@@ -1070,6 +1070,84 @@ theorem endpointQueueRemoveDual_preserves_queueNextTargetBlocked
     have c3 := c2.store hStore
     exact clear _ _ _ c3.1 hClear (epStore _ _ _ _ c2.1 hStore h2)
 
+
+/-- WS-ZA ZA5.4 part 27: the splice keeps every thread with a queue successor
+blocked on an endpoint.
+
+The removed thread's links are cleared, so it carries no successor afterwards.
+The only link the splice *creates* is the predecessor's new `queueNext`, and the
+predecessor already had a successor (the removed thread), so the pre-state holds
+it blocked; every other thread's successor and IPC state are unchanged. -/
+theorem endpointQueueRemoveDual_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
+    (hInv : endpointQueueLinksOnlyBlocked st) : endpointQueueLinksOnlyBlocked st' := by
+  have clear : ∀ (s s' : SystemState) (t : SeLe4n.ThreadId), s.objects.invExt →
+      storeTcbQueueLinks s t none none none = .ok s' →
+      endpointQueueLinksOnlyBlocked s → endpointQueueLinksOnlyBlocked s' :=
+    fun s s' t hi h hP =>
+      storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked s s' t none none none hP hi h
+        (fun hN => absurd rfl hN)
+  have relinkNext : ∀ (s s' : SystemState) (n : SeLe4n.ThreadId) (nTcb : TCB)
+      (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev),
+      s.objects.invExt → lookupTcb s n = some nTcb →
+      storeTcbQueueLinks s n qp qpp nTcb.queueNext = .ok s' →
+      endpointQueueLinksOnlyBlocked s → endpointQueueLinksOnlyBlocked s' := by
+    intro s s' n nTcb qp qpp hi hLk h hP
+    refine storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked s s' n qp qpp nTcb.queueNext
+      hP hi h ?_
+    intro hN tcbN hTcbN
+    have hO := lookupTcb_some_objects s n nTcb hLk
+    rw [hO] at hTcbN; cases hTcbN
+    exact hP n _ hO hN
+  have epStore : ∀ (s s' : SystemState) (e : SeLe4n.ObjId) (ep : Endpoint), s.objects.invExt →
+      storeObject e (.endpoint ep) s = .ok ((), s') →
+      endpointQueueLinksOnlyBlocked s → endpointQueueLinksOnlyBlocked s' :=
+    fun s s' e ep hi h hP =>
+      storeObject_endpoint_preserves_endpointQueueLinksOnlyBlocked s s' e ep hP hi h
+  cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
+  | headLast ep tcb s1 s2 hEp hTcb _ _ _ _ _ hStore1 hStore2 hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c1 := c0.store hStore1
+    have c2 := c1.store hStore2
+    exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore2 (epStore _ _ _ _ c0.1 hStore1 hInv))
+  | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hStore1 hNextTcb hRelink
+      hStore2 hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have c1 := c0.store hStore1
+    have c2 := c1.links hRelink
+    have c3 := c2.store hStore2
+    exact clear _ _ _ c3.1 hClear
+      (epStore _ _ _ _ c2.1 hStore2
+        (relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelink (epStore _ _ _ _ c0.1 hStore1 hInv)))
+  | midLast ep tcb prevTcb prevTid s1 s2 hEp hTcb _ _ _ _ _ hNext hPrevTcb hPrevNext
+      hRelink hStore hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have h1 : endpointQueueLinksOnlyBlocked s1 :=
+      storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked st s1 prevTid prevTcb.queuePrev
+        prevTcb.queuePPrev none hInv hObjInv hRelink (fun hN => absurd rfl hN)
+    have c1 := c0.links hRelink
+    have c2 := c1.store hStore
+    exact clear _ _ _ c2.1 hClear (epStore _ _ _ _ c1.1 hStore h1)
+  | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp hTcb _ _ _ _ _ hNext
+      hPrevTcb hPrevNext hRelinkPrev hNextTcb hRelinkNext hStore hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    have hPrevObj := lookupTcb_some_objects st prevTid prevTcb hPrevTcb
+    -- The predecessor already had a successor (the removed thread), so it is queued.
+    have h1 : endpointQueueLinksOnlyBlocked s1 := by
+      refine storeTcbQueueLinks_preserves_endpointQueueLinksOnlyBlocked st s1 prevTid
+        prevTcb.queuePrev prevTcb.queuePPrev (some nextTid) hInv hObjInv hRelinkPrev ?_
+      intro _ tcbP hP
+      rw [hPrevObj] at hP; cases hP
+      exact hInv prevTid _ hPrevObj (by rw [hPrevNext]; simp)
+    have c1 := c0.links hRelinkPrev
+    have h2 := relinkNext _ _ _ _ _ _ c1.1 hNextTcb hRelinkNext h1
+    have c2 := c1.links hRelinkNext
+    have c3 := c2.store hStore
+    exact clear _ _ _ c3.1 hClear (epStore _ _ _ _ c2.1 hStore h2)
+
 /-- WS-RR RR7.22: the splice preserves the permissive intra-queue compatibility
 relation.
 
@@ -2244,6 +2322,41 @@ theorem endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_exce
       · rcases hSide.2 hB with h | h <;> exact absurd (hIpc ▸ h) (by simp)
       · exact ⟨(ThreadIpcState.blockedOnReceive.inj (hIpc ▸ hSide.1 hB)), rfl⟩)
 
+/-- WS-RR RR7.22 (residual): the splice ends by clearing the removed thread's
+three queue links, so its post-state TCB carries all three as `none`.
+
+Every branch of `SpliceShape` finishes with the same
+`storeTcbQueueLinks _ tid none none none`; this reads that off once, rather than
+each consumer re-running the four-way case analysis to see it. -/
+theorem endpointQueueRemoveDual_removed_links_cleared
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
+      tcb'.queuePrev = none ∧ tcb'.queuePPrev = none ∧ tcb'.queueNext = none := by
+  have clear : ∀ s : SystemState, SpliceCtx endpointId s →
+      storeTcbQueueLinks s tid none none none = .ok st' →
+      ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
+        tcb'.queuePrev = none ∧ tcb'.queuePPrev = none ∧ tcb'.queueNext = none := by
+    intro s hCtx hClear
+    obtain ⟨orig, _, hAt⟩ := storeTcbQueueLinks_result_tcb s st' tid none none none hCtx.1 hClear
+    exact ⟨_, hAt, rfl, rfl, rfl⟩
+  cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
+  | headLast ep tcb s1 s2 hEp _ _ _ _ _ _ hStore1 hStore2 hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    exact clear s2 ((c0.store hStore1).store hStore2) hClear
+  | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp _ _ _ _ _ _ hStore1 _ hRelink hStore2 hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    exact clear s3 (((c0.store hStore1).links hRelink).store hStore2) hClear
+  | midLast ep tcb prevTcb prevTid s1 s2 hEp _ _ _ _ _ _ _ _ _ hRelink hStore hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    exact clear s2 ((c0.links hRelink).store hStore) hClear
+  | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp _ _ _ _ _ _ _ _ _
+      hRelinkPrev _ hRelinkNext hStore hClear =>
+    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
+    exact clear s3 (((c0.links hRelinkPrev).links hRelinkNext).store hStore) hClear
+
 -- ============================================================================
 -- §14  The capstone: what a bare splice leaves behind
 -- ============================================================================
@@ -2271,7 +2384,9 @@ def ipcInvariantFullExceptMembership (st : SystemState) (ex : SeLe4n.ThreadId) :
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
-  queueNextTargetBlocked st ∧ notificationBindingReciprocal st
+  queueNextTargetBlocked st ∧ notificationBindingReciprocal st ∧
+  endpointQueueLinksOnlyBlocked st ∧
+  (∀ tcb, st.objects[ex.toObjId]? = some (.tcb tcb) → tcb.queueNext = none)
 
 /-- WS-RR RR7.22 — **the capstone finding 4 asks for.**
 
@@ -2336,7 +2451,15 @@ theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
       tid hObjInv hStep hInv.queueNextTargetBlocked,
     notificationBindingReciprocal.of_kindPreservingWrite
       (endpointQueueRemoveDual_kindPreservingWrite st st' endpointId isReceiveQ tid
-        hObjInv hStep) hInv.notificationBindingReciprocal⟩
+        hObjInv hStep) hInv.notificationBindingReciprocal,
+    endpointQueueRemoveDual_preserves_endpointQueueLinksOnlyBlocked st st' endpointId
+      isReceiveQ tid hObjInv hStep hInv.endpointQueueLinksOnlyBlocked,
+    fun tcb hTcb => by
+      obtain ⟨tcb', hTcb', _, _, hNext⟩ := endpointQueueRemoveDual_removed_links_cleared st st'
+        endpointId isReceiveQ tid hObjInv hStep
+      rw [hTcb'] at hTcb
+      obtain rfl : tcb' = tcb := KernelObject.tcb.inj (Option.some.inj hTcb)
+      exact hNext⟩
 
 
 -- ============================================================================
@@ -2441,7 +2564,7 @@ re-run that two-step argument.
 
 Together with `endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership`
 this closes the pair: splice relaxes at `tid`, store restores at `tid`, and the
-twenty conjuncts hold of the composite's post-state. -/
+twenty-one conjuncts hold of the composite's post-state. -/
 theorem storeTcbReceiveComplete_closes_exceptMembership
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
@@ -2463,7 +2586,7 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     ipcInvariantFull st' := by
   obtain ⟨hIpc, hDual, hBounded, hBadge, hPend, hNoDup, hMemExcept, hQNB, hQHB,
     hTimeout, _hAcyc, hOwnerValid, hBudget, hReplyTarget, hReplyLink,
-    hStash, hUnique, hTail, hQNT, hNBR⟩ := hExcept
+    hStash, hUnique, hTail, hQNT, hNBR, hLinks, hNoNext⟩ := hExcept
   -- `tid` carries no reply object: a `replyObject` forces a reciprocal `caller`
   -- back-link, and the backward clause makes that caller `.blockedOnReply` —
   -- which `hNotReply` denies.
@@ -2517,7 +2640,9 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     storeTcbReceiveComplete_preserves_queueNextTargetBlocked st st' tid msg hQNT hObjInv hStep
       hNoIncoming,
     notificationBindingReciprocal.of_kindPreservingWrite
-      (storeTcbReceiveComplete_kindPreservingWrite hObjInv hStep) hNBR⟩
+      (storeTcbReceiveComplete_kindPreservingWrite hObjInv hStep) hNBR,
+    storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked st st' tid msg hLinks
+      hObjInv hStep hNoNext⟩
 
 -- ============================================================================
 -- §8  WS-RR RR7.22 (residual) — the removed thread is detached
@@ -2551,41 +2676,6 @@ theorem spliceFinalEndpoint (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     rw [h, lookupTcb_some_objects s' tid orig hOrig] at hAt; cases hAt
   rw [storeTcbQueueLinks_preserves_objects_ne s' s'' tid none none none endpointId hNe hi' hClear]
   exact hAt
-
-/-- WS-RR RR7.22 (residual): the splice ends by clearing the removed thread's
-three queue links, so its post-state TCB carries all three as `none`.
-
-Every branch of `SpliceShape` finishes with the same
-`storeTcbQueueLinks _ tid none none none`; this reads that off once, rather than
-each consumer re-running the four-way case analysis to see it. -/
-theorem endpointQueueRemoveDual_removed_links_cleared
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
-    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
-      tcb'.queuePrev = none ∧ tcb'.queuePPrev = none ∧ tcb'.queueNext = none := by
-  have clear : ∀ s : SystemState, SpliceCtx endpointId s →
-      storeTcbQueueLinks s tid none none none = .ok st' →
-      ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧
-        tcb'.queuePrev = none ∧ tcb'.queuePPrev = none ∧ tcb'.queueNext = none := by
-    intro s hCtx hClear
-    obtain ⟨orig, _, hAt⟩ := storeTcbQueueLinks_result_tcb s st' tid none none none hCtx.1 hClear
-    exact ⟨_, hAt, rfl, rfl, rfl⟩
-  cases endpointQueueRemoveDual_shape st st' endpointId isReceiveQ tid hStep with
-  | headLast ep tcb s1 s2 hEp _ _ _ _ _ _ hStore1 hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s2 ((c0.store hStore1).store hStore2) hClear
-  | headMore ep tcb nextTcb nextTid s1 s2 s3 hEp _ _ _ _ _ _ hStore1 _ hRelink hStore2 hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s3 (((c0.store hStore1).links hRelink).store hStore2) hClear
-  | midLast ep tcb prevTcb prevTid s1 s2 hEp _ _ _ _ _ _ _ _ _ hRelink hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s2 ((c0.links hRelink).store hStore) hClear
-  | midMore ep tcb prevTcb nextTcb prevTid nextTid s1 s2 s3 hEp _ _ _ _ _ _ _ _ _
-      hRelinkPrev _ hRelinkNext hStore hClear =>
-    have c0 : SpliceCtx endpointId st := ⟨hObjInv, ep, hEp⟩
-    exact clear s3 (((c0.links hRelinkPrev).links hRelinkNext).store hStore) hClear
 
 /-- WS-RR RR7.22 (residual): **nothing points at the removed thread** after the
 splice.
@@ -2834,6 +2924,11 @@ theorem queueNextTargetBlocked_of_storeAgrees {st st' : SystemState}
     queueNextTargetBlocked st' :=
   queueNextTargetBlocked_of_objects_eq st st' hA h
 
+theorem endpointQueueLinksOnlyBlocked_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' :=
+  endpointQueueLinksOnlyBlocked_of_objects_eq st st' hA h
+
 /-- WS-OD OD1.3: the relaxed membership conjunct frames pointwise too — the
 exception is a thread id, which store agreement does not move. -/
 theorem ipcStateQueueMembershipConsistentExcept_of_storeAgrees {st st' : SystemState}
@@ -2896,7 +2991,8 @@ theorem ipcInvariantFull_of_storeAgrees {st st' : SystemState}
    endpointQueueTailBlockedConsistent_of_storeAgrees hA
      h.endpointQueueTailBlockedConsistent,
    queueNextTargetBlocked_of_storeAgrees hA h.queueNextTargetBlocked,
-   notificationBindingReciprocal_of_storeAgrees hA h.notificationBindingReciprocal⟩
+   notificationBindingReciprocal_of_storeAgrees hA h.notificationBindingReciprocal,
+   endpointQueueLinksOnlyBlocked_of_storeAgrees hA h.endpointQueueLinksOnlyBlocked⟩
 
 /-- WS-OD OD1.3: the splice's relaxed bundle transfers the same way. -/
 theorem ipcInvariantFullExceptMembership_of_storeAgrees
@@ -2924,7 +3020,9 @@ theorem ipcInvariantFullExceptMembership_of_storeAgrees
    endpointQueueTailBlockedConsistent_of_storeAgrees hA
      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    queueNextTargetBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   notificationBindingReciprocal_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+   notificationBindingReciprocal_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   endpointQueueLinksOnlyBlocked_of_storeAgrees hA h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   fun tcb hTcb => h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 tcb (by rw [← hA]; exact hTcb)⟩
 
 -- ============================================================================
 -- §18  WS-OD OD1.3 — the two endpoint-queue removals agree
@@ -3739,7 +3837,7 @@ theorem timeoutStaging_preserves_ipcInvariantFull
     donationBudgetTransfer_of_sameSchedContextBindings hSame h.donationBudgetTransfer,
     ?_, ?_, ?_,
     donationOwnerUnique_of_sameSchedContextBindings hSame h.donationOwnerUnique,
-    ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_⟩
   · exact storeObject_preserves_ipcInvariant_of_ne_notification st st' tid.toObjId _
       (fun _ => by simp) h.ipcInvariant hObjInv hStore
   · exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree st st' tid.toObjId
@@ -3824,5 +3922,9 @@ theorem timeoutStaging_preserves_ipcInvariantFull
       (sameNotificationBindings.of_storeObject_tcb (t' := timeoutStagedTcb tcb) hObjInv hRaw
         rfl hStore)
       h.notificationBindingReciprocal
+  · intro a tA hA hN
+    obtain ⟨a0, hA0, hIA, _, _, hNA, _⟩ := hBwd a.toObjId tA hA
+    rw [hIA]
+    exact h.endpointQueueLinksOnlyBlocked a a0 hA0 (hNA ▸ hN)
 
 end SeLe4n.Kernel

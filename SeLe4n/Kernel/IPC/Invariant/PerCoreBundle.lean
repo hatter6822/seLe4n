@@ -372,6 +372,7 @@ def queueNextTargetBlocked_perCore (st : SystemState) (c : CoreId) : Prop :=
     (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
       (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep))
 
+
 -- ============================================================================
 -- §2  Restriction bridges: the global conjunct weakens to every core's slice
 -- ============================================================================
@@ -803,6 +804,7 @@ structure ipcInvariantFull_perCore (st : SystemState) (c : CoreId) : Prop where
   queueNextTargetBlocked : queueNextTargetBlocked_perCore st c
   /-- The binding pair is a shared-object clause, carried whole. -/
   notificationBindingReciprocal : notificationBindingReciprocal st
+  endpointQueueLinksOnlyBlocked : endpointQueueLinksOnlyBlocked st
 
 /-- WS-SM SM6.D.1: the ∀-core SMP aggregate — every core's view of the
 IPC invariant bundle holds. -/
@@ -843,6 +845,7 @@ theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
     endpointQueueTailBlockedConsistent_perCore_of_global h.endpointQueueTailBlockedConsistent c
   queueNextTargetBlocked := queueNextTargetBlocked_perCore_of_global h.queueNextTargetBlocked c
   notificationBindingReciprocal := h.notificationBindingReciprocal
+  endpointQueueLinksOnlyBlocked := h.endpointQueueLinksOnlyBlocked
 
 /-- SM6.D.1 recovery: the ∀-core SMP aggregate recovers the full global
 bundle (each restricted conjunct instantiated at its subject's home core). -/
@@ -872,7 +875,7 @@ theorem ipcInvariantFull_of_smp {st : SystemState}
    endpointQueueTailBlockedConsistent_of_forall_perCore
      (fun c => (h c).endpointQueueTailBlockedConsistent),
    queueNextTargetBlocked_of_forall_perCore (fun c => (h c).queueNextTargetBlocked),
-   (h bootCoreId).notificationBindingReciprocal⟩
+   (h bootCoreId).notificationBindingReciprocal, (h bootCoreId).endpointQueueLinksOnlyBlocked⟩
 
 /-- SM6.D.1 recovery to the plan's fifteen-conjunct structural core
 (`ipcInvariantCore` — the "15 conjuncts post-R4" the plan names). -/
@@ -963,6 +966,7 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
     rw [default_objects_getElem_none'] at hEp; cases hEp
   queueNextTargetBlocked := fun a b tcbA tcbB hA _ _ _ => absurd hA default_no_tcb
   notificationBindingReciprocal := .of_objects_none default_objects_getElem_none'
+  endpointQueueLinksOnlyBlocked := fun _ _ hT _ => absurd ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) default_no_tcb
 
 /-- WS-SM SM6.D: the default state satisfies the ∀-core SMP aggregate. -/
 theorem default_ipcInvariantFull_smp : ipcInvariantFull_smp (default : SystemState) :=

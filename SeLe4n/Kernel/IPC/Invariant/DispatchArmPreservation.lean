@@ -597,6 +597,9 @@ theorem storeObject_stashCleared_preserves_ipcInvariantFull
       (sameNotificationBindings.of_storeObject_tcb
         (t' := { rTcb with pendingReceiveReplyCode := 0 }) hObjInv hRaw rfl hStep)
       hInv.notificationBindingReciprocal)
+    (storeObject_tcb_preserveIpcAndQueueNext_preserves_endpointQueueLinksOnlyBlocked st st'
+      receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl rfl
+      hInv.endpointQueueLinksOnlyBlocked hStep)
 
 /-- Raw-insert form of the one-TCB-rewrite bundle lever. -/
 theorem insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
@@ -3431,6 +3434,23 @@ private theorem retypeWrite_queueNextTargetBlocked
     · rw [hNe _ hKb] at hB
       exact hInv a b tcbA tcbB hA hB hN
 
+private theorem retypeWrite_endpointQueueLinksOnlyBlocked
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
+    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
+    (hFresh : retypeReplacementFresh newObj)
+    (hDet : erasedTargetDetached st target)
+    (hInv : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked st' := by
+  intro a tcbA hA hN
+  by_cases hKa : a.toObjId = target
+  · rw [hKa] at hA
+    obtain rfl : newObj = .tcb tcbA := retypeWrite_at_target hAt hA
+    obtain ⟨-, -, hQN, -⟩ := hFresh
+    exact absurd hQN hN
+  · rw [hNe _ hKa] at hA
+    exact hInv a tcbA hA hN
+
 private theorem retypeWrite_queueHeadBlockedConsistent
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
@@ -3934,7 +3954,9 @@ private theorem retypeOrEraseWrite_preserves_ipcInvariantFull
      hInv.endpointQueueTailBlockedConsistent,
    retypeWrite_queueNextTargetBlocked hAt hNe hFresh hDet hInv.queueNextTargetBlocked,
    retypeWrite_notificationBindingReciprocal hAt hNe hFresh hDet
-     hInv.notificationBindingReciprocal⟩
+     hInv.notificationBindingReciprocal,
+   retypeWrite_endpointQueueLinksOnlyBlocked hAt hNe hFresh hDet
+     hInv.endpointQueueLinksOnlyBlocked⟩
 
 /-- The retype write — one arbitrary-kind object replaced by a pristine one at
 a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is

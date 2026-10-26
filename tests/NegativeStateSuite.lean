@@ -1451,6 +1451,66 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint
   pure ()
 
+/-- **WS-ZA ZA5.4 part 27**: `endpointQueueLinksOnlyBlocked`, the 21st
+`ipcInvariantFull` conjunct — a thread with an endpoint-queue successor is
+blocked on an endpoint.
+
+The counterexample is the state the final delete could not otherwise exclude:
+a `.ready` thread naming a queue successor, the successor blocked on an
+endpoint whose own queues are empty.  No live operation reaches it, so it is
+written by hand, one step from a state the live send built.
+
+1. Control: the live queue, and the same state with only the endpoint's
+   queues emptied, satisfy the check — the queued thread has no successor.
+2. Writing the ready thread's `queueNext` breaks the check, on that thread's
+   row alone; `endpointQueueLinksOnlyBlocked.not_ipcInvariantFull` is the
+   proof-side refusal of the same state.
+3. The boot refuses the shape too: `bootSafeObjectCheck` admits no boot TCB
+   carrying any queue link. -/
+private def runEndpointQueueLinksOnlyBlockedChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let sender := SeLe4n.ThreadId.ofNat 8
+  let ready := SeLe4n.ThreadId.ofNat 7
+  -- (1) the live send: thread 8 is `.blockedOnSend` and the sole sendQ member.
+  let (_, stSent) ← expectOkSt "queue links: enqueue the sole sender"
+    (SeLe4n.Kernel.endpointSendDual endpointId sender (.frame none false) baseState)
+  expectBool "the live queue satisfies the check"
+    (endpointQueueLinksOnlyBlockedBool stSent) true
+  let stEmptied ← expectOkVal "queue links: empty the endpoint's queues"
+    (corruptEndpointQueueHeads stSent endpointId none none)
+  expectBool "control: emptying the endpoint's queues alone keeps the check"
+    (endpointQueueLinksOnlyBlockedBool stEmptied) true
+  -- (2) the counterexample: the ready thread 7 names thread 8 as its successor.
+  let stCounter ← expectOkVal "queue links: a ready thread names the blocked sender"
+    (corruptThreadQueueLinks stEmptied ready none none (some sender))
+  expectBool "control: thread 7 is ready, thread 8 blocked on the emptied endpoint"
+    (match stCounter.getTcb? ready, stCounter.getTcb? sender with
+     | some t7, some t8 =>
+         t7.ipcState == .ready && t7.queueNext == some sender &&
+           t8.ipcState == .blockedOnSend endpointId
+     | _, _ => false) true
+  expectBool "NEGATIVE: a ready thread with a queue successor fails the check"
+    (endpointQueueLinksOnlyBlockedBool stCounter) false
+  let failing := ((endpointQueueLinksOnlyBlockedChecks stCounter.objectIndex stCounter).filter
+    (fun c => !c.2)).map (·.1)
+  expectBool "...on the ready thread's row alone"
+    (failing.length == 1 && failing.all (fun l => l.startsWith
+      s!"endpoint queue links only on blocked threads: oid={ready.toObjId}")) true
+  expectBool "...and the full invariant surface reports it"
+    ((stateInvariantChecksFor stCounter.objectIndex stCounter).any
+      (fun c => !c.2 && c.1.startsWith "endpoint queue links only on blocked threads")) true
+  -- (3) the boot: a TCB carrying a queue successor is refused as a boot object.
+  match stCounter.getTcb? ready with
+  | some t7 =>
+      expectBool "NEGATIVE: the boot refuses a TCB carrying a queue successor"
+        (SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb t7)) false
+  | none => throw <| IO.userError "queue links: thread 7 missing"
+  -- The proof-side refusal, elaborated because a run cannot exercise a theorem.
+  let _ := @SeLe4n.Kernel.endpointQueueLinksOnlyBlocked.not_ipcInvariantFull
+  pure ()
+
 /-- PR #932 review: `buildValidated` refuses a supplied TCB that already claims
 a run-queue place, since the fold over `runnable` would skip or refuse its
 enqueue and leave the queue it names unbuilt.  Same fixture with the placement
@@ -1587,6 +1647,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
+  runEndpointQueueLinksOnlyBlockedChecks                -- WS-ZA ZA5.4 part 27
   runBuilderRunPlacementChecks                          -- PR #932 review
   runSlotLinkAgreementChecks                            -- PR #956 review
   runSlotLinkShapeChecks                                -- PR #958 review

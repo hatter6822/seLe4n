@@ -177,6 +177,8 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
       grantRight st st' summary hObjInv hInv.queueNextTargetBlocked hStep,
     notificationBindingReciprocal.of_codes
       (ipcUnwrapCaps_sameNotificationBindings caps receiverRoot slotBase grantRight st st'
-        summary hObjInv hStep) hInv.notificationBindingReciprocal⟩
+        summary hObjInv hStep) hInv.notificationBindingReciprocal,
+    ipcUnwrapCaps_preserves_endpointQueueLinksOnlyBlocked caps receiverRoot slotBase
+      grantRight st st' summary hObjInv hInv.endpointQueueLinksOnlyBlocked hStep⟩
 
 end SeLe4n.Kernel

@@ -1066,6 +1066,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([
 # was verified to fail on.
 run_check "INVARIANT" rg -n '^def endpointQueueHeadDisjointChecks \(' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjointChecks objectIds st" SeLe4n/Testing/InvariantChecks.lean'
+# WS-ZA ZA5.4 part 27: a thread with an endpoint-queue successor is blocked on
+# an endpoint (seL4 `valid_objs`/`sym_refs`), the bundle's last conjunct --- in the
+# DEFINITION, checked at runtime, and read by the empty-queues lemma the final
+# delete's endpoint arm rests on.
+run_check "INVARIANT" rg -n '^def endpointQueueLinksOnlyBlocked \(st : SystemState\) : Prop :=' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "queueNextTargetBlocked st ∧ notificationBindingReciprocal st ∧\n  endpointQueueLinksOnlyBlocked st\n" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem endpointQueues_empty_noneBlocked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueLinksOnlyBlocked\.not_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean
+run_check "INVARIANT" rg -n '^theorem RHTable\.length_le_size_of_nodup_present($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Bridge.lean
+run_check "INVARIANT" rg -n '^def endpointQueueLinksOnlyBlockedChecks \(' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([ \t][^\n]*)?)*endpointQueueLinksOnlyBlockedChecks objectIds st" SeLe4n/Testing/InvariantChecks.lean'
+run_check "INVARIANT" rg -n '^  runEndpointQueueLinksOnlyBlockedChecks\b' tests/NegativeStateSuite.lean
 # ...and the witness that shows the surface was silent, with its own decisive shape:
 # the violating state is reached by a LIVE enqueue plus one hand-written endpoint
 # boundary (no kernel writer can build it -- disjointness is maintained by
@@ -1563,7 +1575,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_schedCon
 run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_reply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # OD2.6: the chain joins `ipcReachable`, not `ipcInvariantFull` — that bundle has
-# exactly twenty conjuncts and a theorem family whose size a Tier-0 gate holds
+# exactly twenty-one conjuncts and a theorem family whose size a Tier-0 gate holds
 # equal to the prose quoting it.  Relation, not presence: the conjunct must be in
 # the DEFINITION, which is what the accessor below reads back.
 run_check "INVARIANT" bash -lc 'rg -U -n "notificationWaiterConsistent st ∧\n  donationChainWellFormed st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
@@ -3774,7 +3786,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
@@ -4618,7 +4630,7 @@ run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTa
 run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.4 part 13 (v0.36.124): no boot untyped is named by two capabilities,
 # the ninth conjunct of `wellFormed`, with its own diagnostic row.
-run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^   \(untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_untypedCapabilitiesUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'runBootUntypedCapabilityChecks$' tests/SmpIdleSuite.lean
@@ -22194,7 +22206,11 @@ run_check "INVARIANT" rg -n '^def Capability\.namedObject \(c : Capability\) : O
 run_check "INVARIANT" rg -n '^  live : ∀ r o, namesAt cap r o → present o$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n -U '^  below : ∀ p c o, c ∈ cdt\.childrenOf p → namesAt cap c o → cap p ≠ none → ¬ namesAt cap p o →\n    ∀ r, namesAt cap r o → CapDerivationTree\.CdtChildReachable cdt p r$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n '^def bootCapabilitiesNameInstalledObjects \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
+# WS-ZA ZA5.4 part 27: the eleventh conjunct, reciprocal notification bindings,
+# closes the list with its own diagnostic row.
+run_check "INVARIANT" rg -n '^    bootNotificationBindingsReciprocal config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootNotificationBindingsReciprocal config, bootNotificationBindingBootError\)\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitiesNameInstalledObjects($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean

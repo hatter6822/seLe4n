@@ -1159,7 +1159,7 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     · obtain ⟨tx, h1, e1, e2, e3, e4, e5, e6, _, _⟩ := hFwd s ty h
       exact ⟨tx, h1, e1, e2, e3, e4, e5, e6⟩
   refine ipcInvariantFull_of_core_replyCallerLinkage hCore ⟨⟨?_, ?_⟩, ?_⟩ ⟨?_, ?_, ?_⟩ hOwnerUnique
-    ?_ ?_ (.of_codes hCodes hInv.notificationBindingReciprocal)
+    ?_ ?_ (.of_codes hCodes hInv.notificationBindingReciprocal) ?_
   -- 16a. replyCallerLinkageReciprocal, TCB → Reply.
   · intro tid tcb rid hTcb hReplyObj
     obtain ⟨ty, hTy, _, _, _, _, _, _, hRO, _⟩ := hBwd tid.toObjId tcb hTcb
@@ -1226,6 +1226,11 @@ theorem ipcInvariantFull_of_donationReadAgreement_of_except
     rcases hSend ep h' with h'' | h''
     · exact Or.inl (hISB ▸ h'')
     · exact Or.inr (hISB ▸ h'')
+  -- 22. endpointQueueLinksOnlyBlocked.
+  · intro a tcbA hA hNext
+    obtain ⟨tyA, hTyA, hISA, _, hQNA, _⟩ := hBwd a.toObjId tcbA hA
+    have h := hInv.endpointQueueLinksOnlyBlocked a tyA hTyA (hQNA ▸ hNext)
+    first | rwa [hISA] | rwa [← hISA]
 
 /-- WS-RR RR2.5: the unrelaxed instance of the transport above — the full bundle
 implies the relaxed one at every thread, and the relaxation is never read. -/

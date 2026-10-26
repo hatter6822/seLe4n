@@ -1762,6 +1762,31 @@ theorem sweptAndRestored_queueNextTargetBlocked
     rw [haIp, hbIp]
     exact ⟨fun ep h => h2.1 ep (h1.1 ep h), fun ep h => h2.2 ep (h1.2 ep h)⟩
 
+/-- **WS-ZA ZA5.4 part 27**: the composite keeps every thread with a queue
+successor blocked on an endpoint.  A post-state edge is a pre-state edge, or the
+skip the splice installed, whose source already had the swept thread as its
+successor; either way the source's IPC state is the pre-state's. -/
+theorem sweptAndRestored_endpointQueueLinksOnlyBlocked
+    (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
+    (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
+    (hTgt : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (sweptAndRestored st v frame) := by
+  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
+  intro a tcbA hA hNext
+  cases hNb : tcbA.queueNext with
+  | none => exact absurd hNb hNext
+  | some b =>
+  have hav : a ≠ v :=
+    sweptAndRestored_not_victim_of_next st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNb
+  rcases sweptAndRestored_edge_source st v frame tcbV hInv hLink hAcyc hLookup a b tcbA hA hNb
+    with ⟨t0a, h0a, hE⟩ | ⟨t0a, h0a, hEv, _⟩
+  · rw [sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup a tcbA t0a hav hA h0a]
+    exact hTgt a t0a h0a (by rw [hE]; simp)
+  · rw [sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup a tcbA t0a hav hA h0a]
+    exact hTgt a t0a h0a (by rw [hEv]; simp)
+
 /-- **WS-RR RR7.22 (residual)**: cross-queue links stay excluded.  Read off the
 forward propagation above, one blocking state at a time. -/
 theorem sweptAndRestored_queueNextBlockingConsistent
@@ -2177,7 +2202,7 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     ipcInvariantFull (sweptAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
-    hDonUnique, hTailBlk, hTgt, hNBR⟩ := hBundle
+    hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
   have hBind := sweptAndRestored_sameSchedContextBindings st v frame tcbV hInv hLink hAcyc hLookup
@@ -2209,7 +2234,9 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
       hTailBlk hCoh.predecessorBlocked,
     sweptAndRestored_queueNextTargetBlocked st v frame tcbV hInv hLink hAcyc hLookup hTgt,
     notificationBindingReciprocal.of_codes
-      (sweptAndRestored_sameNotificationBindings st v frame tcbV hInv hLink hAcyc hLookup) hNBR⟩
+      (sweptAndRestored_sameNotificationBindings st v frame tcbV hInv hLink hAcyc hLookup) hNBR,
+    sweptAndRestored_endpointQueueLinksOnlyBlocked st v frame tcbV hInv hLink hAcyc hLookup
+      hLinks⟩
 
 -- ============================================================================
 -- §13  The live operation: `cancelIpcBlocking`'s endpoint arm

@@ -619,7 +619,7 @@ theorem default_ipcInvariantFull :
    default_blockedOnReplyHasTarget, default_replyCallerLinkage,
    default_pendingReceiveReplyWellFormed, default_donationOwnerUnique,
    default_endpointQueueTailBlockedConsistent, default_queueNextTargetBlocked,
-   .of_objects_none default_objects_none⟩
+   .of_objects_none default_objects_none, fun _ _ hT _ => default_objects_absurd hT⟩
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
@@ -902,7 +902,8 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
   have hLk : ∀ (x : SeLe4n.ObjId), (advanceTimerState ticks st).objects[x]? = st.objects[x]? := by
     intro x; exact congrArg (·.get? x) hObjs
   refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    .of_codes (.of_objects_eq hObjs) hBindings⟩
+    .of_codes (.of_objects_eq hObjs) hBindings.1,
+    endpointQueueLinksOnlyBlocked_of_objects_eq _ _ hLk hBindings.2⟩
   -- dualQueueSystemInvariant
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
     refine ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
@@ -1405,7 +1406,8 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
       (writeRegisterState reg value st).objects[x]? = st.objects[x]? := fun x => congrArg (·.get? x) hObjs
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
   refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    .of_codes (.of_objects_eq hObjs) hBindings⟩
+    .of_codes (.of_objects_eq hObjs) hBindings.1,
+    endpointQueueLinksOnlyBlocked_of_objects_eq _ _ hLk hBindings.2⟩
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
@@ -1544,7 +1546,8 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
     fun x => congrArg (·.get? x) hObjs
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h14, h16, h17, h18, h19, h20, h21, hBindings⟩ := hIpc
   refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    .of_codes (.of_objects_eq hObjs) hBindings⟩
+    .of_codes (.of_objects_eq hObjs) hBindings.1,
+    endpointQueueLinksOnlyBlocked_of_objects_eq _ _ hLk hBindings.2⟩
   · obtain ⟨hEp, hLink, hAcyc, hPPair, hHD⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp

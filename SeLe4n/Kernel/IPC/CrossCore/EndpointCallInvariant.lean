@@ -836,7 +836,7 @@ while agreeing on every lookup.)
 
 The congruence lemmas themselves (`QueueNextPath_of_getElem_eq` …
 `dualQueueSystemInvariant_of_readViewAgreement`, and the full per-conjunct family
-covering all twenty `ipcInvariantFull` conjuncts) live in the **production**
+covering all twenty-one `ipcInvariantFull` conjuncts) live in the **production**
 module `SeLe4n.Kernel.IPC.Invariant.LookupCongruence`; this staged file
 consumes them via import. -/
 
@@ -1480,6 +1480,15 @@ theorem removeRunnableOnCore_preserves_queueNextTargetBlocked
   queueNextTargetBlocked_of_objectsAgreeOffRunLinks
     (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c) h
 
+
+/-- IPC de-threading D4 Slice 2c: `removeRunnableOnCore` frames `endpointQueueLinksOnlyBlocked`
+(object-store frame — `objects` unchanged). -/
+theorem removeRunnableOnCore_preserves_endpointQueueLinksOnlyBlocked
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (removeRunnableOnCore st tid c) :=
+  endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c) h
 /-- IPC de-threading D4 Slice 2c: the cross-core wake of an already-`.ready` thread preserves
 `queueHeadBlockedConsistent` (the wake's `ipcState := .ready` re-insert is object-lookup-invisible —
 the §2 keystone — and the invariant is lookup-only). -/
@@ -1503,6 +1512,17 @@ theorem wakeThread_preserves_queueNextTargetBlocked_of_ready
   queueNextTargetBlocked_of_objectsAgreeOffRunLinks
     (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 
+
+/-- IPC de-threading D4 Slice 2c: the cross-core wake of an already-`.ready` thread preserves
+`endpointQueueLinksOnlyBlocked` (object-lookup-invisible §2 keystone; lookup-only invariant). -/
+theorem wakeThread_preserves_endpointQueueLinksOnlyBlocked_of_ready
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (h : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (wakeThread st tid ec).1 :=
+  endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: the cross-core endpoint call **establishes**
 `queueNextBlockingConsistent`.  Mirrors the single-core
@@ -1763,6 +1783,145 @@ theorem endpointCallOnCore_preserves_queueNextTargetBlocked
               show queueNextTargetBlocked (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_queueNextTargetBlocked st5 caller executingCore hQNTB5
 
+
+open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA5.4 part 27: the cross-core endpoint call keeps every thread with a
+queue successor blocked on an endpoint.  Block path: the enqueue links the old
+tail (blocked) to the caller, which is stored `.blockedOnCall`.  Rendezvous: the
+popped receiver has no successor after the pop, so its `.ready` store keeps the
+conjunct; the running caller is `.ready` (`hCallerReady`) and so has no
+successor either, which keeps its `.blockedOnReply` store; the wake, the reply
+link and `removeRunnableOnCore` move no queue link or IPC state. -/
+theorem endpointCallOnCore_preserves_endpointQueueLinksOnlyBlocked
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState)
+    (hQNTB : endpointQueueLinksOnlyBlocked st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hCallerReady : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid)) :
+    endpointQueueLinksOnlyBlocked (endpointCallOnCore endpointId caller payload executingCore st).1 := by
+  have hReadyNotBlocked : (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnReceive ep) ∧
+      (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnSend ep) ∧
+      (∀ ep, (ThreadIpcState.ready) ≠ .blockedOnCall ep) :=
+    ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+  unfold endpointCallOnCore
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hQNTB
+  | some ep =>
+    have hObjEp : st.objects[endpointId]? = some (.endpoint ep) :=
+      (getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact hQNTB
+      | ok st' =>
+        simp only
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
+        | error e => simp only; exact hQNTB
+        | ok st'' =>
+          simp only
+          refine endpointQueueLinksOnlyBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
+          show endpointQueueLinksOnlyBlocked (removeRunnableOnCore st'' caller executingCore)
+          exact removeRunnableOnCore_preserves_endpointQueueLinksOnlyBlocked st'' caller executingCore
+            (endpointQueueEnqueue_blockStore_establishes_endpointQueueLinksOnlyBlocked endpointId false caller
+              st st' st'' ep (.blockedOnCall endpointId) none hObjInv hObjEp hQNTB hTail hDQSI
+              hFreshCaller hSendTailFresh (by simp) hEnq hMsg)
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact hQNTB
+      | ok pair =>
+        simp only
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt
+          endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+        have hQNTB1 := endpointQueuePopHead_preserves_endpointQueueLinksOnlyBlocked
+          endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hQNTB hPop
+        have hNoIncPop := endpointQueuePopHead_popped_next_none endpointId true st pair.2.2 pair.1
+          pair.2.1 hObjInv hPop
+        have hRetHead := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2.2 hObjEp hPop
+        have hHeadEq : ep.receiveQ.head = some pair.1 := by simpa using hRetHead
+        have hCallerNeReceiver : caller.toObjId ≠ pair.1.toObjId := by
+          intro h
+          have hEq : caller = pair.1 := ThreadId.toObjId_injective caller pair.1 h
+          exact (hFreshCaller endpointId ep hObjEp).2.2.1 (by rw [hHeadEq, hEq])
+        have hNoIncPop' := hNoIncPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
+        | error e => simp only; exact hQNTB
+        | ok st2 =>
+          simp only
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+            pair.2.2 st2 pair.1 _ (some (sendPayloadMessage st caller payload)) hObj1 hMsg
+          have hQNTB2 := storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
+            pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hQNTB1 hObj1 hReadyNotBlocked hNoIncPop' hMsg
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObj1 hMsg
+          have hQNTBW := wakeThread_preserves_endpointQueueLinksOnlyBlocked_of_ready
+            st2 pair.1 executingCore tr hTrGet hTrReady hObj2 hQNTB2
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact hQNTB
+          | ok st4 =>
+            simp only
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ none hObjW hCS
+            -- caller's pre-store TCB at the wake state (without reducing the wake-state projection).
+            obtain ⟨callerPost, hCallerPostGet, _⟩ := storeTcbIpcStateAndMessage_getTcb?_ipcState
+              (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1))
+              none hObjW hCS
+            obtain ⟨callerTcbW, hCallerWGet, _, _⟩ := storeTcbIpcStateAndMessage_getTcb?_backward
+              (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1))
+              none hObjW hCS caller callerPost hCallerPostGet
+            have hCallerMemW : (wakeThread st2 pair.1 executingCore).1.objects[caller.toObjId]? =
+                some (.tcb callerTcbW) :=
+              (SystemState.getTcb?_eq_some_iff _ caller callerTcbW).mp hCallerWGet
+            have hCallerReadyW : callerTcbW.ipcState = .ready := by
+              obtain ⟨c2, hMem2, hc2⟩ := (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1
+                executingCore tr hTrGet hTrReady hObj2).get_tcb' hCallerMemW
+              have hMemPop : pair.2.2.objects[caller.toObjId]? = some (.tcb c2) := by
+                rw [← storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ (some (sendPayloadMessage st caller payload))
+                  caller.toObjId hCallerNeReceiver hObj1 hMsg]; exact hMem2
+              obtain ⟨stC, hStC, hIpcSt⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId true st
+                pair.2.2 pair.1 caller c2 hObjInv hPop hMemPop
+              rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hc2, ← hIpcSt]
+              exact hCallerReady stC hStC
+            have hCallerNotBlocked : (∀ ep, callerTcbW.ipcState ≠ .blockedOnReceive ep) ∧
+                (∀ ep, callerTcbW.ipcState ≠ .blockedOnSend ep) ∧
+                (∀ ep, callerTcbW.ipcState ≠ .blockedOnCall ep) :=
+              ⟨fun ep => by rw [hCallerReadyW]; simp, fun ep => by rw [hCallerReadyW]; simp,
+               fun ep => by rw [hCallerReadyW]; simp⟩
+            have hQNTB4 := storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
+              (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1))
+              none hQNTBW hObjW ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+              (endpointQueueLinksOnlyBlocked_no_incoming_of_notQueueBlocked (wakeThread st2 pair.1 executingCore).1
+                hQNTBW caller callerTcbW hCallerMemW hCallerNotBlocked) hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hQNTB
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hQNTB5 := linkServerStashedReply_preserves_endpointQueueLinksOnlyBlocked
+                st4 st5 caller pair.1 hObjInv4 hQNTB4 hLink
+              refine endpointQueueLinksOnlyBlocked_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
+              show endpointQueueLinksOnlyBlocked (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_endpointQueueLinksOnlyBlocked st5 caller executingCore hQNTB5
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: the cross-core endpoint call **establishes** `queueHeadBlockedConsistent`.
 Block path: the fused sendQ enqueue+`.blockedOnCall` keystone + `removeRunnableOnCore`.  Rendezvous:
@@ -2521,7 +2680,10 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hFreshCaller hSendTailFresh,
     notificationBindingReciprocal.of_kindPreservingWrite
       (endpointCallOnCore_kindPreservingWrite endpointId caller payload executingCore st hObjInv)
-      hInv.notificationBindingReciprocal⟩
+      hInv.notificationBindingReciprocal,
+    endpointCallOnCore_preserves_endpointQueueLinksOnlyBlocked endpointId caller payload executingCore st
+      hInv.endpointQueueLinksOnlyBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady
+      hFreshCaller hSendTailFresh⟩
 
 -- ============================================================================
 -- WS-SM SM6.D: per-core IPC bundle preservation for the cross-core call

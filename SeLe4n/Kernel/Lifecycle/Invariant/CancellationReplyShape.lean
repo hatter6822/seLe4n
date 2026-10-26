@@ -2232,6 +2232,26 @@ theorem restoreToReadyStaging_queueNextTargetBlocked (st : SystemState)
     · exact absurd hk hbv
   · exact absurd hk hav
 
+/-- WS-ZA ZA5.4 part 27: the staging restore keeps every thread with a queue
+successor blocked on an endpoint — a post-state edge avoids the victim, whose
+neighbours keep their records. -/
+theorem restoreToReadyStaging_endpointQueueLinksOnlyBlocked (st : SystemState)
+    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hLink : tcbQueueLinkIntegrity st) (hOff : sweptThreadOffQueueChains st v)
+    (hTgt : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
+  intro a tcbA hA hNext
+  cases hNb : tcbA.queueNext with
+  | none => exact absurd hNb hNext
+  | some b =>
+  obtain ⟨hav, -⟩ := restoreToReadyStaging_edge_avoids_victim st v frame tcbV hInv hLookup
+    hLink hOff a b tcbA hA hNb
+  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
+    a.toObjId tcbA hA with ⟨_, h0a⟩ | ⟨hk, _⟩
+  · exact hTgt a tcbA h0a hNext
+  · exact absurd hk hav
+
 theorem restoreToReadyStaging_queueNextBlockingConsistent (st : SystemState)
     (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
@@ -2523,7 +2543,7 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
       (Lifecycle.Suspend.restoreToReadyStaging st v frame) v := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
-    hDonUnique, hTailBlk, hTgt, hNBR⟩ := hBundle
+    hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hBind := restoreToReadyStaging_sameSchedContextBindings st v frame hInv
   exact ⟨Lifecycle.Suspend.restoreToReadyStaging_preserves_ipcInvariant st v frame hInv hIpc,
@@ -2559,7 +2579,9 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
       hLookup hBlocked hQHB hTailBlk,
     restoreToReadyStaging_queueNextTargetBlocked st v frame tcbV hInv hLookup hLink hOff hTgt,
     notificationBindingReciprocal.of_codes
-      (restoreToReadyStaging_sameNotificationBindings st v frame hInv) hNBR⟩
+      (restoreToReadyStaging_sameNotificationBindings st v frame hInv) hNBR,
+    restoreToReadyStaging_endpointQueueLinksOnlyBlocked st v frame tcbV hInv hLookup hLink hOff
+      hLinks⟩
 
 /-- **WS-RR RR8.7 — the teardown closes the relaxation it was opened for.**
 

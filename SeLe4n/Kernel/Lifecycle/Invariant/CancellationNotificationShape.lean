@@ -813,6 +813,27 @@ theorem purgedAndRestored_queueNextTargetBlocked
     · exact absurd hk hbv
   · exact absurd hk hav
 
+/-- WS-ZA ZA5.4 part 27: the purge keeps every thread with a queue successor
+blocked on an endpoint — a post-state edge avoids the victim, so its source is a
+pre-state thread with its IPC state unchanged. -/
+theorem purgedAndRestored_endpointQueueLinksOnlyBlocked
+    (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
+    (hLink : tcbQueueLinkIntegrity st) (hOff : sweptThreadOffQueueChains st v)
+    (hTgt : endpointQueueLinksOnlyBlocked st) :
+    endpointQueueLinksOnlyBlocked (purgedAndRestored st v frame) := by
+  intro a tcbA hA hNext
+  cases hNb : tcbA.queueNext with
+  | none => exact absurd hNb hNext
+  | some b =>
+  obtain ⟨hav, -⟩ := purgedAndRestored_edge_avoids_victim st v frame tcbV hInv hLookup hLink
+    hOff a b tcbA hA hNb
+  rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup a.toObjId tcbA hA with
+    ⟨_, t0a, h0a, _, _, rfl⟩ | ⟨hk, _⟩
+  · exact hTgt a t0a h0a hNext
+  · exact absurd hk hav
+
 theorem purgedAndRestored_queueNextBlockingConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
@@ -931,7 +952,7 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     ipcInvariantFull (purgedAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
     hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
-    hDonUnique, hTailBlk, hTgt, hNBR⟩ := hBundle
+    hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hNotReply : ∀ ep rt, tcbV.ipcState ≠ .blockedOnReply ep rt := by
     intro ep rt hEq
@@ -987,7 +1008,9 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
       hBlocked hQHB hTailBlk,
     purgedAndRestored_queueNextTargetBlocked st v frame tcbV hInv hLookup hLink hOff hTgt,
     notificationBindingReciprocal.of_codes
-      (purgedAndRestored_sameNotificationBindings st v frame tcbV hInv hLookup) hNBR⟩
+      (purgedAndRestored_sameNotificationBindings st v frame tcbV hInv hLookup) hNBR,
+    purgedAndRestored_endpointQueueLinksOnlyBlocked st v frame tcbV hInv hLookup hLink hOff
+      hLinks⟩
 
 /-- The cancellation's notification arm **is** the purge-then-restore composite —
 `rfl` up to the branch, so the two cannot drift. -/

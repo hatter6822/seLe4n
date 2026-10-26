@@ -1687,6 +1687,14 @@ theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}
   run_links_back hView at tcbA hA; run_links_back hView at tcbB hB
   exact h a b tcbA tcbB hA hB hNext
 
+/-- Read-view transport of `endpointQueueLinksOnlyBlocked`. -/
+theorem endpointQueueLinksOnlyBlocked_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2)
+    (h : endpointQueueLinksOnlyBlocked s1) : endpointQueueLinksOnlyBlocked s2 := by
+  intro a tcbA hA hNext
+  run_links_back hView at tcbA hA
+  exact h a tcbA hA hNext
+
 /-- **The read-view master transport**: two states agreeing on every object
 kind the bundle reads satisfy the eighteen conjuncts that read neither a CNode
 nor a binding code interchangeably; the CNode-reading clause
@@ -1722,7 +1730,8 @@ theorem ipcInvariantFull_of_readViewAgreement_of_reciprocal {s1 s2 : SystemState
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
      h.endpointQueueTailBlockedConsistent,
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
-   hNBR⟩
+   hNBR,
+   endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩
 
 /-- The master transport for a write that moves no binding code: the
 reciprocity carries with the codes. -/
@@ -1745,7 +1754,7 @@ theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemSta
 
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
 two states whose object stores agree off the run-queue links satisfy the
-twenty conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
+twenty-one conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
 theorems across the cross-core wake, whose run-queue placement differs. -/
 theorem ipcInvariantFull_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1)
@@ -1802,7 +1811,8 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : 
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
-   .of_codes (.of_objectsAgreeOffRunLinks hA) h.notificationBindingReciprocal⟩
+   .of_codes (.of_objectsAgreeOffRunLinks hA) h.notificationBindingReciprocal,
+   endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
 objects untouched.  `ipcInvariantFull` reads nothing else, so it transports

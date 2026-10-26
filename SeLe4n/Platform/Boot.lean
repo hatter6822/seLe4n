@@ -5998,7 +5998,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · -- WS-ZA ZA5.4 part 27: notificationBindingReciprocal (21st) — the boot's
         -- bindings are the configuration's, which the boot admits only in
         -- reciprocal pairs (`bootNotificationBindingsReciprocal`).
-        exact hBindings
+        refine ⟨hBindings, ?_⟩
+        -- WS-ZA ZA5.4 part 27: endpointQueueLinksOnlyBlocked (the last, vacuous — boot
+        -- TCBs have queueNext = none, which `bootSafeTcbCheck` refuses otherwise).
+        intro a tcbA hObjA hNext
+        have hTcb := (hBS a.toObjId _ hObjA).2.2.2.1 tcbA rfl
+        exact absurd hTcb.2.2.1 hNext
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       ist.state := by
