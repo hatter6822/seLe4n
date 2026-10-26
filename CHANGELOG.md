@@ -1,3 +1,104 @@
+## v0.36.143 — WS-ZA ZA5.4 part 30: the table back-references recorded
+
+Three tables of the state name kernel objects by id from outside every slot:
+the service registry, the interrupt-handler table and the service graph.  A
+capability held there is one the derivation tree does not see, so a final
+delete must not retire an object a table still names, and today it asks by
+walking all three.  Each of those references is now answered by the object it
+names, as seL4's objects answer the references to them.
+
+- **The choice, and why**: a back-link on the object for the registry and the
+  interrupt table, and an emptiness invariant for the service graph.  The
+  registry and the interrupt table each name one object per entry and the named
+  kind has room for the answer.  The service graph has no seL4 counterpart and
+  no kernel entry writes it, so the smaller and more faithful statement is that
+  it holds no entry (`RHTable.slotsEmpty`) rather than two back-links on every
+  backing object and every owner.
+
+### The invariant and its consumer
+
+- `SystemState.tableReferencesRecorded` (new `Model/TableReferences.lean`)
+  states all three references, each with its converse: a registration names an
+  endpoint recording its service and an endpoint's code names a registration of
+  it (`Endpoint.serviceCode`, `sid + 1`, `0` for none); an interrupt names a
+  notification recording it and a recording notification is named by an
+  interrupt (`Notification.irqBound`); the service graph holds no entry.
+- `SystemState.tableBackLinksClear.namedByNone` is the consumer: an object
+  whose own back-links are clear is named by no registration, no interrupt
+  handler and no service-graph entry — what the retire's three walks establish.
+- `SystemState.default_tableReferencesRecorded`: the empty state records every
+  reference.
+
+### The writers
+
+- `registerService` writes the code on its endpoint and `revokeService` clears
+  it (`clearEndpointServiceCode`); both are proven to keep the invariant
+  (`registerService_preserves_tableReferencesRecorded`,
+  `revokeService_preserves_tableReferencesRecorded`).
+- The registration's validity and uniqueness conjuncts are now **derived** from
+  the invariant (`registryEndpointValid_of_tableReferencesRecorded`,
+  `registryEndpointUnique_of_tableReferencesRecorded`) instead of being
+  separately maintained.
+- The duplicate-endpoint check reads `ep.serviceCode`; the registry fold it
+  replaced (`hasEndpointRegistered`, with `hasEndpointRegistered_false_spec`)
+  is deleted, so the two cannot drift apart.
+
+### The carriage so far
+
+- `kindPreservingWrite` gains `post.tableBackLinks = pre.tableBackLinks` over
+  the new `KernelObject.tableBackLinks`, beside the binding codes it already
+  carried; `storeObject_kindPreservingWrite` and
+  `rewriteObject_kindPreservingWrite` discharge it by autoParam.
+- `TableReferenceFrame.of_kindPreservingWrite` is the bridge from a
+  kind-preserving write that writes no table to the invariant.
+- The endpoint splice carrier now hands each write the relation between what it
+  writes and what it replaces (`SpliceCtx` carries the endpoint's service code;
+  `SpliceShape.carry` and `endpointQueueRemoveDual_carry` carry
+  `epNew.serviceCode = epOld.serviceCode`), which is what an abstract `epNew`
+  needed to keep the code across a dual-queue splice.
+
+### The boot
+
+- `bootSafeEndpointCheck` refuses an endpoint that comes up carrying a
+  registration: the boot installs none, so such an endpoint would record a
+  registration no table holds.
+- `irqHandlersReferenceNotifications` becomes
+  `irqHandlersAndNotificationsReciprocal` — the old name no longer describes
+  it — and refuses both halves of the reciprocity: a handler whose notification
+  does not record the interrupt, and a notification recording one no IRQ names.
+  Both deployments set `irqBound` on every notification their interrupt table
+  names.
+
+### Tests
+
+- The platform suite gains the two new refusals
+  (`handlerWithoutNotificationRecordRejected`,
+  `notificationRecordNoIrqNamesRejected`).
+- The operation-chain register/revoke chain reads the endpoint's recorded code
+  and `tableBackLinksClear` on both sides of the revoke.
+- Nine Tier 3 anchors hold the invariant's five relations, the consumer, the
+  two writers' preservation, the two derivations, the deleted fold, the
+  `kindPreservingWrite` conjunct and both boot gates.
+
+### The split: a new row 31, the later rows renumbered
+
+The plan's row 30 is now what landed here.  The remainder is a new row 31,
+"The table back-references read": the invariant established at boot (the
+establishment theorem and the boot shapes) and carried by every syscall and
+kernel entry and along the delete chain (`finalisingDeleteBundle`,
+`reachableDeleteBundle`), then the retire's guard switched to the back-links,
+deleting `registryNamesNone`, `irqHandlersNameNone` and `servicesNameNone`;
+`lookupServiceByCap` reading the recorded code; and the endpoint arm of
+`cleanupEndpointServiceRegistrations` deleted or justified.  Row 31 now owns
+the registry and service-graph conjuncts of `docs/REGISTERED_DEBT.md` §C.1
+row 21 (`crossSubsystemInvariant` under interleaving), which stays open.  The
+finalise's admission carriage and the zombie fuel become row 32 and the seL4
+reset row 33; every citation of the old numbering is swept — the plan, the
+debt register, `WORKSTREAM_CONTEXT.md`, `ZERO_ALLOCATION_SYSCALL_PLAN.md`, the
+spec, the claim index, GitBook chapter 12, and the source comments that cite
+them (the comment in `scripts/qemu_exerciser_lib.sh` included; no pin
+changes).
+
 ## v0.36.142 — WS-ZA ZA5.4 part 29: the scheduling context's retire reads its own links
 
 The final-delete retire of a scheduling context reads the context's own links

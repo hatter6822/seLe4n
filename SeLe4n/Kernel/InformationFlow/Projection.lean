@@ -392,7 +392,15 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- notification's queues, an address space's mappings, an untyped's extent, a
   -- frame's `base` and `isDevice` (WS-BP BP7.1: *which* physical memory the
   -- object is), and a page table's `base` and `installedIn`.
-  | .endpoint e => .endpoint e
+  -- An endpoint's `serviceCode` names the service registered on it (seL4
+  -- has no such registry; it is the back-link `revokeService` and the final
+  -- delete read).  The service's own visibility is gated by
+  -- `serviceObservable` in `projectServicePresence`, so the endpoint's record
+  -- of it is erased here, or a registration of a hidden service would show
+  -- through a visible endpoint.  A notification's `irqBound` is kept: it is
+  -- true exactly when an IRQ names the notification, which
+  -- `projectIrqHandlers` already shows for every visible notification.
+  | .endpoint e => .endpoint { e with serviceCode := 0 }
   | .notification n => .notification n
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u

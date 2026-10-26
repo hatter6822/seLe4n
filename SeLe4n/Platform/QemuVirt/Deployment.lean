@@ -167,7 +167,10 @@ private def untypedEntry (id : SeLe4n.ObjId) (ut : UntypedObject) : ObjectEntry 
 private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
   { id := id
     obj := .notification
-      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+      -- The interrupt table names this notification, so it records the
+      -- interrupt back (`SystemState.tableReferencesRecorded`).
+      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+        irqBound := true }
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
@@ -257,7 +260,7 @@ theorem qemuVirtBoundPlatformConfig_asidsDistinct :
 
 set_option maxRecDepth 8192 in
 theorem qemuVirtBoundPlatformConfig_irqHandlers :
-    irqHandlersReferenceNotifications qemuVirtBoundPlatformConfig = true := by
+    irqHandlersAndNotificationsReciprocal qemuVirtBoundPlatformConfig = true := by
   decide
 
 theorem qemuVirtBoundPlatformConfig_rootDistinct :

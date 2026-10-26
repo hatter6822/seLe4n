@@ -1558,33 +1558,15 @@ theorem vspaceLookup_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)
     observableSlotsConfinedToCore st st' c₀ :=
   observableSlotsConfinedToCore_of_eq c₀ (vspaceLookup_preserves_state st asid vaddr paddr st' hStep)
 
-/-- SM8.B.3: `registerService` writes only the service registry. -/
+/-- SM8.B.3: `registerService` writes the service registry and its endpoint's
+`serviceCode` — neither the scheduler nor the machine. -/
 theorem registerService_confinedToCore (st st' : SystemState) (reg : ServiceRegistration)
     (c₀ : CoreId) (hStep : registerService reg st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
     (registerService_preserves_scheduler st st' reg hStep) ?_
-  unfold registerService SystemState.getObject? at hStep
-  split at hStep
-  · cases hStep
-  · split at hStep
-    · cases hStep
-    · cases hTarget : reg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        cases hObj : st.objects[epId]? with
-        | none => simp [hObj] at hStep
-        | some obj =>
-          cases obj <;> simp [hObj] at hStep
-          case endpoint ep =>
-            split at hStep
-            · cases hStep
-            · split at hStep
-              · cases hStep
-              · simp at hStep; cases hStep; rfl
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
-      | auditTrail => simp [hTarget] at hStep
+  obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok hStep
+  rfl
 
 /-- SM8.B.3: the checked service registration is either the unchecked one or a
 denial, so it is confined too. -/

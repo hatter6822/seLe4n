@@ -380,8 +380,19 @@ the timeout budgets clear, the binding pair, and every queued context bound and
 on its holder's home core (one `SchedLinkFrame` for a step that writes none of
 them), and new code that names a context by id must extend those invariants.
 The retire still walks the service registry, the interrupt-handler table and
-the service graph (plan row 30), and the finalise's admission is not yet
-carried across its steps (each step re-checks; plan row 31,
+the service graph (plan row 31), though each of those references is now
+recorded on the object it names: an endpoint carries its registration's code
+(`Endpoint.serviceCode`, written by `registerService` and cleared by
+`revokeService`), a notification carries the interrupt flag
+(`Notification.irqBound`, set by the boot alone), and the service graph holds no
+entry — one invariant, `SystemState.tableReferencesRecorded` (since
+`v0.36.143`).  New code that writes either field must write the table entry in
+the same step, as the registry's two writers do; new code that writes the
+interrupt-handler table must set the flag on the notification it names, and
+every other step must leave both fields as it found them, which a
+kind-preserving write already does (`kindPreservingWrite` carries
+`KernelObject.tableBackLinks`).  The finalise's admission is not yet
+carried across its steps (each step re-checks; plan row 32,
 `docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
 (`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
 that clears a frame's `prev` must clear in the same step the `next` of the frame

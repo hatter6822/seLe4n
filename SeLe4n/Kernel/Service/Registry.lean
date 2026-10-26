@@ -21,9 +21,9 @@ returns and machine-checked post-conditions.
 | Operation | Mutates | Error conditions |
 |-----------|---------|-----------------|
 | `registerInterface` | `interfaceRegistry` | `illegalState` (duplicate) |
-| `registerService` | `serviceRegistry` | `illegalState`, `objectNotFound`, `invalidCapability` |
+| `registerService` | `serviceRegistry`, its endpoint's `serviceCode` | `illegalState`, `objectNotFound`, `invalidCapability` |
 | `lookupServiceByCap` | — (read-only) | `objectNotFound` |
-| `revokeService` | `serviceRegistry` | `objectNotFound` |
+| `revokeService` | `serviceRegistry`, its endpoint's `serviceCode` | `objectNotFound` |
 -/
 
 namespace SeLe4n.Kernel
@@ -46,14 +46,6 @@ def registerInterface (spec : InterfaceSpec) : Kernel Unit :=
       .ok ((), { st with
         interfaceRegistry := st.interfaceRegistry.insert spec.ifaceId spec })
 
-/-- AE5-B helper: Check if any existing service registration targets the given endpoint.
-    Public for use in `Registry/Invariant.lean` preservation proofs. -/
-def hasEndpointRegistered (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
-  st.serviceRegistry.fold false fun acc _ entry =>
-    acc || match entry.endpointCap.target with
-           | .object id => id == epId
-           | _ => false
-
 /-- Register a service with capability-mediated binding.
 Checks (ordered for defense-in-depth — validate target before authority):
 1. Service not already registered (`illegalState`)
@@ -61,7 +53,10 @@ Checks (ordered for defense-in-depth — validate target before authority):
 3. Endpoint capability target resolves to an existing object (`invalidCapability`)
 4. R4-C.2 (L-09): Target object must be an endpoint (`invalidCapability`)
 5. R4-C.1 (M-14): Endpoint capability must have Write right (`illegalAuthority`)
-6. AE5-B (U-20): No existing service already targets this endpoint (`illegalState`)
+6. AE5-B (U-20): No existing service already targets this endpoint (`illegalState`),
+   read off the endpoint's own record of its registration (`Endpoint.serviceCode`,
+   WS-ZA ZA5.4 part 30), which `SystemState.tableReferencesRecorded` holds equal
+   to the registry's — one field, where the check walked the registry.
 -/
 def registerService (reg : ServiceRegistration) : Kernel Unit :=
   fun st =>
@@ -72,19 +67,23 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
     else
       match reg.endpointCap.target with
       | .object epId =>
-        match st.getObject? epId with
+        match hObj : st.getObject? epId with
         | none => .error .invalidCapability
         -- R4-C.2 (L-09): Target must be an endpoint object
-        | some (.endpoint _) =>
+        | some (.endpoint ep) =>
           -- R4-C.1 (M-14): Capability authority check — require Write right
           -- Checked after target validation to prevent authority probing on invalid targets
           if !Capability.hasRight reg.endpointCap .write then
             .error .illegalAuthority
           -- AE5-B (U-20): Reject duplicate endpoint registration
-          else if hasEndpointRegistered st epId then
+          else if ep.serviceCode != 0 then
             .error .illegalState
           else
-            .ok ((), { st with
+            -- WS-ZA ZA5.4 part 30: the registration is recorded on its
+            -- endpoint (`Endpoint.serviceCode`), the back-link a final delete
+            -- reads instead of walking the registry.
+            .ok ((), { st.rewriteObject epId (.endpoint { ep with serviceCode := reg.sid.val + 1 })
+                ⟨_, hObj, rfl, rfl⟩ with
               serviceRegistry := st.serviceRegistry.insert reg.sid reg })
         | some _ => .error .invalidCapability
       | _ => .error .invalidCapability
@@ -96,9 +95,15 @@ or `objectNotFound` if none matches.
 T5-K (M-LCS-2): The `fold` iteration order is deterministic for `RHTable`:
 entries are visited in probe-chain order (hash → linear probing). Within a
 given probe chain, entries appear in insertion order. The first-match
-convention is intentional for service resolution — when multiple services
-share an endpoint, the earliest-registered service is returned. This matches
-seL4's first-match semantics for endpoint-backed capability resolution. -/
+convention is what makes the fold's answer independent of that order here,
+since at most one registration can name a given endpoint
+(`registryEndpointUnique`, derived from `SystemState.tableReferencesRecorded`):
+the fold returns the one registration, or none.
+
+WS-ZA ZA5.4 part 30: the endpoint now records its registration's code, so this
+fold is the registry's last O(registry) read on a lookup path.  Replacing it
+with the endpoint's own field needs the invariant at the call site, which
+`docs/planning/UNTYPED_RESET_PLAN.md` row 31 (WS-ZA ZA5.4 part 31) carries. -/
 def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
   fun st =>
     let result := st.serviceRegistry.fold (init := none) fun acc _ reg =>
@@ -112,18 +117,36 @@ def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
     | some reg => .ok (reg, st)
     | none => .error .objectNotFound
 
+/-- **WS-ZA ZA5.4 part 30: clear the registration's record on its endpoint**:
+the endpoint the registration's capability names forgets the service, if it is
+the one it records (`Endpoint.serviceCode`, `sid + 1`).  Every other state is
+returned as it is. -/
+@[inline] def clearEndpointServiceCode (st : SystemState) (cap : Capability) (sid : ServiceId) :
+    SystemState :=
+  match cap.target with
+  | .object e =>
+    match h : st.getObject? e with
+    | some (.endpoint ep) =>
+      if ep.serviceCode = sid.val + 1 then
+        st.rewriteObject e (.endpoint { ep with serviceCode := 0 }) ⟨_, h, rfl, rfl⟩
+      else st
+    | _ => st
+  | _ => st
+
 /-- Remove a service registration by ServiceId.
 Returns `objectNotFound` if no such registration exists.
 R4-D.1 (M-15): After erasing the registration, also cleans the dependency
-graph by calling `removeDependenciesOf` to remove all edges involving `sid`. -/
+graph by calling `removeDependenciesOf` to remove all edges involving `sid`.
+WS-ZA ZA5.4 part 30: and clears the registration's record on its endpoint
+(`clearEndpointServiceCode`). -/
 def revokeService (sid : ServiceId) : Kernel Unit :=
   fun st =>
-    if st.serviceRegistry[sid]? = none then
-      .error .objectNotFound
-    else
+    match st.serviceRegistry[sid]? with
+    | none => .error .objectNotFound
+    | some reg =>
       let st' := { st with
         serviceRegistry := st.serviceRegistry.erase sid }
-      .ok ((), removeDependenciesOf st' sid)
+      .ok ((), removeDependenciesOf (clearEndpointServiceCode st' reg.endpointCap sid) sid)
 
 /-- R4-B.1 (M-13) + T5-F (L-NEW-1): Remove all service registrations whose
     endpoint targets the given ObjId. Called before retype to ensure
@@ -355,21 +378,6 @@ theorem revokeService_error_not_found
   unfold revokeService
   simp [hMissing]
 
-/-- Successful revocation removes the entry from the registry. -/
-theorem revokeService_success_removes
-    (st st' : SystemState) (sid : ServiceId)
-    (hInvExt : st.serviceRegistry.invExt)
-    (hStep : revokeService sid st = .ok ((), st')) :
-    st'.serviceRegistry[sid]? = none := by
-  unfold revokeService at hStep
-  split at hStep
-  · cases hStep
-  · simp at hStep; cases hStep
-    -- removeDependenciesOf preserves serviceRegistry
-    rw [removeDependenciesOf_serviceRegistry_eq]
-    simp only [RHTable_getElem?_eq_get?]
-    exact RHTable.getElem?_erase_self _ _ hInvExt
-
 /-- R4-C.1 (M-14): Service registration without Write right returns `illegalAuthority`
     when targeting an existing endpoint. -/
 theorem registerService_error_no_write_right
@@ -381,87 +389,213 @@ theorem registerService_error_no_write_right
     (hEp : st.objects[epId]? = some (.endpoint ep))
     (hNoWrite : Capability.hasRight reg.endpointCap .write = false) :
     registerService reg st = .error .illegalAuthority := by
-  unfold registerService SystemState.getObject?
-  simp [hNoDup, hHasIface, hTarget, hEp, hNoWrite]
+  unfold registerService
+  simp only [hNoDup, hHasIface, hTarget]
+  repeat' split
+  all_goals (simp_all; try (rename_i hne heq; exact hne _ heq.symm))
 
-/-- Service registration preserves objects. -/
-theorem registerService_preserves_objects
-    (st st' : SystemState) (reg : ServiceRegistration)
+/-- WS-ZA ZA5.4 part 30: **a successful registration** passed every check, and
+records itself in the registry and on its endpoint, and writes nothing else. -/
+theorem registerService_ok {reg : ServiceRegistration} {st st' : SystemState}
     (hStep : registerService reg st = .ok ((), st')) :
-    st'.objects = st.objects := by
-  unfold registerService SystemState.getObject? at hStep
+    ∃ epId ep, reg.endpointCap.target = .object epId ∧
+      st.objects[epId]? = some (.endpoint ep) ∧
+      st.serviceRegistry[reg.sid]? = none ∧
+      ep.serviceCode = 0 ∧
+      st' = { st with
+        objects := st.objects.insert epId (.endpoint { ep with serviceCode := reg.sid.val + 1 })
+        serviceRegistry := st.serviceRegistry.insert reg.sid reg } := by
+  unfold registerService at hStep
   split at hStep
   · cases hStep
   · split at hStep
     · cases hStep
-    · cases hTarget : reg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        cases hObj : st.objects[epId]? with
-        | none => simp [hObj] at hStep
-        | some obj =>
-          cases obj <;> simp [hObj] at hStep
-          case endpoint ep =>
-            split at hStep
+    · rename_i hNoDup _
+      split at hStep
+      · rename_i epId hTarget
+        split at hStep
+        · cases hStep
+        · rename_i ep hObj
+          split at hStep
+          · cases hStep
+          · split at hStep
             · cases hStep
-            · split at hStep
-              · cases hStep
-              · simp at hStep; cases hStep; rfl
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
-      -- WS-SM SM9.A.9: an audit-trail capability is not an endpoint, so
-      -- registration rejects it exactly as it rejects the other non-object arms.
-      | auditTrail => simp [hTarget] at hStep
-
-/-- Revocation preserves objects. -/
-theorem revokeService_preserves_objects
-    (st st' : SystemState) (sid : ServiceId)
-    (hStep : revokeService sid st = .ok ((), st')) :
-    st'.objects = st.objects := by
-  unfold revokeService at hStep
-  split at hStep
-  · cases hStep
-  · simp at hStep; cases hStep
-    exact removeDependenciesOf_objects_eq _ _
+            · rename_i hReg
+              cases hStep
+              exact ⟨epId, ep, hTarget, hObj, by simpa using hNoDup,
+                by simpa using hReg, rfl⟩
+        · cases hStep
+      · cases hStep
 
 /-- Service registration preserves scheduler state. -/
 theorem registerService_preserves_scheduler
     (st st' : SystemState) (reg : ServiceRegistration)
     (hStep : registerService reg st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold registerService SystemState.getObject? at hStep
+  obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok hStep; rfl
+
+/-- The registration's endpoint write: its record of the service, nothing more. -/
+theorem clearEndpointServiceCode_cases (st : SystemState) (cap : Capability) (sid : ServiceId) :
+    clearEndpointServiceCode st cap sid = st ∨
+    ∃ e ep, cap.target = .object e ∧ st.objects[e]? = some (.endpoint ep) ∧
+      ep.serviceCode = sid.val + 1 ∧
+      clearEndpointServiceCode st cap sid =
+        { st with objects := st.objects.insert e (.endpoint { ep with serviceCode := 0 }) } := by
+  unfold clearEndpointServiceCode
+  split
+  · rename_i e hT
+    split
+    · rename_i ep h
+      split
+      · rename_i hc; exact .inr ⟨e, ep, hT, h, hc, rfl⟩
+      · exact .inl rfl
+    · exact .inl rfl
+  · exact .inl rfl
+
+theorem clearEndpointServiceCode_scheduler (st : SystemState) (cap : Capability) (sid : ServiceId) :
+    (clearEndpointServiceCode st cap sid).scheduler = st.scheduler := by
+  rcases clearEndpointServiceCode_cases st cap sid with h | ⟨_, _, _, _, _, h⟩ <;> rw [h]
+
+/-- WS-ZA ZA5.4 part 30: **a successful revocation** erases a present
+registration, clears its record on its endpoint and drops its dependency edges. -/
+theorem revokeService_ok {sid : ServiceId} {st st' : SystemState}
+    (hStep : revokeService sid st = .ok ((), st')) :
+    ∃ reg, st.serviceRegistry[sid]? = some reg ∧
+      st' = removeDependenciesOf
+        (clearEndpointServiceCode { st with serviceRegistry := st.serviceRegistry.erase sid }
+          reg.endpointCap sid) sid := by
+  unfold revokeService at hStep
   split at hStep
   · cases hStep
-  · split at hStep
-    · cases hStep
-    · cases hTarget : reg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        cases hObj : st.objects[epId]? with
-        | none => simp [hObj] at hStep
-        | some obj =>
-          cases obj <;> simp [hObj] at hStep
-          case endpoint ep =>
-            split at hStep
-            · cases hStep
-            · split at hStep
-              · cases hStep
-              · simp at hStep; cases hStep; rfl
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
-      -- WS-SM SM9.A.9: an audit-trail capability is not an endpoint, so
-      -- registration rejects it exactly as it rejects the other non-object arms.
-      | auditTrail => simp [hTarget] at hStep
+  · rename_i reg hReg
+    cases hStep
+    exact ⟨reg, hReg, rfl⟩
+
+/-- Successful revocation removes the entry from the registry. -/
+theorem revokeService_success_removes
+    (st st' : SystemState) (sid : ServiceId)
+    (hInvExt : st.serviceRegistry.invExt)
+    (hStep : revokeService sid st = .ok ((), st')) :
+    st'.serviceRegistry[sid]? = none := by
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  rw [removeDependenciesOf_serviceRegistry_eq]
+  rcases clearEndpointServiceCode_cases { st with serviceRegistry := st.serviceRegistry.erase sid }
+    reg.endpointCap sid with h | ⟨_, _, _, _, _, h⟩ <;> rw [h] <;>
+  · simp only [RHTable_getElem?_eq_get?]
+    exact RHTable.getElem?_erase_self _ _ hInvExt
 
 /-- Revocation preserves scheduler state. -/
 theorem revokeService_preserves_scheduler
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold revokeService at hStep
-  split at hStep
-  · cases hStep
-  · simp at hStep; cases hStep
-    exact removeDependenciesOf_scheduler_eq _ _
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  rw [removeDependenciesOf_scheduler_eq, clearEndpointServiceCode_scheduler]
+
+/-- The registration's endpoint write writes the object store alone. -/
+theorem clearEndpointServiceCode_eq_withObjects (st : SystemState) (cap : Capability)
+    (sid : ServiceId) :
+    clearEndpointServiceCode st cap sid =
+      { st with objects := (clearEndpointServiceCode st cap sid).objects } := by
+  rcases clearEndpointServiceCode_cases st cap sid with h | ⟨_, _, _, _, _, h⟩ <;> rw [h]
+
+/-- ...and keeps every key present or absent. -/
+theorem clearEndpointServiceCode_objects_none_iff (st : SystemState) (cap : Capability)
+    (sid : ServiceId) (hInv : st.objects.invExt) (k : SeLe4n.ObjId) :
+    (clearEndpointServiceCode st cap sid).objects[k]? = none ↔ st.objects[k]? = none := by
+  rcases clearEndpointServiceCode_cases st cap sid with h | ⟨e, ep, _, hE, _, h⟩
+  · rw [h]
+  · rw [h]
+    simp only [RHTable_getElem?_eq_get?]
+    by_cases hk : e = k
+    · subst hk
+      rw [RHTable.getElem?_insert_self _ _ _ hInv]
+      simp only [RHTable_getElem?_eq_get?] at hE
+      rw [hE]; simp
+    · rw [RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hk (eq_of_beq hb)) hInv]
+
+/-- A successful revocation's registry is the old one without the service. -/
+theorem revokeService_serviceRegistry {sid : ServiceId} {st st' : SystemState}
+    (hStep : revokeService sid st = .ok ((), st')) :
+    st'.serviceRegistry = st.serviceRegistry.erase sid ∧
+    st'.interfaceRegistry = st.interfaceRegistry := by
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  rw [removeDependenciesOf_serviceRegistry_eq, removeDependenciesOf_interfaceRegistry_eq,
+    clearEndpointServiceCode_eq_withObjects]
+  exact ⟨rfl, rfl⟩
+
+/-- A successful revocation keeps every key present or absent. -/
+theorem revokeService_objects_none_iff {sid : ServiceId} {st st' : SystemState}
+    (hStep : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) : st'.objects[k]? = none ↔ st.objects[k]? = none := by
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  rw [removeDependenciesOf_objects_eq]
+  exact clearEndpointServiceCode_objects_none_iff
+    { st with serviceRegistry := st.serviceRegistry.erase sid } _ _ hInv k
+
+/-- A successful registration keeps every key present or absent. -/
+theorem registerService_objects_none_iff {reg : ServiceRegistration} {st st' : SystemState}
+    (hStep : registerService reg st = .ok ((), st')) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) : st'.objects[k]? = none ↔ st.objects[k]? = none := by
+  obtain ⟨e, ep, _, hE, _, _, rfl⟩ := registerService_ok hStep
+  simp only [RHTable_getElem?_eq_get?]
+  by_cases hk : e = k
+  · subst hk
+    rw [RHTable.getElem?_insert_self _ _ _ hInv]
+    simp only [RHTable_getElem?_eq_get?] at hE
+    rw [hE]; simp
+  · rw [RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hk (eq_of_beq hb)) hInv]
+
+/-- The one object write the registry makes: an endpoint's `serviceCode`, every
+other field — its queues and its other words — kept.  What a reader of the
+object store transports across a registration or a revocation. -/
+def ServiceCodeRewrite (o o' : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  o' = o ∨ ∃ e ep c, o[e]? = some (.endpoint ep) ∧
+    o' = o.insert e (.endpoint { ep with serviceCode := c })
+
+theorem registerService_serviceCodeRewrite {reg : ServiceRegistration} {st st' : SystemState}
+    (hStep : registerService reg st = .ok ((), st')) :
+    ServiceCodeRewrite st.objects st'.objects := by
+  obtain ⟨e, ep, _, hE, _, _, rfl⟩ := registerService_ok hStep
+  exact .inr ⟨e, ep, _, hE, rfl⟩
+
+theorem revokeService_serviceCodeRewrite {sid : ServiceId} {st st' : SystemState}
+    (hStep : revokeService sid st = .ok ((), st')) :
+    ServiceCodeRewrite st.objects st'.objects := by
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  rw [removeDependenciesOf_objects_eq]
+  rcases clearEndpointServiceCode_cases { st with serviceRegistry := st.serviceRegistry.erase sid }
+    reg.endpointCap sid with h | ⟨e, ep, _, hE, _, h⟩ <;> rw [h]
+  · exact .inl rfl
+  · exact .inr ⟨e, ep, _, hE, rfl⟩
+
+/-- Across the rewrite, every key keeps its kind, and every object but an
+endpoint keeps its value. -/
+theorem ServiceCodeRewrite.lookup {o o'} (h : ServiceCodeRewrite o o') (hInv : o.invExt)
+    (k : SeLe4n.ObjId) :
+    (o'[k]? = o[k]?) ∨ ∃ ep c, o[k]? = some (.endpoint ep) ∧
+      o'[k]? = some (.endpoint { ep with serviceCode := c }) := by
+  rcases h with rfl | ⟨e, ep, c, hE, rfl⟩
+  · exact .inl rfl
+  · simp only [RHTable_getElem?_eq_get?] at hE ⊢
+    by_cases hk : e = k
+    · subst hk
+      rw [RHTable.getElem?_insert_self _ _ _ hInv]
+      exact .inr ⟨ep, c, hE, rfl⟩
+    · rw [RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hk (eq_of_beq hb)) hInv]
+      exact .inl rfl
+
+theorem ServiceCodeRewrite.invExt {o o'} (h : ServiceCodeRewrite o o') (hInv : o.invExt) :
+    o'.invExt := by
+  rcases h with rfl | ⟨e, ep, c, _, rfl⟩
+  · exact hInv
+  · exact o.insert_preserves_invExt e _ hInv
+
+theorem ServiceCodeRewrite.size_le {o o'} (h : ServiceCodeRewrite o o') (hInv : o.invExt) :
+    o'.size ≤ o.size := by
+  rcases h with rfl | ⟨e, ep, c, hE, rfl⟩
+  · exact Nat.le_refl _
+  · simp only [RHTable_getElem?_eq_get?] at hE
+    exact RHTable.size_insert_le_of_get? o e _ _ hInv hE
 
 end SeLe4n.Kernel

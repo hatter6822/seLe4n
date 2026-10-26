@@ -45,14 +45,27 @@ theorem clearWokenReceiverStash_keyFrame (receiver? : Option SeLe4n.ThreadId) {s
       · cases h; exact capabilityKeyFrame_refl hInv
     · cases h; exact capabilityKeyFrame_refl hInv
 
+/-- The registry's one object write — an endpoint's `serviceCode` — feeds no
+key: an endpoint holds no key input. -/
+theorem serviceCodeRewrite_keyFrame {st st' : SystemState} (hInv : st.objects.invExt)
+    (hW : ServiceCodeRewrite st.objects st'.objects) (hS : st'.scheduler = st.scheduler) :
+    capabilityKeyFrame st st' :=
+  ⟨fun oid => by
+    rcases hW.lookup hInv oid with h | ⟨_, _, h0, h1⟩
+    · rw [h]
+    · rw [h0, h1]; rfl, hS, hW.invExt hInv⟩
+
 theorem registerService_keyFrame {reg : ServiceRegistration} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : registerService reg st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
-  unfold registerService at h
-  repeat' split at h
-  all_goals first
-    | (cases h; exact capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl)
-    | (cases h; done)
+    capabilityKeyFrame st st' :=
+  serviceCodeRewrite_keyFrame hInv (registerService_serviceCodeRewrite h)
+    (registerService_preserves_scheduler _ _ _ h)
+
+theorem revokeService_keyFrame {sid : ServiceId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : revokeService sid st = .ok ((), st')) :
+    capabilityKeyFrame st st' :=
+  serviceCodeRewrite_keyFrame hInv (revokeService_serviceCodeRewrite h)
+    (revokeService_preserves_scheduler _ _ _ h)
 
 /-- The declassified signal covers: the bound signal, then the audit records,
 which touch the trail alone. -/
@@ -551,8 +564,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
-    | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
-        (revokeService_preserves_objects _ _ _ h) (revokeService_preserves_scheduler _ _ _ h)).stepCoversInv
+    | exact (revokeService_keyFrame hInv h).stepCoversInv
     | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h)
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv

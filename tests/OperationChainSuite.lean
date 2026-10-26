@@ -2342,7 +2342,11 @@ private def chain26BootSequence : IO Unit := do
   -- For non-CNode/non-VSpace objects, the proof is vacuously true.
   let ntfnEntry : SeLe4n.Platform.Boot.ObjectEntry := {
     id := ntfnId
-    obj := .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+    -- The interrupt table names this notification, so it records the handler
+    -- back on itself (`Notification.irqBound`); the checked boot's reciprocal
+    -- gate refuses a named notification that does not.
+    obj := .notification { state := .idle, hasPendingBadge := false
+                         , pendingWord := SeLe4n.Badge.zero, irqBound := true }
     hSlots := by intro cn h; cases h
     hMappings := by intro vs h; cases h
   }
@@ -2817,6 +2821,15 @@ private def chain33ServiceLifecycle : IO Unit := do
   let regDupEp : ServiceRegistration := { sid := ⟨354⟩, iface := iface1, endpointCap := epCap1 }
   expectErr "chain33: registerService duplicate endpoint"
     (SeLe4n.Kernel.registerService regDupEp st2) .illegalState
+  -- The registration is recorded on the endpoint it names, so a final delete
+  -- can read the endpoint instead of walking the registry
+  -- (`SystemState.tableReferencesRecorded`).
+  expect "chain33: the endpoint records the registration"
+    (match st2.objects[epId1]? with
+     | some (.endpoint ep) => ep.serviceCode == svcId1.val + 1
+     | _ => false)
+  expect "chain33: the registered endpoint's back-links are not clear"
+    (st2.tableBackLinksClear epId1 == false)
   -- W5-C-9: Invariant check after registerService
   assertInvariants "chain33: invariants after registerService" st2
   -- === W5-C-6: serviceRegisterDependency acyclic path ===
@@ -2864,6 +2877,14 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- revokeService on nonexistent
   expectErr "chain33: revokeService nonexistent"
     (SeLe4n.Kernel.revokeService svcIdMissing st5) .objectNotFound
+  -- ...and the revocation clears the endpoint's record, which is what makes the
+  -- back-link readable in place of the registry walk.
+  expect "chain33: the revocation clears the endpoint's record"
+    (match st5.objects[epId1]? with
+     | some (.endpoint ep) => ep.serviceCode == 0
+     | _ => false)
+  expect "chain33: the revoked endpoint's back-links are clear"
+    (st5.tableBackLinksClear epId1 == true)
   -- W5-C-9: Invariant check after revokeService
   assertInvariants "chain33: invariants after revokeService" st5
 

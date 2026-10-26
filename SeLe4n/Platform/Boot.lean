@@ -799,7 +799,7 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     be classified. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
     ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
     ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
@@ -812,7 +812,8 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode⟩ =>
+  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode,
+      _irqBound⟩ =>
     (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
@@ -1805,17 +1806,21 @@ lemma proved by `rfl` (structure eta), because a `simp only` that unfolds a
 object to `bootSafeVSpaceRootCheck`, so there is no enumeration here to drift —
 a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 
-/-- A boot **endpoint** is inert: both intrusive queues empty. -/
+/-- A boot **endpoint** is inert: both intrusive queues empty, and no service
+    registered on it.  The registration code is the registry's back-link
+    (`SystemState.tableReferencesRecorded`), and the boot installs no service
+    registration, so an endpoint that came up carrying one would record a
+    registration no table holds. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
-    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
+    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && ep.serviceCode == 0
 
 @[simp] theorem bootSafeEndpointCheck_def (ep : Endpoint) :
     bootSafeEndpointCheck ep =
       (ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
-       ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone) := rfl
+       ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && ep.serviceCode == 0) := rfl
 
 /-- A boot **notification** is idle, unwaited and unbadged.  `boundTCB` is
     unconstrained here — a boot notification may be pre-bound to a config
@@ -1823,7 +1828,8 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode⟩ =>
+  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode,
+      _irqBound⟩ =>
     decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
     notif.pendingBadge.isNone
 
@@ -2218,7 +2224,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   cases obj with
   | endpoint ep =>
     simp only [bootSafeObjectCheck, bootSafeEndpointCheck_def, Bool.and_eq_true] at h
-    obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, _⟩ := h
     exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
@@ -2390,8 +2396,8 @@ theorem bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot :
 -- AK9-C (P-M01): IRQ Handler Existence Validation
 -- ============================================================================
 
-/-- AK9-C (P-M01): Check that each declared `IrqEntry.handler` ObjId refers to
-    a **notification** object present in `PlatformConfig.initialObjects`.
+/-- **Each declared `IrqEntry.handler` names a notification that records the
+    interrupt, and each notification that records one is named by an IRQ.**
 
     The seL4 IRQ delivery model requires that the handler ObjId resolves to a
     notification kernel object: the GIC dispatch sequence signals the bound
@@ -2401,22 +2407,39 @@ theorem bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot :
     Untyped) would be a boot configuration error — the runtime dispatch
     would fail or silently no-op on every interrupt.
 
-    Returns `true` iff every IRQ's `handler` ObjId appears in `initialObjects`
-    with variant `.notification _`. -/
-def irqHandlersReferenceNotifications (config : PlatformConfig) : Bool :=
-  config.irqTable.all fun irq =>
+    The interrupt-handler table names objects by id from outside every slot, so
+    the object it names records the entry back (`Notification.irqBound`, the
+    table's back-link, `SystemState.tableReferencesRecorded`).  Both halves of
+    that reciprocity are config-level facts and both are refused here: a
+    handler whose notification does not record the interrupt, and a
+    notification that records one no IRQ names.  Not attacker-reachable — the
+    configuration is the integrator's. -/
+def irqHandlersAndNotificationsReciprocal (config : PlatformConfig) : Bool :=
+  config.irqTable.all (fun irq =>
     match config.initialObjects.find? (fun entry => entry.id == irq.handler) with
     | some entry =>
       match entry.obj with
-      | .notification _ => true
+      | .notification n => n.irqBound
       | _ => false
-    | none => false
+    | none => false) &&
+  config.initialObjects.all fun e =>
+    match e.obj with
+    | .notification n =>
+      !n.irqBound || config.irqTable.any fun irq => irq.handler == e.id
+    | _ => true
 
-/-- AK9-C: Empty IRQ table trivially satisfies handler-reference check. -/
-theorem irqHandlersReferenceNotifications_empty_irqs
-    (objs : List ObjectEntry) :
-    irqHandlersReferenceNotifications { irqTable := [], initialObjects := objs } = true := by
-  unfold irqHandlersReferenceNotifications; rfl
+/-- An empty IRQ table is reciprocal exactly when no configured notification
+    records an interrupt: there is no entry to name one. -/
+theorem irqHandlersAndNotificationsReciprocal_empty_irqs
+    (objs : List ObjectEntry)
+    (hNone : objs.all (fun e =>
+      match e.obj with
+      | .notification n => !n.irqBound
+      | _ => true) = true) :
+    irqHandlersAndNotificationsReciprocal { irqTable := [], initialObjects := objs } = true := by
+  unfold irqHandlersAndNotificationsReciprocal
+  simp only [List.all_nil, Bool.true_and, List.any_nil, Bool.or_false]
+  exact hNone
 
 -- ============================================================================
 -- WS-RC R3 (DEEP-BOOT-01) — bootVSpaceRoot config-level gates
@@ -2546,9 +2569,10 @@ theorem bootVSpaceRootObjIdNonSentinel_none
     IDs but invalid object states (e.g., endpoint with non-empty queues, TCB with
     `ipcState != .ready`) is now rejected.
 
-    AK9-C (P-M01): Added `irqHandlersReferenceNotifications` validation.
+    AK9-C (P-M01): Added `irqHandlersAndNotificationsReciprocal` validation.
     Every IRQ's handler ObjId must refer to a notification object in
-    `initialObjects`.
+    `initialObjects` that records the interrupt (`Notification.irqBound`), and
+    every notification that records one must be named by an IRQ.
 
     WS-ZA ZA5.4: the unchecked boot is retired; `bootFromPlatform` is this
     function's object-fold stage, not a boot of its own.  All boot paths use
@@ -2566,7 +2590,7 @@ def bootFromPlatformChecked (config : PlatformConfig) :
         -- notification object in the config. This is verified as a final step
         -- after the per-object bootSafe check so the error message identifies
         -- the specific misconfiguration.
-        if irqHandlersReferenceNotifications config then
+        if irqHandlersAndNotificationsReciprocal config then
           -- AK9-F (P-M05): Validate MachineConfig well-formedness + PA width
           -- bound (ARMv8 LPA max = 52). Prevents the production boot path
           -- from silently accepting a malformed MachineConfig that would leave
@@ -2654,7 +2678,7 @@ theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
     (hWf : config.wellFormed = true)
     (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
     (hAsids : bootVSpaceAsidsDistinct config = true)
-    (hIrq : irqHandlersReferenceNotifications config = true)
+    (hIrq : irqHandlersAndNotificationsReciprocal config = true)
     (hMc : config.machineConfig.wellFormed = true)
     (hPa : config.machineConfig.physicalAddressWidth ≤ 52)
     (hNoBootVSpace : config.bootVSpaceRoot = none) :
@@ -2682,7 +2706,7 @@ theorem bootFromPlatformChecked_admits_bootVSpace (config : PlatformConfig)
     (hWf : config.wellFormed = true)
     (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
     (hAsids : bootVSpaceAsidsDistinct config = true)
-    (hIrq : irqHandlersReferenceNotifications config = true)
+    (hIrq : irqHandlersAndNotificationsReciprocal config = true)
     (hMc : config.machineConfig.wellFormed = true)
     (hPa : config.machineConfig.physicalAddressWidth ≤ 52)
     (hDistinct : bootVSpaceRootObjIdDistinct config = true)
@@ -2698,15 +2722,15 @@ theorem bootFromPlatformChecked_admits_bootVSpace (config : PlatformConfig)
         hDistinct, hNonSentinel, hSafeBVR, hEntry]
 
 /-- AK9-C: Successful checked boot implies IRQ handlers reference notifications.
-    If `bootFromPlatformChecked` returns `.ok`, the `irqHandlersReferenceNotifications`
+    If `bootFromPlatformChecked` returns `.ok`, the `irqHandlersAndNotificationsReciprocal`
     predicate was true — a key witness for downstream interrupt dispatch proofs.
 
     WS-RC R3 audit fix: traverse the ASID gate (`bootVSpaceAsidsDistinct`, WS-BP BP3.2)
-    gate that precedes `irqHandlersReferenceNotifications`. -/
+    gate that precedes `irqHandlersAndNotificationsReciprocal`. -/
 theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformConfig)
     (ist : IntermediateState)
     (hOk : bootFromPlatformChecked config = .ok ist) :
-    irqHandlersReferenceNotifications config = true := by
+    irqHandlersAndNotificationsReciprocal config = true := by
   unfold bootFromPlatformChecked at hOk
   split at hOk
   · split at hOk
@@ -4381,20 +4405,24 @@ theorem bootVSpaceAsidsDistinct_withoutExtents (c : PlatformConfig) :
     cases e.obj <;> rfl
   rw [this]
 
-theorem irqHandlersReferenceNotifications_withoutExtents (c : PlatformConfig) :
-    irqHandlersReferenceNotifications c.withoutExtents = irqHandlersReferenceNotifications c := by
-  unfold irqHandlersReferenceNotifications PlatformConfig.withoutExtents
-  simp only [List.find?_map]
+theorem irqHandlersAndNotificationsReciprocal_withoutExtents (c : PlatformConfig) :
+    irqHandlersAndNotificationsReciprocal c.withoutExtents =
+      irqHandlersAndNotificationsReciprocal c := by
+  unfold irqHandlersAndNotificationsReciprocal PlatformConfig.withoutExtents
+  simp only [List.find?_map, List.all_map, List.any_map, Function.comp_def,
+    ObjectEntry.withoutUntypedExtent_id]
   congr 1
-  funext irq
-  have hComp : ((fun entry : ObjectEntry => entry.id == irq.handler) ∘
-      ObjectEntry.withoutUntypedExtent) = (fun entry => entry.id == irq.handler) := rfl
-  rw [hComp]
-  cases c.initialObjects.find? (fun entry => entry.id == irq.handler) with
-  | none => rfl
-  | some e =>
-      simp only [Option.map_some, ObjectEntry.withoutUntypedExtent_obj]
-      cases e.obj <;> rfl
+  · congr 1
+    funext irq
+    cases c.initialObjects.find? (fun entry => entry.id == irq.handler) with
+    | none => rfl
+    | some e =>
+        simp only [Option.map_some, ObjectEntry.withoutUntypedExtent_obj]
+        cases e.obj <;> rfl
+  · congr 1
+    funext e
+    simp only [ObjectEntry.withoutUntypedExtent_obj]
+    cases e.obj <;> rfl
 
 theorem bootVSpaceRootObjIdDistinct_withoutExtents (c : PlatformConfig) :
     bootVSpaceRootObjIdDistinct c.withoutExtents = bootVSpaceRootObjIdDistinct c := by

@@ -569,9 +569,14 @@ private def runModifiedFieldsChecks : IO Unit := do
   assertBool "storeObject's writes are disjoint from registryDependencyConsistent's reads"
     (decide (fieldsDisjoint registryDependencyConsistent_fields
                storeObject_modifiedFields = true))
-  assertBool "revokeService's writes are disjoint from noStaleEndpointQueueReferences' reads"
+  assertBool "serviceRegisterDependency's writes are disjoint from noStaleEndpointQueueReferences' reads"
     (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
-               revokeService_modifiedFields = true))
+               serviceRegisterDependency_modifiedFields = true))
+  -- NEGATIVE: the revoke clears its endpoint's record of the service, so it
+  -- writes `.objects` and is preserved by a proof, not by the frame.
+  assertBool "NEGATIVE: revokeService is NOT framed away from the queue-reference invariant"
+    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
+               revokeService_modifiedFields = false))
   -- NEGATIVE, and load-bearing: the premise is not decoration.  `storeObject`
   -- writes `.objects` and the queue-reference invariant reads `.objects`, so
   -- the frame does NOT apply to that pair — correctly, since a store really can
