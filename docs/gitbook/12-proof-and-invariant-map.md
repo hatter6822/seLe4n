@@ -150,8 +150,9 @@ one on a reachable state (`passiveObjectQuiescent.namedByNone`,
 `threadRetirable.namedByNone`), and a reply a receiver has stashed is kept
 (`replyStashedAt`); since `v0.36.142` a scheduling context's retire reads its
 own links too, the scheduling links that answer every other reference to it
-(`schedContextLinkInvariant`) carried along the whole delete chain
-(`schedContextRetirable.namedByNone`); any other busy kernel
+(`schedContextLinkInvariant`) carried along the whole delete chain with the
+reachable state (`reachableDeleteBundle`) (`schedContextRetirable.namedByNone`);
+any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
 the untyped carve included (`untypedRetypeObject_preserves_capabilityInvariantBundle`;

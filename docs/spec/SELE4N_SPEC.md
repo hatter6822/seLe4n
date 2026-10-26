@@ -5158,7 +5158,10 @@ the whole truth is carried along the whole delete chain
 and every queued context bound and queued on its holder's home core), kept by
 every finalise step, the slot delete, the page teardown, a thread slot's set and
 the retire, and carried by the finalising delete (`finalisingDeleteBundle`) and
-the capability dispatch's pack (`schedContextLinks`); on such a state no object
+the capability dispatch's pack (`schedContextLinks`); the reachable state
+(`ipcReachable`) rides the same chain with it (`reachableDeleteBundle`, kept by
+the slot delete and teardown, the finalising delete, the revocation and zombie
+loops and the set-space copy); on such a state no object
 names an admitted context (`schedContextRetirable.tcbNamesNone`,
 `schedContextRetirable.namedByNone`) and no core queues it
 (`schedContextRetirable.replenishQueuedNowhere`).  On a finalised

@@ -38,6 +38,16 @@ whole delete chain.
 - `returnDonatedSchedContext_preserves_schedContextBindingConsistent` no longer
   asks for the holder's `.donated` binding: the pop only succeeds on a context
   bound to its server, so the binding pair names it.
+- The reachable state rides the same chain (new staged
+  `IPC/Invariant/DeleteReachability.lean`): `reachableDeleteBundle` pairs
+  `ipcReachable` with `finalisingDeleteBundle` and is kept by the slot delete
+  and teardown, the finalising delete, the revocation and zombie loops; the
+  set-space copy keeps `ipcReachable` (`copyThreadSpaces_preserves_ipcReachable`,
+  `copyThreadSpacesZombie_preserves_ipcReachable`).  The queue invariants it
+  reads beyond the bundle — the notification queues, the donation chains, the
+  run-queue agreement and the reply-waiter queues — are kept by one frame
+  (`ReachLinkFrame`) over the slot delete, the derivation-link writes, the page
+  teardown and a thread slot's copy.
 
 ### The retire's preservation, reproven
 
@@ -78,7 +88,8 @@ whole delete chain.
 - Tier 3: the guard's body is pinned; a negative anchor refuses the four walks
   and `schedContextRetirable_false_of_named`; the carried invariant, its
   preservation along the chain, the bundle, the pack field and the consumer
-  theorems are anchored; the moved theorems' anchors follow them.
+  theorems are anchored; the moved theorems' anchors follow them; the
+  reachable-state frame, the pair and its chain theorems are anchored.
 - The store-reader hygiene baseline is regenerated.
 
 ### Plan

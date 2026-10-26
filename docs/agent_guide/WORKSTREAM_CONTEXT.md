@@ -373,7 +373,9 @@ identity-cleanup step.  Since `v0.36.142` a scheduling context's retire reads
 its own links (`schedContextRetirable`: bound to no thread, lent from none,
 heading no reply stack), answered by the scheduling links the delete chain
 carries (`schedContextLinkInvariant`, inside `finalisingDeleteBundle` and the
-dispatch pack's `schedContextLinks`), so new code on the delete chain must keep
+dispatch pack's `schedContextLinks`) and, in the staged proofs, by the reachable
+state riding with them (`reachableDeleteBundle`, one `ReachLinkFrame` for a step
+that writes no queue the reachable state reads), so new code on the delete chain must keep
 the timeout budgets clear, the binding pair, and every queued context bound and
 on its holder's home core (one `SchedLinkFrame` for a step that writes none of
 them), and new code that names a context by id must extend those invariants.
