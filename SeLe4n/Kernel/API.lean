@@ -3146,7 +3146,16 @@ resolves.  Every field is a pre-state fact — dischargeable before the step —
 so the payoff theorem below carries no post-state obligation. -/
 structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
     (cap : Capability) (st : SystemState) : Prop where
-  bindingBidirectional : schedContextBindingBidirectional st
+  /-- **The scheduling links a final delete's context retire reads against**
+  (`schedContextLinkInvariant`): no thread holds a timeout budget, the binding
+  pair, and every context a replenishment queue holds is bound and queued on its
+  holder's home core.  The retire reads a context's own links alone — bound to no
+  thread, lent from none, heading no stack — and these are what make that the
+  whole truth; the delete's own steps keep them
+  (`cspaceDeleteSlotFinalising_preserves_finalisingDeleteBundle`).  The binding
+  pair's thread-side half the arms read is their consequence with the IPC
+  bundle's loan record (`schedContextBindingBidirectional_of_consistent`). -/
+  schedContextLinks : schedContextLinkInvariant st
   /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
   over the caller — the pack carries no caller, and a fact about *every* thread
   any caller's CSpace resolves MR0 to is a pre-state fact all the same. -/
@@ -3185,7 +3194,7 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   lender's reply as its stack head).  A pre-state fact the finalising delete and
   revocation read in place of a walk of the whole store: a reply heading no stack
   has a caller that lends to no one (`replyCaller_lendsNone`).  The delete's own
-  steps keep it (`cspaceDeleteSlotFinalising_preserves_finaliseLoanBundle`), so
+  steps keep it (`cspaceDeleteSlotFinalising_preserves_finalisingDeleteBundle`), so
   the revocation loop carries it from this one fact.  Stated, not derived: it is
   one of the stated coherence hypotheses `docs/REGISTERED_DEBT.md` carries to
   v1.0.0.  Vacuous on every state that lends no context. -/
@@ -3219,7 +3228,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           split at hStep
           · cases hStep
           exact cspaceDeleteSlotZombie_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
-            hPack.lentContextsHeadedByLender hStep
+            hPack.lentContextsHeadedByLender hPack.schedContextLinks hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3232,7 +3241,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           split at hStep
           · cases hStep
           exact cspaceRevokeCdtFinalising_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
-            hPack.lentContextsHeadedByLender hStep
+            hPack.lentContextsHeadedByLender hPack.schedContextLinks hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3357,7 +3366,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | ok vScId =>
               simp only [hVal] at hStep
               exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
-                hObjInv hInv hPack.bindingBidirectional
+                hObjInv hInv (schedContextBindingBidirectional_of_consistent
+                  hPack.schedContextLinks.binding hInv.donationOwnerValid)
                 (hPack.boundThreadNotDonationOwner tid vThreadId hSy hRes) hStep
     all_goals try cases hStep
   case schedContextUnbind =>
@@ -3445,7 +3455,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   cases hStep
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
                     hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
-                    hPack.bindingBidirectional hInv
+                    (schedContextBindingBidirectional_of_consistent
+                      hPack.schedContextLinks.binding hInv.donationOwnerValid) hInv
                     hPack.replyStacksSettleOnWaitingDonors hSus
     all_goals try cases hStep
   case tcbResume =>
@@ -3619,7 +3630,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact copyThreadSpacesZombie_preserves_ipcInvariantFull executingCore st st'
-                        vtid cn vr hObjInv hInv hPack.lentContextsHeadedByLender hSet
+                        vtid cn vr hObjInv hInv hPack.lentContextsHeadedByLender
+                        hPack.schedContextLinks hSet
     all_goals try cases hStep
   case pageTableMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
