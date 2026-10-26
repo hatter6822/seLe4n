@@ -95,9 +95,15 @@ or `objectNotFound` if none matches.
 T5-K (M-LCS-2): The `fold` iteration order is deterministic for `RHTable`:
 entries are visited in probe-chain order (hash → linear probing). Within a
 given probe chain, entries appear in insertion order. The first-match
-convention is intentional for service resolution — when multiple services
-share an endpoint, the earliest-registered service is returned. This matches
-seL4's first-match semantics for endpoint-backed capability resolution. -/
+convention is what makes the fold's answer independent of that order here,
+since at most one registration can name a given endpoint
+(`registryEndpointUnique`, derived from `SystemState.tableReferencesRecorded`):
+the fold returns the one registration, or none.
+
+WS-ZA ZA5.4 part 30: the endpoint now records its registration's code, so this
+fold is the registry's last O(registry) read on a lookup path.  Replacing it
+with the endpoint's own field needs the invariant at the call site, which part
+2 carries. -/
 def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
   fun st =>
     let result := st.serviceRegistry.fold (init := none) fun acc _ reg =>
