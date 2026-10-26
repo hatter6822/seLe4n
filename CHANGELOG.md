@@ -296,6 +296,20 @@ seL4's Zombie, and is deleted last.
 - `SELE4N_SPEC.md` §8.6, `CLAIM_EVIDENCE_INDEX.md`, the plan's row 26,
   `WORKSTREAM_CONTEXT.md`, GitBook chapter 12, the debt register, and the
   synchronised metrics and codebase map.
+## v0.36.138 — WS-ZA ZA6.3: bring the other plans up to date before the closure
+
+Documentation only; no code changes.
+
+- **New row ZA6.3** in `ZERO_ALLOCATION_SYSCALL_PLAN.md`, at the maintainer's
+  request.  Once the zero rule is enforced (ZA6.2), every other plan under
+  `docs/planning/` is re-read against the tree this workstream leaves:
+  - each citation and figure is re-read from the tree;
+  - a row this workstream already did is recorded as landed, and a row it
+    made unnecessary is deleted;
+  - every remaining row states how it keeps an entry allocating nothing;
+  - numbering stays execution order.
+- **The closure moves to ZA6.4** and consumes ZA6.3.
+
 ## v0.36.137 — WS-ZA ZA3 stands in the zero-allocation plan
 
 Documentation only; no code changes.
