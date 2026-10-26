@@ -463,7 +463,11 @@ private def fo011_serviceLookup : IO Unit := do
     endpointCap := { target := .object ⟨42⟩, rights := .ofNat 7 }
   }
   let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨1⟩ reg
-  let fst := { emptyFrozenState with serviceRegistry := freezeMap regRt }
+  -- The endpoint records its registration's code `sid + 1`, which the lookup reads.
+  let objsMap := (RHTable.empty 16 : RHTable ObjId FrozenKernelObject).insert ⟨42⟩
+    (FrozenKernelObject.endpoint { serviceCode := 2 })
+  let fst := { emptyFrozenState with
+    objects := freezeMap objsMap, serviceRegistry := freezeMap regRt }
   match frozenLookupServiceByCap ⟨42⟩ fst with
   | .ok (found, _) => expect "found service" (found.sid == ⟨1⟩)
   | .error _ => throw <| IO.userError "service lookup should succeed"

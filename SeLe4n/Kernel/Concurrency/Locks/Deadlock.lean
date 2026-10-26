@@ -1552,13 +1552,13 @@ theorem lockSet_serviceRegister_size_le (a : ThreadId) (b c : ObjId) :
   unfold lockSet_serviceRegister maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
-theorem lockSet_serviceRevoke_size_le (a : ThreadId) (b : ObjId) :
-    (lockSet_serviceRevoke a b).size ≤ maxLockSetSize := by
+theorem lockSet_serviceRevoke_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_serviceRevoke a b c).size ≤ maxLockSetSize := by
   unfold lockSet_serviceRevoke maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
-theorem lockSet_serviceQuery_size_le (a : ThreadId) (b : ObjId) :
-    (lockSet_serviceQuery a b).size ≤ maxLockSetSize := by
+theorem lockSet_serviceQuery_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_serviceQuery a b c).size ≤ maxLockSetSize := by
   unfold lockSet_serviceQuery maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
@@ -1728,8 +1728,8 @@ theorem lockSetTransitions_within_bound :
     (∀ a b, (lockSet_auditRead a b).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_auditDrain a b).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
-    (∀ a b, (lockSet_serviceRevoke a b).size ≤ maxLockSetSize) ∧
-    (∀ a b, (lockSet_serviceQuery a b).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_serviceRevoke a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_serviceQuery a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextConfigure a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextBind a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextUnbind a b c d q).size ≤ maxLockSetSize) ∧

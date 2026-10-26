@@ -349,13 +349,13 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
         IO.println s!"[SRG-005] revoke service success: {stRevoked.serviceRegistry[srgSid]? == none}"
 
       -- SRG-007: Lookup by matching capability
-      match SeLe4n.Kernel.lookupServiceByCap demoEndpoint stSvc with
+      match SeLe4n.Kernel.lookupServiceByRecordedCode demoEndpoint stSvc with
       | .error err => IO.println s!"[SRG-007] lookup by cap error: {reprStr err}"
       | .ok (reg, _) =>
         IO.println s!"[SRG-007] lookup by cap found sid: {reg.sid.toNat}"
 
       -- SRG-008: Lookup by non-matching capability
-      match SeLe4n.Kernel.lookupServiceByCap ⟨9999⟩ stSvc with
+      match SeLe4n.Kernel.lookupServiceByRecordedCode ⟨9999⟩ stSvc with
       | .error err => IO.println s!"[SRG-008] lookup non-matching: {reprStr err}"
       | .ok _ => IO.println "[SRG-008] unexpected lookup success"
 

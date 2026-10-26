@@ -481,8 +481,10 @@ example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
 -- `SystemState`-level map and `stateLevelLock` is the only member that can name
 -- it; before this the trio carried the coverage as a convention.
 example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore] := by decide
-example : permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore] := by decide
-example : permittedKinds .serviceQuery = [.tcb, .cnode, .objStore] := by decide
+-- WS-ZA ZA5.4 part 31: `.endpoint` on the revoke and the query too — the revoke
+-- clears the code the endpoint records and the query reads it.
+example : permittedKinds .serviceRevoke = [.tcb, .cnode, .endpoint, .objStore] := by decide
+example : permittedKinds .serviceQuery = [.tcb, .cnode, .endpoint, .objStore] := by decide
 -- WS-RR RR7.38: `.endpoint` and `.notification` join every arm that can write a
 -- *queued* TCB — the queue owner's lock, whose kind `QueueOwner.lock_kind` fixes
 -- to exactly these two.  The lists are pinned whole, so a third kind is still a
@@ -870,15 +872,15 @@ private def runPermittedKindsChecks : IO Unit := do
     ((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
       decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
   assertBool "serviceRevoke declares the registry's state-level write"
-    ((lockSet_serviceRevoke ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
+    ((lockSet_serviceRevoke ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
       decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.write)))
   assertBool "serviceQuery declares the registry's state-level read"
-    ((lockSet_serviceQuery ⟨5⟩ (ObjId.ofNat 10)).pairs.any (fun p =>
+    ((lockSet_serviceQuery ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
       decide (p.fst = stateLevelLock ∧ p.snd = AccessMode.read)))
   -- The pin is that no two registry writers can hold disjoint sets.
   assertBool "no two registry writers have disjoint footprints"
     (decide (((lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.map (·.fst)).any
-        (fun l => ((lockSet_serviceRevoke ⟨6⟩ (ObjId.ofNat 11)).pairs.map (·.fst)).contains l)))
+        (fun l => ((lockSet_serviceRevoke ⟨6⟩ (ObjId.ofNat 11) (ObjId.ofNat 21)).pairs.map (·.fst)).contains l)))
   -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
   -- WS-SM SM6.E: + .reply (the `.blockedOnReply` reply-link teardown).
   -- WS-OD OD3.5: `.objStore` — a suspend that cancels a donation maintains
@@ -922,10 +924,10 @@ private def runPermittedKindsChecks : IO Unit := do
   -- registerService reads st.objects[epId]? to verify endpoint kind.
   assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
     (decide (permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore]))
-  assertBool "permittedKinds .serviceRevoke (registry mutation, under the state-level lock)"
-    (decide (permittedKinds .serviceRevoke = [.tcb, .cnode, .objStore]))
-  assertBool "permittedKinds .serviceQuery (registry lookup, under the state-level lock)"
-    (decide (permittedKinds .serviceQuery = [.tcb, .cnode, .objStore]))
+  assertBool "permittedKinds .serviceRevoke (the endpoint's recorded code + the registry's state-level lock)"
+    (decide (permittedKinds .serviceRevoke = [.tcb, .cnode, .endpoint, .objStore]))
+  assertBool "permittedKinds .serviceQuery (the endpoint's recorded code + the registry's state-level lock)"
+    (decide (permittedKinds .serviceQuery = [.tcb, .cnode, .endpoint, .objStore]))
 
 private def runLockKindHelpersChecks : IO Unit := do
   IO.println "--- §5 LockKind helpers ---"
@@ -1106,14 +1108,25 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "tcbSetIPCBuffer size (VSpaceRoot included) = 4"
     (decide ((lockSet_tcbSetIPCBuffer ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
               (some (ObjId.ofNat 99)) none).size = 4))
-  -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint read lock;
+  -- Audit-pass-6 P2: serviceRegister takes a mandatory endpoint lock;
   -- WS-RR RR7.23 added the registry's own state-level write.
   assertBool "serviceRegister size (endpoint + the registry's state-level write) = 4"
     (decide ((lockSet_serviceRegister ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
-  assertBool "serviceRevoke size (caller, root, registry) = 3"
-    (decide ((lockSet_serviceRevoke ⟨1⟩ (ObjId.ofNat 10)).size = 3))
-  assertBool "serviceQuery size (caller, root, registry) = 3"
-    (decide ((lockSet_serviceQuery ⟨1⟩ (ObjId.ofNat 10)).size = 3))
+  assertBool "serviceRevoke size (caller, root, endpoint, registry) = 4"
+    (decide ((lockSet_serviceRevoke ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  assertBool "serviceQuery size (caller, root, endpoint, registry) = 4"
+    (decide ((lockSet_serviceQuery ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).size = 4))
+  -- The endpoint records its registration's code: register and revoke write
+  -- it, the query reads it.
+  assertBool "serviceRegister writes the endpoint recording the registration"
+    ((lockSet_serviceRegister ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
+      decide (p.fst = endpointLock (ObjId.ofNat 20) ∧ p.snd = AccessMode.write)))
+  assertBool "serviceRevoke writes the endpoint recording the registration"
+    ((lockSet_serviceRevoke ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
+      decide (p.fst = endpointLock (ObjId.ofNat 20) ∧ p.snd = AccessMode.write)))
+  assertBool "serviceQuery reads the endpoint recording the registration"
+    ((lockSet_serviceQuery ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)).pairs.any (fun p =>
+      decide (p.fst = endpointLock (ObjId.ofNat 20) ∧ p.snd = AccessMode.read)))
 
 private def runLubMergeChecks : IO Unit := do
   IO.println "--- §9 Lub-merging on duplicate keys ---"
@@ -1609,9 +1622,9 @@ private def runAuditPass6FootprintChecks : IO Unit := do
      decide (noVsr.pairs.all (fun p => p.fst.kind ≠ .vspaceRoot)))
   -- P2 (serviceRegister): contains the endpoint read lock.
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-  assertBool "P2: serviceRegister contains endpointLock 20 as read"
+  assertBool "P2: serviceRegister contains endpointLock 20 as write (it records its code)"
     (svcReg.pairs.any (fun p =>
-      decide (p = (.object ⟨.endpoint, ObjId.ofNat 20⟩, .read))))
+      decide (p = (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write))))
   assertBool "serviceRegister has exactly 4 locks (tcb + cnode + endpoint + registry)"
     (decide (svcReg.size = 4))
   -- Canonical-sort cross-check: the new SC entries in tcbSetPriority
@@ -1629,7 +1642,7 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   -- Actually wait — hierarchy is cnode=2 < tcb=3 < endpoint=4.  So endpoint is last.
   let svcRegSeq := svcReg.lockAcquireSequence
   assertBool "P2: serviceRegister canonical sort places endpoint at end (level 4)"
-    (decide (svcRegSeq.getLast? = some (.object ⟨.endpoint, ObjId.ofNat 20⟩, .read)))
+    (decide (svcRegSeq.getLast? = some (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write)))
 
 private def runCanonicalSortRuntimeChecks : IO Unit := do
   IO.println "--- §12 lockAcquireSequence canonical sort runtime ---"
