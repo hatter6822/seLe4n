@@ -399,6 +399,15 @@ theorem linkBootCapabilities_agree (config : PlatformConfig) (ist : Intermediate
     SystemState.objectsAgreeOffDerivationLinks (linkBootCapabilities config ist).state ist.state :=
   (linkBootSlots_reach _ _).agree ist.hAllTables.1.1
 
+/-- The linking keeps every object's table back-links and writes no reference
+table: it writes derivation links and the tree. -/
+theorem linkBootCapabilities_tableReferenceFrame (config : PlatformConfig)
+    (ist : IntermediateState) :
+    SystemState.TableReferenceFrame ist.state (linkBootCapabilities config ist).state :=
+  .of_map (g := KernelObject.withoutLinks) KernelObject.tableBackLinks_withoutLinks
+    (by rw [linkBootCapabilities_fields]; rfl)
+    (fun k => ((linkBootCapabilities_agree config ist) k).map_withoutLinks)
+
 theorem linkBootCapabilities_scheduler (config : PlatformConfig) (ist : IntermediateState) :
     (linkBootCapabilities config ist).state.scheduler = ist.state.scheduler := by
   rw [linkBootCapabilities_fields]
@@ -426,7 +435,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
       SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩,
-    hBindings⟩ := h
+    hBindings, hTab⟩ := h
   have hInv₀ := ist.hAllTables.1.1
   have hE : ist.state.cdt = CapDerivationTree.empty := hCdt
   have hL₀ := cdtLinksAgree_of_bootEmpty hCdt fun oid obj hO => (hShape oid obj hO).2
@@ -468,7 +477,8 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     fun u U h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun r u hr hu => ?_, fun Q hQ o => ?_⟩,
-    .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings⟩
+    .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings,
+    (linkBootCapabilities_tableReferenceFrame config ist).preserves hTab⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e
     cases h0 : ist.state.objects[oid]? with

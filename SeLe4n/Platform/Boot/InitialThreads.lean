@@ -273,6 +273,18 @@ theorem startInitialThreadOnCore_sameNotificationBindings (st : SystemState)
         (.of_objectsAgreeOffRunLinks (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _)))
   · exact hU
 
+/-- The start keeps the table references: it writes the thread's state and
+its run-queue links. -/
+theorem startInitialThreadOnCore_tableReferenceFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (startInitialThreadOnCore st tid) := by
+  have hInv1 := SystemState.updateTcb_preserves_objects_invExt st tid
+    (fun t => { t with threadState := .Ready }) hInv
+  unfold startInitialThreadOnCore
+  exact (SystemState.TableReferenceFrame.updateTcb st tid _ hInv).trans
+    (.of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite _ _ tid hInv1)
+      (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ tid).referenceTables)
+
 /-- **WS-BP BP7.11**: **a start keeps the boot shape.**  The written TCB was
 boot-shaped and the start moves only its flag and its IPC state to `.ready`;
 nothing else in the object store moves, so the ASID table, the untypeds and
@@ -283,10 +295,12 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
   have hInv := ist.hAllTables.1.1
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue, hBindings⟩ := h
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue, hBindings, hTab⟩ :=
+    h
   have hFrame := startInitialThreadOnCore_frame ist.state tid
   refine ⟨?_, ?_, ?_, ?_, ?_, startInitialThreadOnCore_runQueueRefined ist.state tid hInv hRun, ?_,
-    .of_codes (startInitialThreadOnCore_sameNotificationBindings ist.state tid hInv) hBindings⟩
+    .of_codes (startInitialThreadOnCore_sameNotificationBindings ist.state tid hInv) hBindings,
+    (startInitialThreadOnCore_tableReferenceFrame ist.state tid hInv).preserves hTab⟩
   · intro oid obj hObj
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid obj hObj with
       hB | ⟨t, t', hT, rfl, he⟩
