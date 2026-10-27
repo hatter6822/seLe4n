@@ -4456,6 +4456,12 @@ run_check "INVARIANT" rg -n '^@\[inline\] def zombieFuel \(st : SystemState\) : 
 # in, so the zombie delete always deletes its slot: no out-of-fuel branch is
 # left in the delete, the revoke loop or set-space.
 run_check "INVARIANT" rg -n -U '  if cspaceDeleteAdmitted ⟨cnode, slot⟩ st then cspaceDeletePerformAt cnode slot st\n  else\n    zombieDeleteSlot executingCore cnode slot\n      \(zombiePasses executingCore cnode slot \(zombieFuel st\) st\)$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^theorem zombiePasses_end [^\n]*(\n[^\n]*){0,6}\n      zombieSlotClass \(zombiePasses ec root rootSlot \(zombieFuel st\) st\)\n        root rootSlot root rootSlot = 0 := by' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombieDescend_live ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombiePasses_live ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem not_zombieReach_of_final_deleted ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombieReach_of_own_deleted ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ZombieTermination$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 run_negative_check "INVARIANT" rg -n 'zombieDeleteAtFuel|zombieFinaliseAt|zombieEmptyObject' SeLe4n tests
 run_check "INVARIANT" rg -n '^      let k := zombieNextSlot o \(zombieSkip root rootSlot x\)$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem revokeFirstChildLoop_chain($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean

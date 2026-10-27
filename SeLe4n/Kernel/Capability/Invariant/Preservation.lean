@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Capability.Invariant.Preservation.Revoke
 import SeLe4n.Kernel.Capability.Invariant.Preservation.ThreadSpaceCopy
 import SeLe4n.Kernel.Capability.Invariant.Preservation.Carve
+import SeLe4n.Kernel.Capability.Invariant.Preservation.ZombieTermination
 
 /-!
 # AN4-F.3 (CAP-M03): `Capability.Invariant.Preservation` hub
@@ -29,12 +30,13 @@ former file — and the original public API is preserved byte-for-byte:
 | `Preservation.Revoke`                     | the finalising delete and `cteRevoke` loop: bundle preservation and the revocation's completeness |
 | `Preservation.ThreadSpaceCopy`            | setting a thread's space (`copyThreadSpaces`): each space slot's delete, copy and derivation edge |
 | `Preservation.Carve`                      | the untyped carve (`retypeFromUntyped`, `untypedRetypeObject`): the carved object's store, the free-index write, the install and its `.retype` edge |
+| `Preservation.ZombieTermination`          | the zombie loop's passes end within `zombieFuel` on every state the capability invariants hold in (`zombiePasses_end`) |
 
 The children form a linear import chain
 (`Insert ← Delete ← CopyMoveMutate ← EndpointReplyAndLifecycle ←
-BadgeIpcCapsAndCdtMaps ← Revoke`), with `ThreadSpaceCopy` on `Revoke` and `Carve`
-on `ThreadSpaceCopy`. The hub
-re-exports the tail of that chain, `ThreadSpaceCopy` and `Carve`, so every downstream
+BadgeIpcCapsAndCdtMaps ← Revoke`), with `ThreadSpaceCopy` and `ZombieTermination` on
+`Revoke` and `Carve` on `ThreadSpaceCopy`. The hub
+re-exports the tails of that chain, `ThreadSpaceCopy`, `Carve` and `ZombieTermination`, so every downstream
 consumer sees the union of all preservation theorems.
 
 **Migration discipline**: theorem names, statements, proofs, and relative
