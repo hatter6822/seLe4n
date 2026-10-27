@@ -665,6 +665,73 @@ theorem finaliseReplyWaiter_plain (st : SystemState) (hInv : st.objects.invExt)
   rw [k2.ipcState, k1.ipcState]
   exact hReady t1 ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1)
 
+/-- **An admitted cancel of a reply heading no stack**: the caller is blocked on
+the reply, hands nothing back, and the cancel is the splice, restore, consume
+and unlink on the state itself, then the revert. -/
+theorem finaliseReplyCallerCancel_noHead (st : SystemState) {c : SeLe4n.ThreadId} {t : TCB}
+    {r : Reply} (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ r.callerCode = c.val + 1 ∧
+      t.replyObject = some ⟨t.replyObjectCode - 1⟩ ∧
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = none ∧
+      finaliseReplyCallerCancel st c t = finaliseReplyRevert
+        (SystemState.unlinkReplyWaiterOpt
+          (Lifecycle.Suspend.consumeReplyLink
+            (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+          c t.blockingServer?) t.blockingServer? := by
+  unfold replyCallerCancelAdmitted at hE
+  rw [hR] at hE
+  dsimp only at hE
+  have hG := hE
+  simp only [Bool.and_eq_true, beq_iff_eq] at hE
+  obtain ⟨⟨hC, hF⟩, -⟩ := hE
+  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  have hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
+    rcases replyCallerFinalisable_cases hR hF with ⟨-, hD⟩ | ⟨s, -, -, -, hN, -⟩
+    · exact hD
+    · rw [hN] at hNH; cases hNH
+  refine ⟨⟨ep, rt, hB⟩, hC, hRO, hD, ?_⟩
+  unfold finaliseReplyCallerCancel finaliseReplyCancel
+  rw [hR]
+  dsimp only
+  rw [if_pos hG, hNH]
+  simp only [Bool.false_eq_true, if_false]
+  rw [cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+
+/-- **The cancel of a reply heading no stack writes no binding.** -/
+theorem finaliseReplyCallerCancel_noHead_schedLinkFrame (st : SystemState)
+    (hInv : st.objects.invExt) {c : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    SchedLinkFrame st (finaliseReplyCallerCancel st c t) ∧
+      (finaliseReplyCallerCancel st c t).objects.invExt := by
+  obtain ⟨⟨ep, rt, hB⟩, -, -, hD, hEq⟩ := finaliseReplyCallerCancel_noHead st hR hNH hE
+  rw [hEq]
+  have F := SchedLinkFrame.replyCancelTail st c t hInv
+  have hI : (SystemState.unlinkReplyWaiterOpt
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+      c t.blockingServer?).objects.invExt := by
+    rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+    exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
+  exact ⟨F.trans (SchedLinkFrame.finaliseReplyRevert _ _ hI),
+    (FinaliseFrame.finaliseReplyRevert _ _ hI).invExt⟩
+
+/-- **One plain waiter's end writes no binding**: its cancel hands nothing back
+(`finaliseReplyCallerCancel_noHead_schedLinkFrame`), and the suspend writes no
+binding. -/
+theorem finaliseReplyWaiter_plain_bindings (st : SystemState) (hInv : st.objects.invExt)
+    {x w : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r)) (hok : plainWaiterOk x w t r) :
+    bindingLinksAgree st (finaliseReplyWaiter st w t) := by
+  have hE := replyWaiterEndable_of_ok hR hok
+  unfold replyWaiterEndable at hE
+  have hG := ((Bool.and_eq_true _ _).mp hE).2
+  obtain ⟨F, hI⟩ := finaliseReplyCallerCancel_noHead_schedLinkFrame st hInv hR
+    (by rw [hok.2.2.2.1]; rfl) hG
+  unfold finaliseReplyWaiter
+  exact bindingLinksAgree.trans (F.binding : bindingLinksAgree _ _) (SchedLinkFrame.finaliseThreadSuspend _ w hI).binding
+
 -- ============================================================================
 -- The walk ends every waiter
 -- ============================================================================
