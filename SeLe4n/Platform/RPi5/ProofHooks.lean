@@ -203,7 +203,7 @@ def rpi5ProductionAdapterProofHooks :
       -- (the bundle's last conjunct) carries that to the abstract queue.
       have hNotRunnable : newTid ∉ st.scheduler.runnable := by
         have h := hStable.1.1.1.1.2
-        have hR : st.runQueueRefined := hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+        have hR : st.runQueueRefined := hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
         intro hMem
         have hC : (st.scheduler.runQueueOnCore bootCoreId).contains newTid = true :=
           RunQueue.mem_iff_contains.mp

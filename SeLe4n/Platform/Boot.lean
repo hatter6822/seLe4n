@@ -6250,11 +6250,17 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     rw [hAudit]
     exact SeLe4n.Model.default_auditLogBounded
   -- 17. runQueueRefined: the caller's hypothesis.
-  -- Compose all 17 components
+  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 part 37): every boot root's epoch
+  -- table is vacant (`VSpaceRootTableRoom`), so no mapping was made by a
+  -- capability and the invariant holds vacuously.
+  have hMappings : ist.state.liveMappingsRecorded :=
+    SystemState.liveMappingsRecorded_of_epochsVacant fun rid root hObj =>
+      ((hBS rid _ hObj).2.2.2.2.1 root rfl).2.2.2
+  -- Compose all 18 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun⟩
+         hAuditBounded, hRun, hMappings⟩
 
 -- ============================================================================
 -- WS-RR RR5.13 / PR #889 review: results that read the object store through

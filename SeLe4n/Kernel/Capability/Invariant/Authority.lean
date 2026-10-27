@@ -906,7 +906,7 @@ theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
   · exact Or.inl hEq
   · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType],
       by simp [KernelObject.tcbSlots, hC, hL], rfl, by simp [KernelObject.bindingCodes, hB],
-      rfl⟩
+      rfl, rfl⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
 capability invariant bundle** — the first instance of the frame above, and one of

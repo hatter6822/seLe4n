@@ -459,9 +459,28 @@ names a notification, and each of those objects records the entry that names it
   | .notification n => (0, n.irqBound)
   | _ => (0, false)
 
+/-- **The mapping facts an object holds**: a VSpace root's ASID, translations
+and mapping epochs, and a frame's base; every other kind holds none.  The part
+of the store the mapping records read besides the slots: a root maps an address
+to a physical page under an epoch, and a frame owns the page at its base
+(`SystemState.liveMappingsRecorded`).  A frame's own epoch counter is not read:
+the map advances it and no record names it. -/
+@[inline] def mappingView (o : KernelObject) :
+    Option (SeLe4n.ASID × SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions) ×
+      SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat) × Option SeLe4n.PAddr :=
+  match o with
+  | .vspaceRoot r => (some (r.asid, r.mappings, r.mappingEpochs), none)
+  | .frame f => (none, some f.base)
+  | _ => (none, none)
+
 /-- Clearing an object's derivation links keeps its table back-links. -/
 @[simp] theorem tableBackLinks_withoutLinks (o : KernelObject) :
     o.withoutLinks.tableBackLinks = o.tableBackLinks := by
+  cases o <;> rfl
+
+/-- Clearing an object's derivation links keeps its mapping facts. -/
+@[simp] theorem mappingView_withoutLinks (o : KernelObject) :
+    o.withoutLinks.mappingView = o.mappingView := by
   cases o <;> rfl
 
 /-- Clearing an object's derivation links keeps its binding codes. -/

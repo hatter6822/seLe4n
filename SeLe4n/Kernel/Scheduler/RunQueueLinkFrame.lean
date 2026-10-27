@@ -466,7 +466,7 @@ theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
           TCB.proj_eq_of_withoutRunLinks_eq (·.spaceCells) ht,
           TCB.proj_eq_of_withoutRunLinks_eq (·.spaceLinks) ht], rfl, by
         simp only [KernelObject.bindingCodes,
-          TCB.proj_eq_of_withoutRunLinks_eq (·.boundNotificationCode) ht], rfl⟩
+          TCB.proj_eq_of_withoutRunLinks_eq (·.boundNotificationCode) ht], rfl, rfl⟩
     | _ => exact Or.inl (h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e)
 
 end objectsAgreeOffRunLinks

@@ -1,0 +1,322 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+/-
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+-/
+
+import SeLe4n.Kernel.API
+import SeLe4n.Kernel.Capability.Invariant.Preservation.MappingRecords
+
+/-! # Every kernel write keeps the live mappings recorded
+
+`SystemState.liveMappingsRecorded` (`Model/MappingRecords.lean`) says every
+mapping an address space makes under a mapping epoch is recorded on a
+capability to its frame.  This module proves that the writes that touch what it
+reads keep it: the `.vspaceMap` arm, which adds a mapping and records it on the
+capability that made it (`vspaceMapFromFrameCap_preserves_liveMappingsRecorded`);
+the finalising delete, the revocation and the zombie delete
+(`Capability/Invariant/Preservation/MappingRecords.lean`); and the remaining
+capability, lifecycle and address-space writes below.  Every other step is a
+`kindPreservingWrite` (`SystemState.liveMappingsRecorded.of_kindPreservingWrite`)
+or writes no object.
+-/
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+
+-- ============================================================================
+-- §1  The map's page-table write
+-- ============================================================================
+
+/-- **One page-table map, exactly**: the root the ASID resolves to takes the new
+translation, and no other key moves. -/
+theorem vspaceMapPage_ok_objects {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    ∃ (rootId : SeLe4n.ObjId) (root root' : VSpaceRoot),
+      Architecture.resolveAsidRoot st asid = some (rootId, root) ∧
+      root.mapPage vaddr paddr perms = some root' ∧
+      st'.objects.invExt ∧ st'.objects[rootId]? = some (.vspaceRoot root') ∧
+      ∀ k, k ≠ rootId → st'.objects[k]? = st.objects[k]? := by
+  unfold Architecture.vspaceMapPage at h
+  cases hRes : Architecture.resolveAsidRoot st asid with
+  | none => rw [hRes] at h; cases h
+  | some pr =>
+    obtain ⟨rootId, root⟩ := pr
+    rw [hRes] at h
+    simp only at h
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · cases hMp : root.mapPage vaddr paddr perms with
+        | none => rw [hMp] at h; cases h
+        | some root' =>
+          rw [hMp] at h
+          simp only at h
+          exact ⟨rootId, root, root', rfl, hMp,
+            storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st _) _ _ _
+              hObjInv h,
+            storeObject_objects_eq (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv h,
+            fun k hk => storeObject_objects_ne (Architecture.recordPhysicalWrites st _) _ _ k _ hk
+              hObjInv h⟩
+
+/-- **The verified map the `.vspaceMap` arm runs writes the objects its
+page-table write does**: the guards write nothing, and the flush, the shootdown
+round, the drain and the fill write only TLB and shootdown state. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_objects
+    (ec : Concurrency.CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore ec asid vaddr
+      paddr perms st = .ok ((), st')) :
+    ∃ stB, Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), stB) ∧
+      st'.objects = stB.objects := by
+  unfold Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
+  cases hS : Architecture.vspaceMapPageCheckedWithShootdownFromState ec asid vaddr paddr
+      perms st with
+  | error e => rw [hS] at hStep; cases hStep
+  | ok pr =>
+    obtain ⟨u, stM⟩ := pr; cases u
+    rw [hS] at hStep
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+    have hTail : st'.objects = stM.objects := by
+      subst hStep
+      unfold Architecture.tlbFillOnCore Architecture.drainInitiatorPerCoreView
+      split
+      · rfl
+      · exact (Architecture.tlbInsertOnCore_frame _ _ _).1
+    unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at hS
+    dsimp only at hS
+    cases hF : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
+    | error e => rw [hF] at hS; cases hS
+    | ok pr2 =>
+      obtain ⟨u2, stF⟩ := pr2; cases u2
+      rw [hF] at hS
+      simp only at hS
+      have hRound : stM.objects = stF.objects := by
+        split at hS
+        · rw [Architecture.withShootdownRound_total] at hS
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+          subst hS
+          exact (Architecture.tlbShootdownBroadcastCoalescing_frame stF ec _ _).1
+        · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
+          subst hS; rfl
+      unfold Architecture.vspaceMapPageCheckedWithFlushFromState at hF
+      split at hF
+      · cases hF
+      · split at hF
+        · cases hF
+        · split at hF
+          · cases hF
+          · unfold Architecture.vspaceMapPageWithFlush at hF
+            cases hB : Architecture.vspaceMapPage asid vaddr paddr perms st with
+            | error e => rw [hB] at hF; cases hF
+            | ok pr3 =>
+              obtain ⟨u3, stB⟩ := pr3; cases u3
+              rw [hB] at hF
+              simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
+              subst hF
+              exact ⟨stB, rfl, hTail.trans hRound⟩
+
+/-- **What `mapPage` makes**: the root with the one new translation, at an
+address it did not map. -/
+theorem VSpaceRoot.mapPage_some_eq {root root' : VSpaceRoot} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions}
+    (h : root.mapPage vaddr paddr perms = some root') :
+    root.mappings[vaddr]? = none ∧
+      root' = { root with mappings := root.mappings.insert vaddr (paddr, perms) } := by
+  unfold VSpaceRoot.mapPage at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · next hNone => cases h; exact ⟨hNone, rfl⟩
+
+/-- **A capability whose record is not live witnesses no live mapping**: on a
+well-formed state, a record naming an address space's mapping under its epoch,
+to the base of the frame the capability targets, is live
+(`capabilityMappingLive`). -/
+theorem slotWitnessesNoMapping_of_notLive {st : SystemState} {s : SlotRef} {cap : Capability}
+    (hW : teardownWellFormed st) (hC : st.slotCapAt s = some cap)
+    (hLive : capabilityMappingLive st cap = false) : st.slotWitnessesNoMapping s := by
+  intro c fid f rid root v perms e hc ht hf hr hm he hmap
+  rw [hC] at hc; cases hc
+  have hG : st.getFrame? fid = some f := (SystemState.getFrame?_eq_some_iff st fid f).2 hf
+  have hRes := resolveAsidRoot_of_root hW hr
+  unfold capabilityMappingLive capabilityMappedPage mappedPageLive at hLive
+  simp only [hmap, ht, hG, Option.map_some, hRes, VSpaceRoot.lookup, hm, he] at hLive
+  simp at hLive
+
+-- ============================================================================
+-- §2  The `.vspaceMap` arm
+-- ============================================================================
+
+/-- **The `.vspaceMap` arm keeps every live mapping recorded.**  It adds one
+mapping — the frame's base at the address, in the address space the ASID
+resolves to, under the frame's current epoch — and records exactly that on the
+capability it resolved, in that capability's own slot.  The record it
+overwrites witnessed nothing: the arm refuses a capability whose record is live
+(`capabilityMappingLive`), and on a well-formed state a record naming a mapping
+an address space still makes is live (`slotWitnessesNoMapping_of_notLive`).  It
+writes one root, one frame's epoch counter and one CNode slot, so every other
+record keeps its slot and its frame's base. -/
+theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState)
+    (hW : teardownWellFormed st) (hL : st.liveMappingsRecorded)
+    (h : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  obtain ⟨frameSlot, frameCap, frame, st1, hR, -, hLive, -, -, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid ec args st st' h
+  obtain ⟨_, _, fid, _, _, _, _, hTgt, hGF, -, hSlotCap⟩ :=
+    resolveVSpaceMapFrame_ok_authorised tid args st frameSlot frameCap frame hR
+  have hFid : frameCapObjId frameCap = fid := by simp [frameCapObjId, hTgt]
+  rw [hFid] at hT
+  have hFr : st.objects[fid]? = some (.frame frame) := (SystemState.getFrame?_eq_some_iff _ _ _).1 hGF
+  have hCap : st.slotCapAt frameSlot = some frameCap := SystemState.slotCapAt_of_lookupSlotCap hSlotCap
+  -- The map: one root takes the translation.
+  obtain ⟨stB, hB, hO1⟩ :=
+    vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_objects _ _ _ _ _ st st1 hMap
+  obtain ⟨rootId, root, root', hRes, hMp, hIB, hAtB, hNeB⟩ := vspaceMapPage_ok_objects hW.1 hB
+  obtain ⟨hNone, rfl⟩ := VSpaceRoot.mapPage_some_eq hMp
+  obtain ⟨-, hRoot, hAsid⟩ := Architecture.resolveAsidRoot_some_implies_obj st _ _ _ hRes
+  have hI1 : st1.objects.invExt := hO1 ▸ hIB
+  have hAt1 : st1.objects[rootId]? = some (.vspaceRoot
+      { root with mappings := root.mappings.insert args.vaddr (frame.base, args.perms) }) :=
+    hO1 ▸ hAtB
+  have hNe1 : ∀ k, k ≠ rootId → st1.objects[k]? = st.objects[k]? := fun k hk => hO1 ▸ hNeB k hk
+  have hFR : fid ≠ rootId := fun e => by subst e; rw [hFr] at hRoot; cases hRoot
+  -- The tag: the same root takes the epoch, the frame its next counter.
+  obtain ⟨f, rootId2, root2, stT, hF1, hRes1, hE, hS1, hS2⟩ :=
+    tagFrameMapping_ok _ _ _ st1 st2 epoch hT
+  subst hE
+  have hfEq : frame = f := by
+    rw [SystemState.getFrame?_eq_some_iff, hNe1 fid hFR, hFr] at hF1; cases hF1; rfl
+  subst hfEq
+  obtain ⟨-, hRoot2, hAsid2⟩ := Architecture.resolveAsidRoot_some_implies_obj st1 _ _ _ hRes1
+  have hId2 : rootId = rootId2 := by
+    by_cases hne : rootId2 = rootId
+    · exact hne.symm
+    exfalso
+    rw [hNe1 _ hne] at hRoot2
+    have h2 := resolveAsidRoot_of_root hW hRoot2
+    rw [hAsid2, hRes] at h2
+    cases h2; exact hne rfl
+  subst hId2
+  rw [hAt1] at hRoot2; cases hRoot2
+  have hIT := storeObject_preserves_objects_invExt _ _ _ _ hI1 hS1
+  have hI2 := storeObject_preserves_objects_invExt _ _ _ _ hIT hS2
+  -- The record: the resolved slot's capability takes the mapping.
+  obtain ⟨cn, cap, hCn, hLk, hS3⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  have hCn2 := (SystemState.getCNode?_eq_some_iff _ _ _).1 hCn
+  have hCR : frameSlot.cnode ≠ rootId := fun e => by
+    rw [e, storeObject_objects_ne _ _ _ _ _ hFR.symm hIT hS2,
+      storeObject_objects_eq _ _ _ _ hI1 hS1] at hCn2; cases hCn2
+  have hCF : frameSlot.cnode ≠ fid := fun e => by
+    rw [e, storeObject_objects_eq _ _ _ _ hIT hS2] at hCn2; cases hCn2
+  have hCnPre : st.objects[frameSlot.cnode]? = some (.cnode cn) := by
+    rw [storeObject_objects_ne _ _ _ _ _ hCF hIT hS2, storeObject_objects_ne _ _ _ _ _ hCR hI1 hS1,
+      hNe1 _ hCR] at hCn2
+    exact hCn2
+  have hCapEq : cap = frameCap := by
+    rw [SystemState.slotCapAt_of_object hCnPre] at hCap
+    exact Option.some.inj (hLk.symm.trans hCap)
+  subst hCapEq
+  -- The post-state, key by key.
+  have hObj : ∀ k, st'.objects[k]? =
+      if k = frameSlot.cnode then
+        some (.cnode (cn.insert frameSlot.slot (cap.withMapping
+          (some { asid := args.asid, vaddr := args.vaddr, epoch := frame.mapEpoch }))))
+      else if k = fid then some (.frame { frame with mapEpoch := frame.mapEpoch + 1 })
+      else if k = rootId then some (.vspaceRoot
+        { root with mappings := root.mappings.insert args.vaddr (frame.base, args.perms),
+                    mappingEpochs := root.mappingEpochs.insert args.vaddr frame.mapEpoch })
+      else st.objects[k]? := by
+    intro k
+    by_cases h1 : k = frameSlot.cnode
+    · subst h1; rw [if_pos rfl]; exact storeObject_objects_eq _ _ _ _ hI2 hS3
+    rw [if_neg h1, storeObject_objects_ne _ _ _ _ _ h1 hI2 hS3]
+    by_cases h2 : k = fid
+    · subst h2; rw [if_pos rfl]; exact storeObject_objects_eq _ _ _ _ hIT hS2
+    rw [if_neg h2, storeObject_objects_ne _ _ _ _ _ h2 hIT hS2]
+    by_cases h3 : k = rootId
+    · subst h3; rw [if_pos rfl]; exact storeObject_objects_eq _ _ _ _ hI1 hS1
+    rw [if_neg h3, storeObject_objects_ne _ _ _ _ _ h3 hI1 hS1, hNe1 _ h3]
+  have hWF := hW.2.2.2.2.2.2.2.2.2 rootId root hRoot
+  have hMI : root.mappings.invExt := hWF.1.1
+  have hEI : root.mappingEpochs.invExt := hWF.2.1
+  refine SystemState.liveMappingsRecorded.of_step frameSlot args.asid args.vaddr frame.base
+    frame.mapEpoch ?_ ?_ ?_ ?_ (slotWitnessesNoMapping_of_notLive hW hCap hLive) hL
+  · intro rid r' v p perms e hR' hM hE'
+    rw [hObj] at hR'
+    by_cases h1 : rid = frameSlot.cnode
+    · rw [if_pos h1] at hR'; cases hR'
+    rw [if_neg h1] at hR'
+    by_cases h2 : rid = fid
+    · rw [if_pos h2] at hR'; cases hR'
+    rw [if_neg h2] at hR'
+    by_cases h3 : rid = rootId
+    · rw [if_pos h3] at hR'; cases hR'
+      subst h3
+      simp only [RHTable_getElem?_eq_get?] at hM hE'
+      by_cases hv : v = args.vaddr
+      · subst hv
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hMI] at hM
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hEI] at hE'
+        cases hM; cases hE'
+        exact .inl ⟨hAsid, rfl, rfl, rfl⟩
+      · have hne : ¬(args.vaddr == v) = true := fun hb => hv (eq_of_beq hb).symm
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hne hMI] at hM
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hne hEI] at hE'
+        exact .inr ⟨root, hRoot, rfl, by rw [RHTable_getElem?_eq_get?]; exact hM,
+          by rw [RHTable_getElem?_eq_get?]; exact hE'⟩
+    · rw [if_neg h3] at hR'
+      exact .inr ⟨r', hR', rfl, hM, hE'⟩
+  · have hAddr := CNode.slotAddressable_of_lookup cn _ _ hLk
+    refine ⟨frameSlot, cap.withMapping
+      (some { asid := args.asid, vaddr := args.vaddr, epoch := frame.mapEpoch }), fid,
+      { frame with mapEpoch := frame.mapEpoch + 1 }, ?_, ?_, ?_, rfl, ?_⟩
+    · rw [SystemState.slotCapAt_eq_bind, hObj, if_pos rfl]
+      exact CNode.lookup_insert_eq cn _ _ (CNode.slotsUnique_holds cn) hAddr
+    · rw [← hTgt]; rfl
+    · rw [hObj, if_neg (Ne.symm hCF), if_pos rfl]
+    · simp [Capability.mapping, Capability.withMapping]
+  · intro r c hr hc
+    rw [SystemState.slotCapAt_eq_bind] at hc ⊢
+    rw [hObj]
+    by_cases h1 : r.cnode = frameSlot.cnode
+    · rw [if_pos h1]
+      rw [h1, hCnPre] at hc
+      have hs : frameSlot.slot ≠ r.slot := fun e => hr (by
+        cases r; cases frameSlot; simp_all)
+      show (cn.insert frameSlot.slot _).lookup r.slot = some c
+      rw [CNode.lookup_insert_ne cn _ _ _ hs (CNode.slotsUnique_holds cn)]
+      exact hc
+    rw [if_neg h1]
+    by_cases h2 : r.cnode = fid
+    · rw [h2, hFr] at hc; cases hc
+    rw [if_neg h2]
+    by_cases h3 : r.cnode = rootId
+    · rw [h3, hRoot] at hc; cases hc
+    rw [if_neg h3]
+    exact hc
+  · intro k g hg
+    rw [hObj]
+    by_cases h1 : k = frameSlot.cnode
+    · rw [h1, hCnPre] at hg; cases hg
+    rw [if_neg h1]
+    by_cases h2 : k = fid
+    · rw [if_pos h2]; rw [h2, hFr] at hg; cases hg; exact ⟨_, rfl, rfl⟩
+    rw [if_neg h2]
+    by_cases h3 : k = rootId
+    · rw [h3, hRoot] at hg; cases hg
+    rw [if_neg h3]
+    exact ⟨g, hg, rfl⟩
+
+end SeLe4n.Kernel

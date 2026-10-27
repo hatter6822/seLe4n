@@ -1418,9 +1418,9 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun iid => lookup_freeze_interfaceRegistry ist iid
   · exact fun oid => lookup_freeze_objectTypes ist oid
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
-  · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
-  · exact fun tid => lookup_freeze_threadPriority ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
-  · exact fun tid => lookup_freeze_membership ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
+  · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId)
+  · exact fun tid => lookup_freeze_threadPriority ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId)
+  · exact fun tid => lookup_freeze_membership ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId)
   -- Non-map fields (20)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
