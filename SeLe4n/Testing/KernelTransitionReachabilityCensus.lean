@@ -1139,6 +1139,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
   , `SeLe4n.Kernel.faultSuspend
+  -- WS-ZA ZA5.4 part 26: names for the states a thread's finalisation reaches
+  -- part way (`FinaliseRetirable.lean`), which the carriage of its admission is
+  -- stated on (part 34); the finalise runs the steps themselves (`finaliseThread`).
+  , `SeLe4n.Kernel.finaliseThreadAfterCancel
+  , `SeLe4n.Kernel.finaliseThreadAfterRelease
   , `SeLe4n.Kernel.handleYield
   , `SeLe4n.Kernel.handleYieldChecked
   , `SeLe4n.Kernel.handleYieldWithBudget
