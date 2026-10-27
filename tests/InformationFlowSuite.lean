@@ -50,7 +50,6 @@ private def sampleLabeling : SeLe4n.Kernel.LabelingContext :=
     objectLabelOf := fun oid => if oid = ⟨2⟩ then secretLabel else publicLabel
     threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
     endpointLabelOf := fun _ => publicLabel
-    serviceLabelOf := fun sid => if sid = ⟨1⟩ then secretLabel else publicLabel
   }
 
 /-- A second state that differs from sampleState only in secret (high-domain) components.
@@ -516,6 +515,74 @@ private def runSeparationWitnessAdmissibilityChecks : IO Unit := do
       some (⟨SeLe4n.Kernel.harnessLowerWitnessIndex⟩, ⟨SeLe4n.Kernel.harnessSeparationBoundary⟩) &&
      SeLe4n.Kernel.harnessLowerWitnessIndex != 1)
 
+/-- The service registry under the endpoint-label gates (WS-ZA ZA5.4 part 33).
+Endpoint 40 is low and endpoint 41 is high; thread 1 is low and thread 2 high.
+Endpoint 41 carries a registration, made before any check runs.  Each check is
+one refusal the gates owe, plus the projection's view of the registration. -/
+private def runServiceRegistryFlowChecks : IO Unit := do
+  let lowEp : SeLe4n.ObjId := ⟨40⟩
+  let highEp : SeLe4n.ObjId := ⟨41⟩
+  let ctx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = highEp then secretLabel else publicLabel
+      threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
+      endpointLabelOf := fun _ => publicLabel }
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨710⟩, methodCount := 1, maxMessageSize := 1, maxResponseSize := 1,
+      requiresGrant := false }
+  let st0 := (BootstrapBuilder.empty
+      |>.withObject lowEp (.endpoint {})
+      |>.withLifecycleObjectType lowEp .endpoint
+      |>.withObject highEp (.endpoint {})
+      |>.withLifecycleObjectType highEp .endpoint
+      |>.buildChecked)
+  let capTo (oid : SeLe4n.ObjId) : Capability :=
+    { target := .object oid, rights := .ofList [.read, .write] }
+  let highReg : ServiceRegistration := { sid := ⟨41⟩, iface := iface, endpointCap := capTo highEp }
+  let lowReg : ServiceRegistration := { sid := ⟨40⟩, iface := iface, endpointCap := capTo lowEp }
+  match SeLe4n.Kernel.registerInterface iface st0 with
+  | .error _ => throw <| IO.userError "service flow checks: interface registration failed"
+  | .ok (_, stI) =>
+  match SeLe4n.Kernel.registerServiceChecked ctx ⟨2⟩ highReg stI with
+  | .error e => throw <| IO.userError s!"service flow checks: high registration failed: {toString e}"
+  | .ok (_, st) =>
+  -- The low observer's view omits the high registration; the high one's keeps it.
+  expect "the projected registry hides a registration on an endpoint the observer cannot see"
+    ((SeLe4n.Kernel.projectServiceRegistry ctx reviewer st ⟨41⟩).isNone &&
+     (SeLe4n.Kernel.projectServiceRegistry ctx admin st ⟨41⟩).isSome)
+  -- A query on an unobservable endpoint is refused before the lookup.
+  expect "NEGATIVE: a low caller's query on the high endpoint is flowDenied"
+    (match SeLe4n.Kernel.serviceQueryStaged ctx ⟨1⟩ highEp st with
+     | .error .flowDenied => true | _ => false)
+  expect "…and the high caller's query on it answers the registration"
+    (match SeLe4n.Kernel.lookupServiceChecked ctx ⟨2⟩ highEp st with
+     | .ok (reg, _) => reg.sid == highReg.sid | _ => false)
+  -- A high caller may not write a registration down onto a low endpoint.
+  expect "NEGATIVE: a high caller's registration on the low endpoint is flowDenied"
+    (match SeLe4n.Kernel.registerServiceChecked ctx ⟨2⟩ lowReg st with
+     | .error .flowDenied => true | _ => false)
+  -- A high caller may not revoke on a low endpoint either: the revoke is a write.
+  expect "NEGATIVE: a high caller's revoke on the low endpoint is flowDenied"
+    (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨2⟩ lowEp st with
+     | .error .flowDenied => true | _ => false)
+  -- No caller reaches the high registration through a capability to an
+  -- unrelated endpoint or object: the revoke names no service.
+  expect "NEGATIVE: a revoke through an unrelated endpoint finds nothing and removes nothing"
+    (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨1⟩ lowEp st with
+     | .error .objectNotFound => st.serviceRegistry[highReg.sid]?.isSome | _ => false)
+  expect "NEGATIVE: a revoke through a capability to no object is objectNotFound"
+    (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨1⟩ ⟨99⟩ st with
+     | .error .objectNotFound => true | _ => false)
+  -- The high caller's revoke removes the endpoint's registration, once.
+  match SeLe4n.Kernel.revokeServiceChecked ctx ⟨2⟩ highEp st with
+  | .error e => throw <| IO.userError s!"service flow checks: high revoke failed: {toString e}"
+  | .ok (_, stR) =>
+    expect "the endpoint's revoke removes the registration it records"
+      (stR.serviceRegistry[highReg.sid]?.isNone)
+    expect "NEGATIVE: a second revoke through the same endpoint is objectNotFound"
+      (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨2⟩ highEp stR with
+       | .error .objectNotFound => true | _ => false)
+  IO.println "service registry flow checks passed"
+
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
@@ -614,8 +681,7 @@ def runInformationFlowChecks : IO Unit := do
   let publicCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   -- Same-domain send should be allowed (same result as unchecked)
   let testMsg : IpcMessage := { registers := #[], badge := none }
@@ -632,8 +698,7 @@ def runInformationFlowChecks : IO Unit := do
   let secretSenderCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun tid => if tid = ⟨1⟩ then secretLabel else publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
   expect "secret-to-public endpointSendDualChecked returns flowDenied"
@@ -651,8 +716,7 @@ def runInformationFlowChecks : IO Unit := do
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := (SeLe4n.Slot.ofNat 0) }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := (SeLe4n.Slot.ofNat 0) }
@@ -669,8 +733,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨100⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
   expect "secret-to-public cspaceMintChecked returns flowDenied"
@@ -736,7 +799,6 @@ def runInformationFlowChecks : IO Unit := do
     objectDomainOf := fun oid => if oid = ⟨1⟩ then ⟨0⟩ else ⟨2⟩
     threadDomainOf := fun tid => if tid = ⟨1⟩ then ⟨0⟩ else ⟨1⟩
     endpointDomainOf := fun _ => ⟨1⟩
-    serviceDomainOf := fun _ => ⟨0⟩
   }
 
   expect "generic context: thread 1 (domain 0) → endpoint (domain 1)"
@@ -745,8 +807,8 @@ def runInformationFlowChecks : IO Unit := do
   expect "generic context: thread 2 (domain 1) → endpoint (domain 1) (same domain)"
     (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf ⟨2⟩) (genericCtx.endpointDomainOf ⟨10⟩))
 
-  expect "generic context: object 2 (domain 2) cannot flow to service (domain 0)"
-    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf ⟨2⟩) (genericCtx.serviceDomainOf ⟨1⟩)))
+  expect "generic context: object 2 (domain 2) cannot flow to thread 1 (domain 0)"
+    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf ⟨2⟩) (genericCtx.threadDomainOf ⟨1⟩)))
 
   -- Test per-endpoint flow policy
   let customEndpointPolicy : SeLe4n.Kernel.DomainFlowPolicy :=
@@ -775,10 +837,14 @@ def runInformationFlowChecks : IO Unit := do
   -- label) + notificationSignalDeclassifiedCrossCoreDispatch (WS-SM SM9.C — the
   -- *data-carrying* declassification, policy-gated for the same reason and
   -- consulting the policy at **two** hops, so an authorized signaller aimed at
-  -- an unauthorized receiver is refused at the second).
-  expect "enforcement boundary: 13 policy-gated operations defined"
+  -- an unauthorized receiver is refused at the second).  15 with the service
+  -- query and revoke wrappers (`lookupServiceChecked`, `revokeServiceChecked`),
+  -- which replace the read-only lookup and the capability-only revoke: the
+  -- query is refused unless the endpoint's label flows to the caller, the
+  -- revoke unless the caller's label flows to the endpoint.
+  expect "enforcement boundary: 15 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 13)
+      match c with | .policyGated _ => true | _ => false)).length == 15)
 
   expect "enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -859,8 +925,7 @@ def runInformationFlowChecks : IO Unit := do
   let secretNotificationCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨10⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
   let deniedWait := SeLe4n.Kernel.notificationWaitChecked secretNotificationCtx ⟨10⟩ ⟨1⟩
     publicEndpointState
   expect "SM8.C: notificationWaitChecked denies a cross-domain wait"
@@ -981,8 +1046,7 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeLabeling : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨2⟩ then secretLabel else publicLabel
       threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let cnodePublicProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling reviewer cnodeState
   let cnodeAdminProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling admin cnodeState
@@ -1083,8 +1147,7 @@ def runInformationFlowChecks : IO Unit := do
   let sameDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx ⟨30⟩ ⟨1⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
   let uncheckedSignal := SeLe4n.Kernel.notificationSignal ⟨30⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
@@ -1099,8 +1162,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => secretLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx ⟨30⟩ ⟨1⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
   expect "cross-domain notificationSignalChecked returns flowDenied"
@@ -1138,8 +1200,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainCopyCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨40⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedCopy := SeLe4n.Kernel.cspaceCopyChecked crossDomainCopyCtx copySrc copyDst copyState
   expect "cross-domain cspaceCopyChecked returns flowDenied"
@@ -1168,8 +1229,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainRecvCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun oid => if oid = ⟨50⟩ then secretLabel else publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun oid => if oid = ⟨50⟩ then secretLabel else publicLabel }
 
   let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx ⟨50⟩ ⟨1⟩ none recvEpState
   expect "cross-domain endpointReceiveDualChecked returns flowDenied"
@@ -1192,8 +1252,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "enforcement boundary has 13 policy-gated ops"
-    (policyGatedCount = 13)
+  expect "enforcement boundary has 15 policy-gated ops"
+    (policyGatedCount = 15)
 
   IO.println "enforcement boundary classification verified"
 
@@ -1202,8 +1262,7 @@ def runInformationFlowChecks : IO Unit := do
     { policy := .linearOrder
       objectDomainOf := fun oid => if oid = ⟨902⟩ then ⟨0⟩ else ⟨2⟩
       threadDomainOf := fun _ => ⟨0⟩
-      endpointDomainOf := fun _ => ⟨0⟩
-      serviceDomainOf := fun _ => ⟨0⟩ }
+      endpointDomainOf := fun _ => ⟨0⟩ }
 
   let declassState :=
     (BootstrapBuilder.empty
@@ -1337,8 +1396,8 @@ def runInformationFlowChecks : IO Unit := do
   let pgCount := boundary.filter (fun c => match c with | .policyGated _ => true | _ => false) |>.length
   let coCount := boundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false) |>.length
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
-  expect "enforcement boundary has 13 policy-gated"
-    (pgCount = 13)
+  expect "enforcement boundary has 15 policy-gated"
+    (pgCount = 15)
   -- WS-SM SM8.E.3: 23 → 24 with the 2PL bracket (`withLockSet`), classified
   -- capability-only for the same reason as `storeObject` — an internal building
   -- block used under an already-capability-guarded context, consulting no
@@ -1355,10 +1414,12 @@ def runInformationFlowChecks : IO Unit := do
   -- revocation it named.
   -- WS-ZA ZA5.4 part 14: 35 → 33, `lifecycleRetypeObject` and
   -- `lifecycleRevokeDeleteRetype` removed with the in-place retype.
-  expect "enforcement boundary has 33 capability-only"
-    (coCount = 33)
-  expect "enforcement boundary has 4 read-only"
-    (roCount = 4)
+  -- 33 → 32 and read-only 4 → 3: `revokeService` and
+  -- `lookupServiceByRecordedCode` are replaced by their policy-gated wrappers.
+  expect "enforcement boundary has 32 capability-only"
+    (coCount = 32)
+  expect "enforcement boundary has 3 read-only"
+    (roCount = 3)
   expect "enforcement boundary total is 50"
     (boundary.length = 50)
 
@@ -1413,12 +1474,15 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "declassification audit trail verified"
 
   -- V6-I: NI constructor mapping
-  expect "kernelOperationNiConstructor is total (32 ops)"
+  expect "kernelOperationNiConstructor is total (36 ops)"
     ([ SeLe4n.Kernel.kernelOperationNiConstructor .chooseThread
      , SeLe4n.Kernel.kernelOperationNiConstructor .endpointSendDual
      , SeLe4n.Kernel.kernelOperationNiConstructor .cspaceMint
      , SeLe4n.Kernel.kernelOperationNiConstructor .registerServiceChecked
-     ].length = 4)
+     , SeLe4n.Kernel.kernelOperationNiConstructor .revokeServiceChecked
+     , SeLe4n.Kernel.kernelOperationNiConstructor .serviceQueryChecked
+     ].length = 6 &&
+     SeLe4n.Kernel.KernelOperation.all.length = 36)
 
   IO.println "NI constructor mapping verified"
 
@@ -1810,3 +1874,4 @@ def main : IO Unit := do
   if !ok then
     throw <| IO.userError "InformationFlowSuite: AK6 sub-tests failed"
   SeLe4n.Testing.runInformationFlowChecks
+  SeLe4n.Testing.runServiceRegistryFlowChecks

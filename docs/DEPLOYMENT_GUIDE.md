@@ -26,7 +26,7 @@ The kernel enforces non-interference (NI) across the following subsystems:
 - **Lifecycle** (thread suspend/resume, object retype)
 - **Decode/dispatch** (syscall argument decode, capability-gated dispatch)
 
-The NI model uses 35 `NonInterferenceStep` constructors
+The NI model uses 36 `NonInterferenceStep` constructors
 (`SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`) covering all
 kernel-primitive transitions with per-step and trace-level NI proofs.
 
@@ -173,13 +173,12 @@ def productionLabelingContext : LabelingContext :=
       else SecurityLabel.publicLabel
     endpointLabelOf := fun eid =>
       if eid.toNat < 2 then SecurityLabel.kernelTrusted
-      else SecurityLabel.publicLabel
-    serviceLabelOf := fun _ => SecurityLabel.kernelTrusted }
+      else SecurityLabel.publicLabel }
 ```
 
-The `LabelingContext` structure (`Policy.lean`) carries four label
-assignment functions (`objectLabelOf`, `threadLabelOf`, `endpointLabelOf`,
-`serviceLabelOf`), an optional `memoryOwnership` for memory projection,
+The `LabelingContext` structure (`Policy.lean`) carries three label
+assignment functions (`objectLabelOf`, `threadLabelOf`, `endpointLabelOf`),
+an optional `memoryOwnership` for memory projection,
 and three policy knobs: `endpointPolicy` and `declassificationPolicy`
 (§2.3) and `auditMonitorClearance` — the audit-trail read/drain gate a
 declassifying deployment must configure (§2.3).
@@ -313,26 +312,24 @@ The kernel's non-interference guarantees have an explicitly documented boundary.
 
 ### 3.1 What Is Covered
 
-The 35 `NonInterferenceStep` constructors in
+The 36 `NonInterferenceStep` constructors in
 `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` cover all kernel
 primitive transitions. Per-step NI proofs and trace-level composition theorems
 ensure that information flows only through policy-authorized channels.
 
 ### 3.2 What Is NOT Covered
 
-**The service registry** is outside the NI boundary today.  The kernel keeps
-no service orchestration state (no lifecycle, restart, heartbeat or dependency
-graph; the graph was removed at `v0.36.145`), and the NI projection
-(`ObservableState`) reads neither the registry nor an endpoint's registration
-code, so the service query's answer in `x0` is not covered by any NI theorem.
-Projecting the registry and proving register, revoke and the query NI is
-[`UNTYPED_RESET_PLAN.md`](planning/UNTYPED_RESET_PLAN.md) row 33, registered in
-[`REGISTERED_DEBT.md`](REGISTERED_DEBT.md).
+**The service registry** is inside the NI boundary (since `v0.36.146`).  A
+registration carries the label of the endpoint that serves it
+(`objectLabelOf` of that endpoint; there is no separate service label), and an
+observer's view holds a registration only when it may see that endpoint.
+Registering and revoking need the caller's label to flow to the endpoint's;
+querying needs the endpoint's label to flow to the caller's, and a refused
+query is refused before the lookup.  Label the endpoints a service is reached
+through at the level of the threads meant to find it.
 
-**Implication for deployers**: If your deployment relies on service-layer
-isolation, you must analyze service-layer information flows separately: in
-particular, which threads hold capabilities to the endpoints a query names.
-The kernel NI guarantees do not extend to the registry until that row lands.
+**Not covered**: what services exchange over their own IPC, which the
+deployment analyses as it would any other user-level protocol.
 
 **Additional exclusions**:
 

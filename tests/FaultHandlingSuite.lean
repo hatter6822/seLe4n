@@ -706,8 +706,7 @@ unchecked one. -/
 private def permissiveCtx : LabelingContext :=
   { objectLabelOf := fun _ => SecurityLabel.publicLabel
     threadLabelOf := fun _ => SecurityLabel.publicLabel
-    endpointLabelOf := fun _ => SecurityLabel.publicLabel
-    serviceLabelOf := fun _ => SecurityLabel.publicLabel }
+    endpointLabelOf := fun _ => SecurityLabel.publicLabel }
 
 /-- The faulting thread is `kernelTrusted` (high confidentiality) and the
 handler endpoint is `publicLabel` (low): the **global lattice** denies the

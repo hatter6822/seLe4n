@@ -811,8 +811,7 @@ private def boundDeliveryLabeling : SeLe4n.Kernel.LabelingContext :=
   { objectLabelOf := fun oid =>
       if oid = epId ∨ oid = boundTid.toObjId ∨ oid = nId then highLabel else lowLabel
     threadLabelOf := fun tid => if tid = boundTid then highLabel else lowLabel
-    endpointLabelOf := fun oid => if oid = epId then highLabel else lowLabel
-    serviceLabelOf := fun _ => lowLabel }
+    endpointLabelOf := fun oid => if oid = epId then highLabel else lowLabel }
 
 /-- The low observer for `boundDeliveryLabeling`: it is cleared for the public
 domain and therefore for none of the three objects the bound delivery writes. -/

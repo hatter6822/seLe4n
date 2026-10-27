@@ -30,11 +30,11 @@ the missing structure around it:
   positions, so SM8.B's `crossCoreNonInterference` and SM8.C's per-core
   declassification audit quantify over one thing.
 * **The shared / per-core field partition** (§3).  `ObservableState`'s
-  eleven components split into five that the observer sees identically
+  twelve components split into six that the observer sees identically
   from every core and six that are restricted to core `c`.  The partition
   is a **bijection**, not a convenient grouping:
   `ObservableState.ofFragments` reassembles a state from the pair and
-  `ofFragments_eta` proves the round trip, so a twelfth
+  `ofFragments_eta` proves the round trip, so a thirteenth
   `ObservableState` field registered in neither fragment leaves
   `ofFragments` unable to supply it.  The plan §7 "per-core projection
   missing a field" risk is therefore a compile error as a *checked fact*,
@@ -43,16 +43,16 @@ the missing structure around it:
   follows: the observer learns the global projection's shared fragment
   paired with core `c`'s per-core fragment — all of it, and nothing beyond.
 * **The decidable fragment** (§4).  Observable-state equality is *not*
-  decidable — three components are functions over unbounded domains; the
-  fourth (`machineRegs`) is decidable, `RegisterFile` being thirty-five
+  decidable — four components are functions over unbounded domains; the
+  fifth (`machineRegs`) is decidable, `RegisterFile` being thirty-five
   machine words.  §4 carves out the fragment that *is* decidable, adds the
   finer register-aware check that compares the banks exactly, proves both
   sound refuters, and proves both **strict** so no caller can mistake either
   for full equality.
 * **Per-core independence** (§5).  The read set of the per-core observable
-  state is characterised exactly: the five shared state components
+  state is characterised exactly: the six shared state components
   (`objects`, `irqHandlers`, `objectIndex`,
-  `scheduler.domainSchedule`, `machine.memory`) plus core `c`'s five
+  `scheduler.domainSchedule`, `machine.memory`, `serviceRegistry`) plus core `c`'s five
   scheduler slots and core `c`'s register bank — and *nothing else*, in
   particular no other core's slots.  Note this does not follow from
   `projectStateOnCore_congr`, whose `hBase` hypothesis is equality of the
@@ -67,7 +67,7 @@ the missing structure around it:
   `objectVisibilityLe`, which is equality off the CNode arm and slot
   un-redaction on it.  `ObservableState.eq_of_visibilityLe_antisymm` is the
   completeness check on that clause list: mutual domination plus agreement on
-  `objects` is equality, so a twelfth component with no clause leaves a
+  `objects` is equality, so a thirteenth component with no clause leaves a
   goal nothing can close.
 
 ## Relationship to the live surface
@@ -152,8 +152,8 @@ def PerCoreObserver.onBootCore (L : SecurityLabel) : PerCoreObserver :=
 The per-core components (`runnable`, `current`, `activeDomain`,
 `domainTimeRemaining`, `domainScheduleIndex`, `machineRegs`) are read off
 core `c`'s scheduler slots and register bank; the shared components
-(`objects`, `irqHandlers`, `objectIndex`, `domainSchedule`, `memory`) are
-label-filtered only.
+(`objects`, `irqHandlers`, `objectIndex`, `domainSchedule`, `memory`,
+`serviceRegistry`) are label-filtered only.
 
 Defined as the SM4.D `projectStateOnCore` at the observer `⟨L⟩` rather than
 as a second structure literal: one projection function, so the per-core
@@ -228,11 +228,11 @@ theorem lowEquivalent_smp_iff_forall_observer (ctx : LabelingContext) (L : Secur
 -- §3  SM8.A.2 — the shared / per-core field partition
 -- ============================================================================
 --
--- `ObservableState` has eleven components.  Under the per-core observer
+-- `ObservableState` has twelve components.  Under the per-core observer
 -- they split into two groups:
 --
---   * SHARED (5)   — objects, irqHandlers, objectIndex, domainSchedule,
---                    memory.  Filtered by
+--   * SHARED (6)   — objects, irqHandlers, objectIndex, domainSchedule,
+--                    memory, serviceRegistry.  Filtered by
 --                    the observer's label; read no per-core scheduler slot
 --                    and no per-core register bank, hence identical from
 --                    every core.  (`domainSchedule` is a system-wide
@@ -255,6 +255,7 @@ structure SharedObservableFragment where
   objectIndex : List SeLe4n.ObjId
   domainSchedule : List DomainScheduleEntry
   memory : SeLe4n.PAddr → Option UInt8
+  serviceRegistry : ServiceId → Option ServiceRegistration
 
 /-- SM8.A.2: the components of an observable state that are restricted to the
 observer's core. -/
@@ -272,7 +273,8 @@ def ObservableState.sharedFragment (v : ObservableState) : SharedObservableFragm
     irqHandlers := v.irqHandlers
     objectIndex := v.objectIndex
     domainSchedule := v.domainSchedule
-    memory := v.memory }
+    memory := v.memory
+    serviceRegistry := v.serviceRegistry }
 
 /-- The core-restricted half of an observable state. -/
 def ObservableState.perCoreFragment (v : ObservableState) : PerCoreObservableFragment :=
@@ -293,11 +295,11 @@ observer can never silently drop a security-relevant field. -/
 theorem ObservableState.ext_fragments {v₁ v₂ : ObservableState}
     (hShared : v₁.sharedFragment = v₂.sharedFragment)
     (hPerCore : v₁.perCoreFragment = v₂.perCoreFragment) : v₁ = v₂ := by
-  obtain ⟨o₁, r₁, cu₁, ad₁, ih₁, oi₁, dtr₁, ds₁, dsi₁, mr₁, m₁⟩ := v₁
-  obtain ⟨o₂, r₂, cu₂, ad₂, ih₂, oi₂, dtr₂, ds₂, dsi₂, mr₂, m₂⟩ := v₂
+  obtain ⟨o₁, r₁, cu₁, ad₁, ih₁, oi₁, dtr₁, ds₁, dsi₁, mr₁, m₁, sr₁⟩ := v₁
+  obtain ⟨o₂, r₂, cu₂, ad₂, ih₂, oi₂, dtr₂, ds₂, dsi₂, mr₂, m₂, sr₂⟩ := v₂
   simp only [ObservableState.sharedFragment, ObservableState.perCoreFragment,
     SharedObservableFragment.mk.injEq, PerCoreObservableFragment.mk.injEq] at hShared hPerCore
-  obtain ⟨h1, h2, h3, h4, h5⟩ := hShared
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hShared
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := hPerCore
   subst_vars
   rfl
@@ -307,7 +309,7 @@ theorem ObservableState.ext_fragments {v₁ v₂ : ObservableState}
 Together with `ofFragments_sharedFragment` / `ofFragments_perCoreFragment` /
 `ofFragments_eta` below this makes the partition a **bijection**
 `ObservableState ≃ SharedObservableFragment × PerCoreObservableFragment`, which
-is what turns "a twelfth field is a compile error" from an argument into a
+is what turns "a thirteenth field is a compile error" from an argument into a
 checked fact: a new `ObservableState` component leaves this definition unable
 to produce it. -/
 def ObservableState.ofFragments (sh : SharedObservableFragment)
@@ -322,7 +324,8 @@ def ObservableState.ofFragments (sh : SharedObservableFragment)
     domainSchedule := sh.domainSchedule
     domainScheduleIndex := pc.domainScheduleIndex
     machineRegs := pc.machineRegs
-    memory := sh.memory }
+    memory := sh.memory
+    serviceRegistry := sh.serviceRegistry }
 
 @[simp] theorem ObservableState.ofFragments_sharedFragment (sh : SharedObservableFragment)
     (pc : PerCoreObservableFragment) : (ObservableState.ofFragments sh pc).sharedFragment = sh := by
@@ -361,7 +364,8 @@ core-independent below. -/
         irqHandlers := projectIrqHandlers ctx (IfObserver.ofLabel L) s
         objectIndex := projectObjectIndex ctx (IfObserver.ofLabel L) s
         domainSchedule := projectDomainSchedule ctx (IfObserver.ofLabel L) s
-        memory := projectMemory ctx (IfObserver.ofLabel L) s } := rfl
+        memory := projectMemory ctx (IfObserver.ofLabel L) s
+        serviceRegistry := projectServiceRegistry ctx (IfObserver.ofLabel L) s } := rfl
 
 /-- SM8.A.2 (definition-pinning): the per-core fragment of the per-core
 observable state, spelled out.  Every component is an `…OnCore c` projection —
@@ -406,6 +410,11 @@ projection breaks the corresponding `rfl`. -/
 @[simp] theorem onCore_memory (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) :
     (ObservableState.onCore ctx c L s).memory = projectMemory ctx (IfObserver.ofLabel L) s := rfl
+
+@[simp] theorem onCore_serviceRegistry (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    (s : SystemState) :
+    (ObservableState.onCore ctx c L s).serviceRegistry =
+      projectServiceRegistry ctx (IfObserver.ofLabel L) s := rfl
 
 @[simp] theorem onCore_runnable (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) :
@@ -544,8 +553,9 @@ theorem onCore_congr_of_globalProjection
 -- Equality of `ObservableState` values is **not** decidable, and no honest
 -- instance can claim otherwise:
 --
---   * three components are functions over unbounded domains — `objects`
---     (`ObjId → …`), `irqHandlers` (`Irq → …`) and `memory` (`PAddr → …`);
+--   * four components are functions over unbounded domains — `objects`
+--     (`ObjId → …`), `irqHandlers` (`Irq → …`), `memory` (`PAddr → …`) and
+--     `serviceRegistry` (`ServiceId → …`);
 --   * `machineRegs` carries a `RegisterFile`, which is decidable (thirty-five
 --     machine words), so the register bank is the one component the finer
 --     check below compares exactly.
@@ -624,13 +634,13 @@ theorem perCoreSlice_erases_register_content :
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0,
             machineRegs := some { pc := 0, sp := 0 },
-            memory := fun _ => none },
+            memory := fun _ => none, serviceRegistry := fun _ => none },
           { objects := fun _ => none, runnable := [], current := none,
             activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0,
             machineRegs := some { pc := 1, sp := 0 },
-            memory := fun _ => none },
+            memory := fun _ => none, serviceRegistry := fun _ => none },
           rfl, ?_⟩
   intro h
   have hval : (0 : Nat) = 1 :=
@@ -649,12 +659,12 @@ theorem perCoreSlice_erases_shared_content :
             activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0, machineRegs := none,
-            memory := fun _ => none },
+            memory := fun _ => none, serviceRegistry := fun _ => none },
           { objects := fun _ => none, runnable := [], current := none,
             activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
             objectIndex := [SeLe4n.ObjId.ofNat 0], domainTimeRemaining := 0,
             domainSchedule := [], domainScheduleIndex := 0, machineRegs := none,
-            memory := fun _ => none },
+            memory := fun _ => none, serviceRegistry := fun _ => none },
           rfl, ?_⟩
   intro h
   have hidx : ([] : List SeLe4n.ObjId) = [SeLe4n.ObjId.ofNat 0] :=
@@ -784,7 +794,7 @@ theorem lowEquivalentSliceOnCoreCheckWithRegsByLinks_eq (ctx : LabelingContext)
 -- observable state at `(c, L)`:
 --
 --   shared   : objects, irqHandlers, objectIndex,
---              scheduler.domainSchedule, machine.memory
+--              scheduler.domainSchedule, machine.memory, serviceRegistry
 --   core `c` : scheduler.{runQueue, current, activeDomain,
 --              domainTimeRemaining, domainScheduleIndex}OnCore c,
 --              machine.regsOnCore c
@@ -801,7 +811,7 @@ theorem lowEquivalentSliceOnCoreCheckWithRegsByLinks_eq (ctx : LabelingContext)
 -- proven here.
 
 /-- SM8.A.4 (headline): **the per-core observable state at `(c, L)` reads the
-five shared state components and core `c`'s six slots — and nothing else.**
+six shared state components and core `c`'s six slots — and nothing else.**
 
 Every hypothesis below names either a shared component or core `c`; no other
 core appears.  The `…_ne` corollaries that follow instantiate it against the
@@ -813,6 +823,7 @@ theorem onCore_perCore_independence
     (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
+    (hRegistry : s₁.serviceRegistry = s₂.serviceRegistry)
     (hRQ : s₁.scheduler.runQueueOnCore c = s₂.scheduler.runQueueOnCore c)
     (hCur : s₁.scheduler.currentOnCore c = s₂.scheduler.currentOnCore c)
     (hAD : s₁.scheduler.activeDomainOnCore c = s₂.scheduler.activeDomainOnCore c)
@@ -822,12 +833,13 @@ theorem onCore_perCore_independence
     ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ := by
   refine ObservableState.ext_fragments ?_ ?_
   · simp only [onCore_sharedFragment, SharedObservableFragment.mk.injEq]
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · funext oid; simp only [projectObjects, SystemState.getObject?]; rw [hObjects]
     · funext irq; simp only [projectIrqHandlers]; rw [hIrq]
     · simp only [projectObjectIndex]; rw [hIndex]
     · simp only [projectDomainSchedule]; rw [hDomSched]
     · exact projectMemory_eq_of_memory_eq _ _ _ _ hMem
+    · exact projectServiceRegistry_eq_of_serviceRegistry_eq _ _ _ _ hRegistry
   · simp only [onCore_perCoreFragment, PerCoreObservableFragment.mk.injEq]
     exact ⟨projectRunnableOnCore_frame _ _ hRQ, projectCurrentOnCore_frame _ _ hCur,
       projectActiveDomainOnCore_frame _ _ hAD, projectDomainTimeRemainingOnCore_frame _ _ hDTR,
@@ -843,7 +855,7 @@ theorem onCore_setCurrentOnCore_ne (ctx : LabelingContext) (L : SecurityLabel)
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setCurrentOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
     simp [Ne.symm hne]
 
 /-- SM8.A.4: writing a *different* core's run queue is invisible to the
@@ -853,7 +865,7 @@ theorem onCore_setRunQueueOnCore_ne (ctx : LabelingContext) (L : SecurityLabel)
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setRunQueueOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
     simp [Ne.symm hne]
 
 /-- SM8.A.4: writing a *different* core's active domain is invisible to the
@@ -865,7 +877,7 @@ theorem onCore_setActiveDomainOnCore_ne (ctx : LabelingContext) (L : SecurityLab
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setActiveDomainOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
     simp [Ne.symm hne]
 
 /-- SM8.A.4: writing a *different* core's remaining domain ticks is invisible
@@ -875,7 +887,7 @@ theorem onCore_setDomainTimeRemainingOnCore_ne (ctx : LabelingContext) (L : Secu
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setDomainTimeRemainingOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
     simp [Ne.symm hne]
 
 /-- SM8.A.4: writing a *different* core's domain-schedule index is invisible
@@ -885,7 +897,7 @@ theorem onCore_setDomainScheduleIndexOnCore_ne (ctx : LabelingContext) (L : Secu
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setDomainScheduleIndexOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;>
     simp [Ne.symm hne]
 
 /-- SM8.A.4: writing a *different* core's register bank is invisible to the
@@ -896,7 +908,7 @@ theorem onCore_setRegsOnCore_ne (ctx : LabelingContext) (L : SecurityLabel)
     (s : SystemState) {c c' : CoreId} (hne : c ≠ c') (v : RegisterFile) :
     ObservableState.onCore ctx c L { s with machine := s.machine.setRegsOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
   exact MachineState.regsOnCore_setRegsOnCore_ne _ _ _ _ (Ne.symm hne)
 
 /-! ### Fields outside the read set: invisible on *every* core
@@ -914,7 +926,7 @@ theorem onCore_setReplenishQueueOnCore (ctx : LabelingContext) (L : SecurityLabe
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setReplenishQueueOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;> simp
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;> simp
 
 /-- SM8.A.4: the diagnostic timeout-error log is invisible on any core. -/
 theorem onCore_setLastTimeoutErrorsOnCore (ctx : LabelingContext) (L : SecurityLabel)
@@ -922,7 +934,7 @@ theorem onCore_setLastTimeoutErrorsOnCore (ctx : LabelingContext) (L : SecurityL
     ObservableState.onCore ctx c L
         { s with scheduler := s.scheduler.setLastTimeoutErrorsOnCore c' v }
       = ObservableState.onCore ctx c L s := by
-  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;> simp
+  refine onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl ?_ ?_ ?_ ?_ ?_ rfl <;> simp
 
 /-- SM8.A.4: the machine timer is invisible to every per-core observer.
 
@@ -934,7 +946,7 @@ theorem onCore_machineTimer (ctx : LabelingContext) (L : SecurityLabel)
     (s : SystemState) (c : CoreId) (t : Nat) :
     ObservableState.onCore ctx c L { s with machine := { s.machine with timer := t } }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM8.A.4: the SM7.C per-core TLB view is invisible to every per-core
 observer — a cached translation is a timing channel, kept out of the
@@ -945,7 +957,7 @@ theorem onCore_perCoreTlb (ctx : LabelingContext) (L : SecurityLabel)
     (v : Vector TlbState SeLe4n.Kernel.Concurrency.numCores) :
     ObservableState.onCore ctx c L { s with perCoreTlb := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 -- ============================================================================
 -- §6  SM8.A.5 — label monotonicity
@@ -1008,7 +1020,7 @@ theorem onCore_perCoreICache (ctx : LabelingContext) (L : SecurityLabel)
     (v : Vector ICacheState SeLe4n.Kernel.Concurrency.numCores) :
     ObservableState.onCore ctx c L { s with perCoreICache := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM8.A.4: the SM7.D cache-maintenance emission ledger is invisible on every
 core.  It is drained in the same atomic step that commits the transition, so it
@@ -1019,7 +1031,7 @@ theorem onCore_pendingIcacheMaintenance (ctx : LabelingContext) (L : SecurityLab
     (v : List SeLe4n.Kernel.Architecture.ICacheInvalidation) :
     ObservableState.onCore ctx c L { s with pendingIcacheMaintenance := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- WS-BP BP7.2: the physical-write ledger is invisible on every core. -/
 theorem onCore_pendingPhysicalWrites (ctx : LabelingContext) (L : SecurityLabel)
@@ -1027,7 +1039,7 @@ theorem onCore_pendingPhysicalWrites (ctx : LabelingContext) (L : SecurityLabel)
     (v : SeLe4n.Kernel.Architecture.PhysicalWriteLedger) (drained : Bool) :
     ObservableState.onCore ctx c L { s with physicalWrites := v, physicalWritesDrained := drained }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM8.A.4: the SM7.A/B TLB-shootdown state (per-core pending queues +
 acknowledgment vector + round generation) is invisible on every core. -/
@@ -1036,7 +1048,7 @@ theorem onCore_tlbShootdown (ctx : LabelingContext) (L : SecurityLabel)
     (v : SeLe4n.Kernel.Architecture.TlbShootdownState) :
     ObservableState.onCore ctx c L { s with tlbShootdown := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM8.C.8 / SM9.A: the mounted declassification audit trail is invisible on
 every core.
@@ -1052,7 +1064,7 @@ theorem onCore_declassificationAuditLog (ctx : LabelingContext) (L : SecurityLab
     (s : SystemState) (c : CoreId) (v : SeLe4n.Kernel.DeclassificationAuditLog) :
     ObservableState.onCore ctx c L { s with declassificationAuditLog := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM9.A.1a: the declassification audit **epoch** is invisible on every core.
 
@@ -1066,7 +1078,7 @@ theorem onCore_declassificationAuditEpoch (ctx : LabelingContext) (L : SecurityL
     (s : SystemState) (c : CoreId) (v : Nat) :
     ObservableState.onCore ctx c L { s with declassificationAuditEpoch := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM9.B.8: the mounted declassification **refusal ledger** is invisible on
 every core.
@@ -1082,7 +1094,7 @@ theorem onCore_declassificationRefusals (ctx : LabelingContext) (L : SecurityLab
     (s : SystemState) (c : CoreId) (v : SeLe4n.Kernel.RefusalLedger) :
     ObservableState.onCore ctx c L { s with declassificationRefusals := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM9.D.6: the mounted declassification **taint side table** is invisible on
 every core.
@@ -1099,7 +1111,7 @@ theorem onCore_declassificationTaint (ctx : LabelingContext) (L : SecurityLabel)
     (v : SeLe4n.Kernel.TaintTable) :
     ObservableState.onCore ctx c L { s with declassificationTaint := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- SM8.A.4: the pre-SMP scalar TLB view (the 9th `proofLayerInvariantBundle`
 conjunct's subject) is invisible on every core, completing the sweep over the
@@ -1108,7 +1120,19 @@ theorem onCore_tlb (ctx : LabelingContext) (L : SecurityLabel)
     (s : SystemState) (c : CoreId) (v : TlbState) :
     ObservableState.onCore ctx c L { s with tlb := v }
       = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+/-- SM8.A.5: service observability is monotone in the observer's clearance —
+a registration carries its endpoint's label, so this is
+`objectObservable_monotone` at that endpoint. -/
+theorem serviceObservable_monotone (ctx : LabelingContext) {L₁ L₂ : SecurityLabel}
+    (hFlow : securityFlowsTo L₁ L₂ = true) (reg : ServiceRegistration)
+    (h : serviceObservable ctx (IfObserver.ofLabel L₁) reg = true) :
+    serviceObservable ctx (IfObserver.ofLabel L₂) reg = true := by
+  unfold serviceObservable at h ⊢
+  split at h
+  · exact objectObservable_monotone ctx hFlow _ h
+  · cases h
 
 /-- SM8.A.5: memory-address observability is monotone.  Vacuous when no
 ownership model is configured (`memoryAddressObservable` is then constantly
@@ -1372,7 +1396,7 @@ the truth allows:
 * every remaining partial component is compared by value.
 
 `ObservableState.eq_of_visibilityLe_antisymm` is the completeness check on this
-list: a twelfth component with no clause here makes that proof fail. -/
+list: a thirteenth component with no clause here makes that proof fail. -/
 structure ObservableState.visibilityLe (v₁ v₂ : ObservableState) : Prop where
   objects : ∀ oid obj₁, v₁.objects oid = some obj₁ →
     ∃ obj₂, v₂.objects oid = some obj₂ ∧ objectVisibilityLe obj₁ obj₂
@@ -1386,6 +1410,7 @@ structure ObservableState.visibilityLe (v₁ v₂ : ObservableState) : Prop wher
   domainScheduleIndex : v₁.domainScheduleIndex = v₂.domainScheduleIndex
   machineRegs : ∀ rf, v₁.machineRegs = some rf → v₂.machineRegs = some rf
   memory : ∀ pa b, v₁.memory pa = some b → v₂.memory pa = some b
+  serviceRegistry : ∀ sid r, v₁.serviceRegistry sid = some r → v₂.serviceRegistry sid = some r
 
 theorem ObservableState.visibilityLe_refl (v : ObservableState) : v.visibilityLe v where
   objects := fun _ obj₁ h => ⟨obj₁, h, objectVisibilityLe_refl obj₁⟩
@@ -1399,6 +1424,7 @@ theorem ObservableState.visibilityLe_refl (v : ObservableState) : v.visibilityLe
   domainScheduleIndex := rfl
   machineRegs := fun _ h => h
   memory := fun _ _ h => h
+  serviceRegistry := fun _ _ h => h
 
 theorem ObservableState.visibilityLe_trans {v₁ v₂ v₃ : ObservableState}
     (h₁ : v₁.visibilityLe v₂) (h₂ : v₂.visibilityLe v₃) : v₁.visibilityLe v₃ where
@@ -1417,6 +1443,7 @@ theorem ObservableState.visibilityLe_trans {v₁ v₂ v₃ : ObservableState}
   domainScheduleIndex := h₁.domainScheduleIndex.trans h₂.domainScheduleIndex
   machineRegs := fun rf h => h₂.machineRegs rf (h₁.machineRegs rf h)
   memory := fun pa b h => h₂.memory pa b (h₁.memory pa b h)
+  serviceRegistry := fun sid r h => h₂.serviceRegistry sid r (h₁.serviceRegistry sid r h)
 
 /-- SM8.A.5: the membership consequence of the `runnable` sublist clause — the
 form most consumers want, derived so the stronger clause costs nothing. -/
@@ -1473,7 +1500,7 @@ equal *lookups* rather than equal slot maps — a `UniqueSlotMap` is a hash tabl
 and two tables with the same contents may differ in probe order.
 
 Every other component is a conclusion, and that is the point.  The proof
-discharges one goal per `ObservableState` field, so a twelfth component with
+discharges one goal per `ObservableState` field, so a thirteenth component with
 no clause in `visibilityLe` leaves a goal nothing can close — the same
 compile-error discipline `ObservableState.ofFragments_eta` applies to the field
 partition.  It is also the statement that fails for the pre-v0.33.4 definition:
@@ -1493,14 +1520,16 @@ theorem ObservableState.eq_of_visibilityLe_antisymm {v₁ v₂ : ObservableState
   have hRegs : v₁.machineRegs = v₂.machineRegs := eq_of_option_imp h₁.machineRegs h₂.machineRegs
   have hMemory : v₁.memory = v₂.memory :=
     funext fun pa => eq_of_option_imp (h₁.memory pa) (h₂.memory pa)
+  have hRegistry : v₁.serviceRegistry = v₂.serviceRegistry :=
+    funext fun sid => eq_of_option_imp (h₁.serviceRegistry sid) (h₂.serviceRegistry sid)
   have hDomain := h₁.activeDomain
   have hRemaining := h₁.domainTimeRemaining
   have hSchedule := h₁.domainSchedule
   have hIndex := h₁.domainScheduleIndex
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _⟩ := v₁
-  obtain ⟨_, _, _, _, _, _, _, _, _, _, _⟩ := v₂
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _⟩ := v₁
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _⟩ := v₂
   simp only [ObservableState.mk.injEq]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> assumption
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> assumption
 
 /-- SM8.A.5 (headline): **the per-core observable state is monotone in the
 observer's clearance.**  On any fixed core, an observer whose clearance
@@ -1512,7 +1541,7 @@ scheduler slots, the label selects entities). -/
 theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : SecurityLabel}
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) :
     (ObservableState.onCore ctx c L₁ s).visibilityLe (ObservableState.onCore ctx c L₂ s) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- objects: visibility widens, and the projected *content* widens only by
     -- CNode slot un-redaction (`projectKernelObject_visibilityLe_monotone`)
     intro oid obj₁ hGet
@@ -1586,6 +1615,17 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
     by_cases hObs : memoryAddressObservable ctx (IfObserver.ofLabel L₁) pa = true
     · simpa [memoryAddressObservable_monotone ctx hFlow pa hObs, hObs] using hm
     · simp [hObs] at hm
+  · -- serviceRegistry: exact — both clearances return the same registration
+    -- once its endpoint is observable at all
+    intro sid r hr
+    simp only [onCore_serviceRegistry, projectServiceRegistry] at hr ⊢
+    cases hLook : s.serviceRegistry[sid]? with
+    | none => rw [hLook] at hr; simp at hr
+    | some reg =>
+      rw [hLook] at hr
+      by_cases hObs : serviceObservable ctx (IfObserver.ofLabel L₁) reg = true
+      · simpa [serviceObservable_monotone ctx hFlow reg hObs, hObs] using hr
+      · simp [hObs] at hr
 
 /-- SM8.A.5 (the `objects` component, exactly): off the CNode arm, an object
 visible at the narrower clearance projects to the **same value** at the wider

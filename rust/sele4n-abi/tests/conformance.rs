@@ -341,20 +341,19 @@ fn xval_012_service_register() {
 /// RUST-XVAL-013: Service revoke register layout.
 #[test]
 fn xval_013_service_revoke() {
-    let args = service::ServiceRevokeArgs {
-        target_service: ServiceId::from(42u64),
-    };
-    let encoded = args.encode();
+    // The revoke reads no message register: the kernel removes the
+    // registration the invoked endpoint records.
     let req = SyscallRequest {
         cap_addr: CPtr::from(1300u64),
-        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
-        msg_regs: [encoded[0], 0, 0, 0],
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceRevoke,
     };
     verify_regs(
         &req,
         &[
-            (2, 42, "x2=targetService"),
+            (0, 1300, "x0=CPtr"),
+            (1, 0, "x1=MessageInfo(empty)"),
             (6, 12, "x7=SyscallId::ServiceRevoke"),
         ],
     );
@@ -2333,9 +2332,8 @@ fn return_shape_value_returning_surface() {
 
 /// WS-RA RA.D.4: the wrapper signatures agree with the shape table —
 /// badge-shaped syscalls return `Badge`, the word-shaped query returns
-/// the **typed** `ServiceId` its word carries (PR #866 round-2 review:
-/// `service_revoke` takes a `ServiceId`, so the query's result composes
-/// into it without an untyped detour), message-shaped wrappers return
+/// the **typed** `ServiceId` its word carries (PR #866 round-2 review),
+/// message-shaped wrappers return
 /// `(Badge, SyscallResponse)`.  A wrapper whose signature drifts from
 /// the table stops compiling here.
 #[test]
@@ -2629,7 +2627,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
         &mut buf,
     );
     assert_clears("service_register", SyscallId::ServiceRegister);
-    let _ = sele4n_sys::service::service_revoke(cap, ServiceId::from(1u64));
+    let _ = sele4n_sys::service::service_revoke(cap);
     assert_clears("service_revoke", SyscallId::ServiceRevoke);
     let _ = sele4n_sys::service::service_query(cap);
     assert_clears("service_query", SyscallId::ServiceQuery);

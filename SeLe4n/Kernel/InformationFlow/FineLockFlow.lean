@@ -1336,8 +1336,7 @@ def writeRulesWitnessContext : LabelingContext :=
     threadLabelOf := fun tid =>
       if tid = (⟨0⟩ : SeLe4n.ThreadId) then SecurityLabel.kernelTrusted
       else SecurityLabel.publicLabel
-    endpointLabelOf := fun _ => SecurityLabel.publicLabel
-    serviceLabelOf := fun _ => SecurityLabel.publicLabel }
+    endpointLabelOf := fun _ => SecurityLabel.publicLabel }
 
 /-- SM8.D.4: the witness context is **not** the degenerate all-public labelling.
 

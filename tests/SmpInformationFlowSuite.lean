@@ -321,6 +321,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @vspaceLookup_confinedToCore
 #check @registerService_confinedToCore
 #check @registerServiceChecked_confinedToCore
+#check @revokeService_confinedToCore
+#check @revokeServiceChecked_confinedToCore
+#check @serviceQueryStaged_confinedToCore
 #check @nonInterference_perCore_chooseThread
 #check @nonInterference_perCore_endpointSendDual
 #check @nonInterference_perCore_cspaceMint
@@ -351,6 +354,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @nonInterference_perCore_timerTick
 #check @nonInterference_perCore_syscallDecodeError
 #check @nonInterference_perCore_registerServiceChecked
+#check @nonInterference_perCore_revokeServiceChecked
+#check @nonInterference_perCore_serviceQueryChecked
 #check @nonInterference_perCore_syscallDispatch
 #check @nonInterference_perCore_endpointCallWithDonation
 #check @nonInterference_perCore_endpointReplyWithReversion
@@ -2237,6 +2242,7 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hIrq : s₁.irqHandlers = s₂.irqHandlers) (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
+    (hRegistry : s₁.serviceRegistry = s₂.serviceRegistry)
     (hRQ : s₁.scheduler.runQueueOnCore c = s₂.scheduler.runQueueOnCore c)
     (hCur : s₁.scheduler.currentOnCore c = s₂.scheduler.currentOnCore c)
     (hAD : s₁.scheduler.activeDomainOnCore c = s₂.scheduler.activeDomainOnCore c)
@@ -2244,7 +2250,7 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hDSI : s₁.scheduler.domainScheduleIndexOnCore c = s₂.scheduler.domainScheduleIndexOnCore c)
     (hRegs : s₁.machine.regsOnCore c = s₂.machine.regsOnCore c) :
     ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ :=
-  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem
+  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem hRegistry
     hRQ hCur hAD hDTR hDSI hRegs
 
 -- SM8.A.4: a write to a different core's current slot is invisible.
@@ -2993,7 +2999,6 @@ private def cnRoot : SeLe4n.ObjId := ⟨1000⟩
 private def vsRoot : SeLe4n.ObjId := ⟨1001⟩
 private def lowEndpoint : SeLe4n.ObjId := ⟨1002⟩
 private def highEndpoint : SeLe4n.ObjId := ⟨1003⟩
-private def highService : ServiceId := ⟨1005⟩
 private def lowIrq : SeLe4n.Irq := ⟨11⟩
 private def highIrq : SeLe4n.Irq := ⟨12⟩
 private def lowCurrent : SeLe4n.ThreadId := ⟨1010⟩
@@ -3040,8 +3045,8 @@ private def unownedPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40002000
 private def lowDomain : SeLe4n.DomainId := ⟨1⟩
 private def highDomain : SeLe4n.DomainId := ⟨2⟩
 
-/-- The suite's labeling context: the high endpoint, the two high threads (and
-their backing objects) and the high service carry `kernelTrusted`; everything
+/-- The suite's labeling context: the high endpoint and the two high threads (and
+their backing objects) carry `kernelTrusted`; everything
 else carries `publicLabel`.
 
 Deliberately **not** `defaultLabelingContext`, under which every observability
@@ -3058,8 +3063,7 @@ private def probeLabeling : LabelingContext :=
       if tid = highCurrent then highLabel
       else if tid = highQueued then highLabel
       else lowLabel
-    endpointLabelOf := fun oid => if oid = highEndpoint then highLabel else lowLabel
-    serviceLabelOf := fun sid => if sid = highService then highLabel else lowLabel }
+    endpointLabelOf := fun oid => if oid = highEndpoint then highLabel else lowLabel }
 
 /-- `probeLabeling` **with a memory-ownership model configured**.
 
@@ -3240,8 +3244,7 @@ private def runFixtureChecks : IO Unit := do
   assertBool "the probe labeling genuinely separates the two clearances"
     (decide (securityFlowsTo (probeLabeling.threadLabelOf highCurrent) lowLabel = false ∧
              securityFlowsTo (probeLabeling.threadLabelOf lowCurrent) lowLabel = true ∧
-             securityFlowsTo (probeLabeling.objectLabelOf highEndpoint) lowLabel = false ∧
-             securityFlowsTo (probeLabeling.serviceLabelOf highService) lowLabel = false))
+             securityFlowsTo (probeLabeling.objectLabelOf highEndpoint) lowLabel = false))
   assertBool "low entities are observable to the low observer, high ones are not"
     (decide (objectObservable probeLabeling lowObserver lowEndpoint = true ∧
              objectObservable probeLabeling lowObserver highEndpoint = false ∧
@@ -4083,7 +4086,7 @@ private theorem remoteCoreWrite_confined :
 private theorem remoteCoreWrite_sharedUnchanged :
     sharedViewUnchanged niLabeling niLowObserver niState remoteCoreWriteState :=
   sharedViewUnchanged_of_state_frames niLabeling niLowObserver
-    (fun _ _ => rfl) rfl rfl rfl rfl
+    (fun _ _ => rfl) rfl rfl rfl rfl rfl
 
 /-- Plan Theorem 3.3.1 instantiated at each of the three bystander cores. -/
 private theorem remoteCoreWrite_invisible_on_c0 :
@@ -4793,7 +4796,7 @@ so the gate's only remaining input is whether a subject exists. -/
 private def niGenericCtx : GenericLabelingContext :=
   { policy := { canFlow := fun _ _ => true }
     objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
-    endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ }
+    endpointDomainOf := fun _ => ⟨0⟩ }
 
 private def niEpPolicy : EndpointFlowPolicy := { endpointPolicy := fun _ => none }
 
@@ -5283,21 +5286,21 @@ private def runLeakageBoundChecks : IO Unit := do
 
 /-- §4.6  Per-core coverage of the operation taxonomy (SM8.B.3 / SM8.B.5). -/
 private def runPerCoreCoverageChecks : IO Unit := do
-  IO.println "--- §4.6 per-core coverage of the 34 kernel operations ---"
-  assertBool "34 distinct per-core theorem names, one per KernelOperation"
+  IO.println "--- §4.6 per-core coverage of the 36 kernel operations ---"
+  assertBool "36 distinct per-core theorem names, one per KernelOperation"
     (decide (([ kernelOperationPerCoreNiTheorem .chooseThread
               , kernelOperationPerCoreNiTheorem .endpointSendDual
               , kernelOperationPerCoreNiTheorem .handleInterrupt ]).length = 3) &&
      decide (kernelOperationPerCoreNiTheorem .chooseThread
         ≠ kernelOperationPerCoreNiTheorem .endpointSendDual))
-  assertBool "30 of the 34 operations DERIVE their confinement; exactly 4 do not"
+  assertBool "32 of the 36 operations DERIVE their confinement; exactly 4 do not"
     (decide (perCoreConfinementDerived .endpointSendDual = true) &&
      decide (perCoreConfinementDerived .timerTick = true) &&
      decide (perCoreConfinementDerived .syscallDispatchHigh = false) &&
      decide (perCoreConfinementDerived .handleInterrupt = false) &&
      decide (perCoreConfinementDerived .endpointCallWithDonationHigh = false) &&
      decide (perCoreConfinementDerived .endpointReplyWithReversionHigh = false))
-  assertBool "the taxonomy count is 34 (single-core authority)"
+  assertBool "the taxonomy count is 36 (single-core authority)"
     (have _h : (List.length
         [KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
          .cspaceRevoke, .retypeFromUntyped,
@@ -5310,9 +5313,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
          .storeTcbIpcStateAndMessageHigh, .storeTcbQueueLinksHigh,
          .cspaceMutateHigh, .handleYield, .timerTick,
          .syscallDecodeError, .syscallDispatchHigh,
-         .registerServiceChecked,
+         .registerServiceChecked, .revokeServiceChecked, .serviceQueryChecked,
          .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
-         .handleInterrupt]) = 34 := kernelOperation_count
+         .handleInterrupt]) = 36 := kernelOperation_count
      true)
 
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
@@ -5634,8 +5637,7 @@ private def declassContext : GenericLabelingContext :=
       if tid = highCurrent then declassSecret
       else if tid = lowCurrent then declassMiddle
       else declassPublic
-    endpointDomainOf := fun oid => if oid = highEndpoint then declassSecret else declassPublic
-    serviceDomainOf := fun _ => declassPublic }
+    endpointDomainOf := fun oid => if oid = highEndpoint then declassSecret else declassPublic }
 
 /-- Authorizes each hop of `2 → 1 → 0` and **not** the composition `2 → 0`. -/
 private def launderingDeclPolicy : DeclassificationPolicy :=
@@ -6506,8 +6508,7 @@ private def legacyPairDeclPolicy : DeclassificationPolicy :=
 private def legacyPairLabeling : LabelingContext :=
   { objectLabelOf := fun _ => legacyDstLabel
     threadLabelOf := fun _ => legacySrcLabel
-    endpointLabelOf := fun _ => legacyDstLabel
-    serviceLabelOf := fun _ => legacyDstLabel }
+    endpointLabelOf := fun _ => legacyDstLabel }
 
 private def runFaithfulLegacyLiftChecks : IO Unit := do
   IO.println "--- §6.15 the faithful lift of the legacy lattice ---"
@@ -8312,7 +8313,7 @@ private def runPhaseSurfaceChecks : IO Unit := do
     (decide ((KernelOperation.all.filter perCoreConfinementDerived).length
       + (KernelOperation.all.filter (fun op => !perCoreConfinementDerived op)).length
       = KernelOperation.all.length) &&
-     decide (KernelOperation.all.length = 34))
+     decide (KernelOperation.all.length = 36))
   -- LOAD-BEARING NEGATIVE for the enumeration itself: `all` is checked against
   -- the *type*, so a constructor omitted from it cannot pass unnoticed — which
   -- is what the thirty-five-element literals it replaced could not say.
@@ -11763,8 +11764,7 @@ private def flowLabeling (clientL epL serverL : SecurityLabel) : LabelingContext
       else highLabel
     threadLabelOf := fun t =>
       if t = flowClient then clientL else if t = flowServer then serverL else highLabel
-    endpointLabelOf := fun oid => if oid = flowEp then epL else highLabel
-    serviceLabelOf := fun _ => highLabel }
+    endpointLabelOf := fun oid => if oid = flowEp then epL else highLabel }
 
 /-- Both gates pass: `client(low) ⊑ ep(low)` on the way in, `ep(low) ⊑ server(high)`
 when the server blocked. -/

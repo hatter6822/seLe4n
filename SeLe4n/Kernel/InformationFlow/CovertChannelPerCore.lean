@@ -1675,7 +1675,7 @@ theorem endpointFlowCheckAtCore_is_not_constant :
         ≠ endpointFlowCheckAtCore ctx epPolicy endpointId st₂ c := by
   refine ⟨{ policy := { canFlow := fun _ _ => true }
             objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
-            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+            endpointDomainOf := fun _ => ⟨0⟩ },
           { endpointPolicy := fun _ => none }, ⟨0⟩,
           { (default : SystemState) with scheduler :=
               (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some ⟨1⟩) },
@@ -1710,7 +1710,7 @@ theorem endpointPolicyRestricted_perCore_is_necessary :
         ¬ endpointPolicyRestricted_perCore ctx.policy epPolicy := by
   refine ⟨{ policy := { canFlow := fun _ _ => false }
             objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
-            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+            endpointDomainOf := fun _ => ⟨0⟩ },
           { endpointPolicy := fun _ => some { canFlow := fun _ _ => true } },
           ⟨0⟩, ⟨0⟩, ⟨0⟩, rfl, rfl, ?_⟩
   intro hRestricted

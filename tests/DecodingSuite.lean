@@ -511,15 +511,6 @@ private def sad025ak4b_serviceRegisterBoundsRejected : IO Unit := do
   expect "SAD-025-AK4B e boundary valid"
     (decodeServiceRegisterArgs stubOk).isOk
 
-/-- SAD-026: decodeServiceRevokeArgs — valid and insufficient. -/
-private def sad026_serviceRevoke : IO Unit := do
-  let stub := mkStub #[⟨7⟩]
-  let result := decodeServiceRevokeArgs stub
-  expect "SAD-026a serviceRevoke ok" result.isOk
-  let stubEmpty := mkStub #[]
-  let resultEmpty := decodeServiceRevokeArgs stubEmpty
-  expect "SAD-026b serviceRevoke empty err" (!resultEmpty.isOk)
-
 -- Zero-register edge case ------------------------------------------------------
 
 /-- SAD-027: All no-arg decode functions succeed with empty registers. -/
@@ -839,7 +830,6 @@ private def runSyscallArgDecodeTests : IO Unit := do
   sad024_serviceRegister
   sad025_serviceRegisterInsufficient
   sad025ak4b_serviceRegisterBoundsRejected
-  sad026_serviceRevoke
   -- Edge cases
   sad027_noArgDecoders
   -- Security-relevant validation

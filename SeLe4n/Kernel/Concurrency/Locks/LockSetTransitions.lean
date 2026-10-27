@@ -4184,11 +4184,11 @@ def lockSet_serviceRegister (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
-`revokeService sid` erases the registration from `serviceRegistry` and
-clears its code on the endpoint its capability names
-(`clearEndpointServiceCode`, a read-modify-write of that endpoint), so the
-footprint is the caller TCB, its CNode, that endpoint in **write** mode and
-the state-level lock that serialises the registry. -/
+`revokeServiceByRecordedCode epId` reads the registration the invoked endpoint
+records, erases it from `serviceRegistry` and clears its code on that endpoint
+(`clearEndpointServiceCode`, a read-modify-write of it), so the footprint is
+the caller TCB, its CNode, the invoked endpoint in **write** mode and the
+state-level lock that serialises the registry. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList

@@ -916,9 +916,10 @@ structure ServiceRegisterArgs where
   deriving Repr, DecidableEq
 
 /-- Per-syscall argument structure for `serviceRevoke`.
-    Register mapping: x2=serviceId. -/
+    No message registers: the revoke removes the registration the invoked
+    endpoint records (`revokeServiceByRecordedCode`), so the endpoint comes
+    from the capability target and the caller names no service. -/
 structure ServiceRevokeArgs where
-  targetService : ServiceId
   deriving Repr, DecidableEq
 
 /-- Per-syscall argument structure for `serviceQuery`.
@@ -971,13 +972,6 @@ def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
            maxResponseSize := r3.val
            requiresGrant  := r4.val == 1 }
 
-/-- Decode service revoke arguments from message registers.
-    Requires 1 message register (serviceId). -/
-def decodeServiceRevokeArgs (decoded : SyscallDecodeResult)
-    : Except KernelError ServiceRevokeArgs := do
-  let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { targetService := ⟨r0.val⟩ }
-
 -- ============================================================================
 -- WS-Q1-D: Service encode functions
 -- ============================================================================
@@ -987,11 +981,6 @@ def decodeServiceRevokeArgs (decoded : SyscallDecodeResult)
 @[inline] def encodeServiceRegisterArgs (args : ServiceRegisterArgs) : Array RegValue :=
   #[⟨args.interfaceId.toNat⟩, ⟨args.methodCount⟩, ⟨args.maxMessageSize⟩,
     ⟨args.maxResponseSize⟩, ⟨if args.requiresGrant then 1 else 0⟩]
-
-/-- Encode service revoke arguments into message registers.
-    Inverse of `decodeServiceRevokeArgs`. -/
-@[inline] def encodeServiceRevokeArgs (args : ServiceRevokeArgs) : Array RegValue :=
-  #[⟨args.targetService.toNat⟩]
 
 -- ============================================================================
 -- WS-Q1-D: Service error-exclusivity theorems
@@ -1051,23 +1040,6 @@ theorem decodeServiceRegisterArgs_error_of_invalid_grant
   have hMrsFalse : ¬ d.msgRegs[3].val > serviceMaxMessageSize := Nat.not_lt.mpr hMrs
   simp [hMcFalse, hMmsFalse, hMrsFalse, hGrant]
 
-/-- Service revoke decode fails iff fewer than 1 message register. -/
-theorem decodeServiceRevokeArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeServiceRevokeArgs d = .error e) ↔ d.msgRegs.size < 1 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 1
-    · exact hlt
-    · exfalso
-      simp only [decodeServiceRevokeArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeServiceRevokeArgs, bind, Except.bind]
-    rw [requireMsgReg_unfold_err _ _ (by omega)]
-
 -- ============================================================================
 -- WS-Q1-D: Service round-trip theorems
 -- ============================================================================
@@ -1089,11 +1061,6 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
         InterfaceId.ofNat, InterfaceId.toNat]
   cases rg <;>
     simp [hMcFalse, hMmsFalse, hMrsFalse]
-
-/-- Round-trip: encoding then decoding ServiceRevokeArgs recovers the original. -/
-theorem decodeServiceRevokeArgs_roundtrip (args : ServiceRevokeArgs) :
-    decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args := by
-  rcases args with ⟨s⟩; rfl
 
 -- ============================================================================
 -- V2-I: Notification and ReplyRecv argument structures
@@ -1425,7 +1392,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       args.maxMessageSize ≤ serviceMaxMessageSize →
       args.maxResponseSize ≤ serviceMaxMessageSize →
       decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
-    (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) ∧
     (∀ args, args.badge.valid →
       decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
@@ -1442,7 +1408,6 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
    fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,
    fun args hMc hMms hMrs => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs,
-   decodeServiceRevokeArgs_roundtrip,
    fun args h => decodeNotificationSignalArgs_roundtrip args h,
    decodeNotificationWaitArgs_roundtrip,
    decodeReplyRecvArgs_roundtrip,
@@ -2122,23 +2087,6 @@ theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Reg
     (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
     decodeVSpaceUnmapArgs decoded maxASID = decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) maxASID := by
   unfold decodeVSpaceUnmapArgs decodeVSpaceUnmapArgsBy
-  rw [h]
-  simp only [requireMsgReg_map_readReg]
-  generalize msgRegOfFile layout regs = g
-  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
-
-@[inline] def decodeServiceRevokeArgsBy (get : MsgRegReader)
-    : Except KernelError ServiceRevokeArgs := do
-  let r0 ← get 0
-  pure { targetService := ⟨r0.toNat⟩ }
-
-theorem decodeServiceRevokeArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
-    (decoded : SyscallDecodeResult)
-    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
-    decodeServiceRevokeArgs decoded = decodeServiceRevokeArgsBy (msgRegOfFile layout regs) := by
-  unfold decodeServiceRevokeArgs decodeServiceRevokeArgsBy
   rw [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g
