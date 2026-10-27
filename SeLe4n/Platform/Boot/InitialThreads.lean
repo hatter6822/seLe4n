@@ -575,6 +575,40 @@ theorem bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle
   proofLayerInvariantBundle_of_bootLinkedShape ist
     (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
 
+/-- WS-ZA ZA5.4 part 36: **the state the started boot installs satisfies the
+untyped memory invariant.**  Every capability is a configured one at free index
+0 (`bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero`), no untyped
+records a child and none is named from two slots
+(`bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved`,
+`…_ok_untypedCapUnique`); the starts write no capability slot and no untyped,
+and the linking writes derivation links and the tree alone. -/
+theorem bootFromPlatformCheckedStartedFor_untypedMemoryInvariant
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
+    untypedMemoryInvariant ist.state := by
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  have hSole := startInitialThreads_untypedsSole _ _ _ hStart
+    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,
+      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩
+  have hIdx : ∀ r c, started.state.slotCapAt r = some c → c.freeIndex = 0 :=
+    startInitialThreads_induct (fun i => ∀ r c, i.state.slotCapAt r = some c → c.freeIndex = 0)
+      (fun i tid _ hP r c hc => by
+        have hc' : (startInitialThreadOnCore i.state tid).slotCapAt r = some c := hc
+        exact hP r c ((startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid i.hAllTables.1.1 r
+          (by rw [hc']; exact Option.some_ne_none _)).symm.trans hc'))
+      _ _ _ hStart (bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero cores config base hBase)
+  have hA := linkBootCapabilities_agree config started
+  have hUt : (linkBootCapabilities config started).state.getUntyped? = started.state.getUntyped? :=
+    hA.getUntyped?
+  have hBack : ∀ {r u}, SystemState.untypedCapAt (linkBootCapabilities config started).state.slotCapAt
+      (linkBootCapabilities config started).state.getUntyped? r u →
+      SystemState.untypedCapAt started.state.slotCapAt started.state.getUntyped? r u :=
+    fun {r _} ⟨c, hc, ht, hu⟩ => ⟨c, (hA.slotCapAt r).symm.trans hc, ht, hUt ▸ hu⟩
+  exact untypedMemoryInvariant_of_pristine
+    (fun r c hc => hIdx r c ((hA.slotCapAt r).symm.trans hc))
+    (fun u U hU => hSole.2 u U (hUt ▸ hU))
+    (fun u r r' hr hr' => hSole.1 u r r' (hBack hr) (hBack hr'))
+
 /-- **WS-BP BP7.11**: the end-to-end bridge for the started boot — the bundle of
 the state it installs, and the frozen bundle of its freeze. -/
 theorem bootToRuntime_invariantBridge_started
