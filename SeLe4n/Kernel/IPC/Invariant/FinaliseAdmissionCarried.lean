@@ -945,4 +945,150 @@ theorem lenderEndable_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
   rw [kt.2.2.1]
   exact Lk.reply _ r hRl (hK _ r hRl ⟨hcw, fun a _ e => absurd e (hN a)⟩)
 
+-- ============================================================================
+-- §6  The two frames across one write
+-- ============================================================================
+
+/-- **A thread update writes nothing of another kind**: an object that is no
+thread is kept. -/
+theorem updateTcb_keeps_nonTcb (st : SystemState) (w : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) {k : SeLe4n.ObjId} {o : KernelObject}
+    (hk : st.objects[k]? = some o) (hno : ∀ t, o ≠ .tcb t) :
+    (st.updateTcb w f).objects[k]? = some o := by
+  by_cases hkw : w.toObjId = k
+  · subst hkw
+    have hN : st.getTcb? w = none := by
+      cases hT : st.getTcb? w with
+      | none => rfl
+      | some t => rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT] at hk; cases hk; exact absurd rfl (hno t)
+    rw [SystemState.updateTcb_eq_self_of_none hN]; exact hk
+  · rw [SystemState.updateTcb_objects_ne st w f k hkw hInv]; exact hk
+
+/-- **A thread update keeps both frames**, when it keeps, of a thread other
+than `x`, what the cancel frame reads, and of every thread its binding codes. -/
+theorem CancelFrame.updateTcb (st : SystemState) (w x : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt)
+    (hf : w ≠ x → ∀ t, st.getTcb? w = some t → TCB.cancelKeptBy (f t) t ∧
+      (f t).ipcObjectCode = t.ipcObjectCode ∧ (f t).ipcStateCode = t.ipcStateCode) :
+    CancelFrame st (st.updateTcb w f) x := by
+  refine ⟨fun v t hv ht => ?_, fun v t' hv ht' => ?_, fun k r hk hn _ => ?_⟩
+  · by_cases hvw : v = w
+    · subst hvw
+      rw [SystemState.updateTcb_getTcb?_self st v f hInv, ht]
+      exact ⟨f t, rfl, (hf hv t ht).1⟩
+    · rw [SystemState.updateTcb_getTcb?_ne st w f hInv v (SeLe4n.Kernel.threadId_toObjId_ne hvw)]
+      exact ⟨t, ht, .refl t⟩
+  · by_cases hvw : v = w
+    · subst hvw
+      rw [SystemState.updateTcb_getTcb?_self st v f hInv] at ht'
+      cases ht : st.getTcb? v with
+      | none => rw [ht] at ht'; cases ht'
+      | some t =>
+        rw [ht] at ht'; cases ht'
+        obtain ⟨-, e1, e2⟩ := hf hv t ht
+        exact ⟨t, rfl, e1, e2⟩
+    · rw [SystemState.updateTcb_getTcb?_ne st w f hInv v (SeLe4n.Kernel.threadId_toObjId_ne hvw)] at ht'
+      exact ⟨t', ht', rfl, rfl⟩
+  · unfold SystemState.getObject? at hk ⊢
+    exact ⟨r, updateTcb_keeps_nonTcb st w f hInv hk (fun _ e => KernelObject.noConfusion e), rfl, hn⟩
+
+theorem LoanKept.updateTcb (st : SystemState) (w : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (K : SeLe4n.ObjId → Reply → Prop)
+    (hb : ∀ t, st.getTcb? w = some t → (f t).scBindingScCode = t.scBindingScCode ∧
+      (f t).scBindingOwnerCode = t.scBindingOwnerCode) :
+    LoanKept st (st.updateTcb w f) K := by
+  refine ⟨fun v t ht => ?_, fun c sc hc => ?_, fun k r hk _ => ?_⟩
+  · by_cases hvw : v = w
+    · subst hvw
+      rw [SystemState.updateTcb_getTcb?_self st v f hInv, ht]
+      exact ⟨f t, rfl, hb t ht⟩
+    · rw [SystemState.updateTcb_getTcb?_ne st w f hInv v (SeLe4n.Kernel.threadId_toObjId_ne hvw)]
+      exact ⟨t, ht, rfl, rfl⟩
+  · rw [SystemState.getSchedContext?_eq_some_iff] at hc ⊢
+    exact updateTcb_keeps_nonTcb st w f hInv hc (fun _ e => KernelObject.noConfusion e)
+  · unfold SystemState.getObject? at hk ⊢
+    exact updateTcb_keeps_nonTcb st w f hInv hk (fun _ e => KernelObject.noConfusion e)
+
+/-- **An object write that keeps every thread, reply and scheduling context**:
+its function is the identity, or maps an object of none of those kinds to one
+of none of them. -/
+def keepsThreadReplyContext (f : KernelObject → KernelObject) : Prop :=
+  ∀ o, f o = o ∨ ((∀ t, o ≠ .tcb t) ∧ (∀ t, f o ≠ .tcb t) ∧ (∀ r, o ≠ .reply r) ∧
+    (∀ r, f o ≠ .reply r) ∧ (∀ sc, o ≠ .schedContext sc) ∧ (∀ sc, f o ≠ .schedContext sc))
+
+/-- An endpoint or notification rewrite keeps every thread, reply and
+scheduling context. -/
+theorem keepsThreadReplyContext.of_kind {f : KernelObject → KernelObject}
+    (hE : ∀ o, (∃ e, o = .endpoint e) ∨ (∃ n, o = .notification n) ∨ f o = o)
+    (hK : ∀ o, (∃ e, o = .endpoint e) ∨ (∃ n, o = .notification n) →
+      (∃ e, f o = .endpoint e) ∨ (∃ n, f o = .notification n)) :
+    keepsThreadReplyContext f := by
+  intro o
+  rcases hE o with h | h | h
+  · refine Or.inr ?_
+    obtain ⟨e, rfl⟩ := h
+    rcases hK _ (Or.inl ⟨e, rfl⟩) with ⟨e', h'⟩ | ⟨n', h'⟩ <;> rw [h'] <;>
+      exact ⟨fun _ c => KernelObject.noConfusion c, fun _ c => KernelObject.noConfusion c,
+        fun _ c => KernelObject.noConfusion c, fun _ c => KernelObject.noConfusion c,
+        fun _ c => KernelObject.noConfusion c, fun _ c => KernelObject.noConfusion c⟩
+  · refine Or.inr ?_
+    obtain ⟨n, rfl⟩ := h
+    rcases hK _ (Or.inr ⟨n, rfl⟩) with ⟨e', h'⟩ | ⟨n', h'⟩ <;> rw [h'] <;>
+      exact ⟨fun _ c => KernelObject.noConfusion c, fun _ c => KernelObject.noConfusion c,
+        fun _ c => KernelObject.noConfusion c, fun _ c => KernelObject.noConfusion c,
+        fun _ c => KernelObject.noConfusion c, fun _ c => KernelObject.noConfusion c⟩
+  · exact Or.inl h
+
+/-- **Such a write keeps every thread, reply and scheduling context**, read at
+any key. -/
+theorem modifyObject_keepsKinds (st : SystemState) (k : SeLe4n.ObjId)
+    {f : KernelObject → KernelObject} (hInv : st.objects.invExt) (hf : keepsThreadReplyContext f)
+    (y : SeLe4n.ObjId) {o : KernelObject} (hKind : (∃ t, o = .tcb t) ∨ (∃ r, o = .reply r) ∨
+      (∃ sc, o = .schedContext sc)) :
+    (st.modifyObject k f).objects[y]? = some o ↔ st.objects[y]? = some o := by
+  rw [modifyObject_objects_getElem hInv y]
+  split
+  · rename_i hky
+    subst hky
+    cases hO : st.objects[k]? with
+    | none => simp
+    | some o0 =>
+      simp only [Option.map_some, Option.some.injEq]
+      rcases hf o0 with e | ⟨h1, h2, h3, h4, h5, h6⟩
+      · rw [e]
+      · constructor
+        · intro e
+          rcases hKind with ⟨t, rfl⟩ | ⟨r, rfl⟩ | ⟨sc, rfl⟩
+          · exact absurd e (h2 t)
+          · exact absurd e (h4 r)
+          · exact absurd e (h6 sc)
+        · intro e
+          rcases hKind with ⟨t, rfl⟩ | ⟨r, rfl⟩ | ⟨sc, rfl⟩
+          · exact absurd e (h1 t)
+          · exact absurd e (h3 r)
+          · exact absurd e (h5 sc)
+  · exact Iff.rfl
+
+theorem CancelFrame.modifyObject (st : SystemState) (k : SeLe4n.ObjId) (x : SeLe4n.ThreadId)
+    {f : KernelObject → KernelObject} (hInv : st.objects.invExt) (hf : keepsThreadReplyContext f) :
+    CancelFrame st (st.modifyObject k f) x := by
+  have hT : ∀ v t, (st.modifyObject k f).getTcb? v = some t ↔ st.getTcb? v = some t := fun v t => by
+    rw [SystemState.getTcb?_eq_some_iff, SystemState.getTcb?_eq_some_iff]
+    exact modifyObject_keepsKinds st k hInv hf _ (Or.inl ⟨t, rfl⟩)
+  refine ⟨fun v t _ ht => ⟨t, (hT v t).mpr ht, .refl t⟩,
+    fun v t _ ht => ⟨t, (hT v t).mp ht, rfl, rfl⟩, fun y r hk hn _ => ⟨r, ?_, rfl, hn⟩⟩
+  unfold SystemState.getObject? at hk ⊢
+  exact (modifyObject_keepsKinds st k hInv hf _ (Or.inr (Or.inl ⟨r, rfl⟩))).mpr hk
+
+theorem LoanKept.modifyObject (st : SystemState) (k : SeLe4n.ObjId)
+    {f : KernelObject → KernelObject} (hInv : st.objects.invExt) (hf : keepsThreadReplyContext f)
+    (K : SeLe4n.ObjId → Reply → Prop) : LoanKept st (st.modifyObject k f) K := by
+  refine ⟨fun v t ht => ⟨t, ?_, rfl, rfl⟩, fun c sc hc => ?_, fun y r hk _ => ?_⟩
+  · rw [SystemState.getTcb?_eq_some_iff] at ht ⊢
+    exact (modifyObject_keepsKinds st k hInv hf _ (Or.inl ⟨t, rfl⟩)).mpr ht
+  · rw [SystemState.getSchedContext?_eq_some_iff] at hc ⊢
+    exact (modifyObject_keepsKinds st k hInv hf _ (Or.inr (Or.inr ⟨sc, rfl⟩))).mpr hc
+  · unfold SystemState.getObject? at hk ⊢
+    exact (modifyObject_keepsKinds st k hInv hf _ (Or.inr (Or.inl ⟨r, rfl⟩))).mpr hk
+
 end SeLe4n.Kernel
