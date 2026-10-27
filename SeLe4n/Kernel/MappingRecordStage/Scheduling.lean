@@ -8,7 +8,6 @@
 -/
 
 import SeLe4n.Kernel.MappingRecordStage.SchedulingPoint
-import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
 
 /-! # The thread-lifecycle and scheduling arms keep the mappings recorded
 
@@ -26,19 +25,12 @@ open SeLe4n.Model
 open SeLe4n.Model.SystemState (MappingStage)
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-/-- **A finalisation-shaped write keeps the mappings recorded**: every object it
-writes is a thread, an endpoint, a notification, a scheduling context or a
-reply, kept of its kind and its slots, and none of those kinds carries a mapping
-fact. -/
+/-- **A finalisation-shaped write keeps the mappings recorded**
+(`FinaliseFrameAny.liveMappingsRecorded`): it keeps every root, every frame and
+every slot's capability. -/
 theorem MappingStage.of_finaliseFrameAny {st st' : SystemState}
     (h : st.objects.invExt → FinaliseFrameAny st st') : MappingStage st st' :=
-  MappingStage.of_mappingFactsKept (fun hI => (h hI).invExt) fun hI oid => by
-    rcases (h hI).write oid with e | ⟨pre, post, hp, hq, ht, hs, hw⟩
-    · exact .inl e
-    · refine .inr ⟨pre, post, hp, hq, ht, by rw [ht]; exact hw.not_cnode, hs, ?_⟩
-      rcases hw with (hw | hw | hw | hw) | hw <;>
-        cases pre <;> cases post <;>
-        simp_all [KernelObject.objectType, KernelObject.mappingView]
+  fun hI => ⟨(h hI).invExt, (h hI).liveMappingsRecorded⟩
 
 theorem MappingStage.of_finaliseFrame {st st' : SystemState}
     (h : st.objects.invExt → FinaliseFrame st st') : MappingStage st st' :=
@@ -746,5 +738,131 @@ theorem timerTickBudgetOnCore_mappingStage {st : SystemState} {c : CoreId}
         exact MappingStage.rewriteObject_schedContext hSc _
           (SystemState.rewriteAdmissible_schedContext hSc _)
     · cases h
+
+theorem idleFallbackOnCore_mappingStage (st : SystemState) (c : CoreId) :
+    MappingStage st (idleFallbackOnCore st c) :=
+  MappingStage.of_objectsAgreeOffRunLinks (idleFallbackOnCore_objects_invExt st c)
+    (idleFallbackOnCore_objectsAgreeOffRunLinks st c)
+
+/-- The reschedule: the register save, then the idle fallback or the dequeue,
+restore and current-slot write of the chosen thread, then the flag clear. -/
+theorem scheduleEffectiveOnCore_mappingStage {st st' : SystemState} {c : CoreId}
+    (h : scheduleEffectiveOnCore st c = .ok st') : MappingStage st st' := by
+  unfold scheduleEffectiveOnCore at h
+  split at h
+  · cases h
+  · rw [Except.ok.injEq] at h; subst h
+    exact ((saveOutgoingContextOnCore_mappingStage st c).trans
+      (idleFallbackOnCore_mappingStage _ c)).trans (clearReschedulePendingOnCore_mappingStage _ c)
+  · split at h
+    · split at h
+      · rw [Except.ok.injEq] at h; subst h
+        rename_i tid _ _ _ _ _
+        exact ((saveOutgoingContextOnCore_mappingStage st c).trans
+          (runRemoveOnCore_mappingStage _ c tid)).trans
+          (MappingStage.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _))
+      · cases h
+    · cases h
+
+/-- The yield's charge: the slice end, or the budget forfeit with the key hook. -/
+theorem yieldChargeOnCore_mappingStage {st st' : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} (h : yieldChargeOnCore st c tid = .ok st') : MappingStage st st' := by
+  unfold yieldChargeOnCore at h
+  split at h
+  · cases h
+  · rename_i tcb hTcb _
+    split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact sliceExpireOnCore_mappingStage st c tid tcb hTcb
+    all_goals
+      split at h
+      · rename_i sc hSc _
+        rw [Except.ok.injEq] at h; subst h
+        exact (spendBudgetOnCore_mappingStage st c tid _ sc hSc _).trans
+          (markKeyChangeFor_mappingStage _ _ _)
+      · cases h
+
+/-- **The yield keeps the mappings recorded**: the charge and the reschedule. -/
+theorem yieldOnCore_mappingStage {st st' : SystemState} {c : CoreId}
+    (h : yieldOnCore st c = .ok st') : MappingStage st st' := by
+  unfold yieldOnCore at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · rename_i hC
+      exact (yieldChargeOnCore_mappingStage hC).trans (scheduleEffectiveOnCore_mappingStage h)
+
+/-- One due replenishment: the refill and the wake. -/
+theorem processOneReplenishmentOnCore_mappingStage (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) :
+    MappingStage st (processOneReplenishmentOnCore st c scId now).1 := by
+  have hRefill : MappingStage st (refillSchedContext st scId now) := by
+    unfold refillSchedContext; exact updateSchedContext_mappingStage _ _ _
+  unfold processOneReplenishmentOnCore
+  dsimp only
+  split
+  · split
+    · exact hRefill
+    · exact hRefill.trans (wakeThread_mappingStage _ _ c)
+  · exact hRefill
+
+/-- The replenishment drain: the replenish-queue pop, then a fold of refills. -/
+theorem processReplenishmentsDueOnCore_mappingStage (st : SystemState) (c : CoreId) (now : Nat) :
+    MappingStage st (processReplenishmentsDueOnCore st c now).1 := by
+  unfold processReplenishmentsDueOnCore
+  dsimp only
+  suffices H : ∀ (l : List SeLe4n.SchedContextId)
+      (acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool),
+      MappingStage st acc.1 → MappingStage st (l.foldl (fun acc scId =>
+        let r := processOneReplenishmentOnCore acc.1 c scId now
+        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1 from
+    H _ _ (MappingStage.of_objects_eq rfl)
+  intro l
+  induction l with
+  | nil => intro acc h; exact h
+  | cons x xs ih =>
+    intro acc h
+    simp only [List.foldl_cons]
+    exact ih _ (h.trans (processOneReplenishmentOnCore_mappingStage _ c x now))
+
+/-- **The timer tick keeps the mappings recorded**: the diagnostic clear, the
+replenishment drain, the charge, and the reschedule or the scheduling point. -/
+theorem timerTickOnCore_mappingStage {st : SystemState} {c : CoreId}
+    {r : SystemState × List (CoreId × Concurrency.SgiKind)}
+    (h : timerTickOnCore st c = .ok r) : MappingStage st r.1 := by
+  unfold timerTickOnCore at h
+  dsimp only at h
+  have hP : MappingStage st (processReplenishmentsDueOnCore
+      { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] } c st.machine.timer).1 :=
+    (MappingStage.of_objects_eq (st := st)
+      (st' := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }) rfl).trans
+      (processReplenishmentsDueOnCore_mappingStage _ c st.machine.timer)
+  split at h
+  · split at h
+    · split at h
+      · cases h
+      · rename_i hH
+        rw [Except.ok.injEq] at h; subst h
+        exact hP.trans (handleRescheduleSgiOnCore_mappingStage hH)
+    · rw [Except.ok.injEq] at h; subst h; exact hP
+  · split at h
+    · cases h
+    · rename_i st2 pre sgis hC
+      obtain ⟨_, _, hB⟩ := timerTickChargeCurrentOnCore_ok hC
+      have hC2 := hP.trans (timerTickBudgetOnCore_mappingStage hB)
+      split at h
+      · split at h
+        · cases h
+        · rename_i hS
+          rw [Except.ok.injEq] at h; subst h
+          exact hC2.trans (scheduleEffectiveOnCore_mappingStage hS)
+      · split at h
+        · split at h
+          · cases h
+          · rename_i hH
+            rw [Except.ok.injEq] at h; subst h
+            exact hC2.trans (handleRescheduleSgiOnCore_mappingStage hH)
+        · rw [Except.ok.injEq] at h; subst h; exact hC2
 
 end SeLe4n.Kernel
