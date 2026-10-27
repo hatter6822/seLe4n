@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "za/finalise-admission-fuel",
-      "commit_sha": "0982caec06f3fbf1b0daf402d1b295b696008067",
-      "tree_sha": "6bbcb6b2f55766fc2f3fbd38bb4b7293b95f254d",
-      "committed_at_utc": "2026-10-27T07:52:26+00:00"
+      "branch": "za/zombie-fuel",
+      "commit_sha": "da008be1201b12eb84eb10525ba7dc25618e51b9",
+      "tree_sha": "114c355277a39631302e8c9c27d5d506b8b44e8d",
+      "committed_at_utc": "2026-10-27T09:34:52+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "02e5921d011a9bc513bcebd63a31d6e02d8ac8f37ae15ec6d48866b952451811"
+    "source_digest": "9d035a498bd41f893fdf71f1acb51322fc1b5146055bbe1a57d56ddd2a4f86ac"
   },
   "summary": {
-    "module_count": 530,
-    "declaration_count": 29692
+    "module_count": 531,
+    "declaration_count": 29741
   },
   "readme_sync": {
-    "version": "0.36.147",
+    "version": "0.36.148",
     "lean_toolchain": "v4.28.0",
-    "production_files": 460,
-    "production_loc": 515477,
+    "production_files": 461,
+    "production_loc": 516486,
     "test_files": 70,
-    "test_loc": 87264,
-    "proved_theorem_lemma_decls": 18849,
+    "test_loc": 87258,
+    "proved_theorem_lemma_decls": 18892,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -38892,7 +38892,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.FrameFinalise",
       "path": "SeLe4n/Kernel/Capability/FrameFinalise.lean",
-      "declaration_count": 117,
+      "declaration_count": 110,
       "declarations": [
         {
           "kind": "def",
@@ -40129,27 +40129,9 @@
         },
         {
           "kind": "def",
-          "name": "zombieFinaliseAt",
-          "full_name": "SeLe4n.Kernel.zombieFinaliseAt",
-          "line": 1347,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.finaliseFinalObject",
-            "SeLe4n.Kernel.slotRetireTarget",
-            "SeLe4n.Kernel.zombieDeleteSlot",
-            "SeLe4n.Kernel.zombieThreadFinalised",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getObject?",
-            "SeLe4n.ObjId",
-            "SeLe4n.ObjId.ofNat",
-            "SeLe4n.Slot"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "zombieObjectSlots",
           "full_name": "SeLe4n.Kernel.zombieObjectSlots",
-          "line": 1358,
+          "line": 1345,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -40158,33 +40140,14 @@
         },
         {
           "kind": "def",
-          "name": "zombieEmptyObject",
-          "full_name": "SeLe4n.Kernel.zombieEmptyObject",
-          "line": 1367,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.zombieDeleteSlot",
-            "SeLe4n.Kernel.zombieNextSlot",
-            "SeLe4n.Kernel.zombieSkip",
-            "SeLe4n.Kernel.zombieSlotClass",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getObject?",
-            "SeLe4n.ObjId",
-            "SeLe4n.Slot",
-            "SeLe4n.Slot.ofNat"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "zombieDescend",
           "full_name": "SeLe4n.Kernel.zombieDescend",
-          "line": 1387,
+          "line": 1366,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.finaliseFinalObject",
             "SeLe4n.Kernel.slotRetireTarget",
             "SeLe4n.Kernel.zombieDeleteSlot",
-            "SeLe4n.Kernel.zombieEmptyObject",
-            "SeLe4n.Kernel.zombieFinaliseAt",
             "SeLe4n.Kernel.zombieObjectSlots",
             "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.SystemState",
@@ -40198,7 +40161,7 @@
           "kind": "def",
           "name": "zombieDepth",
           "full_name": "SeLe4n.Kernel.zombieDepth",
-          "line": 1402,
+          "line": 1395,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Model.SystemState"
@@ -40208,7 +40171,7 @@
           "kind": "def",
           "name": "zombieFuel",
           "full_name": "SeLe4n.Kernel.zombieFuel",
-          "line": 1410,
+          "line": 1404,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Model.SystemState"
@@ -40218,29 +40181,17 @@
           "kind": "def",
           "name": "zombiePasses",
           "full_name": "SeLe4n.Kernel.zombiePasses",
-          "line": 1420,
+          "line": 1415,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.slotRetireTarget",
             "SeLe4n.Kernel.zombieDepth",
             "SeLe4n.Kernel.zombieDescend",
+            "SeLe4n.Kernel.zombieObjectSlots",
             "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
-            "SeLe4n.Slot"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "zombieDeleteAtFuel",
-          "full_name": "SeLe4n.Kernel.zombieDeleteAtFuel",
-          "line": 1443,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.zombieDeleteSlot",
-            "SeLe4n.Kernel.zombiePasses",
-            "SeLe4n.Kernel.zombieSlotClass",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ObjId",
+            "SeLe4n.ObjId.ofNat",
             "SeLe4n.Slot"
           ]
         },
@@ -40248,13 +40199,14 @@
           "kind": "def",
           "name": "zombieDeleteAt",
           "full_name": "SeLe4n.Kernel.zombieDeleteAt",
-          "line": 1455,
+          "line": 1434,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.cspaceDeleteAdmitted",
             "SeLe4n.Kernel.cspaceDeletePerformAt",
-            "SeLe4n.Kernel.zombieDeleteAtFuel",
+            "SeLe4n.Kernel.zombieDeleteSlot",
             "SeLe4n.Kernel.zombieFuel",
+            "SeLe4n.Kernel.zombiePasses",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
             "SeLe4n.Slot"
@@ -40264,7 +40216,7 @@
           "kind": "def",
           "name": "cspaceDeleteSlotZombie",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie",
-          "line": 1463,
+          "line": 1444,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40278,7 +40230,7 @@
           "kind": "theorem",
           "name": "zombieDeleteSlot_chain",
           "full_name": "SeLe4n.Kernel.zombieDeleteSlot_chain",
-          "line": 1471,
+          "line": 1452,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinalisingDeleteChain",
@@ -40291,58 +40243,31 @@
         },
         {
           "kind": "theorem",
-          "name": "zombieFinaliseAt_chain",
-          "full_name": "SeLe4n.Kernel.zombieFinaliseAt_chain",
-          "line": 1481,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.FinalisingDeleteChain",
-            "SeLe4n.Kernel.slotRetireTarget",
-            "SeLe4n.Kernel.zombieDeleteSlot_chain",
-            "SeLe4n.Kernel.zombieFinaliseAt",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ObjId",
-            "SeLe4n.Slot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "zombieEmptyObject_chain",
-          "full_name": "SeLe4n.Kernel.zombieEmptyObject_chain",
-          "line": 1494,
+          "name": "zombieDescend_chain",
+          "full_name": "SeLe4n.Kernel.zombieDescend_chain",
+          "line": 1461,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinalisingDeleteChain",
             "SeLe4n.Kernel.FinalisingDeleteChain.trans",
-            "SeLe4n.Kernel.zombieDeleteSlot_chain",
-            "SeLe4n.Kernel.zombieEmptyObject",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ObjId",
-            "SeLe4n.Slot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "zombieDescend_chain",
-          "full_name": "SeLe4n.Kernel.zombieDescend_chain",
-          "line": 1512,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.FinalisingDeleteChain",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.zombieDeleteSlot",
             "SeLe4n.Kernel.zombieDeleteSlot_chain",
             "SeLe4n.Kernel.zombieDescend",
-            "SeLe4n.Kernel.zombieEmptyObject_chain",
-            "SeLe4n.Kernel.zombieFinaliseAt_chain",
+            "SeLe4n.Kernel.zombieObjectSlots",
+            "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
-            "SeLe4n.Slot"
+            "SeLe4n.ObjId.ofNat",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.ofNat"
           ]
         },
         {
           "kind": "inductive",
           "name": "ZombieRun",
           "full_name": "SeLe4n.Kernel.ZombieRun",
-          "line": 1529,
+          "line": 1508,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinalisingDeleteChain",
@@ -40353,7 +40278,7 @@
           "kind": "theorem",
           "name": "ZombieRun.append",
           "full_name": "SeLe4n.Kernel.ZombieRun.append",
-          "line": 1535,
+          "line": 1514,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinalisingDeleteChain",
@@ -40365,7 +40290,7 @@
           "kind": "theorem",
           "name": "ZombieRun.chain",
           "full_name": "SeLe4n.Kernel.ZombieRun.chain",
-          "line": 1542,
+          "line": 1521,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinalisingDeleteChain",
@@ -40378,17 +40303,20 @@
           "kind": "theorem",
           "name": "zombiePasses_run",
           "full_name": "SeLe4n.Kernel.zombiePasses_run",
-          "line": 1549,
+          "line": 1528,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.ZombieRun",
+            "SeLe4n.Kernel.slotRetireTarget",
             "SeLe4n.Kernel.zombieDepth",
             "SeLe4n.Kernel.zombieDescend",
             "SeLe4n.Kernel.zombieDescend_chain",
+            "SeLe4n.Kernel.zombieObjectSlots",
             "SeLe4n.Kernel.zombiePasses",
             "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
+            "SeLe4n.ObjId.ofNat",
             "SeLe4n.Slot"
           ]
         },
@@ -40396,14 +40324,14 @@
           "kind": "theorem",
           "name": "zombieDeleteAt_cases",
           "full_name": "SeLe4n.Kernel.zombieDeleteAt_cases",
-          "line": 1566,
+          "line": 1546,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.ZombieRun",
             "SeLe4n.Kernel.cspaceDeleteAdmitted",
             "SeLe4n.Kernel.cspaceDeletePerformAt",
             "SeLe4n.Kernel.zombieDeleteAt",
-            "SeLe4n.Kernel.zombieDeleteAtFuel",
+            "SeLe4n.Kernel.zombieDeleteSlot",
             "SeLe4n.Kernel.zombieFuel",
             "SeLe4n.Kernel.zombiePasses",
             "SeLe4n.Kernel.zombiePasses_run",
@@ -40414,48 +40342,16 @@
         },
         {
           "kind": "theorem",
-          "name": "zombieDeleteAtFuel_run",
-          "full_name": "SeLe4n.Kernel.zombieDeleteAtFuel_run",
-          "line": 1582,
+          "name": "zombieDeleteAt_run",
+          "full_name": "SeLe4n.Kernel.zombieDeleteAt_run",
+          "line": 1563,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.ZombieRun",
             "SeLe4n.Kernel.ZombieRun.append",
-            "SeLe4n.Kernel.zombieDeleteAtFuel",
-            "SeLe4n.Kernel.zombieDeleteSlot_chain",
-            "SeLe4n.Kernel.zombiePasses_run",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ObjId",
-            "SeLe4n.Slot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "zombieDeleteAtFuel_kept_or_deleted",
-          "full_name": "SeLe4n.Kernel.zombieDeleteAtFuel_kept_or_deleted",
-          "line": 1595,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.zombieDeleteAtFuel",
-            "SeLe4n.Kernel.zombieDeleteSlot",
-            "SeLe4n.Kernel.zombiePasses",
-            "SeLe4n.Kernel.zombieSlotClass",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ObjId",
-            "SeLe4n.Slot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "zombieDeleteAt_run",
-          "full_name": "SeLe4n.Kernel.zombieDeleteAt_run",
-          "line": 1611,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.ZombieRun",
             "SeLe4n.Kernel.cspaceDeleteSlotFinalising_of_admitted",
             "SeLe4n.Kernel.zombieDeleteAt",
-            "SeLe4n.Kernel.zombieDeleteAtFuel_run",
+            "SeLe4n.Kernel.zombieDeleteSlot_chain",
             "SeLe4n.Kernel.zombieFuel",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
@@ -40466,7 +40362,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotZombie_run",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_run",
-          "line": 1626,
+          "line": 1577,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40481,7 +40377,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotZombie_chain",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_chain",
-          "line": 1637,
+          "line": 1588,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40495,7 +40391,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotZombie_closed",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_closed",
-          "line": 1644,
+          "line": 1595,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40510,7 +40406,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotZombie_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_of_admitted",
-          "line": 1653,
+          "line": 1604,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40524,7 +40420,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotZombie_of_target_zero",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_of_target_zero",
-          "line": 1660,
+          "line": 1611,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40535,7 +40431,6 @@
             "SeLe4n.Kernel.cspaceDeleteSlotZombie",
             "SeLe4n.Kernel.slotRetireTarget",
             "SeLe4n.Kernel.zombieDeleteAt",
-            "SeLe4n.Kernel.zombieDeleteAtFuel",
             "SeLe4n.Kernel.zombieDeleteSlot",
             "SeLe4n.Kernel.zombieFuel",
             "SeLe4n.Kernel.zombiePasses",
@@ -40547,7 +40442,7 @@
           "kind": "def",
           "name": "copyThreadSpacesAfterZombie",
           "full_name": "SeLe4n.Kernel.copyThreadSpacesAfterZombie",
-          "line": 1696,
+          "line": 1645,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40555,7 +40450,6 @@
             "SeLe4n.Kernel.copyThreadSpacesPerform",
             "SeLe4n.Kernel.zombieFuel",
             "SeLe4n.Kernel.zombiePasses",
-            "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB.cspaceRootSlot",
             "SeLe4n.ValidThreadId"
@@ -40565,7 +40459,7 @@
           "kind": "def",
           "name": "copyThreadSpacesZombiePerform",
           "full_name": "SeLe4n.Kernel.copyThreadSpacesZombiePerform",
-          "line": 1709,
+          "line": 1657,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.copyThreadSpacesAfterZombie",
@@ -40582,7 +40476,7 @@
           "kind": "def",
           "name": "copyThreadSpacesZombie",
           "full_name": "SeLe4n.Kernel.copyThreadSpacesZombie",
-          "line": 1722,
+          "line": 1670,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40598,7 +40492,7 @@
           "kind": "theorem",
           "name": "copyThreadSpacesZombie_of_admitted",
           "full_name": "SeLe4n.Kernel.copyThreadSpacesZombie_of_admitted",
-          "line": 1730,
+          "line": 1678,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40613,7 +40507,7 @@
           "kind": "theorem",
           "name": "copyThreadSpacesZombie_cases",
           "full_name": "SeLe4n.Kernel.copyThreadSpacesZombie_cases",
-          "line": 1741,
+          "line": 1689,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40634,7 +40528,7 @@
           "kind": "theorem",
           "name": "copyThreadSpacesZombie_closed",
           "full_name": "SeLe4n.Kernel.copyThreadSpacesZombie_closed",
-          "line": 1767,
+          "line": 1714,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40650,12 +40544,11 @@
           "kind": "def",
           "name": "revokeFirstChildLoop",
           "full_name": "SeLe4n.Kernel.revokeFirstChildLoop",
-          "line": 1795,
+          "line": 1738,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.cspaceDeleteFinalisingAdmitted",
             "SeLe4n.Kernel.zombieDeleteAt",
-            "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.slotLinkNodeWord",
             "SeLe4n.Model.SystemState.slotLinkSlotWord",
@@ -40669,7 +40562,7 @@
           "kind": "theorem",
           "name": "revokeFirstChildLoop_chain",
           "full_name": "SeLe4n.Kernel.revokeFirstChildLoop_chain",
-          "line": 1811,
+          "line": 1752,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.FinalisingDeleteChain",
@@ -40684,7 +40577,7 @@
           "kind": "def",
           "name": "cspaceRevokeAdmitted",
           "full_name": "SeLe4n.Kernel.cspaceRevokeAdmitted",
-          "line": 1831,
+          "line": 1769,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.SystemState",
@@ -40695,7 +40588,7 @@
           "kind": "def",
           "name": "cspaceRevokePerformAt",
           "full_name": "SeLe4n.Kernel.cspaceRevokePerformAt",
-          "line": 1836,
+          "line": 1774,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.revokeFirstChildLoop",
@@ -40709,7 +40602,7 @@
           "kind": "def",
           "name": "cspaceRevokeCdtFinalising",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising",
-          "line": 1847,
+          "line": 1785,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40723,7 +40616,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_of_admitted",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_of_admitted",
-          "line": 1858,
+          "line": 1796,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40738,7 +40631,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_ok_implies_slot_occupied",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_ok_implies_slot_occupied",
-          "line": 1871,
+          "line": 1809,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40751,7 +40644,7 @@
           "kind": "theorem",
           "name": "cdtNodeIsRevocable_false_revoke_refuses",
           "full_name": "SeLe4n.Kernel.cdtNodeIsRevocable_false_revoke_refuses",
-          "line": 1884,
+          "line": 1822,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.cdtNodeIsRevocable",
@@ -40765,7 +40658,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_chain",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_chain",
-          "line": 1895,
+          "line": 1833,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40779,7 +40672,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_closed",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_closed",
-          "line": 1907,
+          "line": 1845,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -40794,7 +40687,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_ok_unmapped",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_ok_unmapped",
-          "line": 1920,
+          "line": 1858,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -45584,7 +45477,7 @@
           "kind": "theorem",
           "name": "mem_slotPageTables_iff_of_bundle",
           "full_name": "SeLe4n.Kernel.mem_slotPageTables_iff_of_bundle",
-          "line": 47,
+          "line": 44,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.capIsFinal_iff_capFinalSpec",
@@ -45602,7 +45495,7 @@
           "kind": "theorem",
           "name": "storeObjectState_cdt",
           "full_name": "SeLe4n.Kernel.storeObjectState_cdt",
-          "line": 61,
+          "line": 58,
           "called": [
             "SeLe4n.Kernel.storeObjectState",
             "SeLe4n.Kernel.storeObject_eq_storeObjectState",
@@ -45616,7 +45509,7 @@
           "kind": "theorem",
           "name": "unmapPageState_cdt",
           "full_name": "SeLe4n.Kernel.unmapPageState_cdt",
-          "line": 67,
+          "line": 64,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.mappingStore?",
@@ -45632,7 +45525,7 @@
           "kind": "theorem",
           "name": "unmapLivePagesState_cdt",
           "full_name": "SeLe4n.Kernel.unmapLivePagesState_cdt",
-          "line": 82,
+          "line": 79,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.unmapLivePagesState",
@@ -45645,7 +45538,7 @@
           "kind": "theorem",
           "name": "detachPageTablesState_cdt",
           "full_name": "SeLe4n.Kernel.detachPageTablesState_cdt",
-          "line": 91,
+          "line": 88,
           "called": [
             "SeLe4n.Kernel.detachPageTablesState",
             "SeLe4n.Kernel.storeObjectState_cdt",
@@ -45658,7 +45551,7 @@
           "kind": "theorem",
           "name": "finaliseDestroyedCapabilitiesState_cdt",
           "full_name": "SeLe4n.Kernel.finaliseDestroyedCapabilitiesState_cdt",
-          "line": 102,
+          "line": 99,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.detachPageTablesState_cdt",
@@ -45673,7 +45566,7 @@
           "kind": "theorem",
           "name": "finaliseDestroyedCapabilities_slots",
           "full_name": "SeLe4n.Kernel.finaliseDestroyedCapabilities_slots",
-          "line": 114,
+          "line": 111,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -45695,7 +45588,7 @@
           "kind": "theorem",
           "name": "finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle",
-          "line": 140,
+          "line": 137,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.capabilityInvariantBundle",
@@ -45712,7 +45605,7 @@
           "kind": "theorem",
           "name": "untypedRecordsChild_congr",
           "full_name": "SeLe4n.Kernel.untypedRecordsChild_congr",
-          "line": 170,
+          "line": 167,
           "called": [
             "SeLe4n.Kernel.untypedRecordsChild",
             "SeLe4n.Model.SystemState",
@@ -45724,7 +45617,7 @@
           "kind": "theorem",
           "name": "retireFinalObject_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.retireFinalObject_preserves_capabilityInvariantBundle",
-          "line": 180,
+          "line": 177,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.capabilityInvariantBundle",
@@ -45765,7 +45658,7 @@
           "kind": "theorem",
           "name": "objId_ofNat_succ_sub_one",
           "full_name": "SeLe4n.Kernel.objId_ofNat_succ_sub_one",
-          "line": 318,
+          "line": 315,
           "called": [
             "SeLe4n.ObjId",
             "SeLe4n.ObjId.ofNat"
@@ -45775,7 +45668,7 @@
           "kind": "theorem",
           "name": "slotRetireTarget_names",
           "full_name": "SeLe4n.Kernel.slotRetireTarget_names",
-          "line": 325,
+          "line": 322,
           "called": [
             "SeLe4n.Kernel.objId_ofNat_succ_sub_one",
             "SeLe4n.Kernel.slotRetireTarget",
@@ -45793,7 +45686,7 @@
           "kind": "theorem",
           "name": "slotRetireTarget_spec",
           "full_name": "SeLe4n.Kernel.slotRetireTarget_spec",
-          "line": 368,
+          "line": 365,
           "called": [
             "SeLe4n.Kernel.capIsFinal_iff_capFinalSpec",
             "SeLe4n.Kernel.capabilityInvariantBundle",
@@ -45811,7 +45704,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlot_slots",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlot_slots",
-          "line": 378,
+          "line": 375,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -45834,7 +45727,7 @@
           "kind": "theorem",
           "name": "finaliseFinalObject_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.finaliseFinalObject_preserves_capabilityInvariantBundle",
-          "line": 396,
+          "line": 393,
           "called": [
             "SeLe4n.Kernel.capabilityInvariantBundle",
             "SeLe4n.Kernel.capabilityInvariantBundle_of_kindPreservingUpToBindings",
@@ -45847,7 +45740,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle",
-          "line": 410,
+          "line": 407,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -45879,7 +45772,7 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle",
-          "line": 450,
+          "line": 447,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -45895,7 +45788,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle",
-          "line": 462,
+          "line": 459,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -45911,7 +45804,7 @@
           "kind": "theorem",
           "name": "filter_neither_length_add_le",
           "full_name": "SeLe4n.Kernel.filter_neither_length_add_le",
-          "line": 476,
+          "line": 473,
           "called": [],
           "private": true
         },
@@ -45919,7 +45812,7 @@
           "kind": "theorem",
           "name": "spliceEdges_length_lt_of_parent",
           "full_name": "SeLe4n.Kernel.spliceEdges_length_lt_of_parent",
-          "line": 487,
+          "line": 484,
           "called": [
             "SeLe4n.Kernel.filter_neither_length_add_le",
             "SeLe4n.Model.CapDerivationEdge",
@@ -45936,7 +45829,7 @@
           "kind": "theorem",
           "name": "spliceNode_edges_length_lt",
           "full_name": "SeLe4n.Kernel.spliceNode_edges_length_lt",
-          "line": 506,
+          "line": 503,
           "called": [
             "SeLe4n.Kernel.spliceEdges_length_lt_of_parent",
             "SeLe4n.Model.CapDerivationEdge",
@@ -45955,7 +45848,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteSlotFinalising_ok_cdt",
           "full_name": "SeLe4n.Kernel.cspaceDeleteSlotFinalising_ok_cdt",
-          "line": 525,
+          "line": 522,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -45977,7 +45870,7 @@
           "kind": "theorem",
           "name": "slotLinkAt_eq_decodeLink",
           "full_name": "SeLe4n.Kernel.slotLinkAt_eq_decodeLink",
-          "line": 538,
+          "line": 535,
           "called": [
             "SeLe4n.Model.KernelObject.linkAt_eq_decode",
             "SeLe4n.Model.LinkField",
@@ -45995,7 +45888,7 @@
           "kind": "theorem",
           "name": "spliceEdgesFrom_keeps",
           "full_name": "SeLe4n.Kernel.spliceEdgesFrom_keeps",
-          "line": 548,
+          "line": 545,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -46009,7 +45902,7 @@
           "kind": "theorem",
           "name": "spliceEdgesFrom_avoid",
           "full_name": "SeLe4n.Kernel.spliceEdgesFrom_avoid",
-          "line": 575,
+          "line": 572,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationTree.reparentEdges",
@@ -46022,7 +45915,7 @@
           "kind": "theorem",
           "name": "spliceEdgesFrom_avoid_self",
           "full_name": "SeLe4n.Kernel.spliceEdgesFrom_avoid_self",
-          "line": 601,
+          "line": 598,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isChildOf",
@@ -46037,7 +45930,7 @@
           "kind": "def",
           "name": "CdtAvoids",
           "full_name": "SeLe4n.Kernel.CdtAvoids",
-          "line": 631,
+          "line": 628,
           "called": [
             "SeLe4n.Model.CapDerivationTree",
             "SeLe4n.Model.CapDerivationTree.edges",
@@ -46048,7 +45941,7 @@
           "kind": "theorem",
           "name": "CdtAvoids.splice",
           "full_name": "SeLe4n.Kernel.CdtAvoids.splice",
-          "line": 634,
+          "line": 631,
           "called": [
             "SeLe4n.Kernel.CdtAvoids",
             "SeLe4n.Kernel.spliceEdgesFrom_avoid",
@@ -46062,7 +45955,7 @@
           "kind": "theorem",
           "name": "CdtAvoids.of_splice_self",
           "full_name": "SeLe4n.Kernel.CdtAvoids.of_splice_self",
-          "line": 641,
+          "line": 638,
           "called": [
             "SeLe4n.Kernel.CdtAvoids",
             "SeLe4n.Kernel.spliceEdgesFrom_avoid_self",
@@ -46080,7 +45973,7 @@
           "kind": "theorem",
           "name": "CdtAvoids.childless",
           "full_name": "SeLe4n.Kernel.CdtAvoids.childless",
-          "line": 651,
+          "line": 648,
           "called": [
             "SeLe4n.Kernel.CdtAvoids",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -46093,7 +45986,7 @@
           "kind": "theorem",
           "name": "mem_childrenOf_iff",
           "full_name": "SeLe4n.Kernel.mem_childrenOf_iff",
-          "line": 658,
+          "line": 655,
           "called": [
             "SeLe4n.Model.CapDerivationEdge",
             "SeLe4n.Model.CapDerivationEdge.isParentOf",
@@ -46107,7 +46000,7 @@
           "kind": "theorem",
           "name": "mem_childrenOf_splice",
           "full_name": "SeLe4n.Kernel.mem_childrenOf_splice",
-          "line": 667,
+          "line": 664,
           "called": [
             "SeLe4n.Kernel.mem_childrenOf_iff",
             "SeLe4n.Kernel.spliceEdgesFrom_keeps",
@@ -46122,7 +46015,7 @@
           "kind": "def",
           "name": "RevokeProgress",
           "full_name": "SeLe4n.Kernel.RevokeProgress",
-          "line": 678,
+          "line": 675,
           "called": [
             "SeLe4n.Kernel.CdtAvoids",
             "SeLe4n.Kernel.capabilityInvariantBundle",
@@ -46136,7 +46029,7 @@
           "kind": "theorem",
           "name": "RevokeProgress.step",
           "full_name": "SeLe4n.Kernel.RevokeProgress.step",
-          "line": 684,
+          "line": 681,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CdtAvoids",
@@ -46160,7 +46053,7 @@
           "kind": "theorem",
           "name": "RevokeProgress.finalise",
           "full_name": "SeLe4n.Kernel.RevokeProgress.finalise",
-          "line": 711,
+          "line": 708,
           "called": [
             "SeLe4n.Kernel.RevokeProgress",
             "SeLe4n.Kernel.finaliseFinalObject",
@@ -46174,7 +46067,7 @@
           "kind": "theorem",
           "name": "FinalisingDeleteChain.avoids",
           "full_name": "SeLe4n.Kernel.FinalisingDeleteChain.avoids",
-          "line": 721,
+          "line": 718,
           "called": [
             "SeLe4n.Kernel.CdtAvoids",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -46191,7 +46084,7 @@
           "kind": "theorem",
           "name": "cspaceDeleteFinalisingAdmitted_of_child",
           "full_name": "SeLe4n.Kernel.cspaceDeleteFinalisingAdmitted_of_child",
-          "line": 733,
+          "line": 730,
           "called": [
             "SeLe4n.Kernel.capabilityInvariantBundle",
             "SeLe4n.Kernel.cspaceDeleteFinalisingAdmitted",
@@ -46209,7 +46102,7 @@
           "kind": "theorem",
           "name": "zombieDeleteAt_revokeProgress",
           "full_name": "SeLe4n.Kernel.zombieDeleteAt_revokeProgress",
-          "line": 751,
+          "line": 746,
           "called": [
             "SeLe4n.Kernel.CdtAvoids",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -46220,8 +46113,6 @@
             "SeLe4n.Kernel.cspaceDeleteSlotFinalising_of_slotHolder",
             "SeLe4n.Kernel.zombieDeleteAt",
             "SeLe4n.Kernel.zombieDeleteSlot",
-            "SeLe4n.Kernel.zombieFuel",
-            "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
             "SeLe4n.Model.CapDerivationTree.edges",
             "SeLe4n.Model.SlotRef",
@@ -46234,7 +46125,7 @@
           "kind": "theorem",
           "name": "revokeFirstChildLoop_childless",
           "full_name": "SeLe4n.Kernel.revokeFirstChildLoop_childless",
-          "line": 804,
+          "line": 788,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.capabilityInvariantBundle",
@@ -46243,7 +46134,6 @@
             "SeLe4n.Kernel.revokeFirstChildLoop_chain",
             "SeLe4n.Kernel.slotLinkAt_eq_decodeLink",
             "SeLe4n.Kernel.zombieDeleteAt_revokeProgress",
-            "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
             "SeLe4n.Model.CapDerivationTree.edges",
             "SeLe4n.Model.CapDerivationTree.mentions",
@@ -46264,14 +46154,13 @@
           "kind": "theorem",
           "name": "cspaceRevokeCdtFinalising_ok_childless",
           "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_ok_childless",
-          "line": 850,
+          "line": 828,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.capabilityInvariantBundle",
             "SeLe4n.Kernel.cspaceRevokeCdtFinalising",
             "SeLe4n.Kernel.revokeFirstChildLoop_childless",
-            "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.CapDerivationTree.childrenOf",
             "SeLe4n.Model.CapDerivationTree.edges_length_le",
             "SeLe4n.Model.SystemState"
@@ -46569,6 +46458,918 @@
             "SeLe4n.Kernel.finaliseFinalObject_preserves_capabilityInvariantBundle",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ValidThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Capability.Invariant.Preservation.ZombieTermination",
+      "path": "SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean",
+      "declaration_count": 56,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "SlotsShrink",
+          "full_name": "SeLe4n.Kernel.SlotsShrink",
+          "line": 61,
+          "called": [
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "refl",
+          "full_name": "SeLe4n.Kernel.SlotsShrink.refl",
+          "line": 66,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_eq",
+          "full_name": "SeLe4n.Kernel.SlotsShrink.of_eq",
+          "line": 68,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "trans",
+          "full_name": "SeLe4n.Kernel.SlotsShrink.trans",
+          "line": 71,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "names",
+          "full_name": "SeLe4n.Kernel.SlotsShrink.names",
+          "line": 77,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "occupied",
+          "full_name": "SeLe4n.Kernel.SlotsShrink.occupied",
+          "line": 84,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capFinal",
+          "full_name": "SeLe4n.Kernel.SlotsShrink.capFinal",
+          "line": 91,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "finaliseFinalObject_slots",
+          "full_name": "SeLe4n.Kernel.finaliseFinalObject_slots",
+          "line": 102,
+          "called": [
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.finaliseFinalObject",
+            "SeLe4n.Kernel.finaliseFinalObject_frame",
+            "SeLe4n.Kernel.finaliseFinalObject_preserves_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "slotCapAt_none_of_not_admitted",
+          "full_name": "SeLe4n.Kernel.slotCapAt_none_of_not_admitted",
+          "line": 110,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.cspaceDeleteFinalisingAdmitted",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.holdsSlots",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.slotCapAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieDeleteSlot_slots",
+          "full_name": "SeLe4n.Kernel.zombieDeleteSlot_slots",
+          "line": 125,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceDeleteFinalisingPerformAt",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_of_slotHolder",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_ok",
+            "SeLe4n.Kernel.cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceDeleteSlot_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceDeleteSlot_slots",
+            "SeLe4n.Kernel.finaliseDestroyedCapabilities_slots",
+            "SeLe4n.Kernel.finaliseFinalObject_frame",
+            "SeLe4n.Kernel.retireFinalObject_slotCapAt",
+            "SeLe4n.Kernel.retireFinalisedObject",
+            "SeLe4n.Kernel.slotCapAt_none_of_not_admitted",
+            "SeLe4n.Kernel.zombieDeleteSlot",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieDeleteSlot_shrink",
+          "full_name": "SeLe4n.Kernel.zombieDeleteSlot_shrink",
+          "line": 156,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.zombieDeleteSlot",
+            "SeLe4n.Kernel.zombieDeleteSlot_slots",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cnode_slotCap_ne_none_iff",
+          "full_name": "SeLe4n.Kernel.cnode_slotCap_ne_none_iff",
+          "line": 170,
+          "called": [
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.CNode.lookup",
+            "SeLe4n.Model.CNode.slots",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.slotCap",
+            "SeLe4n.Model.SlotOccupancy.occupied",
+            "SeLe4n.Model.slotArrayGet",
+            "SeLe4n.Slot.ofNat",
+            "SeLe4n.Slot.toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieNextSlot_cnode",
+          "full_name": "SeLe4n.Kernel.zombieNextSlot_cnode",
+          "line": 181,
+          "called": [
+            "SeLe4n.Kernel.zombieNextSlot",
+            "SeLe4n.Model.CNode",
+            "SeLe4n.Model.SlotOccupancy.code_none",
+            "SeLe4n.Model.SlotOccupancy.code_some",
+            "SeLe4n.Model.SlotOccupancy.occupied"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieNextSlot_spec",
+          "full_name": "SeLe4n.Kernel.zombieNextSlot_spec",
+          "line": 233,
+          "called": [
+            "SeLe4n.Kernel.cnode_slotCap_ne_none_iff",
+            "SeLe4n.Kernel.zombieNextSlot",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.KernelObject.slotCap",
+            "SeLe4n.Slot.ofNat"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "ZombieReach",
+          "full_name": "SeLe4n.Kernel.ZombieReach",
+          "line": 281,
+          "called": [
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "zombieHolds",
+          "full_name": "SeLe4n.Kernel.zombieHolds",
+          "line": 291,
+          "called": [
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ZombieReach.of_shrink",
+          "full_name": "SeLe4n.Kernel.ZombieReach.of_shrink",
+          "line": 296,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieHolds.of_shrink",
+          "full_name": "SeLe4n.Kernel.zombieHolds.of_shrink",
+          "line": 304,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieReach_of_own_deleted",
+          "full_name": "SeLe4n.Kernel.zombieReach_of_own_deleted",
+          "line": 311,
+          "called": [
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt_of_eq",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "not_zombieReach_of_final_deleted",
+          "full_name": "SeLe4n.Kernel.not_zombieReach_of_final_deleted",
+          "line": 332,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieSkip_eq_iff",
+          "full_name": "SeLe4n.Kernel.zombieSkip_eq_iff",
+          "line": 351,
+          "called": [
+            "SeLe4n.Kernel.zombieSkip",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieHolds_iff",
+          "full_name": "SeLe4n.Kernel.zombieHolds_iff",
+          "line": 368,
+          "called": [
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieNextSlot",
+            "SeLe4n.Kernel.zombieSkip",
+            "SeLe4n.Kernel.zombieSkip_eq_iff",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objId_ofNat_val",
+          "full_name": "SeLe4n.Kernel.objId_ofNat_val",
+          "line": 390,
+          "called": [
+            "SeLe4n.ObjId",
+            "SeLe4n.ObjId.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieSlotClass_ne_zero",
+          "full_name": "SeLe4n.Kernel.zombieSlotClass_ne_zero",
+          "line": 395,
+          "called": [
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.slotRetireTarget_spec",
+            "SeLe4n.Kernel.zombieNextSlot",
+            "SeLe4n.Kernel.zombieSkip",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.ObjId.ofNat",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "slotRetireTarget_of_final",
+          "full_name": "SeLe4n.Kernel.slotRetireTarget_of_final",
+          "line": 433,
+          "called": [
+            "SeLe4n.Kernel.capIsFinal_iff_capFinalSpec",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.retirableKind",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Capability.namedObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.capIsFinal",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retirableKind_of_zombieHolds",
+          "full_name": "SeLe4n.Kernel.retirableKind_of_zombieHolds",
+          "line": 451,
+          "called": [
+            "SeLe4n.Kernel.holdsSlots_of_zombieNextSlot",
+            "SeLe4n.Kernel.retirableKind",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieHolds_iff",
+            "SeLe4n.Model.KernelObject.holdsSlots",
+            "SeLe4n.Model.KernelObject.objectType",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.getObjectType?",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieSlotClass_ne_zero_of",
+          "full_name": "SeLe4n.Kernel.zombieSlotClass_ne_zero_of",
+          "line": 463,
+          "called": [
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.objId_ofNat_val",
+            "SeLe4n.Kernel.retirableKind_of_zombieHolds",
+            "SeLe4n.Kernel.slotRetireTarget_of_final",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieHolds_iff",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "countP_lt_of_lost",
+          "full_name": "SeLe4n.Kernel.countP_lt_of_lost",
+          "line": 482,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "zombieLive",
+          "full_name": "SeLe4n.Kernel.zombieLive",
+          "line": 502,
+          "called": [
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieLive_le",
+          "full_name": "SeLe4n.Kernel.zombieLive_le",
+          "line": 507,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.zombieLive",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieLive_lt",
+          "full_name": "SeLe4n.Kernel.zombieLive_lt",
+          "line": 517,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Kernel.ZombieReach.of_shrink",
+            "SeLe4n.Kernel.countP_lt_of_lost",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieLive",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieLive_le_length",
+          "full_name": "SeLe4n.Kernel.zombieLive_le_length",
+          "line": 528,
+          "called": [
+            "SeLe4n.Kernel.zombieLive",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "zombieOccupied",
+          "full_name": "SeLe4n.Kernel.zombieOccupied",
+          "line": 538,
+          "called": [
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieOccupied_le",
+          "full_name": "SeLe4n.Kernel.zombieOccupied_le",
+          "line": 544,
+          "called": [
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieOccupied_le_of_shrink",
+          "full_name": "SeLe4n.Kernel.zombieOccupied_le_of_shrink",
+          "line": 549,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieOccupied_lt",
+          "full_name": "SeLe4n.Kernel.zombieOccupied_lt",
+          "line": 558,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.countP_lt_of_lost",
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieOccupied_pos",
+          "full_name": "SeLe4n.Kernel.zombieOccupied_pos",
+          "line": 573,
+          "called": [
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieObjectSlots_bound",
+          "full_name": "SeLe4n.Kernel.zombieObjectSlots_bound",
+          "line": 585,
+          "called": [
+            "SeLe4n.Kernel.cnode_slotCap_ne_none_iff",
+            "SeLe4n.Kernel.zombieObjectSlots",
+            "SeLe4n.Model.KernelObject.slotCap",
+            "SeLe4n.Model.SlotOccupancy.occupied_lt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.Model.TCB.spaceSlotCap",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objectKeys",
+          "full_name": "SeLe4n.Kernel.objectKeys",
+          "line": 612,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectKeys_length",
+          "full_name": "SeLe4n.Kernel.objectKeys_length",
+          "line": 616,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.RobinHood.countOccupied",
+            "SeLe4n.Kernel.objectKeys",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_objectKeys",
+          "full_name": "SeLe4n.Kernel.mem_objectKeys",
+          "line": 626,
+          "called": [
+            "SeLe4n.Kernel.RobinHood.RHTable.get_some_slot_entry",
+            "SeLe4n.Kernel.objectKeys",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getObject?",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_objectKeys_of_holds",
+          "full_name": "SeLe4n.Kernel.mem_objectKeys_of_holds",
+          "line": 636,
+          "called": [
+            "SeLe4n.Kernel.mem_objectKeys",
+            "SeLe4n.Kernel.objectKeys",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieHolds_iff",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "namesAt_unique",
+          "full_name": "SeLe4n.Kernel.namesAt_unique",
+          "line": 647,
+          "called": [
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ZombieStand",
+          "full_name": "SeLe4n.Kernel.ZombieStand",
+          "line": 657,
+          "called": [
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ZombieStand.target",
+          "full_name": "SeLe4n.Kernel.ZombieStand.target",
+          "line": 668,
+          "called": [
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Kernel.ZombieStand",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieHolds_iff",
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Kernel.zombieSlotClass_ne_zero",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.ObjId.ext",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieLive_lt_of_final_deleted",
+          "full_name": "SeLe4n.Kernel.zombieLive_lt_of_final_deleted",
+          "line": 686,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Kernel.not_zombieReach_of_final_deleted",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieLive",
+            "SeLe4n.Kernel.zombieLive_lt",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ZombieDone",
+          "full_name": "SeLe4n.Kernel.ZombieDone",
+          "line": 697,
+          "called": [
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.zombieLive",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieDescend_live",
+          "full_name": "SeLe4n.Kernel.zombieDescend_live",
+          "line": 705,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.SlotsShrink.of_eq",
+            "SeLe4n.Kernel.ZombieDone",
+            "SeLe4n.Kernel.ZombieReach",
+            "SeLe4n.Kernel.ZombieReach.of_shrink",
+            "SeLe4n.Kernel.ZombieStand",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.finaliseFinalObject",
+            "SeLe4n.Kernel.finaliseFinalObject_slots",
+            "SeLe4n.Kernel.namesAt_unique",
+            "SeLe4n.Kernel.objId_ofNat_val",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.zombieDeleteSlot",
+            "SeLe4n.Kernel.zombieDeleteSlot_shrink",
+            "SeLe4n.Kernel.zombieDeleteSlot_slots",
+            "SeLe4n.Kernel.zombieDescend",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieLive_le",
+            "SeLe4n.Kernel.zombieLive_lt",
+            "SeLe4n.Kernel.zombieLive_lt_of_final_deleted",
+            "SeLe4n.Kernel.zombieObjectSlots",
+            "SeLe4n.Kernel.zombieObjectSlots_bound",
+            "SeLe4n.Kernel.zombieOccupied",
+            "SeLe4n.Kernel.zombieOccupied_le",
+            "SeLe4n.Kernel.zombieOccupied_le_of_shrink",
+            "SeLe4n.Kernel.zombieOccupied_lt",
+            "SeLe4n.Kernel.zombieOccupied_pos",
+            "SeLe4n.Kernel.zombieReach_of_own_deleted",
+            "SeLe4n.Kernel.zombieSkip",
+            "SeLe4n.Kernel.zombieSkip_eq_iff",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Kernel.zombieSlotClass_ne_zero",
+            "SeLe4n.Kernel.zombieSlotClass_ne_zero_of",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.namesAt_of_eq",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombiePasses_live",
+          "full_name": "SeLe4n.Kernel.zombiePasses_live",
+          "line": 838,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.ZombieStand",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.objId_ofNat_val",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.zombieDepth",
+            "SeLe4n.Kernel.zombieDescend_live",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieLive",
+            "SeLe4n.Kernel.zombieObjectSlots",
+            "SeLe4n.Kernel.zombieObjectSlots_bound",
+            "SeLe4n.Kernel.zombieOccupied_le",
+            "SeLe4n.Kernel.zombiePasses",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Kernel.zombieSlotClass_ne_zero",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ObjId.ofNat",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombiePasses_end",
+          "full_name": "SeLe4n.Kernel.zombiePasses_end",
+          "line": 868,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.mem_objectKeys_of_holds",
+            "SeLe4n.Kernel.objectKeys",
+            "SeLe4n.Kernel.objectKeys_length",
+            "SeLe4n.Kernel.zombieFuel",
+            "SeLe4n.Kernel.zombieLive_le_length",
+            "SeLe4n.Kernel.zombiePasses",
+            "SeLe4n.Kernel.zombiePasses_live",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_length_le",
+          "full_name": "SeLe4n.Kernel.nodup_length_le",
+          "line": 886,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "ZombiePath",
+          "full_name": "SeLe4n.Kernel.ZombiePath",
+          "line": 904,
+          "called": [
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombiePath_witness_keep",
+          "full_name": "SeLe4n.Kernel.zombiePath_witness_keep",
+          "line": 914,
+          "called": [
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.namesAt_of_eq",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombiePath_fresh",
+          "full_name": "SeLe4n.Kernel.zombiePath_fresh",
+          "line": 934,
+          "called": [
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.capFinalSpec",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieDescend_depth_free",
+          "full_name": "SeLe4n.Kernel.zombieDescend_depth_free",
+          "line": 953,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.SlotsShrink",
+            "SeLe4n.Kernel.SlotsShrink.of_eq",
+            "SeLe4n.Kernel.ZombiePath",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.finaliseFinalObject",
+            "SeLe4n.Kernel.finaliseFinalObject_slots",
+            "SeLe4n.Kernel.namesAt_unique",
+            "SeLe4n.Kernel.nodup_length_le",
+            "SeLe4n.Kernel.objId_ofNat_val",
+            "SeLe4n.Kernel.slotRetireTarget",
+            "SeLe4n.Kernel.zombieDeleteSlot",
+            "SeLe4n.Kernel.zombieDeleteSlot_shrink",
+            "SeLe4n.Kernel.zombieDeleteSlot_slots",
+            "SeLe4n.Kernel.zombieDescend",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieHolds_iff",
+            "SeLe4n.Kernel.zombiePath_fresh",
+            "SeLe4n.Kernel.zombiePath_witness_keep",
+            "SeLe4n.Kernel.zombieSkip",
+            "SeLe4n.Kernel.zombieSkip_eq_iff",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Kernel.zombieSlotClass_ne_zero",
+            "SeLe4n.Model.SlotRef",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.namesAt",
+            "SeLe4n.Model.SystemState.namesAt_of_eq",
+            "SeLe4n.Model.SystemState.slotCapAt",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot",
+            "SeLe4n.Slot.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zombieDescend_depth_never_binds",
+          "full_name": "SeLe4n.Kernel.zombieDescend_depth_never_binds",
+          "line": 1062,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.mem_objectKeys_of_holds",
+            "SeLe4n.Kernel.objectKeys",
+            "SeLe4n.Kernel.objectKeys_length",
+            "SeLe4n.Kernel.zombieDepth",
+            "SeLe4n.Kernel.zombieDescend",
+            "SeLe4n.Kernel.zombieDescend_depth_free",
+            "SeLe4n.Kernel.zombieHolds",
+            "SeLe4n.Kernel.zombieHolds_iff",
+            "SeLe4n.Kernel.zombieSlotClass",
+            "SeLe4n.Kernel.zombieSlotClass_ne_zero",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
           ]
         }
       ]
@@ -414641,20 +415442,20 @@
         },
         {
           "kind": "def",
-          "name": "runZombieFuelExhaustedChecks",
-          "full_name": "SeLe4n.Testing.runZombieFuelExhaustedChecks",
-          "line": 4503,
+          "name": "runZombieDeleteCompletesChecks",
+          "full_name": "SeLe4n.Testing.runZombieDeleteCompletesChecks",
+          "line": 4504,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.copyThreadSpacesZombie",
             "SeLe4n.Kernel.validateThreadIdArg",
             "SeLe4n.Kernel.zombieDeleteAt",
-            "SeLe4n.Kernel.zombieDeleteAtFuel",
             "SeLe4n.Kernel.zombieSlotClass",
             "SeLe4n.Model.AccessRightSet",
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.CNode.ofList",
+            "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -414665,6 +415466,7 @@
             "SeLe4n.Model.TCB.spaceCellsOf",
             "SeLe4n.Model.TCB.vspaceRoot",
             "SeLe4n.ObjId",
+            "SeLe4n.Slot",
             "SeLe4n.Slot.ofNat",
             "SeLe4n.Testing.BootstrapBuilder.buildChecked",
             "SeLe4n.Testing.BootstrapBuilder.empty",
@@ -414679,7 +415481,7 @@
           "kind": "def",
           "name": "runUntypedRetireSpliceChecks",
           "full_name": "SeLe4n.Testing.runUntypedRetireSpliceChecks",
-          "line": 4604,
+          "line": 4598,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -414705,7 +415507,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 4651,
+          "line": 4645,
           "called": [
             "SeLe4n.Testing.runAC1BudgetFailClosedChecks",
             "SeLe4n.Testing.runAC1CdtTrackingChecks",
@@ -414734,7 +415536,7 @@
             "SeLe4n.Testing.runWSRR8CSpaceSlotRangeChecks",
             "SeLe4n.Testing.runX2RuntimeInvariantTests",
             "SeLe4n.Testing.runZ8SchedContextNegativeChecks",
-            "SeLe4n.Testing.runZombieFuelExhaustedChecks"
+            "SeLe4n.Testing.runZombieDeleteCompletesChecks"
           ]
         }
       ]

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.147` (`lakefile.toml`) |
+| **Package version** | `0.36.148` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 515,477 across 460 Lean files |
-| **Test LoC** | 87,264 across 70 Lean test suites |
-| **Proved declarations** | 18,849 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 516,486 across 461 Lean files |
+| **Test LoC** | 87,258 across 70 Lean test suites |
+| **Proved declarations** | 18,892 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5299,17 +5299,40 @@ object first, as seL4's `finaliseSlot` loop does: `zombieDeleteAt`
 (`cspaceDeleteSlotZombie`) and every revoke child (`revokeFirstChildLoop`) run.
 A delete that finalises and retires nothing keeps the in-place fast path.
 Otherwise the loop runs passes (`zombiePasses`), each starting again from the
-slot: it descends through the capabilities to the deepest object that holds
-any (`zombieDescend`, `zombieSlotClass`), and there either deletes that
-object's slots through the finalising delete (`zombieEmptyObject`) or
-finalises a thread it reaches (`zombieFinaliseAt`, `finaliseFinalObject`), whose
-space slots a later pass deletes.  The slot keeps its capability while the
-passes run, as seL4's Zombie does, and nothing is carried from one pass to the
-next, so a preemption point fits between passes; the slot is deleted last.
-**The bound:** `zombieDeleteAt_run` states at most `zombieFuel st + 1` passes,
-where `zombieFuel st = 3 · objects.size + 2` (each pass but the last empties an
-object or finalises a thread, each at most once), each pass a
-`FinalisingDeleteChain`, which gains a `finalise` step.  **The order:** a CNode
+slot (`zombieDescend`, `zombieSlotClass`): a pass finalises a thread it stands
+on that is not yet finalised (`finaliseFinalObject`, seL4's `finaliseCap`),
+deletes the object's next slot through the finalising delete when that slot is
+a leaf and looks at the object again, and goes down when the slot's capability
+names an object that still holds capabilities.  A pass ends when the object it
+stands on holds none, or with a thread the finalisation refuses deleted from
+the slot it stands on.  The way down is bounded by one more than the store
+holds (`zombieDepth`), and the bound never binds on a state the capability
+bundle holds in (`zombieDescend_depth_never_binds`): a pass goes down only
+through a final capability, so the slot naming each object it reaches is the
+one it came through and it visits no object twice (`zombiePath_fresh`).  The
+slot keeps
+its capability while the passes run, as seL4's Zombie does, and nothing is
+carried from one pass to the next, so a preemption point fits between passes;
+the slot is deleted last.  **The bound:** `zombieDeleteAt_run` states at most
+`zombieFuel st + 1` passes, where `zombieFuel st = objects.size + 1`, each pass
+a `FinalisingDeleteChain`, which gains a `finalise` step.  **The fuel
+suffices** (`v0.36.148`, plan row 35): on every state the capability bundle
+holds in, the passes end with the slot naming nothing that holds a capability
+(`zombiePasses_end`, `Capability/Invariant/Preservation/ZombieTermination.lean`).
+The measure is the number of objects the passes can still reach that hold a
+capability (`zombieLive`): the object the slot names and every object a slot of
+a reached object names, the loop's own slot passed over (`ZombieReach`), each
+counted once over the store's keys, so a CNode holding a capability to itself or
+to one above it needs no acyclicity premise.  Every step only empties slots
+(`SlotsShrink`), so the measure never rises; each pass lowers it
+(`zombieDescend_live`): it ends on an object that held a capability and holds
+none, or deletes the slot of a final capability, after which no slot names its
+object (`not_zombieReach_of_final_deleted`).  An object stays reachable while
+its own slots are emptied (`zombieReach_of_own_deleted`), and a pass empties at
+most the occupied slots of the object it stands on (`zombieOccupied`).  The
+measure is at most the store's size (`objectKeys_length`), so the root delete
+always deletes the slot: the out-of-fuel branch is gone from the delete, the
+revoke loop and set-space.  **The order:** a CNode
 carries occupancy links (`SlotOccupancy`: `CNode.occ`, `occHead`, `occ_agree`),
 so the next slot is read off the head rather than scanned for, and the loop
 deletes a CNode's slots most recently filled first.  seL4 goes from the
@@ -5335,13 +5358,7 @@ write cover and cross-core non-interference are proven for the zombie delete
 the freed id's declassification provenance (`withTaintCleared` in
 `retireRecordedObject`, `retireFinalObject_taint_cleared`), so an object carved
 at the id later inherits no stale tag; the reset's removal does not yet
-(`docs/REGISTERED_DEBT.md`).  **Out of fuel:** when the passes end with the
-root slot still non-leaf, the root delete makes no write
-(`zombieDeleteAtFuel`): the passes' deletes persist and the slot keeps its
-capability, so a retry continues from the slot state, as seL4's preempted
-`cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
-fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 35).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5415,8 +5432,10 @@ admission reads, reads no guard of its own: the notification unbind (the
 admission reads `notificationUnbindAdmitted`) and the context deschedule, which
 reads only whether the holder is ready.  The other steps keep their guards,
 which the reply finalisation's steps share or on which a compiled `@[csimp]`
-form rests, and none refuses on an admitted state.  Still open: that the
-zombie fuel always suffices (plan row 35).
+form rests, and none refuses on an admitted state.  **The zombie fuel proven**
+(`v0.36.148`, plan row 35): the passes always end within `zombieFuel`, as
+described above, so the revocation's completeness theorems state the source
+childless with no kept-child case.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record

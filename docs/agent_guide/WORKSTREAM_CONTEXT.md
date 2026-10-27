@@ -355,10 +355,11 @@ slot is chosen only by `zombieNextSlot` (most recently filled first, Adam's
 decision of 2026-10-25), so new code that fills or empties a CNode slot must
 keep its occupancy links (`CNode.occ`, `occHead`, `occ_agree`) in step; and a
 transition that removes an object clears its declassification provenance
-(`withTaintCleared`).  A final delete keeps its slot when the passes run out
-of fuel, the passes' deletes persisting for a retry (`zombieDeleteAtFuel`), so
-a caller must treat an occupied slot after a delete as a preempted delete, not
-a refusal.  Set-space deletes each old root through the same loop
+(`withTaintCleared`).  Since `v0.36.148` the passes always end within the fuel
+on a state the capability bundle holds in (`zombiePasses_end`), so the delete
+always deletes its slot; the proof needs every step of a pass to only empty
+slots (`SlotsShrink`), so a new step in the loop that fills a slot must extend
+that proof's measure.  Set-space deletes each old root through the same loop
 (`copyThreadSpacesZombie`).  An untyped retired with children is spliced out:
 its recorder adopts them and each child untyped names the recorder as its
 parent (`retireUnrecord`), so new code that reads an untyped's parent or child
@@ -413,8 +414,7 @@ admission is carried across its steps (plan row 34,
 `finaliseThread_admissionCarried`), so new code that adds a finalise step must
 carry the admission to the state the step runs on, as the existing steps do,
 and a step that runs first, on the state the admission reads, reads no guard of
-its own (the notification unbind, the context deschedule).  The zombie fuel's
-sufficiency is plan row 35.  The reply stack's links are reciprocal both ways
+its own (the notification unbind, the context deschedule).  The reply stack's links are reciprocal both ways
 (`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
 that clears a frame's `prev` must clear in the same step the `next` of the frame
 it named, as the removal clears both of the cut frame's links; notification

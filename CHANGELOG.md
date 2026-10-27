@@ -1,3 +1,54 @@
+## v0.36.148 — WS-ZA ZA5.4 part 35: the zombie fuel proven
+
+A final delete of a capability whose object still holds capabilities runs the
+zombie loop's passes on its slot, at most `zombieFuel` of them, before deleting
+the slot.  Until now nothing proved that fuel enough: when the passes ended
+with the slot still naming an object that held capabilities, the delete kept
+the slot.  This part proves the fuel always suffices on a state the capability
+invariants hold in, and deletes the kept branch.
+
+- **The theorem** (`zombiePasses_end`, new module
+  `Capability/Invariant/Preservation/ZombieTermination.lean`): on every state
+  carrying `capabilityInvariantBundle`, the `zombieFuel` passes end with the
+  loop's slot naming nothing that holds a capability, with slots only emptied
+  and the bundle kept.
+- **The measure** (`zombieLive`): the objects the passes can still reach that
+  hold a capability (`ZombieReach`: the object the slot names, and every object
+  a slot of a reached object names, the loop's own slot passed over), each
+  counted once over the store's keys.  It takes no acyclicity premise; seL4
+  keeps none, since a CNode may hold a capability to itself or to one above it.
+  Every step only empties slots (`SlotsShrink`), so the measure never rises.
+  Each pass lowers it (`zombieDescend_live`): it ends on an object that held a
+  capability and holds none, or deletes a final capability's slot, after which
+  no slot names that object (`not_zombieReach_of_final_deleted`).  An object
+  stays reachable while its own slots are emptied
+  (`zombieReach_of_own_deleted`).
+- **The pass continues down in one pass** (`zombieDescend`).  It used to end
+  after finalising a thread or after stopping at a non-leaf head.  Now it
+  finalises the thread it stands on, deletes a leaf next slot and looks at the
+  object again, and goes down when the next slot names an object that still
+  holds capabilities.  seL4's `finaliseSlot` likewise does `finaliseCap` and
+  the reduction in one iteration.  So one object leaves the count per pass, and
+  the fuel is `objects.size + 1` (was `3 · objects.size + 2`).
+  `zombieFinaliseAt` and `zombieEmptyObject` are folded into the pass.
+- **The depth bound never binds** (`zombieDescend_depth_never_binds`).  A pass
+  goes down only through a final capability, so it visits no object twice
+  (`zombiePath_fresh`), and the branch that deletes a slot at the bound never
+  runs on a state the bundle holds in.
+- **Retired**: the out-of-fuel branch (`zombieDeleteAtFuel` and its lemmas),
+  the revoke loop's kept-child stop and set-space's class conjunct.  The root
+  delete is unconditional.  The revocation's completeness theorems
+  (`revokeFirstChildLoop_childless`, `cspaceRevokeCdtFinalising_ok_childless`)
+  state the source childless with no kept-child case.
+- **Tests**: `runZombieFuelExhaustedChecks` is replaced by
+  `runZombieDeleteCompletesChecks`.  It checks that a full delete retires the
+  CNodes below the slot, and that a cycle through the loop's own CNode is
+  deleted to the end.  The Tier 3 anchors are swept, and the new theorems are
+  pinned.
+- Closes the `docs/REGISTERED_DEBT.md` row "The zombie fuel always suffices on a
+  reachable state"; `docs/planning/UNTYPED_RESET_PLAN.md` row 35 is landed with
+  its forks.  Exerciser: every delete pin unchanged.
+
 ## v0.36.147 — WS-ZA ZA5.4 part 34: the thread finalise's admission carried across its own steps
 
 A thread's finalisation is admitted on the pre-state (`threadFinaliseAdmitted`)

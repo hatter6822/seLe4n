@@ -4442,7 +4442,7 @@ run_check "INVARIANT" rg -n -U 'def backshiftLoopImpl[^\n]*(\n([ \t][^\n]*)?){0,
 run_check "INVARIANT" rg -n -U 'def cspaceRevokeCdtFinalising[^\n]*\n[^\n]*\n  fun st =>\n    match SystemState\.lookupSlotCap st addr with\n    \| some _ => \.ok \(\(\), cspaceRevokePerformAt executingCore addr\.cnode addr\.slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.111: every revoke is seL4's cteRevoke, a run of finalising deletes; the
 # general revocation's batch teardown is gone.
-run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        let s := zombieDeleteAt executingCore cc cs st\n        if zombieSlotClass s cc cs cc cs = 0 then revokeFirstChildLoop executingCore cnode slot n s\n        else s' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '      if cspaceDeleteFinalisingAdmitted \{ cnode := cc, slot := cs \} st then\n        revokeFirstChildLoop executingCore cnode slot n \(zombieDeleteAt executingCore cc cs st\)\n      else st' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.139: a compiled slot writer reads the slot's occupancy before it
 # writes the slot array, out of line, so both stay in place.
 run_check "INVARIANT" rg -n -U '  let i := slot\.toNat\n  let w := occupiedAt node\.cells i\n  if ha : i < a\.size then' SeLe4n/Model/Object/Structures.lean
@@ -4451,7 +4451,20 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def occupiedAt \(cells : Array \(Opt
 # v0.36.139: the zombie loop's bound, stated in its theorem, and its one
 # choice of the next slot, which every pass reads.
 run_check "INVARIANT" rg -n -U '    ∃ n, n ≤ zombieFuel st \+ 1 ∧ ZombieRun ec n st \(zombieDeleteAt ec cnode slot st\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def zombieFuel \(st : SystemState\) : Nat := 3 \* st\.objects\.size \+ 2$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def zombieFuel \(st : SystemState\) : Nat := st\.objects\.size \+ 1$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# v0.36.148: the fuel suffices on every state the capability invariants hold
+# in, so the zombie delete always deletes its slot: no out-of-fuel branch is
+# left in the delete, the revoke loop or set-space.
+run_check "INVARIANT" rg -n -U '  if cspaceDeleteAdmitted ⟨cnode, slot⟩ st then cspaceDeletePerformAt cnode slot st\n  else\n    zombieDeleteSlot executingCore cnode slot\n      \(zombiePasses executingCore cnode slot \(zombieFuel st\) st\)$' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '^theorem zombiePasses_end [^\n]*(\n[^\n]*){0,6}\n      zombieSlotClass \(zombiePasses ec root rootSlot \(zombieFuel st\) st\)\n        root rootSlot root rootSlot = 0 := by' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombieDescend_live ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombiePasses_live ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n -U '^theorem zombieDescend_depth_never_binds [^\n]*(\n[^\n]*){0,2}\n    zombieDescend ec root rootSlot \(zombieDepth st\) budget root rootSlot\n        \(zombieSlotClass st root rootSlot root rootSlot\) st =\n      zombieDescend ec root rootSlot \(zombieDepth st \+ m\) budget root rootSlot' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombiePath_fresh ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem not_zombieReach_of_final_deleted ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombieReach_of_own_deleted ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ZombieTermination$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
+run_negative_check "INVARIANT" rg -n 'zombieDeleteAtFuel|zombieFinaliseAt|zombieEmptyObject' SeLe4n tests
 run_check "INVARIANT" rg -n '^      let k := zombieNextSlot o \(zombieSkip root rootSlot x\)$' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem revokeFirstChildLoop_chain($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem FinalisingDeleteChain\.unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
@@ -4551,9 +4564,7 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_copyThreadSpacesZombie_covers
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_cases ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_closed ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n -U '^def copyThreadSpacesZombie [^\n]*\n[^\n]*\n  if copyThreadSpacesAdmitted st vtid cnSrc vrSrc then\n    \.ok \(copyThreadSpacesZombiePerform ' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if zombieSlotClass s vtid\.val\.toObjId TCB\.cspaceRootSlot vtid\.val\.toObjId TCB\.cspaceRootSlot = 0 &&\n      copyThreadSpacesAdmitted s vtid cnSrc vrSrc then' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U '^def zombieDeleteAtFuel [^\n]*(\n[^\n]*){0,2}\n  let s := zombiePasses executingCore cnode slot fuel st\n  if zombieSlotClass s cnode slot cnode slot = 0 then zombieDeleteSlot executingCore cnode slot s\n  else s$' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n '^theorem zombieDeleteAtFuel_kept_or_deleted ' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n -U '  let s := zombiePasses executingCore vtid\.val\.toObjId TCB\.cspaceRootSlot \(zombieFuel st\) st\n  if copyThreadSpacesAdmitted s vtid cnSrc vrSrc then\n    copyThreadSpacesPerform executingCore s ' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_projection ' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U 'theorem copyThreadSpaces_preserves_projection [^\n]*(\n([ \t][^\n]*)?){0,4}\n    \(hHid : ∀ s : SeLe4n\.Slot, s\.toNat < 2 → ∀ c o,' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
