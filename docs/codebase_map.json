@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "za/table-back-refs-read",
-      "commit_sha": "b273ddc5f1b92155e91208f750d2be5d0f107b77",
-      "tree_sha": "e71a76dc5fb87fdb7e33346b73398dd6d6fbd122",
-      "committed_at_utc": "2026-10-26T16:40:28+00:00"
+      "branch": "main",
+      "commit_sha": "f86d28ec207dfdd9ffe4e43ba4f35edf94147960",
+      "tree_sha": "43d5dec0b4597a8e00ba7ccf2d9e40b5e9a06ff0",
+      "committed_at_utc": "2026-10-26T21:33:35-04:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "64fac5bfc0a57158e7bb47b6149bd8ce97d6de980dfb6182f08a122a001b116b"
+    "source_digest": "48f15fa1e87365deb9bcfb9a78cc5d8f71e3d957fa79a6595ac8d964df247210"
   },
   "summary": {
     "module_count": 531,
@@ -27,7 +27,7 @@
     "version": "0.36.144",
     "lean_toolchain": "v4.28.0",
     "production_files": 461,
-    "production_loc": 515329,
+    "production_loc": 515334,
     "test_files": 70,
     "test_loc": 87628,
     "proved_theorem_lemma_decls": 18849,
@@ -392249,7 +392249,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1254,
+          "line": 1259,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -392258,7 +392258,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1297,
+          "line": 1302,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -392268,21 +392268,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1323,
+          "line": 1328,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1347,
+          "line": 1352,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1380,
+          "line": 1385,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -392291,7 +392291,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1412,
+          "line": 1417,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -392300,7 +392300,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1425,
+          "line": 1430,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -392309,7 +392309,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1465,
+          "line": 1470,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -392319,7 +392319,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1473,
+          "line": 1478,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -392329,7 +392329,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1480,
+          "line": 1485,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -392339,7 +392339,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1485,
+          "line": 1490,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -392350,7 +392350,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1497,
+          "line": 1502,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
