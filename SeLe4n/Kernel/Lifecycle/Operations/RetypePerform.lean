@@ -85,12 +85,14 @@ theorem childrenNameNone_eq (childId : SeLe4n.ObjId) (cs : List UntypedChild) :
     · simp [h, ih]
 
 /-- WS-ZA ZA5.4: **`retypeFromUntyped`'s refusals** for an untyped `ut` at
-`untypedId`, the authority capability `authCap` already read from `authority`,
-read before any write; the carve is at the index it starts from
-(`retypeFreeIndex`: `authCap`'s free index, or 0 through a slot with no
-derivation child) rounded up to the carve's boundary (`alignedCarveIndex`).  The
-new object enters as its type `ty` alone, so the check builds no object. -/
-def retypeFromUntypedAdmitted (st : SystemState) (authority : CSpaceAddr) (authCap : Capability)
+`untypedId`, the authority capability `authCap` already read from the slot
+`authCnode`/`authSlot`, read before any write; the carve is at the index it
+starts from (`retypeFreeIndex`: `authCap`'s free index, or 0 through a slot with
+no derivation child) rounded up to the carve's boundary (`alignedCarveIndex`).
+The new object enters as its type `ty` alone, so the check builds no object, and
+the slot as its two words, so no slot reference is built. -/
+def retypeFromUntypedAdmitted (st : SystemState) (authCnode : SeLe4n.ObjId)
+    (authSlot : SeLe4n.Slot) (authCap : Capability)
     (untypedId childId : SeLe4n.ObjId) (ty : KernelObjectType) (size : Nat)
     (ut : UntypedObject) : Bool :=
   !decide (st.objectIndex.length ≥ maxObjects) &&
@@ -101,8 +103,9 @@ def retypeFromUntypedAdmitted (st : SystemState) (authority : CSpaceAddr) (authC
   objectIdInAddressSpace st.machine childId &&
   !decide (size < objectTypeAllocSize ty) &&
   lifecycleRetypeAuthority authCap untypedId &&
-  retypeResetAdmitted st authority ut &&
-  ut.canAllocate (alignedCarveIndex ty size ut (retypeFreeIndex st authority authCap)) size
+  retypeResetAdmitted st { cnode := authCnode, slot := authSlot } ut &&
+  ut.canAllocate (alignedCarveIndex ty size ut
+    (retypeFreeIndex st { cnode := authCnode, slot := authSlot } authCap)) size
 
 /-- WS-ZA ZA5.4: **`retypeFromUntyped`'s writes**: the child recorded in the
 untyped at free index `idx`, the new object stored at its id, and the authority
@@ -121,8 +124,8 @@ theorem retypeFromUntyped_of_admitted {st : SystemState} {authority : CSpaceAddr
     {size : Nat} {ut : UntypedObject}
     (hLk : SystemState.lookupSlotCap st authority = some authCap)
     (hUt : st.getObject? untypedId = some (.untyped ut))
-    (hA : retypeFromUntypedAdmitted st authority authCap untypedId childId newObj.objectType size ut
-      = true) :
+    (hA : retypeFromUntypedAdmitted st authority.cnode authority.slot authCap untypedId childId
+      newObj.objectType size ut = true) :
     retypeFromUntyped authority untypedId childId newObj size st =
       .ok ((), retypeFromUntypedWrites authority
         (alignedCarveIndex newObj.objectType size ut (retypeFreeIndex st authority authCap))
@@ -152,7 +155,8 @@ naming an untyped, the destination slot, and the carve's checks. -/
       match st.getUntyped? untypedId with
       | some ut =>
         cspaceDstAdmitted dst st &&
-        retypeFromUntypedAdmitted st src utCap untypedId childId req.objectType req.size ut
+        retypeFromUntypedAdmitted st src.cnode src.slot utCap untypedId childId req.objectType
+          req.size ut
       | none => false
     | _ => false
   | none => false
