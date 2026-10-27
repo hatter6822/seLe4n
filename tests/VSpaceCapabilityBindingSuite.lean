@@ -2154,6 +2154,44 @@ private def runPassiveRetireChecks : IO Unit := do
               | .error _ => false)
           assertBool s!"the retired {name}'s id carves again"
             ((runAll st2 [decodeCarve slotUtRetype tag 960 slotOwnCnRW 12]).toOption.isSome)
+  -- A registered endpoint is finalised before it is retired: its last
+  -- capability's delete drops the registration it carries
+  -- (`releaseFinalRegistration`, seL4's `finaliseCap` tearing down what the
+  -- endpoint holds), so the endpoint is retired and its untyped resets.
+  -- Before, the recorded `serviceCode` kept the endpoint out of the
+  -- retirable kinds and no capability was left to revoke the service
+  -- through, so the endpoint and its untyped's space were held for good.
+  match runAll carveScenario [decodeCarve slotUtRetype endpointTag 960 slotOwnCnRW 12] with
+  | .error e => assertBool s!"carving the endpoint to register succeeds (got {repr e})" false
+  | .ok st0 =>
+    match SystemState.lookupSlotCap st0 { cnode := carveCn, slot := SeLe4n.Slot.ofNat 12 } with
+    | none => assertBool "the carved endpoint's capability is in slot 12" false
+    | some epCap =>
+      let iface : InterfaceSpec :=
+        { ifaceId := ⟨1⟩, methodCount := 1, maxMessageSize := 1, maxResponseSize := 1,
+          requiresGrant := false }
+      let sid : ServiceId := ⟨960⟩
+      let stI := { st0 with interfaceRegistry := st0.interfaceRegistry.insert iface.ifaceId iface }
+      match registerService { sid := sid, iface := iface, endpointCap := epCap } stI with
+      | .error e => assertBool s!"registering a service on the carved endpoint succeeds (got {repr e})" false
+      | .ok ((), st) => do
+        assertBool "setup: the registry holds the service and the endpoint records it"
+          (st.serviceRegistry[sid]?.isSome &&
+            (match st.getObject? (SeLe4n.ObjId.ofNat 960) with
+              | some (.endpoint ep) => ep.serviceCode == 961
+              | _ => false))
+        match runAll st [decodeDelete 12] with
+        | .error e => assertBool s!"deleting the registered endpoint's last capability succeeds (got {repr e})" false
+        | .ok st1 => do
+          assertBool "deleting a registered endpoint's last capability drops its registration"
+            (st1.serviceRegistry[sid]?.isNone)
+          assertBool "...and retires the endpoint from the store and the untyped's list"
+            (!storedAt st1 960 && !recordsChildAt st1 carveUt 960)
+          assertBool "...so the untyped resets"
+            ((dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner
+              Concurrency.bootCoreId st1).toOption.isSome)
+          assertBool "the registration alone keeps the endpoint from the retirable kinds (what the release drops)"
+            (!passiveObjectRetirable st (SeLe4n.ObjId.ofNat 960))
   -- A notification bound to a thread is finalised before it is retired: its
   -- last capability's delete unbinds the thread (seL4's
   -- `unbindMaybeNotification`, `finaliseFinalObject`), and the then quiescent

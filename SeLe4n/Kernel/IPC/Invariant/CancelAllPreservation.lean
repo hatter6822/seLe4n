@@ -792,15 +792,39 @@ theorem finaliseFinalObject_preserves_finalisingDeleteBundle (target : Nat) (st 
   ⟨finaliseFinalObject_preserves_finaliseLoanBundle target st h.1,
     finaliseFinalObject_preserves_schedContextLinkInvariant target st h.1.2.1 h.2⟩
 
+/-- **WS-ZA ZA5.5: a revocation keeps the bundle the delete carries**: it
+rewrites one endpoint's `serviceCode`, which no conjunct reads
+(`revokeService_preserves_ipcInvariantFull`), keeps every other object, and
+writes no thread, context or reply and no scheduler field. -/
+theorem revokeService_preserves_finalisingDeleteBundle {sid : ServiceId} {st st' : SystemState}
+    (h : finalisingDeleteBundle st) (hR : revokeService sid st = .ok ((), st')) :
+    finalisingDeleteBundle st' := by
+  have hRw := revokeService_serviceCodeRewrite hR
+  have hL := hRw.lookup h.1.2.1
+  have hS := revokeService_preserves_scheduler st st' sid hR
+  have hLoan := revokeService_loanWrite hR h.1.2.1
+  have hF : SchedLinkFrame st st' := by
+    refine ⟨fun oid => ?_, fun oid => ?_, fun c => by rw [hS]⟩
+    · rcases hL oid with e | ⟨ep, c, h0, h1⟩
+      · rw [e]
+      · rw [h0, h1]; rfl
+    · rcases hL oid with e | ⟨ep, c, h0, h1⟩
+      · rw [e]
+      · rw [h0, h1]; rfl
+  exact ⟨⟨revokeService_preserves_ipcInvariantFull st st' sid h.1.2.1 h.1.1 hR,
+    hRw.invExt h.1.2.1, h.1.2.2.of_loanWrite hLoan⟩, hF.preserves h.2⟩
+
 /-- **The retire after the finalisation keeps the bundle the delete carries**:
-the finalisation's (`finaliseFinalObject_preserves_finalisingDeleteBundle`), then
+the release's (`revokeService_preserves_finalisingDeleteBundle`), the finalisation's (`finaliseFinalObject_preserves_finalisingDeleteBundle`), then
 the retire's (`retireFinalObject_preserves_ipcInvariantFull`,
 `retireFinalObject_keepsLentContextHeads`,
 `retireFinalObject_preserves_schedContextLinkInvariant`). -/
 theorem retireFinalisedObject_preserves_finalisingDeleteBundle (ec : Concurrency.CoreId)
     (target recorder : Nat) (st : SystemState) (h : finalisingDeleteBundle st) :
     finalisingDeleteBundle (retireFinalisedObject ec target recorder st) := by
-  obtain ⟨h1, hL⟩ := finaliseFinalObject_preserves_finalisingDeleteBundle target st h
+  have h0 := releaseFinalRegistration_closed finalisingDeleteBundle
+    (fun _ _ _ hs hR => revokeService_preserves_finalisingDeleteBundle hs hR) target st h
+  obtain ⟨h1, hL⟩ := finaliseFinalObject_preserves_finalisingDeleteBundle target _ h0
   have h2 := retireFinalObject_preserves_ipcInvariantFull ec target recorder _ h1.2.1 h1.1
     hL.budgets
   exact ⟨⟨h2.1, h2.2, retireFinalObject_keepsLentContextHeads ec target recorder _ h1.2.1 h1.2.2⟩,

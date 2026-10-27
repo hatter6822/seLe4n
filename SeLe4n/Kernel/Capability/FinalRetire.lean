@@ -535,7 +535,9 @@ reachable state (`SystemState.tableReferencesRecorded`,
 `SystemState.tableBackLinksClear.namedByNone`).  A passive object that fails
 this outlives its last capability, as every kernel object did before
 `v0.36.133`; the cancelling finalisation that brings one here is
-`finaliseFinalObject`. -/
+`finaliseFinalObject`, after `releaseFinalRegistration` has dropped an
+endpoint's service registration, so only an interrupt's notification still
+fails the back-link half at its last capability. -/
 @[inline] def passiveObjectRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   passiveObjectQuiescent st x && st.tableBackLinksClear x
 

@@ -144,8 +144,8 @@ theorem zombieDeleteSlot_slots (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
       rw [e]
       unfold retireFinalisedObject
       rw [retireFinalObject_slotCapAt ec _ _ _
-          (finaliseFinalObject_frame _ st2 hI2).invExt r,
-        (finaliseFinalObject_frame _ st2 hI2).slotCapAt r]
+          (finaliseReleased_frame _ st2 hI2).invExt r,
+        (finaliseReleased_frame _ st2 hI2).slotCapAt r]
     refine ⟨by rw [hLast, hC2]; exact hC1n, fun r hr => ?_⟩
     rw [hLast, hC2, hC1 r hr]
   · next hA =>

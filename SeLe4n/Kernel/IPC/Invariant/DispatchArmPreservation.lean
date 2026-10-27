@@ -4421,7 +4421,7 @@ theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     st'.objects.invExt := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (retireFinalObject_frame ec _ _ _ (finaliseFinalObject_frame _ st2
+  exact (retireFinalObject_frame ec _ _ _ (finaliseReleased_frame _ st2
     (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
       (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).invExt).1
 

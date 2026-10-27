@@ -67,6 +67,14 @@ theorem revokeService_keyFrame {sid : ServiceId} {st st' : SystemState}
   serviceCodeRewrite_keyFrame hInv (revokeService_serviceCodeRewrite h)
     (revokeService_preserves_scheduler _ _ _ h)
 
+/-- WS-ZA ZA5.5: the release of a final endpoint's registration feeds no key: it
+is a revocation or nothing. -/
+theorem releaseFinalRegistration_keyFrame (target : Nat) (st : SystemState)
+    (hInv : st.objects.invExt) : capabilityKeyFrame st (releaseFinalRegistration target st) := by
+  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, _, hR⟩
+  · rw [hE]; exact capabilityKeyFrame_refl hInv
+  · exact revokeService_keyFrame hInv hR
+
 /-- ...and so is the revoke the kernel runs, through the invoked endpoint. -/
 theorem revokeServiceByRecordedCode_keyFrame {epId : SeLe4n.ObjId} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : revokeServiceByRecordedCode epId st = .ok ((), st')) :
@@ -474,11 +482,18 @@ theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
   have h1 : capabilityKeyFrame st st1 := cspaceDeleteSlot_keyInputsEq st st1 addr hB.1.2.1 hD
-  have h2 := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
-  have h3 := finaliseFinalObject_stepCovers e (slotRetireTarget st addr.cnode addr.slot) st2 h2.2.2
+  have h2 := (h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)).trans
+    (releaseFinalRegistration_keyFrame (slotRetireTarget st addr.cnode addr.slot) st2
+      (h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)).2.2)
+  have h3 := finaliseFinalObject_stepCovers e (slotRetireTarget st addr.cnode addr.slot)
+    (releaseFinalRegistration (slotRetireTarget st addr.cnode addr.slot) st2) h2.2.2
   have hB3 := finaliseFinalObject_preserves_finalisingDeleteBundle
-    (slotRetireTarget st addr.cnode addr.slot) st2
-    (cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle hB hD hF)
+    (slotRetireTarget st addr.cnode addr.slot)
+    (releaseFinalRegistration (slotRetireTarget st addr.cnode addr.slot) st2)
+    (releaseFinalRegistration_closed finalisingDeleteBundle
+      (fun _ _ _ hs hR => revokeService_preserves_finalisingDeleteBundle hs hR)
+      (slotRetireTarget st addr.cnode addr.slot) st2
+      (cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle hB hD hF))
   exact stepCoversInv_trans (stepCovers_trans h2.stepCovers h3.1)
     (retireFinalObject_stepCovers e ec _ _ _ h3.2 hB3.1.1 hB3.2)
 

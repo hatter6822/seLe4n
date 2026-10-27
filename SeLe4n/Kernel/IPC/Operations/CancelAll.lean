@@ -1675,11 +1675,12 @@ its waiters are cancelled (`unbindMaybeNotification`, `cancelAllSignals`); a
 thread is suspended and unbound (`finaliseThread`); a scheduling context is
 unbound and its reply stack let go (`finaliseSchedContext`); a reply's waiting
 caller is cancelled and made inactive (`finaliseReply`).  Nothing when no object is
-targeted, for any other kind, or when the object is still held outside every
-slot — a service registration's endpoint capability, an interrupt's
-notification — since seL4 would hold a capability there and the slot's would
-not be final; the object records that itself (`SystemState.tableBackLinksClear`,
-one field read in place of a walk of the registry and the interrupt table). -/
+targeted, for any other kind, or when the object is still named by a table
+outside every slot — an interrupt's notification, or an endpoint whose
+registration the final delete has not dropped first
+(`releaseFinalRegistration`, which `retireFinalisedObject` runs before this);
+the object records that itself (`SystemState.tableBackLinksClear`, one field
+read in place of a walk of the registry and the interrupt table). -/
 def finaliseFinalObject (target : Nat) (st : SystemState) : SystemState :=
   if target = 0 then st
   else
@@ -1694,17 +1695,74 @@ def finaliseFinalObject (target : Nat) (st : SystemState) : SystemState :=
       | _ => st
     else st
 
+/-- **WS-ZA ZA5.5: a final delete of an endpoint drops the service registration
+it records**, as seL4's `finaliseCap` tears down what an endpoint holds.  The
+registration's endpoint capability is held outside every slot, so the slot's
+delete is final; without this step the registration outlived the endpoint's
+last capability, no capability could revoke it, and the endpoint and the
+untyped space it was carved from could never be reclaimed.  The registration
+the endpoint records (`Endpoint.serviceCode`, `sid + 1`) is revoked
+(`revokeService`), which clears the record, so the endpoint's back-links are
+clear and the finalisation and retire after it run as for any endpoint.  Any
+other object, and an endpoint recording none, is returned as it is: a read of
+one field. -/
+@[inline] def releaseFinalRegistration (target : Nat) (st : SystemState) : SystemState :=
+  if target = 0 then st
+  else
+    match st.getObject? (SeLe4n.ObjId.ofNat (target - 1)) with
+    | some (.endpoint ep) =>
+      match ep.serviceCode with
+      | 0 => st
+      | n + 1 =>
+        match revokeService ⟨n⟩ st with
+        | .ok ((), st') => st'
+        | .error _ => st
+    | _ => st
+
+/-- The release either leaves the state or is a successful revoke of the
+registration the target endpoint records. -/
+theorem releaseFinalRegistration_cases (target : Nat) (st : SystemState) :
+    releaseFinalRegistration target st = st ∨
+      ∃ ep n, target ≠ 0 ∧ st.getObject? (SeLe4n.ObjId.ofNat (target - 1)) = some (.endpoint ep) ∧
+        ep.serviceCode = n + 1 ∧
+        revokeService ⟨n⟩ st = .ok ((), releaseFinalRegistration target st) := by
+  unfold releaseFinalRegistration
+  split
+  · exact .inl rfl
+  next h0 =>
+  split
+  · next ep hEp =>
+    split
+    · exact .inl rfl
+    · next n hC =>
+      split
+      · next st' hR => exact .inr ⟨ep, n, h0, hEp, hC, hR⟩
+      · exact .inl rfl
+  · exact .inl rfl
+
+/-- **A property every successful revoke keeps holds after the release.** -/
+theorem releaseFinalRegistration_closed (P : SystemState → Prop)
+    (hRev : ∀ (s s' : SystemState) (sid : ServiceId), P s → revokeService sid s = .ok ((), s') →
+      P s')
+    (target : Nat) (st : SystemState) (h : P st) : P (releaseFinalRegistration target st) := by
+  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, _, hR⟩
+  · rw [hE]; exact h
+  · exact hRev _ _ _ h hR
+
 /-- **The retire of what a final delete destroyed, after its finalisation**:
+the registration an endpoint records dropped (`releaseFinalRegistration`), then
 `finaliseFinalObject`, then `retireFinalObject`. -/
 @[inline] def retireFinalisedObject (executingCore : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) : SystemState :=
-  retireFinalObject executingCore target recorder (finaliseFinalObject target st)
+  retireFinalObject executingCore target recorder
+    (finaliseFinalObject target (releaseFinalRegistration target st))
 
 theorem finaliseFinalObject_zero (st : SystemState) : finaliseFinalObject 0 st = st := by
   simp [finaliseFinalObject]
 
 theorem retireFinalisedObject_zero (ec : Concurrency.CoreId) (recorder : Nat)
     (st : SystemState) : retireFinalisedObject ec 0 recorder st = st := by
-  simp [retireFinalisedObject, finaliseFinalObject_zero, retireFinalObject_zero]
+  simp [retireFinalisedObject, releaseFinalRegistration, finaliseFinalObject_zero,
+    retireFinalObject_zero]
 
 end SeLe4n.Kernel

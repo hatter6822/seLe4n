@@ -2258,15 +2258,87 @@ theorem finaliseFinalObject_preserves_teardownWellFormed (target : Nat) (st : Sy
       vspaceRootsShrink st (finaliseFinalObject target st) :=
   (finaliseFinalObject_frame target st hW.1).preserves_teardownWellFormed hW
 
+/-- **WS-ZA ZA5.5: a revocation is a finalisation write**: it writes one
+endpoint's `serviceCode` and the registry, and keeps the derivation tree and the
+ASID table. -/
+theorem revokeService_finaliseFrameAny {sid : ServiceId} {st st' : SystemState}
+    (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt) :
+    FinaliseFrameAny st st' := by
+  have hRw := revokeService_serviceCodeRewrite h
+  obtain ⟨reg, _, rfl⟩ := revokeService_ok h
+  rw [clearEndpointServiceCode_eq_withObjects] at hRw ⊢
+  refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_⟩
+  rcases hRw.lookup hInv oid with e | ⟨ep, c, hE, hE'⟩
+  · exact Or.inl e
+  · exact Or.inr ⟨_, _, hE, hE', rfl, rfl, Or.inl (Or.inr (Or.inl rfl))⟩
+
+/-- **What a revocation keeps**: every object but an endpoint, read either way. -/
+theorem revokeService_back {sid : ServiceId} {st st' : SystemState}
+    (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
+    {k : SeLe4n.ObjId} {o : KernelObject} (ho : st'.objects[k]? = some o)
+    (hN : ∀ ep, o ≠ .endpoint ep) : st.objects[k]? = some o := by
+  rcases (revokeService_serviceCodeRewrite h).lookup hInv k with e | ⟨ep, c, h0, h1⟩
+  · rw [← e]; exact ho
+  · rw [h1] at ho; cases ho; exact absurd rfl (hN _)
+
+theorem revokeService_fwd {sid : ServiceId} {st st' : SystemState}
+    (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
+    {k : SeLe4n.ObjId} {o : KernelObject} (ho : st.objects[k]? = some o)
+    (hN : ∀ ep, o ≠ .endpoint ep) : st'.objects[k]? = some o := by
+  rcases (revokeService_serviceCodeRewrite h).lookup hInv k with e | ⟨ep, c, h0, h1⟩
+  · rw [e]; exact ho
+  · rw [h0] at ho; cases ho; exact absurd rfl (hN _)
+
+/-- ...so it keeps every thread. -/
+theorem revokeService_getTcb? {sid : ServiceId} {st st' : SystemState}
+    (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
+    (t : SeLe4n.ThreadId) : st'.getTcb? t = st.getTcb? t := by
+  unfold SystemState.getTcb?
+  rcases (revokeService_serviceCodeRewrite h).lookup hInv t.toObjId with e | ⟨ep, c, h0, h1⟩
+  · rw [e]
+  · rw [h0, h1]
+
+/-- **A revocation lets go of no loan**: the one object it writes is an
+endpoint, before and after. -/
+theorem revokeService_loanWrite {sid : ServiceId} {st st' : SystemState}
+    (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt) :
+    loanWrite st st' := fun oid => by
+  rcases (revokeService_serviceCodeRewrite h).lookup hInv oid with e | ⟨ep, c, h0, h1⟩
+  · exact Or.inl e
+  · exact Or.inr ⟨_, _, h0, h1, fun _ hx => KernelObject.noConfusion hx,
+      fun _ _ hx => KernelObject.noConfusion hx⟩
+
+/-- **The release of a final endpoint's registration is a finalisation write.** -/
+theorem releaseFinalRegistration_frame (target : Nat) (st : SystemState)
+    (hInv : st.objects.invExt) : FinaliseFrameAny st (releaseFinalRegistration target st) := by
+  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, _, hR⟩
+  · rw [hE]; exact .refl hInv
+  · exact revokeService_finaliseFrameAny hR hInv
+
+/-- **The release keeps the derivation tree**, on any state. -/
+theorem releaseFinalRegistration_cdt (target : Nat) (st : SystemState) :
+    (releaseFinalRegistration target st).cdt = st.cdt := by
+  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, _, hR⟩
+  · rw [hE]
+  · obtain ⟨reg, _, hEq⟩ := revokeService_ok hR
+    rw [hEq, clearEndpointServiceCode_eq_withObjects]
+
+/-- **The release and the finalisation after it are one finalisation write.** -/
+theorem finaliseReleased_frame (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
+    FinaliseFrameAny st (finaliseFinalObject target (releaseFinalRegistration target st)) :=
+  have h0 := releaseFinalRegistration_frame target st hInv
+  h0.trans (finaliseFinalObject_frame target _ h0.invExt)
+
 /-- **The retire after the finalisation keeps the teardown's well-formedness and
-only shrinks the roots**: the finalisation's, then the retire's
+only shrinks the roots**: the release's, the finalisation's, then the retire's
 (`retireFinalObject_preserves_teardownWellFormed`). -/
 theorem retireFinalisedObject_preserves_teardownWellFormed (ec : Concurrency.CoreId)
     (target recorder : Nat) (st : SystemState) (hW : teardownWellFormed st) :
     teardownWellFormed (retireFinalisedObject ec target recorder st) ∧
       vspaceRootsShrink st (retireFinalisedObject ec target recorder st) := by
-  obtain ⟨h1, s1⟩ := finaliseFinalObject_preserves_teardownWellFormed target st hW
+  obtain ⟨h0, s0⟩ := (releaseFinalRegistration_frame target st hW.1).preserves_teardownWellFormed hW
+  obtain ⟨h1, s1⟩ := finaliseFinalObject_preserves_teardownWellFormed target _ h0
   obtain ⟨h2, s2⟩ := retireFinalObject_preserves_teardownWellFormed ec target recorder _ h1
-  exact ⟨h2, s1.trans s2⟩
+  exact ⟨h2, s0.trans (s1.trans s2)⟩
 
 end SeLe4n.Kernel

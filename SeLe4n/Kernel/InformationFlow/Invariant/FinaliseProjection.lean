@@ -1856,7 +1856,7 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
 (`retireFinalObject_preserves_projection`): the finalisation records no untyped
 child, so the untypeds recording the object, and the children it records, are
 the pre-state's. -/
-theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
+private theorem finaliseThenRetire_preserves_projection (ctx : LabelingContext)
     (observer : IfObserver) (ec : CoreId) (target recorder : Nat) {st : SystemState}
     (h : ipcReachable st) (hLc : lentContextHeadsLenderFrame st)
     (hx : target ≠ 0 → objectObservable ctx observer (SeLe4n.ObjId.ofNat (target - 1)) = false)
@@ -1881,15 +1881,95 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
       objectObservable ctx observer y = false)
     (hR : recorder ≠ 0 →
       objectObservable ctx observer (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
-    projectState ctx observer (retireFinalisedObject ec target recorder st) =
+    projectState ctx observer
+        (retireFinalObject ec target recorder (finaliseFinalObject target st)) =
       projectState ctx observer st := by
   have hF := finaliseFinalObject_frame target st h.2.1
   have hUt := hF.getUntyped?
-  unfold retireFinalisedObject
   rw [retireFinalObject_preserves_projection ctx observer ec target recorder hF.invExt hx
     (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw))
     (fun h0 y hy => hK h0 y (by unfold untypedRecordsChild at hy ⊢; rw [hUt] at hy; exact hy)) hR,
     finaliseFinalObject_preserves_projection ctx observer target h hLc hx hW hBd hTF hSF hRF hFlow
       hValid hIdx hSet hBlockingChainHigh]
+
+theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (ec : CoreId) (target recorder : Nat) {st : SystemState}
+    (h : ipcReachable st) (hLc : lentContextHeadsLenderFrame st)
+    (hx : target ≠ 0 → objectObservable ctx observer (SeLe4n.ObjId.ofNat (target - 1)) = false)
+    (hW : target ≠ 0 → waitersHidden ctx observer (SeLe4n.ObjId.ofNat (target - 1)) st)
+    (hBd : target ≠ 0 → ∀ (ntfn : Notification) (t : SeLe4n.ThreadId),
+      st.getNotification? (SeLe4n.ObjId.ofNat (target - 1)) = some ntfn →
+      ntfn.boundTCB = some t → objectObservable ctx observer t.toObjId = false)
+    (hTF : target ≠ 0 → threadFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hSF : target ≠ 0 →
+      schedContextFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hRF : target ≠ 0 → replyFinaliseHidden ctx observer st (SeLe4n.ObjId.ofNat (target - 1)))
+    (hFlow : donationOwnerFlowsToHolder ctx st)
+    (hValid : LabelingContextValid ctx)
+    (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
+    (hBlockingChainHigh : ∀ (s : SystemState) (t server : SeLe4n.ThreadId),
+      threadObservable ctx observer t = false →
+      PriorityInheritance.blockingServer s t = some server →
+      threadObservable ctx observer server = false)
+    (hU : target ≠ 0 → ∀ w, untypedRecordsChild st w (SeLe4n.ObjId.ofNat (target - 1)) = true →
+      objectObservable ctx observer w = false)
+    (hK : target ≠ 0 → ∀ y, untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y = true →
+      objectObservable ctx observer y = false)
+    (hRec : st.tableReferencesRecorded)
+    (hR : recorder ≠ 0 →
+      objectObservable ctx observer (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
+    projectState ctx observer (retireFinalisedObject ec target recorder st) =
+      projectState ctx observer st := by
+  unfold retireFinalisedObject
+  rcases releaseFinalRegistration_cases target st with hE | ⟨ep, n, h0, hEp, hC, hRev⟩
+  · rw [hE]
+    exact finaliseThenRetire_preserves_projection ctx observer ec target recorder h hLc hx hW hBd
+      hTF hSF hRF hFlow hValid hIdx hSet hBlockingChainHigh hU hK hR
+  -- WS-ZA ZA5.5: the release revokes the registration the endpoint records,
+  -- which names that endpoint, hidden from the observer; it rewrites that
+  -- endpoint alone, so every hypothesis, which reads threads, notifications,
+  -- contexts, replies, untypeds and the index, holds after it.
+  generalize releaseFinalRegistration target st = s0 at hRev ⊢
+  have hObjInv := h.objects_invExt
+  have hX := hx h0
+  rw [SystemState.getObject?_eq_getElem] at hEp
+  have hP0 : projectState ctx observer s0 = projectState ctx observer st :=
+    revokeServiceByRecordedCode_preserves_projection ctx observer _ st s0 hX hObjInv hRec
+      (by unfold revokeServiceByRecordedCode; rw [SystemState.getObject?_eq_getElem, hEp]
+          simp only [hC]; exact hRev)
+  have hBk := fun {k} {o} (ho : s0.objects[k]? = some o) (hN : ∀ e, o ≠ .endpoint e) =>
+    revokeService_back hRev hObjInv ho hN
+  have hT0 := revokeService_getTcb? hRev hObjInv
+  have hFr := revokeService_finaliseFrameAny hRev hObjInv
+  have hUt := hFr.getUntyped?
+  have hSetEq : s0.objectIndexSet = st.objectIndexSet := by
+    obtain ⟨reg, _, rfl⟩ := revokeService_ok hRev
+    rw [clearEndpointServiceCode_eq_withObjects]
+  refine (finaliseThenRetire_preserves_projection ctx observer ec target recorder
+    (revokeService_preserves_ipcReachable h hRev)
+    (hLc.of_loanWrite (revokeService_loanWrite hRev hObjInv)) hx
+    (fun _ t tcb ht hw => hW h0 t tcb (hBk ht (fun _ e => by cases e)) hw)
+    (fun _ ntfn t hN hb => hBd h0 ntfn t (by
+      rw [SystemState.getNotification?_eq_some_iff] at hN ⊢
+      exact hBk hN (fun _ e => by cases e)) hb)
+    (fun _ t ht => by
+      rw [SystemState.getObject?_eq_getElem] at ht
+      have := hBk ht (fun _ e => by cases e)
+      rw [hEp] at this; cases this)
+    (fun _ sc hs => hSF h0 sc (by
+      rw [SystemState.getObject?_eq_getElem] at hs ⊢; exact hBk hs (fun _ e => by cases e)))
+    (fun _ => ⟨fun r hr => (hRF h0).1 r (by
+        rw [SystemState.getObject?_eq_getElem] at hr ⊢; exact hBk hr (fun _ e => by cases e)),
+      fun tid t ht => (hRF h0).2 tid t (by rw [← hT0]; exact ht)⟩)
+    (fun holder owner scId hD => hFlow holder owner scId (by
+      unfold replyDonationReturn? lookupTcb at hD ⊢; rw [← hT0]; exact hD))
+    hValid
+    (fun oid hne => by
+      rw [hSetEq]
+      exact hIdx oid (fun hn => hne ((revokeService_objects_none_iff hRev hObjInv oid).2 hn)))
+    (by rw [hSetEq]; exact hSet) hBlockingChainHigh
+    (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw))
+    (fun h0 y hy => hK h0 y (by unfold untypedRecordsChild at hy ⊢; rw [hUt] at hy; exact hy))
+    hR).trans hP0
 
 end SeLe4n.Kernel
