@@ -64,6 +64,12 @@ theorem of_kindPreservingWrite (hI : st.objects.invExt → st'.objects.invExt)
 theorem of_objects_eq (hO : st'.objects = st.objects) : MappingStage st st' :=
   fun h => ⟨hO ▸ h, fun hL => hL.of_objects_eq hO⟩
 
+/-- A stage from a state with the same objects is a stage from this one: the
+relation reads the objects alone. -/
+theorem of_objects_eq_left {st0 : SystemState} (hO : st0.objects = st.objects)
+    (h : MappingStage st0 st') : MappingStage st st' :=
+  fun hI => let ⟨hI', hL⟩ := h (hO ▸ hI); ⟨hI', fun hL0 => hL (hL0.of_objects_eq hO)⟩
+
 /-- A step whose objects agree with the pre-state's off the threads' run-queue
 links. -/
 theorem of_objectsAgreeOffRunLinks (hI : st.objects.invExt → st'.objects.invExt)
