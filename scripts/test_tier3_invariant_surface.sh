@@ -4046,6 +4046,17 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeFromCap_mappingStage($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Audit.lean
 run_check "INVARIANT" rg -n '^theorem auditDrainVisiblePrefix_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Audit.lean
 run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Fault.lean
+# No thread's space slot records a mapping: the second half of the invariant,
+# what boot reads of a thread's slots, and the thread-space set kept by it.
+run_check "INVARIANT" rg -n '^def threadSlotsRecordNoMapping($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n -U '^def liveMappingsRecorded \(st : SystemState\) : Prop :=\n  st\.liveMappingsWitnessed ∧ st\.threadSlotsRecordNoMapping$' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n -U '^def bootSpaceSlotCapsSafe[^\n]*(\n([ \t][^\n]*)?)*  \(∀ slot cap, tcb\.spaceSlotCap slot = some cap → cap\.mapping = none\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem CarveRequest\.object_threadSlotsEmpty($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Retype.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotCopied_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
 # WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
 # map records it on the capability, and refuses a capability whose mapping is
 # still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);
