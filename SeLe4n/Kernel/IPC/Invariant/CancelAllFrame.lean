@@ -522,22 +522,49 @@ theorem finaliseSchedContextUnbind_closed (P : SystemState → Prop) (hRel : Fin
       · exact h
   · exact h
 
-/-- **A property the deschedule keeps holds after
-`finaliseSchedContextDeschedule`.** -/
-theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
-    (hDes : FinaliseScDescheduleStep P) (st : SystemState) (x : SeLe4n.ObjId) (h : P st) :
-    P (finaliseSchedContextDeschedule st x) := by
+/-- **A property every deschedule keeps holds after
+`finaliseSchedContextDeschedule`**, whatever thread it takes off. -/
+theorem finaliseSchedContextDeschedule_closed_any (P : SystemState → Prop)
+    (hDes : ∀ s t, P s → P (descheduleAtPlacement s t)) (st : SystemState) (x : SeLe4n.ObjId)
+    (h : P st) : P (finaliseSchedContextDeschedule st x) := by
   unfold finaliseSchedContextDeschedule
   split
   · split
     · exact h
     · dsimp only
       split
+      · split
+        · exact hDes _ _ h
+        · exact h
+      · exact h
+  · exact h
+
+/-- **A property the deschedule keeps holds after
+`finaliseSchedContextDeschedule`**, on a state whose admission admits the
+context: the admission reads the holder as no core's idle thread. -/
+theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
+    (hDes : FinaliseScDescheduleStep P) (st : SystemState) (x : SeLe4n.ObjId)
+    (hA : schedContextFinaliseAdmitted st x = true) (h : P st) :
+    P (finaliseSchedContextDeschedule st x) := by
+  unfold schedContextFinaliseAdmitted at hA
+  unfold finaliseSchedContextDeschedule
+  split
+  · rename_i sc hO
+    rw [hO] at hA
+    dsimp only at hA
+    split
+    · exact h
+    · rename_i h0
+      rw [if_neg h0] at hA
+      dsimp only at hA ⊢
+      split
       · rename_i t hT
+        rw [hT] at hA
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hA
         split
         · rename_i hG
-          simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
-          exact hDes st _ t h hT hG.1.1.2 hG.1.2 hG.2
+          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          exact hDes st _ t h hT hG.1 hG.2 hA.2.1.2
         · exact h
       · exact h
   · exact h
@@ -546,8 +573,8 @@ theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
 theorem finaliseSchedContextDeschedule_objectsAgreeOffRunLinks (st : SystemState)
     (x : SeLe4n.ObjId) :
     (finaliseSchedContextDeschedule st x).objectsAgreeOffRunLinks st :=
-  finaliseSchedContextDeschedule_closed (fun s => s.objectsAgreeOffRunLinks st)
-    (fun s t _ h _ _ _ _ => (descheduleAtPlacement_objectsAgreeOffRunLinks s t).trans h) st x
+  finaliseSchedContextDeschedule_closed_any (fun s => s.objectsAgreeOffRunLinks st)
+    (fun s t h => (descheduleAtPlacement_objectsAgreeOffRunLinks s t).trans h) st x
     (.refl st)
 
 /-- **An admitted context is bound to no thread once its holder is unbound**:
@@ -566,8 +593,8 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
     sc.boundThreadCode = 0 ∧ sc.donationOrigin = none := by
   have hD := finaliseSchedContextDeschedule_objectsAgreeOffRunLinks st x
   have hInv1 : (finaliseSchedContextDeschedule st x).objects.invExt :=
-    finaliseSchedContextDeschedule_closed (fun s => s.objects.invExt)
-      (fun s t _ h _ _ _ _ => descheduleAtPlacement_preserves_objects_invExt s t h) st x hInv
+    finaliseSchedContextDeschedule_closed_any (fun s => s.objects.invExt)
+      (fun s t h => descheduleAtPlacement_preserves_objects_invExt s t h) st x hInv
   generalize finaliseSchedContextDeschedule st x = s1 at hD hInv1 hSc
   unfold schedContextFinaliseAdmitted at hA
   obtain ⟨sc0, hO, hB⟩ : ∃ sc0, st.objects[x]? = some (.schedContext sc0) ∧
@@ -658,7 +685,7 @@ theorem finaliseSchedContext_closed (P : SystemState → Prop) (hDes : FinaliseS
   split
   · rename_i hA
     exact finaliseSchedContextUnstack_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
-      (finaliseSchedContextDeschedule_closed P hDes st x h))
+      (finaliseSchedContextDeschedule_closed P hDes st x hA h))
   · exact h
 
 /-- **A property the suspend keeps holds after `finaliseThreadSuspend`.** -/
@@ -746,26 +773,61 @@ theorem finaliseThreadEndWaiters_closed (P : SystemState → Prop) (hRep : Final
   · exact finaliseReplyWaiters_closed P hRep hSuspend x _ s h
   · exact h
 
+/-- **The thread finalisation's admission admits its notification unbind**: it
+reads `notificationUnbindAdmitted` of the thread it finds. -/
+theorem threadFinaliseAdmitted_notificationUnbind {st : SystemState} {x : SeLe4n.ObjId}
+    (hA : threadFinaliseAdmitted st x = true) :
+    ∃ t, st.getTcb? ⟨x.val⟩ = some t ∧ notificationUnbindAdmitted st ⟨x.val⟩ t = true := by
+  unfold threadFinaliseAdmitted at hA
+  rw [SystemState.getObject?_eq_getElem] at hA
+  split at hA
+  rotate_left
+  · cases hA
+  rename_i t hO
+  dsimp only at hA
+  simp only [Bool.and_eq_true] at hA
+  exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, hA.1.2⟩
+
+/-- **An admitted unbind of a bound thread finds its notification.** -/
+theorem notificationUnbindAdmitted_notification {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (hG : notificationUnbindAdmitted st tid t = true) (h0 : t.boundNotificationCode ≠ 0) :
+    ∃ n, st.getNotification? ⟨t.boundNotificationCode - 1⟩ = some n := by
+  unfold notificationUnbindAdmitted at hG
+  simp only [Bool.or_eq_true, beq_iff_eq, h0, false_or, Bool.and_eq_true] at hG
+  revert hG
+  cases st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+  | none => intro hG; cases hG.1
+  | some n => intro _; exact ⟨n, rfl⟩
+
 /-- **A property the notification unbind keeps holds after
-`finaliseThreadUnbindNotification`.** -/
+`finaliseThreadUnbindNotification`**, on a state whose admission admits the
+unbind (`notificationUnbindAdmitted`). -/
 theorem finaliseThreadUnbindNotification_closed (P : SystemState → Prop)
-    (hUnbind : FinaliseUnbindStep P) (st : SystemState) (tid : SeLe4n.ThreadId) (h : P st) :
+    (hUnbind : FinaliseUnbindStep P) (st : SystemState) (tid : SeLe4n.ThreadId) {t : TCB}
+    (hT : st.getTcb? tid = some t) (hG : notificationUnbindAdmitted st tid t = true)
+    (h : P st) :
     P (finaliseThreadUnbindNotification st tid) := by
+  have hc : boundNotificationCodeOf st tid = t.boundNotificationCode := by
+    unfold boundNotificationCodeOf; rw [hT]
   unfold finaliseThreadUnbindNotification
   dsimp only
+  rw [hc]
   split
   · exact h
-  · rename_i hc
-    split
-    · rename_i n hN
-      split
-      · rename_i hB
-        simp only [Bool.and_eq_true, beq_iff_eq] at hB hc
-        refine hUnbind _ st n tid h hN ?_ ?_ hB.2
-        · unfold Notification.boundTCB; rw [hB.1]; exact threadOfOptCode_succ tid
-        · simp only [SeLe4n.ObjId.val]; omega
-      · exact h
-    · exact h
+  · rename_i h0
+    unfold notificationUnbindAdmitted at hG
+    simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at hG h0
+    rcases hG with hz | ⟨hB, hIn⟩
+    · exact absurd hz h0
+    · revert hB
+      cases hN : st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+      | none => intro hB; cases hB
+      | some n =>
+        intro hB
+        simp only [beq_iff_eq] at hB
+        refine hUnbind _ st n tid h hN ?_ ?_ hIn
+        · unfold Notification.boundTCB; rw [hB]; exact threadOfOptCode_succ tid
+        · rw [hc]; simp only [SeLe4n.ObjId.val]; omega
 
 /-- **A property the notification and endpoint cancels and the reply cancel keep
 holds after `finaliseThreadCancel`.** -/
@@ -834,12 +896,14 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
     P (finaliseThread x st) := by
   unfold finaliseThread; dsimp only
   split
-  · exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _
+  · rename_i hA
+    obtain ⟨t, hT, hG⟩ := threadFinaliseAdmitted_notificationUnbind hA
+    exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _
       (finaliseThreadSuspend_closed P hSuspend _ _
         (finaliseThreadEndWaiters_closed P hRep hSuspend _ _
           (finaliseThreadReturnLoan_closed P hRep hSuspend _ _
             (finaliseThreadCancel_closed P hCancel hEndpoint hRep _ _
-              (finaliseThreadUnbindNotification_closed P hUnbind _ _ h))))))
+              (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h))))))
   · exact h
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/

@@ -160,7 +160,9 @@ graph, which held no entry, is gone since `v0.36.145`), stated as one invariant 
 the boot establishes it, every syscall and kernel entry keeps it, and the retire
 reads the object's own back-links (`SystemState.tableBackLinksClear`) instead of
 walking those tables, the service lookup reading the endpoint's recorded code
-(`lookupServiceByRecordedCode`);
+(`lookupServiceByRecordedCode`); since `v0.36.147` a thread's finalisation
+checks before it writes, its pre-state admission carried to the state each
+later step runs on (`finaliseThread_admissionCarried`);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

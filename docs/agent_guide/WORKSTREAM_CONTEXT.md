@@ -343,7 +343,8 @@ borrowed context goes back by its lender's pop before the suspend
 (`finaliseThreadEndWaiters`, bounded by the thread's count).  New code that
 changes what a waiter's end reads or writes must keep the pre-state admission
 (`replyWaitersAdmitted`) reading exactly what the walk re-reads, and keep
-`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted` proved.  Since part
+`finaliseThreadEndWaiters_returnLoan_endsAll` and `replyWaitersAdmitted_plain`
+proved.  Since part
 26 (`v0.36.139`) a final delete runs the zombie loop (`zombieDeleteAt`,
 `Capability/FrameFinalise.lean`): an object that still holds capabilities (a
 populated CNode, a thread with space-slot capabilities) is emptied first, pass
@@ -407,9 +408,13 @@ the same step, as the registry's two writers do; new code that writes the
 interrupt-handler table must set the flag on the notification it names, and
 every other step must leave both fields as it found them, which a
 kind-preserving write already does (`kindPreservingWrite` carries
-`KernelObject.tableBackLinks`).  The finalise's admission is not yet
-carried across its steps (each step re-checks; plan row 34,
-`docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
+`KernelObject.tableBackLinks`).  Since `v0.36.147` the thread finalise's
+admission is carried across its steps (plan row 34,
+`finaliseThread_admissionCarried`), so new code that adds a finalise step must
+carry the admission to the state the step runs on, as the existing steps do,
+and a step that runs first, on the state the admission reads, reads no guard of
+its own (the notification unbind, the context deschedule).  The zombie fuel's
+sufficiency is plan row 35.  The reply stack's links are reciprocal both ways
 (`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
 that clears a frame's `prev` must clear in the same step the `next` of the frame
 it named, as the removal clears both of the cut frame's links; notification

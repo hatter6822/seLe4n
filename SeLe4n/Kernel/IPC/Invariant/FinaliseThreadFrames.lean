@@ -573,13 +573,9 @@ theorem getTcb?_modifyObject_of_keeps (s : SystemState) (k : SeLe4n.ObjId)
   simpa only [Option.map_id, id] using h
 
 /-- **The notification unbind clears the thread's bound-notification code and
-writes nothing else of it**, on a state its admission clause admits. -/
+writes nothing else of it.** -/
 theorem finaliseThreadUnbindNotification_self {s : SystemState} {x : SeLe4n.ThreadId} {tx : TCB}
-    (hInv : s.objects.invExt) (hX : s.getTcb? x = some tx)
-    (hA : (tx.boundNotificationCode == 0 ||
-      ((match s.getNotification? ⟨tx.boundNotificationCode - 1⟩ with
-        | some n => n.boundTCBCode == x.val + 1
-        | none => false) && unbindNotificationInPlace s x)) = true) :
+    (hInv : s.objects.invExt) (hX : s.getTcb? x = some tx) :
     (finaliseThreadUnbindNotification s x).getTcb? x = some { tx with boundNotificationCode := 0 } := by
   have hc : boundNotificationCodeOf s x = tx.boundNotificationCode := by
     unfold boundNotificationCodeOf; rw [hX]
@@ -590,22 +586,15 @@ theorem finaliseThreadUnbindNotification_self {s : SystemState} {x : SeLe4n.Thre
   · rw [if_pos (by rw [h0]; rfl), hX]
     cases tx; simp only at h0; subst h0; rfl
   · rw [if_neg (by simpa only [beq_iff_eq] using h0)]
-    simp only [Bool.or_eq_true, beq_iff_eq, h0, false_or] at hA
-    cases hN : s.getNotification? ⟨tx.boundNotificationCode - 1⟩ with
-    | none => rw [hN] at hA; cases hA
-    | some n =>
-      rw [hN] at hA
-      dsimp only at hA ⊢
-      rw [if_pos hA]
-      unfold storeUnbindNotification
-      rw [getTcb?_modifyObject_of_keeps _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv)
-        (fun _ => rfl) (fun o ho t' => by
-          cases o with
-          | tcb w => exact (ho w rfl).elim
-          | notification _ => intro hc; cases hc
-          | _ => exact ho t'),
-        SystemState.updateTcb_getTcb?_self s x _ hInv, hX]
-      rfl
+    unfold storeUnbindNotification
+    rw [getTcb?_modifyObject_of_keeps _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv)
+      (fun _ => rfl) (fun o ho t' => by
+        cases o with
+        | tcb w => exact (ho w rfl).elim
+        | notification _ => intro hc; cases hc
+        | _ => exact ho t'),
+      SystemState.updateTcb_getTcb?_self s x _ hInv, hX]
+    rfl
 
 -- ============================================================================
 -- The cancel quiets the finalised thread

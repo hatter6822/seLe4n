@@ -30,16 +30,15 @@ context, the holder's and the lender's binding codes, the stack's head and the
 frame below it (`returnDonated_replyUnframed`), and its end keeps every plain
 waiter (`finaliseReplyWaiter_unframed`).  So, on a state the admission
 `replyWaitersAdmitted` admits, the loan return and the walk together leave no
-thread waiting on the server
-(`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`): the admission's
-queue walk reads every waiter but the lender as plain
-(`replyWaitersEndableFrom_plain`).
+thread waiting on the server (`finaliseThreadEndWaiters_returnLoan_endsAll`):
+the admission's queue walk reads every waiter but the lender as plain
+(`replyWaitersAdmitted_plain`, `replyWaitersEndableFrom_plain`), and its lender
+clause makes the lender endable (`lenderEndable_of_admitted`).
 
-Scope: the theorem is stated on the state the loan return runs on.  The
+The theorems are stated on the state the loan return runs on.  The
 finalisation reads the admission one step earlier, before the thread's own
-notification unbind and IPC cancel (`finaliseThread`), and that carriage is
-not proved here: like every other finalise step, the loan return and the walk
-re-read their guards, and a state outside the guard is left as it is.
+notification unbind and IPC cancel (`finaliseThread`); that the facts read there
+carry to the loan return's state is `FinaliseAdmissionCarried.lean` (part 34).
 -/
 
 namespace SeLe4n.Kernel
@@ -665,6 +664,73 @@ theorem finaliseReplyWaiter_plain (st : SystemState) (hInv : st.objects.invExt)
   rw [k2.ipcState, k1.ipcState]
   exact hReady t1 ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1)
 
+/-- **An admitted cancel of a reply heading no stack**: the caller is blocked on
+the reply, hands nothing back, and the cancel is the splice, restore, consume
+and unlink on the state itself, then the revert. -/
+theorem finaliseReplyCallerCancel_noHead (st : SystemState) {c : SeLe4n.ThreadId} {t : TCB}
+    {r : Reply} (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ r.callerCode = c.val + 1 ∧
+      t.replyObject = some ⟨t.replyObjectCode - 1⟩ ∧
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = none ∧
+      finaliseReplyCallerCancel st c t = finaliseReplyRevert
+        (SystemState.unlinkReplyWaiterOpt
+          (Lifecycle.Suspend.consumeReplyLink
+            (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+          c t.blockingServer?) t.blockingServer? := by
+  unfold replyCallerCancelAdmitted at hE
+  rw [hR] at hE
+  dsimp only at hE
+  have hG := hE
+  simp only [Bool.and_eq_true, beq_iff_eq] at hE
+  obtain ⟨⟨hC, hF⟩, -⟩ := hE
+  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  have hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
+    rcases replyCallerFinalisable_cases hR hF with ⟨-, hD⟩ | ⟨s, -, -, -, hN, -⟩
+    · exact hD
+    · rw [hN] at hNH; cases hNH
+  refine ⟨⟨ep, rt, hB⟩, hC, hRO, hD, ?_⟩
+  unfold finaliseReplyCallerCancel finaliseReplyCancel
+  rw [hR]
+  dsimp only
+  rw [if_pos hG, hNH]
+  simp only [Bool.false_eq_true, if_false]
+  rw [cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+
+/-- **The cancel of a reply heading no stack writes no binding.** -/
+theorem finaliseReplyCallerCancel_noHead_schedLinkFrame (st : SystemState)
+    (hInv : st.objects.invExt) {c : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    SchedLinkFrame st (finaliseReplyCallerCancel st c t) ∧
+      (finaliseReplyCallerCancel st c t).objects.invExt := by
+  obtain ⟨⟨ep, rt, hB⟩, -, -, hD, hEq⟩ := finaliseReplyCallerCancel_noHead st hR hNH hE
+  rw [hEq]
+  have F := SchedLinkFrame.replyCancelTail st c t hInv
+  have hI : (SystemState.unlinkReplyWaiterOpt
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+      c t.blockingServer?).objects.invExt := by
+    rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+    exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
+  exact ⟨F.trans (SchedLinkFrame.finaliseReplyRevert _ _ hI),
+    (FinaliseFrame.finaliseReplyRevert _ _ hI).invExt⟩
+
+/-- **One plain waiter's end writes no binding**: its cancel hands nothing back
+(`finaliseReplyCallerCancel_noHead_schedLinkFrame`), and the suspend writes no
+binding. -/
+theorem finaliseReplyWaiter_plain_bindings (st : SystemState) (hInv : st.objects.invExt)
+    {x w : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r)) (hok : plainWaiterOk x w t r) :
+    bindingLinksAgree st (finaliseReplyWaiter st w t) := by
+  have hE := replyWaiterEndable_of_ok hR hok
+  unfold replyWaiterEndable at hE
+  have hG := ((Bool.and_eq_true _ _).mp hE).2
+  obtain ⟨F, hI⟩ := finaliseReplyCallerCancel_noHead_schedLinkFrame st hInv hR
+    (by rw [hok.2.2.2.1]; rfl) hG
+  unfold finaliseReplyWaiter
+  exact bindingLinksAgree.trans (F.binding : bindingLinksAgree _ _) (SchedLinkFrame.finaliseThreadSuspend _ w hI).binding
+
 -- ============================================================================
 -- The walk ends every waiter
 -- ============================================================================
@@ -768,18 +834,20 @@ admits a plain waiter, `replyWaiterEndable_of_ok`), keeps every other waiter
 plain (`finaliseReplyWaiter_plain`, `WaiterFrame.ready`), and shortens the queue
 (`replyWaitersConsistent`, `length_lt_of_nodup_sub`).  It keeps `x` itself
 (`serverKept`, WS-ZA ZA5.4 part 26): each step's frame excludes only the waiter
-it ends. -/
+it ends.  And it writes no binding (`bindingLinksAgree`, part 34): no plain
+waiter's end hands a context back (`finaliseReplyWaiter_plain_bindings`). -/
 theorem finaliseReplyWaiters_endsAll (x : SeLe4n.ThreadId) :
     ∀ (n : Nat) (s : SystemState), finaliseStepInvariant s →
       (∀ v, ReplyViews.waiterOf s.replyViews v x → plainWaiterReady s x v) →
       (∃ tx, s.getTcb? x = some tx ∧ tx.replyWaitersCount ≤ n) →
       (∀ v, ¬ ReplyViews.waiterOf (finaliseReplyWaiters x n s).replyViews v x) ∧
-        serverKept s (finaliseReplyWaiters x n s) x := by
+        serverKept s (finaliseReplyWaiters x n s) x ∧
+        bindingLinksAgree s (finaliseReplyWaiters x n s) := by
   intro n
   induction n with
   | zero =>
     intro s h _ ⟨tx, hX, hC⟩
-    refine ⟨fun v hv => ?_, serverKept.refl s x⟩
+    refine ⟨fun v hv => ?_, serverKept.refl s x, fun _ => rfl⟩
     obtain ⟨l, -, hLen, -, hMem⟩ := h.2.2.2.1.1 x tx.replyView
       (SystemState.replyViews_of_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hX))
     have hl : l = [] := List.eq_nil_of_length_eq_zero (by
@@ -795,7 +863,7 @@ theorem finaliseReplyWaiters_endsAll (x : SeLe4n.ThreadId) :
       have hH : tx.replyWaitersHeadCode = 0 :=
         (SeLe4n.ThreadId.ofOptCode_eq_none_iff _).mp hCh
       rw [finaliseReplyWaiters_headZero hX hH]
-      exact ⟨fun v hv => List.not_mem_nil ((hMem v).mpr hv), serverKept.refl s x⟩
+      exact ⟨fun v hv => List.not_mem_nil ((hMem v).mpr hv), serverKept.refl s x, fun _ => rfl⟩
     | cons w l' =>
       have hH : tx.replyWaitersHeadCode = w.val + 1 := by
         have hc := hCh.1
@@ -821,7 +889,8 @@ theorem finaliseReplyWaiters_endsAll (x : SeLe4n.ThreadId) :
       have hxw : ¬ x = w := fun e => hok.1 (by rw [e])
       obtain ⟨tx', hX', -, -⟩ := F.fwd x tx hxw hX
       have hIh := ih _ h' (fun u hu => ?_) ⟨tx', hX', ?_⟩
-      · exact ⟨hIh.1, (F.serverKept hxw).trans hIh.2⟩
+      · exact ⟨hIh.1, (F.serverKept hxw).trans hIh.2.1,
+          (finaliseReplyWaiter_plain_bindings s h.2.1 hR hok).trans hIh.2.2⟩
       · obtain ⟨huw, hu0⟩ := hBack u hu
         exact F.ready huw (hAll u hu0)
       · obtain ⟨l2, -, hLen2, hNd2, hMem2⟩ := h'.2.2.2.1.1 x tx'.replyView
@@ -1057,21 +1126,24 @@ theorem finaliseReplyRevert_frame (s : SystemState) (hInv : s.objects.invExt)
       PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt s y
         Concurrency.bootCoreId s.objectIndex.length hInv⟩
 
-/-- **The end of a caller whose reply is linked to no frame above** — the head of
-a stack, the lender's case, or a reply on none — when its guard admits it: it
-keeps every other thread and every other reply heading no stack
-(`WaiterFrame`), and leaves the caller `.ready` on no server. -/
-theorem finaliseReplyWaiter_unframed (st : SystemState) (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) {x w : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+/-- **The cancel of a caller whose reply is linked to no frame above** — the
+head of a stack, the lender's case, or a reply on none — when its guard admits
+it (`replyCallerCancelAdmitted`): it keeps every other thread and every other
+reply heading no stack (`WaiterFrame`) and the store's invariant, and leaves the
+caller `.ready`.  The step a finalised thread's own cancel takes
+(`finaliseThreadCancel`'s reply arm) and the first half of a waiter's end. -/
+theorem finaliseReplyCallerCancel_unframed (st : SystemState) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) {w : SeLe4n.ThreadId} {t : TCB} {r : Reply}
     (hT : st.getTcb? w = some t)
     (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
-    (hN : ∀ a, r.next ≠ some (.frame a)) (hE : replyWaiterEndable st x w t = true) :
-    WaiterFrame st (finaliseReplyWaiter st w t) (· = w) ∧
-      ∀ t', (finaliseReplyWaiter st w t).getTcb? w = some t' → t'.ipcState = .ready := by
-  unfold replyWaiterEndable replyCallerCancelAdmitted at hE
+    (hN : ∀ a, r.next ≠ some (.frame a)) (hE : replyCallerCancelAdmitted st w t = true) :
+    WaiterFrame st (finaliseReplyCallerCancel st w t) (· = w) ∧
+      (finaliseReplyCallerCancel st w t).objects.invExt ∧
+      ∀ t', (finaliseReplyCallerCancel st w t).getTcb? w = some t' → t'.ipcState = .ready := by
+  unfold replyCallerCancelAdmitted at hE
   rw [hR] at hE
   dsimp only at hE
-  have hG := ((Bool.and_eq_true _ _).mp hE).2
+  have hG := hE
   have hCF := ((Bool.and_eq_true _ _).mp hG).1
   have hC : r.callerCode = w.val + 1 := beq_iff_eq.mp ((Bool.and_eq_true _ _).mp hCF).1
   obtain ⟨-, hRes, -, -, hB, hRO, -, -, -⟩ :=
@@ -1111,18 +1183,36 @@ theorem finaliseReplyWaiter_unframed (st : SystemState) (hInv : st.objects.invEx
           exact hRd0 tc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hc)
     · exact ⟨FU, hI0, fun t' ht' => hRd0 t' ((SystemState.getTcb?_eq_some_iff _ _ _).mp ht')⟩
   obtain ⟨f1, hI1, hRd1⟩ := hC1
-  unfold finaliseReplyWaiter
   rw [hCancel]
   obtain ⟨f2, hI2⟩ := finaliseReplyRevert_frame _ hI1 t.blockingServer? (· = w)
   obtain ⟨f2', -⟩ := finaliseReplyRevert_frame _ hI1 t.blockingServer? (fun _ => False)
-  generalize finaliseReplyRevert (finaliseReplyCancel st r w t) t.blockingServer? = s2
-    at f2 f2' hI2
-  obtain ⟨f3, hW3⟩ := finaliseThreadSuspend_waiterFrame s2 hI2 w
-  refine ⟨(f1.trans f2).trans f3, fun t' ht' => ?_⟩
-  obtain ⟨t2, h2, k2⟩ := hW3 t' ht'
-  obtain ⟨t1, h1, k1⟩ := f2'.bwd w t2 (fun h => h) h2
-  rw [k2.ipcState, k1.ipcState]
+  refine ⟨f1.trans f2, hI2, fun t' ht' => ?_⟩
+  obtain ⟨t1, h1, k1⟩ := f2'.bwd w t' (fun h => h) ht'
+  rw [k1.ipcState]
   exact hRd1 t1 h1
+
+/-- **The end of a caller whose reply is linked to no frame above** — the head of
+a stack, the lender's case, or a reply on none — when its guard admits it: it
+keeps every other thread and every other reply heading no stack
+(`WaiterFrame`), and leaves the caller `.ready` on no server
+(`finaliseReplyCallerCancel_unframed`, then the suspend). -/
+theorem finaliseReplyWaiter_unframed (st : SystemState) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) {x w : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hT : st.getTcb? w = some t)
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hN : ∀ a, r.next ≠ some (.frame a)) (hE : replyWaiterEndable st x w t = true) :
+    WaiterFrame st (finaliseReplyWaiter st w t) (· = w) ∧
+      ∀ t', (finaliseReplyWaiter st w t).getTcb? w = some t' → t'.ipcState = .ready := by
+  unfold replyWaiterEndable at hE
+  obtain ⟨f1, hI1, hRd1⟩ := finaliseReplyCallerCancel_unframed st hInv hChain hT hR hN
+    ((Bool.and_eq_true _ _).mp hE).2
+  unfold finaliseReplyWaiter
+  generalize finaliseReplyCallerCancel st w t = s2 at f1 hI1 hRd1
+  obtain ⟨f3, hW3⟩ := finaliseThreadSuspend_waiterFrame s2 hI1 w
+  refine ⟨f1.trans f3, fun t' ht' => ?_⟩
+  obtain ⟨t2, h2, k2⟩ := hW3 t' ht'
+  rw [k2.ipcState]
+  exact hRd1 t2 h2
 
 -- ============================================================================
 -- The loan return and the walk end every waiter
@@ -1130,12 +1220,17 @@ theorem finaliseReplyWaiter_unframed (st : SystemState) (hInv : st.objects.invEx
 
 /-- **The lender of a context `x` holds on loan is endable as `x`'s waiter**
 (`tx`, `x`'s TCB): when `x`'s binding names an owner `L`, `L` is stored, its
-reply is linked to no frame above (it heads the context's stack), and the guard
-admits it. -/
+reply heads a context's stack (so it is linked to no frame above), and the
+guard admits it. -/
 def lenderEndable (st : SystemState) (x : SeLe4n.ThreadId) (tx : TCB) : Prop :=
   ∀ o, tx.scBindingOwnerCode = o + 1 → ∃ tl r, st.getTcb? ⟨o⟩ = some tl ∧
     st.getObject? ⟨tl.replyObjectCode - 1⟩ = some (.reply r) ∧
-    (∀ a, r.next ≠ some (.frame a)) ∧ replyWaiterEndable st x ⟨o⟩ tl = true
+    (∃ c, r.next = some (.head c)) ∧ replyWaiterEndable st x ⟨o⟩ tl = true
+
+/-- A reply heading a stack is linked to no frame above. -/
+theorem lenderEndable.noFrame {r : Reply} (h : ∃ c, r.next = some (.head c)) :
+    ∀ a, r.next ≠ some (.frame a) := by
+  obtain ⟨c, hc⟩ := h; intro a e; rw [hc] at e; cases e
 
 /-- **The loan return and the walk end every caller waiting on `x`**
 (WS-ZA ZA5.4 part 25): from a state carrying the finalisation's invariant in
@@ -1152,12 +1247,15 @@ theorem finaliseThreadEndWaiters_returnLoan_endsAll (s : SystemState) (x : SeLe4
       (∀ o, tx.scBindingOwnerCode = o + 1 → v ≠ ⟨o⟩) → plainWaiterReady s x v) :
     (∀ v, ¬ ReplyViews.waiterOf
       (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x).replyViews v x) ∧
-    serverKept s (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) x := by
+    serverKept s (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) x ∧
+    bindingLinksAgree (finaliseThreadReturnLoan s x)
+      (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) := by
   have walk : ∀ s1 : SystemState, finaliseStepInvariant s1 →
       (∀ v, ReplyViews.waiterOf s1.replyViews v x → plainWaiterReady s1 x v) →
       (∃ tx1, s1.getTcb? x = some tx1) →
       (∀ v, ¬ ReplyViews.waiterOf (finaliseThreadEndWaiters s1 x).replyViews v x) ∧
-        serverKept s1 (finaliseThreadEndWaiters s1 x) x := by
+        serverKept s1 (finaliseThreadEndWaiters s1 x) x ∧
+        bindingLinksAgree s1 (finaliseThreadEndWaiters s1 x) := by
     intro s1 h1 hA1 ⟨tx1, hX1⟩
     unfold finaliseThreadEndWaiters
     rw [hX1]
@@ -1170,6 +1268,7 @@ theorem finaliseThreadEndWaiters_returnLoan_endsAll (s : SystemState) (x : SeLe4
     exact walk s h (fun v hv => hAll v hv (fun o e => by rw [hO] at e; cases e)) ⟨tx, hX⟩
   | succ o =>
     obtain ⟨tl, r, hT, hRl, hN, hE⟩ := hL o hO
+    replace hN := lenderEndable.noFrame hN
     have hR : finaliseThreadReturnLoan s x = finaliseReplyWaiter s ⟨o⟩ tl := by
       unfold finaliseThreadReturnLoan; rw [hX]; simp only [hO, hT, hE, if_true]
     rw [hR]
@@ -1181,7 +1280,7 @@ theorem finaliseThreadEndWaiters_returnLoan_endsAll (s : SystemState) (x : SeLe4
       exact hE.1.1 (by rw [e])
     obtain ⟨tx', hX', -, -⟩ := F.fwd x tx hxL hX
     have hWk := walk _ (finaliseStepInvariant_replyWaiter h hT) (fun u hu => ?_) ⟨tx', hX'⟩
-    · exact ⟨hWk.1, (F.serverKept hxL).trans hWk.2⟩
+    · exact ⟨hWk.1, (F.serverKept hxL).trans hWk.2.1, hWk.2.2⟩
     obtain ⟨tu, htu, hsu⟩ := waiterOf_iff.mp hu
     have huL : ¬ u = ⟨o⟩ := by
       intro e; subst e
@@ -1234,23 +1333,22 @@ theorem replyWaitersEndableFrom_plain {st : SystemState} {x : SeLe4n.ThreadId} {
 /-- **The admission's lender clause, with the finalisation's invariant, makes the
 lender endable**: the lent context heads the lender's reply
 (`lentContextHeadsLenderFrame`), so that reply is linked to no frame above, and
-the admission reads the lender's guard.  `x`'s binding is a loan whenever it
-names an owner (`hSc`). -/
+the admission reads the lender's guard.  The admission reads the loan's context
+code too, so `x`'s binding is a loan (`.donated`). -/
 theorem lenderEndable_of_admitted {s : SystemState} {x : SeLe4n.ThreadId} {tx : TCB}
     (h : finaliseStepInvariant s) (hX : s.getTcb? x = some tx)
-    (hSc : tx.scBindingOwnerCode ≠ 0 → tx.scBindingScCode ≠ 0)
     (hA : replyWaitersAdmitted s x tx = true) : lenderEndable s x tx := by
   intro o hO
   unfold replyWaitersAdmitted at hA
   rw [hO] at hA
-  simp only [Bool.and_eq_true] at hA
-  obtain ⟨⟨-, hM⟩, -⟩ := hA
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hA
+  obtain ⟨⟨⟨hSc, -⟩, hM⟩, -⟩ := hA
   cases hT : s.getTcb? ⟨o⟩ with
   | none => rw [hT] at hM; cases hM
   | some tl =>
     rw [hT] at hM
     cases hS : tx.scBindingScCode with
-    | zero => exact absurd hS (hSc (by rw [hO]; exact Nat.succ_ne_zero _))
+    | zero => exact absurd hS hSc
     | succ c =>
       have hBind : tx.schedContextBinding = .donated ⟨c⟩ ⟨o⟩ := by
         show SchedContextBinding.ofCodes tx.scBindingScCode tx.scBindingOwnerCode = _
@@ -1260,32 +1358,28 @@ theorem lenderEndable_of_admitted {s : SystemState} {x : SeLe4n.ThreadId} {tx : 
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
       have hcode : tl.replyObjectCode = rid.val + 1 :=
         (SeLe4n.ReplyId.ofOptCode_eq_some_iff _ _).mp hRO
-      refine ⟨tl, r, rfl, ?_, (fun a e => by rw [hN] at e; cases e), hM⟩
+      refine ⟨tl, r, rfl, ?_, ⟨_, hN⟩, hM⟩
       unfold SystemState.getObject?
       rw [hcode, Nat.add_sub_cancel]
       exact hRo
 
-/-- **A finalised thread's loan return and walk end every caller waiting on it,
-on a state its admission reads** (WS-ZA ZA5.4 part 25): on a state carrying the
-finalisation's invariant on which `replyWaitersAdmitted` admits `x`, no thread
-waits on `x` after the lender's pop and the walk — neither refuses midway.  The
-admission's queue walk reads every waiter but the lender as plain
-(`replyWaitersEndableFrom_plain`) and its lender clause makes the lender endable
-(`lenderEndable_of_admitted`).  Both keep `x` itself (`serverKept`). -/
-theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted (s : SystemState)
-    (x : SeLe4n.ThreadId) (tx : TCB) (h : finaliseStepInvariant s)
-    (hX : s.getTcb? x = some tx)
-    (hSc : tx.scBindingOwnerCode ≠ 0 → tx.scBindingScCode ≠ 0)
+/-- **The waiters' admission reads every waiter but the lender as plain**
+(WS-ZA ZA5.4 part 25): on a state carrying the finalisation's invariant on which
+`replyWaitersAdmitted` admits `x`, every thread waiting on `x` but the lender
+its binding names is a plain waiter — the admission's queue walk reads each one
+(`replyWaitersEndableFrom_plain`); its lender clause makes the lender endable
+(`lenderEndable_of_admitted`).  The thread finalisation carries both to the
+state its loan return runs on (part 34). -/
+theorem replyWaitersAdmitted_plain {s : SystemState} {x : SeLe4n.ThreadId} {tx : TCB}
+    (h : finaliseStepInvariant s) (hX : s.getTcb? x = some tx)
     (hA : replyWaitersAdmitted s x tx = true) :
-    (∀ v, ¬ ReplyViews.waiterOf
-      (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x).replyViews v x) ∧
-    serverKept s (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) x := by
-  have hL := lenderEndable_of_admitted h hX hSc hA
+    ∀ v, ReplyViews.waiterOf s.replyViews v x →
+      (∀ o, tx.scBindingOwnerCode = o + 1 → v ≠ ⟨o⟩) → plainWaiterReady s x v := by
   unfold replyWaitersAdmitted at hA
   have hW := ((Bool.and_eq_true _ _).mp hA).2
   obtain ⟨l, hCh, hLen, -, hMem⟩ := h.2.2.2.1.1 x tx.replyView
     (SystemState.replyViews_of_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hX))
-  refine finaliseThreadEndWaiters_returnLoan_endsAll s x tx h hX hL (fun v hv hne => ?_)
+  intro v hv hne
   refine replyWaitersEndableFrom_plain l tx.replyWaitersCount tx.replyWaitersHeadCode none hCh
     (by rw [hLen]; exact Nat.le_refl _) hW v ((hMem v).mpr hv) (fun e => ?_)
   exact hne v.val (by rw [← e]) rfl

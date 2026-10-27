@@ -160,6 +160,66 @@ theorem getSchedContext?_back (h : bindingLinksAgree st st') {s : SeLe4n.SchedCo
   obtain ⟨u, hu, e⟩ := h.sc_back ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hk)
   exact ⟨u, (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hu, e⟩
 
+theorem trans {a b c : SystemState} (h₁ : bindingLinksAgree a b)
+    (h₂ : bindingLinksAgree b c) : bindingLinksAgree a c := fun o => (h₂ o).trans (h₁ o)
+
+theorem of_objects_eq {a b : SystemState} (h : b.objects = a.objects) :
+    bindingLinksAgree a b := fun o => by rw [h]
+
+/-- A thread read across a step agreeing on the bindings has the same binding
+codes there, both ways. -/
+theorem getTcb?_back {s s' : SystemState} (h : bindingLinksAgree s s')
+    {v : SeLe4n.ThreadId} {t' : TCB} (ht : s'.getTcb? v = some t') :
+    ∃ t, s.getTcb? v = some t ∧ t'.scBindingScCode = t.scBindingScCode ∧
+      t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+  have e := h v.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp ht] at e
+  cases h0 : s.objects[v.toObjId]? with
+  | none => rw [h0] at e; cases e
+  | some o =>
+    rw [h0] at e
+    cases o with
+    | tcb t =>
+      simp only [schedBindingLinksOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at e
+      exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr h0, e.1, e.2⟩
+    | schedContext _ => cases e
+    | _ => cases e
+
+theorem getTcb?_fwd {s s' : SystemState} (h : bindingLinksAgree s s')
+    {v : SeLe4n.ThreadId} {t : TCB} (ht : s.getTcb? v = some t) :
+    ∃ t', s'.getTcb? v = some t' ∧ t'.scBindingScCode = t.scBindingScCode ∧
+      t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+  have e := h v.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp ht] at e
+  cases h0 : s'.objects[v.toObjId]? with
+  | none => rw [h0] at e; cases e
+  | some o =>
+    rw [h0] at e
+    cases o with
+    | tcb t' =>
+      simp only [schedBindingLinksOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at e
+      exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h0, e.1, e.2⟩
+    | schedContext _ => cases e
+    | _ => cases e
+
+/-- A context read after a step agreeing on the bindings is one before it,
+bound to the same thread, both ways. -/
+theorem getSchedContext?_fwd {s s' : SystemState} (h : bindingLinksAgree s s')
+    {c : SeLe4n.SchedContextId} {sc : SchedContext} (hc : s.getSchedContext? c = some sc) :
+    ∃ sc', s'.getSchedContext? c = some sc' ∧ sc'.boundThreadCode = sc.boundThreadCode := by
+  have e := h c.toObjId
+  rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp hc] at e
+  cases h0 : s'.objects[c.toObjId]? with
+  | none => rw [h0] at e; cases e
+  | some o =>
+    rw [h0] at e
+    cases o with
+    | schedContext sc' =>
+      simp only [schedBindingLinksOf, Option.some.injEq, Sum.inr.injEq] at e
+      exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr h0, e⟩
+    | tcb _ => cases e
+    | _ => cases e
+
 end bindingLinksAgree
 
 /-- A thread's home core is read off its affinity: states agreeing on every
@@ -454,6 +514,16 @@ theorem suspend (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invE
     SchedLinkFrame st ((SeLe4n.Kernel.descheduleAtPlacement st t).updateTcb t finalisedSuspendMark) :=
   (descheduleAtPlacement st t).trans
     (updateTcb _ t _ (FinaliseFrame.descheduleAt st t _ hInv).invExt)
+
+/-- A finalised thread's suspend, its guard read or not. -/
+theorem finaliseThreadSuspend (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SchedLinkFrame st (SeLe4n.Kernel.finaliseThreadSuspend st t) := by
+  unfold SeLe4n.Kernel.finaliseThreadSuspend
+  split
+  · split
+    · exact suspend st t hInv
+    · exact .refl st
+  · exact .refl st
 
 end SchedLinkFrame
 

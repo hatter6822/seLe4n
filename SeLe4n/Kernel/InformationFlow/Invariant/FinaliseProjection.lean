@@ -403,6 +403,7 @@ notification and endpoint queue links and its scheduling binding. -/
 theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
     (observer : IfObserver) {s : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t)
+    (hG : notificationUnbindAdmitted s tid t = true)
     (hTh : objectObservable ctx observer tid.toObjId = false)
     (hBn : t.boundNotificationCode ≠ 0 →
       objectObservable ctx observer ⟨t.boundNotificationCode - 1⟩ = false) :
@@ -423,31 +424,28 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
   split
   · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   next h0 =>
-  split
-  · next n hN =>
-    split
-    · have hne : t.boundNotificationCode ≠ 0 := by simpa using h0
-      obtain ⟨hP, -⟩ := storeUnbindNotification_hidden ctx observer s _ n tid hInv hN
-        (hBn hne) hTh
-      have hNo := (SystemState.getNotification?_eq_some_iff s _ n).mp hN
-      have hI1 := SystemState.updateTcb_preserves_objects_invExt s tid
-        (fun y => { y with boundNotificationCode := 0 }) hInv
-      refine ⟨hP, modifyObject_preserves_objects_invExt hI1,
-        { t with boundNotificationCode := 0 }, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-      have hNe : (⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId) ≠ tid.toObjId := by
-        intro e; rw [e, hTo] at hNo; cases hNo
-      refine (SystemState.getTcb?_eq_some_iff _ _ _).mpr ?_
-      unfold storeUnbindNotification
-      rw [modifyObject_objects_getElem hI1, if_neg hNe]
-      exact updateTcb_objects_self_of_tcb _ hInv hTo
-    · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hne : t.boundNotificationCode ≠ 0 := by simpa using h0
+  obtain ⟨n, hN⟩ := notificationUnbindAdmitted_notification hG hne
+  obtain ⟨hP, -⟩ := storeUnbindNotification_hidden ctx observer s _ n tid hInv hN
+    (hBn hne) hTh
+  have hNo := (SystemState.getNotification?_eq_some_iff s _ n).mp hN
+  have hI1 := SystemState.updateTcb_preserves_objects_invExt s tid
+    (fun y => { y with boundNotificationCode := 0 }) hInv
+  refine ⟨hP, modifyObject_preserves_objects_invExt hI1,
+    { t with boundNotificationCode := 0 }, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  have hNe : (⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId) ≠ tid.toObjId := by
+    intro e; rw [e, hTo] at hNo; cases hNo
+  refine (SystemState.getTcb?_eq_some_iff _ _ _).mpr ?_
+  unfold storeUnbindNotification
+  rw [modifyObject_objects_getElem hI1, if_neg hNe]
+  exact updateTcb_objects_self_of_tcb _ hInv hTo
 
 /-- **What a finalised thread's notification unbind leaves of the object
 table**: the index is the pre-state's, and each slot is the pre-state's, or a
 thread rewritten as a thread, or a notification rewritten as a notification. -/
 theorem finaliseThreadUnbindNotification_slots {s : SystemState} {tid : SeLe4n.ThreadId}
-    {t : TCB} (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t) :
+    {t : TCB} (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t)
+    (hG : notificationUnbindAdmitted s tid t = true) :
     (finaliseThreadUnbindNotification s tid).objectIndexSet = s.objectIndexSet ∧
     ∀ k : SeLe4n.ObjId, (finaliseThreadUnbindNotification s tid).objects[k]? = s.objects[k]? ∨
       (∃ a b, s.objects[k]? = some (KernelObject.tcb a) ∧
@@ -462,39 +460,37 @@ theorem finaliseThreadUnbindNotification_slots {s : SystemState} {tid : SeLe4n.T
   rw [hc]
   split
   · exact ⟨rfl, fun _ => Or.inl rfl⟩
-  split
-  · next n hN =>
-    split
-    · have hNo := (SystemState.getNotification?_eq_some_iff s _ n).mp hN
-      have hI1 := SystemState.updateTcb_preserves_objects_invExt s tid
-        (fun y => { y with boundNotificationCode := 0 }) hInv
-      refine ⟨SystemState.updateTcb_objectIndexSet s tid _, fun k => ?_⟩
-      unfold storeUnbindNotification
-      rw [modifyObject_objects_getElem hI1]
-      by_cases hk : (⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId) = k
-      · subst hk
-        have hNe : tid.toObjId ≠ ⟨t.boundNotificationCode - 1⟩ := by
-          intro e; rw [← e, hTo] at hNo; cases hNo
-        rw [if_pos rfl, SystemState.updateTcb_objects_ne _ _ _ _ hNe hInv, hNo]
-        exact Or.inr (Or.inr ⟨n, _, rfl, rfl⟩)
-      · rw [if_neg hk]
-        by_cases hk' : tid.toObjId = k
-        · subst hk'
-          rw [updateTcb_objects_self_of_tcb _ hInv hTo]
-          exact Or.inr (Or.inl ⟨t, _, hTo, rfl⟩)
-        · exact Or.inl (SystemState.updateTcb_objects_ne _ _ _ _ hk' hInv)
-    · exact ⟨rfl, fun _ => Or.inl rfl⟩
-  · exact ⟨rfl, fun _ => Or.inl rfl⟩
+  next h0 =>
+  obtain ⟨n, hN⟩ := notificationUnbindAdmitted_notification hG (by simpa using h0)
+  have hNo := (SystemState.getNotification?_eq_some_iff s _ n).mp hN
+  have hI1 := SystemState.updateTcb_preserves_objects_invExt s tid
+    (fun y => { y with boundNotificationCode := 0 }) hInv
+  refine ⟨SystemState.updateTcb_objectIndexSet s tid _, fun k => ?_⟩
+  unfold storeUnbindNotification
+  rw [modifyObject_objects_getElem hI1]
+  by_cases hk : (⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId) = k
+  · subst hk
+    have hNe : tid.toObjId ≠ ⟨t.boundNotificationCode - 1⟩ := by
+      intro e; rw [← e, hTo] at hNo; cases hNo
+    rw [if_pos rfl, SystemState.updateTcb_objects_ne _ _ _ _ hNe hInv, hNo]
+    exact Or.inr (Or.inr ⟨n, _, rfl, rfl⟩)
+  · rw [if_neg hk]
+    by_cases hk' : tid.toObjId = k
+    · subst hk'
+      rw [updateTcb_objects_self_of_tcb _ hInv hTo]
+      exact Or.inr (Or.inl ⟨t, _, hTo, rfl⟩)
+    · exact Or.inl (SystemState.updateTcb_objects_ne _ _ _ _ hk' hInv)
 
 /-- ...so the unbind keeps the index complete and every reply in its slot. -/
 theorem finaliseThreadUnbindNotification_index {s : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hInv : s.objects.invExt) (hT : s.getTcb? tid = some t)
+    (hG : notificationUnbindAdmitted s tid t = true)
     (hIdx : SeLe4n.Model.objectIndexSetComplete s) :
     SeLe4n.Model.objectIndexSetComplete (finaliseThreadUnbindNotification s tid) ∧
     ∀ (k : SeLe4n.ObjId) (r : Reply),
       (finaliseThreadUnbindNotification s tid).objects[k]? = some (KernelObject.reply r) →
       s.objects[k]? = some (KernelObject.reply r) := by
-  obtain ⟨hS, hK⟩ := finaliseThreadUnbindNotification_slots hInv hT
+  obtain ⟨hS, hK⟩ := finaliseThreadUnbindNotification_slots hInv hT hG
   refine ⟨fun k hk => ?_, fun k r hk => ?_⟩
   · rw [hS]
     refine hIdx k ?_
@@ -1533,11 +1529,14 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
     obtain ⟨h1, h2, h3, h4, h5, h6, h7, h9, hWait, h8⟩ := hH t hO
     have hT : st.getTcb? ⟨x.val⟩ = some t :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
+    have hG : notificationUnbindAdmitted st ⟨x.val⟩ t = true := by
+      obtain ⟨t', hT', hG'⟩ := threadFinaliseAdmitted_notificationUnbind hAd
+      rw [hT] at hT'; cases hT'; exact hG'
     obtain ⟨hP1, hI1, t1, hT1, e1, e2, e3, e4, e5, e6, -, e7⟩ :=
-      finaliseThreadUnbindNotification_hidden ctx observer hInv hT hX h1
-    obtain ⟨hIdx1, hRp⟩ := finaliseThreadUnbindNotification_index hInv hT hIdx
+      finaliseThreadUnbindNotification_hidden ctx observer hInv hT hG hX h1
+    obtain ⟨hIdx1, hRp⟩ := finaliseThreadUnbindNotification_index hInv hT hG hIdx
     have hSet1 : (finaliseThreadUnbindNotification st ⟨x.val⟩).objectIndexSet.table.invExt := by
-      rw [(finaliseThreadUnbindNotification_slots hInv hT).1]; exact hSet
+      rw [(finaliseThreadUnbindNotification_slots hInv hT hG).1]; exact hSet
     obtain ⟨hP2, hI2⟩ := finaliseThreadCancel_hidden ctx observer hI1 hT1 hValid hIdx1 hSet1
       hBlockingChainHigh h8 hX
       (by rw [e1]; exact h3) (by rw [e2]; exact h4) (by rw [e3]; exact h5)
@@ -1659,8 +1658,8 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
   rw [finaliseSchedContext_eq]
   split
   · have hD : FinaliseFrame st (finaliseSchedContextDeschedule st x) :=
-      finaliseSchedContextDeschedule_closed (FinaliseFrame st)
-        (fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt)) st x
+      finaliseSchedContextDeschedule_closed_any (FinaliseFrame st)
+        (fun s t h => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt)) st x
         (.refl hInv)
     have hF : FinaliseFrame st (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) := by
       refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ _ x hD
