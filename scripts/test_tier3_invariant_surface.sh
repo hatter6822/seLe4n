@@ -4112,6 +4112,12 @@ run_check "INVARIANT" rg -n '^    threadRecordQuiesced \(finaliseThread x st\) x
 run_check "INVARIANT" rg -n -U '\(hBd : runCodeBounded st ⟨x\.val⟩\) \(hA : threadFinaliseAdmitted st x = true\) :\n    threadRecordQuiesced \(finaliseThread x st\) x := by$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_negative_check "INVARIANT" rg -n '\((hCancel|hWait|hBind) : ' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_check "INVARIANT" rg -n '^theorem threadIpcCancelAdmitted_after_unbind($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+# The notification unbind runs first, on the state the admission reads, so it
+# reads no guard of its own: the admission reads the binding back and the
+# unbind in place (`notificationUnbindAdmitted`).
+run_check "INVARIANT" rg -n -U 'def finaliseThreadUnbindNotification \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  let c := boundNotificationCodeOf st tid\n  if c == 0 then st else storeUnbindNotification st tid ⟨c - 1⟩$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^    notificationUnbindAdmitted st tid t &&$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_readsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_frames($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean

@@ -345,6 +345,7 @@ theorem replyCallerCancelAdmitted_eq (c : SeLe4n.ThreadId) (t : TCB) :
       | reply rr => rw [(h.reply _ rr).mp e'] at e; cases e
       | _ => rfl
 
+
 /-- **The cancel's admission reads only what the unbind keeps.** -/
 theorem threadIpcCancelAdmitted_eq (x : SeLe4n.ThreadId) (t : TCB) :
     threadIpcCancelAdmitted s' x t = threadIpcCancelAdmitted s x t := by
@@ -372,6 +373,32 @@ theorem threadIpcCancelAdmitted_eq (x : SeLe4n.ThreadId) (t : TCB) :
 
 end CancelReadsKept
 
+/-- Every state keeps its own cancel reads. -/
+theorem CancelReadsKept.refl (s : SystemState) : CancelReadsKept s s :=
+  ⟨fun _ => rfl, fun _ => rfl, fun _ _ => Iff.rfl, fun _ => rfl, tcbProjKept.of_objects rfl,
+    fun _ => rfl, fun _ _ => rfl, rfl⟩
+
+/-- **The notification unbind keeps the cancel's reads**, on a state whose
+admission admits it (`notificationUnbindAdmitted`): with no binding it writes
+nothing, and otherwise it is the in-place unbind the admission reads. -/
+theorem finaliseThreadUnbindNotification_readsKept (st : SystemState) (x : SeLe4n.ThreadId)
+    {t : TCB} (hInv : st.objects.invExt) (hX : st.getTcb? x = some t)
+    (hG : notificationUnbindAdmitted st x t = true) :
+    CancelReadsKept (finaliseThreadUnbindNotification st x) st := by
+  have hc : boundNotificationCodeOf st x = t.boundNotificationCode := by
+    unfold boundNotificationCodeOf; rw [hX]
+  unfold finaliseThreadUnbindNotification
+  dsimp only
+  rw [hc]
+  split
+  · exact .refl st
+  · rename_i h0
+    unfold notificationUnbindAdmitted at hG
+    simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at hG h0
+    rcases hG with hz | ⟨-, hIn⟩
+    · exact absurd hz h0
+    · exact CancelReadsKept.storeUnbindNotification st x _ hInv hIn
+
 -- ============================================================================
 -- §3  The admission's parts, and the cancel's admission after the unbind
 -- ============================================================================
@@ -389,10 +416,7 @@ theorem threadFinaliseAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId}
       tx.timeoutBudget = none ∧ replyWaitersAdmitted st ⟨x.val⟩ tx = true ∧
       threadIpcCancelAdmitted st ⟨x.val⟩ tx = true ∧
       (tx.replyObjectCode = 0 ∨ replyHeadPopsOwn st tx = true) ∧
-      (tx.boundNotificationCode == 0 ||
-        ((match st.getNotification? ⟨tx.boundNotificationCode - 1⟩ with
-          | some n => n.boundTCBCode == x.val + 1
-          | none => false) && unbindNotificationInPlace st ⟨x.val⟩)) = true ∧
+      notificationUnbindAdmitted st ⟨x.val⟩ tx = true ∧
       (tx.scBindingScCode = 0 ∨ ∃ sc, st.getSchedContext? ⟨tx.scBindingScCode - 1⟩ = some sc ∧
         sc.boundThreadCode = x.val + 1) := by
   unfold threadFinaliseAdmitted at hA
@@ -423,7 +447,7 @@ theorem threadFinaliseAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId}
 /-- **The cancel's admission after the notification unbind** (part 34): on a
 state the finalisation admits, the cancel's admission holds of the thread the
 notification unbind leaves — the unbind writes nothing the admission reads
-(`CancelReadsKept.storeUnbindNotification`, `CancelReadsKept.threadIpcCancelAdmitted_eq`),
+(`finaliseThreadUnbindNotification_readsKept`, `CancelReadsKept.threadIpcCancelAdmitted_eq`),
 and the thread it leaves differs from the pre-state's in its bound-notification
 code alone. -/
 theorem threadIpcCancelAdmitted_after_unbind {st : SystemState} {x : SeLe4n.ObjId}
@@ -432,29 +456,10 @@ theorem threadIpcCancelAdmitted_after_unbind {st : SystemState} {x : SeLe4n.ObjI
       threadIpcCancelAdmitted (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩ t1 = true := by
   obtain ⟨tx, hX, -, -, -, -, -, -, hC, -, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
   intro t1 h1
-  rw [finaliseThreadUnbindNotification_self hInv hX hBnc] at h1
+  rw [finaliseThreadUnbindNotification_self hInv hX] at h1
   cases h1
-  have hT : threadIpcCancelAdmitted st ⟨x.val⟩ { tx with boundNotificationCode := 0 } = true :=
-    hC
-  have hc : boundNotificationCodeOf st ⟨x.val⟩ = tx.boundNotificationCode := by
-    unfold boundNotificationCodeOf; rw [hX]
-  unfold finaliseThreadUnbindNotification
-  dsimp only
-  rw [hc]
-  split
-  · exact hT
-  · split
-    · split
-      · rename_i hG
-        simp only [Bool.and_eq_true] at hG
-        rw [(CancelReadsKept.storeUnbindNotification st _ _ hInv hG.2).threadIpcCancelAdmitted_eq]
-        exact hT
-      · exact hT
-    · exact hT
-
--- ============================================================================
--- §4  What the unbind and the cancel keep of the waiters
--- ============================================================================
+  rw [(finaliseThreadUnbindNotification_readsKept st _ hInv hX hBnc).threadIpcCancelAdmitted_eq]
+  exact hC
 
 /-- **What the finalised thread's unbind and cancel keep of another thread**,
 compared: its two IPC codes, its reply link, its timeout budget and its id, a
@@ -1124,24 +1129,16 @@ theorem CancelReadsKept.loanKept {s s' : SystemState} (h : CancelReadsKept s' s)
   · unfold SystemState.getObject? at hk ⊢
     exact (h.reply k r).mpr hk
 
-/-- **The notification unbind keeps both frames**: it writes nothing a plain
-waiter's guard or the lender's guard reads. -/
+/-- **The notification unbind keeps both frames**, on a state whose admission
+admits it: it writes nothing a plain waiter's guard or the lender's guard
+reads. -/
 theorem finaliseThreadUnbindNotification_frames (st : SystemState) (x : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (K : SeLe4n.ObjId → Reply → Prop) :
+    {t : TCB} (hInv : st.objects.invExt) (hX : st.getTcb? x = some t)
+    (hG : notificationUnbindAdmitted st x t = true) (K : SeLe4n.ObjId → Reply → Prop) :
     CancelFrame st (finaliseThreadUnbindNotification st x) x ∧
-      LoanKept st (finaliseThreadUnbindNotification st x) K := by
-  unfold finaliseThreadUnbindNotification
-  dsimp only
-  split
-  · exact ⟨.refl st x, .refl st K⟩
-  · split
-    · split
-      · rename_i hG
-        simp only [Bool.and_eq_true] at hG
-        have h := CancelReadsKept.storeUnbindNotification st x ⟨boundNotificationCodeOf st x - 1⟩ hInv hG.2
-        exact ⟨h.cancelFrame x, h.loanKept K⟩
-      · exact ⟨.refl st x, .refl st K⟩
-    · exact ⟨.refl st x, .refl st K⟩
+      LoanKept st (finaliseThreadUnbindNotification st x) K :=
+  have h := finaliseThreadUnbindNotification_readsKept st x hInv hX hG
+  ⟨h.cancelFrame x, h.loanKept K⟩
 
 -- ============================================================================
 -- §8  The notification and endpoint cancels keep both frames
@@ -2084,23 +2081,14 @@ theorem finaliseThreadReturnLoan_unbinds (s : SystemState) (x : SeLe4n.ThreadId)
 -- §12  The notification unbind carries the admission's reads
 -- ============================================================================
 
-/-- **The notification unbind keeps every reply, both ways**: the unbind writes
-the thread and the notification alone (`CancelReadsKept.storeUnbindNotification`). -/
+/-- **The notification unbind keeps every reply, both ways**, on a state whose
+admission admits it (`finaliseThreadUnbindNotification_readsKept`). -/
 theorem finaliseThreadUnbindNotification_replies (st : SystemState) (x : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (r : Reply) :
+    {t : TCB} (hInv : st.objects.invExt) (hX : st.getTcb? x = some t)
+    (hG : notificationUnbindAdmitted st x t = true) (k : SeLe4n.ObjId) (r : Reply) :
     (finaliseThreadUnbindNotification st x).objects[k]? = some (.reply r) ↔
-      st.objects[k]? = some (.reply r) := by
-  unfold finaliseThreadUnbindNotification
-  dsimp only
-  split
-  · exact Iff.rfl
-  · split
-    · split
-      · rename_i hG
-        simp only [Bool.and_eq_true] at hG
-        exact (CancelReadsKept.storeUnbindNotification st x _ hInv hG.2).reply k r
-      · exact Iff.rfl
-    · exact Iff.rfl
+      st.objects[k]? = some (.reply r) :=
+  (finaliseThreadUnbindNotification_readsKept st x hInv hX hG).reply k r
 
 /-- A read of one reply answers alike on two states keeping every reply, both
 ways: the head pop's hand-back question. -/

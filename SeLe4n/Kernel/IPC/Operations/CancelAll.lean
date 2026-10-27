@@ -987,6 +987,19 @@ reply. -/
     | _ => true
   | _ => true
 
+/-- **Whether the thread `tid` (its TCB `t`) may be unbound from its
+notification**: it is bound to none, or the notification its code names is
+stored and bound back to it, and the unbind writes in place
+(`unbindNotificationInPlace`).  The thread finalisation's admission reads it on
+the pre-state, where the unbind runs first (`finaliseThreadUnbindNotification`),
+so the unbind itself reads nothing more. -/
+@[inline] def notificationUnbindAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) (t : TCB) :
+    Bool :=
+  t.boundNotificationCode == 0 ||
+    ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+      | some n => n.boundTCBCode == tid.val + 1
+      | none => false) && unbindNotificationInPlace st tid)
+
 /-- **Whether a final delete may finalise the thread at `x`**, read on the
 pre-state before any write.  The thread is stored under its own id and is no
 reserved or idle thread; its IPC state is one the cancel ends
@@ -1019,10 +1032,7 @@ the retire then refuses the thread. -/
       t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyObjectCode == 0) &&
     t.timeoutBudget.isNone && replyWaitersAdmitted st tid t &&
     threadIpcCancelAdmitted st tid t && (t.replyObjectCode == 0 || replyHeadPopsOwn st t) &&
-    (t.boundNotificationCode == 0 ||
-      ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
-        | some n => n.boundTCBCode == x.val + 1
-        | none => false) && unbindNotificationInPlace st tid)) &&
+    notificationUnbindAdmitted st tid t &&
     (t.scBindingScCode == 0 ||
       match st.getSchedContext? ⟨t.scBindingScCode - 1⟩ with
       | some sc => sc.boundThreadCode == x.val + 1
@@ -1222,18 +1232,14 @@ theorem finaliseThreadReleaseCores_unheld (st : SystemState) (tid : SeLe4n.Threa
   rw [finaliseThreadReleaseCores_machine]; exact MachineState.releaseThread_releases _ _
 
 /-- **Unbind a thread being finalised from its notification** (seL4's
-`unbindNotification`), when the notification is bound back to it, each side
-rewritten where it stands (`storeUnbindNotification`). -/
+`unbindNotification`), each side rewritten where it stands
+(`storeUnbindNotification`).  It reads no guard of its own: it runs first, on
+the state the finalisation's admission reads, and the admission reads the
+notification bound back to the thread and the unbind in place
+(`notificationUnbindAdmitted`). -/
 def finaliseThreadUnbindNotification (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   let c := boundNotificationCodeOf st tid
-  if c == 0 then st
-  else
-    match st.getNotification? ⟨c - 1⟩ with
-    | some n =>
-      if n.boundTCBCode == tid.val + 1 && unbindNotificationInPlace st tid then
-        storeUnbindNotification st tid ⟨c - 1⟩
-      else st
-    | none => st
+  if c == 0 then st else storeUnbindNotification st tid ⟨c - 1⟩
 
 /-- **Unbind a thread being finalised from the scheduling context it owns**
 (seL4's `unbindFromSC`): the reservation arm the destroy cleanup runs

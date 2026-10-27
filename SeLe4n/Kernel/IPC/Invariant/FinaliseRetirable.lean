@@ -269,11 +269,12 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     · exact h0
   -- The notification unbind.
   have C0 := finaliseCarried.start st ⟨x.val⟩ hI hBd
-  have hX1 := finaliseThreadUnbindNotification_self hI.2.1 hX0 hBnc
+  have hX1 := finaliseThreadUnbindNotification_self hI.2.1 hX0
   have C1 := finaliseThreadUnbindNotification_closed _ (finaliseCarried.unbindStep st ⟨x.val⟩)
-    st ⟨x.val⟩ C0
-  obtain ⟨C01, Lk01⟩ := finaliseThreadUnbindNotification_frames st ⟨x.val⟩ hI.2.1 (fun _ _ => True)
-  have hRep := finaliseThreadUnbindNotification_replies st ⟨x.val⟩ hI.2.1
+    st ⟨x.val⟩ hX0 hBnc C0
+  obtain ⟨C01, Lk01⟩ :=
+    finaliseThreadUnbindNotification_frames st ⟨x.val⟩ hI.2.1 hX0 hBnc (fun _ _ => True)
+  have hRep := finaliseThreadUnbindNotification_replies st ⟨x.val⟩ hI.2.1 hX0 hBnc
   have hL1 : lenderEndable (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩
       { txA with boundNotificationCode := 0 } :=
     lenderEndable_transport C01 Lk01 (LoanReplies.true _ _) rfl hL0
