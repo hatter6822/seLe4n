@@ -1015,8 +1015,8 @@ Two conjuncts, and both are load-bearing:
 
 The kernel's obligation is to broadcast the maintenance *before* committing a
 transition that would falsify either conjunct — which is exactly what the live
-`.vspaceUnmap` wrapper does, and what the untyped reset does before a root's
-page returns to its untyped. -/
+`.vspaceUnmap` wrapper does, and what a capability's finalisation does before a
+root's page returns to its untyped. -/
 def icacheLineConsistent (st : SystemState) (l : ICacheLine) : Prop :=
   tlbEntryConsistent st l.toTranslation ∧ l.perms.execute = true
 

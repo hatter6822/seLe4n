@@ -8315,6 +8315,45 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed
       by simp [hco]⟩
   exact ⟨c, hc, of_decide_eq_true (List.all_eq_true.mp hOne.2 c hmem), hu⟩
 
+/-- WS-ZA ZA5.4 part 36: **a capability a boot-safe object holds is at free
+index 0** (`bootSafeCapCheck`'s last clause), in a CNode's slots and in a
+thread's two space slots alike. -/
+theorem bootSafeObjectCheck_slotCap_freeIndex {obj : KernelObject}
+    (h : bootSafeObjectCheck obj = true) {s : SeLe4n.Slot} {c : Capability}
+    (hs : obj.slotCap s = some c) : c.freeIndex = 0 := by
+  cases obj with
+  | cnode cn =>
+    simp only [bootSafeObjectCheck, bootSafeCnodeCheck_def, Bool.and_eq_true] at h
+    exact (bootSafeCnodeCheck_caps h.1.2 hs).2.2.2
+  | tcb t =>
+    simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true] at h
+    obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hs
+    have hc := (List.all_eq_true.mp h.1.2) _ hm
+    simp only at hc
+    unfold bootSafeCapCheck at hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at hc
+    exact hc.2
+  | _ => simp [KernelObject.slotCap] at hs
+
+/-- WS-ZA ZA5.4 part 36: **every capability the idle-storing boot holds is at
+free index 0** — it is a configured object's, and the configured objects pass
+`bootSafeObjectCheck`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (r : SlotRef) (c : Capability) (hc : ist.state.slotCapAt r = some c) : c.freeIndex = 0 := by
+  rw [SystemState.slotCapAt_eq_bind] at hc
+  cases hO : ist.state.objects[r.cnode]? with
+  | none => rw [hO] at hc; cases hc
+  | some o =>
+    rw [hO, Option.bind_some] at hc
+    obtain ⟨e, he, -, hObj⟩ := bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
+      cores config ist h r.cnode o hO r.slot (by rw [hc]; exact Option.some_ne_none _)
+    have hCheck := List.all_eq_true.mp
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_checks cores config ist h).2 e he
+    rw [hObj] at hCheck
+    exact bootSafeObjectCheck_slotCap_freeIndex hCheck hc
+
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID
     table consistent, the untypeds disjoint, the scheduler the default one but

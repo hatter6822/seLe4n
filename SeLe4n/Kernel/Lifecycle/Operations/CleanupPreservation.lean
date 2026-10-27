@@ -2016,11 +2016,11 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- of an untyped's memory into a kernel object in place would leave that
     -- memory counted as carved by the untyped's capability and named by nothing.  Memory
     -- goes back where it came from, as in seL4: a frame is destroyed by the
-    -- **untyped reset** (`untypedReset`, `v0.36.6`), which removes every mapping
-    -- of the region, erases the frames and returns the pages to the untyped
-    -- once no capability names them.  `.revocationRequired` is the error this
-    -- path uses for "clear this precondition first" — here, revoke the untyped
-    -- capability and reset it.
+    -- delete of its last capability, which removes the mapping it recorded and
+    -- erases the frame, and its pages return to the untyped when the untyped's
+    -- capability is reset (`untypedResetFromCap`).  `.revocationRequired` is the
+    -- error this path uses for "clear this precondition first" — here, delete
+    -- the frame's capabilities and reset the untyped's.
     .error .revocationRequired
   | .pageTable _ =>
     -- **WS-BP BP7.1 (`v0.36.12`): nor can a page table**, for the frame's reason
@@ -2032,14 +2032,15 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- **WS-BP BP7.1 slice 4 (`v0.36.8`): nor can an untyped, for the same
     -- reason one level up.**  An untyped *is* a region of physical memory, and
     -- the objects carved from it — frames, child untypeds and their own carves
-    -- — are named by its child list, which the parent's reset walks to retire
-    -- them.  Replacing it in place would orphan every carved object (a frame
-    -- whose page no untyped accounts for any more) and, for a child untyped,
-    -- leave its parent's child list naming a kernel object the parent's reset
-    -- can never retire, so one holder of the child's capability could wedge
-    -- the parent's reset for good.  seL4 has no in-place retype of an untyped
-    -- at all; its memory returns through the untyped it was carved from
-    -- (`untypedReset`), and a boot untyped is never destroyed.
+    -- — are named by its child list, which the parent's reset refuses while it
+    -- is non-empty.  Replacing it in place would orphan every carved object (a
+    -- frame whose page no untyped accounts for any more) and, for a child
+    -- untyped, leave its parent's child list naming a kernel object no delete
+    -- can retire, so one holder of the child's capability could wedge the
+    -- parent's reset for good.  seL4 has no in-place retype of an untyped at
+    -- all; its memory returns through the untyped it was carved from (its last
+    -- capability's delete, then the parent's reset), and a boot untyped is
+    -- never destroyed.
     .error .revocationRequired
   | .vspaceRoot _ =>
     -- **`v0.36.35`: nor can a VSpace root — the fourth memory-backed kind, and
@@ -2055,10 +2056,11 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- reinstall the old table: a hardware walk to that thread's page, writable,
     -- with nothing mapped in the model.  No ASID invalidation was recorded
     -- either, so the freed ASID's stale TLB entries met the next root carved
-    -- under it.  The untyped reset is the path that finalises a root — it
-    -- refuses while a thread's `vspaceRoot` names it, removes its mappings,
-    -- detaches and zeroes its tables and invalidates its ASID — so a root goes
-    -- back where it came from, as every other memory-backed kind does.
+    -- under it.  The delete of a root's last capability is the path that
+    -- retires it — the root leaves the store with its mappings and its ASID is
+    -- released behind an acknowledged invalidation round (`retireRecordedObject`)
+    -- — so a root goes back where it came from, as every other memory-backed
+    -- kind does.
     .error .revocationRequired
   | _ => .ok st
 

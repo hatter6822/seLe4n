@@ -13,12 +13,10 @@ import SeLe4n.Model.TableReferences
 /-!
 # Page teardown — removing a list of mappings through the verified unmap
 
-**WS-BP BP7.1 (`v0.36.7`).**  Two operations remove mappings they did not ask
-for by address: the untyped reset removes every mapping of a page in the region
-it hands back (`untypedReset`), and destroying a frame capability removes the
-mapping that capability made (`cspaceDeleteSlotFinalising`,
-`cspaceRevokeCdtFinalising`) — seL4's `finaliseCap` → `unmapPage`.  Both are one
-question, so they share one answer here: a list of `MappedPage`s, each removed
+**WS-BP BP7.1 (`v0.36.7`).**  Destroying a frame capability removes the
+mapping that capability made, and destroying a page table's last capability the
+mappings it held (`cspaceDeleteSlotFinalising`, `cspaceRevokeCdtFinalising`) —
+seL4's `finaliseCap` → `unmapPage`.  The removal is a list of `MappedPage`s, each removed
 through the one verified unmap the `.vspaceUnmap` arm runs
 (`vspaceUnmapPageWithShootdownAndIcacheBroadcast` — the page-table erase, the
 local flush, the `.vae1` shootdown round, the initiator's own per-core drain and
@@ -60,7 +58,7 @@ carries the record's mapping epoch (`VSpaceRoot.mappingEpochs`).
 The epoch clause is what makes a record identify *its own* mapping (PR #904
 review, `v0.36.41`).  Without it, a record gone stale matched any later
 translation of the same frame at the same address: an address space destroyed
-by an untyped reset releases its ASID, a later carve may be handed that ASID,
+when its last capability is deleted releases its ASID, a later carve may be handed that ASID,
 and another capability to the frame may map it there — deleting the stale
 capability then removed a mapping it never made.  The same held inside one
 address space after an unmap through the address-space capability.  A page read
@@ -646,45 +644,5 @@ theorem unmapLivePages_ok_frame (ec : Concurrency.CoreId) :
           obtain ⟨hInv2, hW2, hS2, hT2⟩ := unmapLivePages_ok_frame ec rest st1 st' hInv1 hStep
           exact ⟨hInv2, hW1.trans hW2, hS2.trans hS1, hT2.trans hT1⟩
       · exact unmapLivePages_ok_frame ec rest st st' hInv hStep
-
--- ============================================================================
--- §3  Does any capability still name an object?
--- ============================================================================
---
--- Asked by the untyped reset (no capability may name a retired object).  Moved
--- here from `UntypedReset.lean` at `v0.36.12`, when capability finalisation asked
--- it too; since `v0.36.131` finalisation reads finality off the destroyed slot's
--- derivation links instead (`SystemState.capIsFinal`), so the reset is its one
--- asker.
-
-/-- **Does this capability name an object in the subtree?**  Only an `.object`
-target names an object; a CNode-slot, reply or audit-trail target names none. -/
-def capNamesListed (ids : List SeLe4n.ObjId) (cap : Capability) : Bool :=
-  match cap.target with
-  | .object id => ids.contains id
-  | _ => false
-
-/-- **Does this slot's capability, if any, name an object in the subtree?** -/
-@[inline] def cellNamesListed (ids : List SeLe4n.ObjId) : Option Capability → Bool
-  | some cap => capNamesListed ids cap
-  | none => false
-
-/-- **Does this stored object name an object in the subtree?**  A capability
-lives in slots only, a CNode's or a thread's two space slots (seL4's
-`tcbCTable` and `tcbVTable`): as in seL4, a blocked sender keeps the
-*addresses* of the capabilities it transfers and the receive looks them up at
-the rendezvous, so no message holds a capability (`IpcMessage` has no field for
-one), and a thread's address space is the capability in its VSpace root slot. -/
-def objectNamesListed (ids : List SeLe4n.ObjId) : KernelObject → Bool
-  | .cnode cn => !(cn.allSlots fun _ cap => !capNamesListed ids cap)
-  | .tcb t => cellNamesListed ids t.spaceCells[0] || cellNamesListed ids t.spaceCells[1]
-  | _ => false
-
-/-- **The whole-store check: no capability anywhere names an object in the
-subtree.**  A conjunction folded over the object table, which is what makes the
-payoff (`untypedReset_ok_unreferenced`) a statement about every key the table
-resolves rather than about the keys an index happens to list. -/
-def carvedSubtreeUnreferenced (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
-  st.objects.fold true (fun acc _ o => acc && !objectNamesListed ids o)
 
 end SeLe4n.Kernel

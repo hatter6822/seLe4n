@@ -692,7 +692,9 @@ page's base or kind builds no frame record (WS-ZA ZA5.4). -/
 /-- **WS-BP BP7.1: the capability a carve hands back for a frame.**  Read,
 write and grant — the rights a frame capability's holder can exercise (map
 readable, map writable, hand the frame on).  `.retype` is absent because a
-frame is not retyped; its memory returns to its untyped (`untypedReset`). -/
+frame is not retyped; its memory returns to its untyped once its last
+capability is deleted and the untyped's capability is reset
+(`untypedResetFromCap`). -/
 def frameCapability (frameId : SeLe4n.ObjId) : Capability :=
   { target := .object frameId
     rights := AccessRightSet.ofList [.read, .write, .grant] }
@@ -1545,8 +1547,7 @@ theorem carveZeroFrame_device (st : SystemState) (frame : FrameObject)
 /-- **WS-BP BP7.1 slice 4: the carved child untyped's region is inside its
 parent, on a multiple of its own size `2 ^ b` and so on a page boundary, of its
 parent's memory kind, with its parent stamped and nothing carved from it.**  The child-untyped counterpart of
-`untypedNextFrame_of_retype_ok`, and the fact the reset's containment check
-(`untypedSubtreeContained`) decides on every state rather than trusting. -/
+`untypedNextFrame_of_retype_ok`. -/
 theorem untypedNextChild_of_retype_ok
     (st st' : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (ut : UntypedObject) (cap : Capability) (b : Nat)

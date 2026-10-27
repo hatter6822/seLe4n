@@ -1175,8 +1175,9 @@ theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
 /-- **WS-BP BP7.1 slice 3**: the general form of the two instances above — every
 rewritten key holds, on **each** side independently, either nothing or a kind
 outside the read view.  Covers creation (absent → inert), rewriting (inert →
-inert) and **erasure** (inert → absent) at once, which is the shape an untyped
-reset induces: VSpace roots rewritten, frames erased, the untyped rewritten. -/
+inert) and **erasure** (inert → absent) at once, which is the shape a memory
+object's final delete induces: VSpace roots rewritten, frames erased, the
+untyped rewritten. -/
 theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
     (h : ∀ oid : SeLe4n.ObjId,
       s2.objects[oid]? = s1.objects[oid]? ∨

@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.Lifecycle.Operations.UntypedReset
+import SeLe4n.Kernel.Lifecycle.Operations.CarvedObjectErase
 import SeLe4n.Model.CapabilityFinality
 import SeLe4n.Kernel.Architecture.PageTeardownClears
 
@@ -20,7 +20,7 @@ capability.  For the four memory kinds a carve makes — a frame, a page table,
 an address-space root and an untyped — the finalisation is the unmap and
 detach the teardown already does (`finaliseDestroyedCapabilities`); this module
 is what follows it: the object leaves the store (`retireCarvedObject`, the
-store's one erase, which the untyped reset uses too).
+store's one erase of a carved object).
 
 **The passive kernel kinds** (part 22, `v0.36.133`).  An endpoint, a
 notification, a reply or a CNode goes the same way when seL4's `finaliseCap`
@@ -65,7 +65,7 @@ splices a deleted node's children into its parent: the recorder records each
 child in place of the untyped, its offset rebased onto the untyped's
 (`childListAdopt`), and each child untyped names the recorder as its parent
 (`reparentChildren`).  A child keeps its record, so the recorder's reset still
-finds it and no carve is handed its memory; "carved from" only shrinks, since a
+refuses while it lives (`untypedResetSlot`) and no carve is handed its memory; "carved from" only shrinks, since a
 record moved up a level was carved from the recorder through the retired
 untyped.  An untyped no untyped records (a boot untyped) leaves its children
 recorded by none; its region is then covered by no untyped, so nothing carves
@@ -73,7 +73,7 @@ from it again.
 
 **An address-space root** leaves the ASID table with it (`retireCarvedObject`
 erases its entry and records the ASID's invalidation), and its ASID gets one
-acknowledged `.aside1` round (`retypeAsidRoundStep`), the reset's own: a PE
+acknowledged `.aside1` round (`asidReleaseRound`): a PE
 that still holds the root's table in `TTBR0_EL1` leaves it before the next
 carve can hand that page out.
 
@@ -774,7 +774,7 @@ def retireRecordedObject (executingCore : Concurrency.CoreId) (recorder : Nat) (
     (st : SystemState) : SystemState :=
   let st1 := retireUnrecord recorder x st
   match st1.getVSpaceRoot? x with
-  | some root => withTaintCleared (retypeAsidRoundStep executingCore root.asid (retireCarvedObject st1 x)) x
+  | some root => withTaintCleared (asidReleaseRound executingCore root.asid (retireCarvedObject st1 x)) x
   | none => withTaintCleared (retireCarvedObject st1 x) x
 
 /-- **Retire what a final delete destroyed** (`target`, `recorder`: the words
@@ -1160,8 +1160,8 @@ theorem retireCarvedObject_scheduler_machine_cdt (st : SystemState) (id : SeLe4n
     (retireCarvedObject st id).cdt = st.cdt := by
   unfold retireCarvedObject; split <;> exact ⟨rfl, rfl, rfl⟩
 
-theorem retypeAsidRoundStep_cdt (ec : Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
-    (retypeAsidRoundStep ec a s).cdt = s.cdt := rfl
+theorem asidReleaseRound_cdt (ec : Concurrency.CoreId) (a : SeLe4n.ASID) (s : SystemState) :
+    (asidReleaseRound ec a s).cdt = s.cdt := rfl
 
 /-- **The passive kernel kinds**, read off a key: an endpoint, a notification,
 a reply or a CNode (`passiveKindAt`). -/
@@ -1429,10 +1429,10 @@ theorem retireRecordedObject_frame (ec : Concurrency.CoreId) (recorder : Nat) (x
       fun oid => ?_⟩
     rw [hO]; exact hW oid
   split
-  · exact hAll _ ((withTaintCleared_objects _ _).trans (retypeAsidRoundStep_objects _ _ _))
-      ((withTaintCleared_scheduler _ _).trans (retypeAsidRoundStep_scheduler _ _ _))
-      ((withTaintCleared_machine _ _).trans (retypeAsidRoundStep_machine _ _ _))
-      ((withTaintCleared_cdt _ _).trans (retypeAsidRoundStep_cdt _ _ _))
+  · exact hAll _ ((withTaintCleared_objects _ _).trans (asidReleaseRound_objects _ _ _))
+      ((withTaintCleared_scheduler _ _).trans (asidReleaseRound_scheduler _ _ _))
+      ((withTaintCleared_machine _ _).trans (asidReleaseRound_machine _ _ _))
+      ((withTaintCleared_cdt _ _).trans (asidReleaseRound_cdt _ _ _))
   · exact hAll _ rfl rfl rfl rfl
 
 /-- **The retire's frame**: the table keeps its invariant; the scheduler, the
@@ -1461,7 +1461,7 @@ theorem retireFinalObject_frame (ec : Concurrency.CoreId) (target recorder : Nat
   · exact ⟨hInv, rfl, rfl, rfl, fun _ => .inl rfl⟩
 
 /-- **The object kinds a final-delete retire touches without erasing them as a
-thread or a scheduling context**: what a reset touches (`resetTouched`) and the
+thread or a scheduling context**: the memory kinds (`memoryKindOrAbsent`) and the
 four passive kinds.  None is a TCB or a scheduling context, so none feeds the
 scheduler; the one thread or context a retire can take out is erased whole,
 detached first (`retireFinalObject_touched`). -/
@@ -1482,21 +1482,6 @@ theorem schedulingKindAt_iff (st : SystemState) (x : SeLe4n.ObjId) :
   cases st.objects[x]? with
   | none => simp [schedulingKernelObject]
   | some o => cases o <;> simp [schedulingKernelObject, KernelObject.objectType]
-
-theorem resetTouched.retireTouched {o : Option KernelObject} (h : resetTouched o) : retireTouched o := by
-  cases o with
-  | none => trivial
-  | some obj => cases obj <;> first | trivial | exact absurd h (by simp [resetTouched])
-
-/-- A reset-touched write is a retire-touched write. -/
-theorem resetTouchedWrite.retireTouched {st st' : SystemState}
-    (h : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
-      (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?)) (oid : SeLe4n.ObjId) :
-    st'.objects[oid]? = st.objects[oid]? ∨
-      (retireTouched st.objects[oid]? ∧ retireTouched st'.objects[oid]?) := by
-  rcases h oid with e | ⟨a, b⟩
-  · exact .inl e
-  · exact .inr ⟨a.retireTouched, b.retireTouched⟩
 
 /-- **A retire write touches only what a retire may touch**: every key holds
 what it held, or a kind `retireTouched` admits on both sides, or it is the
@@ -1594,7 +1579,7 @@ theorem retireRecordedObject_unrecorded (ec : Concurrency.CoreId) (recorder : Na
       exact h1 u U' hu
   split
   · intro u U' hu
-    rw [withTaintCleared_objects, retypeAsidRoundStep_objects] at hu
+    rw [withTaintCleared_objects, asidReleaseRound_objects] at hu
     exact hR u U' hu
   · intro u U' hu
     rw [withTaintCleared_objects] at hu
@@ -1617,7 +1602,7 @@ theorem retireRecordedObject_target_gone (ec : Concurrency.CoreId) (recorder : N
       rw [hu] at this; cases this
     · rw [hn] at hu; cases hu
   split
-  · rw [withTaintCleared_objects, retypeAsidRoundStep_objects]; exact hX
+  · rw [withTaintCleared_objects, asidReleaseRound_objects]; exact hX
   · rw [withTaintCleared_objects]; exact hX
 
 /-- **After the retire no untyped records its target**, when the recorder word
@@ -1941,13 +1926,13 @@ theorem eraseRetiredObject_not_passive (st : SystemState) (x : SeLe4n.ObjId)
   · rw [eraseRetiredObject_self hP0 hInv]; exact fun h => h
   · rw [eraseRetiredObject_of_not st x hP0]; exact hP0
 
-/-- **A retire write at a key holding no passive object touches only what a
-reset touches.** -/
-theorem finalRetireWrite.resetTouched {st st' : SystemState} {x : SeLe4n.ObjId}
+/-- **A retire write at a key holding no passive object touches only the memory
+kinds.** -/
+theorem finalRetireWrite.memoryKindOrAbsent {st st' : SystemState} {x : SeLe4n.ObjId}
     (h : finalRetireWrite st st' x) (hNP : ¬ erasableKernelObject st.objects[x]?)
     (oid : SeLe4n.ObjId) :
     st'.objects[oid]? = st.objects[oid]? ∨
-      (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?) := by
+      (memoryKindOrAbsent st.objects[oid]? ∧ memoryKindOrAbsent st'.objects[oid]?) := by
   rcases h oid with e | ⟨hx, hcp, hn⟩ | ⟨U, U', -, hU, hU', -⟩
   · exact .inl e
   · refine .inr ⟨?_, by rw [hn]; trivial⟩
@@ -2237,11 +2222,11 @@ theorem retireRecordedObject_preserves_teardownWellFormed (ec : Concurrency.Core
   obtain ⟨hW2, hS2⟩ := retireCarvedObject_preserves_teardownWellFormed st1 x hW1 hRoom1
   split
   · refine ⟨teardownWellFormed_of_tables_eq
-      ((withTaintCleared_objects _ _).trans (retypeAsidRoundStep_objects _ _ _))
-      ((withTaintCleared_asidTable _ _).trans (retypeAsidRoundStep_asidTable _ _ _)) hW2, ?_⟩
+      ((withTaintCleared_objects _ _).trans (asidReleaseRound_objects _ _ _))
+      ((withTaintCleared_asidTable _ _).trans (asidReleaseRound_asidTable _ _ _)) hW2, ?_⟩
     refine hS1'.trans (hS2.trans ?_)
     intro oid r' h'
-    rw [withTaintCleared_objects, retypeAsidRoundStep_objects] at h'
+    rw [withTaintCleared_objects, asidReleaseRound_objects] at h'
     exact ⟨r', h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
   · refine ⟨teardownWellFormed_of_tables_eq (withTaintCleared_objects _ _)
       (withTaintCleared_asidTable _ _) hW2, hS1'.trans (hS2.trans ?_)⟩
@@ -2314,7 +2299,7 @@ theorem retireRecordedObject_fields (ec : Concurrency.CoreId) (recorder : Nat) (
   obtain ⟨s2, m2, c2⟩ := retireCarvedObject_scheduler_machine_cdt st1 x
   split
   · rw [withTaintCleared_cdt, withTaintCleared_scheduler, withTaintCleared_machine,
-      retypeAsidRoundStep_cdt, retypeAsidRoundStep_scheduler, retypeAsidRoundStep_machine,
+      asidReleaseRound_cdt, asidReleaseRound_scheduler, asidReleaseRound_machine,
       c2, s2, m2]
     exact h1
   · rw [withTaintCleared_cdt, withTaintCleared_scheduler, withTaintCleared_machine, c2, s2, m2]

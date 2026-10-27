@@ -232,15 +232,12 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "untypedRetypeFromCap"
   -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset, the transition the live
   -- `.untypedReset` arm calls.  Capability-only: the authority is the untyped
-  -- capability's `.retype` right — authority over the memory it hands back —
-  -- and the reset refuses unless no capability anywhere names a carved child,
-  -- so no principal loses a capability it holds.  What it removes is mappings
-  -- whose capabilities are already gone, and frames no capability names.
-  -- Since `v0.36.37` the arm's composite is `untypedResetWithShootdown`: the reset
-  -- then one acknowledged `.aside1` round per retired ASID, which moves no
-  -- authority either.  Since WS-ZA ZA5.4 the arm calls `untypedResetFromCap`,
-  -- which resolves the invoked slot, refuses while it has a derivation child,
-  -- and rewinds that slot's free index: a word of the caller's own capability.
+  -- capability's `.retype` right — authority over the memory it hands back.
+  -- Since WS-ZA ZA5.4 the reset is seL4's: `untypedResetFromCap` resolves the
+  -- invoked slot, refuses while that slot has a derivation child or the
+  -- untyped records a carved object, and writes `0` to the slot's free index —
+  -- a word of the caller's own capability.  It removes no object, mapping or
+  -- capability, so no principal loses anything it holds.
   , .capabilityOnly "untypedResetFromCap"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"

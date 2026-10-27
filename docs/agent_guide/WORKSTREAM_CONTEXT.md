@@ -419,7 +419,7 @@ its own (the notification unbind, the context deschedule).  The reply stack's li
 that clears a frame's `prev` must clear in the same step the `next` of the frame
 it named, as the removal clears both of the cut frame's links; notification
 bindings and endpoint-queue links are likewise held reciprocal by
-`ipcInvariantFull`, so a writer of either side writes both.  The suspend of a thread blocked in IPC or
+`ipcInvariantFull`, so a writer of either side writes both.  Since `v0.36.149` the untyped reset is seL4's (plan row 36): it refuses while the invoked slot has a derivation child or the untyped's child list records a carved object, and otherwise rewinds the capability's free index in place (`untypedResetSlot`), so new code must not make the reset read the store beyond that slot and that untyped, and an object leaves the store only by its final delete.  Plan rows 37 (every live mapping recorded on a capability) and 38 (the retype resets when its capability has no children) remain.  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
 (ZA6.1).  ZA6 covers the other
 entries and makes the rule standing.  Plan:
@@ -1576,53 +1576,32 @@ carve, scrub, map the carved page, and every refusal the carve owns.
 **BP7.1, slice 3 — memory returns to its untyped** (`v0.36.6`).
 `SyscallId.untypedReset` (discriminant **37**, count 38) is seL4's
 `resetUntypedCap`, invoked on an untyped capability carrying `.retype`, with no
-message registers.  Six things new code must respect.  (1) **"No child survives"
-is decided over the whole store as well as the invoked slot.**  Since
-`v0.36.124` (ZA5.4 part 13) the free index is the capability's, as seL4's
-`capFreeIndex`: a derivation of an untyped capability is refused while its
-source has a child and sets the source full otherwise, and the reset refuses an
-invoked slot with a derivation child and rewinds that slot's index.  The
-per-slot rule needs at most one carving capability per untyped
-(`untypedSoleCarverInvariant`), which boot is not yet proven to establish, so
-`carvedSubtreeUnreferenced`
-(`untypedChildrenUnreferenced` until slice 4a) still folds over the object table
-and asks every CNode slot and every thread's two space slots, and
-`carvedSubtreeRetirable` requires every carved object to be a frame or, since
-slice 4a, an untyped — a kernel object has no operation here that returns its
-memory; both refuse `.revocationRequired`.  (2) **The reset finalises the frames.**  A mapping
-records a physical address, not an object, so revoking a frame's last capability
-leaves every mapping of it in place: the reset removes each mapping of a page
-meeting the region through the `.vspaceUnmap` arm's own verified transition
-(page-table erase, local flush, shootdown round, initiator drain,
-instruction-cache broadcast), collected from the pre-state and **checked**
-afterwards (`untypedRegionUnmapped`; `.illegalState` otherwise), so a mapping the
-collection missed refuses the reset rather than surviving it.  (3) **Carved
-frames are erased, not left capless.**  `retireCarvedObject` (`retireFrame` until
-slice 4a) is the one primitive that erases an object — a no-op at any key holding
-neither a frame nor an untyped, so no other kind can be erased through it — and
-is registered in `WRITE_PRIMITIVE_BODIES`.  Leaving
-dead frames in the store would be unreachable but would consume an object-store
-slot per carve, so a holder of one small untyped could exhaust the global store
-by carving and resetting in a loop.  (4) **The reset zeroes nothing**: the carve
-zeroes a RAM page before any capability to it exists, so a page is scrubbed
-exactly when it is handed out, whatever happened to it in between.  (5) **The
-payoff is four theorems**: `untypedReset_ok_unmapped` (no VSpace root maps a page
-of the region), `untypedReset_ok_unreferenced` (no CNode slot or parked message
-names a former child), `untypedReset_ok_subtree_absent` (`_children_absent`
-until slice 4a) and
-`untypedReset_ok_untyped` (watermark `0`, no children) — together, a page the
-reset hands back is reachable by no thread until the next carve hands it out,
-zeroed.  `untypedReset_preserves_ipcInvariantFull` is the bundle, over the new
-`ipcReadViewAgreement.of_inertOrAbsentWrites` (a key may go from inert to
-**absent**).  (6) **It declares no static lock footprint**, for `.cspaceRevoke`'s
-reason — the VSpace roots it writes are state-discovered and unbounded — so
-`declaresStaticLockFootprint_false_iff` names two arms, and it sits in the
-scheduler domain's `none` group (`untypedReset_ok_frame`: the scheduler is
-unchanged).  It is a live arm of the cross-core inventory
-(`CrossCoreTransition.untypedResetDispatch`) with an **empty** write set
-(`untypedReset_confinedToCores`) and a delegation proof
-(`syscallDelegates_untypedReset`) — the `.vspaceUnmap` arm's shape, since its
-unmap pass is that arm's transition.  **An in-place retype of a frame stays refused, and that is final**:
+message registers.  Since `v0.36.149` (WS-ZA ZA5.4 part 36) it is seL4's
+reset exactly, and four things new code must respect.  (1) **The reset is
+`ensureNoChildren` and a rewind** (`untypedResetSlot`): it refuses
+(`.revocationRequired`) while the invoked slot has a derivation child or the
+untyped's child list still records a carved object, and otherwise writes 0 to
+the invoked capability's free index in place — O(1), no scan of the store, no
+erase, no unmap.  Every refusal precedes the write (`untypedResetAdmittedAt`,
+`untypedResetSlot_of_admitted`), so the arm runs through
+`RefusalCarrying.ofChecked`.  The per-slot rule is sound because the untyped
+invariants hold from boot (`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`)
+and the reset preserves them (`untypedResetSlot_preserves_untypedMemoryInvariant`).
+(2) **Carved objects leave by their final delete**, not by the reset: the
+finalising delete removes the mapping a frame capability recorded, and the retire
+on final delete (`retireFinalObject`, `retireRecordedObject`) erases the object
+(`retireCarvedObject`, `Lifecycle/Operations/CarvedObjectErase.lean`, the one
+object-store erase, registered in `WRITE_PRIMITIVE_BODIES`), releases a root's
+ASID and clears the freed id's taint.  An
+object the retire cannot take stays recorded on the child list, and the reset
+refuses until it leaves.  (3) **The reset zeroes nothing**: the carve zeroes a
+RAM page before any capability to it exists, so a page is scrubbed exactly when
+it is handed out.  (4) **It declares a static lock footprint**
+(`lockSet_untypedReset`), so `declaresStaticLockFootprint_false_iff` names
+`.cspaceRevoke` and `.yield` only; it sits in the scheduler domain's `none`
+group, and its cross-core arm (`CrossCoreTransition.untypedResetDispatch`) has
+an empty write set (`untypedResetSlot_confinedToCores`).  Payoff:
+`untypedResetSlot_ok_freeIndex` and `untypedResetSlot_ok_uncarved`.  **An in-place retype of a frame stays refused, and that is final**:
 memory returns through its untyped, as in seL4.  What this slice did not give was
 seL4's *immediate* unmap on revocation — revoking the untyped capability removed
 the frame capabilities while their mappings persisted until the reset, so a
@@ -1709,24 +1688,12 @@ new key under the kind it will hold (`carvedObjectLock`).  (3) **An untyped is
 never destroyed in place.**  `lifecyclePreRetypeCleanup` refuses an `.untyped`
 target (`.revocationRequired`), as it refuses a frame: replacing one orphans
 everything carved from it, and for a child untyped leaves the parent's child
-list naming a kernel object no reset can retire.  (4) **The reset retires the
-carved SUBTREE, and it has to.**  `untypedCarvedSubtree` is a bounded worklist
-walk over the child lists, proved to contain every child and to be closed
-(`untypedCarvedSubtree_spec`); a walk that runs out of fuel is a refusal, never a
-smaller subtree.  Every member must be a frame or an untyped, no capability may
-name one (decided over the whole store, as before), and every frame must lie in
-the region (`carvedSubtreeFramesInRegion` — true of every reachable state, and
-decided because it is what lets the region-wide unmap reach a frame at any
-depth).  Retiring the whole subtree is forced, not chosen: revoking the parent
-capability destroys the child's capabilities too, so a reset requiring each child
-to be reset first could never run.  (5) **The payoffs** are
-`untypedReset_ok_subtree_absent` (every member gone, the subtree holding every
-child and closed) and `untypedReset_ok_retired_pages_unmapped` (no retired
-frame's page mapped anywhere, whatever depth it was carved at), beside
-`untypedReset_ok_unmapped`, `_unreferenced` and `_untyped`.  The witness is
-`tests/VSpaceCapabilityBindingSuite.lean` §5g, with the retired frames-only guard
-spelled in the suite and computed beside the live reset on the state it would
-have refused forever.  **Page-table objects are slice 4b**, the base BP7.2
+list naming a kernel object no reset can retire.  (4) **Retiring a subtree is the
+revocation's job** (since `v0.36.149`): revoking the parent capability deletes
+every capability below it, each final delete retires its object, and a child
+untyped is retired once its own child list is empty, so the reset finds the
+child list empty and only rewinds the free index.  The witness is
+`tests/VSpaceCapabilityBindingSuite.lean` §5g.  **Page-table objects are slice 4b**, the base BP7.2
 installs; `carveRequestOf?` still refuses them.
 
 **A VSpace root is memory, and is never created in place** (`v0.36.9`,
@@ -1780,13 +1747,10 @@ ASID is non-zero, in range and free before anything is written, because
 (`freshAsid?`) is not what makes it safe.  (2) **`tableBase` is `some` exactly
 for a carved root**; a boot-configured root has none and cannot be installed
 until the boot places a page for it.  (3) **Retiring a root is finalising it**:
-the reset refuses while a thread's `vspaceRoot` names one (a reference no
-capability carries), removes every mapping it holds through the verified unmap
-and checks it empty, and erases its ASID entry, deciding afterwards that no
-entry names a retired object (`untypedReset_ok_asids_released`).  **And every
-PE leaves a retired root before the reset returns** (`v0.36.37`): the live arm is
-`untypedResetWithShootdown`, which posts one acknowledged `.aside1` round per
-retired ASID (`untypedResetShootdownAsids_mem`), and a PE servicing an `.aside1`
+since `v0.36.149` a root leaves the store when its final capability is deleted
+(`retireRecordedObject`), which erases its ASID entry.  **And every PE leaves a
+retired root before that delete returns** (`v0.36.37`): the retire posts one
+acknowledged `.aside1` round (`asidReleaseRound`), and a PE servicing an `.aside1`
 round installs the kernel's boot tables in `TTBR0_EL1` if it still runs under
 that ASID (`shootdown::evict_retired_translation`) before it acknowledges.  The
 ledger's broadcast `TLBI ASIDE1IS` empties TLBs and leaves every `TTBR0_EL1`
@@ -1849,20 +1813,17 @@ read by `vspaceMapFromFrameCap`; `.translationFault` otherwise); a boot-configur
 root has no table page and is exempt until the boot places one.  (4) **A table is
 not unmapped while anything translates through it** (`pageTableInUse`: a mapping,
 or a deeper table), because seL4's tear-out would leave frame capabilities
-recording translations the root no longer holds.  (5) **The reset retires tables
-with their subtree and refuses an install crossing its boundary**
-(`carvedSubtreeInstallsClosed`) — the two sides name each other, so retiring one
-leaves the survivor naming an id the next carve reuses.  `LockId.lookup` at `.page`
+recording translations the root no longer holds.  (5) **A table leaves the store
+by its final delete** (`retireFinalObject`), after the delete has taken it and
+every table beneath it out of its address space, so no root keeps naming an id
+the next carve reuses; the reset retires nothing (since `v0.36.149`).  `LockId.lookup` at `.page`
 reads `getPageObject?` (a frame or a table); a new page-backed kind joins it there.
 **Destroying a table's last capability takes it out of its address space**
 (`finaliseDestroyedCapabilities`, seL4's `finaliseCap` → `unmapPageTable`), with
 every mapping and every table beneath it, so revoking memory authority revokes the
 translations built on it: the finalising delete and revocation find the tables
-some slot named before and none names after (`pageTablesOrphaned` over
-`carvedSubtreeUnreferenced`, every slot of every object since `v0.36.122`, CNode
-slots only from `v0.36.38` — a copy parked in a blocked sender's message
-is dropped by a cancellation that finalises nothing, so it must not keep a table
-installed), and the retype of a CNode holding such a capability is refused.  **The root is the truth
+some slot named before and none names after (`pageTablesOrphaned`; finality is
+seL4's `isFinalCapability` since `v0.36.131`, `SystemState.capIsFinal`), and the retype of a CNode holding such a capability is refused.  **The root is the truth
 and a table's `installedIn` a pointer** (`pageTableInstallLive`): the detach
 writes only roots, so the tables it takes out keep a stale record, which reads as
 installed nowhere — `.pageTableMap` installs it again, `.pageTableUnmap` clears it,

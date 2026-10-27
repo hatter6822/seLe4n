@@ -96,6 +96,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_cspaceMove
 #check @lockSet_cspaceDelete
 #check @lockSet_untypedRetype
+#check @lockSet_untypedReset
 #check @lockSet_vspaceMap
 #check @lockSet_vspaceUnmap
 #check @lockSet_serviceRegister
@@ -648,6 +649,11 @@ example :
   lockSet_consistent_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
     (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext
 
+example :
+    ∀ p ∈ (lockSet_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)).pairs,
+      p.fst.kind ∈ permittedKinds .untypedReset :=
+  lockSet_consistent_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)
+
 -- ============================================================================
 -- §6d — Runtime exercise of lockAcquireSequence_canonical
 -- ============================================================================
@@ -755,12 +761,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 97 := by decide
+example : lockSetTheorems.length = 99 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 38 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 38 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1468,6 +1474,14 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .untypedRetype))
   assertBool "lockSet_untypedRetype: all kinds in permittedKinds .untypedRetype"
     allOk_carve
+  -- The reset: the invoked capability's CNode written, the untyped read.
+  let reset := lockSet_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)
+  assertBool "lockSet_untypedReset: all kinds in permittedKinds .untypedReset"
+    (reset.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .untypedReset)))
+  assertBool "lockSet_untypedReset: the invoked CNode is a write member"
+    (reset.pairs.contains (cnodeLock (ObjId.ofNat 11), .write))
+  assertBool "lockSet_untypedReset: the untyped is a read member"
+    (reset.pairs.contains (untypedLock (ObjId.ofNat 20), .read))
   -- Audit-pass-3: donation extension on .call.
   let callDon := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
                    (some ⟨8⟩) (some ⟨100⟩)
@@ -1704,8 +1718,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 97"
-    (decide (lockSetTheorems.length = 97))
+  assertBool "lockSetTheorems.length = 99"
+    (decide (lockSetTheorems.length = 99))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so

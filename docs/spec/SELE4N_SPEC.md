@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.148` (`lakefile.toml`) |
+| **Package version** | `0.36.149` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 516,486 across 461 Lean files |
-| **Test LoC** | 87,258 across 70 Lean test suites |
-| **Proved declarations** | 18,892 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 515,763 across 462 Lean files |
+| **Test LoC** | 87,194 across 70 Lean test suites |
+| **Proved declarations** | 18,866 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2361,7 +2361,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      finite kinds-list membership.
 
    **SM3.B inventory (90 entries at audit-pass-5; `lockSetTheorems_count`
-   pins the live figure, 111)**:
+   pins the live figure, 99)**:
    `Concurrency/Locks/LockSetInventory.lean` mirrors SM3.A's
    `PerObjectLockInventory.lean` pattern with a typed
    `LockSetTheorem` struct, a `lkst!` macro that compile-time
@@ -2569,7 +2569,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `chainStart` category).  `lockSetTheorems_chainStart_count
      = 3` new witness; partition-sum updated to 6-way.  *(The 90
      is that cut's figure and is kept as the record of it; the
-     inventory has since grown to `lockSetTheorems.length = 111`,
+     inventory is now `lockSetTheorems.length = 99`,
      which `lockSetTheorems_count` pins by `decide`.  Quote the
      theorem, not this line.)*
    * **Test-coverage expansion**: 96 → 106 runtime assertions
@@ -4754,7 +4754,9 @@ Every object is made by the untyped carve (`.untypedRetype`, syscall 36,
 in-place retype (`.lifecycleRetype`, syscall 8, whose number stays reserved —
 `SyscallId.retiredNumbers`), together with its abstract-extent scrub
 (`scrubObjectMemory`, `scrubExtent`).  Memory returns to its untyped through
-the untyped reset, and is zeroed when it is carved again:
+the untyped reset (a rewind of the capability's free index, once every carved
+object has left the store by its final delete), and is zeroed when it is carved
+again:
 
 - **`carveZeroFrame`** (`ScrubAndUntyped.lean`): a RAM frame, page table or
   VSpace root is zeroed at the page the allocator hands out — the untyped's own
@@ -4921,9 +4923,9 @@ id counts as naming it, as seL4's `sameObjectAs` does.
 `isFinalCapability`).  A delete or revoke that destroys the **final** capability
 to a frame, a page table, an address-space root or an untyped whose child list
 records nothing retires that object: it leaves the child list of the untyped that
-records it, then the store (`retireCarvedObject`, the reset's retire), and a
+records it, then the store (`retireCarvedObject`, `CarvedObjectErase.lean`), and a
 root's ASID is released with its acknowledged `.aside1` round
-(`retypeAsidRoundStep`).  Both the object and its recorder are read **before**
+(`asidReleaseRound`).  Both the object and its recorder are read **before**
 the slot is emptied (`slotRetireTarget`, `slotRetireRecorder`), finality by
 `capIsFinal`; the recorder is found by walking the destroyed capability's
 ancestors to the nearest untyped capability whose untyped records the object,
@@ -4936,7 +4938,8 @@ object table has no headroom for the erase, so it never refuses.
 
 An untyped with a live record stays: a kernel object carved from it (a CNode, a
 TCB, an endpoint) may have no capability left yet still be recorded, and the
-untyped's reset would recarve that memory; kernel kinds are finalised from
+untyped's memory must not be carved again while that object lives (the reset
+refuses while the untyped's child list records an object); kernel kinds are finalised from
 `v0.36.133` on (below), and the restriction is lifted once every kind is
 (`docs/planning/UNTYPED_RESET_PLAN.md` row 26).  The capability bundle is preserved
 (`retireFinalObject_preserves_capabilityInvariantBundle`, through
@@ -4944,7 +4947,7 @@ untyped's reset would recarve that memory; kernel kinds are finalised from
 stays, and each untyped's record only shrinks), and so are the IPC, run-queue,
 reschedule and teardown invariants (`retireFinalObject_preserves_ipcInvariantFull`,
 `retireFinalObject_runQueueStage`, `retireFinalObject_keyFrame`,
-`retireFinalObject_preserves_teardownWellFormed`), all through the reset's
+`retireFinalObject_preserves_teardownWellFormed`), all through the retire's
 touched-key frame (`finalRetireWrite.touched`).  The compiled retire erases the
 object's entry, index and type rows in place (`retireCarvedObject_eq_impl`).
 
@@ -5357,8 +5360,8 @@ write cover and cross-core non-interference are proven for the zombie delete
 `cspaceDeleteSlotZombie_crossCoreNonInterference`).  The retire also clears
 the freed id's declassification provenance (`withTaintCleared` in
 `retireRecordedObject`, `retireFinalObject_taint_cleared`), so an object carved
-at the id later inherits no stale tag; the reset's removal does not yet
-(`docs/REGISTERED_DEBT.md`).  **Set-space** deletes each old root
+at the id later inherits no stale tag.  Since `v0.36.149` the reset removes no
+id, so the retire is the only path that frees one.  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5911,43 +5914,36 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   CNode in write mode, and the carve declares its authority CNode in write
   mode.
 - **The untyped reset** (`v0.36.6`, `.untypedReset`, syscall 37, `.retype`,
-  no message registers): seL4's `resetUntypedCap`.  Since `v0.36.8` it acts
-  on the untyped's **carved subtree** — every object carved from it at any
-  depth, derived by a bounded walk over the child lists
-  (`untypedCarvedSubtree`, proved to hold every child and to be closed by
-  `untypedCarvedSubtree_spec`; a walk that cannot finish is a refusal).
-  Refused (`.revocationRequired`) unless every member is a frame or an
-  untyped (`carvedSubtreeRetirable`) and no capability anywhere names one
-  (`carvedSubtreeUnreferenced` — every CNode slot and every thread's two
-  space slots, decided over the whole object store).  Since
-  `v0.36.124` the arm resolves the invoked capability to its slot
-  (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
-  slot has a derivation child, seL4's per-slot `ensureNoChildren`
-  (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 36, `docs/REGISTERED_DEBT.md`).
-  Then every
-  mapping of a page meeting the region is removed through the `.vspaceUnmap`
-  arm's own transition — TLB flush, shootdown round, initiator drain,
-  instruction-cache broadcast — from a list collected on the pre-state and
-  checked afterwards (`untypedRegionUnmapped`, `.illegalState` otherwise,
-  and every frame of the subtree is decided to lie in the region,
-  `carvedSubtreeFramesInRegion`); the subtree is **erased** with its index
-  and metadata rows (`retireCarvedObject`, the one object-store erase, a
-  no-op at any key holding neither a frame nor an untyped), so its ids and
-  store capacity return; and the
-  invoked slot's free index is rewound to 0 (`untypedResetSlot`) and the
-  untyped's child list cleared.  Nothing is zeroed here:
-  the carve zeroes a RAM page before any capability to it exists.  Payoff:
-  `untypedReset_ok_unmapped`, `untypedReset_ok_unreferenced`,
-  `untypedReset_ok_subtree_absent`, `untypedReset_ok_retired_pages_unmapped`,
-  `untypedReset_ok_untyped`; bundle:
-  `untypedReset_preserves_ipcInvariantFull` (over
-  `ipcReadViewAgreement.of_inertOrAbsentWrites`).  It declares no static
-  lock footprint (the VSpace roots it writes are state-discovered and
-  unbounded, `.cspaceRevoke`'s reason) and writes no scheduler slot.
-  The reset shares its unmap pass with the destroying arms below
-  (`unmapLivePages`, `Architecture/PageTeardown.lean`), which re-checks each
-  page is still live before removing it.
+  no message registers): seL4's `resetUntypedCap` behind `ensureNoChildren`,
+  since `v0.36.149`.  The arm resolves the invoked capability to its slot
+  (`untypedResetFromCap`, `untypedResetFromCap_ok`) and runs
+  `untypedResetSlot`: it refuses (`.revocationRequired`) while that slot has a
+  derivation child (`hasCdtChildren`), and while the untyped's child list still
+  records a carved object — an object a final delete could not retire outlives
+  its last capability there, and its memory is not handed out again; an empty
+  slot or a capability naming no object is `.invalidCapability`, and one naming
+  an object that is not an untyped `.untypedTypeMismatch`.  Otherwise it writes 0
+  to the invoked capability's free index in place (`setCapFreeIndex`): O(1), no
+  scan of the store, no erase and no unmap.  Every refusal precedes the write
+  (`untypedResetAdmittedAt`, `untypedResetPerformAt`,
+  `untypedResetSlot_of_admitted`), so the refusal-carrying dispatch runs it
+  through `RefusalCarrying.ofChecked` and keeps no pre-state.  The carved
+  objects leave the store earlier, each when its final capability is deleted
+  (`retireFinalObject`, §8.6), which is what makes the child list empty after a
+  revocation of the untyped's capability.  Nothing is zeroed here: the carve
+  zeroes a RAM page before any capability to it exists.  Payoff:
+  `untypedResetSlot_ok` (the refusals' negations and the write),
+  `untypedResetSlot_ok_freeIndex` (the capability holds index 0),
+  `untypedResetSlot_ok_uncarved` (nothing carved remains below its index) and
+  `untypedResetSlot_ok_frame` (only the slot's capability changes); bundles:
+  `untypedResetSlot_preserves_capabilityInvariantBundle`,
+  `untypedResetSlot_preserves_untypedMemoryInvariant`,
+  `untypedResetSlot_preserves_ipcInvariantFull`; cross-core confinement:
+  `untypedResetSlot_confinedToCores`.  It declares a static lock footprint
+  (`lockSet_untypedReset`: the caller's TCB and CSpace root read, the invoked
+  CNode written, the untyped read, the state-level lock read) and writes no
+  scheduler slot.  The reset removes no id, so it has no declassification
+  provenance to clear (witness: §5p recarves after a reset and reads no tag).
 - **A frame capability owns the mapping it made** (`v0.36.7`, closing the
   divergence slice 3 registered: a revoked frame capability's mapping used to
   persist until the reset).  `Capability.mapping : Option FrameMapping` is
@@ -6011,12 +6007,11 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   free non-zero ASID below the machine's bound (`freshAsid?`) — a precondition
   the carve re-checks before writing anything (`CarveRequest.admissible`) —
   with a read/write capability (`vspaceRootCapability`).  A boot-configured
-  root has `tableBase = none`.  The reset retires carved roots: it refuses while
-  any thread's VSpace root slot holds a capability naming one, removes every mapping a carved root holds
-  through the verified unmap and checks it empty, erases its ASID-table entry,
-  and decides no entry names a retired object.  Payoffs:
-  `untypedRetypeObject_ok_vspaceRoot`, `untypedNextVSpaceRoot_of_retype_ok`,
-  `untypedReset_ok_asids_released`.  Open: a boot-configured root has no table
+  root has `tableBase = none`.  Since `v0.36.149` a carved root leaves the store
+  when its final capability is deleted (`retireRecordedObject`, §8.6), which
+  releases its ASID with one acknowledged `.aside1` round (`asidReleaseRound`);
+  the reset retires nothing.  Payoffs:
+  `untypedRetypeObject_ok_vspaceRoot`, `untypedNextVSpaceRoot_of_retype_ok`.  Open: a boot-configured root has no table
   page (intermediate page tables landed at `v0.36.12`, below).  Witness: §5i.
 - **A thread runs in a carved address space** (`v0.36.11`, `.tcbSetSpace`,
   syscall 38, `.write` on the target TCB — seL4's `TCB_SetSpace`).
@@ -6083,7 +6078,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `mem_slotPageTables_iff_of_bundle`; §8.6).  From `v0.36.122` to `v0.36.130`
   it was a scan of every slot of every object after the step
   (`carvedSubtreeUnreferenced`, CNode slots only from `v0.36.38`), which the
-  untyped reset still runs.
+  untyped reset ran until `v0.36.149`.
   Since `v0.36.132` the table itself then leaves the store and its untyped's
   record (`retireFinalObject`, §8.6), as a frame, a root and a childless untyped
   do when their final capability goes.
@@ -6165,13 +6160,13 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`Architecture.threadTranslationOperands`: its page and ASID, or the kernel's
   own `(0, 0)`), writing the root's entry 0 with the kernel window (UXNTable,
   APTable = no EL0).  Witness: §5l.
-- **A retired ASID is left by every PE, acknowledged** (`v0.36.37`).  The live
-  `.untypedReset` arm is `untypedResetWithShootdown`: the reset, then one
-  acknowledged `.aside1` shootdown round per retired root's ASID, read on the
-  pre-state (`untypedResetShootdownAsids`, `untypedResetShootdownAsids_mem`);
-  the round fold writes no object, scheduler, machine or ASID-table state
-  (`untypedResetWithShootdown_ok_frame`), so the reset's results and bundle
-  carry over.  A PE servicing an `.aside1` round, on the precise path and on the
+- **A retired ASID is left by every PE, acknowledged** (`v0.36.37`).  Since
+  `v0.36.149` a root's ASID is released by the final delete that retires the
+  root (`retireRecordedObject`, §8.6): one acknowledged `.aside1` shootdown
+  round (`asidReleaseRound`), which writes no object, scheduler, machine or
+  CDT state (`asidReleaseRound_objects`, `asidReleaseRound_scheduler`,
+  `asidReleaseRound_machine`, `asidReleaseRound_cdt`).  From `v0.36.37` to
+  `v0.36.148` the reset posted these rounds for the roots it retired.  A PE servicing an `.aside1` round, on the precise path and on the
   self-service path, installs the kernel's boot tables in `TTBR0_EL1` when that
   register still carries the retired ASID
   (`shootdown::evict_retired_translation`, `translation_retired_by`) before it

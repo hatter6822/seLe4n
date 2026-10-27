@@ -351,29 +351,18 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores executingCore asid vaddr
       st st' hStep) hShared
 
-/-- WS-BP BP7.1 (slice 3) (**the live `.untypedReset` arm, cross-core**): a
-reset is invisible on **every** core. -/
-theorem untypedReset_crossCoreNonInterference
-    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
-    (untypedId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
-    (hStep : untypedReset executingCore untypedId st = .ok ((), st'))
-    (hShared : sharedViewUnchanged ctx observer st st') :
-    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simp)
-    (untypedReset_confinedToCores executingCore untypedId st st' hStep) hShared
-
-/-- **The live `.untypedReset` arm, cross-core** (`v0.36.37`, WS-ZA ZA5.4) —
-invisible on every core, with its slot rewind and its acknowledged ASID rounds. -/
+/-- **The live `.untypedReset` arm, cross-core** (WS-BP BP7.1, WS-ZA ZA5.4) —
+invisible on every core: the reset writes the invoked capability's free index
+and nothing else. -/
 theorem untypedResetFromCap_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) (srcAddr : SeLe4n.CPtr)
-    (untypedId : SeLe4n.ObjId) (st st' : SystemState) (c : CoreId)
-    (hStep : untypedResetFromCap tid executingCore srcAddr untypedId st = .ok ((), st'))
+    (srcAddr : SeLe4n.CPtr) (st st' : SystemState) (c : CoreId)
+    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st'))
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
-  obtain ⟨src, _, cn, hO, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
+  obtain ⟨src, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
   exact crossCoreNonInterference_ofCores ctx observer (by simp)
-    (untypedResetRewound_confinedToCores executingCore src cn untypedId st st' hO hS) hShared
+    (untypedResetSlot_confinedToCores src.cnode src.slot st st' hS) hShared
 
 /-- WS-BP BP7.1 (`v0.36.7`), WS-ZA ZA5.4 part 23 (**the live `.cspaceDelete`
 arm, cross-core**): a finalising delete is invisible on every core outside
@@ -1234,12 +1223,9 @@ inductive CrossCoreTransition where
   | vspaceMapDispatch
   /-- SM8.B — the **live** `.vspaceUnmap` arm. Empty write set, same reasons. -/
   | vspaceUnmapDispatch
-  /-- WS-BP BP7.1 (slice 3) — the **live** `.untypedReset` arm.  Takes an
-  executing core to initiate its unmaps' shootdown rounds, and writes no core:
-  its unmap pass is the `.vspaceUnmap` arm's own transition, the retire and the
-  rewind write the object table alone, and (`v0.36.37`) its acknowledged `.aside1`
-  rounds write the TLB state alone (`untypedResetWithShootdown`); since WS-ZA
-  ZA5.4 it first rewinds the invoked slot's free index (`untypedResetFromCap`). -/
+  /-- WS-BP BP7.1, WS-ZA ZA5.4 — the **live** `.untypedReset` arm.  Writes no
+  core: it writes `0` to the invoked capability's free index, one CNode store
+  (`untypedResetFromCap`). -/
   | untypedResetDispatch
   /-- WS-BP BP7.1 (`v0.36.7`) — the **live** `.cspaceDelete` arm.  Takes an
   executing core since the delete finalises a frame capability — its recorded
@@ -1689,7 +1675,7 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   -- the two VSpace arms take an executing core and write **no** core with it
   | .vspaceMapDispatch => false
   | .vspaceUnmapDispatch => false
-  -- WS-BP BP7.1 (slice 3): and the reset, for the unmap's own reason
+  -- WS-ZA ZA5.4: and the reset, which writes one capability's free index
   | .untypedResetDispatch => false
   -- WS-BP BP7.1 (`v0.36.7`): the two finalising destroyers' teardown is the
   -- unmap's own transition, but (WS-ZA ZA5.4 part 23) the finalisation of a

@@ -1636,9 +1636,9 @@ WRITE_PRIMITIVE_BODIES = {
         "serializability-model read-modify-write; kind-agnostic, so not a rewrite",
     ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenWithObjectStored"):
         "the frozen surface's one store, over `FrozenMap.set`",
-    ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "retireCarvedObject"):
+    ("SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean", "retireCarvedObject"):
         "the one object-store erase: a frame, an untyped, a page table or a root, with its index and metadata rows",
-    ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "withObjectErased"):
+    ("SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean", "withObjectErased"):
         "`retireCarvedObject`'s compiled object-table erase (`@[csimp]`), out of line so the table is erased in place",
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "censusWitnessRawTableWrite"):
         "the reply-stack write census's planted raw-table witness",

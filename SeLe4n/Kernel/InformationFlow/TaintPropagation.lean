@@ -169,12 +169,13 @@ def contentFlowClass : SyscallId → ContentFlowClass
   -- content-tracked field — and a RAM frame's page is
   -- zeroed, which moves no principal's bytes anywhere.
   | .untypedRetype => .inert
-  -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset is inert too.  It unmaps
-  -- VSpace-root entries (page-table state, not content), erases frames — which
-  -- no content-moving arm writes, whose carve is inert, and whose ids therefore
-  -- carry no provenance for a later carve to inherit — and clears the untyped's
-  -- child list and rewinds the invoked capability's free index.  No principal's bytes move anywhere: a RAM page it hands back is
-  -- zeroed by the carve that next hands it out, before any capability exists.
+  -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset is inert too.  Since WS-ZA
+  -- ZA5.4 it writes `0` to the invoked capability's free index and nothing
+  -- else, and only once nothing carved from the untyped survives, so it removes
+  -- no id and owes no provenance clear: every carved id has already left
+  -- through a final delete's retire, which clears it (`withTaintCleared`).  No
+  -- principal's bytes move anywhere: a RAM page it hands back is zeroed by the
+  -- carve that next hands it out, before any capability exists.
   | .untypedReset => .inert
   -- CSpace: both slots live in the capability's own CNode (verified at the
   -- arms), so any edge would be a self-loop.
@@ -1033,10 +1034,8 @@ downgrade by that thread would record no predecessor — a missed chain, the
 direction this module must never err in.  `endpointReceiveDual`'s block path
 discards a stale `pendingMessage` the same way and is not a clear for the same
 reason; the only thing that may clear a TCB's taint is its own destruction,
-and no transition destroys a kernel object yet (an untyped reset refuses while
-one is carved from it), so its id is never re-used.  The destroy path owes that
-clear when it lands (`docs/REGISTERED_DEBT.md`, the destroy-path provenance
-row). -/
+the final delete's retire (`withTaintCleared`), which runs before its id can be
+carved again. -/
 def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) : List SeLe4n.ObjId :=
   match syscallOperandCap? st tid decoded.capAddr with

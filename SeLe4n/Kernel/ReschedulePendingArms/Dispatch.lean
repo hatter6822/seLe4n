@@ -564,7 +564,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
-    | exact (untypedResetFromCap_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv
+    | exact (untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceRootOnlyWrite_keyFrame
         (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv

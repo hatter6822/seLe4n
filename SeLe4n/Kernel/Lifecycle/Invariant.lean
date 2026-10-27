@@ -532,6 +532,140 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
     hObjInv
     hStep
 
+/-- WS-ZA ZA5.4 part 36: **the reset preserves the untyped memory invariant.**
+The reset writes `0` to the invoked capability's free index and nothing else,
+and only once that slot has no derivation child and its untyped records no
+child.  So the rewound index is within the region and above every child (there
+is none); and every *other* capability to the untyped is full: it lies on one
+descent with the invoked slot (`TreeShapeOver.chainLinear`), not below it (the
+slot has no child), so above it, and a capability that is not full has no
+capability to its untyped below it (`TreeShapeOver.notFullLeaf`).  That is what
+makes the rewound capability the untyped's sole carver. -/
+theorem untypedResetSlot_preserves_untypedMemoryInvariant {st st' : SystemState}
+    {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
+    (hInv : untypedMemoryInvariant st) (hShape : SystemState.CapTreeShape st)
+    (hLinks : LinksAgree st.slotLinkAt st.cdt) (hObjInv : st.objects.invExt)
+    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
+    untypedMemoryInvariant st' := by
+  rcases hInv with ⟨hFI, hCB, hSC, hNO, hUI⟩
+  obtain ⟨cap, u0, ut0, hC, hL, hT, hU, hE, rfl⟩ := untypedResetSlot_ok hStep
+  obtain ⟨cn, hO, hLk⟩ := SystemState.lookupSlotCap_cnode hL
+  have hSlot : st.slotCapAt ⟨srcCnode, srcSlot⟩ = some cap :=
+    (SystemState.slotCapAt_of_object hO).trans hLk
+  have hU0 : st.objects[u0]? = some (KernelObject.untyped ut0) :=
+    (SystemState.getUntyped?_eq_some_iff st u0 ut0).mp hU
+  have hNil : st.cdt.childrenOf ⟨srcCnode, srcSlot⟩ = [] := by
+    rw [hasCdtChildren_eq_tree hLinks] at hC; simpa using hC
+  -- Every untyped of the post-state is the pre-state's.
+  have objs : ∀ (oid : SeLe4n.ObjId) (u : UntypedObject), (setCapFreeIndex st ⟨srcCnode, srcSlot⟩ 0).objects[oid]? =
+      some (KernelObject.untyped u) → st.objects[oid]? = some (KernelObject.untyped u) := by
+    intro oid u h
+    by_cases hA : oid = srcCnode
+    · subst hA; rw [setCapFreeIndex_objects_self hObjInv hO] at h; cases h
+    · rwa [setCapFreeIndex_objects_ne hObjInv hA] at h
+  -- Every capability of the post-state is the rewound one or the pre-state's.
+  have slots : ∀ r c, (setCapFreeIndex st ⟨srcCnode, srcSlot⟩ 0).slotCapAt r = some c →
+      (r = ⟨srcCnode, srcSlot⟩ ∧ c = cap.withFreeIndex 0) ∨
+      (r ≠ ⟨srcCnode, srcSlot⟩ ∧ st.slotCapAt r = some c) := by
+    intro r c hR
+    by_cases hA : r.cnode = srcCnode
+    · obtain ⟨rc, rs⟩ := r
+      simp only at hA
+      subst hA
+      have hO' := setCapFreeIndex_objects_self (idx := 0) (addr := ⟨rc, srcSlot⟩) hObjInv hO
+      rw [SystemState.slotCapAt_of_object (r := ⟨rc, rs⟩) hO'] at hR
+      simp only [KernelObject.slotCap] at hR
+      by_cases hS : rs = srcSlot
+      · left
+        subst hS
+        rw [CNode.setFreeIndex_of_lookup hLk,
+          CNode.lookup_insert_eq _ _ _ (CNode.slotsUnique_holds _)
+            (CNode.slotAddressable_of_lookup _ _ _ hLk)] at hR
+        cases hR; exact ⟨rfl, rfl⟩
+      · right
+        rw [CNode.lookup_setFreeIndex_ne _ _ (Ne.symm hS)] at hR
+        refine ⟨fun h => hS (by cases h; rfl), ?_⟩
+        rw [SystemState.slotCapAt_of_object (r := ⟨rc, rs⟩) hO]; exact hR
+    · right
+      refine ⟨fun h => hA (h ▸ rfl), ?_⟩
+      unfold SystemState.slotCapAt SystemState.getObject? at hR ⊢
+      rwa [setCapFreeIndex_objects_ne hObjInv hA] at hR
+  -- The rewound capability names `u0`.
+  have hTgt0 : ∀ oid, (cap.withFreeIndex 0).target = .object oid → oid = u0 := by
+    intro oid h; rw [Capability.withFreeIndex_target, hT] at h; cases h; rfl
+  -- Every other capability to `u0` is full.
+  have full : ∀ r c, r ≠ ⟨srcCnode, srcSlot⟩ → st.slotCapAt r = some c →
+      c.target = .object u0 → c.freeIndex = ut0.regionSize := by
+    intro r c hNe hP hTc
+    refine Classical.byContradiction fun hNF => ?_
+    have hlt : c.freeIndex < ut0.regionSize :=
+      Nat.lt_of_le_of_ne (hFI r c u0 ut0 hP hTc hU0) hNF
+    have hUr : SystemState.untypedCapAt st.slotCapAt st.getUntyped? r u0 :=
+      ⟨c, hP, hTc, by rw [hU]; simp⟩
+    have hUs : SystemState.untypedCapAt st.slotCapAt st.getUntyped? ⟨srcCnode, srcSlot⟩ u0 :=
+      ⟨cap, hSlot, hT, by rw [hU]; simp⟩
+    rcases hShape.chainLinear u0 r _ hUr hUs with e | e | e
+    · exact hNe e
+    · exact hShape.notFullLeaf r c u0 ut0 id hP hTc hU hlt _ e hUs
+    · exact CapDerivationTree.CdtChildReachable.not_of_childless hNil e
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · -- untypedFreeIndexInvariant
+    intro r c oid u hR hTc hO'
+    rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hP⟩
+    · simp [UntypedObject.freeIndexValid]
+    · exact hFI r c oid u hP hTc (objs _ _ hO')
+  · -- untypedChildrenBoundsInvariant
+    intro r c oid u hR hTc hO'
+    rcases slots r c hR with ⟨_, rfl⟩ | ⟨_, hP⟩
+    · obtain rfl := hTgt0 _ hTc
+      have hPre := objs _ _ hO'
+      rw [hU0] at hPre; cases hPre
+      intro ch hMem; rw [hE] at hMem; cases hMem
+    · exact hCB r c oid u hP hTc (objs _ _ hO')
+  · -- untypedSoleCarverInvariant
+    intro r₁ r₂ c₁ c₂ oid u hNe12 h1 h2 t1 t2 hO'
+    have hPre := objs _ _ hO'
+    rcases slots r₁ c₁ h1 with ⟨hr₁, rfl⟩ | ⟨hNe₁, hP₁⟩ <;>
+      rcases slots r₂ c₂ h2 with ⟨hr₂, rfl⟩ | ⟨hNe₂, hP₂⟩
+    · exact absurd (hr₁.trans hr₂.symm) hNe12
+    · obtain rfl := hTgt0 _ t1
+      rw [hU0] at hPre; cases hPre
+      exact Or.inr (full r₂ c₂ hNe₂ hP₂ t2)
+    · obtain rfl := hTgt0 _ t2
+      rw [hU0] at hPre; cases hPre
+      exact Or.inl (full r₁ c₁ hNe₁ hP₁ t1)
+    · exact hSC r₁ r₂ c₁ c₂ oid u hNe12 hP₁ hP₂ t1 t2 hPre
+  · -- untypedChildrenNonOverlapInvariant
+    intro oid u hO'; exact hNO oid u (objs _ _ hO')
+  · -- untypedChildrenUniqueIdsInvariant
+    intro oid u hO'; exact hUI oid u (objs _ _ hO')
+
+/-- WS-ZA ZA5.4 part 36: **a state whose untypeds are pristine satisfies the
+untyped memory invariant** — every capability naming an untyped is at index 0,
+no untyped records a child, and no untyped is named from two slots.  It is what
+a boot leaves (`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`). -/
+theorem untypedMemoryInvariant_of_pristine {st : SystemState}
+    (hIdx : ∀ r c, st.slotCapAt r = some c → c.freeIndex = 0)
+    (hUncarved : ∀ u U, st.getUntyped? u = some U → U.children = [])
+    (hUnique : ∀ u r r', SystemState.untypedCapAt st.slotCapAt st.getUntyped? r u →
+      SystemState.untypedCapAt st.slotCapAt st.getUntyped? r' u → r = r') :
+    untypedMemoryInvariant st := by
+  have hU : ∀ (oid : SeLe4n.ObjId) (u : UntypedObject),
+      st.objects[oid]? = some (KernelObject.untyped u) → st.getUntyped? oid = some u :=
+    fun oid u h => (SystemState.getUntyped?_eq_some_iff st oid u).mpr h
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro r c oid u hR _ _
+    unfold UntypedObject.freeIndexValid; rw [hIdx r c hR]; exact Nat.zero_le _
+  · intro r c oid u _ _ hO ch hMem
+    rw [hUncarved oid u (hU oid u hO)] at hMem; cases hMem
+  · intro r₁ r₂ c₁ c₂ oid u hNe h1 h2 t1 t2 hO
+    exact absurd (hUnique oid r₁ r₂ ⟨c₁, h1, t1, by rw [hU oid u hO]; simp⟩
+      ⟨c₂, h2, t2, by rw [hU oid u hO]; simp⟩) hNe
+  · intro oid u hO c₁ c₂ hMem
+    rw [hUncarved oid u (hU oid u hO)] at hMem; cases hMem
+  · intro oid u hO c₁ c₂ hMem
+    rw [hUncarved oid u (hU oid u hO)] at hMem; cases hMem
+
 -- ============================================================================
 -- S6-D: Memory scrubbing preserves lifecycle invariants
 -- ============================================================================

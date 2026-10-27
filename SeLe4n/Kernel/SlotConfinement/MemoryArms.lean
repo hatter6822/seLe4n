@@ -305,8 +305,8 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores
       (fun _ _ hk => vspaceUnmapPageWithShootdownPerCore_framed executingCore asid vaddr _ _ hk)
       hStep)
 
-/-- WS-BP BP7.1: the page teardown (`unmapLivePages`, shared by the untyped
-reset and a frame capability's destruction) is a sequence of the `.vspaceUnmap`
+/-- WS-BP BP7.1: the page teardown (`unmapLivePages`, run when a frame
+capability is destroyed) is a sequence of the `.vspaceUnmap`
 arm's own transition, each step taken only while its page is still live, so it
 frames what one unmap frames. -/
 theorem unmapLivePages_framed (executingCore : CoreId) :
@@ -332,58 +332,16 @@ theorem unmapLivePages_framed (executingCore : CoreId) :
           exact ⟨hs2.trans hs1, hm2.trans hm1⟩
       · exact unmapLivePages_framed executingCore rest st st' h
 
-/-- WS-BP BP7.1 (slice 3, carved subtrees at slice 4): retiring carved objects
-writes the object table and its bookkeeping — never the scheduler, never the
-machine. -/
-theorem retireCarvedObjects_framed :
-    ∀ (ids : List SeLe4n.ObjId) (st : SystemState),
-      SchedulerMachineFramed st (retireCarvedObjects st ids)
-  | [], _ => ⟨rfl, rfl⟩
-  | id :: rest, st => by
-      have hOne : SchedulerMachineFramed st (retireCarvedObject st id) := by
-        unfold retireCarvedObject; split <;> exact ⟨rfl, rfl⟩
-      obtain ⟨hs, hm⟩ := retireCarvedObjects_framed rest (retireCarvedObject st id)
-      exact ⟨hs.trans hOne.1, hm.trans hOne.2⟩
-
-/-- WS-BP BP7.1 (slice 3) (**the live `.untypedReset` bound**): a reset writes
-**no core**.  Its unmap pass is the `.vspaceUnmap` arm's own transition, whose
-bound is already empty; retiring the carved subtree and storing the rewound
-untyped write the object table alone.  An executing core is taken only to
-initiate the shootdown rounds, exactly as the `.vspaceUnmap` arm takes it. -/
-theorem untypedReset_confinedToCores
-    (executingCore : CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : untypedReset executingCore untypedId st = .ok ((), st')) :
+/-- **The live `.untypedReset` arm writes no core** (WS-ZA ZA5.4).  The reset
+writes `0` to the invoked capability's free index — one CNode store — and
+nothing else, so it writes neither the scheduler nor the machine. -/
+theorem untypedResetSlot_confinedToCores
+    (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (st st' : SystemState)
+    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] := by
   apply observableSlotsConfinedToCores_nil_of_framed
-  obtain ⟨_, ids, st1, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
-    untypedReset_ok_decompose executingCore untypedId st st' hStep
-  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ st st1 hUnmap
-  obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st1
-  exact ⟨(storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans hs1),
-    (storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans hm1)⟩
-
-/-- **The live `.untypedReset` arm writes no core** (`v0.36.37`, WS-ZA ZA5.4).
-The arm rewinds the invoked slot's free index (one CNode store), runs the reset,
-and posts the `.aside1` round fold, which writes neither the scheduler nor the
-machine (`untypedResetWithShootdown_ok_frame`). -/
-theorem untypedResetRewound_confinedToCores
-    (executingCore : CoreId) (src : CSpaceAddr) (cn : CNode) (untypedId : SeLe4n.ObjId)
-    (st st' : SystemState) (hO : st.objects[src.cnode]? = some (.cnode cn))
-    (hStep : untypedResetWithShootdown executingCore untypedId (setCapFreeIndex st src 0) =
-      .ok ((), st')) :
-    observableSlotsConfinedToCores st st' [] := by
-  apply observableSlotsConfinedToCores_nil_of_framed
-  have hS := setCapFreeIndex_eq_storeObject (idx := 0) hO
-  obtain ⟨st1, hR, -, hs, hm, -⟩ :=
-    untypedResetWithShootdown_ok_frame executingCore untypedId _ st' hStep
-  obtain ⟨_, ids, st2, -, -, -, -, -, -, -, hUnmap, -, -, -, -, hSt⟩ :=
-    untypedReset_ok_decompose executingCore untypedId _ st1 hR
-  obtain ⟨hs1, hm1⟩ := unmapLivePages_framed executingCore _ _ st2 hUnmap
-  obtain ⟨hs2, hm2⟩ := retireCarvedObjects_framed ids st2
-  exact ⟨hs.trans ((storeObject_scheduler_eq _ _ _ _ hSt).trans (hs2.trans
-      (hs1.trans (storeObject_scheduler_eq _ _ _ _ hS)))),
-    hm.trans ((storeObject_machine_eq _ _ _ _ hSt).trans (hm2.trans
-      (hm1.trans (storeObject_machine_eq _ _ _ _ hS))))⟩
+  rw [untypedResetSlot_ok_frame hStep]
+  exact ⟨setCapFreeIndex_scheduler _ _ _, setCapFreeIndex_machine _ _ _⟩
 
 /-- WS-BP BP7.1 (`v0.36.12`): the finalisation a destroying capability
 operation owes — the page-table detach, stores to VSpace roots, and the page

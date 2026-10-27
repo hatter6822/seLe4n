@@ -1479,6 +1479,27 @@ def lockSet_untypedRetype (callerTid : ThreadId)
      (cnodeLock dstCnodeObjId, .write),
      (stateLevelLock, .write)]
 
+/-- **WS-ZA ZA5.4**: `lockSet` for `untypedReset` — seL4's reset, which writes
+`0` to the invoked untyped capability's free index.
+
+Caller TCB (read) and CSpace root (read) for the capability resolution; the
+CNode holding the invoked capability (write — its free index is written there;
+on a single-level CSpace it is the root, and `insertOrMerge` lubs the two modes
+to one write member); the untyped (read — the reset refuses while its child list
+records a carved object); and `stateLevelLock` (read): the reset refuses while
+the invoked slot has a derivation child, read off the slot's link words, and the
+free-index write rewrites the CNode, link words included, so a capability
+operation that relinks a slot of that CNode must conflict with it, as with
+`lockSet_vspaceMap`.  Every member is named by the operands. -/
+def lockSet_untypedReset (callerTid : ThreadId)
+    (cnodeRootObjId srcCnodeObjId untypedObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read),
+     (cnodeLock srcCnodeObjId, .write),
+     (untypedLock untypedObjId, .read),
+     (stateLevelLock, .read)]
+
 /-! ## VSpace syscalls (2 transitions) -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceMap`.
@@ -4940,18 +4961,13 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .untypedRetype =>
       [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore,
        .endpoint, .notification, .reply, .schedContext]
-  -- **WS-BP BP7.1 (`v0.36.6`)**: the reset reads the caller and its CSpace root,
-  -- writes the CNode holding the invoked capability (WS-ZA ZA5.4 part 13: its
-  -- free index rewinds to zero), writes the untyped, retires frames (their
-  -- `page` locks), rewrites every VSpace
-  -- root that maps a page of the region, and writes the object index through
-  -- `stateLevelLock`.  It declares **no** static footprint, for `.cspaceRevoke`'s
-  -- reason: the VSpace roots it must write are the ones the state says map the
-  -- region — a set nothing bounds, while a `LockSet` is capped at
-  -- `maxLockSetSize` — so this list says which kinds a future declaration may
-  -- contain.
+  -- **WS-BP BP7.1 (`v0.36.6`)**, seL4's reset since WS-ZA ZA5.4: the reset
+  -- reads the caller and its CSpace root, writes the CNode holding the invoked
+  -- capability (its free index is written to zero), reads the untyped's child
+  -- list, and reads the slot's derivation links under `stateLevelLock`
+  -- (`lockSet_untypedReset`).
   | .untypedReset =>
-      [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore]
+      [.tcb, .cnode, .untyped, .objStore]
   -- VSpace syscalls
   -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
   -- VSpaceRoot in read mode: it modifies no page table, only cache state.
@@ -5098,8 +5114,8 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
 
 /-- **WS-RR RR8.16 (`v0.35.190`): does this syscall declare a STATIC footprint?**
 
-Every arm but one does, and the exception is structural rather than unfinished:
-`cspaceRevokeCdtFinalising` walks the source slot's CDT descendants across *arbitrary*
+Every arm but two does (`.yield`'s reason is at its arm), and each exception is
+structural rather than unfinished: `cspaceRevokeCdtFinalising` walks the source slot's CDT descendants across *arbitrary*
 CNodes, a set the state discovers and nothing bounds, while a `LockSet` is
 capped at `maxLockSetSize`.  A static footprint naming only the source CNode
 would be **false** of the transition, which this project rates worse than no
@@ -5112,7 +5128,7 @@ than inheriting a default; and it is what `lockSet_consistent_aggregate_covers_e
 is stated over, so the inventory's coverage claim names the set it actually
 covers instead of an off-by-one against `SyscallId.count`. -/
 def declaresStaticLockFootprint : SyscallId → Bool
-  | .cspaceRevoke | .untypedReset => false
+  | .cspaceRevoke => false
   -- **WS-ZA ZA4.3**: a yield that exhausts a budget times out every IPC wait the
   -- SchedContext bounded (`timeoutBlockedThreads`, the timer tick's own arm),
   -- and each timeout walks the priority-inheritance chain it releases — a set
@@ -5123,7 +5139,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
-  | .untypedRetype
+  | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
@@ -5132,14 +5148,15 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
-/-- **The exemption is exactly three arms**, each an unbounded state-discovered
-walk — `.cspaceRevoke`'s derivation tree, `.untypedReset`'s VSpace roots and
-`.yield`'s timeouts with the inheritance chains they release — so a fourth
-undeclared syscall is a decision somebody has to write down rather than a number
-that quietly moves. -/
+/-- **The exemption is exactly two arms**, each an unbounded state-discovered
+walk — `.cspaceRevoke`'s derivation tree and `.yield`'s timeouts with the
+inheritance chains they release — so a third undeclared syscall is a decision
+somebody has to write down rather than a number that quietly moves.  The untyped
+reset left the exemption in WS-ZA ZA5.4, when it became seL4's one free-index
+write (`lockSet_untypedReset`). -/
 theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
     declaresStaticLockFootprint sid = false ↔
-      sid = .cspaceRevoke ∨ sid = .untypedReset ∨ sid = .yield := by
+      sid = .cspaceRevoke ∨ sid = .yield := by
   cases sid <;> simp [declaresStaticLockFootprint]
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**
@@ -6583,6 +6600,25 @@ theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
               endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- **WS-ZA ZA5.4** — WS-SM SM3.B.4 for `.untypedReset`. -/
+theorem lockSet_consistent_untypedReset (callerTid : ThreadId)
+    (cnRoot srcCn untypedId : ObjId) :
+    ∀ p ∈ (lockSet_untypedReset callerTid cnRoot srcCn untypedId).pairs,
+      p.fst.kind ∈ permittedKinds .untypedReset :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [untypedLock]; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))

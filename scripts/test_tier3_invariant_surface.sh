@@ -3967,38 +3967,31 @@ run_check "INVARIANT" rg -n 'the revocation retires the child untyped and the gr
 run_check "INVARIANT" rg -n 'an untyped recording a child is retired with its capability, its parent adopting the child' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'the carved RAM page is zeroed before any capability to it exists' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'and .\.vspaceMap. maps the CARVED page, writable' tests/VSpaceCapabilityBindingSuite.lean
-# WS-BP BP7.1 slice 3: memory returns to its untyped.  The live
-# `.untypedReset` arm runs `untypedReset`; its refusals are decided over the
-# whole object store (a per-slot "no derivations" test would pass a sibling
-# copy of the untyped capability), every mapping of the region is removed
-# through the `.vspaceUnmap` arm's own transition and the result checked, and
-# the carved frames are ERASED (their ids and store capacity return) through
-# the one primitive that erases, which touches frames only.
-run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object untypedId => untypedResetFromCap tid executingCore decoded\.capAddr untypedId' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*      match untypedCarvedSubtree st ut with\n      \| none => \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeRetirable st ids then \.error \.revocationRequired\n        else if !carvedSubtreeFramesInRegion st ut ids then \.error \.illegalState\n        else if !carvedSubtreeUnreferenced st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*  \| 0, _ :: _, _ => none' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def carvedSubtreeWalk[^\n]*(\n([ \t][^\n]*)?)*      \| some u => carvedSubtreeWalk st fuel \(u\.children\.map \(·\.objId\) \+\+ rest\) \(id :: acc\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedCarvedSubtree_spec($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_retired_pages_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*          match unmapLivePages executingCore \(untypedResetMappings st ut ids\) st with' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedResetMappings[^\n]*(\n([ \t][^\n]*)?)*  untypedRegionMappings st ut \+\+ carvedRootMappings st ids' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            else if !carvedRootsEmpty st1 ids then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            else if !asidTableNamesNoneOf \(retireCarvedObjects st1 ids\) ids then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_asids_released($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*            if !untypedRegionUnmapped st1 ut then \.error \.illegalState' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*              storeObject untypedId \(\.untyped ut\.reset\) \(retireCarvedObjects st1 ids\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+# WS-BP BP7.1 slice 3, seL4's reset since WS-ZA ZA5.4 part 36: the live
+# `.untypedReset` arm resolves the invoked slot and runs `untypedResetSlot`,
+# which refuses while that slot has a derivation child or the untyped records a
+# carved object, every refusal before the one write, and otherwise writes 0 to
+# the slot's free index -- no scan, no erase.  The objects carved from it left
+# through their final deletes (`retireCarvedObject`, the erase that moved out of
+# the reset into its own module).
+run_check "INVARIANT" rg -n -U '  \| \.untypedReset =>\n    some <\| match cap\.target with\n    \| \.object _ => untypedResetFromCap tid decoded\.capAddr' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedResetFromCap[^\n]*(\n([ \t][^\n]*)?)*      \(fun srcCnode srcSlot _ _ => untypedResetSlot srcCnode srcSlot st\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def untypedResetSlot[^\n]*\n  fun st =>\n    if hasCdtChildren st \{ cnode := srcCnode, slot := srcSlot \} then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n -U 'def untypedResetSlot[^\n]*(\n([ \t][^\n]*)?)*            if ut\.children\.isEmpty then\n              \.ok \(\(\), setCapFreeIndex st \{ cnode := srcCnode, slot := srcSlot \} 0\)\n            else \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_negative_check "INVARIANT" rg -n -U 'def untypedResetSlot[^\n]*(\n([ \t][^\n]*)?)*(retireCarvedObject|unmapLivePages|storeObject|objects\.fold)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok_freeIndex($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok_uncarved($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_ok($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n '\buntypedResetWithShootdown|\buntypedResetShootdownAsids\b|\bretireCarvedObjects\b|\bcarvedSubtree[A-Z][A-Za-z]*\b|\buntypedCarvedSubtree\b|\bobjectNamesListed\b|\bretypeAsidRoundFold\b|\buntypedReset_ok_[a-z]' SeLe4n tests
 run_check "INVARIANT" rg -n -U 'def unmapLivePages[^\n]*(\n([ \t][^\n]*)?)*      if mappedPageLive st p then\n        match Architecture\.vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PageTeardown.lean
-run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome \|\| \(st\.getPageTable\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*          \| some root => st\.asidTable\.erase root\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def objectNamesListed[^\n]*(\n([ \t][^\n]*)?)*  \| \.tcb t => cellNamesListed ids t\.spaceCells\[0\] \|\| cellNamesListed ids t\.spaceCells\[1\]\n  \| _ => false' SeLe4n/Kernel/Architecture/PageTeardown.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_unreferenced($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_subtree_absent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_ok_untyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*\n  if \(st\.getFrame\? id\)\.isSome \|\| \(st\.getUntyped\? id\)\.isSome \|\|\n      \(st\.getVSpaceRoot\? id\)\.isSome \|\| \(st\.getPageTable\? id\)\.isSome then' SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean
+run_check "INVARIANT" rg -n -U 'def retireCarvedObject \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*          \| some root => st\.asidTable\.erase root\.asid' SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean
 run_check "INVARIANT" rg -n '^theorem of_inertOrAbsentWrites($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n -U 'case untypedReset =>(\n([ \t][^\n]*)?)*      exact untypedResetRewound_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n -U 'case untypedReset =>(\n([ \t][^\n]*)?)*      exact untypedResetSlot_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedReset    => \.retype$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedReset          => 37$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedReset = 37,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
@@ -4328,7 +4321,7 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_target_gone ' SeLe4n/Ker
 run_negative_check "INVARIANT" rg -n 'unrecordChild|untypedWithoutChild' SeLe4n
 # A reply-capability target in a slot's spare record is written over in place.
 run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  match t with\n  \| \.object _ => \.object id\n  \| \.replyCap _ => \.object id\n  \| _ => CapTarget\.ofObject id' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => withTaintCleared \(retypeAsidRoundStep executingCore root\.asid \(retireCarvedObject st1 x\)\) x\n  \| none => withTaintCleared \(retireCarvedObject st1 x\) x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => withTaintCleared \(asidReleaseRound executingCore root\.asid \(retireCarvedObject st1 x\)\) x\n  \| none => withTaintCleared \(retireCarvedObject st1 x\) x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.139: the retire forgets the freed id's declassification provenance.
 run_check "INVARIANT" rg -n -U '@\[inline\] def withTaintCleared \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  \{ st with declassificationTaint := st\.declassificationTaint\.clearAt x \}' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_taint_cleared ' SeLe4n/Kernel/Capability/FinalRetire.lean
@@ -4432,7 +4425,7 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_capabilityInva
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_preserves_ipcInvariantFull ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_runQueueStage ' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_stepCovers ' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem retireCarvedObject_eq_impl : @retireCarvedObject = @retireCarvedObjectImpl' SeLe4n/Kernel/Lifecycle/Operations/CarvedObjectErase.lean
 # v0.36.132: the retire's erases allocate nothing: the compiled erase probes for
 # a bare index, and the compiled backshift takes each moved cell out of the
 # array before rewriting it, so an exclusively owned table is erased in place.
@@ -4499,33 +4492,28 @@ run_check "INVARIANT" rg -n '^theorem vspaceMap_capabilityOps_share_serializatio
 run_check "INVARIANT" rg -n 'RETIRED: the non-finalising delete left the deleted capability.s mapping in place' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a stale record removes nothing: the other frame.s mapping survives' tests/VSpaceCapabilityBindingSuite.lean
 run_negative_check "INVARIANT" rg -n 'untypedResetUnmap' SeLe4n tests
-run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke \| \.untypedReset => false$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke => false$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # WS-BP BP7.1 slice 3: the reset arm is in the cross-core inventory, writes no core,
 # and its live-arm claim is backed by a delegation proof rather than a reading.
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_untypedReset_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_untypedReset($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
-run_check "INVARIANT" rg -n -U '^theorem untypedReset_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*    observableSlotsConfinedToCores st st. \[\] :=' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
-run_check "INVARIANT" rg -n '^theorem untypedReset_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetSlot_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n -U '^theorem untypedResetSlot_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*    observableSlotsConfinedToCores st st. \[\] :=' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => \.delegationProof \.untypedReset syscallDelegates_untypedReset$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # v0.36.37: a retired ASID gets an ACKNOWLEDGED `.aside1` round, and a PE
 # servicing one leaves that address space before it acknowledges.  The ledger's
-# broadcast TLBI empties TLBs and leaves every TTBR0_EL1 alone, so the bare
-# reset must not come back as the live arm, and the HAL eviction must precede
-# the local invalidation on both servicing paths.
-run_negative_check "INVARIANT" rg -n 'untypedReset executingCore untypedId st' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedResetWithShootdown [^\n]*(\n([ \t][^\n]*)?)*      \.ok \(\(\), retypeAsidRoundFold executingCore \(untypedResetShootdownAsids st untypedId\) st1\)' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n -U 'def untypedResetRetiredRootAsids[^\n]*(\n([ \t][^\n]*)?)*  ids\.filterMap fun id => \(st\.getVSpaceRoot\? id\)\.map VSpaceRoot\.asid' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetShootdownAsids_mem($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetWithShootdown_ok_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetWithShootdown_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem untypedResetRewound_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
+# broadcast TLBI empties TLBs and leaves every TTBR0_EL1 alone, so the HAL
+# eviction must precede the local invalidation on both servicing paths.  The
+# round is posted by a root's final delete (`asidReleaseRound`); the reset
+# retires nothing since WS-ZA ZA5.4 part 36.
 run_check "INVARIANT" rg -n '^  \| \.untypedResetDispatch => niName! untypedResetFromCap_crossCoreNonInterference$' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  \| \.untypedReset => "untypedResetFromCap"$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n -U '                    Some\(decoded\) => \{(\n([ \t][^\n]*)?)*?                        if let crate::tlb::TlbInvalidation::Aside1 \{ asid \} = decoded \{\n                            evict_retired_translation\(asid\);\n                        \}\n                        crate::tlb::tlbi_local\(decoded\)' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n -U '                if op\.op_tag == ASIDE1_OP_TAG \{\n                    evict_retired_translation\(op\.asid\);\n                \}\n            \}\n        \}\n        _ => evict_user_translation\(\),\n    \}\n    crate::tlb::tlbi_vmalle1\(\);' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub const fn translation_retired_by\(ttbr0: u64, retired: u16\) -> bool \{$' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n 'RETIRED: the bare reset posted no .aside1 round for a retired ASID' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'the revocation retires both roots and the frame, releasing the roots. ASIDs' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n -F '(Architecture.shootdownPostedOps st1 stLive).contains (Architecture.encodeAsidInvalidation one))' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.11): a thread runs in a carved address space.  The
 # space change refuses a thread the STATE runs or blocks, not only one whose
 # stored flag says so; the retired flag-only guard must not come back.
@@ -4622,13 +4610,12 @@ run_check "INVARIANT" rg -n '^theorem pageTableUnmap_refuses_in_use($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem pageTableMap_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem pageTableUnmap_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n -U 'def vspaceMapFromFrameCap [^\n]*(\n([ \t][^\n]*)?)*        else if !Architecture\.asidTranslationReady st args\.asid args\.vaddr then\n          \.error \.translationFault' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedReset \(executingCore[^\n]*(\n([ \t][^\n]*)?)*        else if !carvedSubtreeInstallsClosed st ids then \.error \.revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^  \| \.pageTableMap          => 39$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.pageTableUnmap        => 40$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_pageTableMap($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_pageTableUnmap_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n 'runPageTableChecks$' tests/VSpaceCapabilityBindingSuite.lean
-run_check "INVARIANT" rg -n 'so resetting the child alone is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n 'a reset of the child while its root.s capability lives is refused \(revocationRequired\)' tests/VSpaceCapabilityBindingSuite.lean
 # WS-BP BP7.1 (v0.36.12): destroying a table's LAST capability takes it out of
 # its address space (seL4's finaliseCap -> unmapPageTable).  Both destroying
 # arms run the one finalisation; the orphan set is "named by a destroyed
@@ -4680,7 +4667,6 @@ run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete =>\n    some <\| match cap\.
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_of_slotHolder($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_closed($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
-run_check "INVARIANT" rg -n -U 'def carvedSubtreeUnreferenced [^\n]*\n  st\.objects\.fold true \(fun acc _ o => acc && !objectNamesListed ids o\)' SeLe4n/Kernel/Architecture/PageTeardown.lean
 # v0.36.38: a frozen mint inserts a capability with no mapping record, and the
 # frozen phase claims no coverage of a VSpace write it has only a read for.
 run_check "INVARIANT" rg -n -U 'def frozenCspaceMint [^\n]*(\n([ \t][^\n]*)?)*            let slots. := cn\.slots\.insert slot cap\.withoutMapping' SeLe4n/Kernel/FrozenOps/Operations.lean
@@ -4693,7 +4679,6 @@ run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_preserves_ip
 run_check "INVARIANT" rg -n '^theorem finaliseDestroyedCapabilities_framed($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/MemoryArms.lean
 run_check "INVARIANT" rg -n '^      if pageTableInstallLive st tableId then \.error \.invalidCapability$' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_negative_check "INVARIANT" rg -n 'installedIn\.isSome then' SeLe4n/Kernel/Architecture/PageTableInstall.lean
-run_check "INVARIANT" rg -n '^        \| some inst => ids\.contains inst\.root \|\| !Architecture\.pageTableInstallLive st id$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '\(fun cap => cap\.mapping\.isSome \|\| frozenCapNamesInstalledPageTable st cap\) then' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'deleting a table.s last capability takes it, and the two tables beneath it, out of the root' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n 'a table another capability still names stays installed, with everything beneath it' tests/VSpaceCapabilityBindingSuite.lean
@@ -4797,12 +4782,10 @@ run_check "INVARIANT" rg -n '^  Concurrency\.recordCommittedCurrentThreadHw r\.2
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def faultEntryDeliver [^\n]*(\n([ \t][^\n]*)?)*\| none => \(\[\], st\)" SeLe4n/Kernel/FaultEntry.lean'
 # v0.36.40: the boot-root physical-address bound is the Cortex-A76's 40 bits,
 # tied to the configuration's width, and the retired 2^44 does not return to
-# the checks; and the untyped reset asks every surviving root about the tables
-# it would retire.
+# the checks.
 run_check "INVARIANT" rg -n '^def bootRootPaddrBound : Nat := 2 \^ 40$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
 run_check "INVARIANT" rg -n '^theorem bootRootPaddrBound_eq_physicalAddressWidth($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
 run_negative_check "INVARIANT" rg -n '2 ?\^ ?44' SeLe4n/Platform/RPi5/VSpaceBoot.lean SeLe4n/Platform/Sim/Contract.lean
-run_check "INVARIANT" rg -n '^    \| \.vspaceRoot root => ids\.contains oid \|\| root\.tables\.all \(fun s => !ids\.contains s\.table\)$' SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean

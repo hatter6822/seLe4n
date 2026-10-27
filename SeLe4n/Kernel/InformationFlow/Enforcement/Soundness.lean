@@ -452,8 +452,8 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     part 8 (`v0.36.111`) removed with the general revocation it named; WS-BP BP7.1 (`v0.36.5`) added `untypedRetypeFromCap`,
     capability-only — the live `.untypedRetype` arm's transition, the untyped
     carve behind its two slot resolutions; and WS-BP BP7.1 (`v0.36.6`) added
-    `untypedReset`, capability-only — the live `.untypedReset` arm's
-    transition, named `untypedResetWithShootdown` since `v0.36.37`; and WS-BP BP7.1 (`v0.36.7`) added `cspaceDeleteSlotFinalising`
+    the untyped reset, capability-only — the live `.untypedReset` arm's
+    transition, `untypedResetFromCap` since WS-ZA ZA5.4; and WS-BP BP7.1 (`v0.36.7`) added `cspaceDeleteSlotFinalising`
     and `cspaceRevokeCdtFinalising`, capability-only — the live `.cspaceDelete`
     and `.cspaceRevoke` arms' transitions, each removing the mappings the frame
     capabilities it destroys recorded.  WS-BP BP7.1 (`v0.36.11`) added

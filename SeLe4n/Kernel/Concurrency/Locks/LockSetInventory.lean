@@ -155,6 +155,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_cspaceDelete .lockSet,
     lkst! "lockSet for untypedRetype"
       lockSet_untypedRetype .lockSet,
+    lkst! "lockSet for untypedReset"
+      lockSet_untypedReset .lockSet,
     lkst! "lockSet for vspaceMap"
       lockSet_vspaceMap .lockSet,
     lkst! "lockSet for vspaceUnmap"
@@ -232,6 +234,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_cspaceDelete .consistency,
     lkst! "lockSet_consistent for untypedRetype"
       lockSet_consistent_untypedRetype .consistency,
+    lkst! "lockSet_consistent for untypedReset"
+      lockSet_consistent_untypedReset .consistency,
     lkst! "lockSet_consistent for vspaceMap"
       lockSet_consistent_vspaceMap .consistency,
     lkst! "lockSet_consistent for vspaceUnmap"
@@ -332,7 +336,11 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "pipChainStart for tcbSuspend (revert from the captured blocking server when reply-blocked)"
       pipChainStart_tcbSuspend .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 121 entries (WS-BP BP7.1's
+/-- WS-SM SM3.B: the inventory has exactly 99 entries (WS-ZA ZA5.4's
+`untypedReset` lockSet + consistency pair — seL4's reset, whose footprint is
+the caller's TCB and CNode root read, the invoked capability's CNode written and
+the untyped and the derivation links read — on top of the 97 before it; the
+figures that follow are the history of earlier cuts: WS-BP BP7.1's
 `pageTableMap` and `pageTableUnmap` lockSet + consistency pairs — the page-table
 syscalls, whose footprint is the caller's TCB and CNode root read and the table
 and its address space written — on top of the 117 before them, which were its
@@ -366,18 +374,18 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 97 := by decide
+    lockSetTheorems.length = 99 := by decide
 
-/-- WS-SM SM3.B: 37 entries in the `lockSet` category (one per statically
+/-- WS-SM SM3.B: 39 entries in the `lockSet` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 38 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
   decide
 
-/-- WS-SM SM3.B: 37 entries in the `consistency` category (one per statically
+/-- WS-SM SM3.B: 39 entries in the `consistency` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 38 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

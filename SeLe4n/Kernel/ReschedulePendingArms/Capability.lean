@@ -253,9 +253,8 @@ theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (named : List SeLe4
   exact ⟨keyInputsEq_of_vspaceRootOnlyWrite hW, hSched, hExt⟩
 
 /-- **A write of the kinds a retire touches moves no key input**: none of those
-kinds feeds a key (`retireTouched`).  The untyped reset
-(`resetTouchedWrite.retireTouched`) and the final-delete retire are such
-writes. -/
+kinds feeds a key (`retireTouched`).  The final-delete retire is such a
+write. -/
 theorem capabilityKeyFrame_of_retireTouched {st st' : SystemState}
     (hExt : st'.objects.invExt) (hSched : st'.scheduler = st.scheduler)
     (hW : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
@@ -363,27 +362,15 @@ theorem untypedRetypeObject_keyFrameOffChild (src dst : CSpaceAddr) (childId : S
     cases req <;> simp [CarveRequest.object, carvedTcb]
   · rw [kR.2.1, storeObject_scheduler_eq _ _ _ _ hStCh, k1.2.1]
 
-theorem untypedResetWithShootdown_keyFrame (ec : CoreId) (untypedId : SeLe4n.ObjId)
+/-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind,
+a CNode store, which feeds no key, and nothing else. -/
+theorem untypedResetFromCap_keyFrame (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
+    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  obtain ⟨st1, hR, hObj, hSched, -, -⟩ :=
-    untypedResetWithShootdown_ok_frame ec untypedId st st' hStep
-  obtain ⟨hExt, hS1, hW⟩ := untypedReset_ok_frame ec untypedId st st1 hObjInv hR
-  have k1 : capabilityKeyFrame st st1 := capabilityKeyFrame_of_retireTouched hExt hS1 (resetTouchedWrite.retireTouched hW)
-  exact k1.trans (capabilityKeyFrame_of_objects_scheduler_eq hExt hObj hSched)
-
-/-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind
-(a CNode store, which feeds no key) and then the reset. -/
-theorem untypedResetFromCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
-    (srcAddr : SeLe4n.CPtr) (untypedId : SeLe4n.ObjId)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : untypedResetFromCap tid ec srcAddr untypedId st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
-  obtain ⟨src, _, cn, hO, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ st st' hStep
-  have k1 := storeObject_inert_keyFrame hObjInv (setCapFreeIndex_eq_storeObject (idx := 0) hO)
-    (by rw [hO]; rfl) rfl
-  exact k1.trans (untypedResetWithShootdown_keyFrame ec untypedId _ st' k1.2.2 hS)
+  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
+  rw [untypedResetSlot_ok_frame hS]
+  exact setCapFreeIndex_keyFrame _ _ _ hObjInv
 
 /-! ### One-field TCB rewrites and registry writes -/
 

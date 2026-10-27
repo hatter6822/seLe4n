@@ -1,3 +1,66 @@
+## v0.36.149 — WS-ZA ZA5.4 part 36: the seL4 reset
+
+Syscall 37 is now seL4's `resetUntypedCap` behind `ensureNoChildren`.  It used
+to walk the untyped's carved subtree, scan the whole object store for
+references, unmap the region, erase every carved object and post a shootdown
+round per retired root, and it could refuse after it had written.  The carved
+objects now leave the store by their own final deletes (since `v0.36.132`), so
+the reset only rewinds the free index.
+
+- **The reset** (`untypedResetSlot`, `Lifecycle/Operations/UntypedReset.lean`):
+  on the slot the invoked capability resolves to (`untypedResetFromCap`), it
+  refuses (`.revocationRequired`) while the slot has a derivation child
+  (`hasCdtChildren`) or the untyped's child list still records a carved
+  object, and otherwise writes 0 to the capability's free index in place
+  (`setCapFreeIndex`).  O(1): no scan, no erase, no unmap.  Every refusal
+  precedes the write (`untypedResetAdmittedAt`, `untypedResetPerformAt`,
+  `untypedResetSlot_of_admitted`), so `dispatchInvocationByR` runs the arm
+  through `RefusalCarrying.ofChecked` and keeps no pre-state.
+- **The theorems, restated**: `untypedResetSlot_ok`,
+  `untypedResetSlot_ok_freeIndex` (the capability holds index 0),
+  `untypedResetSlot_ok_uncarved` (nothing carved remains below its index) and
+  `untypedResetSlot_ok_frame` (only the slot's capability changes); the
+  capability bundle (`untypedResetSlot_preserves_capabilityInvariantBundle`,
+  `untypedResetFromCap_preserves_capabilityInvariantBundle`), the untyped
+  invariants (`untypedResetSlot_preserves_untypedMemoryInvariant`), the IPC
+  bundle, the run-queue stage, the key frame, the cross-core confinement
+  (`untypedResetSlot_confinedToCores`) and non-interference
+  (`untypedResetFromCap_crossCoreNonInterference`).
+- **The boot establishes the untyped invariants**
+  (`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`, through
+  `untypedMemoryInvariant_of_pristine` and
+  `bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero`), so the
+  per-slot rule is the reset's only guard.
+- **The lock footprint is static** (`lockSet_untypedReset`, its consistency
+  and size theorems); `declaresStaticLockFootprint` is false for
+  `.cspaceRevoke` and `.yield` only.  Lock-set inventory 97 → 99, phase
+  manifest 958 → 960 entries (780 → 781 theorems).
+- **Retired**: the carved-subtree walk, the whole-store reference scan
+  (`carvedSubtreeUnreferenced`, `objectNamesListed`), `carvedSubtreeRetirable`,
+  `carvedSubtreeFramesInRegion`, `carvedSubtreeInstallsClosed`, the region
+  unmap and its check, the root checks, the batch erase
+  (`retireCarvedObjects`), the shootdown wrapper
+  (`untypedResetWithShootdown`), `UntypedObject.reset` and every theorem only
+  they pinned.  The one object-store erase, `retireCarvedObject`, moves to the
+  new module `Lifecycle/Operations/CarvedObjectErase.lean`; the per-root round
+  is `asidReleaseRound`.
+- **Tests**: the vspace capability-binding suite's reset scenarios (§5e, §5g,
+  §5i, §5k) run the new reset after the revocation that retires the carved
+  objects; §5p adds the provenance witness (reset, free index 0, the retired
+  endpoint's id recarved with no tag).  The lock-set suite checks the new
+  footprint.  Tier 3 anchors, the store-read census and the store-reader
+  baseline follow the moved and deleted code (`getuntyped` adoption 144 → 138
+  and `getvspaceroot` 103 → 95, the deleted scan's reads).
+- **Exerciser**: `untyped-reset` reads 0 at first call and steady state (30
+  before), pinned exactly at (0, 0); every other pin unchanged.
+- Closes the `docs/REGISTERED_DEBT.md` rows "A destroyed object's
+  declassification provenance is not cleared", "Boot is not proven to
+  establish `untypedMemoryInvariant`" and "The reset's rewind costs 10 heap
+  cells"; registers "A live mapping is not proven to be recorded on a
+  capability".  `docs/planning/UNTYPED_RESET_PLAN.md` row 36 is landed with its
+  forks, and the row is split: row 37 (mapping completeness) and row 38 (the
+  retype resets when its capability has no children) are new.
+
 ## v0.36.148 — WS-ZA ZA5.4 part 35: the zombie fuel proven
 
 A final delete of a capability whose object still holds capabilities runs the

@@ -65,13 +65,14 @@ because the defect lived in dispatch and only dispatch can witness it.
   owns is exercised, and so is seL4's derivation rule for an untyped
   capability: a copy of one with children is refused, and after a copy of a
   childless one the source is full and only the copy carves.
-* §5e — **WS-BP BP7.1 (`v0.36.6`): memory returns to its untyped.**
-  `.untypedReset` refuses while any capability names a carved frame — including
-  through a **duplicate** of the untyped capability with no derivation of its
-  own, which a per-slot "no derivations" test would miss — and after
-  `.cspaceRevoke` it removes every mapping of the region (an unrelated mapping
-  survives), retires the frames and rewinds the invoked capability's free index,
-  so the next carve reuses both the page, zeroed again, and the child id.
+* §5e — **WS-BP BP7.1 (`v0.36.6`): memory returns to its untyped.**  Since
+  WS-ZA ZA5.4 part 36 the reset is seL4's: `.untypedReset` refuses while the
+  invoked slot has a derivation child, or while the untyped records a carved
+  object — so a **duplicate** of the untyped capability with no derivation of
+  its own is refused too — and after `.cspaceRevoke`, whose final deletes remove
+  the frames' mappings and retire the frames, it writes 0 to the invoked
+  capability's free index, so the next carve reuses both the page, zeroed
+  again, and the child id.
 * §5f — **WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it
   made.**  `.vspaceMap` records the mapping on the capability; a copy carries
   none; a capability whose mapping is live cannot map again; deleting a frame
@@ -80,26 +81,22 @@ because the defect lived in dispatch and only dispatch can witness it.
   record gone stale removes nothing — a different frame mapped since at the
   same address survives — and does not block a fresh map; a CNode holding a
   recording capability is refused by the destroy cleanup; and the boot refuses a
-  configured record.  §5e's revocation witness inverts in the same cut: the
-  revocation now removes the mapping the reset used to be the first to remove.
+  configured record.
 * §5g — **WS-BP BP7.1 slice 4 (`v0.36.8`): an untyped carves child untypeds,
   and a reset returns the whole subtree.**  `.untypedRetype` at the untyped tag
   carves a child untyped of `2^sizeBits` bytes at the parent capability's free index, with
   its parent stamped and its memory left unwritten; the child carves a frame,
-  zeroed, which maps.  A second carve at the child's id is refused.  After
-  one revocation of the parent capability — which destroys the child's
-  capability and the grandchild frame's with it — the parent's reset retires
-  the child and the frame together and unmaps the page, where the retired
-  frames-only reset (computed beside it) would refuse that state forever.
+  zeroed, which maps.  A second carve at the child's id is refused.  One
+  revocation of the parent capability destroys the child's capability and the
+  grandchild frame's with it, retiring both, and the parent then resets.
   Every size the decode refuses is exercised.
 * §5i — **WS-BP BP7.1 slice 4b (`v0.36.10`): an address space is carved
   memory.**  `.untypedRetype` at the VSpace-root tag carves a root on a zeroed
   page of its untyped, under the least free ASID — never `0`, never one another
   root holds — with a read/write capability; a frame maps into it; a device
-  untyped cannot back one.  After one revocation the reset retires both roots
-  and the frame, removes the carved address space's translation and releases
-  both ASIDs, while a thread still running in a carved root refuses the reset;
-  the next carve reuses the released ASID and page.
+  untyped cannot back one.  One revocation retires both roots and the frame and
+  releases both ASIDs; the reset then writes the free index alone, and the next
+  carve reuses the released ASID and page.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -155,9 +152,11 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.untypedRetypeFromCap_ok
 #check @SeLe4n.Kernel.carveRequestOf?_ok
 #check @SeLe4n.Kernel.untypedRetypeObject_preserves_ipcInvariantFull
-#check @SeLe4n.Kernel.untypedCarvedSubtree_spec
-#check @SeLe4n.Kernel.untypedReset_ok_subtree_absent
-#check @SeLe4n.Kernel.untypedReset_ok_retired_pages_unmapped
+#check @SeLe4n.Kernel.untypedResetSlot
+#check @SeLe4n.Kernel.untypedResetSlot_ok
+#check @SeLe4n.Kernel.untypedResetSlot_ok_freeIndex
+#check @SeLe4n.Kernel.untypedResetSlot_ok_uncarved
+#check @SeLe4n.Kernel.untypedResetFromCap_ok
 
 -- ============================================================================
 -- Scenario fixture
@@ -942,15 +941,15 @@ private def runResetChecks : IO Unit := do
           assertBool "a second reset leaves the untyped empty"
             (freeIndexAt stTwice slotUtRetype == some 0 &&
              (stTwice.getUntyped? carveUt).map (·.children.length) == some 0)
-  -- A child that is not a frame cannot be retired: an untyped whose child list
-  -- names a kernel object keeps its memory.
+  -- The reset asks the untyped, not only the slot: an untyped whose child list
+  -- records a carved object is refused, whatever that object is.
   let utWithObjChild : UntypedObject :=
     { regionBase := SeLe4n.PAddr.ofNat carveUtBase, regionSize := 0x3000,
       children := [{ objId := carveVsp, offset := 0, size := SeLe4n.pageBytes }] }
   match storeObject carveUt (.untyped utWithObjChild) carveScenario with
   | .error _ => assertBool "the non-frame-child fixture stores" false
   | .ok ((), stObj) =>
-    assertBool "a reset whose child is neither a frame nor an untyped is refused (revocationRequired)"
+    assertBool "a reset of an untyped recording a carved object is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stObj))
 
 -- ============================================================================
@@ -1129,17 +1128,8 @@ private def decodeMapVia (rootSlot asid vaddr frameSlot perms : Nat) : SyscallDe
 private def rootAt (st : SystemState) (oid : Nat) : Option VSpaceRoot :=
   st.getVSpaceRoot? (SeLe4n.ObjId.ofNat oid)
 
-/-- The objects at `ids` stored in `dst` as `src` holds them. -/
-private def restoreObjects (src dst : SystemState) (ids : List SeLe4n.ObjId) : SystemState :=
-  ids.foldl (fun s id =>
-    match src.objects[id]? with
-    | some o => match storeObject id o s with
-      | .ok ((), s') => s'
-      | .error _ => s
-    | none => s) dst
-
 private def runCarvedRootChecks : IO Unit := do
-  IO.println "-- §5i `.untypedRetype` carves a VSpace root, and the reset retires it (WS-BP BP7.1)"
+  IO.println "-- §5i `.untypedRetype` carves a VSpace root, and its final delete retires it (WS-BP BP7.1)"
   let st := carveScenario
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
     match r with | .error e' => e' == e | .ok _ => false
@@ -1187,48 +1177,16 @@ private def runCarvedRootChecks : IO Unit := do
          (stLive.objects[SeLe4n.ObjId.ofNat 982]?).isNone &&
          stLive.asidTable[one]? == none && stLive.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
          (Architecture.shootdownPostedOps st1 stLive).contains (Architecture.encodeAsidInvalidation one))
-      -- The reset's own retire, over carved objects no capability names: the
-      -- roots, the frame and the untyped's record of them put back as the
-      -- carve left them (what a revocation left before part 21).
-      let stRev := restoreObjects st1 stLive
-        [carveUt, SeLe4n.ObjId.ofNat 980, SeLe4n.ObjId.ofNat 981, SeLe4n.ObjId.ofNat 982]
-      -- A thread still running in a carved root names it without a capability.
-      let stUsed : SystemState :=
-        match stRev.getTcb? carveOwner with
-        | some t =>
-          match storeObject carveOwner.toObjId
-              (.tcb (t.withVSpaceRoot (SeLe4n.ObjId.ofNat 980))) stRev with
-          | .ok ((), s) => s
-          | .error _ => stRev
-        | none => stRev
-      assertBool "a reset while a thread's vspaceRoot names a carved root is refused (revocationRequired)"
-        (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stUsed))
-      match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
-      | .error e => assertBool s!"CONTROL: with no thread in it, the reset retires the roots (got {repr e})" false
+      -- WS-ZA ZA5.4 part 36: the reset is seL4's.  Nothing carved survives, so
+      -- it writes 0 to the invoked capability's free index and nothing else.
+      match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stLive with
+      | .error e => assertBool s!"the reset after the revocation succeeds (got {repr e})" false
       | .ok ((), stReset) => do
-        assertBool "CONTROL: both roots and the frame are retired"
-          ((stReset.objects[SeLe4n.ObjId.ofNat 980]?).isNone &&
-           (stReset.objects[SeLe4n.ObjId.ofNat 981]?).isNone &&
-           (stReset.objects[SeLe4n.ObjId.ofNat 982]?).isNone)
-        assertBool "their ASIDs are released, and the boot root's is untouched"
-          (stReset.asidTable[one]? == none && stReset.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
+        assertBool "the reset rewinds the free index and leaves the boot root's ASID alone"
+          (freeIndexAt stReset slotUtRetype == some 0 &&
            stReset.asidTable[carveAsid]? == some carveVsp)
-        -- `v0.36.37`: every retired ASID gets an ACKNOWLEDGED `.aside1` round,
-        -- whose servicing PEs leave that address space (their `TTBR0_EL1`)
-        -- before they acknowledge.  The ledger's broadcast `TLBI ASIDE1IS`
-        -- empties TLBs and leaves every `TTBR0_EL1` alone.
-        let posted := Architecture.shootdownPostedOps stRev stReset
-        assertBool "each retired root's ASID is posted as an acknowledged .aside1 round"
-          (posted.contains (Architecture.encodeAsidInvalidation one) &&
-           posted.contains (Architecture.encodeAsidInvalidation (SeLe4n.ASID.ofNat 2)))
-        assertBool "and the boot root's ASID, which the reset did not retire, is not"
-          (!posted.contains (Architecture.encodeAsidInvalidation carveAsid))
-        assertBool "RETIRED: the bare reset posted no .aside1 round for a retired ASID"
-          (match untypedReset Concurrency.bootCoreId carveUt stRev with
-            | .ok ((), stOld) =>
-                !(Architecture.shootdownPostedOps stRev stOld).contains
-                  (Architecture.encodeAsidInvalidation one)
-            | .error _ => false)
+        assertBool "the reset posts no shootdown round: the revocation already released the ASIDs"
+          ((Architecture.shootdownPostedOps stLive stReset).isEmpty)
         match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 slotOwnCnRW 12)
             carveOwner Concurrency.bootCoreId stReset with
         | .error e => assertBool s!"a root carve after the reset succeeds (got {repr e})" false
@@ -1620,33 +1578,6 @@ private def decodeUnmapVia (rootSlot asid vaddr : Nat) : SyscallDecodeResult :=
 private def installOf (st : SystemState) (oid : Nat) : Option PageTableInstall :=
   (st.getPageTable? (SeLe4n.ObjId.ofNat oid)).bind (·.installedIn)
 
-/-- The installs-closed check as it read until `v0.36.40`: the subtree's own
-records only.  Kept here, and nowhere else, so the witness can show that a
-surviving root naming a retired table passed it. -/
-private def retiredInstallsClosed (st : SystemState) (ids : List SeLe4n.ObjId) : Bool :=
-  ids.all fun id =>
-    (match st.getPageTable? id with
-      | some p => match p.installedIn with
-        | some inst => ids.contains inst.root || !Architecture.pageTableInstallLive st id
-        | none => true
-      | none => true) &&
-    (match st.getVSpaceRoot? id with
-      | some root => root.tables.all (fun s => ids.contains s.table)
-      | none => true)
-
-/-- A state whose pairing has parted — the surviving root `rootId` holding a slot
-naming `tableId`, which no live writer produces.  Built by hand, as the RR8.3
-witnesses write a corrupted back-pointer by hand, to exercise the one clause
-nothing on a reachable state can. -/
-private def withStraySlot (st : SystemState) (rootId tableId : Nat) : SystemState :=
-  match st.getVSpaceRoot? (SeLe4n.ObjId.ofNat rootId) with
-  | some root =>
-    let stray : PageTableSlot := { level := 3, index := 511, table := SeLe4n.ObjId.ofNat tableId }
-    let root' : VSpaceRoot := { root with tables := root.tables ++ [stray] }
-    let objs := st.objects.insert (SeLe4n.ObjId.ofNat rootId) (.vspaceRoot root')
-    { st with objects := objs }
-  | none => st
-
 /-- The (level, table) slots a root holds. -/
 private def slotsOf (st : SystemState) (oid : Nat) : Option (List (Nat × Nat)) :=
   (rootAt st oid).map (fun r => r.tables.map (fun s => (s.level, s.table.toNat)))
@@ -1827,68 +1758,47 @@ private def runPageTableChecks : IO Unit := do
               assertBool "the revocation retires the child's table and its record"
                 ((st5Live.objects[SeLe4n.ObjId.ofNat 991]?).isNone &&
                  (st5Live.getUntyped? (SeLe4n.ObjId.ofNat 990)).map (·.children.length) == some 0)
-              -- The reset's boundary, over the table put back as the carve left
-              -- it, unnamed and stale-recorded (what a revocation left before
-              -- part 21).
-              let st5 := restoreObjects stA st5Live [SeLe4n.ObjId.ofNat 990, SeLe4n.ObjId.ofNat 991]
-              let childIds := match st5.getUntyped? (SeLe4n.ObjId.ofNat 990) with
-                | some u => (untypedCarvedSubtree st5 u).getD []
-                | none => []
               assertBool "the revocation took the child's table out of the parent's root"
-                (slotsOf st5 980 == slotsOf st4 980 &&
-                 !Architecture.pageTableInstallLive st5 (SeLe4n.ObjId.ofNat 991))
-              assertBool "so the child's subtree is unreferenced and closed"
-                (childIds == [SeLe4n.ObjId.ofNat 991] && carvedSubtreeUnreferenced st5 childIds &&
-                 carvedSubtreeInstallsClosed st5 childIds)
-              -- v0.36.40: the pairing asked from the surviving root's side too.
-              let stStray := withStraySlot st5 980 991
-              assertBool "RETIRED: a surviving root naming the retired table passed the subtree-only check"
-                (retiredInstallsClosed stStray childIds)
-              assertBool "a surviving root naming a table the reset would retire is refused"
-                (!carvedSubtreeInstallsClosed stStray childIds &&
-                 isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId stStray))
-              match dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st5 with
+                (slotsOf st5Live 980 == slotsOf st4 980)
+              match dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st5Live with
               | .error e => assertBool s!"resetting the child alone succeeds (got {repr e})" false
               | .ok ((), st5r) => do
-                assertBool "the child's table is retired and the parent's root is untouched"
-                  ((st5r.objects[SeLe4n.ObjId.ofNat 991]?).isNone && slotsOf st5r 980 == slotsOf st5 980)
-                -- The boundary the reset still enforces: an address space carved
-                -- from the child holding a table carved from the parent, whose
-                -- capability survives the child's revocation.
+                assertBool "the reset rewinds the child's free index and leaves the parent's root alone"
+                  (freeIndexAt st5r 19 == some 0 && slotsOf st5r 980 == slotsOf st5Live 980)
+                -- An address space carved from the child holding a table carved
+                -- from the parent, whose capability survives the child's
+                -- revocation: the root goes with its last capability, the table
+                -- outlives it, and the child resets.
                 match runAll st5r
                     [decodeCarve 19 vspaceRootTag 993 slotOwnCnRW 21,
                      decodeCarve slotUtRetype pageTableTag 994 slotOwnCnRW 22,
                      decodeTableMap 22 21 va] with
                 | .error e => assertBool s!"carving a root from the child and installing a parent table in it succeeds (got {repr e})" false
-                | .ok st6pre =>
-                match dispatchSyscallAsCurrent (decodeRevoke 19) carveOwner Concurrency.bootCoreId st6pre with
-                | .error e => assertBool s!"revoking the child succeeds (got {repr e})" false
-                | .ok ((), st6Live) => do
-                  -- v0.36.132: the revocation destroys the root's final
-                  -- capability, so it retires the root and its record.
-                  assertBool "the child's revocation retires its root and the child's record of it"
-                    ((st6Live.objects[SeLe4n.ObjId.ofNat 993]?).isNone &&
-                     (match st6Live.getUntyped? (SeLe4n.ObjId.ofNat 990) with
-                      | some u => !(u.children.any (fun c => c.objId == SeLe4n.ObjId.ofNat 993))
-                      | none => false))
-                  -- The boundary is a property of the state a revocation that
-                  -- leaves the root behind would reach: rebuild it.
-                  let st6 := restoreObjects st6pre st6Live [SeLe4n.ObjId.ofNat 990, SeLe4n.ObjId.ofNat 993]
-                  let childIds6 := match st6.getUntyped? (SeLe4n.ObjId.ofNat 990) with
-                    | some u => (untypedCarvedSubtree st6 u).getD []
-                    | none => []
-                  assertBool "CONTROL: nothing names the child's root any more (the refusal below is the boundary's)"
-                    (childIds6 == [SeLe4n.ObjId.ofNat 993] && carvedSubtreeUnreferenced st6 childIds6)
-                  assertBool "the child's subtree is not closed: its root holds a surviving table"
-                    (!carvedSubtreeInstallsClosed st6 childIds6)
-                  assertBool "so resetting the child alone is refused (revocationRequired)"
-                    (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st6))
-                  match runAll st6 [decodeRevoke slotUtRetype, decodeReset slotUtRetype] with
-                  | .error e => assertBool s!"CONTROL: the parent's reset, taking roots and tables together, succeeds (got {repr e})" false
-                  | .ok st7 =>
-                    assertBool "CONTROL: the roots, every table, the frame and the child are retired"
-                      ([980, 982, 983, 984, 985, 986, 990, 993, 994].all
-                        (fun n => (st7.objects[SeLe4n.ObjId.ofNat n]?).isNone))
+                | .ok st6pre => do
+                  assertBool "a reset of the child while its root's capability lives is refused (revocationRequired)"
+                    (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st6pre))
+                  match dispatchSyscallAsCurrent (decodeRevoke 19) carveOwner Concurrency.bootCoreId st6pre with
+                  | .error e => assertBool s!"revoking the child succeeds (got {repr e})" false
+                  | .ok ((), st6) => do
+                    -- v0.36.132: the revocation destroys the root's final
+                    -- capability, so it retires the root and its record.
+                    assertBool "the child's revocation retires its root and the child's record of it"
+                      ((st6.objects[SeLe4n.ObjId.ofNat 993]?).isNone &&
+                       (match st6.getUntyped? (SeLe4n.ObjId.ofNat 990) with
+                        | some u => !(u.children.any (fun c => c.objId == SeLe4n.ObjId.ofNat 993))
+                        | none => false))
+                    assertBool "the parent's table survives the root it was installed in"
+                      ((st6.objects[SeLe4n.ObjId.ofNat 994]?).isSome)
+                    assertBool "so the child, with nothing carved from it surviving, resets"
+                      (match dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st6 with
+                       | .ok ((), r) => freeIndexAt r 19 == some 0
+                       | .error _ => false)
+                    match runAll st6 [decodeRevoke slotUtRetype, decodeReset slotUtRetype] with
+                    | .error e => assertBool s!"CONTROL: the parent's revocation and reset succeed (got {repr e})" false
+                    | .ok st7 =>
+                      assertBool "CONTROL: the roots, every table, the frame and the child are retired"
+                        ([980, 982, 983, 984, 985, 986, 990, 993, 994].all
+                          (fun n => (st7.objects[SeLe4n.ObjId.ofNat n]?).isNone))
 
 -- ============================================================================
 -- §5l  WS-BP BP7.2 (`v0.36.15`) — the physical writes a transition records
@@ -3073,6 +2983,18 @@ private def runZombieDeleteChecks : IO Unit := do
           !recordsChildAt st1 carveUt 971 && !ownSlotHolds st1 12)
       assertBool "the retire clears the endpoint's declassification provenance"
         (!(st1.declassificationTaint ep).contains 3)
+      -- WS-ZA ZA5.4 part 36: the reset removes no id, so it owes no clear; the
+      -- id the retire freed is carved again after the reset with no tag.
+      match runAll st1 [decodeReset slotUtRetype] with
+      | .error e => assertBool s!"resetting the emptied untyped succeeds (got {repr e})" false
+      | .ok stR => do
+        assertBool "the reset rewinds the free index"
+          (freeIndexAt stR slotUtRetype == some 0)
+        match runAll stR [decodeCarve slotUtRetype endpointTag 971 slotOwnCnRW 12] with
+        | .error e => assertBool s!"carving the endpoint's id again after the reset succeeds (got {repr e})" false
+        | .ok st2 =>
+          assertBool "an endpoint carved at the retired id after the reset inherits no tag"
+            (storedAt st2 971 && !(st2.declassificationTaint ep).contains 3)
   -- A carved thread holding the last capability to a carved CNode, its CSpace
   -- root: the thread's last capability's delete finalises it, then deletes its
   -- space slots, which retires the CNode; the boot VSpace root, named by
