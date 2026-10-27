@@ -13,6 +13,9 @@ by Adam on 2026-10-26.
   walk (`lookupService`, `hasIsolationEdge`, `serviceHasPathTo` and its fuel),
   `ServiceGraphEntry` and `ServiceIdentity` are deleted, and so are
   `Service/Invariant/Acyclicity.lean` and `Service/Invariant/Policy.lean`.
+  `revokeService` no longer folds `removeDependenciesOf` (which cleared the
+  revoked service from other entries' dependency lists, held only by the
+  graph); its registry erase and endpoint-code clear are unchanged.
   `Service/Operations.lean` and `Service/Invariant.lean` stay as hubs over the
   registry.  `crossSubsystemInvariant` loses `registryDependencyConsistent`
   and `serviceGraphInvariant` (12 conjuncts to 10); the policy surface's place
