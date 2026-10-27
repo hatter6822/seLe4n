@@ -343,6 +343,29 @@ theorem SystemState.liveMappingsRecorded.of_kindPreservingWrite {st st' : System
     st'.liveMappingsRecorded :=
   SystemState.liveMappingsRecorded.of_mappingFactsKept hK.mappingFactsKept h
 
+/-- **An object stored at a key no object held keeps the mappings recorded**,
+when it is no address space holding a mapping epoch: every other key keeps its
+object, so every slot that recorded a mapping keeps its capability and every
+frame it names stays (neither is at the fresh key), and the new object adds no
+live mapping.  What a carve's store of its child is. -/
+theorem SystemState.liveMappingsRecorded.of_freshObject {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject} (hFresh : st.objects[k]? = none) (hK : st'.objects[k]? = some obj)
+    (hNe : ∀ j, j ≠ k → st'.objects[j]? = st.objects[j]?)
+    (hNoEpoch : ∀ root, obj = .vspaceRoot root → ∀ (v : SeLe4n.VAddr) (e : Nat),
+      root.mappingEpochs[v]? = some e → False)
+    (h : st.liveMappingsRecorded) : st'.liveMappingsRecorded := by
+  intro rid root v p perms e hR hM hE
+  by_cases hr : rid = k
+  · subst hr; rw [hK] at hR; cases hR; exact absurd hE (fun hE => hNoEpoch root rfl v e hE)
+  · rw [hNe rid hr] at hR
+    obtain ⟨r, cap, fid, f, hc, ht, hf, hb, hm⟩ := h rid root v p perms e hR hM hE
+    have hcK : r.cnode ≠ k := by
+      intro hx; rw [SystemState.slotCapAt_eq_bind, hx, hFresh] at hc; cases hc
+    have hfK : fid ≠ k := by intro hx; rw [hx, hFresh] at hf; cases hf
+    refine ⟨r, cap, fid, f, ?_, ht, (hNe fid hfK).trans hf, hb, hm⟩
+    rw [SystemState.slotCapAt_eq_bind, hNe r.cnode hcK, ← SystemState.slotCapAt_eq_bind]
+    exact hc
+
 /-- **A state in which no root holds a mapping epoch records every mapping**,
 vacuously: no mapping was made by a capability.  What the boot leaves, every
 root's epoch table vacant (`RHTable.vacant`). -/
