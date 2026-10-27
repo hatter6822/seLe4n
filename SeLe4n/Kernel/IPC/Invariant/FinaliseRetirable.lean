@@ -137,8 +137,8 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
       exact ⟨sc0, by rw [← SystemState.getObject?_eq_getElem]; exact hO, hA0.1⟩
     · cases hA0
   have hInv1 : (finaliseSchedContextDeschedule st x).objects.invExt :=
-    finaliseSchedContextDeschedule_closed (fun s => s.objects.invExt)
-      (fun s t _ h _ _ _ _ => descheduleAtPlacement_preserves_objects_invExt s t h) st x hInv
+    finaliseSchedContextDeschedule_closed_any (fun s => s.objects.invExt)
+      (fun s t h => descheduleAtPlacement_preserves_objects_invExt s t h) st x hInv
   have hO1 := finaliseSchedContextDeschedule_keeps (x := x) (fun _ e => KernelObject.noConfusion e) hO
   obtain ⟨⟨sc2, hO2, hR2⟩, hKeep⟩ := finaliseSchedContextUnbind_keeps hInv1 hO1
   have hInv2 : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).objects.invExt :=

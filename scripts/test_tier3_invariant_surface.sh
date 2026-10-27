@@ -4197,7 +4197,9 @@ run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \
 # reply is finalised as reply_remove: its caller's wait cancelled, the boost it
 # lent reverted, the caller suspended.
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    finaliseSchedContextCleanup \(finaliseSchedContextUnstack\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
-run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \t][^\n]*)?){0,9}\n          descheduleAtPlacement st tid' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The deschedule runs first, on the state the admission reads, so it reads only
+# whether the holder is ready: the admission reads the binding back and the idle check.
+run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \t][^\n]*)?){0,9}\n        if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 then descheduleAtPlacement st tid$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n -U 'def schedContextFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,20}\n[^\n]*threadHeldOnSomeCore' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\n          finaliseThreadSuspend \(finaliseReplyRevert \(finaliseReplyCancel st r c t\) t\.blockingServer\?\) c' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a reply heading a context's reply stack is popped first, as

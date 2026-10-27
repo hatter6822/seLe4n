@@ -1020,9 +1020,11 @@ notification and a bound scheduling context are bound back to it.  A context
 that records it as a reservation's origin is no reason to refuse it: that origin
 counts only while the thread's own back-link names the context
 (`donationOriginRecipient?`), so the thread's record leaving with it ends the
-origin.  Each step
-below re-reads its own guard, so a state outside this set is left as it is and
-the retire then refuses the thread. -/
+origin.  The admission is carried across the finalisation's own steps
+(`finaliseThread_quiesces`): the notification unbind, run first on this state,
+reads nothing more (`notificationUnbindAdmitted`); the later steps keep their
+own guards, which the reply finalisation's steps share and the compiled context
+unbind rests on, and none of them refuses after an earlier step has written. -/
 @[inline] def threadFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.tcb t) =>
@@ -1332,7 +1334,10 @@ waits on, or the current slot of the core running it, by the suspend's own
 removal (`descheduleAtPlacement`), which raises that core's reschedule flag, so
 the core chooses another thread.  The thread stays ready, with no reservation:
 it is not runnable until a context is bound to it again.  A holder that is not
-ready waits on no core and is left as it is. -/
+ready waits on no core and is left as it is.  It runs first, on the state the
+finalisation's admission reads, and the admission reads the holder bound back to
+the context and no core's idle thread (`schedContextFinaliseAdmitted`), so the
+deschedule reads only whether the holder is ready. -/
 def finaliseSchedContextDeschedule (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   match st.getObject? x with
   | some (.schedContext sc) =>
@@ -1341,9 +1346,7 @@ def finaliseSchedContextDeschedule (st : SystemState) (x : SeLe4n.ObjId) : Syste
       let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
       match st.getTcb? tid with
       | some t =>
-        if t.scBindingScCode == x.val + 1 && t.ipcStateCode == 0 && t.ipcObjectCode == 0 &&
-            !isIdleThreadId tid then
-          descheduleAtPlacement st tid
+        if t.ipcStateCode == 0 && t.ipcObjectCode == 0 then descheduleAtPlacement st tid
         else st
       | none => st
   | _ => st

@@ -1658,8 +1658,8 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
   rw [finaliseSchedContext_eq]
   split
   · have hD : FinaliseFrame st (finaliseSchedContextDeschedule st x) :=
-      finaliseSchedContextDeschedule_closed (FinaliseFrame st)
-        (fun s t _ h _ _ _ _ => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt)) st x
+      finaliseSchedContextDeschedule_closed_any (FinaliseFrame st)
+        (fun s t h => h.trans (FinaliseFrame.descheduleAt s t _ h.invExt)) st x
         (.refl hInv)
     have hF : FinaliseFrame st (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) := by
       refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ _ x hD

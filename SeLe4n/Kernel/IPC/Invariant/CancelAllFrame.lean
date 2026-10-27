@@ -522,22 +522,49 @@ theorem finaliseSchedContextUnbind_closed (P : SystemState → Prop) (hRel : Fin
       · exact h
   · exact h
 
-/-- **A property the deschedule keeps holds after
-`finaliseSchedContextDeschedule`.** -/
-theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
-    (hDes : FinaliseScDescheduleStep P) (st : SystemState) (x : SeLe4n.ObjId) (h : P st) :
-    P (finaliseSchedContextDeschedule st x) := by
+/-- **A property every deschedule keeps holds after
+`finaliseSchedContextDeschedule`**, whatever thread it takes off. -/
+theorem finaliseSchedContextDeschedule_closed_any (P : SystemState → Prop)
+    (hDes : ∀ s t, P s → P (descheduleAtPlacement s t)) (st : SystemState) (x : SeLe4n.ObjId)
+    (h : P st) : P (finaliseSchedContextDeschedule st x) := by
   unfold finaliseSchedContextDeschedule
   split
   · split
     · exact h
     · dsimp only
       split
+      · split
+        · exact hDes _ _ h
+        · exact h
+      · exact h
+  · exact h
+
+/-- **A property the deschedule keeps holds after
+`finaliseSchedContextDeschedule`**, on a state whose admission admits the
+context: the admission reads the holder as no core's idle thread. -/
+theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
+    (hDes : FinaliseScDescheduleStep P) (st : SystemState) (x : SeLe4n.ObjId)
+    (hA : schedContextFinaliseAdmitted st x = true) (h : P st) :
+    P (finaliseSchedContextDeschedule st x) := by
+  unfold schedContextFinaliseAdmitted at hA
+  unfold finaliseSchedContextDeschedule
+  split
+  · rename_i sc hO
+    rw [hO] at hA
+    dsimp only at hA
+    split
+    · exact h
+    · rename_i h0
+      rw [if_neg h0] at hA
+      dsimp only at hA ⊢
+      split
       · rename_i t hT
+        rw [hT] at hA
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hA
         split
         · rename_i hG
-          simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hG
-          exact hDes st _ t h hT hG.1.1.2 hG.1.2 hG.2
+          simp only [Bool.and_eq_true, beq_iff_eq] at hG
+          exact hDes st _ t h hT hG.1 hG.2 hA.2.1.2
         · exact h
       · exact h
   · exact h
@@ -546,8 +573,8 @@ theorem finaliseSchedContextDeschedule_closed (P : SystemState → Prop)
 theorem finaliseSchedContextDeschedule_objectsAgreeOffRunLinks (st : SystemState)
     (x : SeLe4n.ObjId) :
     (finaliseSchedContextDeschedule st x).objectsAgreeOffRunLinks st :=
-  finaliseSchedContextDeschedule_closed (fun s => s.objectsAgreeOffRunLinks st)
-    (fun s t _ h _ _ _ _ => (descheduleAtPlacement_objectsAgreeOffRunLinks s t).trans h) st x
+  finaliseSchedContextDeschedule_closed_any (fun s => s.objectsAgreeOffRunLinks st)
+    (fun s t h => (descheduleAtPlacement_objectsAgreeOffRunLinks s t).trans h) st x
     (.refl st)
 
 /-- **An admitted context is bound to no thread once its holder is unbound**:
@@ -566,8 +593,8 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
     sc.boundThreadCode = 0 ∧ sc.donationOrigin = none := by
   have hD := finaliseSchedContextDeschedule_objectsAgreeOffRunLinks st x
   have hInv1 : (finaliseSchedContextDeschedule st x).objects.invExt :=
-    finaliseSchedContextDeschedule_closed (fun s => s.objects.invExt)
-      (fun s t _ h _ _ _ _ => descheduleAtPlacement_preserves_objects_invExt s t h) st x hInv
+    finaliseSchedContextDeschedule_closed_any (fun s => s.objects.invExt)
+      (fun s t h => descheduleAtPlacement_preserves_objects_invExt s t h) st x hInv
   generalize finaliseSchedContextDeschedule st x = s1 at hD hInv1 hSc
   unfold schedContextFinaliseAdmitted at hA
   obtain ⟨sc0, hO, hB⟩ : ∃ sc0, st.objects[x]? = some (.schedContext sc0) ∧
@@ -658,7 +685,7 @@ theorem finaliseSchedContext_closed (P : SystemState → Prop) (hDes : FinaliseS
   split
   · rename_i hA
     exact finaliseSchedContextUnstack_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
-      (finaliseSchedContextDeschedule_closed P hDes st x h))
+      (finaliseSchedContextDeschedule_closed P hDes st x hA h))
   · exact h
 
 /-- **A property the suspend keeps holds after `finaliseThreadSuspend`.** -/
