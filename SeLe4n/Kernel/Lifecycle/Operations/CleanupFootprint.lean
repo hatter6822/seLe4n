@@ -286,7 +286,7 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
       simp only at h
       injection h with h
       subst h
-      rw [cleanupEndpointServiceRegistrations_scheduler_eq]
+      rfl
   | cnode cn =>
       subst hC
       simp only at h

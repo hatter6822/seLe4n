@@ -330,6 +330,24 @@ theorem storeTcbQueueLinks_endpoint_forward
       rw [lookupTcb_some_objects st tid tcb hLookup] at hEp; cases hEp
   · exact ⟨ep, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep]; exact hEp⟩
 
+/-- A queue-link write keeps every endpoint as it was. -/
+theorem storeTcbQueueLinks_endpoint_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
+    {oid : SeLe4n.ObjId} {ep : Endpoint}
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hEp : st.objects[oid]? = some (.endpoint ep)) :
+    st'.objects[oid]? = some (.endpoint ep) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq; unfold storeTcbQueueLinks modifyTcb at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      rw [lookupTcb_some_objects st tid tcb hLookup] at hEp; cases hEp
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep]
+    exact hEp
+
 /-- storeTcbQueueLinks preserves objects.invExt. -/
 theorem storeTcbQueueLinks_preserves_objects_invExt
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -1588,6 +1606,96 @@ theorem endpointQueueRemove_unwritten_kind_forward
           | (apply UnwrittenKindFwd.insert_tcb_step (hTcb := hTcb)
              case hAt => assumption)
           | split)
+
+/-- `T` holds `base`'s table back-links at every key, and is well-formed. -/
+private def BackLinksKept (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  T.invExt ∧ ∀ k, (T.get? k).map KernelObject.tableBackLinks =
+    (base.get? k).map KernelObject.tableBackLinks
+
+/-- Inserting an object holding the back-links the key held keeps them. -/
+private theorem BackLinksKept.insert_step {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {v₀ : KernelObject} (hF : BackLinksKept base T)
+    (hB : (T.get? k₀).map KernelObject.tableBackLinks = some v₀.tableBackLinks) :
+    BackLinksKept base (T.insert k₀ v₀) := by
+  refine ⟨SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt T k₀ v₀ hF.1, fun k => ?_⟩
+  rw [RHTable_getElem?_insert _ _ _ hF.1 k]
+  split
+  · rename_i hk; have := eq_of_beq hk; subst this; rw [← hF.2 k₀, hB]; rfl
+  · exact hF.2 k
+
+/-- A thread written over a thread of `T` keeps the back-links (a thread holds none). -/
+private theorem BackLinksKept.insert_tcb_step {base T : RHTable SeLe4n.ObjId KernelObject}
+    {k₀ : SeLe4n.ObjId} {t t' : TCB} (hF : BackLinksKept base T)
+    (hAt : T.get? k₀ = some (.tcb t)) : BackLinksKept base (T.insert k₀ (.tcb t')) :=
+  hF.insert_step (by rw [hAt]; rfl)
+
+/-- The splice writes only threads over threads and an endpoint over itself with
+its queues changed, so every slot keeps its table back-links. -/
+theorem endpointQueueRemove_tableBackLinks
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).map KernelObject.tableBackLinks =
+      (st.objects[oid]?).map KernelObject.tableBackLinks := by
+  rw [RHTable_getElem?_eq_get?, RHTable_getElem?_eq_get?]
+  refine (?_ : BackLinksKept st.objects st'.objects).2 oid
+  unfold endpointQueueRemove SystemState.getObject? at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcbLk : lookupTcb st tid with
+      | none => simp [hTcbLk] at h
+      | some tcb =>
+        simp only [hTcbLk, Except.ok.injEq] at h
+        subst h
+        simp only []
+        have hEpAt : st.objects.get? endpointId = some (.endpoint ep) := by
+          rw [← RHTable_getElem?_eq_get?]; exact hObj
+        have hTidAt : st.objects.get? tid.toObjId = some (.tcb tcb) := by
+          rw [← RHTable_getElem?_eq_get?]
+          exact lookupTcb_some_objects st tid tcb hTcbLk
+        have hBase : BackLinksKept st.objects st.objects := ⟨hInv, fun _ => rfl⟩
+        have hStep : ∀ T, BackLinksKept st.objects T → ∀ q : IntrusiveQueue,
+            BackLinksKept st.objects ((T.insert endpointId
+              (.endpoint (if isReceiveQ then ep.withReceiveQ q else ep.withSendQ q))).insert
+              tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none))) := fun T hT q =>
+          have h1 := hT.insert_step (k₀ := endpointId)
+            (v₀ := .endpoint (if isReceiveQ then ep.withReceiveQ q else ep.withSendQ q))
+            (by rw [hT.2, hEpAt]; cases isReceiveQ <;> rfl)
+          h1.insert_step (by rw [h1.2, hTidAt]; rfl)
+        refine hStep _ ?_ _
+        repeat (first
+          | exact hBase
+          | (apply BackLinksKept.insert_tcb_step
+             case hAt => assumption)
+          | split)
+
+/-- **The timeout splice keeps the table references**: it writes no reference
+table, and every slot keeps its back-links (`endpointQueueRemove_tableBackLinks`). -/
+theorem endpointQueueRemove_tableReferenceFrame
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    SystemState.TableReferenceFrame st st' := by
+  refine .of_map_tableBackLinks ?_
+    (endpointQueueRemove_tableBackLinks endpointId isReceiveQ tid st st' hInv h)
+  unfold endpointQueueRemove SystemState.getObject? at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at h
+      | some tcb =>
+        simp only [hTcb, Except.ok.injEq] at h
+        rw [← h]; rfl
 
 /-- WS-OD OD1.4: the SchedContext instance, forwards — `donationOwnerValid`'s
     first clause names a SchedContext in the pre-state. -/

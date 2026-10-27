@@ -13,7 +13,7 @@ import SeLe4n.Kernel.Service.Operations
 /-! # Service Registry Operations — seLe4n Extension
 
 Capability-indexed service registry replacing the lifecycle-focused
-orchestration model. Four deterministic operations with explicit error
+orchestration model. Five deterministic operations with explicit error
 returns and machine-checked post-conditions.
 
 ## Operations
@@ -22,7 +22,8 @@ returns and machine-checked post-conditions.
 |-----------|---------|-----------------|
 | `registerInterface` | `interfaceRegistry` | `illegalState` (duplicate) |
 | `registerService` | `serviceRegistry`, its endpoint's `serviceCode` | `illegalState`, `objectNotFound`, `invalidCapability` |
-| `lookupServiceByCap` | — (read-only) | `objectNotFound` |
+| `lookupServiceByCap` | — (read-only; the specification) | `objectNotFound` |
+| `lookupServiceByRecordedCode` | — (read-only; the O(1) form the kernel runs) | `objectNotFound` |
 | `revokeService` | `serviceRegistry`, its endpoint's `serviceCode` | `objectNotFound` |
 -/
 
@@ -100,10 +101,10 @@ since at most one registration can name a given endpoint
 (`registryEndpointUnique`, derived from `SystemState.tableReferencesRecorded`):
 the fold returns the one registration, or none.
 
-WS-ZA ZA5.4 part 30: the endpoint now records its registration's code, so this
-fold is the registry's last O(registry) read on a lookup path.  Replacing it
-with the endpoint's own field needs the invariant at the call site, which
-`docs/planning/UNTYPED_RESET_PLAN.md` row 31 (WS-ZA ZA5.4 part 31) carries. -/
+This fold is the specification.  The kernel runs `lookupServiceByRecordedCode`,
+which reads the code the endpoint records instead (WS-ZA ZA5.4 part 31); the two
+agree wherever the table references are recorded
+(`lookupServiceByRecordedCode_eq_lookupServiceByCap`). -/
 def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
   fun st =>
     let result := st.serviceRegistry.fold (init := none) fun acc _ reg =>
@@ -116,6 +117,25 @@ def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
     match result with
     | some reg => .ok (reg, st)
     | none => .error .objectNotFound
+
+/-- **The service lookup the kernel runs: O(1), through the endpoint's record.**
+An endpoint records the code `sid + 1` of the registration naming it
+(`Endpoint.serviceCode`), so the lookup reads that one object and that one
+registry key instead of folding over the registry.  It returns what the
+specification `lookupServiceByCap` returns wherever the table references are
+recorded (`lookupServiceByRecordedCode_eq_lookupServiceByCap`), which every
+reachable state satisfies (WS-ZA ZA5.4 part 31). -/
+def lookupServiceByRecordedCode (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
+  fun st =>
+    match st.getObject? epId with
+    | some (.endpoint ep) =>
+      match ep.serviceCode with
+      | 0 => .error .objectNotFound
+      | n + 1 =>
+        match st.serviceRegistry[(⟨n⟩ : ServiceId)]? with
+        | some reg => .ok (reg, st)
+        | none => .error .objectNotFound
+    | _ => .error .objectNotFound
 
 /-- **WS-ZA ZA5.4 part 30: clear the registration's record on its endpoint**:
 the endpoint the registration's capability names forgets the service, if it is
@@ -148,165 +168,12 @@ def revokeService (sid : ServiceId) : Kernel Unit :=
         serviceRegistry := st.serviceRegistry.erase sid }
       .ok ((), removeDependenciesOf (clearEndpointServiceCode st' reg.endpointCap sid) sid)
 
-/-- R4-B.1 (M-13) + T5-F (L-NEW-1): Remove all service registrations whose
-    endpoint targets the given ObjId. Called before retype to ensure
-    `registryEndpointValid` is preserved when an endpoint backing a registered
-    service is retyped.
-
-    T5-F: After filtering registrations, also removes dependency graph edges
-    (`services`) referencing the removed services via `removeDependenciesOf`.
-    This prevents orphaned edges in the service dependency graph.
-
-    This is a pure state helper (not monadic) for composition in the
-    pre-retype cleanup path. -/
-def cleanupEndpointServiceRegistrations (st : SystemState) (epId : SeLe4n.ObjId) : SystemState :=
-  -- Identify services to remove (those targeting the deleted endpoint)
-  let removedSids := st.serviceRegistry.fold ([] : List ServiceId) fun acc sid reg =>
-    match reg.endpointCap.target with
-    | .object id => if id == epId then sid :: acc else acc
-    | _ => acc
-  -- Filter registrations
-  let st' := { st with
-    serviceRegistry := st.serviceRegistry.filter fun _sid reg =>
-      match reg.endpointCap.target with
-      | .object id => !(id == epId)
-      | _ => true }
-  -- T5-F: Also clean up dependency edges for removed services
-  removedSids.foldl (fun s sid => removeDependenciesOf s sid) st'
-
-/-- T5-F helper: folding `removeDependenciesOf` over a list preserves objects. -/
-private theorem foldl_removeDependenciesOf_objects_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).objects = st.objects := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_objects_eq st hd
-
-/-- T5-F helper: folding `removeDependenciesOf` over a list preserves scheduler. -/
-private theorem foldl_removeDependenciesOf_scheduler_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).scheduler = st.scheduler := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_scheduler_eq st hd
-
-/-- T5-F helper: folding `removeDependenciesOf` over a list preserves lifecycle. -/
-private theorem foldl_removeDependenciesOf_lifecycle_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).lifecycle = st.lifecycle := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_lifecycle_eq st hd
-
-/-- T5-F helper: folding `removeDependenciesOf` over a list preserves serviceRegistry. -/
-theorem foldl_removeDependenciesOf_serviceRegistry_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).serviceRegistry = st.serviceRegistry := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_serviceRegistry_eq st hd
-
-/-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves objects. -/
-theorem cleanupEndpointServiceRegistrations_objects_eq
-    (st : SystemState) (epId : SeLe4n.ObjId) :
-    (cleanupEndpointServiceRegistrations st epId).objects = st.objects := by
-  unfold cleanupEndpointServiceRegistrations
-  exact foldl_removeDependenciesOf_objects_eq _ _
-
-/-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves scheduler. -/
-theorem cleanupEndpointServiceRegistrations_scheduler_eq
-    (st : SystemState) (epId : SeLe4n.ObjId) :
-    (cleanupEndpointServiceRegistrations st epId).scheduler = st.scheduler := by
-  unfold cleanupEndpointServiceRegistrations
-  exact foldl_removeDependenciesOf_scheduler_eq _ _
-
-/-- WS-SM SM8.B.2 helper: folding `removeDependenciesOf` preserves machine. -/
-private theorem foldl_removeDependenciesOf_machine_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).machine = st.machine := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_machine_eq st hd
-
-/-- WS-SM SM8.B.2: cleaning up an endpoint's service registrations writes no
-register bank.
-
-The `machine` companion of `cleanupEndpointServiceRegistrations_scheduler_eq`.
-Together the two say the endpoint arm of `lifecyclePreRetypeCleanup` is confined
-to the **empty** set of cores, which is what lets the retype's write set name
-only the cores the destroyed *thread* occupied. -/
-theorem cleanupEndpointServiceRegistrations_machine_eq
-    (st : SystemState) (epId : SeLe4n.ObjId) :
-    (cleanupEndpointServiceRegistrations st epId).machine = st.machine := by
-  unfold cleanupEndpointServiceRegistrations
-  exact foldl_removeDependenciesOf_machine_eq _ _
-
-/-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves lifecycle. -/
-theorem cleanupEndpointServiceRegistrations_lifecycle_eq
-    (st : SystemState) (epId : SeLe4n.ObjId) :
-    (cleanupEndpointServiceRegistrations st epId).lifecycle = st.lifecycle := by
-  unfold cleanupEndpointServiceRegistrations
-  exact foldl_removeDependenciesOf_lifecycle_eq _ _
-
-/-- WS-SM SM7.B helper: folding `removeDependenciesOf` over a list preserves
-the TLB-shootdown state. -/
-private theorem foldl_removeDependenciesOf_tlbShootdown_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).tlbShootdown = st.tlbShootdown := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_tlbShootdown_eq st hd
-
-/-- WS-SM SM7.B: cleanupEndpointServiceRegistrations is registry-only — the
-TLB-shootdown state is framed (`pendingBounded` bundle-carriage link
-through the retype cleanup pipeline). -/
-theorem cleanupEndpointServiceRegistrations_tlbShootdown_eq
-    (st : SystemState) (epId : SeLe4n.ObjId) :
-    (cleanupEndpointServiceRegistrations st epId).tlbShootdown = st.tlbShootdown := by
-  unfold cleanupEndpointServiceRegistrations
-  exact foldl_removeDependenciesOf_tlbShootdown_eq _ _
-
 /-- U4-I: removeDependenciesOf preserves interfaceRegistry. -/
 theorem removeDependenciesOf_interfaceRegistry_eq
     (st : SystemState) (sid : ServiceId) :
     (removeDependenciesOf st sid).interfaceRegistry = st.interfaceRegistry := by
   unfold removeDependenciesOf; rfl
 
-/-- U4-I: folding removeDependenciesOf preserves interfaceRegistry. -/
-private theorem foldl_removeDependenciesOf_interfaceRegistry_eq
-    (sids : List ServiceId) (st : SystemState) :
-    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).interfaceRegistry = st.interfaceRegistry := by
-  induction sids generalizing st with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    rw [ih]
-    exact removeDependenciesOf_interfaceRegistry_eq st hd
-
-/-- U4-I: cleanupEndpointServiceRegistrations preserves interfaceRegistry. -/
-theorem cleanupEndpointServiceRegistrations_interfaceRegistry_eq
-    (st : SystemState) (epId : SeLe4n.ObjId) :
-    (cleanupEndpointServiceRegistrations st epId).interfaceRegistry = st.interfaceRegistry := by
-  unfold cleanupEndpointServiceRegistrations
-  exact foldl_removeDependenciesOf_interfaceRegistry_eq _ _
 
 -- ============================================================================
 -- Theorems: error conditions, success post-conditions, frame lemmas

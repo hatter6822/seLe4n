@@ -1945,6 +1945,16 @@ theorem storeDonationFramePush_cdt_eq
   · exact e1
   · exact (storeObject_cdt_eq _ _ _ _ hS2).trans e1
 
+theorem storeDonationFramePush_referenceTables
+    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
+    st'.referenceTables = st.referenceTables := by
+  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
+  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
+  · exact storeObject_referenceTables hS1
+  · exact (storeObject_referenceTables hS2).trans (storeObject_referenceTables hS1)
+
 /-- The pushed frame's record afterwards. -/
 theorem storeDonationFramePush_getReply?_pushed
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
@@ -3948,6 +3958,15 @@ theorem storeDonationHeadClear_serviceRegistry_eq
   · rfl
   · unfold storeObject at hS; cases hS; rfl
 
+/-- ...and every table that names an object by id. -/
+theorem storeDonationHeadClear_referenceTables
+    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationHeadClear head? st = .ok st') :
+    st'.referenceTables = st.referenceTables := by
+  rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, _, hS⟩
+  · rfl
+  · exact storeObject_referenceTables hS
+
 /-- WS-OD OD3.1: ...the TLB-shootdown half. -/
 theorem storeDonationHeadClear_tlbShootdown_eq
     {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -4263,6 +4282,15 @@ theorem storeReplyReHead_serviceRegistry_eq
   · rfl
   · unfold storeObject at hS; cases hS; rfl
 
+/-- ...and every table that names an object by id. -/
+theorem storeReplyReHead_referenceTables
+    {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeReplyReHead scId head? st = .ok st') :
+    st'.referenceTables = st.referenceTables := by
+  rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, _, hS⟩
+  · rfl
+  · exact storeObject_referenceTables hS
+
 /-- WS-OD OD3.1: ...the TLB-shootdown half. -/
 theorem storeReplyReHead_tlbShootdown_eq
     {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -4544,6 +4572,16 @@ theorem storeDonationHeadPop_serviceRegistry_eq
   · rfl
   · rw [storeReplyReHead_serviceRegistry_eq hReHead,
       storeDonationHeadClear_serviceRegistry_eq hClear]
+
+/-- ...and every table that names an object by id. -/
+theorem storeDonationHeadPop_referenceTables
+    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    {st st' : SystemState}
+    (h : storeDonationHeadPop scId head? st = .ok st') :
+    st'.referenceTables = st.referenceTables := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
+  · rfl
+  · rw [storeReplyReHead_referenceTables hReHead, storeDonationHeadClear_referenceTables hClear]
 
 theorem storeDonationHeadPop_tlbShootdown_eq
     {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
@@ -5853,6 +5891,20 @@ theorem spliceReplyFrameOut_scheduler_eq {st st' : SystemState} {rid : SeLe4n.Re
   · rfl
   · exact spliceReplyFrameStores_scheduler_eq hS
   · exact severReplyFrameBelowStores_scheduler_eq hS
+
+/-- The frame splice writes no table that names objects by id. -/
+theorem spliceReplyFrameOut_referenceTables {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (h : spliceReplyFrameOut st rid = .ok st') : st'.referenceTables = st.referenceTables := by
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
+      ⟨_, _, _, _, _, _, _, _, hS⟩
+  · rfl
+  · rcases spliceReplyFrameStores_cases hS with ⟨t1, _, hT1, hT2⟩ |
+        ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
+    · exact (storeObject_referenceTables hT2).trans (storeObject_referenceTables hT1)
+    · exact ((storeObject_referenceTables hS3).trans (storeObject_referenceTables hS2)).trans
+        (storeObject_referenceTables hS1)
+  · obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
+    exact (storeObject_referenceTables hS2).trans (storeObject_referenceTables hS1)
 
 theorem spliceReplyFrameOut_machine_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (h : spliceReplyFrameOut st rid = .ok st') : st'.machine = st.machine := by
@@ -9552,6 +9604,23 @@ theorem returnDonatedSchedContext_serviceRegistry_eq
   rw [storeObject_serviceRegistry_eq s3 s4 _ _ h4, storeObject_serviceRegistry_eq s2 s3 _ _ h3,
     storeDonationHeadPop_serviceRegistry_eq hClear,
     storeObject_serviceRegistry_eq st s1 _ _ h1]
+
+/-- **The donation return keeps the table references**: it writes no reference
+table, and its store chain is a `kindPreservingWrite`, which keeps every
+object's back-links. -/
+theorem returnDonatedSchedContext_tableReferenceFrame
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.TableReferenceFrame st st' := by
+  refine .of_kindPreservingWrite (returnDonatedSchedContext_kindPreservingWrite hObjInv h) ?_
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  rw [hEq]
+  show s4.referenceTables = st.referenceTables
+  rw [storeObject_referenceTables h4, storeObject_referenceTables h3,
+    storeDonationHeadPop_referenceTables hClear, storeObject_referenceTables h1]
 
 /-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and the
 reschedule flags — the TLB-shootdown state is framed.  Mirrors the proof

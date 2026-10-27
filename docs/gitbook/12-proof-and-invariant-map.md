@@ -156,9 +156,11 @@ reachable state (`reachableDeleteBundle`) (`schedContextRetirable.namedByNone`);
 is answered by the object it names — an endpoint records its registration's code,
 a notification records the interrupt handler that names it, and the service graph
 holds no entry, stated as one invariant (`SystemState.tableReferencesRecorded`,
-`Model/TableReferences.lean`) and refused at boot otherwise — though the retire
-still walks those three tables until the invariant is carried by every syscall
-(`docs/planning/UNTYPED_RESET_PLAN.md` row 31);
+`Model/TableReferences.lean`) and refused at boot otherwise; since `v0.36.144`
+the boot establishes it, every syscall and kernel entry keeps it, and the retire
+reads the object's own back-links (`SystemState.tableBackLinksClear`) instead of
+walking those tables, the service lookup reading the endpoint's recorded code
+(`lookupServiceByRecordedCode`);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

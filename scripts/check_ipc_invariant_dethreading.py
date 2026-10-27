@@ -279,9 +279,13 @@ MACHINERY_PINS = {
     # The `run_queue_current_nowhere` / `run_queue_slot_same` tactics carrying
     # the scheduler's placement invariant across a step, and the
     # `tcb_state_mono` / `current_frame` / `obj_state_mono` tactics that
-    # discharge a step's state-monotonicity and current-slot frame; none mints
-    # a declaration.
-    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 3,
+    # discharge a step's state-monotonicity and current-slot frame, and the
+    # `table_frame` / `table_backlinks` tactics that discharge a step's
+    # table-reference frame (WS-ZA ZA5.4 part 31); none mints a declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 5,
+    # The `table_frame` alternative over the context switch's reference-table
+    # lemmas; it adds a tactic alternative and mints no declaration.
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Scheduling.lean", "macro_rules"): 1,
     # PR #932 review: the `ntfn_links_back` / `ntfn_links_fwd` tactics, which
     # swap a TCB across a notification-link rewrite; neither mints a declaration.
     ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "macro_rules"): 2,

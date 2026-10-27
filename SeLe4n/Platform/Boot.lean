@@ -7803,6 +7803,200 @@ theorem foldl_storeIdleThread_notificationBindingReciprocal
     rw [← hEq, hFresh c] at hk
     exact hk rfl
 
+/-- The interrupt fold names, under each interrupt, the handler of some entry
+    of its table, or what the state named before it. -/
+theorem foldIrqs_irqHandlers_source (irqs : List IrqEntry) (ist : IntermediateState)
+    (irq : SeLe4n.Irq) (n : SeLe4n.ObjId)
+    (h : (foldIrqs irqs ist).state.irqHandlers[irq]? = some n) :
+    ist.state.irqHandlers[irq]? = some n ∨ ∃ e ∈ irqs, e.handler = n := by
+  induction irqs generalizing ist with
+  | nil => exact Or.inl h
+  | cons x rest ih =>
+    rcases ih (registerIrq ist x.irq x.handler) h with h1 | ⟨e, he, hn⟩
+    · by_cases hk : x.irq = irq
+      · subst hk
+        have hSelf : (registerIrq ist x.irq x.handler).state.irqHandlers[x.irq]? =
+            some x.handler := RHTable.getElem?_insert_self _ _ _ ist.hAllTables.2.1.1
+        rw [hSelf] at h1; cases h1
+        exact Or.inr ⟨x, List.mem_cons_self, rfl⟩
+      · have hNe : (registerIrq ist x.irq x.handler).state.irqHandlers[irq]? =
+            ist.state.irqHandlers[irq]? :=
+          RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hk (eq_of_beq hb)) ist.hAllTables.2.1.1
+        rw [hNe] at h1; exact Or.inl h1
+    · exact Or.inr ⟨e, List.mem_cons_of_mem _ he, hn⟩
+
+/-- The interrupt fold leaves an interrupt no entry names alone. -/
+theorem foldIrqs_irqHandlers_ne (irqs : List IrqEntry) (ist : IntermediateState)
+    (irq : SeLe4n.Irq) (h : ∀ e ∈ irqs, e.irq ≠ irq) :
+    (foldIrqs irqs ist).state.irqHandlers[irq]? = ist.state.irqHandlers[irq]? := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons x rest ih =>
+    show (foldIrqs rest (registerIrq ist x.irq x.handler)).state.irqHandlers[irq]? = _
+    rw [ih _ (fun e he => h e (List.mem_cons_of_mem _ he))]
+    exact RHTable.getElem?_insert_ne _ _ _ _
+      (fun hb => h x List.mem_cons_self (eq_of_beq hb)) ist.hAllTables.2.1.1
+
+/-- Over entries naming distinct interrupts, the interrupt fold names every
+    entry's handler under its interrupt. -/
+theorem foldIrqs_irqHandlers_of_mem (irqs : List IrqEntry) (ist : IntermediateState)
+    (hUniq : irqs.Pairwise (fun a b => a.irq ≠ b.irq)) (e : IrqEntry) (hMem : e ∈ irqs) :
+    (foldIrqs irqs ist).state.irqHandlers[e.irq]? = some e.handler := by
+  induction irqs generalizing ist with
+  | nil => cases hMem
+  | cons x rest ih =>
+    rw [List.pairwise_cons] at hUniq
+    show (foldIrqs rest (registerIrq ist x.irq x.handler)).state.irqHandlers[e.irq]? = _
+    rcases List.mem_cons.mp hMem with rfl | hRest
+    · rw [foldIrqs_irqHandlers_ne _ _ _ (fun e' hE' => (hUniq.1 e' hE').symm)]
+      exact RHTable.getElem?_insert_self _ _ _ ist.hAllTables.2.1.1
+    · exact ih _ hUniq.2 hRest
+
+/-- A well-formed config's interrupts are pairwise distinct. -/
+theorem PlatformConfig.wellFormed_irqs_pairwise (config : PlatformConfig)
+    (h : config.wellFormed = true) :
+    config.irqTable.Pairwise (fun a b => a.irq ≠ b.irq) := by
+  have hU := config.wellFormed_irqsUnique h
+  rw [irqsUnique_eq_transparent, irqsUniqueTransparent,
+    listAllDistinct_eq_true_iff, List.Nodup, List.pairwise_map] at hU
+  exact hU.imp fun hNe hEq => hNe (congrArg SeLe4n.Irq.toNat hEq)
+
+/-- The plain boot's interrupt table is the interrupt fold's. -/
+theorem bootFromPlatform_irqHandlers (config : PlatformConfig) :
+    (bootFromPlatform config).state.irqHandlers =
+      (foldIrqs config.irqTable mkEmptyIntermediateState).state.irqHandlers := by
+  unfold bootFromPlatform
+  exact foldObjects_irqHandlers _ _
+
+/-- ...and so is the checked boot's. -/
+theorem bootFromPlatformChecked_ok_irqHandlers (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.irqHandlers =
+      (foldIrqs config.irqTable mkEmptyIntermediateState).state.irqHandlers := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+  · exact bootFromPlatform_irqHandlers config
+  · exact bootFromPlatform_irqHandlers config
+
+/-- **Every object the checked boot holds that holds a table back-link is a
+    configured object at its id** — the binding's VSpace root holds none. -/
+theorem bootFromPlatformChecked_ok_backLinkedObject_of_config (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ (0, false)) :
+    ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
+  have hBase := bootFromPlatform_objects_of_config config oid obj
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj; exact hBase hObj
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    by_cases hEq : entry.id = oid
+    · subst hEq
+      rw [installBootVSpaceRoot_objects_lookup] at hObj
+      cases hObj; exact absurd rfl hb
+    · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj; exact hBase hObj
+
+/-- **The checked boot records its table references.**  The registry and the
+    service graph are empty (`bootQuiescentFields`), and no configured endpoint
+    carries a registration code (`bootSafeEndpointCheck`); an interrupt names
+    the notification of its table entry, which records it, and a notification
+    recording an interrupt is named by one (`irqHandlersAndNotificationsReciprocal`,
+    with the interrupts distinct, `irqsUnique`). -/
+theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.tableReferencesRecorded := by
+  obtain ⟨hWf, hSafe, _⟩ := bootFromPlatformChecked_ok_shape config ist h
+  have hQ := (bootFromPlatformChecked_ok_bootQuiescentFields config ist h).2
+  have hD := SystemState.default_tableReferencesRecorded
+  have hIrq := bootFromPlatformChecked_ok_implies_irqHandlersValid config ist h
+  unfold irqHandlersAndNotificationsReciprocal at hIrq
+  rw [Bool.and_eq_true] at hIrq
+  obtain ⟨hI1, hI2⟩ := hIrq
+  have hEmptyObj : ∀ k : SeLe4n.ObjId, (default : SystemState).objects[k]? = none := fun k => by
+    simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hQ.2.1]; exact hD.registryInvExtK
+  · intro sid reg hs
+    rw [hQ.2.1] at hs
+    obtain ⟨_, _, h1⟩ := hD.registry sid reg hs
+    rw [hEmptyObj] at h1; cases h1
+  · intro e n hn
+    cases hO : ist.state.objects[e]? with
+    | none => rw [hO] at hn; cases hn
+    | some o =>
+      rw [hO] at hn
+      obtain ⟨ep, hep, hc⟩ := objTableBackLinks_code_succ hn
+      cases hep
+      obtain ⟨en, hMem, _, hEo⟩ := bootFromPlatformChecked_ok_backLinkedObject_of_config config
+        ist h e _ hO (fun h0 => by
+          rw [objTableBackLinks_some, h0] at hn; cases hn)
+      have hS := List.all_eq_true.mp hSafe en hMem
+      rw [hEo] at hS
+      simp [bootSafeObjectCheck, hc] at hS
+  · intro irq n hn
+    rw [bootFromPlatformChecked_ok_irqHandlers config ist h] at hn
+    rcases foldIrqs_irqHandlers_source _ _ _ _ hn with h0 | ⟨ie, hMem, hH⟩
+    · have h1 := hD.irqHandlers irq n h0
+      rw [hEmptyObj] at h1; cases h1
+    · have hB := List.all_eq_true.mp hI1 ie hMem
+      cases hF : config.initialObjects.find? (fun entry => entry.id == ie.handler) with
+      | none => rw [hF] at hB; cases hB
+      | some en =>
+        rw [hF] at hB
+        have hMemEn := List.mem_of_find?_eq_some hF
+        have hIdEn : en.id = ie.handler := by
+          have := List.find?_some hF; simpa using this
+        rw [← hH, ← hIdEn, bootFromPlatformChecked_ok_objects_of_mem config ist h en hMemEn]
+        dsimp only at hB
+        split at hB
+        · rename_i nn hnn
+          rw [hnn]; simpa [KernelObject.tableBackLinks] using hB
+        · cases hB
+  · intro n hn
+    cases hO : ist.state.objects[n]? with
+    | none => rw [hO] at hn; cases hn
+    | some o =>
+      rw [hO, objTableBackLinks_some] at hn
+      obtain ⟨en, hMem, hId, hEo⟩ := bootFromPlatformChecked_ok_backLinkedObject_of_config config
+        ist h n o hO (fun h0 => by rw [h0] at hn; cases hn)
+      have hB := List.all_eq_true.mp hI2 en hMem
+      rw [hEo] at hB
+      cases o with
+      | notification nn =>
+        simp only [KernelObject.tableBackLinks] at hn
+        simp only [hn, Bool.not_true, Bool.false_or, List.any_eq_true, beq_iff_eq] at hB
+        obtain ⟨ie, hieMem, hieH⟩ := hB
+        refine ⟨ie.irq, ?_⟩
+        rw [bootFromPlatformChecked_ok_irqHandlers config ist h,
+          foldIrqs_irqHandlers_of_mem _ _ (config.wellFormed_irqs_pairwise hWf) ie hieMem,
+          hieH, hId]
+      | _ => simp [KernelObject.tableBackLinks] at hn
+  · rw [hQ.1]; exact hD.servicesEmpty
+
+/-- The idle store writes no reference table. -/
+theorem foldl_storeIdleThread_referenceTables (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) :
+    (L.foldl storeIdleThread ist).state.referenceTables = ist.state.referenceTables := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact storeObject_referenceTables (SystemState.storeObject_eq_withObjectStored _ _ _)
+
+/-- **The idle store keeps the table references recorded**: an idle thread lands
+    on an empty slot and holds no back-link. -/
+theorem foldl_storeIdleThread_tableReferenceFrame (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) (hFresh : idleSlotsFreshAt ist) :
+    SystemState.TableReferenceFrame ist.state (L.foldl storeIdleThread ist).state :=
+  .of_offTcb (foldl_storeIdleThread_referenceTables L ist) fun k o hNot =>
+    ⟨fun hk => (foldl_storeIdleThread_objects_cases L ist k o hk).resolve_right
+        (fun ⟨_, _, he⟩ => hNot _ he),
+      fun hk => by
+        rw [foldl_storeIdleThread_objects_frame_of_not_idle L ist k (fun c _ hEq => by
+          rw [← hEq, hFresh c] at hk; cases hk)]
+        exact hk⟩
+
 /-- **WS-ZA ZA5.4**: ...and the idle store keeps it so: an idle TCB holds no
     capability. -/
 theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capObject_of_config
@@ -8213,7 +8407,8 @@ def bootStartShape (ist : IntermediateState) : Prop :=
       runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
   ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId ∧
-  notificationBindingReciprocal ist.state
+  notificationBindingReciprocal ist.state ∧
+  ist.state.tableReferencesRecorded
 
 /-- **WS-ZA ZA5.4**: **what the linked boot leaves** — `bootStartShape` with
     the objects read off their derivation links and the empty tree replaced by
@@ -8231,7 +8426,8 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
   ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId ∧
   bootDerivationTreeSound ist.state ∧
-  notificationBindingReciprocal ist.state
+  notificationBindingReciprocal ist.state ∧
+  ist.state.tableReferencesRecorded
 
 /-- **WS-BP BP7.11**: **the proof-layer bundle of any state of linked boot
     shape.**  The scheduler half of `proofLayerInvariantBundle_of_bootShape`'s
@@ -8240,7 +8436,7 @@ def bootLinkedShape (ist : IntermediateState) : Prop :=
 theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     (h : bootLinkedShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQueue⟩,
-    hTree, hBindings⟩ := h
+    hTree, hBindings, -⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
     rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
@@ -8327,7 +8523,9 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
       foldl_storeIdleThread_runQueueRefined cores base
         (bootFromPlatformChecked_ok_runQueueRefined config base hChecked) (fun c _ c' => ?_),
       ⟨?_, ?_⟩, foldl_storeIdleThread_notificationBindingReciprocal cores base hFresh
-        (bootFromPlatformChecked_ok_notificationBindingReciprocal config base hChecked)⟩
+        (bootFromPlatformChecked_ok_notificationBindingReciprocal config base hChecked),
+      (foldl_storeIdleThread_tableReferenceFrame cores base hFresh).preserves
+        (bootFromPlatformChecked_ok_tableReferencesRecorded config base hChecked)⟩
     · -- Every object: the checked boot's, or an idle TCB.
       intro oid obj hObj
       rcases foldl_storeIdleThread_objects_cases cores base oid obj hObj with

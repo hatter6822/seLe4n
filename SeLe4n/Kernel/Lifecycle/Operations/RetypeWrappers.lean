@@ -102,6 +102,18 @@ theorem retypeAsidRoundStep_tlbShootdown
         (Architecture.shootdownTargets executingCore)
         (Architecture.encodeAsidInvalidation a) := rfl
 
+/-- The round fold writes no reference table: each round writes shootdown
+state alone. -/
+theorem retypeAsidRoundFold_referenceTables
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) (s : SystemState) :
+    (retypeAsidRoundFold executingCore asids s).referenceTables = s.referenceTables := by
+  induction asids generalizing s with
+  | nil => rfl
+  | cons a rest ih =>
+      have h1 : retypeAsidRoundFold executingCore (a :: rest) s
+        = retypeAsidRoundFold executingCore rest (retypeAsidRoundStep executingCore a s) := rfl
+      rw [h1, ih]; rfl
+
 /-- **WS-SM SM7.F.4(b)(iii)**: the round fold frames the object store. -/
 theorem retypeAsidRoundFold_objects
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID) (s : SystemState) :

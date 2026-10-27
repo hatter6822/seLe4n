@@ -248,7 +248,7 @@ theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (named : List SeLe4
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  obtain ⟨hExt, hW, hSched⟩ :=
+  obtain ⟨hExt, hW, hSched, -⟩ :=
     finaliseDestroyedCapabilities_ok_frame ec named pages st st' hObjInv hStep
   exact ⟨keyInputsEq_of_vspaceRootOnlyWrite hW, hSched, hExt⟩
 
@@ -284,9 +284,10 @@ theorem storeObject_inert_keyFrame {st st' : SystemState} {oid : SeLe4n.ObjId}
    storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStore⟩
 
 theorem vspaceRootOnlyWrite_keyFrame {st st' : SystemState}
-    (h : st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler) :
+    (h : st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
+      st'.referenceTables = st.referenceTables) :
     capabilityKeyFrame st st' :=
-  ⟨keyInputsEq_of_vspaceRootOnlyWrite h.2.1, h.2.2, h.1⟩
+  ⟨keyInputsEq_of_vspaceRootOnlyWrite h.2.1, h.2.2.1, h.1⟩
 
 theorem tagFrameMapping_keyFrame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (frameId : SeLe4n.ObjId) (st st' : SystemState) (e : Nat) (hObjInv : st.objects.invExt)

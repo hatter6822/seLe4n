@@ -4967,38 +4967,33 @@ theorem setMCPriorityOnCore_preserves_projection
   · exact absurd hStep (by simp)
 
 -- ============================================================================
--- AK6-F.11: lookupServiceByCap state + projection preservation
+-- AK6-F.11: service lookup state + projection preservation
 -- ============================================================================
 
-/-- AK6-F.11: `lookupServiceByCap` is a read-only state query. On success
-    it returns `(reg, st)` with state unchanged; on error it returns
-    `.error _`. This helper extracts the state equality from a success
-    result. -/
-theorem lookupServiceByCap_preserves_state
+/-- AK6-F.11: the service lookup the kernel runs, `lookupServiceByRecordedCode`,
+    is a read-only state query. On success it returns `(reg, st)` with state
+    unchanged; on error it returns `.error _`. This helper extracts the state
+    equality from a success result. -/
+theorem lookupServiceByRecordedCode_preserves_state
     (epId : SeLe4n.ObjId) (st : SystemState)
     (reg : SeLe4n.Model.ServiceRegistration) (st' : SystemState)
-    (hStep : SeLe4n.Kernel.lookupServiceByCap epId st = .ok (reg, st')) :
+    (hStep : SeLe4n.Kernel.lookupServiceByRecordedCode epId st = .ok (reg, st')) :
     st' = st := by
-  unfold SeLe4n.Kernel.lookupServiceByCap at hStep
-  -- hStep has shape: (let result := fold …; match result with | some r => .ok (r, st) | none => .error _) = .ok (reg, st')
-  -- In the success branch, the state in `.ok (r, st)` is literally `st`, so st' = st.
-  cases hRes : (st.serviceRegistry.fold (init := none) _)
-    with
-    | none => rw [hRes] at hStep; simp at hStep
-    | some r =>
-        rw [hRes] at hStep
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        exact hStep.2.symm
+  unfold SeLe4n.Kernel.lookupServiceByRecordedCode at hStep
+  repeat' split at hStep
+  all_goals first
+    | (simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm)
+    | cases hStep
 
-/-- AK6-F.11: Corollary for NI composition — `lookupServiceByCap`
-    preserves the observer's projection trivially because `st' = st`. -/
-theorem lookupServiceByCap_preserves_projection
+/-- AK6-F.11: Corollary for NI composition — the service lookup preserves the
+    observer's projection trivially because `st' = st`. -/
+theorem lookupServiceByRecordedCode_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (epId : SeLe4n.ObjId) (st : SystemState)
     (reg : SeLe4n.Model.ServiceRegistration) (st' : SystemState)
-    (hStep : SeLe4n.Kernel.lookupServiceByCap epId st = .ok (reg, st')) :
+    (hStep : SeLe4n.Kernel.lookupServiceByRecordedCode epId st = .ok (reg, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  rw [lookupServiceByCap_preserves_state epId st reg st' hStep]
+  rw [lookupServiceByRecordedCode_preserves_state epId st reg st' hStep]
 
 -- ============================================================================
 -- AK6-F.12: revokeService preservation

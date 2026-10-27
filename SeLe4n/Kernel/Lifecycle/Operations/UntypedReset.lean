@@ -811,7 +811,7 @@ private theorem untypedReset_ok_frames {ec : Concurrency.CoreId}
     st1.objects.invExt ∧ vspaceRootOnlyWrite st st1 ∧ st1.scheduler = st.scheduler ∧
     st2.objects.invExt ∧ st2.scheduler = st1.scheduler ∧ carvedRetireWrite st1 st2 ∧
     (∀ id ∈ ids, (st1.objects[id]? = none ∨ carvedAt st1 id) → st2.objects[id]? = none) := by
-  obtain ⟨hInv1, hW1, hS1⟩ := unmapLivePages_ok_frame ec _ st st1 hObjInv hM
+  obtain ⟨hInv1, hW1, hS1, -⟩ := unmapLivePages_ok_frame ec _ st st1 hObjInv hM
   obtain ⟨hInv2, -, hS2, hW2, hN2⟩ := retireCarvedObjects_frame ids st1 hInv1 hSz
   exact ⟨hInv1, hW1, hS1, hInv2, hS2, hW2, hN2⟩
 
@@ -1043,6 +1043,39 @@ theorem untypedReset_ok_frame (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjI
       rcases hW1 oid with e1 | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
       · have := hCT st1 oid hc; rw [e1] at this; exact Or.inr ⟨this, trivial⟩
       · rw [hr]; exact Or.inr ⟨trivial, trivial⟩
+
+/-- A kind the reset touches holds no table back-link. -/
+theorem resetTouched_objTableBackLinks {o : Option KernelObject} (h : resetTouched o) :
+    objTableBackLinks o = (0, false) := by
+  rcases o with _ | o
+  · rfl
+  · cases o <;> first | rfl | exact absurd h id
+
+/-- The retire of carved objects writes no reference table. -/
+theorem retireCarvedObjects_referenceTables :
+    ∀ (ids : List SeLe4n.ObjId) (st : SystemState),
+      (retireCarvedObjects st ids).referenceTables = st.referenceTables
+  | [], _ => rfl
+  | h :: t, st => by
+      show (retireCarvedObjects (retireCarvedObject st h) t).referenceTables = _
+      rw [retireCarvedObjects_referenceTables t]
+      unfold retireCarvedObject; split <;> rfl
+
+/-- **The reset keeps the table references**: it writes no reference table, and
+every key it changes holds a kind with no back-link on both sides
+(`untypedReset_ok_frame`). -/
+theorem untypedReset_tableReferenceFrame (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId)
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : untypedReset ec untypedId st = .ok ((), st')) :
+    SystemState.TableReferenceFrame st st' := by
+  refine .of_getElem ?_ fun oid => ?_
+  · obtain ⟨_, ids, st1, _, -, -, -, -, -, -, hM, -, -, -, -, hSt⟩ :=
+      untypedReset_ok_decompose ec untypedId st st' hStep
+    rw [storeObject_referenceTables hSt, retireCarvedObjects_referenceTables,
+      (unmapLivePages_ok_frame ec _ st st1 hObjInv hM).2.2.2]
+  · rcases (untypedReset_ok_frame ec untypedId st st' hObjInv hStep).2.2 oid with e | ⟨h1, h2⟩
+    · rw [e]
+    · rw [resetTouched_objTableBackLinks h1, resetTouched_objTableBackLinks h2]
 
 -- ============================================================================
 -- §7  The acknowledged ASID round (`v0.36.37`)

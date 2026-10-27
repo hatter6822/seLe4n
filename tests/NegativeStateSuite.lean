@@ -3676,7 +3676,8 @@ private def runWSR4CoherenceChecks : IO Unit := do
         (SeLe4n.Kernel.registerService regTcb stIface2)
         .invalidCapability
 
-    -- R4-NEG-03: Endpoint retype → service registration auto-revoked (R4-B/M-13)
+    -- R4-NEG-03: a registered endpoint records its registration, so the final
+    -- delete's retire refuses it until the service is revoked (WS-ZA ZA5.4 part 31)
     let epForRetype : SeLe4n.ObjId := ⟨32⟩
     let r4State3 := (BootstrapBuilder.empty
         |>.withObject epForRetype (.endpoint {})
@@ -3697,12 +3698,25 @@ private def runWSR4CoherenceChecks : IO Unit := do
         -- Verify service is registered
         if stSvc3.serviceRegistry[svcSid]? = none then
           throw <| IO.userError "service not registered"
-        -- Run cleanup (simulates pre-retype endpoint cleanup)
-        let stCleaned := SeLe4n.Kernel.cleanupEndpointServiceRegistrations stSvc3 epForRetype
-        -- Verify service registration was revoked
-        if stCleaned.serviceRegistry[svcSid]? != none then
-          throw <| IO.userError "service registration was NOT revoked after endpoint cleanup"
-        IO.println "negative check passed [R4-NEG-03: endpoint cleanup auto-revokes service registrations]"
+        -- The endpoint records the registration, so its back-links are not clear
+        if stSvc3.tableBackLinksClear epForRetype then
+          throw <| IO.userError "registered endpoint's back-links read clear"
+        -- The O(1) lookup finds the registration through the endpoint's code
+        match SeLe4n.Kernel.lookupServiceByRecordedCode epForRetype stSvc3 with
+        | .error _ => throw <| IO.userError "recorded-code lookup missed the registration"
+        | .ok (found, _) =>
+          if found.sid != svcSid then
+            throw <| IO.userError "recorded-code lookup found the wrong registration"
+        -- Revoking clears the record, and the retire may then admit the endpoint
+        match SeLe4n.Kernel.revokeService svcSid stSvc3 with
+        | .error _ => throw <| IO.userError "service revocation failed"
+        | .ok (_, stRevoked3) =>
+          if !stRevoked3.tableBackLinksClear epForRetype then
+            throw <| IO.userError "revoked endpoint still records the registration"
+          expectErr "recorded-code lookup after revocation"
+            (SeLe4n.Kernel.lookupServiceByRecordedCode epForRetype stRevoked3)
+            .objectNotFound
+        IO.println "negative check passed [R4-NEG-03: a registered endpoint's back-links hold the retire until revocation]"
 
     -- R4-NEG-04: Service revocation cleans dependency graph (R4-D/M-15)
     let svcA : ServiceId := ⟨710⟩

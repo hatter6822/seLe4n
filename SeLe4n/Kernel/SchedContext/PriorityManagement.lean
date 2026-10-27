@@ -507,7 +507,8 @@ theorem updatePrioritySource_runQueueStage (st : SystemState) (tid : SeLe4n.Thre
   unfold updatePrioritySource
   split
   · refine SystemState.RunQueueStage.trans (SystemState.RunQueueStage.of_invExt fun h0 =>
-      SystemState.RunQueueStage.of_link (fun h r => ⟨?_, ?_⟩) ?_ ?_ ?_)
+      SystemState.RunQueueStage.of_link (.of_tableFrame (fun h r => ⟨?_, ?_⟩)
+        (SystemState.TableReferenceFrame.updateSchedContext _ _ _)) ?_ ?_ ?_)
       (SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl))
     · exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ h
     · exact SystemState.runQueueRefined_of_frame

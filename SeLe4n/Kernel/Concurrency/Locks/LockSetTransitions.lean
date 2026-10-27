@@ -4153,10 +4153,10 @@ nothing would have acquired it and two concurrent `serviceRegister`s had
 provably disjoint sets while writing the same `serviceRegistry` map.  The same
 defect class the round-7 finding closed for the audit trail, and closed the same
 way: all four registry writers now carry `stateLevelLock` by name — the trio in
-write / write / **read** mode (the query folds over the whole map, so it is the
-reader, exactly as `lockSet_auditRead` is for the trail) and the **retype**,
-whose `cleanupEndpointServiceRegistrations` sweep is the writer the prose kept
-listing and no footprint declared.  `serviceRegistry_footprints_share_serialization`
+write / write / **read** mode (the query reads the map, so it is the reader,
+exactly as `lockSet_auditRead` is for the trail) and the **retype**, whose
+registry sweep was the writer the prose kept listing and no footprint declared
+(the sweep is deleted since WS-ZA ZA5.4 part 31).  `serviceRegistry_footprints_share_serialization`
 is the pin, and a new registry writer must extend it before it can claim a
 footprint.  Under the SM5.I kernel-entry lock there was no live race, which is
 why the register graded it a medium rather than a blocker. -/
@@ -4170,35 +4170,38 @@ variant (R4-C.2 / L-09) and the endpoint capability has Write right
 (R4-C.1 / M-14).  Without locking the endpoint, this transition
 could race with concurrent endpoint writers (e.g., IPC queue
 mutations from `endpointSend` / `endpointReceive`) and observe a
-mid-transition `KernelObject` variant.  A read lock is sufficient
-since `registerService` only writes the `serviceRegistry` map (not
-the endpoint object itself). -/
+mid-transition `KernelObject` variant.  The lock is a **write** lock:
+`registerService` records the registration's code on the endpoint
+(`Endpoint.serviceCode`, a read-modify-write of the endpoint object), so
+it excludes the endpoint's other writers. -/
 def lockSet_serviceRegister (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
-     (endpointLock endpointObjId, .read),
+     (endpointLock endpointObjId, .write),
      (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
-`revokeService sid` only touches `serviceRegistry` (erase) and
-`removeDependenciesOf` (in-place state mutation).  Neither reads
-nor writes a kernel object, so the per-object lock footprint is
-just caller TCB + CNode. -/
+`revokeService sid` erases the registration from `serviceRegistry` and
+clears its code on the endpoint its capability names
+(`clearEndpointServiceCode`, a read-modify-write of that endpoint), so the
+footprint is the caller TCB, its CNode, that endpoint in **write** mode and
+the state-level lock that serialises the registry. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) : LockSet :=
+    (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
+     (endpointLock endpointObjId, .write),
      (stateLevelLock, .write)]
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceQuery`.
 
-`lookupServiceByCap epId` folds over `serviceRegistry`; it does NOT
-read `st.objects[epId]?` (the lookup is by cap-target ObjId match
-within the registry, not by object dereference).
+`lookupServiceByRecordedCode epId` reads the endpoint `st.objects[epId]?`
+for the code it records and then that one key of `serviceRegistry`, so the
+endpoint is in **read** mode and the state-level lock (the registry) too.
 
 Caller TCB **write** (PR #870 round 6): `.serviceQuery` is `.word`-shaped, so
 on success its arm stages the resolved `ServiceId` into the caller's TCB via
@@ -4207,23 +4210,25 @@ audit pair declares, present since the WS-RA staging landed (v0.33.37) and
 fixed with them (`lockSet_serviceQuery_staging_write_mem`).  CNode **read**
 for capability resolution. -/
 def lockSet_serviceQuery (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) : LockSet :=
+    (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .write),
      (cnodeLock cnodeRootObjId, .read),
+     (endpointLock endpointObjId, .read),
      (stateLevelLock, .read)]
 
 /-- WS-SM SM3.B.3 (PR #870 round 6): `.serviceQuery`'s staging write is in its
 declared footprint — the sibling of `lockSet_auditRead_staging_write_mem`. -/
 theorem lockSet_serviceQuery_staging_write_mem (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) :
+    (cnodeRootObjId endpointObjId : ObjId) :
     (tcbLock callerTid, AccessMode.write)
-      ∈ (lockSet_serviceQuery callerTid cnodeRootObjId).pairs := by
+      ∈ (lockSet_serviceQuery callerTid cnodeRootObjId endpointObjId).pairs := by
   unfold lockSet_serviceQuery lockSetOfList
   simp only [List.foldl]
   exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
     (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (by simp [LockSet.insertOrMerge]))
+      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+        (by simp [LockSet.insertOrMerge])))
 
 /-- **WS-RR RR7.23 (register finding 5): every writer of the service registry
 declares the state-level lock.**
@@ -4235,13 +4240,15 @@ this file's service section said the registry was covered by the table-level
 object-store lock "implicitly" — which under SM3.C.9's fine locks is nothing at
 all: two concurrent `serviceRegister`s had provably disjoint sets while
 read-modify-writing the same map, and so did a `serviceRevoke` racing a retype
-that swept the registry through `cleanupEndpointServiceRegistrations`.
+that swept the registry.
 
 The in-place retype was a fourth writer — it swept the registry when the object
 it re-purposed was an endpoint — and left with WS-ZA ZA5.4 part 14; the destroy
-path's finalisation will be the next, and must extend this theorem.
+path's cleanup swept it too until WS-ZA ZA5.4 part 31 deleted the sweep (the
+retire admits only an endpoint no registration names).  A new registry writer
+must extend this theorem.
 
-The query is the reader — `lookupServiceByCap` folds over the whole map — so it
+The query is the reader — `lookupServiceByRecordedCode` reads one key of the map — so it
 takes the member in **read** mode, exactly as `lockSet_auditRead` does for the
 trail.  Read/read does not conflict, so two queries still run concurrently;
 what the member buys is that a query cannot observe a half-applied register or
@@ -4251,15 +4258,15 @@ A new registry writer must extend this theorem before it can claim a
 footprint. -/
 theorem serviceRegistry_footprints_share_serialization :
     ∀ (callerA : ThreadId) (rootA epA : ObjId)
-      (callerB : ThreadId) (rootB : ObjId)
-      (callerC : ThreadId) (rootC : ObjId),
+      (callerB : ThreadId) (rootB epB : ObjId)
+      (callerC : ThreadId) (rootC epC : ObjId),
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_serviceRegister callerA rootA epA).pairs ∧
       (stateLevelLock, AccessMode.write)
-        ∈ (lockSet_serviceRevoke callerB rootB).pairs ∧
+        ∈ (lockSet_serviceRevoke callerB rootB epB).pairs ∧
       (stateLevelLock, AccessMode.read)
-        ∈ (lockSet_serviceQuery callerC rootC).pairs := by
-  intro callerA rootA epA callerB rootB callerC rootC
+        ∈ (lockSet_serviceQuery callerC rootC epC).pairs := by
+  intro callerA rootA epA callerB rootB epB callerC rootC epC
   refine ⟨?_, ?_, ?_⟩
   · unfold lockSet_serviceRegister lockSetOfList; simp only [List.foldl]
     exact LockSet.mem_insertOrMerge_write_self _ _
@@ -5001,16 +5008,15 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- serialization no per-object kind can express.
   | .auditRead | .auditDrain =>
       [.tcb, .cnode, .objStore]
-  -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
-  -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
+  -- Service syscalls.  Each reads or writes the endpoint its registration
+  -- names: `.serviceRegister` and `.serviceRevoke` write its recorded code
+  -- (`Endpoint.serviceCode`) and `.serviceQuery` reads it.
   -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
   -- `SystemState`-level map, exactly like the audit trail, and the member that
   -- serialises it is `stateLevelLock` (kind `.objStore`, hierarchy level 0, so
   -- it is acquired first and the by-kind ladder stays acyclic).
-  | .serviceRegister =>
+  | .serviceRegister | .serviceRevoke | .serviceQuery =>
       [.tcb, .cnode, .endpoint, .objStore]
-  | .serviceRevoke | .serviceQuery =>
-      [.tcb, .cnode, .objStore]
   -- **WS-RR RR7.38 — `.endpoint` and `.notification` on every arm that can
   -- write a *queued* TCB.**  Splicing a blocked thread out of its wait queue
   -- writes its neighbours' link fields, TCBs the splice holds no `tcbLock` for.
@@ -6654,11 +6660,13 @@ theorem lockSet_consistent_serviceRegister (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.serviceRevoke`. -/
 theorem lockSet_consistent_serviceRevoke (callerTid : ThreadId)
-    (cnRoot : ObjId) :
-    ∀ p ∈ (lockSet_serviceRevoke callerTid cnRoot).pairs,
+    (cnRoot epId : ObjId) :
+    ∀ p ∈ (lockSet_serviceRevoke callerTid cnRoot epId).pairs,
       p.fst.kind ∈ permittedKinds .serviceRevoke :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
@@ -6669,11 +6677,13 @@ theorem lockSet_consistent_serviceRevoke (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.serviceQuery`. -/
 theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
-    (cnRoot : ObjId) :
-    ∀ p ∈ (lockSet_serviceQuery callerTid cnRoot).pairs,
+    (cnRoot epId : ObjId) :
+    ∀ p ∈ (lockSet_serviceQuery callerTid cnRoot epId).pairs,
       p.fst.kind ∈ permittedKinds .serviceQuery :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem

@@ -506,6 +506,206 @@ theorem cancelIpcBlocking_determineTargetCore_eq (st : SystemState)
   determineTargetCore_congr st _ x
     (TCB.map_cpuAffinity_of_placement (cancelIpcBlocking_placement_frame st victim tcb hInv x))
 
+/-- The mid-queue splice rewrites threads only. -/
+theorem spliceOutMidQueueNode_tableReferenceFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (spliceOutMidQueueNode st tid) :=
+  SystemState.TableReferenceFrame.of_offTcb
+    (by rw [spliceOutMidQueueNode_eq_patches]; split <;> rfl)
+    (fun k o hNot => spliceOutMidQueueNode_nonTcb st tid hInv k o hNot)
+
+/-- The endpoint sweep rewrites queue ends only, so it keeps every endpoint's
+registration code. -/
+theorem removeFromAllEndpointQueues_tableReferenceFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (removeFromAllEndpointQueues st tid) := by
+  have hS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  rw [removeFromAllEndpointQueues_eq_fold]
+  refine (spliceOutMidQueueNode_tableReferenceFrame st tid hInv).trans
+    (RobinHood.RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+      (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+      (fun acc => acc.objects.invExt ∧
+        SystemState.TableReferenceFrame (spliceOutMidQueueNode st tid) acc)
+      hS ⟨hS, .refl _⟩ ?_).2
+  rintro acc k' v' _ ⟨hE, hA⟩
+  unfold endpointSweepBody
+  cases v' with
+  | endpoint _ =>
+    simp only
+    split
+    · next ep hEp _ =>
+      split
+      · exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE,
+          hA.trans (.rewriteObject _ hE (by
+            rw [(SystemState.getEndpoint?_eq_some_iff acc k' ep).mp hEp]; rfl))⟩
+      · exact ⟨hE, hA⟩
+    · exact ⟨hE, hA⟩
+  | _ => exact ⟨hE, hA⟩
+
+/-- A thread write chained onto a frame. -/
+private theorem tableReferenceFrame_updateTcb_step {st s : SystemState}
+    (h : s.objects.invExt ∧ SystemState.TableReferenceFrame st s)
+    (p : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (s.updateTcb p f).objects.invExt ∧ SystemState.TableReferenceFrame st (s.updateTcb p f) :=
+  ⟨SystemState.updateTcb_preserves_objects_invExt s p f h.1,
+    h.2.trans (.updateTcb s p f h.1)⟩
+
+/-- The neighbour relink after a frame. -/
+private theorem unlinkNtfnNeighbours_tableReferenceFrame_step {st s : SystemState}
+    (h : s.objects.invExt ∧ SystemState.TableReferenceFrame st s)
+    (prev next : Option SeLe4n.ThreadId) :
+    SystemState.TableReferenceFrame st (unlinkNtfnNeighbours s prev next) := by
+  unfold unlinkNtfnNeighbours
+  cases prev <;> cases next <;> dsimp only
+  · exact h.2
+  · exact (tableReferenceFrame_updateTcb_step h _ _).2
+  · exact (tableReferenceFrame_updateTcb_step h _ _).2
+  · exact (tableReferenceFrame_updateTcb_step (tableReferenceFrame_updateTcb_step h _ _) _ _).2
+
+/-- The notification unlink keeps the notification's interrupt flag and
+rewrites threads' links. -/
+theorem removeFromNotificationWaitQueue_tableReferenceFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (removeFromNotificationWaitQueue st tid) := by
+  unfold removeFromNotificationWaitQueue
+  split
+  · split
+    · split
+      · next notif hN _ =>
+        have hN' := (SystemState.getNotification?_eq_some_iff st _ notif).mp hN
+        dsimp only
+        unfold unlinkNtfnNeighbours clearNtfnLinks
+        refine unlinkNtfnNeighbours_tableReferenceFrame_step
+          (tableReferenceFrame_updateTcb_step
+            ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv,
+              SystemState.TableReferenceFrame.rewriteObject _ hInv ?_⟩ _ _) _ _
+        rw [hN']; rfl
+      · exact .refl _
+    · exact .refl _
+  · exact .refl _
+
+/-- The reply consume rewrites a reply and a thread. -/
+theorem consumeCallerReply_tableReferenceFrame {st st' : SystemState}
+    {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} (hInv : st.objects.invExt)
+    (h : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    SystemState.TableReferenceFrame st st' := by
+  unfold SystemState.consumeCallerReply at h
+  cases hC : SystemState.consumeReply rid st with
+  | error e => simp [hC] at h
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hC] at h
+    have hF1 : SystemState.TableReferenceFrame st st1 := by
+      unfold SystemState.consumeReply at hC
+      cases hG : st.getReply? rid with
+      | none => rw [hG] at hC; cases hC; exact .refl _
+      | some r =>
+        rw [hG] at hC
+        exact .storeObject hInv hC (by
+          rw [(SystemState.getReply?_eq_some_iff st rid r).mp hG]; rfl)
+    have hInv1 := SystemState.consumeReply_preserves_objects_invExt st st1 rid hInv hC
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      rw [← h]; exact hF1
+    | some tcb =>
+      simp only [hT] at h
+      exact hF1.trans (.storeObject hInv1 h
+        (SystemState.TableReferenceFrame.tcb_over
+          ((SystemState.getTcb?_eq_some_iff st1 caller tcb).mp hT)))
+
+/-- The reply-waiter unlink writes no reference table. -/
+theorem unlinkReplyWaiterOpt_referenceTables (st : SystemState) (w : SeLe4n.ThreadId)
+    (s? : Option SeLe4n.ThreadId) :
+    (st.unlinkReplyWaiterOpt w s?).referenceTables = st.referenceTables := by
+  have h := congrArg SystemState.referenceTables (SystemState.unlinkReplyWaiterOpt_eq_objects st w s?)
+  exact h.trans rfl
+
+/-- The reply-link teardown rewrites a reply and a thread. -/
+theorem consumeReplyLink_tableReferenceFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  split
+  · exact .refl _
+  · next rid _ =>
+    exact consumeCallerReply_tableReferenceFrame hInv (SystemState.consumeCallerReply_eq_link _ tid rid)
+
+/-- The cancelled caller's reply-frame splice rewrites replies only. -/
+theorem spliceThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (spliceThreadReplyFrameOut st tcb) := by
+  unfold spliceThreadReplyFrameOut
+  split
+  · exact .refl _
+  · next rid _ =>
+    rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    · rw [h]; exact .refl _
+    · exact ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
+        rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+        · rw [e]
+        · rw [h1, h2]; rfl⟩
+
+/-- The restore rewrites its thread. -/
+theorem restoreToReadyStaging_tableReferenceFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (Lifecycle.Suspend.restoreToReadyStaging st tid frame) := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  exact .updateTcb _ _ _ hInv
+
+/-- The cancelled caller's donation return. -/
+theorem returnDonationToCancelledCaller_tableReferenceFrame (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none => exact .refl _
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    cases hT : st.getTcb? v with
+    | none => exact .refl _
+    | some _ =>
+      dsimp only
+      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      | error _ => exact .refl _
+      | ok st' =>
+        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        exact returnDonatedSchedContext_tableReferenceFrame hInv hPop
+
+/-- **The IPC teardown keeps the reference tables and every object's
+back-links**: each of its writes rewrites a thread, a reply, a scheduling
+context, an endpoint's queue ends or a notification's queue ends. -/
+theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) := by
+  unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
+  cases tcb.ipcState with
+  | ready => exact .refl _
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    exact (removeFromAllEndpointQueues_tableReferenceFrame st victim hInv).trans
+      (restoreToReadyStaging_tableReferenceFrame _ victim _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st victim hInv))
+  | blockedOnNotification _ =>
+    exact (removeFromNotificationWaitQueue_tableReferenceFrame st victim hInv).trans
+      (restoreToReadyStaging_tableReferenceFrame _ victim _
+        (removeFromNotificationWaitQueue_preserves_objects_invExt st victim hInv))
+  | blockedOnReply _ _ =>
+    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st victim tcb hInv
+    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb hR
+    have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ victim
+      (some Architecture.cancelledIpcFrame) hS
+    dsimp only
+    have f3 := ((returnDonationToCancelledCaller_tableReferenceFrame st victim tcb hInv).trans
+      (spliceThreadReplyFrameOut_tableReferenceFrame _ tcb hR)).trans
+      (restoreToReadyStaging_tableReferenceFrame _ victim (some Architecture.cancelledIpcFrame) hS)
+    have f4 := f3.trans (consumeReplyLink_tableReferenceFrame _ victim tcb hU)
+    exact f4.trans (.of_agreeOffRunLinks
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _)
+      (unlinkReplyWaiterOpt_referenceTables _ _ _))
+
 /-- **WS-ZA ZA4.5: the teardown keeps the run queues in agreement with the
 links** — it writes no scheduler slot (`cancelIpcBlocking_scheduler_eq`) and moves
 no thread (`cancelIpcBlocking_placement_frame`). -/
@@ -517,6 +717,7 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (by rw [hS]) (by rw [hS])
     (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
     (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_tableReferenceFrame st victim tcb hInv)
 
 /-- ...and so does the teardown with its replenishment migration. -/
 theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)

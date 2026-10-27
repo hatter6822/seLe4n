@@ -372,7 +372,8 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq]))).entry
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry
   · rename_i hE
     cases h
     exact hW.entry.trans (syscallEntryChecked_runQueueEntryStage E1
@@ -430,7 +431,8 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler]))
+      (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl))
   have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
     (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       fun _ => by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
@@ -443,6 +445,21 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
   (hS.entry.trans (syscallDispatchCrossCoreStep_runQueueEntryStage (E.of_ipcFrame hS hF))).trans
     hC.entry
+
+/-- **The syscall entry keeps the table references recorded**, so the retire's
+read of an object's own back-links (`SystemState.tableBackLinksClear`) answers
+what a walk of the registry and the interrupt table would. -/
+theorem syscallDispatchEntryState_preserves_tableReferencesRecorded (ctx : LabelingContext)
+    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (E : EntryPremises st) (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hT : st.tableReferencesRecorded) :
+    (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).tableReferencesRecorded :=
+  (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E).tableReferencesRecorded
+    hInv hR hT
 
 /-! ### The suspend, timer, reschedule, fault and FP/SIMD entries -/
 

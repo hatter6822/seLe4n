@@ -166,7 +166,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .serviceQuery =>
     match cap.target with
     | .object epId =>
-        match lookupServiceByCap epId st with
+        match lookupServiceByRecordedCode epId st with
         | .ok (reg, st') =>
             .ok ((), Architecture.writeReturnFrameToTcb st' tid
               (Architecture.returnFrameOfWord reg.sid.val.toUInt64))

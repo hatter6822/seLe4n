@@ -37,10 +37,11 @@ the three tables; `tableBackLinksClear.namedByNone` is the theorem that, under
 `tableReferencesRecorded`, an object it admits is named by no table entry — the
 consumer theorem that makes the back-links worth recording.
 
-The final delete still walks the tables: switching its guard to
-`tableBackLinksClear` needs `tableReferencesRecorded` carried through every
-kernel entry, which is `docs/planning/UNTYPED_RESET_PLAN.md` row 31 (WS-ZA ZA5.4
-part 31) and is not landed here. -/
+The final delete reads the back-links instead of walking the tables (WS-ZA
+ZA5.4 part 31): the boot establishes `tableReferencesRecorded`, and every step
+that writes no table and leaves every object's back-links as it found them is a
+`TableReferenceFrame`, the form in which the run-queue link stage carries the
+invariant through every syscall and kernel entry. -/
 
 namespace SeLe4n.Kernel.RobinHood
 
@@ -182,6 +183,16 @@ def SystemState.TableReferenceFrame (st st' : SystemState) : Prop :=
   st'.referenceTables = st.referenceTables ∧
   ∀ k : SeLe4n.ObjId, objTableBackLinks st'.objects[k]? = objTableBackLinks st.objects[k]?
 
+/-- An in-place object rewrite writes no reference table. -/
+@[simp] theorem SystemState.rewriteObject_referenceTables (st : SystemState) (k : SeLe4n.ObjId)
+    (obj : KernelObject) (h : st.rewriteAdmissible k obj) :
+    (st.rewriteObject k obj h).referenceTables = st.referenceTables := rfl
+
+/-- A thread write writes no reference table. -/
+@[simp] theorem SystemState.updateTcb_referenceTables (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) : (st.updateTcb tid f).referenceTables = st.referenceTables := by
+  unfold SystemState.updateTcb; split <;> rfl
+
 namespace SystemState.TableReferenceFrame
 
 /-- A kind-preserving write that writes no reference table is a frame: it keeps
@@ -206,6 +217,143 @@ theorem preserves {st st' : SystemState} (h : TableReferenceFrame st st')
     fun irq n h => by rw [hIrq] at h; rw [hB]; exact hR.irqHandlers irq n h,
     fun n h => by rw [hB] at h; rw [hIrq]; exact hR.irqBound n h,
     hSvc ▸ hR.servicesEmpty⟩
+
+theorem refl (st : SystemState) : TableReferenceFrame st st := ⟨rfl, fun _ => rfl⟩
+
+theorem trans {st st' st'' : SystemState} (h1 : TableReferenceFrame st st')
+    (h2 : TableReferenceFrame st' st'') : TableReferenceFrame st st'' :=
+  ⟨h2.1.trans h1.1, fun k => (h2.2 k).trans (h1.2 k)⟩
+
+/-- A step that writes no object and no reference table. -/
+theorem of_objects_eq {st st' : SystemState} (hO : st'.objects = st.objects)
+    (hT : st'.referenceTables = st.referenceTables) : TableReferenceFrame st st' :=
+  ⟨hT, fun k => by rw [hO]⟩
+
+/-- A step writing no reference table whose every slot maps to the back-links of
+the slot it replaces, read through `Option.map`. -/
+theorem of_map_tableBackLinks {st st' : SystemState}
+    (hT : st'.referenceTables = st.referenceTables)
+    (h : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map KernelObject.tableBackLinks =
+      (st.objects[k]?).map KernelObject.tableBackLinks) : TableReferenceFrame st st' :=
+  ⟨hT, fun k => by rw [objTableBackLinks_eq_map, objTableBackLinks_eq_map, h k]⟩
+
+/-- A step whose every slot maps to the back-links of the slot it replaces. -/
+theorem of_getElem {st st' : SystemState} (hT : st'.referenceTables = st.referenceTables)
+    (h : ∀ k : SeLe4n.ObjId, objTableBackLinks st'.objects[k]? = objTableBackLinks st.objects[k]?) :
+    TableReferenceFrame st st' := ⟨hT, h⟩
+
+/-- **One object written into the store** holding the back-links of the slot it
+replaces, the reference tables untouched: the store primitive every object write
+is built from. -/
+theorem insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k obj)
+    (hT : st'.referenceTables = st.referenceTables)
+    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]?) : TableReferenceFrame st st' :=
+  ⟨hT, fun j => by
+    rw [hO]
+    by_cases hj : k = j
+    · subst hj
+      simp only [RHTable_getElem?_eq_get?] at hB ⊢
+      rw [RHTable.getElem?_insert_self st.objects _ obj hInv]
+      exact hB
+    · simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_ne st.objects _ _ obj (fun hb => hj (eq_of_beq hb)) hInv]⟩
+
+/-- **Stores that agree up to a view keeping the back-links**: a step whose
+every slot maps, under `g`, to what the old slot maps to, where `g` keeps every
+object's table back-links (clearing a thread's run-queue or space links, for
+instance). -/
+theorem of_map {st st' : SystemState} {g : KernelObject → KernelObject}
+    (hg : ∀ o, (g o).tableBackLinks = o.tableBackLinks)
+    (hT : st'.referenceTables = st.referenceTables)
+    (h : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map g = (st.objects[k]?).map g) :
+    TableReferenceFrame st st' :=
+  ⟨hT, fun k => by
+    have hk := h k
+    cases h1 : st'.objects[k]? <;> cases h2 : st.objects[k]? <;>
+      simp only [h1, h2, Option.map_some, Option.map_none, Option.some.injEq,
+        reduceCtorEq] at hk <;> simp only [objTableBackLinks_some, objTableBackLinks_none]
+    rw [← hg, hk, hg]⟩
+
+/-- `storeObject` writes no reference table. -/
+theorem _root_.SeLe4n.Model.storeObject_referenceTables {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st')) :
+    st'.referenceTables = st.referenceTables := by
+  unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
+
+/-- **The store primitive**: `storeObject` of an object holding the back-links
+of the slot it replaces. -/
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt) (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
+    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]?) : TableReferenceFrame st st' := by
+  unfold SeLe4n.Model.storeObject at hS; cases hS
+  exact insert hInv rfl rfl hB
+
+/-- **The in-place rewrite primitive**: `rewriteObject` of an object holding the
+back-links of the one it replaces. -/
+theorem rewriteObject {st : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (h : st.rewriteAdmissible k obj) (hInv : st.objects.invExt)
+    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]?) :
+    TableReferenceFrame st (st.rewriteObject k obj h) :=
+  insert hInv rfl rfl hB
+
+/-- A thread holds no table back-link, so a thread written over a thread keeps them. -/
+theorem tcb_over {st : SystemState} {k : SeLe4n.ObjId} {t t' : TCB}
+    (hO : st.objects[k]? = some (.tcb t)) :
+    (KernelObject.tcb t').tableBackLinks = objTableBackLinks st.objects[k]? := by
+  rw [hO]; rfl
+
+/-- **The thread write primitive** (`updateTcb`). -/
+theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : TableReferenceFrame st (st.updateTcb tid f) := by
+  unfold SystemState.updateTcb
+  split
+  · rename_i t hT _
+    exact rewriteObject _ hInv (tcb_over ((getTcb?_eq_some_iff st tid t).mp hT))
+  · exact refl st
+
+/-- **The scheduling-context write primitive** (`updateSchedContext`): a context
+holds no table back-link. -/
+theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt) :
+    TableReferenceFrame st (st.updateSchedContext scId f) := by
+  unfold SystemState.updateSchedContext
+  split
+  · rename_i sc hS _
+    exact rewriteObject _ hInv (by
+      rw [(getSchedContext?_eq_some_iff st scId sc).mp hS]; rfl)
+  · exact refl st
+
+/-- A step whose every slot holding no thread reads as it did, both ways, and
+which writes no reference table, keeps every object's back-links: a thread
+holds none. -/
+theorem of_offTcb {st st' : SystemState}
+    (hT : st'.referenceTables = st.referenceTables)
+    (h : ∀ (k : SeLe4n.ObjId) (o : KernelObject), (∀ t, o ≠ .tcb t) →
+      (st'.objects[k]? = some o ↔ st.objects[k]? = some o)) :
+    TableReferenceFrame st st' := ⟨hT, fun k => by
+  cases h1 : st'.objects[k]? with
+  | none =>
+    cases h2 : st.objects[k]? with
+    | none => rfl
+    | some p =>
+      cases p with
+      | tcb _ => rfl
+      | _ =>
+        have := (h k _ (fun _ h => KernelObject.noConfusion h)).mpr h2
+        rw [h1] at this; cases this
+  | some o =>
+    cases o with
+    | tcb _ =>
+      cases h2 : st.objects[k]? with
+      | none => rfl
+      | some p =>
+        cases p with
+        | tcb _ => rfl
+        | _ =>
+          have := (h k _ (fun _ h => KernelObject.noConfusion h)).mpr h2
+          rw [h1] at this; cases this
+    | _ => rw [(h k _ (fun _ h => KernelObject.noConfusion h)).mp h1]⟩
 
 end SystemState.TableReferenceFrame
 

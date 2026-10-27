@@ -108,7 +108,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
-| `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
+| `registerService`, `revokeService`, `lookupServiceByRecordedCode` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
 | `vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A/X2-E: production uses state-aware WithFlush variant) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
@@ -2796,7 +2796,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .object epId =>
       fun st =>
-        match lookupServiceByCap epId st with
+        match lookupServiceByRecordedCode epId st with
         | .ok (reg, st') =>
             -- WS-RA RA.B.7: the query answers — the resolved registration's
             -- `ServiceId` is staged as the caller's return word instead of
@@ -3327,12 +3327,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object epId =>
       try dsimp only [] at hStep
-      cases hLkS : lookupServiceByCap epId st with
+      cases hLkS : lookupServiceByRecordedCode epId st with
       | error e => simp only [hLkS] at hStep; cases hStep
       | ok pair =>
           obtain ⟨reg, st1⟩ := pair
           simp only [hLkS] at hStep
-          have hStEq : st1 = st := lookupServiceByCap_preserves_state epId st reg st1 hLkS
+          have hStEq : st1 = st := lookupServiceByRecordedCode_preserves_state epId st reg st1 hLkS
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
@@ -6016,7 +6016,7 @@ theorem dispatchArm_serviceQuery_matches_returnShape
     (reg : ServiceRegistration) (tcb : TCB)
     (hSyscall : decoded.syscallId = .serviceQuery)
     (hTarget : cap.target = .object epId)
-    (hLookup : lookupServiceByCap epId st = .ok (reg, st'))
+    (hLookup : lookupServiceByRecordedCode epId st = .ok (reg, st'))
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .serviceQuery = .word ∧
@@ -6500,7 +6500,7 @@ theorem dispatchWithCap_preservation_composition_witness :
     **Fully substantive (5/14)** — proof uses only observability
     hypotheses and pre-proven frame lemmas; NO abstract closures:
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
-    - `.serviceQuery` → `lookupServiceByCap_preserves_projection` (AK6F.11,
+    - `.serviceQuery` → `lookupServiceByRecordedCode_preserves_projection` (AK6F.11,
        state is unchanged, projection follows)
     - `.tcbSetIPCBuffer` → `setIPCBufferOp_preserves_projection`
     - `.vspaceMap` → `vspaceMapPageCheckedWithFlushFromState_preserves_projection`
@@ -6570,7 +6570,7 @@ theorem dispatchWithCap_preservation_composition_witness :
     | `.vspaceMap` | `vspaceMapPage_preserves_projection` (Operations.lean:753); requires `hRootHigh` via ASID resolution |
     | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
     | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
-    | `.serviceQuery` | read-only (`lookupServiceByCap` does not mutate state) |
+    | `.serviceQuery` | read-only (`lookupServiceByRecordedCode` does not mutate state) |
     | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |

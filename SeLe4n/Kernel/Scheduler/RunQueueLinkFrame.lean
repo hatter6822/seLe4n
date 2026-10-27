@@ -573,17 +573,13 @@ theorem StateMono.of_agreeOffRunLinks {st st' : SystemState} (h : objectsAgreeOf
   StateMono.of_stateFields fun t =>
     TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun x => (x.ipcState, x.threadState)) (h.getTcb? t)
 
-theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
-    RunQueueStage st (st.runRemoveOnCore c t) :=
-  RunQueueStage.of_link (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
-    (fun c' y h' => by
-      rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
-      exact h')
-    (fun c' y h' => by
-      rw [runRemoveOnCore_queuedOn] at h'; split at h'
-      · cases h'
-      · exact h')
-    (StateMono.of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
+/-- A step that writes only run-queue links keeps every table back-link: a
+thread holds none. -/
+theorem TableReferenceFrame.of_agreeOffRunLinks {st st' : SystemState}
+    (h : objectsAgreeOffRunLinks st' st)
+    (hT : st'.referenceTables = st.referenceTables := by table_frame) :
+    TableReferenceFrame st st' :=
+  .of_map (g := KernelObject.withoutRunLinks) (fun o => by cases o <;> rfl) hT h
 
 
 -- ============================================================================
@@ -618,6 +614,12 @@ theorem updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) :
   unfold SystemState.updateTcbAtCode; split
   · exact .refl _
   · exact mapTcbInPlace _ _ _
+
+/-- The tables that name objects by id are `st`'s. -/
+theorem referenceTables {a b : SystemState} (h : onlyObjectsSchedulerDiffer b a) :
+    b.referenceTables = a.referenceTables := by
+  unfold onlyObjectsSchedulerDiffer at h
+  rw [h]; rfl
 
 /-- Every table but the object store is `st`'s, so the kernel-level table
 invariant needs only the object store's. -/
@@ -660,6 +662,35 @@ theorem runRemoveOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreI
   unfold runRemoveOnCore; dsimp only; split
   · exact .withScheduler (.withScheduler (runUnlinkLinks_onlyObjectsSchedulerDiffer _ _ _ _ _ _) _) _
   · exact .withScheduler (.refl _) _
+
+@[simp] theorem runRemoveOnCore_referenceTables (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) : (st.runRemoveOnCore c t).referenceTables = st.referenceTables :=
+  (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).referenceTables
+
+@[simp] theorem runEnqueueAdmitted_referenceTables (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runEnqueueAdmitted c t p).referenceTables = st.referenceTables :=
+  (runEnqueueAdmitted_onlyObjectsSchedulerDiffer st c t p).referenceTables
+
+@[simp] theorem runEnqueueOnCore_referenceTables (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runEnqueueOnCore c t p).referenceTables = st.referenceTables :=
+  (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
+
+theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    RunQueueStage st (st.runRemoveOnCore c t) :=
+  RunQueueStage.of_link (.of_tableFrame
+      (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
+      fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+        (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).referenceTables)
+    (fun c' y h' => by
+      rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
+      exact h')
+    (fun c' y h' => by
+      rw [runRemoveOnCore_queuedOn] at h'; split at h'
+      · cases h'
+      · exact h')
+    (StateMono.of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
 
 /-- A run-queue write leaves the machine where it was. -/
 @[simp] theorem runEnqueueAdmitted_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
@@ -1168,6 +1199,9 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
       rwa [runRequeueOnCore_queuedOn_of_queued p
         ((queuedOn_eq_runLinkOn st c t).trans hq)] at h')
     (StateMono.of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
+  refine .of_tableFrame ?_ fun _ => .of_agreeOffRunLinks
+    (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
+    (runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
   intro hInv hR
   refine ⟨runRequeueOnCore_objects_invExt st c t p hInv, ?_⟩
   obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
@@ -1212,7 +1246,9 @@ theorem runEnqueueOnCore_current (st : SystemState) (c : CoreId) (t : SeLe4n.Thr
 /-- The guarded enqueue keeps the link agreement whichever thread it places. -/
 theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : RunQueueLinkStage st (st.runEnqueueOnCore c t p) :=
-  fun h r => ⟨runEnqueueOnCore_objects_invExt st c t p h, runEnqueueOnCore_refined r⟩
+  .of_tableFrame (fun h r => ⟨runEnqueueOnCore_objects_invExt st c t p h, runEnqueueOnCore_refined r⟩)
+    fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
+      (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
 
 /-- The guarded enqueue of a runnable thread current on no core is a stage:
 every current thread stays off the queues, and every queued one is runnable. -/

@@ -572,7 +572,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv
     | (cases h; rename_i hU
        first
-        | (rw [lookupServiceByCap_preserves_state _ _ _ _ hU]
+        | (rw [lookupServiceByRecordedCode_preserves_state _ _ _ _ hU]
            exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv)
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv

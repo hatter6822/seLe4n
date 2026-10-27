@@ -1438,18 +1438,19 @@ theorem withIcacheBroadcast_frame
     st'.objects = stB.objects ∧ st'.asidTable = stB.asidTable ∧
     st'.scheduler = stB.scheduler ∧ st'.machine = stB.machine ∧
     st'.tlb = stB.tlb ∧ st'.tlbShootdown = stB.tlbShootdown ∧
-    st'.perCoreTlb = stB.perCoreTlb := by
+    st'.perCoreTlb = stB.perCoreTlb ∧ st'.serviceRegistry = stB.serviceRegistry ∧
+    st'.irqHandlers = stB.irqHandlers ∧ st'.services = stB.services := by
   unfold withIcacheBroadcast at hStep
   rw [hk] at hStep
   cases hOp : mkOp st with
   | none =>
       rw [hOp] at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-      subst hStep; exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      subst hStep; exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   | some op =>
       rw [hOp] at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-      subst hStep; exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      subst hStep; exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 -- ============================================================================
 -- SM7.D.1 — Live wiring (a): the `.vspaceUnmap` instruction-cache broadcast
@@ -1916,7 +1917,8 @@ theorem vspaceUnifyInstructionPage_frame {st st' : SystemState}
     st'.objects = st.objects ∧ st'.asidTable = st.asidTable ∧
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine ∧
     st'.tlb = st.tlb ∧ st'.tlbShootdown = st.tlbShootdown ∧
-    st'.perCoreTlb = st.perCoreTlb := by
+    st'.perCoreTlb = st.perCoreTlb ∧ st'.serviceRegistry = st.serviceRegistry ∧
+    st'.irqHandlers = st.irqHandlers ∧ st'.services = st.services := by
   cases hres : resolveAsidRoot st asid with
   | none => rw [vspaceUnifyInstructionPage_asid_unbound st vaddr hres] at h; cases h
   | some rr =>
@@ -1928,7 +1930,7 @@ theorem vspaceUnifyInstructionPage_frame {st st' : SystemState}
           rw [vspaceUnifyInstructionPage_ok hres hlk] at h
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
           subst h
-          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **WS-SM SM7.D**: the unify records the *unify* operand — the runtime emits
 the full data-to-instruction sequence, not a bare invalidate, so the caller's

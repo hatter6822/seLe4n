@@ -61,7 +61,7 @@ than misleading its next reader.
 |13 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
 |14 | `frozenCspaceDelete`         | `cspaceDeleteSlot`         | Capability   |
 |15 | `frozenVspaceLookup`         | `vspaceLookupFull`         | VSpace       |
-|16 | `frozenLookupServiceByCap`   | `lookupServiceByCap`       | Service      |
+|16 | `frozenLookupServiceByCap`   | `lookupServiceByRecordedCode` | Service   |
 |17 | `frozenSchedContextConfigure`| `schedContextConfigure`    | SchedContext |
 |18 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
 |19 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
@@ -1358,19 +1358,20 @@ def frozenVspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
 -- ============================================================================
 
 /-- Q7-C5: Frozen service lookup by capability target.
-Mirrors `lookupServiceByCap` using FrozenMap fold. -/
+Mirrors `lookupServiceByRecordedCode`, the O(1) lookup the live kernel runs:
+the endpoint records the code `sid + 1` of the registration naming it, so the
+lookup reads that endpoint and that one registry key (WS-ZA ZA5.4 part 31). -/
 def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
     : FrozenKernel ServiceRegistration :=
   fun st =>
-    let result := st.serviceRegistry.fold (init := none) fun acc _sid reg =>
-      match acc with
-      | some _ => acc
-      | none =>
-          match reg.endpointCap.target with
-          | .object id => if id == epId then some reg else none
-          | _ => none
-    match result with
-    | some reg => .ok (reg, st)
+    match frozenLookupEndpoint st epId with
+    | some ep =>
+      match ep.serviceCode with
+      | 0 => .error .objectNotFound
+      | n + 1 =>
+        match st.serviceRegistry.get? ⟨n⟩ with
+        | some reg => .ok (reg, st)
+        | none => .error .objectNotFound
     | none => .error .objectNotFound
 
 -- ============================================================================

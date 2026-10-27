@@ -4343,9 +4343,24 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_taint_cleared ' SeLe4n/K
 # last capability.  v0.36.141: quiescence is read off the object's own links, a
 # reply's live stash included (seL4's replyTCB), with no walk of the object table.
 run_check "INVARIANT" rg -n -U 'def retireFinalObject[^\n]*(\n([ \t][^\n]*)?){0,4}\n    if finalRetireAdmitted st x then\n      retireRecordedObject executingCore recorder x \(eraseRetiredObject st x\)\n    else st' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && registryNamesNone st x &&\n    servicesNameNone st x && irqHandlersNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def passiveObjectRetirable[^\n]*\n  passiveObjectQuiescent st x && st\.tableBackLinksClear x$' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U '  \| some \(\.reply r\) =>\n    r\.callerCode == 0 && !st\.replyStashedAt ⟨x\.val⟩ r && r\.prev\.isNone && r\.next\.isNone' SeLe4n/Kernel/Capability/FinalRetire.lean
-run_check "INVARIANT" rg -n -U '    t\.tid\.val == x\.val && !isIdleThreadId t\.tid && threadQuiescent t &&\n      !threadHeldOnSomeCore st t\.tid && servicesNameNone st x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '    t\.tid\.val == x\.val && !isIdleThreadId t\.tid && threadQuiescent t &&\n      !threadHeldOnSomeCore st t\.tid$' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def finaliseFinalObject[^\n]*\n  if target = 0 then st\n  else\n    let x := SeLe4n\.ObjId\.ofNat \(target - 1\)\n    if st\.tableBackLinksClear x then' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_negative_check "INVARIANT" rg -n 'registryNamesNone|servicesNameNone|irqHandlersNameNone' SeLe4n
+# v0.36.144 (part 31): the table references are established at boot, carried by
+# every entry's link stage and along the delete chain, and the service lookup
+# reads its endpoint's recorded code.
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem RunQueueEntryStage\.tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s ∧ s\.tableReferencesRecorded$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedCode_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedCode epId st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId =>\n        match lookupServiceByRecordedCode epId st with' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U 'def frozenLookupServiceByCap[^\n]*\n[^\n]*\n  fun st =>\n    match frozenLookupEndpoint st epId with' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.read\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.write\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_negative_check "INVARIANT" rg -n 'cleanupEndpointServiceRegistrations' SeLe4n tests
 run_negative_check "INVARIANT" rg -n 'storeNamesNone|storeNamesThreadNone' SeLe4n
 # v0.36.142 (part 29): a scheduling context is retired on its own links (seL4's
 # scTCB and scReply), with no walk of the object table or the replenishment

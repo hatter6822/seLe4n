@@ -1493,6 +1493,17 @@ theorem donateSchedContext_cdt_eq
     storeObject_cdt_eq _ _ _ _ hS4
   rw [show st'.cdt = s4.cdt by rw [hEq], e4, e3, e2, e1]
 
+/-- The donation writes no reference table. -/
+theorem donateSchedContext_referenceTables {st st' : SystemState}
+    {clientTid serverTid : SeLe4n.ThreadId} {clientScId : SeLe4n.SchedContextId}
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    st'.referenceTables = st.referenceTables := by
+  obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  rw [show st'.referenceTables = s4.referenceTables by rw [hEq]; rfl, storeObject_referenceTables hS4,
+    storeObject_referenceTables hS3, storeDonationFramePush_referenceTables hS2,
+    storeObject_referenceTables hS1]
+
 /-- WS-RR RR2.6: `applyCallDonation` preserves the object store's extended
 invariant — the no-op arm trivially, the donating arm through
 `donateSchedContext`. -/

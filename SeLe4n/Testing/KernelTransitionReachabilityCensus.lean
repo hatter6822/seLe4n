@@ -1149,6 +1149,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.handleYieldWithBudget
   , `SeLe4n.Kernel.lifecycleCleanupPipeline
   , `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken
+  -- WS-ZA ZA5.4 part 31: the registry fold is the service lookup's
+  -- specification; the kernel runs `lookupServiceByRecordedCode`, proven equal
+  -- to it wherever the table references are recorded
+  -- (`lookupServiceByRecordedCode_eq_lookupServiceByCap`).
+  , `SeLe4n.Kernel.lookupServiceByCap
   , `SeLe4n.Kernel.Architecture.tlbFlushByASID
   , `SeLe4n.Kernel.Architecture.tlbFlushByASIDWithShootdown
   , `SeLe4n.Kernel.notificationSignal
