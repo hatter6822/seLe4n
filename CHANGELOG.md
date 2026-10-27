@@ -1,3 +1,53 @@
+## v0.36.147 — WS-ZA ZA5.4 part 34: the thread finalise's admission carried across its own steps
+
+A thread's finalisation is admitted on the pre-state (`threadFinaliseAdmitted`)
+and then runs seven steps, each of which used to re-read its own guard on the
+state the steps before it left.  This part proves the carriage: on a state the
+finalisation admits, what each later step's guard reads holds where that step
+runs, so no step's guard can refuse after an earlier step has written.  That is
+checks-before-writes for the thread finalise.
+
+- **The carriage** (`finaliseThread_admissionCarried`,
+  `IPC/Invariant/FinaliseRetirable.lean`): the cancel's admission after the
+  notification unbind (`threadIpcCancelAdmitted_after_unbind`); the lender's
+  endability and every other waiter's plainness after the cancel; and the
+  context unbind's binding clause after the release.  `finaliseThread_quiesces`
+  now reads the admission on the pre-state alone; its three per-step
+  hypotheses are gone.
+- **The frames** (new module `IPC/Invariant/FinaliseAdmissionCarried.lean`):
+  `CancelFrame` keeps every plain waiter of the finalised thread but the thread
+  itself, and `LoanKept` keeps what its lender's guard reads.  The unbind and
+  every cancel arm keep both (`finaliseThreadUnbindNotification_frames`,
+  `finaliseThreadCancel_carries`), and the lender stays endable across them
+  (`lenderEndable_transport`).  The thread's own head-reply pop hands its
+  context back to it (`finaliseReplyCallerCancel_pop`), and the lender's pop
+  leaves the thread lending nothing (`finaliseThreadReturnLoan_unbinds`).  The
+  walk, the suspend and the release write no binding
+  (`finaliseReplyWaiter_plain_bindings`, `SchedLinkFrame.finaliseThreadSuspend`).
+- **The admission reads two facts more**: a loan's context code beside its
+  owner code (`replyWaitersAdmitted`), so the binding reads back `.donated`;
+  and that a head reply the thread waits on has no frame below
+  (`replyHeadPopsOwn`).  A head with a frame below was already refused by the
+  waiters' admission; the read makes that refusal the admission's.
+- **Dead re-checks removed**: the notification unbind reads no guard (its
+  clause is `notificationUnbindAdmitted`, read by the admission alone), and the
+  context deschedule reads only whether the holder is ready (the admission
+  reads the binding back and the idle check).  Their closure, frame and
+  projection lemmas take the admission.  The other steps keep their guards:
+  the reply finalisation's steps share them, and the two context unbinds'
+  compiled `@[csimp]` forms rest on theirs.  None refuses on an admitted
+  state.
+- **Retired**: `finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`, replaced
+  by `replyWaitersAdmitted_plain`, the admission's reading of the waiters.
+  `lenderEndable` now reads the lender's reply heading a stack.
+- **Split**: the zombie fuel's sufficiency, which plan row 34 also held, is now
+  row 35 (its own proof, a measure over what the passes can still reach,
+  without the acyclicity the registered sketch assumed: seL4 keeps no such
+  invariant).  The reset moves to row 36, and every citation is swept.
+- Closes the `docs/REGISTERED_DEBT.md` row "The finalise's admission is not
+  carried across its own steps"; the zombie-fuel row is re-targeted to part 35.
+  `docs/planning/UNTYPED_RESET_PLAN.md` row 34 is landed with its forks.
+
 ## v0.36.146 — WS-ZA ZA5.4 part 33: the service registry projected for non-interference (security fix)
 
 **Security fix.**  Projecting the service registry needed the analysis the
