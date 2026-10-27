@@ -1,3 +1,63 @@
+## v0.36.146 — WS-ZA ZA5.4 part 33: the service registry projected for non-interference (security fix)
+
+**Security fix.**  Projecting the service registry needed the analysis the
+debt row had left open, and it found three flows the kernel did not stop:
+
+- **High — revoke by any capability.**  The `.serviceRevoke` arm took the
+  service to remove from the caller's `x0` and ignored the capability's
+  target, so a thread holding a write capability to any object could revoke
+  any registration.  The revoke now removes the registration the invoked
+  endpoint records (`revokeServiceByRecordedCode`) and reads no message
+  register; a capability to an object that records none fails with
+  `objectNotFound` and removes nothing.
+- **Medium — query of an unreadable endpoint.**  The `.serviceQuery` arm ran
+  no flow gate, so a thread holding a capability to an endpoint above its
+  clearance read the registration that endpoint records.  The query is now
+  refused with `flowDenied` before the lookup unless the endpoint's label
+  flows to the caller's (`lookupServiceChecked`).
+- **Medium — registration written down.**  The register gate read a service
+  label (`LabelingContext.serviceLabelOf`) unrelated to the endpoint, so a
+  high caller could record a service on a low endpoint, writing the
+  low-visible `serviceCode`.  The gate now reads the endpoint's own label.
+
+Each needs a capability to the endpoint (or, for the revoke, to anything), so
+none is reachable without capability distribution the policy already allows.
+
+- **Labelling**: a registration is labelled by the endpoint that serves it
+  (`objectLabelOf`); `LabelingContext.serviceLabelOf` is deleted.
+  Register and revoke need the caller's label to flow to the endpoint's
+  (`registrationWriteAdmitted`, `serviceEndpointWriteAdmitted`), the query the
+  endpoint's to flow to the caller's (`serviceEndpointReadAdmitted`).  The
+  checked dispatcher runs the wrappers (`dispatchCapabilityOnlyChecked`:
+  `serviceQueryStaged`, `revokeServiceChecked`), so the enforcement inventory
+  is 15 policy-gated, 32 capability-only and 3 read-only.
+- **Projection**: `ObservableState.serviceRegistry` (`projectServiceRegistry`)
+  keeps each registration whose endpoint the observer may see
+  (`serviceObservable`); `Endpoint.serviceCode` stays projected with its
+  endpoint, which agrees with that filter.  `ObservableState` has 12 fields,
+  the per-core shared fragment 6 components; `sharedViewUnchanged` and its
+  state-frame constructors gain the registry.
+- **Non-interference**: `registerServiceChecked_NI`, `revokeServiceChecked_NI`,
+  `serviceQueryStaged_NI`, and `serviceQueryStaged_answer_lowEquivalent` for
+  the query's `x0` word.  `NonInterferenceStep` and `KernelOperation` gain
+  `revokeServiceChecked` and `serviceQueryChecked` (34 to 36; 32 with derived
+  per-core confinement), with per-core forms.  `API.lean`'s coverage docstring
+  merges the query's "lookup only" tier into the fully substantive one.
+- **Kept theorems for the fixed behaviour**:
+  `dispatchWithCapChecked_serviceQuery_refuses_unreadable_endpoint`,
+  `dispatchWithCapChecked_serviceRevoke_refuses_unwritable_endpoint`,
+  `dispatchWithCapChecked_serviceRevoke_removes_recorded_registration`,
+  `dispatchWithCapChecked_serviceRevoke_objectNotFound_of_unrecorded`,
+  `dispatchWithCapChecked_serviceRegister_refuses_unwritable_endpoint`.
+- **ABI**: `ServiceRevokeArgs` is empty; the Rust `service_revoke` takes the
+  endpoint capability alone (message length 0).
+- **Fixtures**: `tests/fixtures/smp_information_flow.expected` moves its
+  NI-coverage line (36 lifts, 32 derived) and its enforcement-boundary line
+  (15 + 32 + 3): both are printed from the enumerations this part extends.
+- Closes the `docs/REGISTERED_DEBT.md` row "The service registry is not
+  projected for non-interference"; `docs/planning/UNTYPED_RESET_PLAN.md` row 33
+  is landed with its forks.
+
 ## v0.36.145 — WS-ZA ZA5.4 part 32: the service graph removed
 
 The kernel kept a service dependency graph (`SystemState.services`) beside the

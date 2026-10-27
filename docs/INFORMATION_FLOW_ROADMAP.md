@@ -44,7 +44,7 @@ Initial information-flow statements should cover:
 1. **Cross-domain object confidentiality:** unauthorized capabilities cannot reveal protected object-state changes.
 2. **Scheduler-observable control flow:** runnable/waiting transitions do not expose restricted state across policy domains.
 3. **IPC channel confinement:** endpoint state changes preserve channel-participant authorization boundaries.
-4. **Service registry confinement:** registering, revoking and querying a service do not reveal a registration to an observer whose clearance does not cover it.  Not yet proven: the registry is not projected and the query's return word is uncovered ([`UNTYPED_RESET_PLAN.md`](planning/UNTYPED_RESET_PLAN.md) row 33).  The kernel has no service dependency graph since `v0.36.145`.
+4. **Service registry confinement:** registering, revoking and querying a service do not reveal a registration to an observer whose clearance does not cover it.  Proven since `v0.36.146` ([`UNTYPED_RESET_PLAN.md`](planning/UNTYPED_RESET_PLAN.md) row 33): a registration is labelled by its endpoint, the projected registry holds it only for an observer that may see that endpoint, the three arms are gated on the endpoint's label, and `registerServiceChecked_NI`, `revokeServiceChecked_NI`, `serviceQueryStaged_NI` and `serviceQueryStaged_answer_lowEquivalent` (the query's `x0` word) hold.  The kernel has no service dependency graph since `v0.36.145`.
 
 ## 4. Milestone trajectory
 

@@ -74,9 +74,9 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 | Untyped retype (carve) | `UntypedRetypeArgs` | 4 | newType + sizeBits, childId, dstCNode, dstSlot |
 | VSpace map | `VSpaceMapArgs` | 4 | asid, vaddr, frame (a frame-capability address — never a physical address, since v0.36.4), perms |
 | VSpace unmap | `VSpaceUnmapArgs` | 2 | asid, vaddr |
-| Service register | `ServiceRegisterArgs` | 2 | serviceId, dependencies |
-| Service revoke | `ServiceRevokeArgs` | 1 | serviceId |
-| Service query | `ServiceQueryArgs` | 1 | serviceId |
+| Service register | `ServiceRegisterArgs` | 5 | interfaceId, methodCount, maxMessageSize, maxResponseSize, requiresGrant |
+| Service revoke | `ServiceRevokeArgs` | 0 | none: the registration the invoked endpoint records is removed |
+| Service query | `ServiceQueryArgs` | 0 | none: the registration the invoked endpoint records is read |
 
 A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Ten encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
 
@@ -340,7 +340,7 @@ gap. `dispatchWithCap_layer2_decode_pure` proves decode depends only on `msgRegs
 `retypeFromUntyped_preserves_lowEquivalent` completes the last deferred NI proof.
 **Layer 7 (completed, K-G v0.16.7):** Lifecycle NI proof completion.
 `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` completes the deferred
-composed lifecycle NI proof. `NonInterferenceStep` extended to 34 constructors (now 35 with AG5-F `handleInterrupt`).
+composed lifecycle NI proof. `NonInterferenceStep` extended to 34 constructors (36 since v0.36.146, with the checked service revoke and query).
 `syscallNI_coverage_witness` confirms all 35 NI constructors are exhaustive. See
 [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 

@@ -394,12 +394,15 @@ a registry fold on a syscall path.  Since `v0.36.145` the kernel has no
 service dependency graph (`SystemState.services` and everything over it is
 deleted, plan row 32): service isolation comes from capabilities and dependency
 policy belongs to a user-level service manager, as in seL4, so new code must not
-reintroduce a kernel-side dependency table.  The registry itself is not yet
-projected for non-interference: `ObservableState` reads neither
-`st.serviceRegistry` nor an endpoint's `serviceCode`, and the service query's
-return word is unproven (plan row 33, `docs/REGISTERED_DEBT.md`), so new code
-that reads the registry on a syscall path must not assume a non-interference
-theorem covers it.  New code that writes either field must write the table entry in
+reintroduce a kernel-side dependency table.  Since `v0.36.146` the registry is
+projected for non-interference (plan row 33): a registration is labelled by
+its endpoint (`serviceObservable` reads `objectObservable` of the endpoint the
+registration names), and register, revoke and query are gated on that label
+(`registrationWriteAdmitted`, `serviceEndpointWriteAdmitted`,
+`serviceEndpointReadAdmitted`), so new code that reads or writes the registry
+on a syscall path must gate on the endpoint's label the same way, and must
+name the registration through an endpoint's `serviceCode`, never through a
+caller-supplied service id.  New code that writes either field must write the table entry in
 the same step, as the registry's two writers do; new code that writes the
 interrupt-handler table must set the flag on the notification it names, and
 every other step must leave both fields as it found them, which a
