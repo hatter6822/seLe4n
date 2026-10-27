@@ -1234,23 +1234,22 @@ theorem replyWaitersEndableFrom_plain {st : SystemState} {x : SeLe4n.ThreadId} {
 /-- **The admission's lender clause, with the finalisation's invariant, makes the
 lender endable**: the lent context heads the lender's reply
 (`lentContextHeadsLenderFrame`), so that reply is linked to no frame above, and
-the admission reads the lender's guard.  `x`'s binding is a loan whenever it
-names an owner (`hSc`). -/
+the admission reads the lender's guard.  The admission reads the loan's context
+code too, so `x`'s binding is a loan (`.donated`). -/
 theorem lenderEndable_of_admitted {s : SystemState} {x : SeLe4n.ThreadId} {tx : TCB}
     (h : finaliseStepInvariant s) (hX : s.getTcb? x = some tx)
-    (hSc : tx.scBindingOwnerCode ≠ 0 → tx.scBindingScCode ≠ 0)
     (hA : replyWaitersAdmitted s x tx = true) : lenderEndable s x tx := by
   intro o hO
   unfold replyWaitersAdmitted at hA
   rw [hO] at hA
-  simp only [Bool.and_eq_true] at hA
-  obtain ⟨⟨-, hM⟩, -⟩ := hA
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hA
+  obtain ⟨⟨⟨hSc, -⟩, hM⟩, -⟩ := hA
   cases hT : s.getTcb? ⟨o⟩ with
   | none => rw [hT] at hM; cases hM
   | some tl =>
     rw [hT] at hM
     cases hS : tx.scBindingScCode with
-    | zero => exact absurd hS (hSc (by rw [hO]; exact Nat.succ_ne_zero _))
+    | zero => exact absurd hS hSc
     | succ c =>
       have hBind : tx.schedContextBinding = .donated ⟨c⟩ ⟨o⟩ := by
         show SchedContextBinding.ofCodes tx.scBindingScCode tx.scBindingOwnerCode = _
@@ -1275,12 +1274,11 @@ admission's queue walk reads every waiter but the lender as plain
 theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted (s : SystemState)
     (x : SeLe4n.ThreadId) (tx : TCB) (h : finaliseStepInvariant s)
     (hX : s.getTcb? x = some tx)
-    (hSc : tx.scBindingOwnerCode ≠ 0 → tx.scBindingScCode ≠ 0)
     (hA : replyWaitersAdmitted s x tx = true) :
     (∀ v, ¬ ReplyViews.waiterOf
       (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x).replyViews v x) ∧
     serverKept s (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) x := by
-  have hL := lenderEndable_of_admitted h hX hSc hA
+  have hL := lenderEndable_of_admitted h hX hA
   unfold replyWaitersAdmitted at hA
   have hW := ((Bool.and_eq_true _ _).mp hA).2
   obtain ⟨l, hCh, hLen, -, hMem⟩ := h.2.2.2.1.1 x tx.replyView

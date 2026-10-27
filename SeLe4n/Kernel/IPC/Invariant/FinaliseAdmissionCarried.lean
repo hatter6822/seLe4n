@@ -388,6 +388,7 @@ theorem threadFinaliseAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId}
         tx.replyWaiterNextCode = 0 ∧ tx.replyWaiterPrevCode = 0 ∧ tx.replyObjectCode = 0) ∧
       tx.timeoutBudget = none ∧ replyWaitersAdmitted st ⟨x.val⟩ tx = true ∧
       threadIpcCancelAdmitted st ⟨x.val⟩ tx = true ∧
+      (tx.replyObjectCode = 0 ∨ replyHeadPopsOwn st tx = true) ∧
       (tx.boundNotificationCode == 0 ||
         ((match st.getNotification? ⟨tx.boundNotificationCode - 1⟩ with
           | some n => n.boundTCBCode == x.val + 1
@@ -402,9 +403,10 @@ theorem threadFinaliseAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId}
   rename_i tx hO
   dsimp only at hA
   simp only [Bool.and_eq_true] at hA
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hTid, hRes⟩, hIdle⟩, hRw⟩, hTB⟩, hW⟩, hC⟩, hN⟩, hS⟩ := hA
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hTid, hRes⟩, hIdle⟩, hRw⟩, hTB⟩, hW⟩, hC⟩, hP⟩, hN⟩, hS⟩ := hA
   refine ⟨tx, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, by simpa using hTid,
-    by simpa using hRes, by simpa using hIdle, ?_, by simpa using hTB, hW, hC, hN, ?_⟩
+    by simpa using hRes, by simpa using hIdle, ?_, by simpa using hTB, hW, hC,
+    by simpa only [Bool.or_eq_true, beq_iff_eq] using hP, hN, ?_⟩
   · simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at hRw
     rcases hRw with h | ⟨⟨h1, h2⟩, h3⟩
     · exact Or.inl h
@@ -428,7 +430,7 @@ theorem threadIpcCancelAdmitted_after_unbind {st : SystemState} {x : SeLe4n.ObjI
     (hInv : st.objects.invExt) (hA : threadFinaliseAdmitted st x = true) :
     ∀ t1, (finaliseThreadUnbindNotification st ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t1 →
       threadIpcCancelAdmitted (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩ t1 = true := by
-  obtain ⟨tx, hX, -, -, -, -, -, -, hC, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
+  obtain ⟨tx, hX, -, -, -, -, -, -, hC, -, hBnc, -⟩ := threadFinaliseAdmitted_parts hA
   intro t1 h1
   rw [finaliseThreadUnbindNotification_self hInv hX hBnc] at h1
   cases h1

@@ -955,16 +955,37 @@ own pop (`finaliseThreadReturnLoan`): `L` is endable as `x`'s waiter, and `x`'s
 own reply, when it waits on one, sits on no stack, so `x`'s cancel leaves `L`'s
 pop as it is read here.  Every other waiter of `x`, followed from `x`'s queue
 head for `x`'s count (`replyWaitersEndableFrom`), is endable and waits on a
-reply on no stack, so no waiter's end touches another's reads. -/
+reply on no stack, so no waiter's end touches another's reads.  A loan names a
+context as well as its lender (`t.scBindingScCode`), so the codes read back as
+`.donated` (`SchedContextBinding.ofCodes`), the binding the lender's pop takes
+back. -/
 @[inline] def replyWaitersAdmitted (st : SystemState) (x : SeLe4n.ThreadId) (t : TCB) : Bool :=
   (match t.scBindingOwnerCode with
    | 0 => true
    | o + 1 =>
+     t.scBindingScCode != 0 &&
      (t.replyObjectCode == 0 || replyCallerReplyUnstacked st t) &&
        match st.getTcb? ⟨o⟩ with
        | some tl => replyWaiterEndable st x ⟨o⟩ tl
        | none => false) &&
     replyWaitersEndableFrom st x t.scBindingOwnerCode t.replyWaitersCount t.replyWaitersHeadCode
+
+/-- **Whether the pop of the reply a thread `t` waits on hands it back a context
+of its own**: a reply heading a context's stack has no frame below it, so the
+pop resolves no outer caller (`replyStackOuterCaller?`) and binds the context
+back to `t` as its own, with no lender of its own to hand back.  A reply heading
+no stack pops nothing and answers `true`.  A head reply with a frame below is
+one `t` lent on from the caller below, and that caller waits on `t` with its
+reply on a stack, which `replyWaitersAdmitted` refuses: read here, on `t`'s own
+reply, the refusal is the admission's, before any write.  One read: the
+reply. -/
+@[inline] def replyHeadPopsOwn (st : SystemState) (t : TCB) : Bool :=
+  match st.getObject? ⟨t.replyObjectCode - 1⟩ with
+  | some (.reply r) =>
+    match r.next with
+    | some (.head _) => r.prev.isNone
+    | _ => true
+  | _ => true
 
 /-- **Whether a final delete may finalise the thread at `x`**, read on the
 pre-state before any write.  The thread is stored under its own id and is no
@@ -975,7 +996,7 @@ a core as its FP/SIMD owner or its resident), blocked on a notification, or
 blocked receiving, sending or calling on an endpoint, wherever it waits in that
 queue, or blocked on a reply, whose cancel removes the reply as the reply's own
 finalisation does (seL4's `reply_remove_tcb`; a head reply popped, so a thread
-that lent its context gets it back); a thread not blocked on a reply is linked
+that lent its context gets it back, as its own: `replyHeadPopsOwn`); a thread not blocked on a reply is linked
 into no reply-waiter queue and holds no reply link; it holds no timeout budget;
 a context it holds on loan goes back to its lender by the lender's own pop, and
 every other caller waiting on it for a reply is ended as `reply_remove` ends it
@@ -997,7 +1018,7 @@ the retire then refuses the thread. -/
     (decide (4 ≤ t.ipcStateCode) ||
       t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 && t.replyObjectCode == 0) &&
     t.timeoutBudget.isNone && replyWaitersAdmitted st tid t &&
-    threadIpcCancelAdmitted st tid t &&
+    threadIpcCancelAdmitted st tid t && (t.replyObjectCode == 0 || replyHeadPopsOwn st t) &&
     (t.boundNotificationCode == 0 ||
       ((match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
         | some n => n.boundTCBCode == x.val + 1

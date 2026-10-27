@@ -261,7 +261,7 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   rename_i tx0 hO
   dsimp only at hA0
   simp only [Bool.and_eq_true] at hA0
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hTid, -⟩, hIdle⟩, -⟩, -⟩, -⟩, -⟩, hBnc⟩, -⟩ := hA0
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hTid, -⟩, hIdle⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hBnc⟩, -⟩ := hA0
   simp only [beq_iff_eq] at hTid
   simp only [Bool.not_eq_true'] at hIdle
   have hX0 : st.getTcb? ⟨x.val⟩ = some tx0 := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
@@ -278,9 +278,9 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     s1 ⟨x.val⟩ C1
   generalize finaliseThreadCancel s1 ⟨x.val⟩ = s2 at hX2 C2 hWait hBind
   -- The loan return and the walk.
-  obtain ⟨hW2, hSc2⟩ := hWait t2 hX2
+  obtain ⟨hW2, -⟩ := hWait t2 hX2
   obtain ⟨hNoW4, hK4⟩ :=
-    finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted s2 ⟨x.val⟩ t2 C2.1 hX2 hSc2 hW2
+    finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted s2 ⟨x.val⟩ t2 C2.1 hX2 hW2
   obtain ⟨t4, hX4, key4, -⟩ := hK4 t2 hX2
   have C4 := finaliseThreadEndWaiters_closed _ (finaliseCarried.replyStep st ⟨x.val⟩)
     (finaliseCarried.suspendStep st ⟨x.val⟩) _ ⟨x.val⟩
