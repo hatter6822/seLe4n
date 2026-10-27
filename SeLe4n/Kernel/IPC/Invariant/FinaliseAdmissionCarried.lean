@@ -1175,11 +1175,29 @@ theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) {f : KernelObject →
 
 end replyContextKept
 
+/-- **A step keeping every scheduling context and every reply `K` admits.** -/
+def replyContextKeptBy (K : SeLe4n.ObjId → Reply → Prop) (s s' : SystemState) : Prop :=
+  ∀ (k : SeLe4n.ObjId) (o : KernelObject), s.objects[k]? = some o →
+    ((∃ r, o = .reply r ∧ K k r) ∨ ∃ sc, o = .schedContext sc) → s'.objects[k]? = some o
+
+theorem replyContextKeptBy.trans {K : SeLe4n.ObjId → Reply → Prop} {a b c : SystemState}
+    (h₁ : replyContextKeptBy K a b) (h₂ : replyContextKeptBy K b c) : replyContextKeptBy K a c :=
+  fun k o h hk => h₂ k o (h₁ k o h hk) hk
+
+/-- A step keeping every reply keeps every reply `K` admits. -/
+theorem replyContextKept.by {s s' : SystemState} (h : replyContextKept s s')
+    (K : SeLe4n.ObjId → Reply → Prop) : replyContextKeptBy K s s' := by
+  intro k o ho hk
+  refine h k o ho ?_
+  rcases hk with ⟨r, e, -⟩ | e
+  · exact Or.inl ⟨r, e⟩
+  · exact Or.inr e
+
 /-- **A step writing none of the scheduling links and keeping every reply and
 context keeps the lender's reads.** -/
-theorem LoanKept.of_schedLinkFrame {s s' : SystemState} (F : SchedLinkFrame s s')
-    (hk : replyContextKept s s') (K : SeLe4n.ObjId → Reply → Prop) : LoanKept s s' K := by
-  refine ⟨fun v t ht => ?_, fun c sc hc => ?_, fun k r hr _ => ?_⟩
+theorem LoanKept.of_schedLinkFrame {s s' : SystemState} {K : SeLe4n.ObjId → Reply → Prop}
+    (F : SchedLinkFrame s s') (hk : replyContextKeptBy K s s') : LoanKept s s' K := by
+  refine ⟨fun v t ht => ?_, fun c sc hc => ?_, fun k r hr hK => ?_⟩
   · have e := F.binding v.toObjId
     rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp ht] at e
     cases h' : s'.objects[v.toObjId]? with
@@ -1195,7 +1213,7 @@ theorem LoanKept.of_schedLinkFrame {s s' : SystemState} (F : SchedLinkFrame s s'
   · rw [SystemState.getSchedContext?_eq_some_iff] at hc ⊢
     exact hk _ _ hc (Or.inr ⟨sc, rfl⟩)
   · unfold SystemState.getObject? at hr ⊢
-    exact hk _ _ hr (Or.inl ⟨r, rfl⟩)
+    exact hk _ _ hr (Or.inl ⟨r, rfl, hK⟩)
 
 /-- **A notification-queue unlink keeps both frames**: it rewrites
 notifications and the threads' notification links alone. -/
@@ -1242,7 +1260,7 @@ theorem notificationCancel_frames (st : SystemState) (x : SeLe4n.ThreadId) (tcb 
   obtain ⟨C1, k1⟩ := ntfnUnlinkReach_frames hR x
   unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging at F ⊢
   refine ⟨C1.trans (CancelFrame.updateTcb _ x x _ hR.1 (fun h => absurd rfl h)),
-    LoanKept.of_schedLinkFrame F (k1.trans (replyContextKept.updateTcb _ x _ hR.1)) K⟩
+    LoanKept.of_schedLinkFrame F ((k1.trans (replyContextKept.updateTcb _ x _ hR.1)).by K)⟩
 
 /-- An endpoint rewrite keeps every thread, reply and scheduling context. -/
 theorem keepsThreadReplyContext.endpoint {f : KernelObject → KernelObject}
@@ -1380,6 +1398,359 @@ theorem storeEndpointBlockedCancelled_frames (st : SystemState) (e : SeLe4n.ObjI
   have F := SchedLinkFrame.storeEndpointBlockedCancelled st e q x ep tcb hInv
   unfold storeEndpointBlockedCancelled at F ⊢
   exact ⟨C.trans (CancelFrame.updateTcb _ x x _ I (fun h => absurd rfl h)),
-    LoanKept.of_schedLinkFrame F (k.trans (replyContextKept.updateTcb _ x _ I)) K⟩
+    LoanKept.of_schedLinkFrame F ((k.trans (replyContextKept.updateTcb _ x _ I)).by K)⟩
+
+-- ============================================================================
+-- §9  What the finalisation keeps of the thread's own binding
+-- ============================================================================
+
+theorem bindingLinksAgree.trans {a b c : SystemState} (h₁ : bindingLinksAgree a b)
+    (h₂ : bindingLinksAgree b c) : bindingLinksAgree a c := fun o => (h₂ o).trans (h₁ o)
+
+theorem bindingLinksAgree.of_objects_eq {a b : SystemState} (h : b.objects = a.objects) :
+    bindingLinksAgree a b := fun o => by rw [h]
+
+/-- A thread read across a step agreeing on the bindings has the same binding
+codes there, both ways. -/
+theorem bindingLinksAgree.getTcb?_back {s s' : SystemState} (h : bindingLinksAgree s s')
+    {v : SeLe4n.ThreadId} {t' : TCB} (ht : s'.getTcb? v = some t') :
+    ∃ t, s.getTcb? v = some t ∧ t'.scBindingScCode = t.scBindingScCode ∧
+      t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+  have e := h v.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp ht] at e
+  cases h0 : s.objects[v.toObjId]? with
+  | none => rw [h0] at e; cases e
+  | some o =>
+    rw [h0] at e
+    cases o with
+    | tcb t =>
+      simp only [schedBindingLinksOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at e
+      exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr h0, e.1, e.2⟩
+    | schedContext _ => cases e
+    | _ => cases e
+
+theorem bindingLinksAgree.getTcb?_fwd {s s' : SystemState} (h : bindingLinksAgree s s')
+    {v : SeLe4n.ThreadId} {t : TCB} (ht : s.getTcb? v = some t) :
+    ∃ t', s'.getTcb? v = some t' ∧ t'.scBindingScCode = t.scBindingScCode ∧
+      t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+  have e := h v.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp ht] at e
+  cases h0 : s'.objects[v.toObjId]? with
+  | none => rw [h0] at e; cases e
+  | some o =>
+    rw [h0] at e
+    cases o with
+    | tcb t' =>
+      simp only [schedBindingLinksOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at e
+      exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h0, e.1, e.2⟩
+    | schedContext _ => cases e
+    | _ => cases e
+
+/-- A context read after a step agreeing on the bindings is one before it,
+bound to the same thread, both ways. -/
+theorem bindingLinksAgree.getSchedContext?_fwd {s s' : SystemState} (h : bindingLinksAgree s s')
+    {c : SeLe4n.SchedContextId} {sc : SchedContext} (hc : s.getSchedContext? c = some sc) :
+    ∃ sc', s'.getSchedContext? c = some sc' ∧ sc'.boundThreadCode = sc.boundThreadCode := by
+  have e := h c.toObjId
+  rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp hc] at e
+  cases h0 : s'.objects[c.toObjId]? with
+  | none => rw [h0] at e; cases e
+  | some o =>
+    rw [h0] at e
+    cases o with
+    | schedContext sc' =>
+      simp only [schedBindingLinksOf, Option.some.injEq, Sum.inr.injEq] at e
+      exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr h0, e⟩
+    | tcb _ => cases e
+    | _ => cases e
+
+/-- **The thread `x`'s context is bound back to it**: a nonzero context code
+names a context whose bound-thread code is `x`'s. -/
+def bindingBack (s : SystemState) (x : SeLe4n.ThreadId) : Prop :=
+  ∀ tx, s.getTcb? x = some tx → tx.scBindingScCode ≠ 0 →
+    ∃ sc, s.getSchedContext? ⟨tx.scBindingScCode - 1⟩ = some sc ∧ sc.boundThreadCode = x.val + 1
+
+/-- A step agreeing on the bindings keeps a context bound back. -/
+theorem bindingBack.transport {s s' : SystemState} {x : SeLe4n.ThreadId}
+    (h : bindingLinksAgree s s') (hB : bindingBack s x) : bindingBack s' x := by
+  intro tx' hX' hc
+  obtain ⟨tx, hX, e1, -⟩ := h.getTcb?_back hX'
+  obtain ⟨sc, hS, hb⟩ := hB tx hX (by rw [← e1]; exact hc)
+  obtain ⟨sc', hS', hb'⟩ := h.getSchedContext?_fwd hS
+  exact ⟨sc', by rw [e1]; exact hS', hb'.trans hb⟩
+
+/-- **What the donation return writes of the two threads**: the thread the
+context is taken from gets no binding, and the thread it is handed to the binding
+the return names (`donationReturnBinding`). -/
+theorem returnDonatedSchedContext_codes {st st' : SystemState} {hd c : SeLe4n.ThreadId}
+    {s : SeLe4n.SchedContextId} {n : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st hd s c n = .ok st') (hne : c ≠ hd) :
+    (∃ th, st'.objects[hd.toObjId]? = some (.tcb th) ∧ th.scBindingScCode = 0 ∧
+      th.scBindingOwnerCode = 0) ∧
+    (∃ tc, st'.objects[c.toObjId]? = some (.tcb tc) ∧
+      tc.scBindingScCode = (donationReturnBinding s n).scCode ∧
+      tc.scBindingOwnerCode = (donationReturnBinding s n).ownerCode) := by
+  obtain ⟨_, _, clientTcb, serverTcb, s1, s2, s3, s4, _, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' hd s c n h
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  rw [hEq]
+  exact ⟨⟨_, storeObject_objects_eq' s3 hd.toObjId _ _ hInv3 hS4, rfl, rfl⟩,
+    ⟨_, (storeObject_objects_ne s3 s4 hd.toObjId c.toObjId _
+      (SeLe4n.Kernel.threadId_toObjId_ne hne.symm) hInv3 hS4).trans
+      (storeObject_objects_eq' s2 c.toObjId _ _ hInv2 hS3), rfl, rfl⟩⟩
+
+/-- **An admitted head reply's cancel is a committed pop, then writes no
+binding**: the cancel of `c` (its TCB `t`), whose reply heads the stack of `s`,
+admitted by its guard, runs the donation return of `s` from the thread `hd`
+holding it to `c`, resolving the outer caller `n`, and every write after it —
+the splice, restore, consume and unlink, the migration, the holder's deschedule
+and the revert — keeps every binding (`bindingLinksAgree`). -/
+theorem finaliseReplyCallerCancel_pop (st : SystemState) (hInv : st.objects.invExt)
+    {c : SeLe4n.ThreadId} {t : TCB} {r : Reply} {s : SeLe4n.SchedContextId}
+    (hT : st.getTcb? c = some t)
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r)) (hN : r.next = some (.head s))
+    (hE : replyCallerCancelAdmitted st c t = true) :
+    ∃ (hd : SeLe4n.ThreadId) (n : Option SeLe4n.ThreadId) (P : SystemState),
+      replyStackOuterCaller? st s = .ok n ∧ c ≠ hd ∧
+      replyCallerServerCode t = hd.val + 1 ∧
+      returnDonatedSchedContext st hd s c n = .ok P ∧
+      bindingLinksAgree P (finaliseReplyCallerCancel st c t) := by
+  unfold replyCallerCancelAdmitted at hE
+  rw [hR] at hE
+  dsimp only at hE
+  have hG := hE
+  simp only [Bool.and_eq_true, beq_iff_eq] at hE
+  obtain ⟨⟨hC, hF⟩, hH⟩ := hE
+  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF
+  rcases replyCallerFinalisable_cases hR hF with ⟨hNH, -⟩ |
+      ⟨s', sc, hd, ht, hN', hSc, -, hBt, hHt, hBind, hCm, hDon⟩
+  · rw [hN] at hNH; cases hNH
+  rw [hN] at hN'; cases hN'
+  have hSrv : replyCallerServerCode t = hd.val + 1 := by
+    unfold replyHeadHeldByServer at hH
+    rw [hN] at hH
+    simp only [hSc, beq_iff_eq] at hH
+    rw [← hH]
+    exact (SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp hBt
+  obtain ⟨P, hOk⟩ := returnDonatedSchedContextResolved_ok_of_commits hInv hCm
+  obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
+  have hne : c ≠ hd := returnDonatedSchedContext_ok_recipient_ne_server st P hd s c n ht hHt
+    (by rw [hBind]; exact fun e => by cases e) hPop
+  have hRet : Lifecycle.Suspend.returnDonationToCancelledCaller st c t = P := by
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+    rw [hDon, hT]
+    dsimp only
+    rw [hOk]
+  have hCancel : finaliseReplyCallerCancel st c t =
+      finaliseReplyRevert (cancelIpcBlockingReclaimed c t st) t.blockingServer? := by
+    unfold finaliseReplyCallerCancel finaliseReplyCancel
+    rw [hR]
+    dsimp only
+    rw [if_pos hG, hN]
+    rfl
+  refine ⟨hd, n, P, hRes, hne, hSrv, hPop, ?_⟩
+  rw [hCancel]
+  have hIP : P.objects.invExt :=
+    returnDonatedSchedContext_preserves_objects_invExt st P hd s c hInv n hPop
+  have F := SchedLinkFrame.replyCancelTail P c t hIP
+  rw [← hRet, ← cancelIpcBlocking_replyArm_unfold st c t hB] at F
+  have hInvC : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt :=
+    (FinaliseFrameAny.replyCancel st c t hInv hB).invExt
+  have FD : SchedLinkFrame (cancelIpcBlockingMigrated c t st) (cancelIpcBlockingReclaimed c t st) :=
+    SchedLinkFrame.of_agreeOffRunLinks
+      (descheduleUnboundHolder_objectsAgreeOffRunLinks st (cancelIpcBlockingMigrated c t st) c t)
+      (descheduleUnboundHolder_replenishQueueOnCore st (cancelIpcBlockingMigrated c t st) c t)
+  have FR := SchedLinkFrame.finaliseReplyRevert _ t.blockingServer?
+    (cancelIpcBlockingReclaimed_objects_invExt c t st hInvC)
+  rw [hRet] at F
+  exact ((bindingLinksAgree.trans F.binding (bindingLinksAgree.of_objects_eq
+    (cancelIpcBlockingMigrated_objects c t st))).trans FD.binding).trans FR.binding
+
+/-- **An admitted cancel of a reply heading no stack**: the caller is blocked on
+the reply, hands nothing back, and the cancel is the splice, restore, consume
+and unlink on the state itself, then the revert. -/
+theorem finaliseReplyCallerCancel_noHead (st : SystemState) {c : SeLe4n.ThreadId} {t : TCB}
+    {r : Reply} (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    (∃ ep rt, t.ipcState = .blockedOnReply ep rt) ∧ r.callerCode = c.val + 1 ∧
+      t.replyObject = some ⟨t.replyObjectCode - 1⟩ ∧
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = none ∧
+      finaliseReplyCallerCancel st c t = finaliseReplyRevert
+        (SystemState.unlinkReplyWaiterOpt
+          (Lifecycle.Suspend.consumeReplyLink
+            (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+          c t.blockingServer?) t.blockingServer? := by
+  unfold replyCallerCancelAdmitted at hE
+  rw [hR] at hE
+  dsimp only at hE
+  have hG := hE
+  simp only [Bool.and_eq_true, beq_iff_eq] at hE
+  obtain ⟨⟨hC, hF⟩, -⟩ := hE
+  obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  have hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
+    rcases replyCallerFinalisable_cases hR hF with ⟨-, hD⟩ | ⟨s, -, -, -, hN, -⟩
+    · exact hD
+    · rw [hN] at hNH; cases hNH
+  refine ⟨⟨ep, rt, hB⟩, hC, hRO, hD, ?_⟩
+  unfold finaliseReplyCallerCancel finaliseReplyCancel
+  rw [hR]
+  dsimp only
+  rw [if_pos hG, hNH]
+  simp only [Bool.false_eq_true, if_false]
+  rw [cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+
+/-- **The cancel of a reply heading no stack writes no binding.** -/
+theorem finaliseReplyCallerCancel_noHead_schedLinkFrame (st : SystemState)
+    (hInv : st.objects.invExt) {c : SeLe4n.ThreadId} {t : TCB} {r : Reply}
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    SchedLinkFrame st (finaliseReplyCallerCancel st c t) := by
+  obtain ⟨⟨ep, rt, hB⟩, -, -, hD, hEq⟩ := finaliseReplyCallerCancel_noHead st hR hNH hE
+  rw [hEq]
+  have F := SchedLinkFrame.replyCancelTail st c t hInv
+  have hI : (SystemState.unlinkReplyWaiterOpt
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+      c t.blockingServer?).objects.invExt := by
+    rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+    exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
+  exact F.trans (SchedLinkFrame.finaliseReplyRevert _ _ hI)
+
+/-- **The replies a cancel of `c`'s reply keeps for a lender**: every reply but
+`c`'s own (at `rid`) and a frame linking up to it. -/
+def offCallerReply (rid : SeLe4n.ReplyId) (k : SeLe4n.ObjId) (r : Reply) : Prop :=
+  k ≠ rid.toObjId ∧ r.next ≠ some (.frame rid)
+
+/-- **The restore, consume, unlink and revert of a cancelled caller `c` keep every
+context and every reply but `c`'s own**: they write threads, and the consume
+`c`'s reply. -/
+theorem replyCancelRest_kept (s0 : SystemState) (hI0 : s0.objects.invExt) (c : SeLe4n.ThreadId)
+    (t t0 : TCB) {rid : SeLe4n.ReplyId} {r0 : Reply} (hRO : t.replyObject = some rid)
+    (hT0 : s0.getTcb? c = some t0) (hR0 : s0.objects[rid.toObjId]? = some (.reply r0))
+    (hInvC : (SystemState.unlinkReplyWaiterOpt
+      (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s0 c) c t)
+      c t.blockingServer?).objects.invExt) :
+    replyContextKeptBy (offCallerReply rid) s0 (finaliseReplyRevert
+      (SystemState.unlinkReplyWaiterOpt
+        (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s0 c) c t)
+        c t.blockingServer?) t.blockingServer?) := by
+  have hNT : ∀ (k : SeLe4n.ObjId) (o : KernelObject), ((∃ r, o = .reply r ∧ offCallerReply rid k r) ∨
+      ∃ sc, o = .schedContext sc) → ∀ tt, o ≠ .tcb tt := fun k o h tt e => by
+    subst e; rcases h with ⟨_, e, -⟩ | ⟨_, e⟩ <;> cases e
+  have k1 : replyContextKeptBy (offCallerReply rid) s0
+      (Lifecycle.Suspend.restoreToReadyCancelled s0 c) := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact (replyContextKept.updateTcb s0 c _ hI0).by _
+  have hI1 : (Lifecycle.Suspend.restoreToReadyCancelled s0 c).objects.invExt :=
+    Lifecycle.Suspend.restoreToReadyStaging_invExt s0 c _ hI0
+  have hR1 : (Lifecycle.Suspend.restoreToReadyCancelled s0 c).objects[rid.toObjId]? =
+      some (.reply r0) := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact updateTcb_keeps_nonTcb s0 c _ hI0 hR0 (fun _ e => by cases e)
+  have hC1 : ∃ tw, (Lifecycle.Suspend.restoreToReadyCancelled s0 c).objects[c.toObjId]? =
+      some (.tcb tw) := by
+    have h : ∃ tw, (Lifecycle.Suspend.restoreToReadyCancelled s0 c).getTcb? c = some tw := by
+      unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+      rw [SystemState.updateTcb_getTcb?_self s0 c _ hI0, hT0]; exact ⟨_, rfl⟩
+    obtain ⟨tw, h⟩ := h
+    exact ⟨tw, (SystemState.getTcb?_eq_some_iff _ _ _).mp h⟩
+  obtain ⟨tw, hC1⟩ := hC1
+  have k2 : replyContextKeptBy (offCallerReply rid) (Lifecycle.Suspend.restoreToReadyCancelled s0 c)
+      (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s0 c) c t) := by
+    intro k o ho hk
+    rw [Lifecycle.Suspend.consumeReplyLink_some _ c t rid hRO]
+    have hkR : k ≠ rid.toObjId := by
+      intro e; subst e
+      rw [hR1] at ho; cases ho
+      rcases hk with ⟨_, e, hK⟩ | ⟨_, e⟩
+      · cases e; exact hK.1 rfl
+      · cases e
+    have hkC : k ≠ c.toObjId := by
+      intro e; subst e
+      rw [hC1] at ho; cases ho
+      exact hNT _ _ hk tw rfl
+    rw [consumeCallerReply_objects_frame _ _ c rid hI1 (SystemState.consumeCallerReply_eq_link _ c rid)
+      k hkR hkC]
+    exact ho
+  have k3 : replyContextKeptBy (offCallerReply rid)
+      (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s0 c) c t)
+      (SystemState.unlinkReplyWaiterOpt
+        (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s0 c) c t)
+        c t.blockingServer?) := fun k o ho hk =>
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ c _).get_of_not_tcb
+      (hNT k o hk) ho
+  have k4 : ∀ (s : SystemState) (sv : Option SeLe4n.ThreadId), s.objects.invExt →
+      replyContextKeptBy (offCallerReply rid) s (finaliseReplyRevert s sv) := by
+    intro s sv hs k o ho hk
+    cases sv with
+    | none => exact ho
+    | some y =>
+      rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise
+          s.objectIndex.length s y Concurrency.bootCoreId hs k with e | ⟨pre, -, hp, -⟩
+      · show (PriorityInheritance.propagatePipChainCrossCore s y Concurrency.bootCoreId).1.objects[k]? = _
+        rw [show PriorityInheritance.propagatePipChainCrossCore s y Concurrency.bootCoreId =
+          PriorityInheritance.propagatePipChainCrossCore s y Concurrency.bootCoreId
+            s.objectIndex.length from rfl, e]
+        exact ho
+      · rw [ho] at hp; cases hp; exact absurd rfl (hNT k _ hk pre)
+  exact ((k1.trans k2).trans k3).trans (k4 _ _ hInvC)
+
+/-- **The cancel of a reply on no stack keeps the lender's reads**: it writes no
+binding (`finaliseReplyCallerCancel_noHead_schedLinkFrame`), and its writes to
+replies are the caller's own reply and, at a top cut from the frame below, that
+frame, which links up to it (`offCallerReply`). -/
+theorem finaliseReplyCallerCancel_unstacked_loanKept (st : SystemState) (hInv : st.objects.invExt)
+    {c : SeLe4n.ThreadId} {t : TCB} {r : Reply} (hT : st.getTcb? c = some t)
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r)) (hN : r.next = none)
+    (hE : replyCallerCancelAdmitted st c t = true) :
+    LoanKept st (finaliseReplyCallerCancel st c t) (offCallerReply ⟨t.replyObjectCode - 1⟩) := by
+  have hNH : replyStackLinkIsHead r.next = false := by rw [hN]; rfl
+  have F := finaliseReplyCallerCancel_noHead_schedLinkFrame st hInv hR hNH hE
+  refine LoanKept.of_schedLinkFrame F ?_
+  obtain ⟨⟨ep, rt, hB⟩, -, hRO, hD, hEq⟩ := finaliseReplyCallerCancel_noHead st hR hNH hE
+  rw [hEq]
+  let rid : SeLe4n.ReplyId := ⟨t.replyObjectCode - 1⟩
+  have hRo : st.objects[rid.toObjId]? = some (.reply r) := hR
+  have hGR : st.getReply? rid = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hRo
+  -- The splice: the identity, or the cut from the frame below.
+  have K0 : replyContextKeptBy (offCallerReply rid) st (spliceThreadReplyFrameOut st t) ∧
+      ∃ r0, (spliceThreadReplyFrameOut st t).objects[rid.toObjId]? = some (.reply r0) := by
+    rcases spliceThreadReplyFrameOut_cases st t with h | ⟨rid', hr', h⟩
+    · rw [h]; exact ⟨fun _ _ h _ => h, r, hRo⟩
+    rw [hRO] at hr'; cases hr'
+    rcases spliceReplyFrameOut_cases h with h' | ⟨r1, above, _, hR1, hN1, _, _, _⟩ |
+        ⟨r1, below, b, hR1, hN1, _, hB', hBn, hS⟩
+    · rw [h']; exact ⟨fun _ _ h _ => h, r, hRo⟩
+    · rw [hGR] at hR1; cases hR1; rw [hN] at hN1; cases hN1
+    rw [hGR] at hR1; cases hR1
+    obtain ⟨-, hRv, hFrame⟩ := severReplyFrameBelowStores_values hInv hGR hN1 hB' hBn hS
+    have hBO := (SystemState.getReply?_eq_some_iff _ _ _).mp hB'
+    refine ⟨fun k o ho hk => ?_, _, (SystemState.getReply?_eq_some_iff _ _ _).mp hRv⟩
+    have hkB : k ≠ below.toObjId := by
+      intro e; subst e
+      rw [hBO] at ho; cases ho
+      rcases hk with ⟨_, e, hK⟩ | ⟨_, e⟩
+      · cases e; exact hK.2 hBn
+      · cases e
+    have hkR : k ≠ rid.toObjId := by
+      intro e; subst e
+      rw [hRo] at ho; cases ho
+      rcases hk with ⟨_, e, hK⟩ | ⟨_, e⟩
+      · cases e; exact hK.1 rfl
+      · cases e
+    rw [hFrame k hkB hkR]; exact ho
+  obtain ⟨K0, r0, hR0⟩ := K0
+  have hI0 := spliceThreadReplyFrameOut_preserves_objects_invExt st t hInv
+  have hT0 : (spliceThreadReplyFrameOut st t).getTcb? c = some t := by
+    rw [spliceThreadReplyFrameOut_getTcb?_eq st t hInv]; exact hT
+  have hInvC : (SystemState.unlinkReplyWaiterOpt
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+      c t.blockingServer?).objects.invExt := by
+    rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+    exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
+  exact K0.trans (replyCancelRest_kept _ hI0 c t t hRO hT0 hR0 hInvC)
 
 end SeLe4n.Kernel
