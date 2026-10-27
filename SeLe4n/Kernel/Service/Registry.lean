@@ -24,6 +24,7 @@ returns and machine-checked post-conditions.
 | `lookupServiceByCap` | — (read-only; the specification) | `objectNotFound` |
 | `lookupServiceByRecordedCode` | — (read-only; the O(1) form the kernel runs) | `objectNotFound` |
 | `revokeService` | `serviceRegistry`, its endpoint's `serviceCode` | `objectNotFound` |
+| `revokeServiceByRecordedCode` | as `revokeService` (the form the kernel runs) | `objectNotFound` |
 -/
 
 namespace SeLe4n.Kernel
@@ -166,6 +167,47 @@ def revokeService (sid : ServiceId) : Kernel Unit :=
         serviceRegistry := st.serviceRegistry.erase sid }
       .ok ((), clearEndpointServiceCode st' reg.endpointCap sid)
 
+
+/-- **The revoke the kernel runs: the registration recorded on the invoked
+endpoint.**  The caller names no service: the authority to remove a
+registration is a capability to the endpoint it names, the same capability the
+query reads it back through (`lookupServiceByRecordedCode`), and the
+registration is the one that endpoint records (`Endpoint.serviceCode`, `sid +
+1`).  An endpoint recording none is `objectNotFound`, as is any other object.
+
+`revokeService` stays the primitive this runs: where the table references are
+recorded the registration it erases names `epId`
+(`SystemState.tableReferencesRecorded.serviceCodes`). -/
+def revokeServiceByRecordedCode (epId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st =>
+    match st.getObject? epId with
+    | some (.endpoint ep) =>
+      match ep.serviceCode with
+      | 0 => .error .objectNotFound
+      | n + 1 => revokeService ⟨n⟩ st
+    | _ => .error .objectNotFound
+
+/-- A successful revoke through the endpoint is `revokeService` of the
+registration the endpoint records. -/
+theorem revokeServiceByRecordedCode_ok {epId : SeLe4n.ObjId} {st : SystemState}
+    {r : Unit × SystemState} (h : revokeServiceByRecordedCode epId st = .ok r) :
+    ∃ ep n, st.objects[epId]? = some (.endpoint ep) ∧ ep.serviceCode = n + 1 ∧
+      revokeService ⟨n⟩ st = .ok r := by
+  unfold revokeServiceByRecordedCode SystemState.getObject? at h
+  split at h
+  · rename_i ep hEp
+    split at h
+    · cases h
+    · rename_i n hC
+      exact ⟨ep, n, hEp, hC, h⟩
+  · cases h
+
+/-- ...so it is a successful `revokeService` of some registration. -/
+theorem revokeServiceByRecordedCode_revokeService {epId : SeLe4n.ObjId} {st st' : SystemState}
+    (h : revokeServiceByRecordedCode epId st = .ok ((), st')) :
+    ∃ sid, revokeService sid st = .ok ((), st') := by
+  obtain ⟨_, n, _, _, h⟩ := revokeServiceByRecordedCode_ok h
+  exact ⟨⟨n⟩, h⟩
 
 -- ============================================================================
 -- Theorems: error conditions, success post-conditions, frame lemmas

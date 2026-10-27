@@ -158,19 +158,16 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     | _ => .error .invalidCapability
   | .serviceRevoke =>
     match cap.target with
-    | .object _ =>
-      match decodeServiceRevokeArgsBy (msgRegOfFile layout regs) with
-      | .error e => .error e
-      | .ok args => revokeService args.targetService st
+    | .object epId => revokeServiceChecked ctx tid epId st
     | _ => .error .invalidCapability
   | .serviceQuery =>
     match cap.target with
     | .object epId =>
-        match lookupServiceByRecordedCode epId st with
-        | .ok (reg, st') =>
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
-        | .error e => .error e
+      match lookupServiceChecked ctx tid epId st with
+      | .ok (reg, st') =>
+          .ok ((), Architecture.writeReturnFrameToTcb st' tid
+            (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
+      | .error e => .error e
     | _ => .error .invalidCapability
   | .schedContextBind =>
     match cap.target with
@@ -400,7 +397,6 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hRetype := decodeUntypedRetypeArgs_eq_by layout regs decoded hRegs
   have hMap := decodeVSpaceMapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
   have hUnmap := decodeVSpaceUnmapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
-  have hRevoke := decodeServiceRevokeArgs_eq_by layout regs decoded hRegs
   have hScBind := decodeSchedContextBindArgs_eq_by layout regs decoded hRegs
   have hNtfn := decodeTcbBindNotificationArgs_eq_by layout regs decoded hRegs
   have hPrio := decodeSetPriorityArgs_eq_by layout regs decoded hRegs
@@ -415,9 +411,10 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   cases sid <;> simp only [routedInvocation, Bool.false_eq_true] at h <;>
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hMint,
-      hCopy, hMove, hDelete, hRetype, hMap, hUnmap, hRevoke, hScBind, hNtfn, hPrio, hMcp,
-      hIpcBuf, hAff, hFault, hSpace, hPt, decodeVSpaceUnifyInstructionArgs]
-  all_goals rfl
+      hCopy, hMove, hDelete, hRetype, hMap, hUnmap, hScBind, hNtfn, hPrio, hMcp,
+      hIpcBuf, hAff, hFault, hSpace, hPt, decodeVSpaceUnifyInstructionArgs,
+      capabilityOnlyFlowGate]
+  all_goals first | rfl | (split <;> rfl)
 
 /-- WS-ZA ZA5.2: answering an admitted resume's pending fault keeps it admitted:
 the write reads back (its slot is found in place), and it clears the fault and

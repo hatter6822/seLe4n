@@ -275,12 +275,9 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeServiceRevokeArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          refine RunQueueStage.entry ?_
-          exact revokeService_runQueueStage hStep
+      obtain ⟨_, hRev⟩ := revokeServiceByRecordedCode_revokeService hStep
+      refine RunQueueStage.entry ?_
+      exact revokeService_runQueueStage hRev
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -735,7 +732,8 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC h
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC
+      (capabilityOnlyFlowGate_ok hC h)
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -827,7 +825,6 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     repeat' split at h
     all_goals first | (cases h; done) | skip
     unfold registerServiceChecked at h
-    dsimp only at h
     split at h
     · refine RunQueueStage.entry ?_
       exact registerService_runQueueStage h

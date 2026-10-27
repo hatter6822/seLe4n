@@ -1101,7 +1101,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
   | some k =>
       rw [hCapOnly] at hStep
       exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid executingCore k st st'
-        hCapOnly hObjInv hInv hQ.base.capOnly hQ.base.reachable.runQueueRefined hStep
+        hCapOnly hObjInv hInv hQ.base.capOnly hQ.base.reachable.runQueueRefined
+        (capabilityOnlyFlowGate_ok hCapOnly hStep)
   | none =>
       rw [hCapOnly] at hStep
       have hCapOnly0 := hCapOnly
@@ -1269,7 +1270,6 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           | ok args =>
               simp only [hDec] at hStep
               unfold registerServiceChecked at hStep
-              simp only [] at hStep
               split at hStep
               · have hU : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st') := by
                   unfold dispatchWithCap

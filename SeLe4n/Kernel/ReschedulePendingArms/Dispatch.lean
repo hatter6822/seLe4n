@@ -67,6 +67,13 @@ theorem revokeService_keyFrame {sid : ServiceId} {st st' : SystemState}
   serviceCodeRewrite_keyFrame hInv (revokeService_serviceCodeRewrite h)
     (revokeService_preserves_scheduler _ _ _ h)
 
+/-- ...and so is the revoke the kernel runs, through the invoked endpoint. -/
+theorem revokeServiceByRecordedCode_keyFrame {epId : SeLe4n.ObjId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : revokeServiceByRecordedCode epId st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨_, h⟩ := revokeServiceByRecordedCode_revokeService h
+  exact revokeService_keyFrame hInv h
+
 /-- The declassified signal covers: the bound signal, then the audit records,
 which touch the trail alone. -/
 theorem notificationSignalDeclassifiedOnCore_stepCovers (e : CoreId)
@@ -564,7 +571,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
-    | exact (revokeService_keyFrame hInv h).stepCoversInv
+    | exact (revokeServiceByRecordedCode_keyFrame hInv h).stepCoversInv
     | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h)
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
@@ -636,7 +643,9 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchWithCapChecked at h
   cases hC : dispatchCapabilityOnly decoded cap tid e with
-  | some k => rw [hC] at h; exact dispatchCapabilityOnly_stepCovers hInv hB hPlaced hC h
+  | some k =>
+    rw [hC] at h
+    exact dispatchCapabilityOnly_stepCovers hInv hB hPlaced hC (capabilityOnlyFlowGate_ok hC h)
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -726,7 +735,6 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     repeat' split at h
     all_goals first | (cases h; done) | skip
     unfold registerServiceChecked at h
-    dsimp only at h
     split at h
     · exact (registerService_keyFrame hInv h).stepCoversInv
     · cases h

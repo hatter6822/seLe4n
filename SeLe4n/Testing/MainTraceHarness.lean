@@ -253,8 +253,8 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       | .error err => IO.println s!"[SRG-002] duplicate register: {reprStr err}"
       | .ok _ => IO.println "[SRG-002] unexpected duplicate success"
 
-      -- SRG-005: Revoke registered service
-      match SeLe4n.Kernel.revokeService srgSid stSvc with
+      -- SRG-005: Revoke the registration the endpoint records
+      match SeLe4n.Kernel.revokeServiceByRecordedCode demoEndpoint stSvc with
       | .error err => IO.println s!"[SRG-005] revoke service error: {reprStr err}"
       | .ok (_, stRevoked) =>
         IO.println s!"[SRG-005] revoke service success: {stRevoked.serviceRegistry[srgSid]? == none}"
@@ -296,8 +296,8 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     | .error err => IO.println s!"[SRG-004] invalid endpoint: {reprStr err}"
     | .ok _ => IO.println "[SRG-004] unexpected success with invalid endpoint"
 
-  -- SRG-006: Revoke non-existent service
-  match SeLe4n.Kernel.revokeService ⟨9998⟩ st1 with
+  -- SRG-006: Revoke through an object recording no registration
+  match SeLe4n.Kernel.revokeServiceByRecordedCode ⟨9998⟩ st1 with
   | .error err => IO.println s!"[SRG-006] revoke non-existent: {reprStr err}"
   | .ok _ => IO.println "[SRG-006] unexpected revoke success"
 

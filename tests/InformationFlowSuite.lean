@@ -769,10 +769,14 @@ def runInformationFlowChecks : IO Unit := do
   -- label) + notificationSignalDeclassifiedCrossCoreDispatch (WS-SM SM9.C — the
   -- *data-carrying* declassification, policy-gated for the same reason and
   -- consulting the policy at **two** hops, so an authorized signaller aimed at
-  -- an unauthorized receiver is refused at the second).
-  expect "enforcement boundary: 13 policy-gated operations defined"
+  -- an unauthorized receiver is refused at the second).  15 with the service
+  -- query and revoke wrappers (`lookupServiceChecked`, `revokeServiceChecked`),
+  -- which replace the read-only lookup and the capability-only revoke: the
+  -- query is refused unless the endpoint's label flows to the caller, the
+  -- revoke unless the caller's label flows to the endpoint.
+  expect "enforcement boundary: 15 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 13)
+      match c with | .policyGated _ => true | _ => false)).length == 15)
 
   expect "enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -1180,8 +1184,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "enforcement boundary has 13 policy-gated ops"
-    (policyGatedCount = 13)
+  expect "enforcement boundary has 15 policy-gated ops"
+    (policyGatedCount = 15)
 
   IO.println "enforcement boundary classification verified"
 
@@ -1324,8 +1328,8 @@ def runInformationFlowChecks : IO Unit := do
   let pgCount := boundary.filter (fun c => match c with | .policyGated _ => true | _ => false) |>.length
   let coCount := boundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false) |>.length
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
-  expect "enforcement boundary has 13 policy-gated"
-    (pgCount = 13)
+  expect "enforcement boundary has 15 policy-gated"
+    (pgCount = 15)
   -- WS-SM SM8.E.3: 23 → 24 with the 2PL bracket (`withLockSet`), classified
   -- capability-only for the same reason as `storeObject` — an internal building
   -- block used under an already-capability-guarded context, consulting no
@@ -1342,10 +1346,12 @@ def runInformationFlowChecks : IO Unit := do
   -- revocation it named.
   -- WS-ZA ZA5.4 part 14: 35 → 33, `lifecycleRetypeObject` and
   -- `lifecycleRevokeDeleteRetype` removed with the in-place retype.
-  expect "enforcement boundary has 33 capability-only"
-    (coCount = 33)
-  expect "enforcement boundary has 4 read-only"
-    (roCount = 4)
+  -- 33 → 32 and read-only 4 → 3: `revokeService` and
+  -- `lookupServiceByRecordedCode` are replaced by their policy-gated wrappers.
+  expect "enforcement boundary has 32 capability-only"
+    (coCount = 32)
+  expect "enforcement boundary has 3 read-only"
+    (roCount = 3)
   expect "enforcement boundary total is 50"
     (boundary.length = 50)
 

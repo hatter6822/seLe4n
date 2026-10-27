@@ -4325,7 +4325,7 @@ run_check "INVARIANT" rg -n '^theorem RunQueueEntryStage\.tableReferencesRecorde
 run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s ∧ s\.tableReferencesRecorded$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
 run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedCode_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedCode epId st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId =>\n        match lookupServiceByRecordedCode epId st with' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId =>\n      match lookupServiceChecked ctx tid epId st with' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U 'def frozenLookupServiceByCap[^\n]*\n[^\n]*\n  fun st =>\n    match frozenLookupEndpoint st epId with' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.read\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.write\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -10845,14 +10845,19 @@ run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^structure ServiceRegisterArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^structure ServiceRevokeArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^def decodeServiceRegisterArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeServiceRevokeArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n 'def encodeServiceRegisterArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n 'def encodeServiceRevokeArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeServiceRegisterArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeServiceRevokeArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-Q1-D: Service registration enforcement wrapper.
 run_check "INVARIANT" rg -n '^def registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^def lookupServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^def revokeServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^def capabilityOnlyFlowGate($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def revokeServiceByRecordedCode($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^  \| some k => capabilityOnlyFlowGate ctx decoded\.syscallId tid cap k$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceChecked ctx tid epId st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem registerServiceChecked_eq_registerService_when_allowed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^theorem registerServiceChecked_flowDenied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^theorem enforcementSoundness_registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean

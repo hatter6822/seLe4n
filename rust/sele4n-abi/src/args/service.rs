@@ -3,7 +3,7 @@
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 496–694.
 
-use sele4n_types::{InterfaceId, KernelError, KernelResult, ServiceId};
+use sele4n_types::{InterfaceId, KernelError, KernelResult};
 
 /// Maximum method count for a service registration.
 /// Lean: service registrations are bounded to prevent resource exhaustion.
@@ -75,28 +75,13 @@ impl ServiceRegisterArgs {
 }
 
 /// Arguments for `serviceRevoke` (syscall 12).
-/// Register mapping: x2=serviceId.
+/// No message registers — the kernel removes the registration the invoked
+/// endpoint records, so the endpoint comes from the capability target and the
+/// caller names no service.
 ///
-/// Lean: `ServiceRevokeArgs` (SyscallArgDecode.lean:512)
+/// Lean: `ServiceRevokeArgs` (SyscallArgDecode.lean)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ServiceRevokeArgs {
-    pub target_service: ServiceId,
-}
-
-impl ServiceRevokeArgs {
-    pub const fn encode(&self) -> [u64; 1] {
-        [self.target_service.raw()]
-    }
-
-    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
-        if regs.is_empty() {
-            return Err(KernelError::InvalidMessageInfo);
-        }
-        Ok(Self {
-            target_service: ServiceId::from(regs[0]),
-        })
-    }
-}
+pub struct ServiceRevokeArgs;
 
 /// Arguments for `serviceQuery` (syscall 13).
 /// No additional message registers — the endpoint object ID comes from the
@@ -133,14 +118,6 @@ mod tests {
         };
         let decoded = ServiceRegisterArgs::decode(&args.encode()).unwrap();
         assert!(!decoded.requires_grant);
-    }
-
-    #[test]
-    fn revoke_roundtrip() {
-        let args = ServiceRevokeArgs {
-            target_service: ServiceId::from(42u64),
-        };
-        assert_eq!(ServiceRevokeArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]

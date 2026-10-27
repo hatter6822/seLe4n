@@ -310,6 +310,92 @@ theorem enforcementSoundness_registerServiceChecked
     rw [this] at hStep; simp at hStep
 
 -- ============================================================================
+-- The service query and revoke: read-down and write-up on the endpoint's label
+-- ============================================================================
+
+/-- When the endpoint's label flows to the caller's, the checked query is the
+lookup. -/
+theorem lookupServiceChecked_eq_lookup_when_allowed
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) (hFlow : serviceEndpointReadAdmitted ctx caller epId = true) :
+    lookupServiceChecked ctx caller epId st = lookupServiceByRecordedCode epId st := by
+  simp [lookupServiceChecked, hFlow]
+
+/-- Otherwise it is `flowDenied`, whatever the registry holds. -/
+theorem lookupServiceChecked_flowDenied
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) (hDeny : serviceEndpointReadAdmitted ctx caller epId = false) :
+    lookupServiceChecked ctx caller epId st = .error .flowDenied := by
+  simp [lookupServiceChecked, hDeny]
+
+/-- The checked query either looks up or is denied. -/
+theorem enforcement_sufficiency_lookupService
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) :
+    (serviceEndpointReadAdmitted ctx caller epId = true ∧
+       lookupServiceChecked ctx caller epId st = lookupServiceByRecordedCode epId st) ∨
+    (serviceEndpointReadAdmitted ctx caller epId = false ∧
+       lookupServiceChecked ctx caller epId st = .error .flowDenied) := by
+  cases h : serviceEndpointReadAdmitted ctx caller epId with
+  | true => exact .inl ⟨rfl, lookupServiceChecked_eq_lookup_when_allowed ctx caller epId st h⟩
+  | false => exact .inr ⟨rfl, lookupServiceChecked_flowDenied ctx caller epId st h⟩
+
+/-- A successful checked query passed its read gate. -/
+theorem enforcementSoundness_lookupServiceChecked
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) (r : ServiceRegistration × SystemState)
+    (hStep : lookupServiceChecked ctx caller epId st = .ok r) :
+    serviceEndpointReadAdmitted ctx caller epId = true := by
+  cases h : serviceEndpointReadAdmitted ctx caller epId with
+  | true => rfl
+  | false => rw [lookupServiceChecked_flowDenied ctx caller epId st h] at hStep; cases hStep
+
+/-- When the caller's label flows to the endpoint's, the checked revoke is the
+revoke through the endpoint. -/
+theorem revokeServiceChecked_eq_revoke_when_allowed
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) (hFlow : serviceEndpointWriteAdmitted ctx caller epId = true) :
+    revokeServiceChecked ctx caller epId st = revokeServiceByRecordedCode epId st := by
+  simp [revokeServiceChecked, hFlow]
+
+/-- Otherwise it is `flowDenied`. -/
+theorem revokeServiceChecked_flowDenied
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) (hDeny : serviceEndpointWriteAdmitted ctx caller epId = false) :
+    revokeServiceChecked ctx caller epId st = .error .flowDenied := by
+  simp [revokeServiceChecked, hDeny]
+
+/-- A denied revoke changes nothing. -/
+theorem revokeServiceChecked_denied_preserves_state
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) (hDeny : serviceEndpointWriteAdmitted ctx caller epId = false) :
+    ¬∃ st', revokeServiceChecked ctx caller epId st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  rw [revokeServiceChecked_flowDenied ctx caller epId st hDeny] at h; cases h
+
+/-- The checked revoke either revokes or is denied. -/
+theorem enforcement_sufficiency_revokeService
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st : SystemState) :
+    (serviceEndpointWriteAdmitted ctx caller epId = true ∧
+       revokeServiceChecked ctx caller epId st = revokeServiceByRecordedCode epId st) ∨
+    (serviceEndpointWriteAdmitted ctx caller epId = false ∧
+       revokeServiceChecked ctx caller epId st = .error .flowDenied) := by
+  cases h : serviceEndpointWriteAdmitted ctx caller epId with
+  | true => exact .inl ⟨rfl, revokeServiceChecked_eq_revoke_when_allowed ctx caller epId st h⟩
+  | false => exact .inr ⟨rfl, revokeServiceChecked_flowDenied ctx caller epId st h⟩
+
+/-- A successful checked revoke passed its write gate. -/
+theorem enforcementSoundness_revokeServiceChecked
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (st st' : SystemState)
+    (hStep : revokeServiceChecked ctx caller epId st = .ok ((), st')) :
+    serviceEndpointWriteAdmitted ctx caller epId = true := by
+  cases h : serviceEndpointWriteAdmitted ctx caller epId with
+  | true => rfl
+  | false => rw [revokeServiceChecked_flowDenied ctx caller epId st h] at hStep; cases hStep
+
+-- ============================================================================
 -- WS-H8/Q1: Updated enforcement boundary classification
 -- ============================================================================
 
@@ -893,7 +979,7 @@ theorem checkedDispatch_flowDenied_preserves_state :
     simp [registerServiceChecked, hDeny] at h⟩
 
 /-- T6-J/V6-L: The checked dispatch path delegates to checked wrappers for all
-    11 policy-gated operations, ensuring the enforcement boundary is complete.
+    13 policy-gated operations, ensuring the enforcement boundary is complete.
     This is a classification witness documenting which operations are checked.
     V6-L: Updated from 7 to 11 entries to match all policy-gated wrappers. -/
 def checkedDispatchEnforcementCoverage : List String :=
@@ -908,11 +994,13 @@ def checkedDispatchEnforcementCoverage : List String :=
   , "notificationSignalChecked" -- .notifSignal → notificationSignalChecked
   , "notificationWaitChecked" -- .notifWait → notificationWaitChecked (V2-A)
   , "registerServiceChecked" -- .serviceRegister → registerServiceChecked
+  , "lookupServiceChecked" -- .serviceQuery → the read gate, then the lookup
+  , "revokeServiceChecked" -- .serviceRevoke → the write gate, then the revoke
   ]
 
-/-- T6-J/V6-L: The checked dispatch covers all 11 policy-gated operations. -/
+/-- T6-J/V6-L: The checked dispatch covers all 13 policy-gated operations. -/
 theorem checkedDispatchEnforcementCoverage_complete :
-    checkedDispatchEnforcementCoverage.length = 11 := by rfl
+    checkedDispatchEnforcementCoverage.length = 13 := by rfl
 
 -- ============================================================================
 -- X3-B (H-5): Enforcement-NI global bridge theorem
@@ -920,10 +1008,10 @@ theorem checkedDispatchEnforcementCoverage_complete :
 
 /-- X3-B (H-5) / Y2-E: **Enforcement-NI global bridge theorem.**
 
-    This theorem unifies all **11** enforcement soundness theorems into a single
+    This theorem unifies all **13** enforcement soundness theorems into a single
     bridge connecting the enforcement layer to the non-interference layer.
 
-    **Structure**: For each of the 11 checked wrappers, this theorem proves that
+    **Structure**: For each of the 13 checked wrappers, this theorem proves that
     wrapper success implies the underlying `securityFlowsTo` check(s) passed.
     This `securityFlowsTo` witness is the prerequisite for constructing
     `NonInterferenceStep` terms in `Invariant/Composition.lean`.
@@ -934,7 +1022,7 @@ theorem checkedDispatchEnforcementCoverage_complete :
     The bridge connects these: enforcement success ⟹ flow allowed ⟹
     NI step constructable (given the domain-separation context).
 
-    **Coverage**: 11 of 11 checked wrappers. Complete. (Y2-E extended from 6/11
+    **Coverage**: 13 of 13 checked wrappers. Complete. (Y2-E extended from 6/11
     to 11/11 by adding `endpointCallChecked`, `endpointReplyChecked`,
     `cspaceMintChecked`, `notificationWaitChecked`, `endpointReplyRecvChecked`.) -/
 theorem enforcementBridge_to_NonInterferenceStep
@@ -985,7 +1073,15 @@ theorem enforcementBridge_to_NonInterferenceStep
     (∀ eid receiver replyTarget payload replyId,
       endpointReplyRecvChecked ctx eid receiver replyTarget payload replyId st = .ok ((), st') →
       securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
-      securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) := by
+      securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
+    -- 12. lookupServiceChecked: success implies endpoint→caller flow allowed
+    (∀ caller epId r,
+      lookupServiceChecked ctx caller epId st = .ok r →
+      serviceEndpointReadAdmitted ctx caller epId = true) ∧
+    -- 13. revokeServiceChecked: success implies caller→endpoint flow allowed
+    (∀ caller epId,
+      revokeServiceChecked ctx caller epId st = .ok ((), st') →
+      serviceEndpointWriteAdmitted ctx caller epId = true) := by
   exact ⟨
     fun eid sender payload receiverSlotBase r hStep =>
       enforcementSoundness_endpointSendDualChecked ctx eid sender payload
@@ -1009,7 +1105,11 @@ theorem enforcementBridge_to_NonInterferenceStep
     fun ntfnId waiter r hStep =>
       enforcementSoundness_notificationWaitChecked ctx ntfnId waiter st r st' hStep,
     fun eid receiver replyTarget payload replyId hStep =>
-      enforcementSoundness_endpointReplyRecvChecked ctx eid receiver replyTarget payload replyId st st' hStep⟩
+      enforcementSoundness_endpointReplyRecvChecked ctx eid receiver replyTarget payload replyId st st' hStep,
+    fun caller epId r hStep =>
+      enforcementSoundness_lookupServiceChecked ctx caller epId st r hStep,
+    fun caller epId hStep =>
+      enforcementSoundness_revokeServiceChecked ctx caller epId st st' hStep⟩
 
 
 -- ============================================================================
@@ -1027,8 +1127,11 @@ delegate-or-deny, had no theorem for a third of them.
 
 Per the implement-the-improvement rule the remedy is the theorems, not a smaller
 claim. With these eight and the three in
-`InformationFlow/Declassification.lean`, the families cover all twelve
-policy-gated entries of `enforcementBoundary`. The declassification contributes
+`InformationFlow/Declassification.lean`, the families cover the
+policy-gated entries of `enforcementBoundary` that were there at SM8.C; the
+service query and revoke (`v0.36.146`) carry theirs beside the register's
+(`lookupServiceChecked_flowDenied`, `revokeServiceChecked_denied_preserves_state`,
+`enforcement_sufficiency_lookupService`, `enforcement_sufficiency_revokeService`). The declassification contributes
 three rather than two because its denial-preservation is stated at both levels:
 `declassifyObjectFromCore`, the name `enforcementBoundary` classifies (covering
 all three of its refusal modes — an idle core, an absent target, and a declined

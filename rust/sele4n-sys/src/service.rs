@@ -50,29 +50,30 @@ pub fn service_register(
     })
 }
 
-/// Revoke (unregister) a service by its ServiceId.
+/// Revoke the service registered on an endpoint.
 ///
-/// Lean: `apiServiceRevoke` (API.lean) — requires `.write` right.
+/// Lean: the `.serviceRevoke` arm (API.lean) — requires `.write` right, and
+/// the checked dispatcher admits it only when the caller's label flows to the
+/// endpoint's (`revokeServiceChecked`).  The kernel removes the registration
+/// the invoked endpoint records (`revokeServiceByRecordedCode`): the
+/// capability to the endpoint is the authority, and no message registers are
+/// read, so the caller names no service.
 #[inline]
-pub fn service_revoke(
-    service_cap: CPtr,
-    target_service: ServiceId,
-) -> KernelResult<SyscallResponse> {
-    let args = ServiceRevokeArgs { target_service };
-    let encoded = args.encode();
+pub fn service_revoke(endpoint_cap: CPtr) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {
-        cap_addr: service_cap,
-        msg_info: MessageInfo::new_const(1, 0, 0),
-        msg_regs: [encoded[0], 0, 0, 0],
+        cap_addr: endpoint_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceRevoke,
     })
 }
 
 /// Query services by capability (endpoint lookup).
 ///
-/// Lean: `apiServiceQuery` (API.lean) — requires `.read` right.
-/// No additional message registers — the endpoint object ID comes from
-/// the capability target.
+/// Lean: the `.serviceQuery` arm (API.lean) — requires `.read` right, and
+/// the checked dispatcher admits it only when the endpoint's label flows to
+/// the caller's (`lookupServiceChecked`).  No additional message registers —
+/// the endpoint object ID comes from the capability target.
 ///
 /// WS-RA RA.D.3: returns the resolved registration's **typed**
 /// [`ServiceId`], constructed from the `x0` word — the answer the kernel
@@ -81,12 +82,11 @@ pub fn service_revoke(
 /// `SyscallResponse` of the caller's own registers).  Staged by the
 /// `.serviceQuery` arm via `returnFrameOfWord`.
 ///
-/// PR #866 round-2 review: typed, not a bare `u64` — `service_revoke`
-/// already *takes* a `ServiceId`, so the raw word made the two halves of
-/// the service API asymmetric and let callers mix the result with
-/// unrelated words (the project's typed-identifier convention).  The
-/// intended composition now typechecks end to end:
-/// `service_query(cap)` → `service_revoke(cap, sid)`.
+/// PR #866 round-2 review: typed, not a bare `u64`, so callers cannot mix
+/// the result with unrelated words (the project's typed-identifier
+/// convention).  Both halves of the service API name the registration by
+/// the endpoint that records it: `service_query(cap)` reads it and
+/// `service_revoke(cap)` removes it.
 #[inline]
 pub fn service_query(endpoint_cap: CPtr) -> KernelResult<ServiceId> {
     let resp = invoke_syscall(SyscallRequest {

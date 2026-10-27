@@ -151,13 +151,13 @@ This section formally classifies all kernel operations into enforcement categori
 and proves that the policy-checked wrappers are sufficient for the enforcement
 boundary.
 
-**Canonical classification (20 operations — V2-B/C updated):**
+**Canonical classification (21 operations):**
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (11) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`, `notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C) |
+| **Policy-gated** (13) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`, `lookupServiceChecked`, `revokeServiceChecked`, `notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C) |
 | **Capability-only** (5) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `storeObject` |
-| **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupServiceByRecordedCode`, `cspaceResolvePath` |
+| **Read-only** (3) | `chooseThread`, `lookupObject`, `cspaceResolvePath` |
 
 Policy-gated operations cross domain boundaries and carry explicit information-flow
 risk. Capability-only operations derive authority entirely from capability
@@ -200,6 +200,8 @@ def enforcementBoundary : List EnforcementClass :=
   , .policyGated "cspaceMoveChecked"
   , .policyGated "notificationSignalChecked"
   , .policyGated "registerServiceChecked"
+  , .policyGated "lookupServiceChecked"
+  , .policyGated "revokeServiceChecked"
   , .policyGated "notificationWaitChecked" -- V2-A: notification wait IF check
   , .policyGated "endpointReplyRecvChecked" -- V2-C: compound reply+recv IF check
   -- Capability-only: authority derived from capability possession
@@ -243,7 +245,6 @@ def enforcementBoundary : List EnforcementClass :=
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
-  , .readOnly "lookupServiceByRecordedCode"
   , .readOnly "cspaceResolvePath"
   -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "storeObject"
@@ -312,8 +313,6 @@ def enforcementBoundary : List EnforcementClass :=
   -- code you were able to write); there is no information-flow policy to
   -- consult, because no data crosses a label boundary.
   , .capabilityOnly "vspaceUnifyInstructionPage"
-  -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
-  , .capabilityOnly "revokeService"
   -- WS-SM SM8.C.9: the live declassification. **Policy-gated**, and it is the
   -- one entry whose gate is not `securityFlowsTo`: it runs the two-check
   -- `declassificationDecision` (base policy must *deny*, declassification policy
@@ -407,8 +406,8 @@ def syscallIdToEnforcementName : SyscallId → String
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"
-  | .serviceRevoke => "revokeService"
-  | .serviceQuery => "lookupServiceByRecordedCode"
+  | .serviceRevoke => "revokeServiceChecked"
+  | .serviceQuery => "lookupServiceChecked"
   | .notificationSignal => "notificationSignalChecked"
   | .notificationWait => "notificationWaitChecked"
   | .replyRecv => "endpointReplyRecvChecked"
@@ -674,6 +673,39 @@ def registerServiceChecked
   fun st =>
     if registrationWriteAdmitted ctx caller reg then
       registerService reg st
+    else
+      .error .flowDenied
+
+/-- Policy-checked service query: the endpoint's label must flow to the caller's
+(`serviceEndpointReadAdmitted`) before the registration it records is read.
+The check reads labels only and precedes the lookup, so a refusal says nothing
+about the registry; every other read a caller makes of an object it holds a
+capability to is gated the same way (`notificationWaitChecked`, the receive
+gate).
+
+Returns `flowDenied` otherwise. -/
+def lookupServiceChecked
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
+  fun st =>
+    if serviceEndpointReadAdmitted ctx caller epId then
+      lookupServiceByRecordedCode epId st
+    else
+      .error .flowDenied
+
+/-- Policy-checked service revocation: the caller's label must flow to the
+endpoint's (`serviceEndpointWriteAdmitted`) before the registration that
+endpoint records is removed (`revokeServiceByRecordedCode`).
+
+Returns `flowDenied` otherwise. -/
+def revokeServiceChecked
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st =>
+    if serviceEndpointWriteAdmitted ctx caller epId then
+      revokeServiceByRecordedCode epId st
     else
       .error .flowDenied
 
