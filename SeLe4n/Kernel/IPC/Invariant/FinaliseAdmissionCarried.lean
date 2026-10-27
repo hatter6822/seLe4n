@@ -929,7 +929,8 @@ theorem lenderEndable_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
     (ho : tx'.scBindingOwnerCode = tx.scBindingOwnerCode) (hL : lenderEndable s x tx) :
     lenderEndable s' x tx' := by
   intro o hO
-  obtain ⟨tl, r, hT, hRl, hN, hE⟩ := hL o (ho ▸ hO)
+  obtain ⟨tl, r, hT, hRl, hNh, hE⟩ := hL o (ho ▸ hO)
+  have hN := lenderEndable.noFrame hNh
   have hLx : (⟨o⟩ : SeLe4n.ThreadId) ≠ x := by
     intro e
     unfold replyWaiterEndable at hE
@@ -941,7 +942,7 @@ theorem lenderEndable_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
     rw [hRl] at hE
     simp only [Bool.and_eq_true, beq_iff_eq] at hE
     rw [hE.2.1.1]; intro e; exact hLx (by cases x; simp at e; subst e; rfl)
-  refine ⟨tl', r, hT', ?_, hN, replyWaiterEndable_transport C Lk hK hLx kt hRl hN hE⟩
+  refine ⟨tl', r, hT', ?_, hNh, replyWaiterEndable_transport C Lk hK hLx kt hRl hN hE⟩
   rw [kt.2.2.1]
   exact Lk.reply _ r hRl (hK _ r hRl ⟨hcw, fun a _ e => absurd e (hN a)⟩)
 
@@ -2022,5 +2023,144 @@ theorem finaliseThreadCancel_carries (s : SystemState) (x : SeLe4n.ThreadId) (t 
           | _ => rfl
       · exact e
     exact finaliseReplyCallerCancel_carries s x t h hX hA hP' hA1
+
+
+-- ============================================================================
+-- §11  The loan return hands the context back
+-- ============================================================================
+
+/-- **The loan return leaves `x` lending nothing, its context bound back**
+(part 34): on a state carrying the finalisation's invariant, when `x`'s lender,
+if any, is endable (`lenderEndable`) — its reply heading a stack — the lender's
+pop (`finaliseThreadReturnLoan`) takes the context from `x`: the donation
+return writes `x` no binding (`returnDonatedSchedContext_codes`, the pop's
+holder being `x`, the server the lender waits on), and every write after it
+keeps every binding (`finaliseReplyCallerCancel_pop`,
+`SchedLinkFrame.finaliseThreadSuspend`).  With no lender, nothing is written,
+so a context bound back stays so. -/
+theorem finaliseThreadReturnLoan_unbinds (s : SystemState) (x : SeLe4n.ThreadId) (tx : TCB)
+    (h : finaliseStepInvariant s) (hX : s.getTcb? x = some tx) (hL : lenderEndable s x tx)
+    (hB : tx.scBindingOwnerCode = 0 → bindingBack s x) :
+    (∀ t', (finaliseThreadReturnLoan s x).getTcb? x = some t' → t'.scBindingOwnerCode = 0) ∧
+      bindingBack (finaliseThreadReturnLoan s x) x := by
+  cases hO : tx.scBindingOwnerCode with
+  | zero =>
+    have hR : finaliseThreadReturnLoan s x = s := by
+      unfold finaliseThreadReturnLoan; rw [hX]; simp only [hO]
+    rw [hR]
+    refine ⟨fun t' ht' => ?_, hB hO⟩
+    rw [hX] at ht'; cases ht'; exact hO
+  | succ o =>
+    obtain ⟨tl, r, hT, hRl, ⟨c, hNh⟩, hE⟩ := hL o hO
+    have hR : finaliseThreadReturnLoan s x = finaliseReplyWaiter s ⟨o⟩ tl := by
+      unfold finaliseThreadReturnLoan; rw [hX]; simp only [hO, hT, hE, if_true]
+    rw [hR]
+    have hE' := hE
+    unfold replyWaiterEndable at hE'
+    simp only [Bool.and_eq_true, beq_iff_eq] at hE'
+    obtain ⟨⟨-, hSx⟩, hG⟩ := hE'
+    obtain ⟨hd, n, P, -, hne, hSrv, hRet, hAg⟩ := finaliseReplyCallerCancel_pop s h.2.1 hT hRl hNh hG
+    have hdx : hd = x := by
+      have e : hd.val = x.val := by omega
+      cases hd; cases x; simp only at e; subst e; rfl
+    subst hdx
+    obtain ⟨⟨th, hth, h1, h2⟩, -⟩ := returnDonatedSchedContext_codes h.2.1 hRet hne
+    obtain ⟨-, hI, -⟩ := finaliseReplyCallerCancel_unframed s h.2.1 h.2.2.2.2.1 hT hRl
+      (lenderEndable.noFrame ⟨c, hNh⟩) hG
+    have F : bindingLinksAgree P (finaliseReplyWaiter s ⟨o⟩ tl) := by
+      unfold finaliseReplyWaiter
+      exact hAg.trans (SchedLinkFrame.finaliseThreadSuspend _ _ hI).binding
+    have hzero : ∀ t', (finaliseReplyWaiter s ⟨o⟩ tl).getTcb? hd = some t' →
+        t'.scBindingScCode = 0 ∧ t'.scBindingOwnerCode = 0 := by
+      intro t' ht'
+      obtain ⟨tp, hp, e1, e2⟩ := F.getTcb?_back ht'
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hth] at hp
+      cases hp
+      exact ⟨e1.trans h1, e2.trans h2⟩
+    exact ⟨fun t' ht' => (hzero t' ht').2, fun t' ht' hc => absurd (hzero t' ht').1 hc⟩
+
+
+-- ============================================================================
+-- §12  The notification unbind carries the admission's reads
+-- ============================================================================
+
+/-- **The notification unbind keeps every reply, both ways**: the unbind writes
+the thread and the notification alone (`CancelReadsKept.storeUnbindNotification`). -/
+theorem finaliseThreadUnbindNotification_replies (st : SystemState) (x : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (r : Reply) :
+    (finaliseThreadUnbindNotification st x).objects[k]? = some (.reply r) ↔
+      st.objects[k]? = some (.reply r) := by
+  unfold finaliseThreadUnbindNotification
+  dsimp only
+  split
+  · exact Iff.rfl
+  · split
+    · split
+      · rename_i hG
+        simp only [Bool.and_eq_true] at hG
+        exact (CancelReadsKept.storeUnbindNotification st x _ hInv hG.2).reply k r
+      · exact Iff.rfl
+    · exact Iff.rfl
+
+/-- A read of one reply answers alike on two states keeping every reply, both
+ways: the head pop's hand-back question. -/
+theorem replyHeadPopsOwn_of_replies {s s' : SystemState}
+    (h : ∀ (k : SeLe4n.ObjId) (r : Reply), s'.objects[k]? = some (KernelObject.reply r) ↔
+      s.objects[k]? = some (KernelObject.reply r))
+    (t : TCB) : replyHeadPopsOwn s' t = replyHeadPopsOwn s t := by
+  unfold replyHeadPopsOwn SystemState.getObject?
+  cases e : s.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
+  | some o =>
+    cases o with
+    | reply rr => rw [(h _ rr).mpr e]
+    | _ =>
+      cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
+      | none => rfl
+      | some o' =>
+        cases o' with
+        | reply rr => rw [(h _ rr).mp e'] at e; cases e
+        | _ => rfl
+  | none =>
+    cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
+    | none => rfl
+    | some o' =>
+      cases o' with
+      | reply rr => rw [(h _ rr).mp e'] at e; cases e
+      | _ => rfl
+
+/-- A read of one reply answers alike on two states keeping every reply, both
+ways: the unstacked-reply question. -/
+theorem replyCallerReplyUnstacked_of_replies {s s' : SystemState}
+    (h : ∀ (k : SeLe4n.ObjId) (r : Reply), s'.objects[k]? = some (KernelObject.reply r) ↔
+      s.objects[k]? = some (KernelObject.reply r))
+    (t : TCB) : replyCallerReplyUnstacked s' t = replyCallerReplyUnstacked s t := by
+  unfold replyCallerReplyUnstacked SystemState.getObject?
+  cases e : s.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
+  | some o =>
+    cases o with
+    | reply rr => rw [(h _ rr).mpr e]
+    | _ =>
+      cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
+      | none => rfl
+      | some o' =>
+        cases o' with
+        | reply rr => rw [(h _ rr).mp e'] at e; cases e
+        | _ => rfl
+  | none =>
+    cases e' : s'.objects[(⟨t.replyObjectCode - 1⟩ : SeLe4n.ObjId)]? with
+    | none => rfl
+    | some o' =>
+      cases o' with
+      | reply rr => rw [(h _ rr).mp e'] at e; cases e
+      | _ => rfl
+
+
+/-- A step agreeing on the bindings keeps a thread lending nothing. -/
+theorem bindingLinksAgree.ownerZero {s s' : SystemState} {x : SeLe4n.ThreadId}
+    (h : bindingLinksAgree s s') (hz : ∀ t, s.getTcb? x = some t → t.scBindingOwnerCode = 0) :
+    ∀ t', s'.getTcb? x = some t' → t'.scBindingOwnerCode = 0 := by
+  intro t' ht'
+  obtain ⟨t, ht, -, e⟩ := h.getTcb?_back ht'
+  exact e.trans (hz t ht)
 
 end SeLe4n.Kernel

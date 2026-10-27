@@ -580,9 +580,13 @@ import SeLe4n.Kernel.IPC.Invariant.Reachability
 import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
 import SeLe4n.Kernel.InformationFlow.Invariant.FinaliseProjection
 -- WS-ZA ZA5.4 part 25: a finalised thread's loan return and reply-waiter walk
--- end every caller waiting on it on a state its admission reads
--- (`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`).
+-- end every caller waiting on it (`finaliseThreadEndWaiters_returnLoan_endsAll`).
 import SeLe4n.Kernel.IPC.Invariant.FinaliseWaiterCompletion
+-- WS-ZA ZA5.4 part 34: the thread finalisation's pre-state admission carries to
+-- every state a later step runs on (`finaliseThreadCancel_carries`,
+-- `finaliseThreadReturnLoan_unbinds`), so `finaliseThread_quiesces` reads it
+-- once, on the pre-state.
+import SeLe4n.Kernel.IPC.Invariant.FinaliseAdmissionCarried
 import SeLe4n.Kernel.IPC.Invariant.FinaliseRetirable
 -- WS-ZA ZA5.4 part 29: the reachable state rides the whole delete chain with
 -- the bundle the delete carries (`reachableDeleteBundle`): the slot delete, the

@@ -2,7 +2,7 @@
 Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
-import SeLe4n.Kernel.IPC.Invariant.FinaliseThreadFrames
+import SeLe4n.Kernel.IPC.Invariant.FinaliseAdmissionCarried
 
 /-!
 # A finalised object's own record is retirable
@@ -201,35 +201,25 @@ def threadRecordQuiesced (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∃ t, st.objects[x]? = some (.tcb t) ∧ t.tid.val = x.val ∧ threadLinksQuiescent t = true ∧
     threadHeldOnSomeCore st ⟨x.val⟩ = false
 
-/-- **The state a thread's finalisation ends its own IPC on**: its notification
-unbound, then its blocked IPC cancelled — where the loan return and the walk
-over its waiters run. -/
-abbrev finaliseThreadAfterCancel (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  finaliseThreadCancel (finaliseThreadUnbindNotification st tid) tid
-
-/-- **The state a thread's finalisation unbinds its context on**: its waiters
-ended, then suspended and released by every core. -/
-abbrev finaliseThreadAfterRelease (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  finaliseThreadReleaseCores (finaliseThreadSuspend (finaliseThreadEndWaiters
-    (finaliseThreadReturnLoan (finaliseThreadAfterCancel st tid) tid) tid) tid) tid
-
 /-- **A finalised thread's own record is quiesced** (WS-ZA ZA5.4 part 26), on a
 state carrying the finalisation's invariant, the run queues' agreement and
-`currentDequeuedUnique`, on which its admission admits it, and stated on the
-states where each later step runs, as part 25's walk theorem is: the cancel's
-own admission on the state the notification unbind leaves (`hCancel`), the
-waiters' admission on the state the cancel leaves (`hWait`), and the context
-unbind's binding clause on the state the release leaves (`hBind`).  That the
-pre-state admission carries to those states — so no step's guard refuses after
-an earlier step has written, which is what proves checks-before-writes for the
-thread finalisation — is `docs/planning/UNTYPED_RESET_PLAN.md` row 34; today
-each step and the retire re-check their own guards.
+`currentDequeuedUnique`, on which its admission admits it.  The pre-state
+admission carries to every state a later step runs on (part 34), so no step's
+guard refuses after an earlier step has written: the cancel's admission survives
+the notification unbind (`threadIpcCancelAdmitted_after_unbind`); the lender's
+endability, every other waiter's plainness and the context's binding back survive
+the unbind (`finaliseThreadUnbindNotification_frames`) and the cancel
+(`finaliseThreadCancel_carries`); the loan return then leaves the thread lending
+nothing (`finaliseThreadReturnLoan_unbinds`), and the walk, the suspend and the
+release write no binding (`finaliseThreadEndWaiters_returnLoan_endsAll`,
+`SchedLinkFrame.finaliseThreadSuspend`), so the context unbind's binding clause
+holds where it runs.
 
 The steps: the unbind clears the bound-notification code
 (`finaliseThreadUnbindNotification_self`); the cancel leaves the thread ready
 off every endpoint queue (`finaliseThreadCancel_quiets`); the loan return and
 the walk end every waiter and keep the thread
-(`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`); the suspend marks
+(`finaliseThreadEndWaiters_returnLoan_endsAll`); the suspend marks
 it `.Inactive` on no core (`finaliseThreadSuspend_quiets`, single placement from
 `currentDequeuedUnique`); the release lets every core's hold go; the context
 unbind clears the binding (`finaliseThreadUnbindSchedContext_self`); and the
@@ -237,20 +227,11 @@ invariant, carried along every step (`finaliseCarried`), reads every other link
 off a ready thread nothing waits on (`readyThread_unlinked`). -/
 theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     (hI : finaliseStepInvariant st) (hRQ : st.runQueueRefined) (hCD : st.currentDequeuedUnique)
-    (hBd : runCodeBounded st ⟨x.val⟩) (hA : threadFinaliseAdmitted st x = true)
-    (hCancel : ∀ t1, (finaliseThreadUnbindNotification st ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t1 →
-      threadIpcCancelAdmitted (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩ t1 = true)
-    (hWait : ∀ t2, (finaliseThreadAfterCancel st ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t2 →
-      replyWaitersAdmitted (finaliseThreadAfterCancel st ⟨x.val⟩) ⟨x.val⟩ t2 = true ∧
-        (t2.scBindingOwnerCode ≠ 0 → t2.scBindingScCode ≠ 0))
-    (hBind : ∀ t6, (finaliseThreadAfterRelease st ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t6 →
-      t6.scBindingOwnerCode = 0 ∧ (t6.scBindingScCode ≠ 0 → ∃ sc,
-        (finaliseThreadAfterRelease st ⟨x.val⟩).getSchedContext? ⟨t6.scBindingScCode - 1⟩ = some sc ∧
-          sc.boundThreadCode = x.val + 1)) :
+    (hBd : runCodeBounded st ⟨x.val⟩) (hA : threadFinaliseAdmitted st x = true) :
     threadRecordQuiesced (finaliseThread x st) x := by
+  have hCancel := threadIpcCancelAdmitted_after_unbind hI.2.1 hA
+  obtain ⟨txA, hXA, -, -, -, -, -, hWA, -, hPA, -, hSBA⟩ := threadFinaliseAdmitted_parts hA
   unfold finaliseThread; dsimp only; rw [if_pos hA]
-  unfold finaliseThreadAfterRelease at hBind
-  unfold finaliseThreadAfterCancel at hWait hBind
   -- The admission's reads of the thread.
   have hA0 := hA
   unfold threadFinaliseAdmitted at hA0
@@ -265,30 +246,96 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   simp only [beq_iff_eq] at hTid
   simp only [Bool.not_eq_true'] at hIdle
   have hX0 : st.getTcb? ⟨x.val⟩ = some tx0 := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
+  cases hXA.symm.trans hX0
+  -- What the admission reads of the waiters, the lender and the binding.
+  have hL0 := lenderEndable_of_admitted hI hX0 hWA
+  have hAll0 := replyWaitersAdmitted_plain hI hX0 hWA
+  have hA10 : txA.scBindingOwnerCode ≠ 0 →
+      txA.replyObjectCode = 0 ∨ replyCallerReplyUnstacked st txA = true := by
+    intro hne
+    have hW := hWA
+    unfold replyWaitersAdmitted at hW
+    cases hOw : txA.scBindingOwnerCode with
+    | zero => exact absurd hOw hne
+    | succ o =>
+      rw [hOw] at hW
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hW
+      exact hW.1.1.2
+  have hBB0 : bindingBack st ⟨x.val⟩ := by
+    intro t ht hc
+    rw [hX0] at ht; cases ht
+    rcases hSBA with h0 | h0
+    · exact absurd h0 hc
+    · exact h0
   -- The notification unbind.
   have C0 := finaliseCarried.start st ⟨x.val⟩ hI hBd
   have hX1 := finaliseThreadUnbindNotification_self hI.2.1 hX0 hBnc
   have C1 := finaliseThreadUnbindNotification_closed _ (finaliseCarried.unbindStep st ⟨x.val⟩)
     st ⟨x.val⟩ C0
-  generalize finaliseThreadUnbindNotification st ⟨x.val⟩ = s1 at hX1 C1 hCancel hWait hBind
+  obtain ⟨C01, Lk01⟩ := finaliseThreadUnbindNotification_frames st ⟨x.val⟩ hI.2.1 (fun _ _ => True)
+  have hRep := finaliseThreadUnbindNotification_replies st ⟨x.val⟩ hI.2.1
+  have hL1 : lenderEndable (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩
+      { txA with boundNotificationCode := 0 } :=
+    lenderEndable_transport C01 Lk01 (LoanReplies.true _ _) rfl hL0
+  have hP1 : txA.replyObjectCode = 0 ∨
+      replyHeadPopsOwn (finaliseThreadUnbindNotification st ⟨x.val⟩)
+        { txA with boundNotificationCode := 0 } = true := by
+    rw [replyHeadPopsOwn_of_replies hRep]; exact hPA
+  have hA11 : txA.scBindingOwnerCode ≠ 0 → txA.replyObjectCode = 0 ∨
+      replyCallerReplyUnstacked (finaliseThreadUnbindNotification st ⟨x.val⟩)
+        { txA with boundNotificationCode := 0 } = true := by
+    rw [replyCallerReplyUnstacked_of_replies hRep]; exact hA10
+  have hBB1 : bindingBack (finaliseThreadUnbindNotification st ⟨x.val⟩) ⟨x.val⟩ := by
+    intro t ht hc
+    rw [hX1] at ht; cases ht
+    obtain ⟨sc, hS, hb⟩ := hBB0 txA hX0 hc
+    exact ⟨sc, Lk01.sc _ _ hS, hb⟩
+  generalize finaliseThreadUnbindNotification st ⟨x.val⟩ = s1
+    at hX1 C1 hCancel C01 hL1 hP1 hA11 hBB1
   -- The cancel.
   obtain ⟨t2, hX2, k2⟩ := finaliseThreadCancel_quiets C1.1.2.1 hX1 (hCancel _ hX1)
+  obtain ⟨C12, ho2, hLe2, hBB2⟩ :=
+    finaliseThreadCancel_carries s1 ⟨x.val⟩ _ C1.1 hX1 (hCancel _ hX1) hP1 hA11
+  have hL2 := hLe2 hL1 t2 hX2
+  have hBB2' := hBB2 hBB1
+  have hOw2 := ho2 t2 hX2
+  have hRd2 : t2.blockingServer? = none := by
+    have hS2 : t2.ipcStateCode = 0 := congrArg (fun k => k.2.1) k2
+    have hO2 : t2.ipcObjectCode = 0 := congrArg (fun k => k.1) k2
+    have e : t2.ipcState = .ready := by
+      show ThreadIpcState.ofCodes t2.ipcObjectCode t2.ipcStateCode = _
+      rw [hO2, hS2]; rfl
+    unfold TCB.blockingServer?; rw [e]
+  have C02 := C01.trans C12
+  have hAll2 : ∀ v, ReplyViews.waiterOf (finaliseThreadCancel s1 ⟨x.val⟩).replyViews v ⟨x.val⟩ →
+      (∀ o, t2.scBindingOwnerCode = o + 1 → v ≠ ⟨o⟩) →
+      plainWaiterReady (finaliseThreadCancel s1 ⟨x.val⟩) ⟨x.val⟩ v := by
+    intro v hv hne
+    have hvx : v ≠ ⟨x.val⟩ := by
+      intro e; subst e
+      obtain ⟨tv, htv, hsv⟩ := waiterOf_iff.mp hv
+      rw [hX2] at htv; cases htv
+      rw [hRd2] at hsv; cases hsv
+    exact C02.ready hvx (hAll0 v (C02.waiterOf_back hvx hv) (fun o e => hne o (hOw2.trans e)))
   have C2 := finaliseThreadCancel_closed _ (finaliseCarried.notificationCancelStep st ⟨x.val⟩)
     (finaliseCarried.endpointCancelStep st ⟨x.val⟩) (finaliseCarried.replyStep st ⟨x.val⟩)
     s1 ⟨x.val⟩ C1
-  generalize finaliseThreadCancel s1 ⟨x.val⟩ = s2 at hX2 C2 hWait hBind
+  generalize finaliseThreadCancel s1 ⟨x.val⟩ = s2 at hX2 C2 hL2 hBB2' hAll2
   -- The loan return and the walk.
-  obtain ⟨hW2, -⟩ := hWait t2 hX2
-  obtain ⟨hNoW4, hK4⟩ :=
-    finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted s2 ⟨x.val⟩ t2 C2.1 hX2 hW2
+  obtain ⟨hNoW4, hK4, hWalkB⟩ :=
+    finaliseThreadEndWaiters_returnLoan_endsAll s2 ⟨x.val⟩ t2 C2.1 hX2 hL2 hAll2
+  obtain ⟨hOwn3, hBB3⟩ :=
+    finaliseThreadReturnLoan_unbinds s2 ⟨x.val⟩ t2 C2.1 hX2 hL2 (fun _ => hBB2')
+  have hOwn4 := hWalkB.ownerZero hOwn3
+  have hBB4 := bindingBack.transport hWalkB hBB3
   obtain ⟨t4, hX4, key4, -⟩ := hK4 t2 hX2
   have C4 := finaliseThreadEndWaiters_closed _ (finaliseCarried.replyStep st ⟨x.val⟩)
     (finaliseCarried.suspendStep st ⟨x.val⟩) _ ⟨x.val⟩
     (finaliseThreadReturnLoan_closed _ (finaliseCarried.replyStep st ⟨x.val⟩)
       (finaliseCarried.suspendStep st ⟨x.val⟩) s2 ⟨x.val⟩ C2)
   generalize finaliseThreadEndWaiters (finaliseThreadReturnLoan s2 ⟨x.val⟩) ⟨x.val⟩ = s4
-    at hNoW4 hX4 C4 hBind
-  have k4 : t4.cancelKey = TCB.quietKey { tx0 with boundNotificationCode := 0 }.bindKey := by
+    at hNoW4 hX4 C4 hOwn4 hBB4
+  have k4 : t4.cancelKey = TCB.quietKey { txA with boundNotificationCode := 0 }.bindKey := by
     refine Eq.trans ?_ k2
     obtain ⟨a1, a2, -, a4, a5, -, a7, a8, a9⟩ := key4
     simp only [TCB.cancelKey, a1, a2, a4, a5, a7, a8, a9]
@@ -301,7 +348,10 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     finaliseThreadSuspend_quiets C4.1.2.1 hCD4 C4.2.2.2 hX4 hS4 hO4 hIdle
   have hNoW5 := noWaiter_of_servers (finaliseThreadSuspend_servers s4 ⟨x.val⟩ C4.1.2.1) hNoW4
   have C5 := finaliseThreadSuspend_closed _ (finaliseCarried.suspendStep st ⟨x.val⟩) s4 ⟨x.val⟩ C4
-  generalize finaliseThreadSuspend s4 ⟨x.val⟩ = s5 at hX5 hCur5 hNoW5 C5 hBind
+  have F5 := (SchedLinkFrame.finaliseThreadSuspend s4 ⟨x.val⟩ C4.1.2.1).binding
+  have hOwn5 := bindingLinksAgree.ownerZero F5 hOwn4
+  have hBB5 := bindingBack.transport F5 hBB4
+  generalize finaliseThreadSuspend s4 ⟨x.val⟩ = s5 at hX5 hCur5 hNoW5 C5 hOwn5 hBB5
   -- The release.
   have hX6 : (finaliseThreadReleaseCores s5 ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t5 := by
     rw [finaliseThreadReleaseCores_getTcb?]; exact hX5
@@ -314,7 +364,10 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   have hNoW6 := noWaiter_of_servers (s := s5)
     (tcbProjKept.of_objects (finaliseThreadReleaseCores_objects s5 ⟨x.val⟩)) hNoW5
   have C6 := finaliseCarried.releaseStep st ⟨x.val⟩ s5 ⟨x.val⟩ C5
-  obtain ⟨hOwn6, hBd6⟩ := hBind t5 hX6
+  have F6 : bindingLinksAgree s5 (finaliseThreadReleaseCores s5 ⟨x.val⟩) :=
+    bindingLinksAgree.of_objects_eq (finaliseThreadReleaseCores_objects s5 ⟨x.val⟩)
+  have hOwn6 := bindingLinksAgree.ownerZero F6 hOwn5 t5 hX6
+  have hBd6 := bindingBack.transport F6 hBB5 t5 hX6
   generalize finaliseThreadReleaseCores s5 ⟨x.val⟩ = s6 at hX6 hHeld6 hNoW6 C6 hBd6
   -- The context unbind.
   obtain ⟨hX7, hOth7, hCur7, hM7⟩ :=

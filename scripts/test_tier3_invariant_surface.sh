@@ -4085,7 +4085,8 @@ run_check "INVARIANT" rg -n '^theorem returnDonated_replyUnframed($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem replyWaitersEndableFrom_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem lenderEndable_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
-run_check "INVARIANT" rg -n '^theorem finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem replyWaitersAdmitted_plain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyWaiter_plain_bindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 run_check "INVARIANT" rg -n '^theorem spliceUnframed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseWaiterCompletion.lean
 # A finalised object's own record is retirable: the context's released, the
 # thread's quiesced (every field the retire's link guard reads, the space slots
@@ -4105,6 +4106,22 @@ run_check "INVARIANT" rg -n '^def threadRecordQuiesced($|[ ({:\[\]])' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContext_releases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThread_quiesces($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 run_check "INVARIANT" rg -n '^    threadRecordQuiesced \(finaliseThread x st\) x := by$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+# The thread finalise's pre-state admission is carried across its own steps:
+# the quiescence theorem reads the admission on the pre-state alone, with no
+# hypothesis on a later step's state.
+run_check "INVARIANT" rg -n -U '\(hBd : runCodeBounded st ⟨x\.val⟩\) \(hA : threadFinaliseAdmitted st x = true\) :\n    threadRecordQuiesced \(finaliseThread x st\) x := by$' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_negative_check "INVARIANT" rg -n '\((hCancel|hWait|hBind) : ' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
+run_check "INVARIANT" rg -n '^theorem threadIpcCancelAdmitted_after_unbind($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_frames($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_carries($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem lenderEndable_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyCallerCancel_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadReturnLoan_unbinds($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadUnbindNotification_replies($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^structure CancelFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^structure LoanKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
+run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n 't\.tid\.val = x\.val ∧ threadLinksQuiescent t = true ∧' SeLe4n/Kernel/IPC/Invariant/FinaliseRetirable.lean
 # A contextless stack top (the head a context's unstack leaves, no `next`) is cut
 # from the frame below, seL4's `reply_remove` `prev->replyNext = 0`: in the
