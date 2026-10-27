@@ -10,18 +10,26 @@
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Capability.Invariant.Preservation.MappingRecords
 
-/-! # Every kernel write keeps the live mappings recorded
+/-! # The API arms keep the live mappings recorded
 
 `SystemState.liveMappingsRecorded` (`Model/MappingRecords.lean`) says every
 mapping an address space makes under a mapping epoch is recorded on a
-capability to its frame.  This module proves that the writes that touch what it
-reads keep it: the `.vspaceMap` arm, which adds a mapping and records it on the
-capability that made it (`vspaceMapFromFrameCap_preserves_liveMappingsRecorded`);
-the finalising delete, the revocation and the zombie delete
-(`Capability/Invariant/Preservation/MappingRecords.lean`); and the remaining
-capability, lifecycle and address-space writes below.  Every other step is a
-`kindPreservingWrite` (`SystemState.liveMappingsRecorded.of_kindPreservingWrite`)
-or writes no object.
+capability to its frame.  This module proves that the arms defined over
+`Kernel.API` keep it: the `.vspaceMap` arm, which adds a mapping and records it
+on the capability that made it
+(`vspaceMapFromFrameCap_preserves_liveMappingsRecorded`); the unmap and the
+instruction-page unify, which only remove or keep mappings; the page-table
+writes, which keep every object's kind and mapping view; and the reset, which
+writes one free index.  The capability arms (copy, mint, move, the reply-cap
+mint, the finalising delete, the revocation and the zombie delete) are in
+`Capability/Invariant/Preservation/MappingRecords.lean`.  A write that keeps
+each object's kind and mapping view keeps it too
+(`SystemState.liveMappingsRecorded.of_kindPreservingWrite`).  The other
+arms (the IPC paths with their capability transfer, the thread,
+scheduling-context, notification, service and audit arms, the thread-space set
+and the retype) and the kernel entries are the `docs/REGISTERED_DEBT.md` row
+"A live mapping is not proven to be recorded on a capability", which plan row
+38 closes.
 -/
 
 namespace SeLe4n.Kernel
@@ -518,4 +526,25 @@ theorem pageTableUnmap_preserves_liveMappingsRecorded {tableId : SeLe4n.ObjId}
     (h : Architecture.pageTableUnmap tableId st = .ok ((), st')) :
     st'.liveMappingsRecorded :=
   hL.of_kindPreservingWrite (pageTableUnmap_kindPreservingWrite hObjInv h)
+/-! ## The reset
+
+The reset writes only the free index of the invoked capability, which keeps
+its target and its record. -/
+
+/-- **The reset keeps every live mapping recorded.** -/
+theorem untypedResetSlot_preserves_liveMappingsRecorded {srcCnode : SeLe4n.ObjId}
+    {srcSlot : SeLe4n.Slot} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hL : st.liveMappingsRecorded) (h : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  obtain ⟨-, -, -, -, -, -, -, -, rfl⟩ := untypedResetSlot_ok h
+  exact setCapFreeIndex_preserves_liveMappingsRecorded hInv hL
+
+/-- **The `.untypedReset` arm keeps every live mapping recorded.** -/
+theorem untypedResetFromCap_preserves_liveMappingsRecorded (tid : SeLe4n.ThreadId)
+    (srcAddr : SeLe4n.CPtr) {st st' : SystemState} (hInv : st.objects.invExt)
+    (hL : st.liveMappingsRecorded) (h : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  obtain ⟨_, _, _, _, _, hR⟩ := untypedResetFromCap_ok tid srcAddr st st' h
+  exact untypedResetSlot_preserves_liveMappingsRecorded hInv hL hR
+
 end SeLe4n.Kernel

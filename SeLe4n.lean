@@ -300,8 +300,8 @@ import SeLe4n.Kernel.RadixTree
 import SeLe4n.Kernel.Scheduler.PriorityInheritance
 import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
--- **Every live mapping is recorded** (WS-ZA ZA5.4 part 37): the `.vspaceMap`
--- arm's preservation of `SystemState.liveMappingsRecorded`, over the arm's
--- definition in `Kernel.API`, which no kernel module downstream of the API
--- imports.
+-- **Every live mapping is recorded** (WS-ZA ZA5.4 part 37): the address-space
+-- arms' and the reset's preservation of `SystemState.liveMappingsRecorded`, over
+-- the arms' definitions in `Kernel.API`, which no kernel module downstream of
+-- the API imports.
 import SeLe4n.Kernel.MappingRecordPreservation
