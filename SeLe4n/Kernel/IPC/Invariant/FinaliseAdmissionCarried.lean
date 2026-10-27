@@ -1753,4 +1753,384 @@ theorem finaliseReplyCallerCancel_unstacked_loanKept (st : SystemState) (hInv : 
     exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
   exact K0.trans (replyCancelRest_kept _ hI0 c t t hRO hT0 hR0 hInvC)
 
+/-- **The splice of a framed reply keeps every other reply heading no stack**,
+up to its `prev`: it writes the frame above (its `prev` alone, or its links cut
+from the spliced reply), the frame below (linked up to the frame above, so
+linking up to a frame before and after), and the spliced reply itself. -/
+theorem spliceThreadReplyFrameOut_framed_cancelFrame (st : SystemState) (hInv : st.objects.invExt)
+    {c : SeLe4n.ThreadId} {t : TCB} {r : Reply} {rid : SeLe4n.ReplyId}
+    (hRO : t.replyObject = some rid) (hRo : st.objects[rid.toObjId]? = some (.reply r))
+    (hC : r.callerCode = c.val + 1) :
+    CancelFrame st (spliceThreadReplyFrameOut st t) c ∧
+      ∃ r0, (spliceThreadReplyFrameOut st t).objects[rid.toObjId]? = some (.reply r0) ∧
+        r0.callerCode = r.callerCode := by
+  have hGR : st.getReply? rid = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hRo
+  have hTcb := spliceThreadReplyFrameOut_getTcb?_eq st t hInv
+  have hT : ∀ (v : SeLe4n.ThreadId) (tv : TCB),
+      (spliceThreadReplyFrameOut st t).getTcb? v = some tv ↔ st.getTcb? v = some tv := fun v tv => by
+    rw [hTcb]
+  have mk : (∀ (k : SeLe4n.ObjId) (r' : Reply), st.objects[k]? = some (.reply r') → r'.next = none →
+      r'.callerCode ≠ c.val + 1 → ∃ r'', (spliceThreadReplyFrameOut st t).objects[k]? =
+        some (.reply r'') ∧ r''.callerCode = r'.callerCode ∧ r''.next = none) →
+      CancelFrame st (spliceThreadReplyFrameOut st t) c := fun hRep =>
+    ⟨fun v tv _ hv => ⟨tv, (hT v tv).mpr hv, .refl tv⟩, fun v tv _ hv => ⟨tv, (hT v tv).mp hv, rfl, rfl⟩,
+      fun k r' hk hn hc => by unfold SystemState.getObject? at hk ⊢; exact hRep k r' hk hn hc⟩
+  rcases spliceThreadReplyFrameOut_cases st t with h | ⟨rid', hr', h⟩
+  · rw [h]; exact ⟨.refl st c, r, hRo, rfl⟩
+  rw [hRO] at hr'; cases hr'
+  rcases spliceReplyFrameOut_cases h with h' | ⟨r1, above, a, hR1, hN1, hA, hP, hS⟩ |
+      ⟨r1, below, b, hR1, hN1, hPv, hB', hBn, hS⟩
+  · rw [h']; exact ⟨.refl st c, r, hRo, rfl⟩
+  · rw [hGR] at hR1; cases hR1
+    have hAO := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
+    have hkR : ∀ (k : SeLe4n.ObjId) (r' : Reply), st.objects[k]? = some (.reply r') →
+        r'.callerCode ≠ c.val + 1 → k ≠ rid.toObjId := fun k r' hk hc e => by
+      subst e; rw [hRo] at hk; cases hk; exact hc hC
+    cases hBelow : spliceFrameBelow? st rid r above with
+    | none =>
+      obtain ⟨hCut, hAbove, hFrame⟩ := spliceReplyFrameStores_sever_values hInv hBelow hS
+      refine ⟨mk (fun k r' hk hn hc => ?_), _, (SystemState.getReply?_eq_some_iff _ _ _).mp hCut, rfl⟩
+      have hk1 := hkR k r' hk hc
+      by_cases hkA : k = above.toObjId
+      · subst hkA
+        rw [hAO] at hk; cases hk
+        have hAR : above ≠ rid := fun e => hk1 (by rw [e])
+        refine ⟨_, (SystemState.getReply?_eq_some_iff _ _ _).mp (hAbove hAR), ?_, ?_⟩ <;>
+          rw [Reply.unlinkedFrom_of_next_ne (by rw [hn]; exact fun e => by cases e)]
+        all_goals first | rfl | exact hn
+      · exact ⟨r', by rw [hFrame k hkA hk1]; exact hk, rfl, hn⟩
+    | some pair =>
+      obtain ⟨below, b⟩ := pair
+      obtain ⟨-, -, hBb, hBn⟩ := spliceFrameBelow?_eq_some hBelow
+      obtain ⟨hAv, hBv, hCut, hFrame⟩ := spliceReplyFrameStores_splice_values hInv hGR hN1 hA hP
+        hBelow hS
+      have hBO := (SystemState.getReply?_eq_some_iff _ _ _).mp hBb
+      refine ⟨mk (fun k r' hk hn hc => ?_), _, (SystemState.getReply?_eq_some_iff _ _ _).mp hCut, rfl⟩
+      have hk1 := hkR k r' hk hc
+      by_cases hkB : k = below.toObjId
+      · subst hkB; rw [hBO] at hk; cases hk; rw [hBn] at hn; cases hn
+      by_cases hkA : k = above.toObjId
+      · subst hkA
+        rw [hAO] at hk; cases hk
+        exact ⟨_, (SystemState.getReply?_eq_some_iff _ _ _).mp hAv, rfl, hn⟩
+      · exact ⟨r', by rw [hFrame k hkA hkB hk1]; exact hk, rfl, hn⟩
+  · rw [hGR] at hR1; cases hR1
+    obtain ⟨-, hRv, hFrame⟩ := severReplyFrameBelowStores_values hInv hGR hN1 hB' hBn hS
+    have hBO := (SystemState.getReply?_eq_some_iff _ _ _).mp hB'
+    refine ⟨mk (fun k r' hk hn hc => ?_), _, (SystemState.getReply?_eq_some_iff _ _ _).mp hRv, rfl⟩
+    have hkB : k ≠ below.toObjId := fun e => by
+      subst e; rw [hBO] at hk; cases hk; rw [hBn] at hn; cases hn
+    have hkR : k ≠ rid.toObjId := fun e => by
+      subst e; rw [hRo] at hk; cases hk; exact hc hC
+    exact ⟨r', by rw [hFrame k hkB hkR]; exact hk, rfl, hn⟩
+
+/-- **The cancel of a framed reply keeps every other plain waiter**
+(`CancelFrame`): the splice (`spliceThreadReplyFrameOut_framed_cancelFrame`), then
+the restore, the consume, the unlink and the revert, which keep every other
+thread and every other reply (`WaiterFrame`). -/
+theorem finaliseReplyCallerCancel_noHead_cancelFrame (st : SystemState) (hInv : st.objects.invExt)
+    {c : SeLe4n.ThreadId} {t : TCB} {r : Reply} (hT : st.getTcb? c = some t)
+    (hR : st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hE : replyCallerCancelAdmitted st c t = true) :
+    CancelFrame st (finaliseReplyCallerCancel st c t) c := by
+  obtain ⟨⟨ep, rt, hB⟩, hC, hRO, hD, hEq⟩ := finaliseReplyCallerCancel_noHead st hR hNH hE
+  rw [hEq]
+  let rid : SeLe4n.ReplyId := ⟨t.replyObjectCode - 1⟩
+  have hRo : st.objects[rid.toObjId]? = some (.reply r) := hR
+  obtain ⟨C0, r1, hr1, hc1⟩ := spliceThreadReplyFrameOut_framed_cancelFrame st hInv hRO hRo hC
+  have I1 := spliceThreadReplyFrameOut_preserves_objects_invExt st t hInv
+  have hT1 : (spliceThreadReplyFrameOut st t).getTcb? c = some t := by
+    rw [spliceThreadReplyFrameOut_getTcb?_eq st t hInv]; exact hT
+  have hInvC : (SystemState.unlinkReplyWaiterOpt
+      (Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+      c t.blockingServer?).objects.invExt := by
+    rw [← cancelIpcBlocking_replyArm_of_noDonation st c t hB hD]
+    exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st c t hInv
+  generalize spliceThreadReplyFrameOut st t = s1 at C0 hr1 I1 hT1 hInvC
+  have f1 : WaiterFrame s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) (· = c) := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact WaiterFrame.updateTcb s1 c _ I1
+  have hI1 : (Lifecycle.Suspend.restoreToReadyCancelled s1 c).objects.invExt :=
+    Lifecycle.Suspend.restoreToReadyStaging_invExt s1 c _ I1
+  have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT1
+  have hwR : c.toObjId ≠ rid.toObjId := fun e => by rw [e, hr1] at hTo; cases hTo
+  have hR1 : (Lifecycle.Suspend.restoreToReadyCancelled s1 c).objects[rid.toObjId]? =
+      some (.reply r1) := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    rw [SystemState.updateTcb_objects_ne s1 c _ _ hwR I1]; exact hr1
+  have hW1 : ∃ tw, (Lifecycle.Suspend.restoreToReadyCancelled s1 c).getTcb? c = some tw := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    rw [SystemState.updateTcb_getTcb?_self s1 c _ I1, hT1]; exact ⟨_, rfl⟩
+  obtain ⟨tw, hW1⟩ := hW1
+  have f2 := WaiterFrame.consumeReplyLink _ c t tw hI1 rid r1 hRO hR1 (hc1.trans hC) hW1
+  have f3 := WaiterFrame.of_agreeOffReplyLinks (· = c)
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks
+      (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyCancelled s1 c) c t) c
+      t.blockingServer?)
+  obtain ⟨f4, -⟩ := finaliseReplyRevert_frame _ hInvC t.blockingServer? (· = c)
+  exact C0.trans (CancelFrame.of_waiterFrame (((f1.trans f2).trans f3).trans f4))
+
+-- ============================================================================
+-- §10  The cancel carries the waiters, the lender and the binding
+-- ============================================================================
+
+/-- **What a step keeping both frames and every binding carries of `x`**: its
+owner code, its lender's endability, and its context bound back. -/
+theorem carried_of_frames {s s' : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
+    {K : SeLe4n.ObjId → Reply → Prop} (hX : s.getTcb? x = some t) (C : CancelFrame s s' x)
+    (Lk : LoanKept s s' K) (hK : LoanReplies s x K) (F : bindingLinksAgree s s') :
+    (∀ t', s'.getTcb? x = some t' → t'.scBindingOwnerCode = t.scBindingOwnerCode) ∧
+      (lenderEndable s x t → ∀ t', s'.getTcb? x = some t' → lenderEndable s' x t') ∧
+      (bindingBack s x → bindingBack s' x) := by
+  have ho : ∀ t', s'.getTcb? x = some t' → t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+    intro t' ht'
+    obtain ⟨t0, h0, -, e⟩ := F.getTcb?_back ht'
+    rw [hX] at h0; cases h0; exact e
+  exact ⟨ho, fun hL t' ht' => lenderEndable_transport C Lk hK (ho t' ht') hL,
+    bindingBack.transport F⟩
+
+/-- Every reply is one a cancel keeps for the lender when the cancel keeps every
+reply. -/
+theorem LoanReplies.true (s : SystemState) (x : SeLe4n.ThreadId) :
+    LoanReplies s x (fun _ _ => True) := fun _ _ _ _ => trivial
+
+/-- **A reply-blocked thread's own reply is no reply of its lender's**
+(`offCallerReply`): it is `x`'s, and a frame linking up to it links up to `x`'s. -/
+theorem LoanReplies.offCallerReply {s : SystemState} {x : SeLe4n.ThreadId} {r : Reply}
+    {rid : SeLe4n.ReplyId} (hR : s.getObject? rid.toObjId = some (.reply r))
+    (hC : r.callerCode = x.val + 1) : LoanReplies s x (offCallerReply rid) := by
+  intro k r' hk hN
+  refine ⟨fun e => ?_, fun e => hN.2 rid r e hR hC⟩
+  subst e; rw [hR] at hk; cases hk; exact hN.1 hC
+
+/-- **A context heads a stack of one frame**: its head reply links down to
+nothing, so it has no outer caller. -/
+theorem replyStackOuterCaller?_of_prev_none {st : SystemState} {s : SeLe4n.SchedContextId}
+    {sc : SchedContext} {rid : SeLe4n.ReplyId} {r : Reply} (hSc : st.getSchedContext? s = some sc)
+    (hRp : sc.scReply = some rid) (hGR : st.getReply? rid = some r) (hN : r.next = some (.head s))
+    (hP : r.prev = none) : replyStackOuterCaller? st s = .ok none := by
+  unfold replyStackOuterCaller? donationHeadOf?
+  rw [hSc]
+  dsimp only
+  rw [hRp]
+  dsimp only
+  rw [hGR]
+  dsimp only
+  rw [hN]
+  simp only [bne_self_eq_false, Bool.false_eq_true, if_false]
+  rw [hP]
+
+/-- **An endpoint cancel admitted by the finalisation keeps both frames and every
+binding.** -/
+theorem cancelEndpointBlocked_frames (s : SystemState) (e : SeLe4n.ObjId) (q : Bool)
+    (x : SeLe4n.ThreadId) (t : TCB) (hInv : s.objects.invExt) (hL : tcbQueueLinkIntegrity s)
+    (hX : s.getTcb? x = some t) (hA : endpointCancelAdmitted s e q x t = true) :
+    CancelFrame s (cancelEndpointBlocked s e q x t) x ∧
+      LoanKept s (cancelEndpointBlocked s e q x t) (fun _ _ => True) ∧
+      bindingLinksAgree s (cancelEndpointBlocked s e q x t) := by
+  unfold endpointCancelAdmitted at hA
+  unfold cancelEndpointBlocked
+  cases hE : s.getEndpoint? e with
+  | none => rw [hE] at hA; simp at hA
+  | some ep =>
+    rw [hE] at hA
+    simp only [Bool.and_eq_true] at hA
+    have hC := hA.2
+    dsimp only
+    rw [if_pos hC]
+    have hG : queueRemoveInPlace s e q x ep t = true := by
+      unfold endpointBlockedCancellable at hC
+      simp only [Bool.and_eq_true] at hC
+      exact hC.1.2
+    obtain ⟨C, Lk⟩ := storeEndpointBlockedCancelled_frames s e q x ep t hInv hL hX hG (fun _ _ => True)
+    exact ⟨C, Lk, (SchedLinkFrame.storeEndpointBlockedCancelled s e q x ep t hInv).binding⟩
+
+/-- **A reply-blocked thread's own cancel carries its waiters, its lender and its
+binding**, on a state the finalisation admits: a reply on no stack keeps both
+frames and every binding; a framed reply keeps the waiters' frame and every
+binding, and the thread lends nothing (`replyWaitersAdmitted` reads a lender's
+loan only with the thread's reply on no stack); a head reply is the thread's own
+pop, which hands its context back to it as its own (`replyHeadPopsOwn`), bound
+back to it. -/
+theorem finaliseReplyCallerCancel_carries (s : SystemState) (x : SeLe4n.ThreadId) (t : TCB)
+    (h : finaliseStepInvariant s) (hX : s.getTcb? x = some t)
+    (hA : replyCallerCancelAdmitted s x t = true) (hP : replyHeadPopsOwn s t = true)
+    (hA1 : t.scBindingOwnerCode ≠ 0 → t.replyObjectCode = 0 ∨ replyCallerReplyUnstacked s t = true) :
+    CancelFrame s (finaliseReplyCallerCancel s x t) x ∧
+      (∀ t', (finaliseReplyCallerCancel s x t).getTcb? x = some t' →
+        t'.scBindingOwnerCode = t.scBindingOwnerCode) ∧
+      (lenderEndable s x t → ∀ t', (finaliseReplyCallerCancel s x t).getTcb? x = some t' →
+        lenderEndable (finaliseReplyCallerCancel s x t) x t') ∧
+      (bindingBack s x → bindingBack (finaliseReplyCallerCancel s x t) x) := by
+  have hInv := h.2.1
+  have hA0 := hA
+  unfold replyCallerCancelAdmitted at hA0
+  cases hR : s.getObject? ⟨t.replyObjectCode - 1⟩ with
+  | none => rw [hR] at hA0; cases hA0
+  | some o =>
+    cases o with
+    | reply r =>
+      rw [hR] at hA0
+      dsimp only at hA0
+      simp only [Bool.and_eq_true, beq_iff_eq] at hA0
+      obtain ⟨⟨hC, hF⟩, -⟩ := hA0
+      obtain ⟨-, -, -, -, -, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+      have hcode : t.replyObjectCode ≠ 0 := by
+        intro e; unfold TCB.replyObject at hRO; rw [e] at hRO; cases hRO
+      -- On a stacked reply the thread lends nothing.
+      have hOwn0 : (∃ l, r.next = some l) → t.scBindingOwnerCode = 0 := by
+        intro ⟨l, hl⟩
+        rcases Nat.eq_zero_or_pos t.scBindingOwnerCode with h0 | hpos
+        · exact h0
+        rcases hA1 (by omega) with e | e
+        · exact absurd e hcode
+        · unfold replyCallerReplyUnstacked at e; rw [hR] at e
+          simp only [hl, Option.isNone_some, Bool.false_eq_true] at e
+      cases hN : r.next with
+      | none =>
+        obtain ⟨W, -, -⟩ := finaliseReplyCallerCancel_unframed s hInv h.2.2.2.2.1 hX hR
+          (fun a e => by rw [hN] at e; cases e) hA
+        have Lk := finaliseReplyCallerCancel_unstacked_loanKept s hInv hX hR hN hA
+        have F := finaliseReplyCallerCancel_noHead_schedLinkFrame s hInv hR (by rw [hN]; rfl) hA
+        refine ⟨CancelFrame.of_waiterFrame W, carried_of_frames hX (CancelFrame.of_waiterFrame W) Lk
+          (LoanReplies.offCallerReply (rid := ⟨t.replyObjectCode - 1⟩) hR hC) F.binding⟩
+      | some l =>
+        have hO := hOwn0 ⟨l, hN⟩
+        cases l with
+        | frame a =>
+          have C := finaliseReplyCallerCancel_noHead_cancelFrame s hInv hX hR (by rw [hN]; rfl) hA
+          have F : bindingLinksAgree s (finaliseReplyCallerCancel s x t) :=
+            (finaliseReplyCallerCancel_noHead_schedLinkFrame s hInv hR (by rw [hN]; rfl) hA).binding
+          have ho : ∀ t', (finaliseReplyCallerCancel s x t).getTcb? x = some t' →
+              t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+            intro t' ht'
+            obtain ⟨t0, h0, -, e⟩ := F.getTcb?_back ht'
+            rw [hX] at h0; cases h0; exact e
+          refine ⟨C, ho, fun _ t' ht' o hO' => ?_, bindingBack.transport F⟩
+          rw [ho t' ht', hO] at hO'; cases hO'
+        | head sid =>
+          obtain ⟨W, -, -⟩ := finaliseReplyCallerCancel_unframed s hInv h.2.2.2.2.1 hX hR
+            (fun a e => by rw [hN] at e; cases e) hA
+          obtain ⟨hd, n, P, hRes, hne, -, hPop, hAg⟩ := finaliseReplyCallerCancel_pop s hInv hX hR hN hA
+          -- The pop resolves no outer caller.
+          have hn : n = none := by
+            rcases replyCallerFinalisable_cases hR hF with ⟨hNH, -⟩ |
+                ⟨s', sc, -, -, hN', hSc, hRp, -⟩
+            · rw [hN] at hNH; cases hNH
+            rw [hN] at hN'; cases hN'
+            have hPv : r.prev = none := by
+              unfold replyHeadPopsOwn at hP; rw [hR] at hP
+              simp only [hN, Option.isNone_iff_eq_none] at hP; exact hP
+            have hGR : s.getReply? ⟨t.replyObjectCode - 1⟩ = some r :=
+              (SystemState.getReply?_eq_some_iff _ _ _).mpr hR
+            rw [replyStackOuterCaller?_of_prev_none hSc hRp hGR hN hPv] at hRes
+            cases hRes; rfl
+          subst hn
+          obtain ⟨-, tc, htc, hc1, hc2⟩ := returnDonatedSchedContext_codes hInv hPop hne
+          obtain ⟨tx', hX', e1, e2⟩ := hAg.getTcb?_fwd ((SystemState.getTcb?_eq_some_iff _ _ _).mpr htc)
+          have hOwn' : ∀ t', (finaliseReplyCallerCancel s x t).getTcb? x = some t' →
+              t'.scBindingOwnerCode = 0 := by
+            intro t' ht'; rw [hX'] at ht'; cases ht'; rw [e2, hc2]; rfl
+          refine ⟨CancelFrame.of_waiterFrame W, fun t' ht' => by rw [hOwn' t' ht', hO],
+            fun _ t' ht' o hO' => (by rw [hOwn' t' ht'] at hO'; cases hO'), fun _ t' ht' hz => ?_⟩
+          rw [hX'] at ht'; cases ht'
+          obtain ⟨sc', hS', hB'⟩ := returnDonatedSchedContext_post_boundThread s P hd sid x hInv none hPop
+          obtain ⟨sc'', hS'', hB''⟩ := hAg.getSchedContext?_fwd hS'
+          refine ⟨sc'', ?_, hB''.trans ((SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp hB')⟩
+          rw [e1, hc1]; exact hS''
+    | _ => rw [hR] at hA0; cases hA0
+
+/-- **The finalisation's cancel carries the waiters, the lender and the binding**
+(part 34): on a state carrying the finalisation's invariant whose cancel the
+admission admits, the cancel keeps every plain waiter of `x` but `x`
+(`CancelFrame`), keeps `x`'s owner code, keeps `x`'s lender endable, and keeps
+`x`'s context bound back — whatever `x` was blocked on. -/
+theorem finaliseThreadCancel_carries (s : SystemState) (x : SeLe4n.ThreadId) (t : TCB)
+    (h : finaliseStepInvariant s) (hX : s.getTcb? x = some t)
+    (hA : threadIpcCancelAdmitted s x t = true)
+    (hP : t.replyObjectCode = 0 ∨ replyHeadPopsOwn s t = true)
+    (hA1 : t.scBindingOwnerCode ≠ 0 → t.replyObjectCode = 0 ∨ replyCallerReplyUnstacked s t = true) :
+    CancelFrame s (finaliseThreadCancel s x) x ∧
+      (∀ t', (finaliseThreadCancel s x).getTcb? x = some t' →
+        t'.scBindingOwnerCode = t.scBindingOwnerCode) ∧
+      (lenderEndable s x t → ∀ t', (finaliseThreadCancel s x).getTcb? x = some t' →
+        lenderEndable (finaliseThreadCancel s x) x t') ∧
+      (bindingBack s x → bindingBack (finaliseThreadCancel s x) x) := by
+  have hInv := h.2.1
+  have hL : tcbQueueLinkIntegrity s := h.1.2.1.linkIntegrity
+  have hId : CancelFrame s s x ∧
+      (∀ t', s.getTcb? x = some t' → t'.scBindingOwnerCode = t.scBindingOwnerCode) ∧
+      (lenderEndable s x t → ∀ t', s.getTcb? x = some t' → lenderEndable s x t') ∧
+      (bindingBack s x → bindingBack s x) :=
+    ⟨.refl s x, fun t' ht' => by rw [hX] at ht'; cases ht'; rfl,
+      fun hL t' ht' => by rw [hX] at ht'; cases ht'; exact hL, id⟩
+  have hEp : ∀ e q, endpointCancelAdmitted s e q x t = true →
+      CancelFrame s (cancelEndpointBlocked s e q x t) x ∧
+      (∀ t', (cancelEndpointBlocked s e q x t).getTcb? x = some t' →
+        t'.scBindingOwnerCode = t.scBindingOwnerCode) ∧
+      (lenderEndable s x t → ∀ t', (cancelEndpointBlocked s e q x t).getTcb? x = some t' →
+        lenderEndable (cancelEndpointBlocked s e q x t) x t') ∧
+      (bindingBack s x → bindingBack (cancelEndpointBlocked s e q x t) x) := fun e q hE => by
+    obtain ⟨C, Lk, F⟩ := cancelEndpointBlocked_frames s e q x t hInv hL hX hE
+    exact ⟨C, carried_of_frames hX C Lk (LoanReplies.true s x) F⟩
+  unfold threadIpcCancelAdmitted at hA
+  unfold finaliseThreadCancel
+  rw [hX]
+  dsimp only
+  have hI : t.ipcState = ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode := rfl
+  rcases hc : t.ipcStateCode with _ | _ | _ | _ | k
+  · rw [hc] at hA
+    cases ho : t.ipcObjectCode with
+    | zero =>
+      have hR : t.ipcState = .ready := by rw [hI, hc, ho]; rfl
+      rw [hR]; exact hId
+    | succ o =>
+      have hR : t.ipcState = .blockedOnSend ⟨o⟩ := by rw [hI, hc, ho]; rfl
+      rw [hR]
+      simp only [ho, Nat.add_sub_cancel, Nat.succ_ne_zero, beq_iff_eq, if_false] at hA
+      exact hEp _ _ hA
+  · have hR : t.ipcState = .blockedOnReceive ⟨t.ipcObjectCode⟩ := by rw [hI, hc]; rfl
+    rw [hR]
+    rw [hc] at hA
+    exact hEp _ _ hA
+  · have hR : t.ipcState = .blockedOnNotification ⟨t.ipcObjectCode⟩ := by rw [hI, hc]; rfl
+    rw [hR]
+    rw [hc] at hA
+    dsimp only at hA ⊢
+    cases hN : s.getNotification? ⟨t.ipcObjectCode⟩ with
+    | none => exact hId
+    | some ntfn =>
+      rw [hN] at hA
+      dsimp only at hA ⊢
+      have hC := ((Bool.and_eq_true _ _).mp hA).2
+      rw [if_pos hC]
+      obtain ⟨C, Lk⟩ := notificationCancel_frames s x t _ hInv hR (fun _ _ => True)
+      exact ⟨C, carried_of_frames hX C Lk (LoanReplies.true s x)
+        (SchedLinkFrame.notificationCancel s x t _ hInv hR).binding⟩
+  · have hR : t.ipcState = .blockedOnCall ⟨t.ipcObjectCode⟩ := by rw [hI, hc]; rfl
+    rw [hR]
+    rw [hc] at hA
+    exact hEp _ _ hA
+  · have hR : t.ipcState = .blockedOnReply ⟨t.ipcObjectCode⟩ (SeLe4n.ThreadId.ofOptCode k) := by
+      rw [hI, hc]; rfl
+    rw [hR]
+    rw [hc] at hA
+    have hP' : replyHeadPopsOwn s t = true := by
+      rcases hP with e | e
+      · unfold replyHeadPopsOwn
+        unfold replyCallerCancelAdmitted at hA
+        cases hO : s.getObject? ⟨t.replyObjectCode - 1⟩ with
+        | none => rfl
+        | some o =>
+          cases o with
+          | reply r =>
+            rw [hO] at hA
+            simp only [Bool.and_eq_true, beq_iff_eq] at hA
+            obtain ⟨-, -, -, -, -, hRO, -, -, -⟩ := replyCallerFinalisable_parts hA.1.2
+            unfold TCB.replyObject at hRO; rw [e] at hRO; cases hRO
+          | _ => rfl
+      · exact e
+    exact finaliseReplyCallerCancel_carries s x t h hX hA hP' hA1
+
 end SeLe4n.Kernel
