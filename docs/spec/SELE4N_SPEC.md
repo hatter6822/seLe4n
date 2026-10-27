@@ -5268,8 +5268,9 @@ reads every waiter on the pre-state (`replyWaitersAdmitted`): the lender is
 endable, the thread's own reply, when it lends onward, heads no stack, and every
 other waiter is endable with its reply on no stack.  On a state carrying the
 finalisation's step invariant that the admission admits, neither the loan
-return nor the walk refuses midway
-(`finaliseThreadEndWaiters_returnLoan_endsAll_of_admitted`); the lender's pop
+return nor the walk refuses midway (`finaliseThreadEndWaiters_returnLoan_endsAll`,
+the admission read as `replyWaitersAdmitted_plain` and
+`lenderEndable_of_admitted`); the lender's pop
 keeps the plain waiters' guards (`finaliseReplyWaiter_unframed`).  The head
 pop's recipient check refuses no reachable state
 (`donationRecipientAcceptable_of_donationOwnerValid`).  A context whose holder is blocked sending or calling is finalised
@@ -5340,7 +5341,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 34).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 35).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5398,9 +5399,24 @@ deleted.  **The service graph removed** (`v0.36.145`, plan row 32): the
 kernel's service dependency graph (`SystemState.services`), which no kernel
 entry wrote, is deleted with its operations, its acyclicity and policy proofs,
 the two `crossSubsystemInvariant` conjuncts over it, its frozen copy and its
-information-flow projections; the registry stays.  Still open:
-the finalise's admission is not carried across its own steps (plan row 34);
-each step and the retire re-check their guards.
+information-flow projections; the registry stays.  **The finalise's admission
+carried** (`v0.36.147`, plan row 34): on a state carrying the finalisation's
+invariant that `threadFinaliseAdmitted` admits, what each later step's guard
+reads holds on the state that step runs on (`finaliseThread_admissionCarried`):
+the cancel's admission after the notification unbind, the lender's endability
+and every other waiter's plainness after the cancel (the frames `CancelFrame`
+and `LoanKept`, `finaliseThreadCancel_carries`), and the context unbind's
+binding clause after the release (the loan return takes a loan back,
+`finaliseThreadReturnLoan_unbinds`, and the walk, the suspend and the release
+write no binding).  So no step's guard refuses after an earlier step has
+written — checks before writes — and `finaliseThread_quiesces` reads the
+admission on the pre-state alone.  A step that runs first, on the state the
+admission reads, reads no guard of its own: the notification unbind (the
+admission reads `notificationUnbindAdmitted`) and the context deschedule, which
+reads only whether the holder is ready.  The other steps keep their guards,
+which the reply finalisation's steps share or on which a compiled `@[csimp]`
+form rests, and none refuses on an admitted state.  Still open: that the
+zombie fuel always suffices (plan row 35).
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record
@@ -5889,7 +5905,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 35, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 36, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,
