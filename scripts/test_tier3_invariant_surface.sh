@@ -4026,6 +4026,26 @@ run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_liveM
 run_check "INVARIANT" rg -n '^theorem pageTableMap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem pageTableUnmap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
+# The arms' own steps keep the mappings recorded, each a `MappingStage`.
+run_check "INVARIANT" rg -n '^def MappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Basic.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_mappingFactsKept($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_freshObject($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendCrossCoreDispatchChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Ipc.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Ipc.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatchChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Ipc.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCoreChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Ipc.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitCrossCoreDispatchChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Ipc.lean
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/SchedulingPoint.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem yieldOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeFromCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Retype.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Audit.lean
+run_check "INVARIANT" rg -n '^theorem auditDrainVisiblePrefix_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Audit.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Fault.lean
 # WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
 # map records it on the capability, and refuses a capability whose mapping is
 # still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);

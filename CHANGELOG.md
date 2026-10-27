@@ -1,3 +1,53 @@
+## v0.36.151 — WS-ZA ZA5.4 part 38: the arms' own steps keep the mappings recorded
+
+Part 37 proved the address-space, capability-write, reset and delete arms keep
+`SystemState.liveMappingsRecorded`.  This part proves it for every step of the
+other arms, at the operation, so the entries can compose them.
+
+- **The step relation** (`MappingStage`, new module
+  `Kernel/MappingRecordStage/Basic.lean`): from a state whose object store keeps
+  its table invariant, a step reaches one that keeps it and keeps the mappings
+  recorded.  Stages compose with `MappingStage.trans`, as the run-queue stages
+  do.
+- **A weaker frame** (`SystemState.mappingFactsKept`, `Model/MappingRecords.lean`):
+  every object is unchanged, or keeps its kind, is not a CNode, and keeps its
+  thread slots and mapping view.  The notification bind and unbind move
+  binding codes, which `kindPreservingWrite` does not allow, so they use it.
+- **A fresh store** (`SystemState.liveMappingsRecorded.of_freshObject`): an
+  object stored at a key no object held keeps the mappings recorded, unless it
+  is an address space holding a mapping epoch.
+- **Stages proven** (new modules under `Kernel/MappingRecordStage/`):
+  - `Ipc.lean`: send, receive, call, reply and reply-receive, with the
+    capability transfer; the notification signal, wait and bound signal;
+  - `Thread.lean`: the thread-control and service arms;
+  - `SchedulingPoint.lean`: the run-queue writes, the context save and
+    restore, and the scheduling point;
+  - `Scheduling.lean`: suspend, resume, priority, MCP, affinity, the
+    scheduling-context bind, unbind and configure, timeouts, budget and
+    replenishment, the yield and the timer tick;
+  - `Retype.lean`: the carve (a carved root has no epoch);
+  - `Audit.lean`: the audit read and drain, the declassification and the
+    declassified signal;
+  - `Fault.lean`: the fault delivery, flow-checked and not.
+- **Tests**: Tier 3 anchors pin the relation, the two frame lemmas and the
+  arms' main stages.
+- **Exerciser**: every pin unchanged; no runtime code changed.
+- **Split**: `docs/planning/UNTYPED_RESET_PLAN.md` row 38 is landed with its
+  forks.
+  - New row 39: a thread's space slot holds no capability recording a mapping,
+    as an invariant, and the thread-space set proven with it.  The set-space
+    copy overwrites the slot's old capability without unmapping, which is sound
+    only because of that fact.  Every executable path keeps it: the copy writes
+    `TCB.spaceCopyOf`, which carries no record, as seL4's `deriveCap` clears a
+    frame capability's mapped address.  It is not yet an invariant.
+  - New row 40: the dispatchers and the kernel entries, carrying the delete
+    chain's premises to the arm; it closes the `docs/REGISTERED_DEBT.md` row.
+  - The retype's reset, previously row 39, is now row 41.
+  - The `docs/REGISTERED_DEBT.md` row "A live mapping is not proven to be
+    recorded on a capability" is narrowed to the thread-space set, the
+    dispatchers and the entries.
+- **Found on the way**: no executable path leaves a mapping unrecorded.
+
 ## v0.36.150 — WS-ZA ZA5.4 part 37: every live mapping is recorded
 
 The final delete of a frame's last capability removes the page that capability
