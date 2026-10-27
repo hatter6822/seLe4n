@@ -515,6 +515,74 @@ private def runSeparationWitnessAdmissibilityChecks : IO Unit := do
       some (⟨SeLe4n.Kernel.harnessLowerWitnessIndex⟩, ⟨SeLe4n.Kernel.harnessSeparationBoundary⟩) &&
      SeLe4n.Kernel.harnessLowerWitnessIndex != 1)
 
+/-- The service registry under the endpoint-label gates (WS-ZA ZA5.4 part 33).
+Endpoint 40 is low and endpoint 41 is high; thread 1 is low and thread 2 high.
+Endpoint 41 carries a registration, made before any check runs.  Each check is
+one refusal the gates owe, plus the projection's view of the registration. -/
+private def runServiceRegistryFlowChecks : IO Unit := do
+  let lowEp : SeLe4n.ObjId := ⟨40⟩
+  let highEp : SeLe4n.ObjId := ⟨41⟩
+  let ctx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun oid => if oid = highEp then secretLabel else publicLabel
+      threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
+      endpointLabelOf := fun _ => publicLabel }
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨710⟩, methodCount := 1, maxMessageSize := 1, maxResponseSize := 1,
+      requiresGrant := false }
+  let st0 := (BootstrapBuilder.empty
+      |>.withObject lowEp (.endpoint {})
+      |>.withLifecycleObjectType lowEp .endpoint
+      |>.withObject highEp (.endpoint {})
+      |>.withLifecycleObjectType highEp .endpoint
+      |>.buildChecked)
+  let capTo (oid : SeLe4n.ObjId) : Capability :=
+    { target := .object oid, rights := .ofList [.read, .write] }
+  let highReg : ServiceRegistration := { sid := ⟨41⟩, iface := iface, endpointCap := capTo highEp }
+  let lowReg : ServiceRegistration := { sid := ⟨40⟩, iface := iface, endpointCap := capTo lowEp }
+  match SeLe4n.Kernel.registerInterface iface st0 with
+  | .error _ => throw <| IO.userError "service flow checks: interface registration failed"
+  | .ok (_, stI) =>
+  match SeLe4n.Kernel.registerServiceChecked ctx ⟨2⟩ highReg stI with
+  | .error e => throw <| IO.userError s!"service flow checks: high registration failed: {toString e}"
+  | .ok (_, st) =>
+  -- The low observer's view omits the high registration; the high one's keeps it.
+  expect "the projected registry hides a registration on an endpoint the observer cannot see"
+    ((SeLe4n.Kernel.projectServiceRegistry ctx reviewer st ⟨41⟩).isNone &&
+     (SeLe4n.Kernel.projectServiceRegistry ctx admin st ⟨41⟩).isSome)
+  -- A query on an unobservable endpoint is refused before the lookup.
+  expect "NEGATIVE: a low caller's query on the high endpoint is flowDenied"
+    (match SeLe4n.Kernel.serviceQueryStaged ctx ⟨1⟩ highEp st with
+     | .error .flowDenied => true | _ => false)
+  expect "…and the high caller's query on it answers the registration"
+    (match SeLe4n.Kernel.lookupServiceChecked ctx ⟨2⟩ highEp st with
+     | .ok (reg, _) => reg.sid == highReg.sid | _ => false)
+  -- A high caller may not write a registration down onto a low endpoint.
+  expect "NEGATIVE: a high caller's registration on the low endpoint is flowDenied"
+    (match SeLe4n.Kernel.registerServiceChecked ctx ⟨2⟩ lowReg st with
+     | .error .flowDenied => true | _ => false)
+  -- A high caller may not revoke on a low endpoint either: the revoke is a write.
+  expect "NEGATIVE: a high caller's revoke on the low endpoint is flowDenied"
+    (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨2⟩ lowEp st with
+     | .error .flowDenied => true | _ => false)
+  -- No caller reaches the high registration through a capability to an
+  -- unrelated endpoint or object: the revoke names no service.
+  expect "NEGATIVE: a revoke through an unrelated endpoint finds nothing and removes nothing"
+    (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨1⟩ lowEp st with
+     | .error .objectNotFound => st.serviceRegistry[highReg.sid]?.isSome | _ => false)
+  expect "NEGATIVE: a revoke through a capability to no object is objectNotFound"
+    (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨1⟩ ⟨99⟩ st with
+     | .error .objectNotFound => true | _ => false)
+  -- The high caller's revoke removes the endpoint's registration, once.
+  match SeLe4n.Kernel.revokeServiceChecked ctx ⟨2⟩ highEp st with
+  | .error e => throw <| IO.userError s!"service flow checks: high revoke failed: {toString e}"
+  | .ok (_, stR) =>
+    expect "the endpoint's revoke removes the registration it records"
+      (stR.serviceRegistry[highReg.sid]?.isNone)
+    expect "NEGATIVE: a second revoke through the same endpoint is objectNotFound"
+      (match SeLe4n.Kernel.revokeServiceChecked ctx ⟨2⟩ highEp stR with
+       | .error .objectNotFound => true | _ => false)
+  IO.println "service registry flow checks passed"
+
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
@@ -1406,12 +1474,15 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "declassification audit trail verified"
 
   -- V6-I: NI constructor mapping
-  expect "kernelOperationNiConstructor is total (32 ops)"
+  expect "kernelOperationNiConstructor is total (36 ops)"
     ([ SeLe4n.Kernel.kernelOperationNiConstructor .chooseThread
      , SeLe4n.Kernel.kernelOperationNiConstructor .endpointSendDual
      , SeLe4n.Kernel.kernelOperationNiConstructor .cspaceMint
      , SeLe4n.Kernel.kernelOperationNiConstructor .registerServiceChecked
-     ].length = 4)
+     , SeLe4n.Kernel.kernelOperationNiConstructor .revokeServiceChecked
+     , SeLe4n.Kernel.kernelOperationNiConstructor .serviceQueryChecked
+     ].length = 6 &&
+     SeLe4n.Kernel.KernelOperation.all.length = 36)
 
   IO.println "NI constructor mapping verified"
 
@@ -1803,3 +1874,4 @@ def main : IO Unit := do
   if !ok then
     throw <| IO.userError "InformationFlowSuite: AK6 sub-tests failed"
   SeLe4n.Testing.runInformationFlowChecks
+  SeLe4n.Testing.runServiceRegistryFlowChecks

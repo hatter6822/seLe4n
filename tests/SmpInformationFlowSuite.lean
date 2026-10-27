@@ -321,6 +321,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @vspaceLookup_confinedToCore
 #check @registerService_confinedToCore
 #check @registerServiceChecked_confinedToCore
+#check @revokeService_confinedToCore
+#check @revokeServiceChecked_confinedToCore
+#check @serviceQueryStaged_confinedToCore
 #check @nonInterference_perCore_chooseThread
 #check @nonInterference_perCore_endpointSendDual
 #check @nonInterference_perCore_cspaceMint
@@ -351,6 +354,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @nonInterference_perCore_timerTick
 #check @nonInterference_perCore_syscallDecodeError
 #check @nonInterference_perCore_registerServiceChecked
+#check @nonInterference_perCore_revokeServiceChecked
+#check @nonInterference_perCore_serviceQueryChecked
 #check @nonInterference_perCore_syscallDispatch
 #check @nonInterference_perCore_endpointCallWithDonation
 #check @nonInterference_perCore_endpointReplyWithReversion
@@ -2237,6 +2242,7 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hIrq : s₁.irqHandlers = s₂.irqHandlers) (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
+    (hRegistry : s₁.serviceRegistry = s₂.serviceRegistry)
     (hRQ : s₁.scheduler.runQueueOnCore c = s₂.scheduler.runQueueOnCore c)
     (hCur : s₁.scheduler.currentOnCore c = s₂.scheduler.currentOnCore c)
     (hAD : s₁.scheduler.activeDomainOnCore c = s₂.scheduler.activeDomainOnCore c)
@@ -2244,7 +2250,7 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hDSI : s₁.scheduler.domainScheduleIndexOnCore c = s₂.scheduler.domainScheduleIndexOnCore c)
     (hRegs : s₁.machine.regsOnCore c = s₂.machine.regsOnCore c) :
     ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ :=
-  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem
+  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem hRegistry
     hRQ hCur hAD hDTR hDSI hRegs
 
 -- SM8.A.4: a write to a different core's current slot is invisible.
@@ -4080,7 +4086,7 @@ private theorem remoteCoreWrite_confined :
 private theorem remoteCoreWrite_sharedUnchanged :
     sharedViewUnchanged niLabeling niLowObserver niState remoteCoreWriteState :=
   sharedViewUnchanged_of_state_frames niLabeling niLowObserver
-    (fun _ _ => rfl) rfl rfl rfl rfl
+    (fun _ _ => rfl) rfl rfl rfl rfl rfl
 
 /-- Plan Theorem 3.3.1 instantiated at each of the three bystander cores. -/
 private theorem remoteCoreWrite_invisible_on_c0 :
@@ -5280,21 +5286,21 @@ private def runLeakageBoundChecks : IO Unit := do
 
 /-- §4.6  Per-core coverage of the operation taxonomy (SM8.B.3 / SM8.B.5). -/
 private def runPerCoreCoverageChecks : IO Unit := do
-  IO.println "--- §4.6 per-core coverage of the 34 kernel operations ---"
-  assertBool "34 distinct per-core theorem names, one per KernelOperation"
+  IO.println "--- §4.6 per-core coverage of the 36 kernel operations ---"
+  assertBool "36 distinct per-core theorem names, one per KernelOperation"
     (decide (([ kernelOperationPerCoreNiTheorem .chooseThread
               , kernelOperationPerCoreNiTheorem .endpointSendDual
               , kernelOperationPerCoreNiTheorem .handleInterrupt ]).length = 3) &&
      decide (kernelOperationPerCoreNiTheorem .chooseThread
         ≠ kernelOperationPerCoreNiTheorem .endpointSendDual))
-  assertBool "30 of the 34 operations DERIVE their confinement; exactly 4 do not"
+  assertBool "32 of the 36 operations DERIVE their confinement; exactly 4 do not"
     (decide (perCoreConfinementDerived .endpointSendDual = true) &&
      decide (perCoreConfinementDerived .timerTick = true) &&
      decide (perCoreConfinementDerived .syscallDispatchHigh = false) &&
      decide (perCoreConfinementDerived .handleInterrupt = false) &&
      decide (perCoreConfinementDerived .endpointCallWithDonationHigh = false) &&
      decide (perCoreConfinementDerived .endpointReplyWithReversionHigh = false))
-  assertBool "the taxonomy count is 34 (single-core authority)"
+  assertBool "the taxonomy count is 36 (single-core authority)"
     (have _h : (List.length
         [KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
          .cspaceRevoke, .retypeFromUntyped,
@@ -5307,9 +5313,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
          .storeTcbIpcStateAndMessageHigh, .storeTcbQueueLinksHigh,
          .cspaceMutateHigh, .handleYield, .timerTick,
          .syscallDecodeError, .syscallDispatchHigh,
-         .registerServiceChecked,
+         .registerServiceChecked, .revokeServiceChecked, .serviceQueryChecked,
          .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
-         .handleInterrupt]) = 34 := kernelOperation_count
+         .handleInterrupt]) = 36 := kernelOperation_count
      true)
 
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
@@ -8307,7 +8313,7 @@ private def runPhaseSurfaceChecks : IO Unit := do
     (decide ((KernelOperation.all.filter perCoreConfinementDerived).length
       + (KernelOperation.all.filter (fun op => !perCoreConfinementDerived op)).length
       = KernelOperation.all.length) &&
-     decide (KernelOperation.all.length = 34))
+     decide (KernelOperation.all.length = 36))
   -- LOAD-BEARING NEGATIVE for the enumeration itself: `all` is checked against
   -- the *type*, so a constructor omitted from it cannot pass unnoticed — which
   -- is what the thirty-five-element literals it replaced could not say.

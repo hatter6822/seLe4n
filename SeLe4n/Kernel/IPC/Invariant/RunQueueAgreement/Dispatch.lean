@@ -733,7 +733,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
   | some k =>
     rw [hC] at h
     exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC
-      (capabilityOnlyFlowGate_ok hC h)
+      (dispatchCapabilityOnlyChecked_ok hC h)
   | none =>
   rw [hC] at h
   dsimp only at h

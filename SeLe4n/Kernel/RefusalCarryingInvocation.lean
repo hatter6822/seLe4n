@@ -162,12 +162,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     | _ => .error .invalidCapability
   | .serviceQuery =>
     match cap.target with
-    | .object epId =>
-      match lookupServiceChecked ctx tid epId st with
-      | .ok (reg, st') =>
-          .ok ((), Architecture.writeReturnFrameToTcb st' tid
-            (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
-      | .error e => .error e
+    | .object epId => serviceQueryStaged ctx tid epId st
     | _ => .error .invalidCapability
   | .schedContextBind =>
     match cap.target with
@@ -413,7 +408,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hMint,
       hCopy, hMove, hDelete, hRetype, hMap, hUnmap, hScBind, hNtfn, hPrio, hMcp,
       hIpcBuf, hAff, hFault, hSpace, hPt, decodeVSpaceUnifyInstructionArgs,
-      capabilityOnlyFlowGate]
+      dispatchCapabilityOnlyChecked]
   all_goals first | rfl | (split <;> rfl)
 
 /-- WS-ZA ZA5.2: answering an admitted resume's pending fault keeps it admitted:

@@ -4325,7 +4325,7 @@ run_check "INVARIANT" rg -n '^theorem RunQueueEntryStage\.tableReferencesRecorde
 run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s ∧ s\.tableReferencesRecorded$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
 run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedCode_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedCode epId st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId =>\n      match lookupServiceChecked ctx tid epId st with' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U 'def frozenLookupServiceByCap[^\n]*\n[^\n]*\n  fun st =>\n    match frozenLookupEndpoint st epId with' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.read\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.write\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -7674,7 +7674,7 @@ run_negative_check "INVARIANT" rg -n "a write to core 1's current slot is invisi
 run_check "INVARIANT" rg -n '^def KernelOperation.all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem KernelOperation.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem KernelOperation.all_nodup($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n 'KernelOperation.all.length = 34' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n 'KernelOperation.all.length = 36' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.filter perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -8922,7 +8922,7 @@ run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*Dec
 # `NonInterferenceStep` constructor concludes the projection is *unchanged*, so
 # an operation whose purpose is an authorized visible flow cannot correspond to
 # one; both declassifying operations live in `CrossCoreTransition` instead.
-run_check "INVARIANT" rg -n '^theorem kernelOperation_count : KernelOperation.all.length = 34' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem kernelOperation_count : KernelOperation.all.length = 36' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
@@ -10852,11 +10852,12 @@ run_check "INVARIANT" rg -n '^theorem decodeServiceRegisterArgs_roundtrip($|[ ({
 run_check "INVARIANT" rg -n '^def registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^def lookupServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^def revokeServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^def capabilityOnlyFlowGate($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def dispatchCapabilityOnlyChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def revokeServiceByRecordedCode($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
-run_check "INVARIANT" rg -n '^  \| some k => capabilityOnlyFlowGate ctx decoded\.syscallId tid cap k$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  \| some k => dispatchCapabilityOnlyChecked ctx decoded\.syscallId tid cap k$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceChecked ctx tid epId st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def serviceQueryStaged[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>\n    match lookupServiceChecked ctx caller epId st with' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem registerServiceChecked_eq_registerService_when_allowed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^theorem registerServiceChecked_flowDenied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean

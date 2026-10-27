@@ -303,15 +303,36 @@ inductive NonInterferenceStep
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
-  /-- R5-B/M-02: Service registration — registerService writes only
-      `serviceRegistry`, which no projection reads, and its endpoint's
-      `serviceCode`, which the object projection erases.  Therefore
-      registerService unconditionally preserves projection.  Projecting the
-      registry, and proving this arm against that projection, is
-      `UNTYPED_RESET_PLAN.md` part 33. -/
+  /-- R5-B/M-02: Service registration by a caller the observer cannot see.
+      A registration carries its endpoint's label (`serviceObservable`), and
+      the write gate puts the endpoint's label above the caller's, so the
+      registration and its endpoint's `serviceCode` are both unobservable
+      (`registerServiceChecked_preserves_projection`). -/
   | registerServiceChecked
       (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
+      (hCallerHigh : threadObservable ctx observer caller = false)
+      (hRegInv : st.serviceRegistry.invExt)
       (hStep : registerServiceChecked ctx caller reg st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  /-- Service revocation by a caller the observer cannot see.  The revoke
+      removes the registration the invoked endpoint records, which names that
+      endpoint wherever the table references are recorded, and the write gate
+      puts the endpoint above the caller
+      (`revokeServiceChecked_preserves_projection`). -/
+  | revokeServiceChecked
+      (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+      (hCallerHigh : threadObservable ctx observer caller = false)
+      (hRec : st.tableReferencesRecorded)
+      (hStep : revokeServiceChecked ctx caller epId st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
+  /-- The checked service query, by any caller: it writes only its caller's
+      return frame, which the projection strips
+      (`serviceQueryStaged_preserves_projection`).  What it answers is bounded
+      separately: for an observable caller the staged word is the same in two
+      low-equivalent states (`serviceQueryStaged_answer_lowEquivalent`). -/
+  | serviceQueryChecked
+      (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+      (hStep : serviceQueryStaged ctx caller epId st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   /-- AE1-F5 (U-04): Full call path with donation and PIP — covers the
       post-IPC mutations `applyCallDonation` and `propagatePriorityInheritance`
@@ -401,6 +422,8 @@ theorem step_preserves_projection
       · -- R5-C.1: memory
         exact projectMemory_eq_of_memory_eq ctx observer st' st
           (by rw [cspaceInsertSlot_preserves_machine st st' dst c hInsert])
+      · exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st
+          (cspaceInsertSlot_preserves_serviceRegistry st st' dst c hInsert)
   | cspaceRevoke addr hAddrH hOp =>
     exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hObjInv hOp
   | retypeFromUntyped authority untypedId childId newObj allocSize hUH hCH hAH hOp =>
@@ -441,6 +464,8 @@ theorem step_preserves_projection
     · -- R5-C.1: memory
       exact projectMemory_eq_of_memory_eq ctx observer st' st
         (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hOp])
+    · exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st
+        (cspaceInsertSlot_preserves_serviceRegistry st st' dst cap hOp)
   | schedule hCurH hAllR hOp =>
     exact schedule_preserves_projection ctx observer st st' hCurH hAllR hObjInv hOp
   | vspaceMapPage asid vaddr paddr hRH hOp =>
@@ -510,10 +535,14 @@ theorem step_preserves_projection
     exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hObjInv hOp
   | syscallDecodeError hEq => subst hEq; rfl
   | syscallDispatchHigh _ hProj => exact hProj
-  | registerServiceChecked caller reg hOp =>
-    have hFlow := enforcementSoundness_registerServiceChecked ctx caller reg st st' hOp
-    rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg st hFlow] at hOp
-    exact registerService_preserves_projection ctx observer reg st st' hObjInv hOp
+  | registerServiceChecked caller reg hCH hRI hOp =>
+    exact registerServiceChecked_preserves_projection ctx observer caller reg st st' hCH hObjInv
+      hRI hOp
+  | revokeServiceChecked caller epId hCH hRec hOp =>
+    exact revokeServiceChecked_preserves_projection ctx observer caller epId st st' hCH hObjInv
+      hRec hOp
+  | serviceQueryChecked caller epId hOp =>
+    exact serviceQueryStaged_preserves_projection ctx observer caller epId st st' hObjInv hOp
   | endpointCallWithDonationHigh _ hProj => exact hProj
   | endpointReplyWithReversionHigh _ hProj => exact hProj
   | handleInterrupt _ _ _ hProj => exact hProj
@@ -1449,12 +1478,13 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 34 constructors cover every operation reachable from `dispatchWithCap`
+The 36 constructors cover every operation reachable from `dispatchWithCap`
 plus interrupt handling:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
 - Lifecycle: `.retypeFromUntyped` (the carve)
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
-- Service: `.registerServiceChecked` (R5-B/M-02)
+- Service: `.registerServiceChecked` (R5-B/M-02), `.revokeServiceChecked`,
+  `.serviceQueryChecked`
 - IPC: `.endpointSendDual`, `.endpointCallHigh`, `.endpointReply`,
        `.endpointReceiveDualHigh`
 - Entry: `.syscallDecodeError` (decode failure), `.syscallDispatchHigh`
@@ -1473,7 +1503,7 @@ The `syscallEntry`-level bridge theorems are in `API.lean`:
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step
 `NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
-constructor (checked by the Lean exhaustiveness checker on the 34-arm match). -/
+constructor (checked by the Lean exhaustiveness checker on the 36-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
@@ -1485,7 +1515,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 36 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
@@ -1558,6 +1588,8 @@ inductive KernelOperation where
   | syscallDecodeError
   | syscallDispatchHigh
   | registerServiceChecked
+  | revokeServiceChecked
+  | serviceQueryChecked
   | endpointCallWithDonationHigh
   | endpointReplyWithReversionHigh
   | handleInterrupt  -- AG5-F: Interrupt dispatch (timer + device)
@@ -1590,7 +1622,7 @@ def KernelOperation.all : List KernelOperation :=
    .storeTcbIpcStateAndMessageHigh, .storeTcbQueueLinksHigh,
    .cspaceMutateHigh, .handleYield, .timerTick,
    .syscallDecodeError, .syscallDispatchHigh,
-   .registerServiceChecked,
+   .registerServiceChecked, .revokeServiceChecked, .serviceQueryChecked,
    .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
    .handleInterrupt]
 
@@ -1615,7 +1647,7 @@ theorem KernelOperation.all_nodup : KernelOperation.all.Nodup := by decide
     `KernelOperation.mem_all` it *is* the assertion its predecessor's docstring
     claimed to be: a new variant either fails `mem_all` (if the enumeration was
     not extended) or moves this count (if it was). -/
-theorem kernelOperation_count : KernelOperation.all.length = 34 := by rfl
+theorem kernelOperation_count : KernelOperation.all.length = 36 := by rfl
 
 -- ============================================================================
 -- U4-F / U-H10: NI step coverage theorem
@@ -1645,14 +1677,14 @@ theorem kernelOperation_count : KernelOperation.all.length = 34 := by rfl
     unchanged = trivially NI-preserving) — this is a statement about
     CONSTRUCTOR EXISTENCE for every `KernelOperation`, not about any
     specific op's semantics. See `step_preserves_projection` for the
-    operational correspondence that covers all 34 constructors. -/
+    operational correspondence that covers all 36 constructors. -/
 theorem niStepConstructorCoverage
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) :
     ∀ (_op : KernelOperation),
     ∃ (st' : SystemState), NonInterferenceStep ctx observer st st' := by
   intro
-    -- Exhaustive match on all 34 variants — each witnesses a valid NI step
+    -- Exhaustive match on all 36 variants — each witnesses a valid NI step
     -- via syscallDecodeError (state identity). The match ensures completeness:
     -- adding a new KernelOperation variant without a case here is a compile error.
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
@@ -1665,7 +1697,7 @@ theorem niStepConstructorCoverage
     | .storeTcbIpcStateAndMessageHigh | .storeTcbQueueLinksHigh
     | .cspaceMutateHigh | .handleYield | .timerTick
     | .syscallDecodeError | .syscallDispatchHigh
-    | .registerServiceChecked
+    | .registerServiceChecked | .revokeServiceChecked | .serviceQueryChecked
     | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh
     | .handleInterrupt
       => exact ⟨st, .syscallDecodeError rfl⟩
@@ -1692,7 +1724,7 @@ theorem niStepConstructorCoverage
       retypeFromUntyped, storeObjectHigh
     Batch 4 (remaining): vspaceMapPage, vspaceUnmapPage, vspaceLookup,
       syscallDecodeError, syscallDispatchHigh, registerServiceChecked,
-      endpointCallWithDonationHigh, endpointReplyWithReversionHigh,
+      revokeServiceChecked, serviceQueryChecked, endpointCallWithDonationHigh, endpointReplyWithReversionHigh,
       handleInterrupt -/
 def kernelOperationNiConstructor : KernelOperation → String
   | .chooseThread                   => "chooseThread"
@@ -1726,6 +1758,8 @@ def kernelOperationNiConstructor : KernelOperation → String
   | .syscallDecodeError             => "syscallDecodeError"
   | .syscallDispatchHigh            => "syscallDispatchHigh"
   | .registerServiceChecked             => "registerServiceChecked"
+  | .revokeServiceChecked               => "revokeServiceChecked"
+  | .serviceQueryChecked                => "serviceQueryChecked"
   | .endpointCallWithDonationHigh       => "endpointCallWithDonationHigh"
   | .endpointReplyWithReversionHigh     => "endpointReplyWithReversionHigh"
   | .handleInterrupt                    => "handleInterrupt"
@@ -1746,7 +1780,7 @@ theorem niStepCoverage_operational :
     | .storeTcbIpcStateAndMessageHigh | .storeTcbQueueLinksHigh
     | .cspaceMutateHigh | .handleYield | .timerTick
     | .syscallDecodeError | .syscallDispatchHigh
-    | .registerServiceChecked
+    | .registerServiceChecked | .revokeServiceChecked | .serviceQueryChecked
     | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh
     | .handleInterrupt => decide
 
@@ -1760,7 +1794,7 @@ theorem niStepCoverage_injective :
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationNiConstructor] at hEq)
 
 /-- V6-I5: The number of distinct NI constructor names matches the
-    KernelOperation count (34), confirming surjective coverage. -/
+    KernelOperation count (36), confirming surjective coverage. -/
 theorem niStepCoverage_count :
     ([ kernelOperationNiConstructor .chooseThread
      , kernelOperationNiConstructor .endpointSendDual
@@ -1793,9 +1827,11 @@ theorem niStepCoverage_count :
      , kernelOperationNiConstructor .syscallDecodeError
      , kernelOperationNiConstructor .syscallDispatchHigh
      , kernelOperationNiConstructor .registerServiceChecked
+     , kernelOperationNiConstructor .revokeServiceChecked
+     , kernelOperationNiConstructor .serviceQueryChecked
      , kernelOperationNiConstructor .endpointCallWithDonationHigh
      , kernelOperationNiConstructor .endpointReplyWithReversionHigh
      , kernelOperationNiConstructor .handleInterrupt
-     ]).length = 34 := by rfl
+     ]).length = 36 := by rfl
 
 end SeLe4n.Kernel

@@ -222,7 +222,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   simp only at hOps
   rw [hLk] at hOps
   simp only at hOps
-  unfold dispatchWithCapChecked dispatchCapabilityOnly capabilityOnlyFlowGate at hDisp
+  unfold dispatchWithCapChecked dispatchCapabilityOnly dispatchCapabilityOnlyChecked at hDisp
   cases hId : decoded.syscallId <;> rw [hId] at hOps hSched hDisp <;> simp only at hDisp
   all_goals try (simp only [schedLockSetForSyscall, reduceCtorEq] at hSched; done)
   case yield => exact absurd hId hY

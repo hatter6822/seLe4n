@@ -3665,7 +3665,7 @@ syscalls now route to real kernel operations — zero `.illegalState` stubs
 remain.
 
 V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`, behind the
-two service arms' flow gates (`capabilityOnlyFlowGate`): the query reads the
+two service arms' flow gates (`dispatchCapabilityOnlyChecked`): the query reads the
 registration its endpoint records, and the revoke removes it.
 
 **W6-D (L-8): Two-tier dispatch design rationale.** The dispatch is split into
@@ -4133,25 +4133,19 @@ runs only when the endpoint's label flows to the caller's
 (`serviceEndpointReadAdmitted`), the revoke only when the caller's flows to the
 endpoint's (`serviceEndpointWriteAdmitted`), and either is `flowDenied`
 otherwise.  The checked tier runs the policy-checked wrappers themselves —
-`lookupServiceChecked` under the query arm's return-word staging, and
-`revokeServiceChecked` — so the dispatcher and the enforcement inventory name
+`serviceQueryStaged` (`lookupServiceChecked` under the query arm's return-word
+staging) and `revokeServiceChecked` — so the dispatcher and the enforcement inventory name
 one function for each.  The gate reads labels only and runs before the arm, so
 a refusal reveals nothing about the registry.  Every other arm, and a
 capability naming no object (which each arm refuses itself), runs the
-capability-only arm `k` as it is; `capabilityOnlyFlowGate_ok` is the bridge
+capability-only arm `k` as it is; `dispatchCapabilityOnlyChecked_ok` is the bridge
 back to `k` for a success. -/
-def capabilityOnlyFlowGate (ctx : LabelingContext) (sid : SyscallId) (tid : SeLe4n.ThreadId)
+def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (tid : SeLe4n.ThreadId)
     (cap : Capability) (k : Kernel Unit) : Kernel Unit :=
   match sid with
   | .serviceQuery =>
     match cap.target with
-    | .object epId =>
-      fun st =>
-        match lookupServiceChecked ctx tid epId st with
-        | .ok (reg, st') =>
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
-        | .error e => .error e
+    | .object epId => serviceQueryStaged ctx tid epId
     | _ => k
   | .serviceRevoke =>
     match cap.target with
@@ -4162,12 +4156,12 @@ def capabilityOnlyFlowGate (ctx : LabelingContext) (sid : SyscallId) (tid : SeLe
 /-- A success through the gate is a success of the capability-only arm it
 stands for: each checked service arm is the unchecked arm once its gate
 admits, and a refusal is no success. -/
-theorem capabilityOnlyFlowGate_ok {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : SyscallDecodeResult}
     {tid : SeLe4n.ThreadId} {e : Concurrency.CoreId} {cap : Capability} {k : Kernel Unit}
     {st : SystemState} {r : Unit × SystemState}
     (hC : dispatchCapabilityOnly decoded cap tid e = some k)
-    (h : capabilityOnlyFlowGate ctx decoded.syscallId tid cap k st = .ok r) : k st = .ok r := by
-  unfold capabilityOnlyFlowGate at h
+    (h : dispatchCapabilityOnlyChecked ctx decoded.syscallId tid cap k st = .ok r) : k st = .ok r := by
+  unfold dispatchCapabilityOnlyChecked at h
   cases hS : decoded.syscallId <;> rw [hS] at h <;> try exact h
   all_goals
     unfold dispatchCapabilityOnly at hC
@@ -4180,15 +4174,15 @@ theorem capabilityOnlyFlowGate_ok {ctx : LabelingContext} {decoded : SyscallDeco
     · simp [revokeServiceChecked, hA] at h
   · rename_i epId
     by_cases hA : serviceEndpointReadAdmitted ctx tid epId = true
-    · simpa [lookupServiceChecked, hA] using h
-    · simp [lookupServiceChecked, hA] at h
+    · simpa [serviceQueryStaged, lookupServiceChecked, hA] using h
+    · simp [serviceQueryStaged, lookupServiceChecked, hA] at h
 
 /-- Every arm but the two service arms is ungated. -/
-@[simp] theorem capabilityOnlyFlowGate_of_not_service (ctx : LabelingContext) {sid : SyscallId}
+@[simp] theorem dispatchCapabilityOnlyChecked_of_not_service (ctx : LabelingContext) {sid : SyscallId}
     (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit)
     (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) :
-    capabilityOnlyFlowGate ctx sid tid cap k = k := by
-  unfold capabilityOnlyFlowGate
+    dispatchCapabilityOnlyChecked ctx sid tid cap k = k := by
+  unfold dispatchCapabilityOnlyChecked
   split
   · exact absurd rfl hQ
   · exact absurd rfl hR
@@ -4228,7 +4222,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap tid executingCore with
-  | some k => capabilityOnlyFlowGate ctx decoded.syscallId tid cap k
+  | some k => dispatchCapabilityOnlyChecked ctx decoded.syscallId tid cap k
   | none =>
   match decoded.syscallId with
   -- T6-I: IPC send — checked for sender→endpoint flow
@@ -4966,7 +4960,7 @@ The shared arms are: `.cspaceDelete`, `.vspaceMap`,
 `.vspaceUnmap`, `.schedContextConfigure`,
 `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.  The
 two service arms, `.serviceRevoke` and `.serviceQuery`, are the unchecked arm
-behind a flow gate (`capabilityOnlyFlowGate`), equal to it when the gate
+behind a flow gate (`dispatchCapabilityOnlyChecked`), equal to it when the gate
 admits.
 
 V8-H/D3: With the shared helper extraction, each per-arm theorem follows
@@ -5007,7 +5001,7 @@ theorem dispatchWithCapChecked_serviceRevoke_eq
     dispatchWithCapChecked ctx decoded tid executingCore gate cap =
     revokeServiceChecked ctx tid epId := by
   simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
-    capabilityOnlyFlowGate]
+    dispatchCapabilityOnlyChecked]
 
 /-- ...and when the write is admitted it is the unchecked arm. -/
 theorem checkedDispatch_serviceRevoke_eq_unchecked_of_admitted
@@ -5019,21 +5013,19 @@ theorem checkedDispatch_serviceRevoke_eq_unchecked_of_admitted
     dispatchWithCap decoded tid executingCore gate cap := by
   funext st
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
-    capabilityOnlyFlowGate, revokeServiceChecked, hAdm]
+    dispatchCapabilityOnlyChecked, revokeServiceChecked, hAdm]
 
 /-- The checked `.serviceQuery` arm is the unchecked one behind the read gate:
-the arm's staging over the policy-checked lookup `lookupServiceChecked`. -/
+`serviceQueryStaged`, the arm's staging over the policy-checked lookup
+`lookupServiceChecked`. -/
 theorem dispatchWithCapChecked_serviceQuery_eq
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .object epId) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap = fun st =>
-      match lookupServiceChecked ctx tid epId st with
-      | .ok (reg, st') => .ok ((), Architecture.writeReturnFrameToTcb st' tid
-          (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
-      | .error e => .error e := by
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap =
+      serviceQueryStaged ctx tid epId := by
   simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget,
-    capabilityOnlyFlowGate]
+    dispatchCapabilityOnlyChecked]
 
 /-- ...and when the read is admitted it is the unchecked arm. -/
 theorem checkedDispatch_serviceQuery_eq_unchecked_of_admitted
@@ -5045,7 +5037,86 @@ theorem checkedDispatch_serviceQuery_eq_unchecked_of_admitted
     dispatchWithCap decoded tid executingCore gate cap := by
   funext st
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget,
-    capabilityOnlyFlowGate, lookupServiceChecked, hAdm]
+    dispatchCapabilityOnlyChecked, serviceQueryStaged, lookupServiceChecked, hAdm]
+  rfl
+
+/-- **The query refuses an endpoint the caller may not read**, before any lookup:
+whatever the endpoint records, and whether it records anything, the checked
+`.serviceQuery` arm answers `flowDenied` when the endpoint's label does not flow
+to the caller's.  The refusal reads labels only, so it says nothing about the
+registry or the endpoint. -/
+theorem dispatchWithCapChecked_serviceQuery_refuses_unreadable_endpoint
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .serviceQuery) (hTarget : cap.target = .object epId)
+    (hAdm : serviceEndpointReadAdmitted ctx tid epId = false) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
+  rw [dispatchWithCapChecked_serviceQuery_eq ctx decoded tid executingCore gate cap epId
+    hSyscall hTarget]
+  simp [serviceQueryStaged, lookupServiceChecked, hAdm]
+
+/-- **The revoke refuses an endpoint the caller may not write**, before reading
+what it records. -/
+theorem dispatchWithCapChecked_serviceRevoke_refuses_unwritable_endpoint
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
+    (hAdm : serviceEndpointWriteAdmitted ctx tid epId = false) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
+  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
+    hSyscall hTarget]
+  simp [revokeServiceChecked, hAdm]
+
+/-- **The revoke removes the registration the invoked endpoint records, and no
+other.**  The service is named by the endpoint's `serviceCode`, never by a
+caller-supplied word: the arm reads no message register. -/
+theorem dispatchWithCapChecked_serviceRevoke_removes_recorded_registration
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (ep : Endpoint) (n : Nat)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
+    (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true)
+    (hEp : st.objects[epId]? = some (.endpoint ep)) (hCode : ep.serviceCode = n + 1) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      revokeService ⟨n⟩ st := by
+  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
+    hSyscall hTarget]
+  simp [revokeServiceChecked, hAdm, revokeServiceByRecordedCode, SystemState.getObject?, hEp,
+    hCode]
+
+/-- **A revoke through a capability to an object that records no service fails
+with `objectNotFound` and removes nothing**: a non-endpoint, a missing object,
+or an endpoint whose registration was already revoked.  A capability to an
+unrelated object therefore cannot reach another endpoint's registration. -/
+theorem dispatchWithCapChecked_serviceRevoke_objectNotFound_of_unrecorded
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
+    (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true)
+    (hNone : ∀ ep, st.objects[epId]? = some (.endpoint ep) → ep.serviceCode = 0) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .objectNotFound := by
+  rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
+    hSyscall hTarget]
+  simp only [revokeServiceChecked, hAdm, if_true]
+  unfold revokeServiceByRecordedCode SystemState.getObject?
+  split
+  · rename_i ep hEp
+    rw [hNone ep hEp]
+  · rfl
+
+/-- **Registration refuses an endpoint the caller may not write**: the gate reads
+the endpoint's own label (`objectLabelOf`), so a caller cannot record a
+service on an endpoint above it whatever service id it would be given. -/
+theorem dispatchWithCapChecked_serviceRegister_refuses_unwritable_endpoint
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
+    (args : Architecture.SyscallArgDecode.ServiceRegisterArgs)
+    (hSyscall : decoded.syscallId = .serviceRegister) (hTarget : cap.target = .object epId)
+    (hArgs : Architecture.SyscallArgDecode.decodeServiceRegisterArgs decoded = .ok args)
+    (hAdm : serviceEndpointWriteAdmitted ctx tid epId = false) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hArgs,
+    registerServiceChecked, registrationWriteAdmitted, hAdm]
 
 /-- Z5-J: Structural equivalence for `.schedContextConfigure`. -/
 theorem checkedDispatch_schedContextConfigure_eq_unchecked
@@ -6597,31 +6668,28 @@ theorem dispatchWithCap_preservation_composition_witness :
     **Closure status (v0.29.12, post-audit classification):** `hArmProj`
     remains externally-supplied, BUT every cap-only arm now has a NAMED
     per-op preservation theorem in `InformationFlow/Invariant/Operations.lean`
-    that the caller can directly reference. The 14 arms fall into FOUR
+    that the caller can directly reference. The 14 arms fall into THREE
     substantiveness tiers:
 
-    **Fully substantive (5/14)** — proof uses only observability
-    hypotheses and pre-proven frame lemmas; NO abstract closures:
+    **Fully substantive (6/14)** — proof uses only observability
+    hypotheses, store invariants and pre-proven frame lemmas; NO abstract
+    closures:
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
-    - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12);
-       the registry erase is outside the projection and the endpoint's
-       `serviceCode` is erased by it (closure-free since WS-ZA ZA5.4 part 32
-       removed the service graph the revoke used to fold)
+    - `.serviceRevoke` → `revokeServiceChecked_preserves_projection`; the
+       admitted revoke removes the registration the invoked endpoint records
+       (`revokeServiceByRecordedCode_preserves_projection`), which the
+       projected registry hides because its endpoint is one the caller may
+       write and so one the observer cannot see.  Paired NI:
+       `revokeServiceChecked_NI`.
+    - `.serviceQuery` → `serviceQueryStaged_preserves_projection` for the
+       state, and `serviceQueryStaged_answer_lowEquivalent` for the answer:
+       the arm's outcome in two low-equivalent states is the same refusal or
+       the same `x0` word, because the read gate admits only an endpoint the
+       caller may read and the projected registry carries that endpoint's
+       registration.  Paired NI: `serviceQueryStaged_NI`.
     - `.tcbSetIPCBuffer` → `setIPCBufferOp_preserves_projection`
     - `.vspaceMap` → `vspaceMapPageCheckedWithFlushFromState_preserves_projection`
     - `.vspaceUnmap` → `vspaceUnmapPageWithFlush_preserves_projection`
-
-    **The lookup only (1/14)** — the theorem covers the operation's state,
-    not the arm's answer:
-    - `.serviceQuery` → `lookupServiceByRecordedCode_preserves_projection`
-       (AK6F.11) proves the lookup leaves the state unchanged.  The arm then
-       stages the resolved registration's `ServiceId` into the caller's `x0`,
-       and that word is read from `serviceRegistry`, which no projection
-       carries; NOTHING here proves the answer is the same in two
-       low-equivalent states.  Projecting the registry and proving the
-       register, revoke and query arms against it, the query's `x0` word
-       included, is `UNTYPED_RESET_PLAN.md` part 33 (registered in
-       `docs/REGISTERED_DEBT.md`).
 
     **Hybrid substantive + legitimate closure (2/14)** — proof body
     uses frame lemmas for most phases but takes ONE closure over an

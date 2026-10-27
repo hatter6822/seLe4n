@@ -645,7 +645,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
   cases hC : dispatchCapabilityOnly decoded cap tid e with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_stepCovers hInv hB hPlaced hC (capabilityOnlyFlowGate_ok hC h)
+    exact dispatchCapabilityOnly_stepCovers hInv hB hPlaced hC (dispatchCapabilityOnlyChecked_ok hC h)
   | none =>
   rw [hC] at h
   dsimp only at h

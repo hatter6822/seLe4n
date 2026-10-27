@@ -1102,7 +1102,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       rw [hCapOnly] at hStep
       exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid executingCore k st st'
         hCapOnly hObjInv hInv hQ.base.capOnly hQ.base.reachable.runQueueRefined
-        (capabilityOnlyFlowGate_ok hCapOnly hStep)
+        (dispatchCapabilityOnlyChecked_ok hCapOnly hStep)
   | none =>
       rw [hCapOnly] at hStep
       have hCapOnly0 := hCapOnly

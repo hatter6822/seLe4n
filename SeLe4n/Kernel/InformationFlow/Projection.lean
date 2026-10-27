@@ -83,6 +83,10 @@ structure ObservableState where
       When `ctx.memoryOwnership = none`, this projection is empty (`none` at
       all addresses) for backward compatibility. -/
   memory : SeLe4n.PAddr → Option UInt8
+  /-- The service registry, filtered by `serviceObservable`: a registration is
+      shown exactly when the endpoint it names is observable, so the registry
+      carries its endpoint's label (`projectServiceRegistry`). -/
+  serviceRegistry : ServiceId → Option ServiceRegistration
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -302,15 +306,15 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- frame's `base` and `isDevice` (WS-BP BP7.1: *which* physical memory the
   -- object is), and a page table's `base` and `installedIn`.
   -- An endpoint's `serviceCode` names the service registered on it (seL4
-  -- has no such registry; it is the back-link `revokeService` and the final
-  -- delete read).  No projection carries the service registry, so the
-  -- endpoint's record of a registration is erased here, or a registration of a
-  -- hidden service would show through a visible endpoint (projecting the
-  -- registry under a service observability gate is `UNTYPED_RESET_PLAN.md`
-  -- part 33).  A notification's `irqBound` is kept: it is
-  -- true exactly when an IRQ names the notification, which
-  -- `projectIrqHandlers` already shows for every visible notification.
-  | .endpoint e => .endpoint { e with serviceCode := 0 }
+  -- has no such registry; it is the back-link the query, the revoke and the
+  -- final delete read).  It is kept: a registration is labelled with the
+  -- endpoint it names (`serviceObservable`), so the registry projection shows
+  -- exactly the registrations of visible endpoints, and the code a visible
+  -- endpoint records names a registration that projection already shows.  A
+  -- notification's `irqBound` is kept for the same reason: it is true exactly
+  -- when an IRQ names the notification, which `projectIrqHandlers` already
+  -- shows for every visible notification.
+  | .endpoint e => .endpoint e
   | .notification n => .notification n
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u
@@ -658,6 +662,37 @@ def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : Sys
     List SeLe4n.ObjId :=
   st.objectIndex.filter (objectObservable ctx observer)
 
+/-- **A service registration carries the label of the endpoint it names.**  The
+registry is reached only through an endpoint: the register writes the
+registration of the endpoint the invoked capability names, and the query and
+the revoke read and remove the registration that endpoint records
+(`Endpoint.serviceCode`).  So a registration is observable exactly when its
+endpoint is, and a registration naming no object (which `registerService`
+never builds) is observable to no one. -/
+def serviceObservable (ctx : LabelingContext) (observer : IfObserver)
+    (reg : ServiceRegistration) : Bool :=
+  match reg.endpointCap.target with
+  | .object epId => objectObservable ctx observer epId
+  | _ => false
+
+/-- Project the service registry to the registrations the observer can see:
+each key keeps its registration when `serviceObservable` admits it, and is
+empty otherwise. -/
+def projectServiceRegistry (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    ServiceId → Option ServiceRegistration :=
+  fun sid =>
+    match st.serviceRegistry[sid]? with
+    | some reg => if serviceObservable ctx observer reg then some reg else none
+    | none => none
+
+/-- Two states with one registry project it alike. -/
+theorem projectServiceRegistry_eq_of_serviceRegistry_eq
+    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState)
+    (h : s₁.serviceRegistry = s₂.serviceRegistry) :
+    projectServiceRegistry ctx observer s₁ = projectServiceRegistry ctx observer s₂ := by
+  funext sid
+  simp only [projectServiceRegistry, h]
+
 /-- WS-H8/A-36: Project domain time remaining (scheduling transparency — always visible). -/
 def projectDomainTimeRemaining (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
     Nat :=
@@ -910,6 +945,7 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
     machineRegs := projectMachineRegs ctx observer st
     memory := projectMemory ctx observer st
+    serviceRegistry := projectServiceRegistry ctx observer st
   }
 
 /-- AK6-F.2a: Modifying `scheduler.replenishQueue` does not affect

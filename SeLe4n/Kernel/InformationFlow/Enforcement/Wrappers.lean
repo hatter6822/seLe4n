@@ -694,6 +694,20 @@ def lookupServiceChecked
     else
       .error .flowDenied
 
+/-- **The checked service query as the dispatcher runs it**: the policy-checked
+lookup, its answer staged as the caller's return word (`x0` = the
+registration's `ServiceId`, success in `x1`, no message registers).  The lookup
+leaves the state, so the only write is the caller's return frame. -/
+def serviceQueryStaged
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st =>
+    match lookupServiceChecked ctx caller epId st with
+    | .ok (reg, st') => .ok ((), Architecture.writeReturnFrameToTcb st' caller
+        (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
+    | .error e => .error e
+
 /-- Policy-checked service revocation: the caller's label must flow to the
 endpoint's (`serviceEndpointWriteAdmitted`) before the registration that
 endpoint records is removed (`revokeServiceByRecordedCode`).
