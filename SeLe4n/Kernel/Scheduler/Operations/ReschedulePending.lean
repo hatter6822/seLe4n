@@ -428,12 +428,6 @@ theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : Se
   markKeyChangeFor_extract_frame (fun s => s.objectIndexSet) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFor_services (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).services = st.services :=
-  markKeyChangeFor_extract_frame (fun s => s.services) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
 @[simp] theorem markKeyChangeFor_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     (markKeyChangeFor st tid k).lifecycle = st.lifecycle :=
@@ -648,11 +642,6 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
 @[simp] theorem markKeyChangeFrom_objectIndexSet (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).objectIndexSet = st.objectIndexSet :=
   markKeyChangeFrom_extract_frame (fun s => s.objectIndexSet) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFrom_services (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).services = st.services :=
-  markKeyChangeFrom_extract_frame (fun s => s.services) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markKeyChangeFrom_lifecycle (pre st : SystemState) (tid : SeLe4n.ThreadId) :

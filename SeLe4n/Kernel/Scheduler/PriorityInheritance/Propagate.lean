@@ -146,7 +146,7 @@ diverge, and that theorem is the equation consumers rewrite with.
 * `updatePipBoost` (this function) — idempotent single-thread update.
   `propagate` / `revert` compose it across the chain. Frame lemmas
   in `PriorityInheritance/Preservation.lean` (D4-O family) establish
-  which fields it preserves (current, services, activeDomain, etc.),
+  which fields it preserves (current, activeDomain, etc.),
   and the NI-preservation theorem
   `updatePipBoost_preserves_projection` in
   `InformationFlow/Invariant/Operations.lean` discharges cross-domain

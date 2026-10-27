@@ -11,14 +11,13 @@ import SeLe4n.Model.State
 
 /-! # The tables that name objects by id, and the objects' back-links to them
 
-Three tables of the state name kernel objects by id outside every slot: the
-service registry (a registration keeps its endpoint's capability), the
-interrupt-handler table (an interrupt names the notification it signals) and
-the service graph (an entry names its backing object and its owner).  A
+Two tables of the state name kernel objects by id outside every slot: the
+service registry (a registration keeps its endpoint's capability) and the
+interrupt-handler table (an interrupt names the notification it signals).  A
 capability held there is one the derivation tree does not see, so a final
 delete must not retire an object a table still names.
 
-seL4 has no service registry or service graph, and keeps an interrupt's
+seL4 has no service registry, and keeps an interrupt's
 notification capability in the interrupt's own slot, where finality sees it.
 Here each table reference is answered by the object, as seL4's objects answer
 the references to them:
@@ -27,13 +26,11 @@ the references to them:
   by `registerService` and cleared by `revokeService`);
 * an interrupt handler is recorded on its notification (`Notification.irqBound`,
   set by the boot for every notification the interrupt table names; nothing
-  after the boot writes the table);
-* the service graph holds no entry (`RHTable.slotsEmpty`): no kernel entry
-  writes it, so it stays as the boot leaves it, empty.
+  after the boot writes the table).
 
-`tableReferencesRecorded` states all three, each with its converse, and
+`tableReferencesRecorded` states both, each with its converse, and
 `tableBackLinksClear` reads an object's own back-links in place of a walk of
-the three tables; `tableBackLinksClear.namedByNone` is the theorem that, under
+the two tables; `tableBackLinksClear.namedByNone` is the theorem that, under
 `tableReferencesRecorded`, an object it admits is named by no table entry — the
 consumer theorem that makes the back-links worth recording.
 
@@ -42,65 +39,6 @@ ZA5.4 part 31): the boot establishes `tableReferencesRecorded`, and every step
 that writes no table and leaves every object's back-links as it found them is a
 `TableReferenceFrame`, the form in which the run-queue link stage carries the
 invariant through every syscall and kernel entry. -/
-
-namespace SeLe4n.Kernel.RobinHood
-
-variable {α β γ : Type}
-
-/-- **A table no slot of which holds an entry.** -/
-def RHTable.slotsEmpty (t : RHTable α β) : Prop :=
-  ∀ (i : Nat) (h : i < t.slots.size), t.slots[i] = none
-
-theorem getLoop_of_slotsEmpty [BEq α] [Hashable α] (fuel idx : Nat) (k : α) (d : Nat)
-    (slots : Array (Option (RHEntry α β))) (cap : Nat) (hLen : slots.size = cap)
-    (hCap : 0 < cap) (hE : ∀ (i : Nat) (h : i < slots.size), slots[i] = none) :
-    getLoop fuel idx k d slots cap hLen hCap = none := by
-  cases fuel with
-  | zero => rfl
-  | succ n => unfold getLoop; simp only [hE]
-
-theorem findLoop_of_slotsEmpty [BEq α] [Hashable α] (fuel idx : Nat) (k : α) (d : Nat)
-    (slots : Array (Option (RHEntry α β))) (cap : Nat) (hLen : slots.size = cap)
-    (hCap : 0 < cap) (hE : ∀ (i : Nat) (h : i < slots.size), slots[i] = none) :
-    findLoop fuel idx k d slots cap hLen hCap = none := by
-  cases fuel with
-  | zero => rfl
-  | succ n => unfold findLoop; simp only [hE]
-
-/-- An empty table looks nothing up. -/
-theorem RHTable.get?_of_slotsEmpty [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β}
-    (h : t.slotsEmpty) (k : α) : t.get? k = none :=
-  getLoop_of_slotsEmpty _ _ _ _ _ _ _ _ h
-
-/-- An empty table erases nothing. -/
-theorem RHTable.erase_of_slotsEmpty [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β}
-    (h : t.slotsEmpty) (k : α) : t.erase k = t := by
-  unfold RHTable.erase
-  simp only [findLoop_of_slotsEmpty _ _ _ _ _ _ _ _ h]
-
-/-- A fold over an empty table is its initial value. -/
-theorem RHTable.fold_of_slotsEmpty {t : RHTable α β} (h : t.slotsEmpty) (init : γ)
-    (f : γ → α → β → γ) : t.fold init f = init := by
-  unfold RHTable.fold
-  rw [← Array.foldl_toList]
-  have hL : ∀ x ∈ t.slots.toList, x = none := fun x hx => by
-    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx
-    simp only [Array.getElem_toList]
-    exact h i (by simpa using hi)
-  clear h
-  generalize t.slots.toList = L at hL
-  induction L generalizing init with
-  | nil => rfl
-  | cons x xs ih =>
-    rw [hL x List.mem_cons_self]
-    exact ih init (fun y hy => hL y (List.mem_cons_of_mem _ hy))
-
-/-- The empty table of any capacity is empty. -/
-theorem RHTable.empty_slotsEmpty (cap : Nat) (hCapGe4 : 4 ≤ cap) :
-    (RHTable.empty cap hCapGe4 : RHTable α β).slotsEmpty := fun i hi => by
-  simp [RHTable.empty]
-
-end SeLe4n.Kernel.RobinHood
 
 namespace SeLe4n.Model
 
@@ -121,18 +59,17 @@ theorem objTableBackLinks_eq_map (o : Option KernelObject) :
     objTableBackLinks o = (o.map KernelObject.tableBackLinks).getD (0, false) := by
   cases o <;> rfl
 
-/-- The three tables that name objects by id outside every slot. -/
+/-- The two tables that name objects by id outside every slot. -/
 @[inline] def SystemState.referenceTables (st : SystemState) :
-    RHTable ServiceId ServiceRegistration × RHTable SeLe4n.Irq SeLe4n.ObjId ×
-      RHTable ServiceId ServiceGraphEntry :=
-  (st.serviceRegistry, st.irqHandlers, st.services)
+    RHTable ServiceId ServiceRegistration × RHTable SeLe4n.Irq SeLe4n.ObjId :=
+  (st.serviceRegistry, st.irqHandlers)
 
 /-- **Every table reference by id is recorded on the object it names, and
 every back-link an object holds answers a table entry.**  A registration names
 an endpoint whose code is its service's (`registry`), and an endpoint's code
 names a registration of it (`serviceCodes`); an interrupt names a notification
 whose flag is set (`irqHandlers`), and a set flag is named by an interrupt
-(`irqBound`); the service graph holds no entry (`servicesEmpty`).  Established
+(`irqBound`).  Established
 by the boot and kept by every syscall and kernel entry (the run-queue stages
 carry it, `SystemState.RunQueueLinkStage`), so a final delete reads the object
 it retires (`tableBackLinksClear`) instead of walking the tables. -/
@@ -152,8 +89,6 @@ structure SystemState.tableReferencesRecorded (st : SystemState) : Prop where
   /-- A notification's interrupt flag is named by an interrupt. -/
   irqBound : ∀ n : SeLe4n.ObjId, (objTableBackLinks st.objects[n]?).2 = true →
     ∃ irq : SeLe4n.Irq, st.irqHandlers[irq]? = some n
-  /-- The service graph holds no entry. -/
-  servicesEmpty : st.services.slotsEmpty
 
 /-- A nonzero registration code is an endpoint's. -/
 theorem objTableBackLinks_code_succ {o : Option KernelObject} {m : Nat}
@@ -207,7 +142,7 @@ theorem preserves {st st' : SystemState} (h : TableReferenceFrame st st')
     (hR : st.tableReferencesRecorded) : st'.tableReferencesRecorded := by
   obtain ⟨hT, hB⟩ := h
   simp only [referenceTables, Prod.mk.injEq] at hT
-  obtain ⟨hReg, hIrq, hSvc⟩ := hT
+  obtain ⟨hReg, hIrq⟩ := hT
   exact ⟨hReg ▸ hR.registryInvExtK,
     fun sid reg h => by
       rw [hReg] at h
@@ -215,8 +150,7 @@ theorem preserves {st st' : SystemState} (h : TableReferenceFrame st st')
       exact ⟨e, he, by rw [hB]; exact hc⟩,
     fun e n h => by rw [hB] at h; rw [hReg]; exact hR.serviceCodes e n h,
     fun irq n h => by rw [hIrq] at h; rw [hB]; exact hR.irqHandlers irq n h,
-    fun n h => by rw [hB] at h; rw [hIrq]; exact hR.irqBound n h,
-    hSvc ▸ hR.servicesEmpty⟩
+    fun n h => by rw [hB] at h; rw [hIrq]; exact hR.irqBound n h⟩
 
 theorem refl (st : SystemState) : TableReferenceFrame st st := ⟨rfl, fun _ => rfl⟩
 
@@ -360,8 +294,8 @@ end SystemState.TableReferenceFrame
 /-- **Whether the object at `x` holds no table back-link**: an endpoint no
 registration records itself on, a notification no interrupt names; every other
 kind, and an empty slot, holds none.  One field of the object, read in place:
-what a final delete will ask where it walks the registry, the interrupt table
-and the service graph today -- under `tableReferencesRecorded` the two
+what a final delete asks in place of walking the registry and the interrupt
+table -- under `tableReferencesRecorded` the two
 questions have the same answer (`tableBackLinksClear.namedByNone`). -/
 @[inline] def SystemState.tableBackLinksClear (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
@@ -377,17 +311,16 @@ theorem SystemState.tableBackLinksClear_iff (st : SystemState) (x : SeLe4n.ObjId
   | some o => cases o <;> simp [KernelObject.tableBackLinks]
 
 /-- **An object whose back-links are clear is named by no table entry**: no
-registration holds a capability naming it, no interrupt names it, and the
-service graph holds no entry — exactly what the three walks a final delete
-still makes establish, now answered by one field of the object. -/
+registration holds a capability naming it and no interrupt names it — what
+walks of the two tables would establish, answered by one field of the
+object. -/
 theorem SystemState.tableBackLinksClear.namedByNone {st : SystemState} {x : SeLe4n.ObjId}
     (hR : st.tableReferencesRecorded) (h : st.tableBackLinksClear x = true) :
     (∀ (sid : ServiceId) (reg : ServiceRegistration), st.serviceRegistry[sid]? = some reg →
       ∃ e, reg.endpointCap.target = .object e ∧ e ≠ x) ∧
-    (∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n → n ≠ x) ∧
-    (∀ (sid : ServiceId), st.services[sid]? = none) := by
+    (∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n → n ≠ x) := by
   rw [tableBackLinksClear_iff] at h
-  refine ⟨fun sid reg hs => ?_, fun irq n hi hn => ?_, fun sid => ?_⟩
+  refine ⟨fun sid reg hs => ?_, fun irq n hi hn => ?_⟩
   · obtain ⟨e, he, hc⟩ := hR.registry sid reg hs
     refine ⟨e, he, fun hn => ?_⟩
     subst hn
@@ -397,7 +330,6 @@ theorem SystemState.tableBackLinksClear.namedByNone {st : SystemState} {x : SeLe
     subst hn
     rw [h] at hb
     cases hb
-  · exact RHTable.get?_of_slotsEmpty hR.servicesEmpty sid
 
 /-- The empty state records every reference: its tables are empty. -/
 theorem SystemState.default_tableReferencesRecorded :
@@ -415,6 +347,5 @@ theorem SystemState.default_tableReferencesRecorded :
   irqBound := fun n h => by
     have : (default : SystemState).objects[n]? = none := RHTable_get?_empty 16 (by omega)
     rw [this] at h; cases h
-  servicesEmpty := RHTable.empty_slotsEmpty 16 (by omega)
 
 end SeLe4n.Model

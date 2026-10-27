@@ -516,7 +516,7 @@ enforced at the hardware level:
 The `timerTick` and `handleInterrupt` operations preserve the interrupt-disabled
 invariant: if entered with `interruptsEnabled = false`, the state remains
 `interruptsEnabled = false` on exit. This follows from the structure of kernel
-operations, which only modify `objects`, `scheduler`, `services`, etc. —
+operations, which only modify `objects`, `scheduler`, `serviceRegistry`, etc. —
 none toggle `machine.interruptsEnabled`.
 -/
 

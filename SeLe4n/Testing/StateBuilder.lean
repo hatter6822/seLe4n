@@ -22,7 +22,6 @@ Later entries win because DSL combinators prepend to each list.
 structure BootstrapBuilder where
   machine : SeLe4n.MachineState := default
   objects : List (SeLe4n.ObjId × KernelObject) := []
-  services : List (ServiceId × ServiceGraphEntry) := []
   runnable : List SeLe4n.ThreadId := []
   current : Option SeLe4n.ThreadId := none
   irqHandlers : List (SeLe4n.Irq × SeLe4n.ObjId) := []
@@ -66,12 +65,6 @@ def withObject (builder : BootstrapBuilder) (oid : SeLe4n.ObjId) (obj : KernelOb
   else
     { builder with objects := (oid, obj) :: builder.objects }
 
-def withService
-    (builder : BootstrapBuilder)
-    (sid : ServiceId)
-    (entry : ServiceGraphEntry) : BootstrapBuilder :=
-  { builder with services := (sid, entry) :: builder.services }
-
 def withRunnable (builder : BootstrapBuilder) (queue : List SeLe4n.ThreadId) : BootstrapBuilder :=
   { builder with runnable := queue }
 
@@ -105,7 +98,6 @@ private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.objects
     objectIndex := builder.objects.map Prod.fst
     objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst)
-    services := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.services
     -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
     scheduler := (default : SchedulerState).setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId builder.current

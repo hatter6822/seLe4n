@@ -1728,9 +1728,6 @@ theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp
 @[simp] theorem cdtAddChild_objectIndexSet (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).objectIndexSet = st.objectIndexSet := by rw [cdtAddChild_fields]
 
-@[simp] theorem cdtAddChild_services (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).services = st.services := by rw [cdtAddChild_fields]
-
 @[simp] theorem cdtAddChild_scheduler (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).scheduler = st.scheduler := by rw [cdtAddChild_fields]
 
@@ -1799,9 +1796,6 @@ theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
 @[simp] theorem cdtSplice_objectIndexSet (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).objectIndexSet = st.objectIndexSet := by rw [cdtSplice_fields]
 
-@[simp] theorem cdtSplice_services (st : SystemState) (n : SlotRef) :
-    (st.cdtSplice n).services = st.services := by rw [cdtSplice_fields]
-
 @[simp] theorem cdtSplice_scheduler (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).scheduler = st.scheduler := by rw [cdtSplice_fields]
 
@@ -1869,9 +1863,6 @@ theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
 
 @[simp] theorem cdtMove_objectIndexSet (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).objectIndexSet = st.objectIndexSet := by rw [cdtMove_fields]
-
-@[simp] theorem cdtMove_services (st : SystemState) (old new : SlotRef) :
-    (st.cdtMove old new).services = st.services := by rw [cdtMove_fields]
 
 @[simp] theorem cdtMove_scheduler (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).scheduler = st.scheduler := by rw [cdtMove_fields]

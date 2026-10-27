@@ -167,7 +167,6 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
   machine : s2.machine = s1.machine
   objectIndex : s2.objectIndex = s1.objectIndex
   objectIndexSet : s2.objectIndexSet = s1.objectIndexSet
-  services : s2.services = s1.services
   irqHandlers : s2.irqHandlers = s1.irqHandlers
   lifecycle : s2.lifecycle = s1.lifecycle
   asidTable : s2.asidTable = s1.asidTable
@@ -214,13 +213,13 @@ namespace OffSchedulerAgrees
 
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
-  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
     OffSchedulerAgrees s2 s1 :=
   ⟨h.objects.symm, h.machine.symm, h.objectIndex.symm,
-   h.objectIndexSet.symm, h.services.symm, h.irqHandlers.symm, h.lifecycle.symm,
+   h.objectIndexSet.symm, h.irqHandlers.symm, h.lifecycle.symm,
    h.asidTable.symm, h.interfaceRegistry.symm, h.serviceRegistry.symm, h.cdt.symm,
    h.tlb.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
    h.pendingIcacheMaintenance.symm, h.pendingPhysicalWrites.symm, h.declassificationAuditLog.symm,
@@ -233,7 +232,7 @@ theorem trans {s1 s2 s3 : SystemState}
     OffSchedulerAgrees s1 s3 :=
   ⟨hSecond.objects.trans hFirst.objects, hSecond.machine.trans hFirst.machine,
    hSecond.objectIndex.trans hFirst.objectIndex, hSecond.objectIndexSet.trans hFirst.objectIndexSet,
-   hSecond.services.trans hFirst.services, hSecond.irqHandlers.trans hFirst.irqHandlers,
+   hSecond.irqHandlers.trans hFirst.irqHandlers,
    hSecond.lifecycle.trans hFirst.lifecycle, hSecond.asidTable.trans hFirst.asidTable,
    hSecond.interfaceRegistry.trans hFirst.interfaceRegistry,
    hSecond.serviceRegistry.trans hFirst.serviceRegistry, hSecond.cdt.trans hFirst.cdt,
@@ -256,7 +255,7 @@ end OffSchedulerAgrees
 off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
-  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- WS-ZA ZA4.5: a step that writes only the object store and the scheduler,
 and the store only off the run-queue links, agrees with its input
@@ -266,7 +265,7 @@ theorem OffSchedulerAgrees.of_runLinkStep {st st' : SystemState}
     OffSchedulerAgrees st st' := by
   have hD' := hD
   unfold SystemState.onlyObjectsSchedulerDiffer at hD'
-  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rw [hD']; try rfl)
+  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rw [hD']; try rfl)
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler — it writes the scheduler and the woken thread's run-queue
@@ -380,7 +379,7 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
     unfold storeObject at h1 h2
     cases h1
     cases h2
-    refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.services, hRel.irqHandlers, ?_, ?_,
+    refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.irqHandlers, ?_, ?_,
       hRel.interfaceRegistry, hRel.serviceRegistry, hRel.cdt, hRel.tlb,
       hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
       hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,

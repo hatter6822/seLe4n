@@ -1289,9 +1289,10 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.2: 25, the per-context thread index retired.
   -- WS-ZA ZA5.3 part 2: 22, the slot is the derivation node (three CDT index fields gone).
   -- WS-ZA ZA5.4: 23, the physical-write ledger's drained flag.
-  expect "StateField enum has 23 variants, one per SystemState field"
+  -- WS-ZA ZA5.4 part 32: 22, the service graph removed.
+  expect "StateField enum has 22 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
-       .services, .scheduler, .irqHandlers, .lifecycle,
+       .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt,
        .tlb,
@@ -1299,7 +1300,7 @@ def runInformationFlowChecks : IO Unit := do
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .physicalWrites,
        .physicalWritesDrained,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 23)
+       .declassificationRefusals, .declassificationTaint ].length = 22)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation added `lifecycleObjectTypeLockstep_fields`; the

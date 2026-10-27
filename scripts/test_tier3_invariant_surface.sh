@@ -10002,7 +10002,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 23 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 22 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -22286,15 +22286,14 @@ run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSol
 run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
 
 # --- The tables that name objects by id, and the objects' back-links to them ---
-# Three tables name kernel objects outside every slot (the service registry,
-# the interrupt-handler table, the service graph).  Each reference is answered
-# by the object it names, or by the table holding no entry at all; these
-# anchors hold the relation, not the names.
+# Two tables name kernel objects outside every slot (the service registry and
+# the interrupt-handler table).  Each reference is answered by the object it
+# names; these anchors hold the relation, not the names.
 #
 # The invariant states each direction, so a back-link can be read in place of a
-# table walk.  The registry's two directions, the interrupt table's two, and
-# the service graph's emptiness, in one structure.
-run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),(\n([ \t][^\n]*)?)*\n  serviceCodes : ∀ \(e : SeLe4n\.ObjId\) \(n : Nat\), \(objTableBackLinks st\.objects\[e\]\?\)\.1 = n \+ 1 →(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →(\n([ \t][^\n]*)?)*\n  servicesEmpty : st\.services\.slotsEmpty$' SeLe4n/Model/TableReferences.lean
+# table walk.  The registry's two directions and the interrupt table's two, in
+# one structure, which ends there.
+run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),(\n([ \t][^\n]*)?)*\n  serviceCodes : ∀ \(e : SeLe4n\.ObjId\) \(n : Nat\), \(objTableBackLinks st\.objects\[e\]\?\)\.1 = n \+ 1 →(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
 # The consumer: clear back-links mean no table names the object.  Without this
 # the fields would be recorded and never read.
 run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean

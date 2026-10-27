@@ -5367,7 +5367,7 @@ theorem retireFinalObject_preserves_projection (ctx : LabelingContext) (observer
     projectState ctx observer (retireFinalObject ec target recorder st) =
       projectState ctx observer st := by
   obtain ⟨-, hS, hM⟩ := retireFinalObject_fields ec target recorder st
-  obtain ⟨-, hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st hObjInv _ hx hR hK
+  obtain ⟨hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st hObjInv _ hx hR hK
   have hO := retireFinalObject_objects_of_excluded ec target recorder st hObjInv _ hx hU hK
   generalize retireFinalObject ec target recorder st = s at hS hM hIrq hIdx hO
   have hPO : projectObjects ctx observer s = projectObjects ctx observer st := by

@@ -893,7 +893,7 @@ theorem crossSubsystemInvariant_composition_gap_documented
     structure's declaration order, so a reader can diff the two by eye. -/
 inductive StateField where
   | machine | objects | objectIndex | objectIndexSet
-  | services | scheduler | irqHandlers | lifecycle
+  | scheduler | irqHandlers | lifecycle
   | asidTable | interfaceRegistry | serviceRegistry
   | cdt
   | tlb | tlbShootdown
@@ -1213,7 +1213,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .objects,                    st, st' => st'.objects = st.objects
   | .objectIndex,                st, st' => st'.objectIndex = st.objectIndex
   | .objectIndexSet,             st, st' => st'.objectIndexSet = st.objectIndexSet
-  | .services,                   st, st' => st'.services = st.services
   | .scheduler,                  st, st' => st'.scheduler = st.scheduler
   | .irqHandlers,                st, st' => st'.irqHandlers = st.irqHandlers
   | .lifecycle,                  st, st' => st'.lifecycle = st.lifecycle
@@ -1249,7 +1248,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
   cases st; cases st'
   simp only [SystemState.mk.injEq]
   exact ⟨h .machine, h .objects, h .objectIndex, h .objectIndexSet,
-    h .services, h .scheduler, h .irqHandlers, h .lifecycle,
+    h .scheduler, h .irqHandlers, h .lifecycle,
     h .asidTable, h .interfaceRegistry, h .serviceRegistry,
     h .cdt,
     h .tlb, h .tlbShootdown, Subsingleton.elim _ _, Subsingleton.elim _ _,

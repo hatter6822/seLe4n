@@ -26,7 +26,7 @@ store's one erase, which the untyped reset uses too).
 notification, a reply or a CNode goes the same way when seL4's `finaliseCap`
 would have nothing to cancel (`passiveObjectQuiescent`, read off the object's
 own links) and nothing names it outside a slot (`passiveObjectRetirable`: no
-service registration or graph entry, no interrupt handler); it leaves the store
+service registration, no interrupt handler); it leaves the store
 first (`eraseRetiredObject`), then its recorder's list.  No object names a
 quiescent one by id under the reachable invariants
 (`passiveObjectQuiescent.namedByNone`), so the guard walks no object table.  One
@@ -1025,11 +1025,10 @@ theorem retireUnrecord_fields (recorder : Nat) (x : SeLe4n.ObjId) (st : SystemSt
 
 theorem storeUntypedWith_tables (st : SystemState) (w : SeLe4n.ObjId)
     (f : UntypedObject → UntypedObject) (p : SeLe4n.ObjId → Bool) (hw : p w = false) :
-    (st.storeUntypedWith w f).services = st.services ∧
-      (st.storeUntypedWith w f).irqHandlers = st.irqHandlers ∧
+    (st.storeUntypedWith w f).irqHandlers = st.irqHandlers ∧
       (st.storeUntypedWith w f).objectIndex.filter p = st.objectIndex.filter p := by
   cases hW : st.objects[w]? with
-  | none => unfold SystemState.storeUntypedWith; rw [hW]; exact ⟨rfl, rfl, rfl⟩
+  | none => unfold SystemState.storeUntypedWith; rw [hW]; exact ⟨rfl, rfl⟩
   | some o =>
     cases o with
     | untyped U =>
@@ -1037,46 +1036,44 @@ theorem storeUntypedWith_tables (st : SystemState) (w : SeLe4n.ObjId)
       unfold storeObject at hS
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
       rw [← hS]
-      refine ⟨rfl, rfl, ?_⟩
+      refine ⟨rfl, ?_⟩
       dsimp only
       split
       · rfl
       · rw [List.filter_cons, hw]; rfl
-    | _ => all_goals (unfold SystemState.storeUntypedWith; rw [hW]; exact ⟨rfl, rfl, rfl⟩)
+    | _ => all_goals (unfold SystemState.storeUntypedWith; rw [hW]; exact ⟨rfl, rfl⟩)
 
-/-- **The unrecord keeps the service and interrupt tables, and the object index
+/-- **The unrecord keeps the interrupt table, and the object index
 on the keys a predicate admits**, when the predicate admits neither the
 recorder nor a child `x` records. -/
 theorem retireUnrecord_tables (recorder : Nat) (x : SeLe4n.ObjId) (st : SystemState)
     (p : SeLe4n.ObjId → Bool)
     (hR : recorder ≠ 0 → p (SeLe4n.ObjId.ofNat (recorder - 1)) = false)
     (hK : ∀ c ∈ retiredChildren st x, p c.objId = false) :
-    (retireUnrecord recorder x st).services = st.services ∧
-      (retireUnrecord recorder x st).irqHandlers = st.irqHandlers ∧
+    (retireUnrecord recorder x st).irqHandlers = st.irqHandlers ∧
       (retireUnrecord recorder x st).objectIndex.filter p = st.objectIndex.filter p := by
   have hP : ∀ kids st, (∀ c ∈ kids, p c.objId = false) →
-      (reparentChildren recorder kids st).services = st.services ∧
       (reparentChildren recorder kids st).irqHandlers = st.irqHandlers ∧
       (reparentChildren recorder kids st).objectIndex.filter p = st.objectIndex.filter p := by
     intro kids
     induction kids with
-    | nil => intro st _; exact ⟨rfl, rfl, rfl⟩
+    | nil => intro st _; exact ⟨rfl, rfl⟩
     | cons c rest ih =>
       intro st hk
       simp only [reparentChildren]
-      obtain ⟨a, b, d⟩ := ih (st.storeUntypedWith c.objId _) (fun c' hc' => hk c' (List.mem_cons_of_mem _ hc'))
-      obtain ⟨a', b', d'⟩ := storeUntypedWith_tables st c.objId
+      obtain ⟨b, d⟩ := ih (st.storeUntypedWith c.objId _) (fun c' hc' => hk c' (List.mem_cons_of_mem _ hc'))
+      obtain ⟨b', d'⟩ := storeUntypedWith_tables st c.objId
         (fun U => { U with parent := recorderParent recorder }) p (hk c List.mem_cons_self)
-      exact ⟨a.trans a', b.trans b', d.trans d'⟩
+      exact ⟨b.trans b', d.trans d'⟩
   unfold retireUnrecord adoptChildren
   dsimp only
-  obtain ⟨a, b, d⟩ := hP (retiredChildren st x) st hK
+  obtain ⟨b, d⟩ := hP (retiredChildren st x) st hK
   split
-  · exact ⟨a, b, d⟩
+  · exact ⟨b, d⟩
   · next h0 =>
-    obtain ⟨a', b', d'⟩ := storeUntypedWith_tables (reparentChildren recorder (retiredChildren st x) st)
+    obtain ⟨b', d'⟩ := storeUntypedWith_tables (reparentChildren recorder (retiredChildren st x) st)
       (SeLe4n.ObjId.ofNat (recorder - 1)) _ p (hR h0)
-    exact ⟨a'.trans a, b'.trans b, d'.trans d⟩
+    exact ⟨b'.trans b, d'.trans d⟩
 
 /-- **The unrecord's frame**: the table keeps its invariant and headroom, the
 scheduler, the machine and the tree are unchanged, and every key holds what it
@@ -2501,7 +2498,7 @@ theorem filter_bne_filter {l : List SeLe4n.ObjId} {x : SeLe4n.ObjId} {p : SeLe4n
     · subst h; simp [List.filter_cons, hx, ih]
     · simp [List.filter_cons, h, ih]
 
-/-- **The retire keeps the service and interrupt tables, and the object index
+/-- **The retire keeps the interrupt table, and the object index
 on the keys a predicate admits**, when the predicate admits neither the target
 nor the recorder. -/
 theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Nat)
@@ -2510,12 +2507,11 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
     (hR : recorder ≠ 0 → p (SeLe4n.ObjId.ofNat (recorder - 1)) = false)
     (hK : target ≠ 0 → ∀ y, untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y = true →
       p y = false) :
-    (retireFinalObject ec target recorder st).services = st.services ∧
     (retireFinalObject ec target recorder st).irqHandlers = st.irqHandlers ∧
     (retireFinalObject ec target recorder st).objectIndex.filter p = st.objectIndex.filter p := by
   unfold retireFinalObject
   split
-  · exact ⟨rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
   next h0 =>
   split
   · next hSz =>
@@ -2524,14 +2520,13 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
     · have hS0 : ∀ y, untypedRecordsChild (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1)))
           (SeLe4n.ObjId.ofNat (target - 1)) y = untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y :=
         fun y => eraseRetiredObject_untypedRecordsChild st _ hInv hSz _ y
-      have h1 : (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).services = st.services ∧
-          (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
+      have h1 : (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
           (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
             st.objectIndex.filter p := by
         rw [eraseRetiredObject_eq]
         split
-        · exact ⟨rfl, rfl, filter_bne_filter (hx h0)⟩
-        · exact ⟨rfl, rfl, rfl⟩
+        · exact ⟨rfl, filter_bne_filter (hx h0)⟩
+        · exact ⟨rfl, rfl⟩
       generalize eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1)) = s0 at h1 hS0 ⊢
       unfold retireRecordedObject
       dsimp only
@@ -2541,21 +2536,20 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
         rw [hS0] at this
         exact hK h0 _ this
       have h2 := retireUnrecord_tables recorder (SeLe4n.ObjId.ofNat (target - 1)) s0 p hR hK0
-      rw [h1.1, h1.2.1, h1.2.2] at h2
+      rw [h1.1, h1.2] at h2
       generalize retireUnrecord recorder (SeLe4n.ObjId.ofNat (target - 1)) s0 = s1 at h2 ⊢
-      have h3 : (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).services = st.services ∧
-          (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
+      have h3 : (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
           (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
             st.objectIndex.filter p := by
         unfold retireCarvedObject
         split
-        · exact ⟨h2.1, h2.2.1, (filter_bne_filter (hx h0)).trans h2.2.2⟩
+        · exact ⟨h2.1, (filter_bne_filter (hx h0)).trans h2.2⟩
         · exact h2
       split
       · exact h3
       · exact h3
-    · exact ⟨rfl, rfl, rfl⟩
-  · exact ⟨rfl, rfl, rfl⟩
+    · exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
 
 -- ============================================================================
 -- §10  What the retire keeps of the objects other objects name

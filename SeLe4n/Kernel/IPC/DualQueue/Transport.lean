@@ -3342,25 +3342,4 @@ theorem endpointQueueRemove_lifecycle_eq
         simp only [Except.ok.injEq] at hStep
         rw [← hStep]
 
-/-- Z6-M: endpointQueueRemove does not modify services. -/
-theorem endpointQueueRemove_services_eq
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
-    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    st'.services = st.services := by
-  unfold endpointQueueRemove SystemState.getObject? at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-      simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep
-      cases hTcb : lookupTcb st tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        simp only [Except.ok.injEq] at hStep
-        rw [← hStep]
-
 end SeLe4n.Kernel

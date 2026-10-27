@@ -321,8 +321,7 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
     RunQueueStage st st' :=
   have hF := Architecture.vspaceUnifyInstructionPage_frame h
   RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
-    (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2.1, hF.2.2.2.2.2.2.2.2.1,
-      hF.2.2.2.2.2.2.2.2.2])
+    (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2.1, hF.2.2.2.2.2.2.2.2])
 
 theorem untypedResetWithShootdown_runQueueStage {ec : Concurrency.CoreId} {untypedId : SeLe4n.ObjId}
     {st st' : SystemState} (h : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
