@@ -395,12 +395,6 @@ for driver in drivers:
             # a map at a second address after an unmap: the root's retained
             # mapping and epoch cells take the new address.
             "vspace-map-moved": (0, 0), "vspace-unmap-moved": (0, 0),
-            # The reset of a region whose carved objects the revocation before
-            # it already retired (part 21, `v0.36.132`; 161 before, 151 of
-            # them the whole-store reset); 10 of the 30 are the free-index
-            # rewind, copied because the reset still refuses after it writes,
-            # so its dispatch keeps the pre-state alive (docs/REGISTERED_DEBT.md
-            # §C, "The reset's rewind costs 10 heap cells"; part 36 reads 0).
             # WS-ZA ZA5.4 part 26: the populated CNode's carve (a CNode's 30)
             # and the endpoint's into its slot (an endpoint's 11), the spaced
             # thread's carve (a thread's 24) and its CNode root's into the
@@ -412,7 +406,11 @@ for driver in drivers:
             # carve made, and the thread's cell in place (0).
             "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
             "untyped-retype-spaced-tcb": (24, 24), "untyped-retype-space-cnode": (31, 31),
-            "untyped-reset": (30, 30),
+            # The reset is seL4's (WS-ZA ZA5.4 part 36, `v0.36.149`; 30 before):
+            # every refusal precedes its one write, the in-place rewind of the
+            # invoked capability's free index, so its dispatch runs through
+            # `RefusalCarrying.ofChecked` and keeps no pre-state.
+            "untyped-reset": (0, 0),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}
