@@ -163,7 +163,13 @@ reads the object's own back-links (`SystemState.tableBackLinksClear`) instead of
 walking those tables, the service lookup reading the endpoint's recorded code
 (`lookupServiceByRecordedCode`); since `v0.36.147` a thread's finalisation
 checks before it writes, its pre-state admission carried to the state each
-later step runs on (`finaliseThread_admissionCarried`);
+later step runs on (`finaliseThread_admissionCarried`); since `v0.36.149` the
+untyped reset is seL4's — refused while the invoked slot has a derivation child
+or the untyped records a carved object, otherwise a rewind of the capability's
+free index — and keeps the bundle and the untyped invariants, which the boot
+establishes (`untypedResetSlot_preserves_capabilityInvariantBundle`,
+`untypedResetSlot_preserves_untypedMemoryInvariant`,
+`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
