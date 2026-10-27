@@ -319,4 +319,203 @@ theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded (tid : SeLe4n.Threa
     rw [if_neg h3]
     exact ⟨g, hg, rfl⟩
 
+-- ============================================================================
+-- §3  The address-space arms that remove a mapping or touch none
+-- ============================================================================
+
+/-- **A store of one root that only loses translations and epochs keeps the
+mappings recorded**: the root keeps its ASID, no slot or frame moves. -/
+theorem liveMappingsRecorded_of_rootShrinkStore {st st' : SystemState} {rootId : SeLe4n.ObjId}
+    {root root' : VSpaceRoot} (hRoot : st.objects[rootId]? = some (.vspaceRoot root))
+    (hAt : st'.objects[rootId]? = some (.vspaceRoot root'))
+    (hNe : ∀ k, k ≠ rootId → st'.objects[k]? = st.objects[k]?)
+    (hAsid : root'.asid = root.asid)
+    (hSub : ∀ (v : SeLe4n.VAddr) (e : SeLe4n.PAddr × PagePermissions),
+      root'.mappings[v]? = some e → root.mappings[v]? = some e)
+    (hEp : ∀ (v : SeLe4n.VAddr) (n : Nat), root'.mappingEpochs[v]? = some n →
+      root.mappingEpochs[v]? = some n)
+    (hL : st.liveMappingsRecorded) : st'.liveMappingsRecorded := by
+  refine SystemState.liveMappingsRecorded.of_shrink (fun rid r' hR => ?_)
+    (SystemState.mappingRecordsKept.of_fwd (fun r cap hc _ => ?_) (fun fid f hf => ?_)) hL
+  · by_cases hk : rid = rootId
+    · subst hk; rw [hAt] at hR; cases hR; exact ⟨root, hRoot, hAsid, hSub, hEp⟩
+    · rw [hNe rid hk] at hR; exact ⟨r', hR, rfl, fun _ _ h => h, fun _ _ h => h⟩
+  · refine ⟨r, cap, ?_, rfl, rfl⟩
+    rw [SystemState.slotCapAt_eq_bind] at hc ⊢
+    by_cases hk : r.cnode = rootId
+    · rw [hk, hRoot] at hc; cases hc
+    · rw [hNe _ hk]; exact hc
+  · have hk : fid ≠ rootId := fun e => by subst e; rw [hRoot] at hf; cases hf
+    exact ⟨f, (hNe fid hk).trans hf, rfl⟩
+
+/-- **One page-table unmap keeps the mappings recorded**: its root loses the
+address's translation and epoch, and nothing else moves. -/
+theorem vspaceUnmapPage_preserves_liveMappingsRecorded {asid : SeLe4n.ASID}
+    {vaddr : SeLe4n.VAddr} {st st' : SystemState} (hW : teardownWellFormed st)
+    (hL : st.liveMappingsRecorded)
+    (h : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  unfold Architecture.vspaceUnmapPage at h
+  cases hRes : Architecture.resolveAsidRoot st asid with
+  | none => rw [hRes] at h; cases h
+  | some pr =>
+    obtain ⟨rootId, root⟩ := pr
+    rw [hRes] at h
+    simp only at h
+    cases hUn : root.unmapPage vaddr with
+    | none => rw [hUn] at h; cases h
+    | some root' =>
+      rw [hUn] at h
+      simp only at h
+      obtain ⟨-, hObj, -⟩ := Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
+      have hKK := hW.2.2.2.2.2.2.2.2.2 rootId root hObj
+      exact liveMappingsRecorded_of_rootShrinkStore hObj
+        (storeObject_objects_eq (Architecture.recordPhysicalWrites st _) _ _ _ hW.1 h)
+        (fun k hk => storeObject_objects_ne (Architecture.recordPhysicalWrites st _) _ _ k _ hk
+          hW.1 h)
+        (VSpaceRoot.unmapPage_asid_eq root root' vaddr hUn)
+        (Architecture.VSpaceRoot.unmapPage_mappings_sub root root' vaddr hKK.1 hUn)
+        (Architecture.VSpaceRoot.unmapPage_mappingEpochs_sub root root' vaddr hKK.2 hUn) hL
+
+/-- **The verified unmap the `.vspaceUnmap` arm runs writes the objects its
+page-table erase does**: the flush, the shootdown round, the drain and the
+instruction-cache broadcast write only TLB, shootdown and cache state. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_objects
+    (ec : Concurrency.CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) :
+    ∃ stU, Architecture.vspaceUnmapPage asid vaddr st = .ok ((), stU) ∧
+      st'.objects = stU.objects := by
+  unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast at hStep
+  cases hK : Architecture.vspaceUnmapPageWithShootdownPerCore ec asid vaddr st with
+  | error e =>
+    rw [(Architecture.withIcacheBroadcast_error_iff _ _ st e).mpr hK] at hStep
+    cases hStep
+  | ok pr =>
+    obtain ⟨u, stK⟩ := pr; cases u
+    obtain ⟨hObjsK, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
+    unfold Architecture.vspaceUnmapPageWithShootdownPerCore at hK
+    cases hS : Architecture.vspaceUnmapPageWithShootdown ec asid vaddr st with
+    | error e => rw [hS] at hK; cases hK
+    | ok pr2 =>
+      obtain ⟨u2, stS⟩ := pr2; cases u2
+      rw [hS] at hK
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hK
+      subst hK
+      unfold Architecture.vspaceUnmapPageWithShootdown at hS
+      cases hF : Architecture.vspaceUnmapPageWithFlush asid vaddr st with
+      | error e => rw [hF] at hS; cases hS
+      | ok pr3 =>
+        obtain ⟨u3, stF⟩ := pr3; cases u3
+        rw [hF] at hS
+        simp only [Architecture.withShootdownRound_total, Except.ok.injEq, Prod.mk.injEq,
+          true_and] at hS
+        subst hS
+        unfold Architecture.vspaceUnmapPageWithFlush at hF
+        cases hU : Architecture.vspaceUnmapPage asid vaddr st with
+        | error e => rw [hU] at hF; cases hF
+        | ok pr4 =>
+          obtain ⟨u4, stU⟩ := pr4; cases u4
+          rw [hU] at hF
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
+          subst hF
+          exact ⟨stU, rfl, hObjsK⟩
+
+/-- **The `.vspaceUnmap` arm keeps the mappings recorded**: it removes one
+translation and its epoch, and records nothing a slot reads. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded
+    (ec : Concurrency.CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState) (hW : teardownWellFormed st) (hL : st.liveMappingsRecorded)
+    (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) : st'.liveMappingsRecorded := by
+  obtain ⟨stU, hU, hO⟩ := vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_objects ec asid vaddr
+    st st' h
+  exact SystemState.liveMappingsRecorded.of_objects_eq hO
+    (vspaceUnmapPage_preserves_liveMappingsRecorded hW hL hU)
+
+/-- **The `.vspaceUnifyInstruction` arm keeps the mappings recorded**: a cache
+operation, it writes no object. -/
+theorem vspaceUnifyInstructionPage_preserves_liveMappingsRecorded {asid : SeLe4n.ASID}
+    {vaddr : SeLe4n.VAddr} {st st' : SystemState} (hL : st.liveMappingsRecorded)
+    (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    st'.liveMappingsRecorded :=
+  SystemState.liveMappingsRecorded.of_objects_eq (Architecture.vspaceUnifyInstructionPage_frame h).1 hL
+
+/-- **The page-table install keeps every object's kind and mapping facts**: it
+stores the table with its install record and the root with one more table
+slot, its ASID, translations and epochs unchanged. -/
+theorem pageTableMap_kindPreservingWrite {tableId rootId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (h : Architecture.pageTableMap tableId rootId vaddr st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  obtain ⟨table, root, level, st1, hT, hR, -, -, -, -, hS1, hS2⟩ :=
+    Architecture.pageTableMap_ok tableId rootId vaddr st st' h
+  have hTo := (SystemState.getPageTable?_eq_some_iff _ _ _).1 hT
+  have hRo := (SystemState.getVSpaceRoot?_eq_some_iff _ _ _).1 hR
+  have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS1
+  have hNe : rootId ≠ tableId := fun e => by subst e; rw [hTo] at hRo; cases hRo
+  have hR1 : st1.objects[rootId]? = some (.vspaceRoot root) := by
+    rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hRo
+  exact (storeObject_kindPreservingWrite hObjInv hS1 hTo rfl
+      (by simp [KernelObject.objectType])).trans
+    (storeObject_kindPreservingWrite (st := Architecture.recordPhysicalWrites st1 _) hI1 hS2 hR1
+      rfl (by simp [KernelObject.objectType]))
+
+/-- **The page-table removal keeps every object's kind and mapping facts**: it
+clears the table's install record and, when its root still holds it, takes the
+table slot out of the root. -/
+theorem pageTableUnmap_kindPreservingWrite {tableId : SeLe4n.ObjId} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : Architecture.pageTableUnmap tableId st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold Architecture.pageTableUnmap at h
+  cases hT : st.getPageTable? tableId with
+  | none => rw [hT] at h; cases h
+  | some table =>
+    rw [hT] at h
+    have hTo := (SystemState.getPageTable?_eq_some_iff _ _ _).1 hT
+    have hTab : ∀ {s'}, storeObject tableId (.pageTable table.uninstalled) st = .ok ((), s') →
+        kindPreservingWrite st s' := fun hS =>
+      storeObject_kindPreservingWrite hObjInv hS hTo rfl (by simp [KernelObject.objectType])
+    simp only at h
+    split at h
+    · cases h; exact .refl st
+    · next inst _ =>
+      split at h
+      · exact hTab h
+      · next root hR =>
+        have hRo := (SystemState.getVSpaceRoot?_eq_some_iff _ _ _).1 hR
+        split at h
+        · split at h
+          · cases h
+          · cases hS1 : storeObject tableId (.pageTable table.uninstalled) st with
+            | error e => rw [hS1] at h; cases h
+            | ok p =>
+              obtain ⟨⟨⟩, st1⟩ := p
+              rw [hS1] at h
+              have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hObjInv hS1
+              have hNe : inst.root ≠ tableId := fun e => by
+                rw [e, hTo] at hRo; cases hRo
+              have hR1 : st1.objects[inst.root]? = some (.vspaceRoot root) := by
+                rw [storeObject_objects_ne _ _ _ _ _ hNe hObjInv hS1]; exact hRo
+              exact (hTab hS1).trans
+                (storeObject_kindPreservingWrite (st := Architecture.recordPhysicalWrites st1 _)
+                  hI1 h hR1 rfl (by simp [KernelObject.objectType]))
+        · exact hTab h
+
+/-- **The `.pageTableMap` arm keeps the mappings recorded.** -/
+theorem pageTableMap_preserves_liveMappingsRecorded {tableId rootId : SeLe4n.ObjId}
+    {vaddr : SeLe4n.VAddr} {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (hL : st.liveMappingsRecorded)
+    (h : Architecture.pageTableMap tableId rootId vaddr st = .ok ((), st')) :
+    st'.liveMappingsRecorded :=
+  hL.of_kindPreservingWrite (pageTableMap_kindPreservingWrite hObjInv h)
+
+/-- **The `.pageTableUnmap` arm keeps the mappings recorded.** -/
+theorem pageTableUnmap_preserves_liveMappingsRecorded {tableId : SeLe4n.ObjId}
+    {st st' : SystemState} (hObjInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
+    (h : Architecture.pageTableUnmap tableId st = .ok ((), st')) :
+    st'.liveMappingsRecorded :=
+  hL.of_kindPreservingWrite (pageTableUnmap_kindPreservingWrite hObjInv h)
 end SeLe4n.Kernel

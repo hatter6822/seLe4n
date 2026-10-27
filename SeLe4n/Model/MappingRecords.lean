@@ -147,6 +147,43 @@ theorem liveMappingsRecorded.of_objects_eq {st st' : SystemState} (hO : st'.obje
   obtain ⟨r, cap, fid, f, hc, ht, hf, hb, hm⟩ := h rid root v p perms e hR hM hE
   exact ⟨r, cap, fid, f, (hC r).trans hc, ht, hO ▸ hf, hb, hm⟩
 
+/-- **A write of slot holders alone, keeping every record**: every key holds
+what it held, or an object holding no mapping facts before and after (no root,
+no frame: `KernelObject.mappingView` empty), and every capability recording a
+mapping is still held by some slot with its target and record.  What a
+capability write is: the CNode or thread it writes holds slots, not mappings. -/
+theorem liveMappingsRecorded.of_slotWrite {st st' : SystemState}
+    (hObj : ∀ k : SeLe4n.ObjId, st'.objects[k]? = st.objects[k]? ∨
+      ∃ pre post : KernelObject, st.objects[k]? = some pre ∧ st'.objects[k]? = some post ∧
+        pre.mappingView = (none, none) ∧ post.mappingView = (none, none))
+    (hSlot : ∀ (r : SlotRef) (cap : Capability), st.slotCapAt r = some cap → cap.mapped = true →
+      ∃ (r' : SlotRef) (cap' : Capability), st'.slotCapAt r' = some cap' ∧
+        cap'.target = cap.target ∧ cap'.mapping = cap.mapping)
+    (h : st.liveMappingsRecorded) : st'.liveMappingsRecorded :=
+  liveMappingsRecorded.of_shrink
+    (fun rid r' hR => by
+      rcases hObj rid with e | ⟨pre, post, -, hq, -, hv⟩
+      · exact ⟨r', e ▸ hR, rfl, fun _ _ h => h, fun _ _ h => h⟩
+      · rw [hR] at hq; cases hq; cases hv)
+    (mappingRecordsKept.of_fwd hSlot fun fid f hf => by
+      rcases hObj fid with e | ⟨pre, post, hp, -, hv, -⟩
+      · exact ⟨f, e.trans hf, rfl⟩
+      · rw [hf] at hp; cases hp; cases hv)
+    h
+
+/-- **A write of derivation links alone keeps the mappings recorded**: it
+rewrites CNodes and threads in their link words only, so every slot reads as
+before and no root or frame moves. -/
+theorem liveMappingsRecorded.of_linkReach {st₀ st : SystemState} (hR : linkReach st₀ st)
+    (hInv : st₀.objects.invExt) (h : st₀.liveMappingsRecorded) : st.liveMappingsRecorded := by
+  have hF := SlotTreeFrame.of_linkReach hR hInv
+  refine liveMappingsRecorded.of_slotWrite (fun k => ?_)
+    (fun r cap hc _ => ⟨r, cap, (hF.slotCapAt r).trans hc, rfl, rfl⟩) h
+  rcases hR.agree hInv k with e | ⟨cn, cn', h1, h2, -⟩ | ⟨t, t', h1, h2, -⟩
+  · exact .inl e
+  · exact .inr ⟨_, _, h1, h2, rfl, rfl⟩
+  · exact .inr ⟨_, _, h1, h2, rfl, rfl⟩
+
 /-- **A slot witnesses no live mapping**: no capability it holds records a
 mapping an address space still makes under the record's epoch, to the frame the
 capability targets.  What a step that overwrites or destroys the slot's record

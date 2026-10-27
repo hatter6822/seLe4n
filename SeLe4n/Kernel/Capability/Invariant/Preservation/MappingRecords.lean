@@ -154,6 +154,257 @@ theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded (ec : Concurre
             (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) := ⟨c, hc0, hn⟩
         exact hFin _ hAddr s hs ⟨cap, hc, by rw [← hx]; simp [Capability.namedObject, ht]⟩
 
+-- ============================================================================
+-- Capability writes that keep every record
+-- ============================================================================
+
+/-- A store at a key holding no mapping facts, of an object holding none, is a
+slot write's object half. -/
+theorem storeObject_slotWriteObjects {st st' : SystemState} {k : SeLe4n.ObjId}
+    {pre post : KernelObject} (hInv : st.objects.invExt)
+    (hS : storeObject k post st = .ok ((), st')) (hPre : st.objects[k]? = some pre)
+    (hp : pre.mappingView = (none, none)) (hq : post.mappingView = (none, none)) :
+    ∀ j : SeLe4n.ObjId, st'.objects[j]? = st.objects[j]? ∨
+      ∃ pre post : KernelObject, st.objects[j]? = some pre ∧ st'.objects[j]? = some post ∧
+        pre.mappingView = (none, none) ∧ post.mappingView = (none, none) := fun j => by
+  by_cases hj : j = k
+  · subst hj; exact .inr ⟨pre, post, hPre, storeObject_objects_eq _ _ _ _ hInv hS, hp, hq⟩
+  · exact .inl (storeObject_objects_ne _ _ _ _ _ hj hInv hS)
+
+/-- **An insert into an empty slot keeps the mappings recorded**, whatever the
+capability inserted: every capability already held keeps its slot. -/
+theorem cspaceInsertSlot_preserves_liveMappingsRecorded {addr : CSpaceAddr} {cap : Capability}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : cspaceInsertSlot addr cap st = .ok ((), st')) (hL : st.liveMappingsRecorded) :
+    st'.liveMappingsRecorded := by
+  obtain ⟨cn, hGet, -, hNone, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap h
+  have hPre := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hGet
+  refine hL.of_slotWrite (storeObject_slotWriteObjects hInv hStore hPre rfl rfl)
+    (fun r c hc _ => ⟨r, c, ?_, rfl, rfl⟩)
+  by_cases hr : r = addr
+  · subst hr
+    rw [SystemState.slotCapAt_of_object hPre] at hc
+    change cn.lookup r.slot = some c at hc
+    rw [hNone] at hc; cases hc
+  · rw [cspaceInsertSlot_slotCapAt_ne hInv h r hr]; exact hc
+
+/-- **A free-index write keeps the mappings recorded**: it rewrites one slot's
+free index, keeping the capability's target and record. -/
+theorem setCapFreeIndex_preserves_liveMappingsRecorded {st : SystemState} {addr : CSpaceAddr}
+    {idx : Nat} (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded) :
+    (setCapFreeIndex st addr idx).liveMappingsRecorded := by
+  cases hO : st.objects[addr.cnode]? with
+  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact hL
+  | some o =>
+    cases o with
+    | cnode cn =>
+      have hS := setCapFreeIndex_eq_storeObject (idx := idx) hO
+      have hObj := storeObject_slotWriteObjects hInv hS hO rfl rfl
+      cases hLk : cn.lookup addr.slot with
+      | none =>
+        have hEq : cn.setFreeIndex addr.slot idx = cn := by unfold CNode.setFreeIndex; rw [hLk]
+        rw [hEq] at hS
+        refine hL.of_slotWrite hObj (fun r c hc _ => ⟨r, c, ?_, rfl, rfl⟩)
+        rw [SystemState.slotCapAt_eq_bind] at hc ⊢
+        by_cases hr : r.cnode = addr.cnode
+        · rw [hr, storeObject_objects_eq _ _ _ _ hInv hS]; rw [hr, hO] at hc; exact hc
+        · rw [storeObject_objects_ne _ _ _ _ _ hr hInv hS]; exact hc
+      | some c0 =>
+        rw [CNode.setFreeIndex_of_lookup hLk] at hS
+        refine hL.of_slotWrite hObj (fun r c hc _ => ?_)
+        by_cases e : r = addr
+        · subst e
+          have h0 : st.slotCapAt r = some c0 := (SystemState.slotCapAt_of_object hO).trans hLk
+          rw [h0] at hc; cases hc
+          refine ⟨r, c0.withFreeIndex idx, ?_, Capability.withFreeIndex_target _ _, rfl⟩
+          rw [SystemState.slotCapAt_of_object (storeObject_objects_eq _ _ _ _ hInv hS)]
+          exact CNode.lookup_insert_eq cn r.slot _ (CNode.slotsUnique_holds _)
+            (CNode.slotAddressable_of_lookup _ _ _ hLk)
+        · exact ⟨r, c, (SystemState.slotCapAt_storeObject_ne hInv hO hS
+            (fun s' hs => CNode.lookup_insert_ne cn addr.slot s' _ (Ne.symm hs)
+              (CNode.slotsUnique_holds _)) r e).trans hc, rfl, rfl⟩
+    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]; exact hL
+
+/-- **Setting a derivation's source full keeps the mappings recorded.** -/
+theorem untypedSourceSetFull_preserves_liveMappingsRecorded {st : SystemState} {src : CSpaceAddr}
+    {cap : Capability} (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded) :
+    (untypedSourceSetFull st src cap).liveMappingsRecorded :=
+  untypedSourceSetFull_of (P := SystemState.liveMappingsRecorded) hL
+    fun _ => setCapFreeIndex_preserves_liveMappingsRecorded hInv hL
+
+/-- **A derivation edge keeps the mappings recorded**: it writes link words. -/
+theorem cdtAddChild_preserves_liveMappingsRecorded {st : SystemState} {p c : SlotRef}
+    {op : DerivationOp} (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded) :
+    (st.cdtAddChild p c op).liveMappingsRecorded :=
+  SystemState.liveMappingsRecorded.of_linkReach (SystemState.cdtAddChild_reach st p c op) hInv hL
+
+/-- **A derivation-node move keeps the mappings recorded**: it writes link words. -/
+theorem cdtMove_preserves_liveMappingsRecorded {st : SystemState} {old new : SlotRef}
+    (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded) :
+    (st.cdtMove old new).liveMappingsRecorded :=
+  SystemState.liveMappingsRecorded.of_linkReach (SystemState.cdtMove_reach st old new) hInv hL
+
+/-- **The core delete of a slot whose record another slot also holds keeps the
+mappings recorded**: every other slot keeps its capability, and a record the
+deleted slot held is still held by a slot it names. -/
+theorem cspaceDeleteSlotCore_preserves_liveMappingsRecorded {addr : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : cspaceDeleteSlotCore addr st = .ok ((), st'))
+    (hDup : ∀ cap, st.slotCapAt addr = some cap → cap.mapped = true →
+      ∃ r, r ≠ addr ∧ st.slotCapAt r = some cap)
+    (hL : st.liveMappingsRecorded) : st'.liveMappingsRecorded := by
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok h
+  have hp : o.mappingView = (none, none) := by
+    cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.mappingView]
+  have hq : (o.removeSlotCap addr.slot).mappingView = (none, none) := by
+    cases o <;> simp_all [KernelObject.holdsSlots, KernelObject.mappingView,
+      KernelObject.removeSlotCap]
+  obtain ⟨-, hOther⟩ := cspaceDeleteSlotCore_slotCapAt hInv h
+  refine hL.of_slotWrite (storeObject_slotWriteObjects hInv hS hO hp hq) (fun r c hc hm => ?_)
+  by_cases hr : r = addr
+  · subst hr
+    obtain ⟨r', hr', hc'⟩ := hDup c hc hm
+    exact ⟨r', c, (hOther r' hr').trans hc', rfl, rfl⟩
+  · exact ⟨r, c, (hOther r hr).trans hc, rfl, rfl⟩
+
+theorem cspaceInsertSlot_objects_invExt {addr : CSpaceAddr} {cap : Capability}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : cspaceInsertSlot addr cap st = .ok ((), st')) : st'.objects.invExt := by
+  obtain ⟨cn, -, -, -, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap h
+  exact storeObject_preserves_objects_invExt _ _ _ _ hInv hStore
+
+/-- **The copy keeps the mappings recorded**: it inserts a capability carrying
+no record into an empty slot, adds a derivation edge and may set the source
+full. -/
+theorem cspaceCopy_preserves_liveMappingsRecorded {src dst : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
+    (h : cspaceCopy src dst st = .ok ((), st')) : st'.liveMappingsRecorded := by
+  obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose h
+  have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
+  exact untypedSourceSetFull_preserves_liveMappingsRecorded
+    ((SystemState.cdtAddChild_reach st2 src dst .copy).invExt hI2)
+    (cdtAddChild_preserves_liveMappingsRecorded hI2
+      (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL))
+
+/-- **The mint keeps the mappings recorded**: an insert into an empty slot. -/
+theorem cspaceMint_preserves_liveMappingsRecorded {src dst : CSpaceAddr}
+    {rights : AccessRightSet} {badge : Option SeLe4n.Badge} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
+    (h : cspaceMint src dst rights badge st = .ok ((), st')) : st'.liveMappingsRecorded := by
+  obtain ⟨-, child, -, hIns, -⟩ := cspaceMint_ok_decompose src dst rights badge st st' h
+  exact cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL
+
+/-- **The `.cspaceMint` arm keeps the mappings recorded**: the mint, a
+derivation edge, and the source set full. -/
+theorem cspaceMintWithCdt_preserves_liveMappingsRecorded {src dst : CSpaceAddr}
+    {rights : AccessRightSet} {badge : Option SeLe4n.Badge} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
+    (h : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  unfold cspaceMintWithCdt at h
+  cases hM : cspaceMint src dst rights badge st with
+  | error e => rw [hM] at h; cases h
+  | ok pr =>
+    obtain ⟨⟨⟩, st1⟩ := pr
+    rw [hM] at h
+    obtain ⟨-, child, -, hIns, -⟩ := cspaceMint_ok_decompose src dst rights badge st st1 hM
+    have hI1 := cspaceInsertSlot_objects_invExt hInv hIns
+    have hL1 := cspaceMint_preserves_liveMappingsRecorded hInv hL hM
+    simp only at h
+    split at h
+    · split at h
+      · cases h
+      · cases h
+        exact untypedSourceSetFull_preserves_liveMappingsRecorded
+          ((SystemState.cdtAddChild_reach st1 src dst .mint).invExt hI1)
+          (cdtAddChild_preserves_liveMappingsRecorded hI1 hL1)
+    · cases h
+      exact cdtAddChild_preserves_liveMappingsRecorded hI1 hL1
+
+/-- **The move keeps the mappings recorded**: the capability, with its record,
+is inserted into the empty destination before the source is emptied, so the
+record is held throughout, and the derivation node then moves with it. -/
+theorem cspaceMove_preserves_liveMappingsRecorded {src dst : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
+    (h : cspaceMove src dst st = .ok ((), st')) : st'.liveMappingsRecorded := by
+  unfold cspaceMove at h
+  by_cases hSelf : src = dst
+  · simp [hSelf] at h
+  simp only [hSelf, ↓reduceIte] at h
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => rw [hSrc] at h; cases h
+  | ok pair =>
+    obtain ⟨cap, st1⟩ := pair
+    have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
+    subst hSt1
+    have hCapSrc : st1.slotCapAt src = some cap :=
+      SystemState.slotCapAt_of_lookupSlotCap (cspaceLookupSlot_ok_lookupSlotCap hSrc)
+    rw [hSrc] at h
+    simp only at h
+    cases hNN : cap.toNonNull? with
+    | none => rw [hNN] at h; cases h
+    | some capNN =>
+      rw [hNN] at h
+      simp only at h
+      have hVal : capNN.val = cap := by
+        unfold Capability.toNonNull? at hNN
+        split at hNN
+        · cases hNN; rfl
+        · cases hNN
+      cases hIns : cspaceInsertSlot dst capNN.val st1 with
+      | error e => rw [hIns] at h; cases h
+      | ok pr2 =>
+        obtain ⟨⟨⟩, st2⟩ := pr2
+        rw [hIns] at h
+        simp only at h
+        cases hDel : cspaceDeleteSlotCore src st2 with
+        | error e => rw [hDel] at h; cases h
+        | ok pr3 =>
+          obtain ⟨⟨⟩, st3⟩ := pr3
+          rw [hDel] at h
+          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+          subst h
+          have hI2 := cspaceInsertSlot_objects_invExt hInv hIns
+          have hL2 := cspaceInsertSlot_preserves_liveMappingsRecorded hInv hIns hL
+          have hDst : st2.slotCapAt dst = some cap := hVal ▸ cspaceInsertSlot_slotCapAt_self hInv hIns
+          have hSrc2 : st2.slotCapAt src = some cap := by
+            rw [cspaceInsertSlot_slotCapAt_ne hInv hIns src hSelf]; exact hCapSrc
+          have hL3 := cspaceDeleteSlotCore_preserves_liveMappingsRecorded hI2 hDel
+            (fun c hc _ => ⟨dst, Ne.symm hSelf, by rw [hSrc2] at hc; cases hc; exact hDst⟩) hL2
+          obtain ⟨o, -, -, hS3⟩ := cspaceDeleteSlotCore_ok hDel
+          exact cdtMove_preserves_liveMappingsRecorded
+            (storeObject_preserves_objects_invExt _ _ _ _ hI2 hS3) hL3
+
+/-- **The reply-cap mint keeps the mappings recorded**: it inserts a reply
+capability, which carries no record, into an empty slot and adds a derivation
+edge. -/
+theorem mintReplyCapWithCdt_preserves_liveMappingsRecorded {src dst : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded)
+    (h : mintReplyCapWithCdt src dst st = .ok ((), st')) : st'.liveMappingsRecorded := by
+  unfold mintReplyCapWithCdt at h
+  cases hM : mintReplyCap src dst st with
+  | error e => rw [hM] at h; cases h
+  | ok pr =>
+    obtain ⟨⟨⟩, st1⟩ := pr
+    rw [hM] at h
+    cases h
+    unfold mintReplyCap at hM
+    cases hLk : cspaceLookupSlot src st with
+    | error e => rw [hLk] at hM; cases hM
+    | ok pair =>
+      obtain ⟨parent, st0⟩ := pair
+      have hSt0 : st0 = st := cspaceLookupSlot_preserves_state st st0 src parent hLk
+      subst hSt0
+      rw [hLk] at hM
+      simp only at hM
+      split at hM
+      · split at hM
+        · have hI1 := cspaceInsertSlot_objects_invExt hInv hM
+          exact cdtAddChild_preserves_liveMappingsRecorded hI1
+            (cspaceInsertSlot_preserves_liveMappingsRecorded hInv hM hL)
+        · cases hM
+      · cases hM
+
 /-- **What a finalising delete chain carries**: the capability invariants, the
 teardown's well-formedness and the mapping records together, each step's
 preservation of the third reading the first two. -/
