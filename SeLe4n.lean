@@ -305,3 +305,10 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
 -- the arms' definitions in `Kernel.API`, which no kernel module downstream of
 -- the API imports.
 import SeLe4n.Kernel.MappingRecordPreservation
+-- The other arms' stages (`Kernel.MappingRecordStage.*`, WS-ZA ZA5.4 part 38):
+-- the IPC, thread, scheduling-context, notification, service, scheduling,
+-- timer, fault, audit and retype steps keep the mappings recorded.
+import SeLe4n.Kernel.MappingRecordStage.Scheduling
+import SeLe4n.Kernel.MappingRecordStage.Retype
+import SeLe4n.Kernel.MappingRecordStage.Audit
+import SeLe4n.Kernel.MappingRecordStage.Fault

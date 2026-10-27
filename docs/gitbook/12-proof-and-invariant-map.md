@@ -173,7 +173,9 @@ establishes (`untypedResetSlot_preserves_capabilityInvariantBundle`,
 every live mapping is recorded on a capability to its frame
 (`SystemState.liveMappingsRecorded`, the proof-layer bundle's 18th conjunct),
 which the boot establishes and the address-space, capability-write, reset and
-delete arms keep (the other arms are a registered debt, plan row 38);
+delete arms keep, and since `v0.36.151` the steps of the IPC, thread,
+scheduling, timer, fault, audit and retype arms too (`MappingStage`; the
+thread-space set and the entries are a registered debt, plan rows 39 and 40);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

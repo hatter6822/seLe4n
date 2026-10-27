@@ -24,12 +24,13 @@ writes one free index.  The capability arms (copy, mint, move, the reply-cap
 mint, the finalising delete, the revocation and the zombie delete) are in
 `Capability/Invariant/Preservation/MappingRecords.lean`.  A write that keeps
 each object's kind and mapping view keeps it too
-(`SystemState.liveMappingsRecorded.of_kindPreservingWrite`).  The other
-arms (the IPC paths with their capability transfer, the thread,
-scheduling-context, notification, service and audit arms, the thread-space set
-and the retype) and the kernel entries are the `docs/REGISTERED_DEBT.md` row
-"A live mapping is not proven to be recorded on a capability", which plan row
-38 closes.
+(`SystemState.liveMappingsRecorded.of_kindPreservingWrite`).  The steps of
+the other arms (the IPC paths with their capability transfer, the thread,
+scheduling-context, notification, service, audit and fault arms, the scheduling
+point, the timer tick and the retype) are each a `MappingStage`
+(`Kernel/MappingRecordStage/*.lean`).  The thread-space set, the dispatchers
+and the kernel entries are the `docs/REGISTERED_DEBT.md` row "A live mapping is
+not proven to be recorded on a capability", which plan rows 39 and 40 close.
 -/
 
 namespace SeLe4n.Kernel

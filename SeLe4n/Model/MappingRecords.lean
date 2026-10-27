@@ -250,16 +250,67 @@ private theorem root_of_kind_view {pre : KernelObject} {r' : VSpaceRoot}
   cases pre <;> simp [KernelObject.objectType, KernelObject.mappingView] at hT hV ⊢
   exact hV
 
-/-- **A kind-preserving write keeps the mappings recorded**: it writes no CNode,
-keeps every thread's slots, and keeps every root's ASID, translations and
-epochs and every frame's base (`kindPreservingWrite.mappingView`).  Every IPC
-and scheduler step is one. -/
-theorem SystemState.liveMappingsRecorded.of_kindPreservingWrite {st st' : SystemState}
-    (hK : kindPreservingWrite st st') (h : st.liveMappingsRecorded) :
+/-- **A write that keeps every object's mapping facts**: at every key the store
+is unchanged, or holds an object of the same kind, not a CNode, with the same
+thread slots and the same mapping facts (`KernelObject.mappingView`).  Weaker
+than `kindPreservingWrite`: it may move an object's untyped record, binding
+codes and table back-links, none of which the mapping records read — the
+notification bind and unbind move the binding codes. -/
+def SystemState.mappingFactsKept (st st' : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ pre post : KernelObject,
+      st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+      post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
+      post.tcbSlots = pre.tcbSlots ∧ post.mappingView = pre.mappingView
+
+namespace SystemState.mappingFactsKept
+
+theorem refl (st : SystemState) : st.mappingFactsKept st := fun _ => .inl rfl
+
+theorem trans {st st' st'' : SystemState} (h₁ : st.mappingFactsKept st')
+    (h₂ : st'.mappingFactsKept st'') : st.mappingFactsKept st'' := fun oid => by
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hm₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hm₂⟩
+    · exact .inl (e₂.trans e₁)
+    · exact .inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hm₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hm₂⟩
+    · exact .inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hm₁⟩
+    · rw [hq₁] at hp₂; cases hp₂
+      exact .inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hm₂.trans hm₁⟩
+
+end SystemState.mappingFactsKept
+
+/-- A kind-preserving write keeps every object's mapping facts. -/
+theorem kindPreservingWrite.mappingFactsKept {st st' : SystemState}
+    (h : kindPreservingWrite st st') : st.mappingFactsKept st' := fun oid =>
+  (h oid).imp id fun ⟨pre, post, hp, hq, ht, hn, hs, _, _, _, hm⟩ =>
+    ⟨pre, post, hp, hq, ht, hn, hs, hm⟩
+
+/-- One store of an object of the kind it replaces, not a CNode, with the
+replaced object's thread slots and mapping facts. -/
+theorem SystemState.mappingFactsKept_storeObject {st st' : SystemState} {oid : SeLe4n.ObjId}
+    {obj pre : KernelObject} (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st')) (hPre : st.objects[oid]? = some pre)
+    (hKind : obj.objectType = pre.objectType)
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode)
+    (hSlots : obj.tcbSlots = pre.tcbSlots := by rfl)
+    (hMapping : obj.mappingView = pre.mappingView := by rfl) :
+    st.mappingFactsKept st' := fun k => by
+  by_cases hEq : k = oid
+  · subst hEq
+    exact .inr ⟨pre, obj, hPre, storeObject_objects_eq st st' k obj hObjInv hStore, hKind,
+      hNotCnode, hSlots, hMapping⟩
+  · exact .inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
+
+/-- **A write that keeps every object's mapping facts keeps the mappings
+recorded**: it writes no CNode, keeps every thread's slots, and keeps every
+root's ASID, translations and epochs and every frame's base. -/
+theorem SystemState.liveMappingsRecorded.of_mappingFactsKept {st st' : SystemState}
+    (hK : st.mappingFactsKept st') (h : st.liveMappingsRecorded) :
     st'.liveMappingsRecorded := by
   refine SystemState.liveMappingsRecorded.of_shrink (fun rid r' hR => ?_)
     (SystemState.mappingRecordsKept.of_fwd (fun r cap hc _ => ?_) (fun fid f hf => ?_)) h
-  · rcases hK rid with e | ⟨pre, post, hp, hq, ht, -, -, -, -, -, hm⟩
+  · rcases hK rid with e | ⟨pre, post, hp, hq, ht, -, -, hm⟩
     · exact ⟨r', e ▸ hR, rfl, fun _ _ h => h, fun _ _ h => h⟩
     · rw [hR] at hq; cases hq
       obtain ⟨r, rfl, ha, hmp, hep⟩ := root_of_kind_view ht hm
@@ -269,16 +320,51 @@ theorem SystemState.liveMappingsRecorded.of_kindPreservingWrite {st st' : System
     | none => rw [ho] at hc; cases hc
     | some o =>
       rw [ho] at hc
-      obtain ⟨o', ho', hs⟩ := hK.slotCap_fwd ho
+      have hs : ∃ o', st'.objects[r.cnode]? = some o' ∧ o'.slotCap = o.slotCap := by
+        rcases hK r.cnode with e | ⟨pre, post, hp, hq, ht, hn, hsl, -⟩
+        · exact ⟨o, e.trans ho, rfl⟩
+        · rw [ho] at hp; cases hp
+          exact ⟨post, hq, (KernelObject.slots_eq_of_tcbSlots ht hn hsl).1⟩
+      obtain ⟨o', ho', hs⟩ := hs
       refine ⟨r, cap, ?_, rfl, rfl⟩
       rw [SystemState.slotCapAt_eq_bind, ho']
       show o'.slotCap r.slot = some cap
       rw [hs]; exact hc
-  · rcases hK fid with e | ⟨pre, post, hp, hq, ht, -, -, -, -, -, hm⟩
+  · rcases hK fid with e | ⟨pre, post, hp, hq, ht, -, -, hm⟩
     · exact ⟨f, e ▸ hf, rfl⟩
     · rw [hf] at hp; cases hp
       obtain ⟨f', rfl, hb⟩ := frame_of_kind_view ht hm
       exact ⟨f', hq, hb⟩
+
+/-- **A kind-preserving write keeps the mappings recorded**
+(`kindPreservingWrite.mappingFactsKept`).  Every IPC and scheduler step is one. -/
+theorem SystemState.liveMappingsRecorded.of_kindPreservingWrite {st st' : SystemState}
+    (hK : kindPreservingWrite st st') (h : st.liveMappingsRecorded) :
+    st'.liveMappingsRecorded :=
+  SystemState.liveMappingsRecorded.of_mappingFactsKept hK.mappingFactsKept h
+
+/-- **An object stored at a key no object held keeps the mappings recorded**,
+when it is no address space holding a mapping epoch: every other key keeps its
+object, so every slot that recorded a mapping keeps its capability and every
+frame it names stays (neither is at the fresh key), and the new object adds no
+live mapping.  What a carve's store of its child is. -/
+theorem SystemState.liveMappingsRecorded.of_freshObject {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject} (hFresh : st.objects[k]? = none) (hK : st'.objects[k]? = some obj)
+    (hNe : ∀ j, j ≠ k → st'.objects[j]? = st.objects[j]?)
+    (hNoEpoch : ∀ root, obj = .vspaceRoot root → ∀ (v : SeLe4n.VAddr) (e : Nat),
+      root.mappingEpochs[v]? = some e → False)
+    (h : st.liveMappingsRecorded) : st'.liveMappingsRecorded := by
+  intro rid root v p perms e hR hM hE
+  by_cases hr : rid = k
+  · subst hr; rw [hK] at hR; cases hR; exact absurd hE (fun hE => hNoEpoch root rfl v e hE)
+  · rw [hNe rid hr] at hR
+    obtain ⟨r, cap, fid, f, hc, ht, hf, hb, hm⟩ := h rid root v p perms e hR hM hE
+    have hcK : r.cnode ≠ k := by
+      intro hx; rw [SystemState.slotCapAt_eq_bind, hx, hFresh] at hc; cases hc
+    have hfK : fid ≠ k := by intro hx; rw [hx, hFresh] at hf; cases hf
+    refine ⟨r, cap, fid, f, ?_, ht, (hNe fid hfK).trans hf, hb, hm⟩
+    rw [SystemState.slotCapAt_eq_bind, hNe r.cnode hcK, ← SystemState.slotCapAt_eq_bind]
+    exact hc
 
 /-- **A state in which no root holds a mapping epoch records every mapping**,
 vacuously: no mapping was made by a capability.  What the boot leaves, every
