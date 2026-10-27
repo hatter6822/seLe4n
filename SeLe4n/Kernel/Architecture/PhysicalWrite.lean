@@ -177,7 +177,7 @@ end PhysicalWrite
 def ledgerEntryBytes : Nat := 24
 
 /-- The entries a ledger is made with room for; a transition that owes more
-grows the buffer (an untyped reset's scrub of a large region). -/
+grows the buffer (a scrub of a large region). -/
 def ledgerInitialEntries : Nat := 128
 
 /-- The first `n` entries of a ledger buffer, as the HAL reads them. -/

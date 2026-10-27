@@ -418,8 +418,8 @@ structure MappedPage where
   paddr : SeLe4n.PAddr
   /-- **PR #904 review (`v0.36.41`)**: the mapping epoch a capability's record
       names (`FrameMapping.epoch`), or `none` for a page read off an address
-      space itself (the untyped reset's region-wide teardown), which removes
-      whatever maps the page. -/
+      space itself (the pages beneath a page table being finalised,
+      `pageTableMappingsBeneath`), which removes whatever maps the page. -/
   epoch : Option Nat := none
   deriving Repr, DecidableEq
 
@@ -3601,11 +3601,6 @@ theorem allocateChecked_eq_allocate (ut : UntypedObject) (idx : Nat) (childId : 
     (size : Nat) (hPos : size > 0) :
     ut.allocateChecked idx childId size hPos = ut.allocate idx childId size := rfl
 
-/-- Reset the untyped to its initial state (revoke all children).  The free
-index is rewound on the capability the reset is invoked through. -/
-def reset (ut : UntypedObject) : UntypedObject :=
-  { ut with children := [] }
-
 /-- WS-ZA ZA5.4 part 13: a free index is within the region's bounds. -/
 def freeIndexValid (ut : UntypedObject) (idx : Nat) : Prop :=
   idx ≤ ut.regionSize
@@ -3845,16 +3840,6 @@ theorem allocate_preserves_childrenUniqueIds (ut ut' : UntypedObject) (idx : Nat
   · dsimp at hIdEq; exact absurd hIdEq (hFresh c₁ hOld₁)
   · exact hUnique c₁ c₂ hOld₁ hOld₂ hIdEq
 
-/-- `reset` leaves no child below which a free index must lie. -/
-theorem reset_childrenBelow (ut : UntypedObject) (idx : Nat) : ut.reset.childrenBelow idx := by
-  intro c hMem; simp [reset] at hMem
-
-/-- `reset` restores full well-formedness. -/
-theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
-  refine ⟨reset_childrenBelow ut _, ?_, ?_⟩
-  · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
-  · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
-
 end UntypedObject
 
 /-! ### AN2-F.3 / FND-M03 — `UntypedObjectValid` subtype
@@ -3946,10 +3931,10 @@ inductive SyscallId where
   | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
                            -- (`v0.36.8`) a child untyped — out of an untyped the caller
                            -- holds (seL4_Untyped_Retype), through `untypedRetypeObject`
-  | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back once no
-                           -- object of its carved subtree is reachable (seL4's
-                           -- resetUntypedCap), through
-                           -- `untypedReset`
+  | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): write 0 to the invoked untyped
+                           -- capability's free index once nothing carved from it
+                           -- survives (seL4's resetUntypedCap), through
+                           -- `untypedResetFromCap`
   | tcbSetSpace            -- WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and
                            -- VSpace roots (seL4_TCB_SetSpace), through `copyThreadSpaces`
   | pageTableMap           -- WS-BP BP7.1 (`v0.36.12`): install an intermediate page table

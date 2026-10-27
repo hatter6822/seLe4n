@@ -223,8 +223,7 @@ theorem cspaceDeleteSlot_runQueueStage {st st' : SystemState} {addr : CSpaceAddr
 
 /-- **A write of the kinds a retire touches is a run-queue stage**: no key it
 changes holds a TCB on either side (`retireTouched`), and it frames the
-scheduler.  The untyped reset (`resetTouchedWrite.retireTouched`) and the
-final-delete retire are such writes. -/
+scheduler.  The final-delete retire is such a write. -/
 theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     (h : st.objects.invExt → st'.objects.invExt ∧ st'.scheduler = st.scheduler ∧
       ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
@@ -323,18 +322,12 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
   RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
     (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2.1, hF.2.2.2.2.2.2.2.2])
 
-theorem untypedResetWithShootdown_runQueueStage {ec : Concurrency.CoreId} {untypedId : SeLe4n.ObjId}
-    {st st' : SystemState} (h : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
+/-- WS-ZA ZA5.4: the untyped reset is one free-index write
+(`untypedResetSlot_ok_frame`). -/
+theorem untypedResetSlot_runQueueStage {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
+    {st st' : SystemState} (h : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
     RunQueueStage st st' := by
-  obtain ⟨st1, hR, rfl⟩ := untypedResetWithShootdown_ok ec untypedId st st' h
-  have hSched := retypeAsidRoundFold_scheduler ec (untypedResetShootdownAsids st untypedId) st1
-  exact RunQueueStage.trans (st' := st1)
-    (RunQueueStage.of_retireTouched (fun hInv =>
-      have h := untypedReset_ok_frame ec untypedId st st1 hInv hR
-      ⟨h.1, h.2.1, resetTouchedWrite.retireTouched h.2.2⟩)
-      fun hInv => untypedReset_tableReferenceFrame ec untypedId st st1 hInv hR)
-    (RunQueueStage.of_frame (retypeAsidRoundFold_objects _ _ _) (by rw [hSched]) (by rw [hSched])
-      (by rw [hSched]) (retypeAsidRoundFold_referenceTables _ _ _))
+  rw [untypedResetSlot_ok_frame h]; exact setCapFreeIndex_runQueueStage _ _ _
 
 /-- The registry's one object write — an endpoint's `serviceCode` — moves no
 run-queue link: the endpoint holds none, before or after. -/

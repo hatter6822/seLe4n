@@ -204,6 +204,23 @@ theorem setCapFreeIndex_preserves_capabilityInvariantBundle
     (Capability.withFreeIndex_target _ _)
     (fun u _ ht _ _ r hr => hLeaf u ((Capability.withFreeIndex_target _ _).symm.trans ht) r hr) hS
 
+/-- WS-ZA ZA5.4 part 36: **the reset preserves the capability bundle.**  It
+writes the invoked slot's free index, and only once the slot has no derivation
+child (`hasCdtChildren`, read through the links' agreement with the tree), so
+the slot has no strict descendant at all and the leaf fact a lowered index owes
+holds vacuously. -/
+theorem untypedResetSlot_preserves_capabilityInvariantBundle {st st' : SystemState}
+    {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot} (hInv : capabilityInvariantBundle st)
+    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  obtain ⟨cap, -, -, hC, hL, -, -, -, rfl⟩ := untypedResetSlot_ok hStep
+  obtain ⟨cn, hO, hLk⟩ := SystemState.lookupSlotCap_cnode hL
+  have hNil : st.cdt.childrenOf { cnode := srcCnode, slot := srcSlot } = [] := by
+    rw [hasCdtChildren_eq_tree hInv.linksAgree] at hC
+    simpa using hC
+  exact setCapFreeIndex_preserves_capabilityInvariantBundle st _ cn cap 0 hInv hO hLk
+    (fun _ _ r hr => absurd hr (CapDerivationTree.CdtChildReachable.not_of_childless hNil))
+
 /-- WS-ZA ZA5.4: **setting a derivation's untyped source full restores the
 capability bundle** from the bundle off (b) at that source (WS-ZA ZA5.4 part 19,
 seL4's `setUntypedCapAsFull` in `cteInsert`): a full capability owes (b)

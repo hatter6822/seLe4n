@@ -159,8 +159,8 @@ root and that root holds the slot the record names, for this table.  A record
 whose root no longer holds that slot is **stale** — what a finalisation leaves
 behind when it takes a table out of an address space without writing the table
 (`finalisePageTables`) — and reads as not installed everywhere: `.pageTableMap`
-installs such a table again, `.pageTableUnmap` clears its record, and the untyped
-reset does not refuse to retire it. -/
+installs such a table again, `.pageTableUnmap` clears its record, and its final
+delete owes no detach. -/
 def pageTableInstallLive (st : SystemState) (tableId : SeLe4n.ObjId) : Bool :=
   match st.getPageTable? tableId with
   | some table =>

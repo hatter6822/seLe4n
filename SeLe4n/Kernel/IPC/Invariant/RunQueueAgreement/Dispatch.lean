@@ -227,10 +227,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
       refine RunQueueStage.entry ?_
-      obtain ⟨src, _, cn, hO, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ _ _ hStep
-      exact (storeObject_inert_runQueueStage (setCapFreeIndex_eq_storeObject (idx := 0) hO) hO
-        (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)).trans
-        (untypedResetWithShootdown_runQueueStage hS)
+      obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ hStep
+      exact untypedResetSlot_runQueueStage hS
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

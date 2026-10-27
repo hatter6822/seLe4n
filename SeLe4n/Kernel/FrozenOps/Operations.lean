@@ -72,10 +72,10 @@ than misleading its next reader.
 |24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
 
 **Lifecycle operations** (`untypedRetype`, `untypedReset`) are builder-only.
-The carve adds an object and a CDT node; the reset *removes* the frames it
-retires, and there is no `FrozenMap.erase`.  Adding one is a shrink, so it
-renumbers every index above the hole; that is a separate piece of work, not a
-corollary of the append `FrozenMap.insert` performs.
+The carve adds an object and a CDT node, which a frozen map's fixed key set
+cannot; the reset writes the invoked capability's free index, and its refusal
+reads the untyped's child list and the derivation tree, which the frozen
+phase has no operation for.
 -/
 
 namespace SeLe4n.Kernel.FrozenOps
@@ -2018,10 +2018,9 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
     without a frozen operation (or vice versa) produces a type error.
 
     Lifecycle operations (`untypedRetype`, `untypedReset`) are intentionally
-    excluded — the reset *removes* keys (the frames it retires), and a frozen
-    map has no `erase`: a shrink renumbers every index above the hole, unlike
-    the append `FrozenMap.insert` performs. Service registration/revocation are
-    also builder-only for the same reason.  `tcbSetAffinity` (WS-SM SM5.H.4)
+    excluded — the carve adds keys a frozen map's fixed key set cannot hold,
+    and the reset is its companion: it writes back the free index the carve
+    advanced. Service registration/revocation are builder-only too.  `tcbSetAffinity` (WS-SM SM5.H.4)
     is excluded because the operation is defined by its run-queue + replenish-queue
     *migration* (live scheduler state), which the frozen snapshot phase does not
     model — the production op is complete and verified in the non-frozen path. -/
@@ -2049,9 +2048,9 @@ def frozenOpCoverage : SyscallId → Bool
   | .untypedRetype => false   -- WS-BP BP7.1 (`v0.36.5`): adds a key (the carved
                              -- object) and a CDT node, which the frozen phase's
                              -- fixed key set cannot.
-  | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): *removes* keys (the retired
-                             -- frames), and the frozen object store is a
-                             -- `FrozenMap` with no `erase`.
+  | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): the carve's companion,
+                             -- writing back the free index the carve advanced;
+                             -- the frozen phase carves nothing.
   | .vspaceMap => false       -- WS-BP BP7.1 (`v0.36.38`): a map WRITES a mapping,
                              -- a frame-capability record and a physical-write
                              -- ledger entry; the frozen phase has only

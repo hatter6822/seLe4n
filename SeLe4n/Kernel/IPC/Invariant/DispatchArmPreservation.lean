@@ -1377,22 +1377,22 @@ theorem storeObject_capRewrite_preserves_ipcInvariantFull
     hCap hInv,
     storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStore⟩
 
-/-- **A write of the kinds a reset touches preserves `ipcInvariantFull`**: every
-key holds what it held, or on each side nothing or a kind the bundle does not
-read (`resetTouched`), so the read view agrees (`of_inertOrAbsentWrites`); with
-no CNode written, the badge clause carries.  The untyped reset and the
-final-delete retire are such writes. -/
-theorem ipcInvariantFull_of_resetTouchedWrite {st st' : SystemState}
+/-- **A write of the memory kinds preserves `ipcInvariantFull`**: every key holds
+what it held, or on each side nothing or a kind the bundle does not read
+(`memoryKindOrAbsent`), so the read view agrees (`of_inertOrAbsentWrites`); with
+no CNode written, the badge clause carries.  The final-delete retire's erase of a
+carved object is such a write. -/
+theorem ipcInvariantFull_of_memoryKindWrite {st st' : SystemState}
     (hW : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
-      (resetTouched st.objects[oid]? ∧ resetTouched st'.objects[oid]?))
+      (memoryKindOrAbsent st.objects[oid]? ∧ memoryKindOrAbsent st'.objects[oid]?))
     (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
-  have hTouched : ∀ o : Option KernelObject, resetTouched o → o = none ∨ ipcReadInert o := by
+  have hTouched : ∀ o : Option KernelObject, memoryKindOrAbsent o → o = none ∨ ipcReadInert o := by
     intro o h
     cases o with
     | none => exact Or.inl rfl
     | some obj =>
       right
-      cases obj <;> first | trivial | exact absurd h (by simp [resetTouched])
+      cases obj <;> first | trivial | exact absurd h (by simp [memoryKindOrAbsent])
   have hView : ipcReadViewAgreement st st' :=
     ipcReadViewAgreement.of_inertOrAbsentWrites fun oid => by
       rcases hW oid with e | ⟨t1, t2⟩
@@ -1404,7 +1404,7 @@ theorem ipcInvariantFull_of_resetTouchedWrite {st st' : SystemState}
       · exact Or.inl e
       · exact Or.inr ⟨hTouched _ t1, hTouched _ t2⟩
   -- a CNode or TCB in the post-state is the pre-state's, unchanged
-  have hBackObj : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ resetTouched (some o) →
+  have hBackObj : ∀ (oid : SeLe4n.ObjId) (o : KernelObject), ¬ memoryKindOrAbsent (some o) →
       st'.objects[oid]? = some o → st.objects[oid]? = some o := by
     intro oid o hNT hPost
     rcases hW oid with e | ⟨_, t2⟩
@@ -1415,37 +1415,9 @@ theorem ipcInvariantFull_of_resetTouchedWrite {st st' : SystemState}
     cases o with
     | cnode _ | tcb _ =>
       exact hInv.badgeWellFormed.2 oid _ slot cap badge
-        (hBackObj _ _ (by simp [resetTouched]) hCn) hLk hB
+        (hBackObj _ _ (by simp [memoryKindOrAbsent]) hCn) hLk hB
     | _ => simp [KernelObject.slotCap] at hLk
   exact ipcInvariantFull_of_readViewAgreement hView hCodes hCap hInv
-
-/-- **WS-BP BP7.1 slice 3 (`v0.36.6`)**: the untyped reset preserves
-`ipcInvariantFull`.  Every key it writes holds, on each side, nothing or a kind
-the bundle does not read — VSpace roots (the unmap pass), frames (erased) and
-the untyped (its child list cleared) — so the read view agrees
-(`of_inertOrAbsentWrites`); and no CNode or TCB is written, which carries the
-badge clause. -/
-theorem untypedReset_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedReset ec untypedId st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨-, -, hW⟩ := untypedReset_ok_frame ec untypedId st st' hObjInv hStep
-  exact ipcInvariantFull_of_resetTouchedWrite hW hInv
-
-/-- **`v0.36.37`: the live `.untypedReset` arm preserves `ipcInvariantFull`.**  The
-arm is the reset followed by the `.aside1` round fold, which writes neither the
-object store nor the scheduler (`untypedResetWithShootdown_ok_frame`), so the
-reset's own result carries over. -/
-theorem untypedResetWithShootdown_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (untypedId : SeLe4n.ObjId) (st st' : SystemState)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨st1, hR, hObj, hSched, -, -⟩ :=
-    untypedResetWithShootdown_ok_frame ec untypedId st st' hStep
-  exact ipcInvariantFull_of_objects_eq hObj
-    (untypedReset_preserves_ipcInvariantFull ec untypedId st st1 hObjInv hInv hR)
 
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.7`): frame finalisation preserves `ipcInvariantFull`
@@ -1554,17 +1526,16 @@ theorem setCapFreeIndex_preserves_ipcInvariantFull
     (Capability.withFreeIndex_badge _ _) hS
 
 /-- WS-ZA ZA5.4: **the `.untypedReset` arm preserves `ipcInvariantFull`.**  The
-arm rewinds the invoked slot's free index (a capability rewrite that keeps the
-badge) and then runs the reset with its `.aside1` rounds. -/
-theorem untypedResetRewound_preserves_ipcInvariantFull
-    (ec : Concurrency.CoreId) (src : CSpaceAddr) (cn : CNode) (cap : Capability)
-    (untypedId : SeLe4n.ObjId) (st st' : SystemState)
+reset rewinds the invoked slot's free index, a capability rewrite that keeps the
+badge (`setCapFreeIndex_preserves_ipcInvariantFull`), and writes nothing else. -/
+theorem untypedResetSlot_preserves_ipcInvariantFull {srcCnode : SeLe4n.ObjId}
+    {srcSlot : SeLe4n.Slot} {st st' : SystemState}
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hPre : st.objects[src.cnode]? = some (.cnode cn)) (hLk : cn.lookup src.slot = some cap)
-    (hStep : untypedResetWithShootdown ec untypedId (setCapFreeIndex st src 0) = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  let h1 := setCapFreeIndex_preserves_ipcInvariantFull src cn cap 0 st hObjInv hInv hPre hLk
-  untypedResetWithShootdown_preserves_ipcInvariantFull ec untypedId _ st' h1.2 h1.1 hStep
+    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨cap, -, -, -, hL, -, -, -, rfl⟩ := untypedResetSlot_ok hStep
+  obtain ⟨cn, hO, hLk⟩ := SystemState.lookupSlotCap_cnode hL
+  exact (setCapFreeIndex_preserves_ipcInvariantFull _ cn cap 0 st hObjInv hInv hO hLk).1
 
 /-- WS-ZA ZA5.4: **setting a derivation's untyped source full preserves the
 bundle**, given the source still holds a capability. -/
@@ -4423,7 +4394,7 @@ theorem erasedTargetDetached_of_admitted {st : SystemState} {x : SeLe4n.ObjId}
 /-- **The final-delete retire preserves the bundle**: the passive erase takes
 out an object nothing the bundle reads names (`eraseWrite_preserves_ipcInvariantFull`,
 `erasedTargetDetached_of_admitted`), and the recorded retire after it
-touches only what a reset touches (`finalRetireWrite.resetTouched`). -/
+touches only the memory kinds (`finalRetireWrite.memoryKindOrAbsent`). -/
 theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (target recorder : Nat) (st : SystemState) (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st) :
@@ -4440,8 +4411,8 @@ theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
         (erasedTargetDetached_of_admitted hAdm hP hObjInv hInv hBudgets) hInv
     · rw [eraseRetiredObject_of_not st x hP]; exact hInv
   obtain ⟨hExt, -, -, -, hW⟩ := retireRecordedObject_frame ec recorder x _ i0 room0
-  exact ⟨ipcInvariantFull_of_resetTouchedWrite
-    (hW.resetTouched (eraseRetiredObject_not_passive st x hObjInv)) h0, hExt⟩
+  exact ⟨ipcInvariantFull_of_memoryKindWrite
+    (hW.memoryKindOrAbsent (eraseRetiredObject_not_passive st x hObjInv)) h0, hExt⟩
 
 /-- The finalising delete keeps the object table well formed. -/
 theorem cspaceDeleteSlotFinalising_preserves_objects_invExt

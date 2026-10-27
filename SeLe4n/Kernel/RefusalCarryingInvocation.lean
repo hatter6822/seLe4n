@@ -119,8 +119,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
     | _ => .error .invalidCapability
   | .untypedReset =>
     match cap.target with
-    | .object untypedId =>
-        untypedResetFromCap tid executingCore capAddr untypedId st
+    | .object _ => untypedResetFromCap tid capAddr st
     | _ => .error .invalidCapability
   | .vspaceMap =>
     match cap.target with
@@ -811,6 +810,15 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
                     vChild.val req st)
                   (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
+  | .untypedReset =>
+    match cap.target with
+    | .object _ =>
+      resolveCallerCapSlotK tid capAddr .retype st (fun e => .error (e, st))
+        (fun srcCnode srcSlot _ _ =>
+          RefusalCarrying.ofChecked (untypedResetAdmittedAt st srcCnode srcSlot)
+            (fun st => untypedResetPerformAt srcCnode srcSlot st)
+            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+    | _ => .error (.invalidCapability, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
     | .error e => .error (e, st)
@@ -1307,6 +1315,23 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
               intro hA
               simp only [dispatchInvocationBy, untypedRetypeFromCap, hD, hQ, hV, hR,
                 untypedRetypeObject_of_admitted hA]
+    all_goals rfl
+  case untypedReset =>
+    cases target
+    case object _ =>
+      dsimp only
+      rw [resolveCallerCapSlotK_eq]
+      cases hR : resolveCallerCapSlot tid capAddr .retype st with
+      | error e =>
+        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, untypedResetFromCap,
+          resolveCallerCapSlotK_eq, hR]
+      | ok r =>
+        obtain ⟨src, c, oid⟩ := r
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, untypedResetFromCap, resolveCallerCapSlotK_eq, hR,
+          untypedResetSlot_of_admitted hA]
     all_goals rfl
   all_goals
     dsimp only [RefusalCarrying.ofKernel]

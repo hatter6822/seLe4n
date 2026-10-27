@@ -170,7 +170,7 @@ plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
 the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`,
 plus WS-BP
-BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetWithShootdown`, and the
+BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetFromCap`, and the
 two finalising destroyers `cspaceDeleteSlotFinalising` /
 `cspaceRevokeCdtFinalising`, its space change `copyThreadSpaces`, and the two
 page-table operations `pageTableMap` / `pageTableUnmap`, plus WS-ZA ZA4.3's

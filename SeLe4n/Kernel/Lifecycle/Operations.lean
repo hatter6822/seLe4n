@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
+import SeLe4n.Kernel.Lifecycle.Operations.CarvedObjectErase
 import SeLe4n.Kernel.Lifecycle.Operations.UntypedReset
 import SeLe4n.Kernel.Lifecycle.Operations.RetypePerform
 import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
@@ -22,8 +23,9 @@ A thin re-export hub over the lifecycle child modules:
 | `Operations.Cleanup`                         | `lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences` |
 | `Operations.CleanupPreservation`             | Cleanup-primitive preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, `lifecycleCleanupPipeline` — the destroy-path cleanup a capability's finalisation will call |
 | `Operations.ScrubAndUntyped`                 | the object-identifier address-space guard, the carve (`CarveRequest`, `retypeFromUntyped`) + capacity / alignment / freshness / atomicity / error-path theorems |
-| `Operations.RetypeWrappers`                  | The ASID round fold the untyped reset drains through, and the carve-scrub discharge |
-| `Operations.UntypedReset`, `RetypePerform`, `SetSpace` | The reset, the carve's dispatch-level entry, and the space-slot write |
+| `Operations.RetypeWrappers`                  | A released ASID's shootdown round, and the carve-scrub discharge |
+| `Operations.CarvedObjectErase`               | The store's erase of a carved object (`retireCarvedObject`), which the final-delete retire runs |
+| `Operations.UntypedReset`, `RetypePerform`, `SetSpace` | The reset (seL4's `resetUntypedCap`), the carve's dispatch-level entry, and the space-slot write |
 
 **WS-ZA ZA5.4 part 14**: there is no in-place retype.  Every kernel object is
 carved from an untyped at its free index (`untypedRetypeObject`), so the
