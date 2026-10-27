@@ -50,7 +50,6 @@ private def sampleLabeling : SeLe4n.Kernel.LabelingContext :=
     objectLabelOf := fun oid => if oid = ⟨2⟩ then secretLabel else publicLabel
     threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
     endpointLabelOf := fun _ => publicLabel
-    serviceLabelOf := fun sid => if sid = ⟨1⟩ then secretLabel else publicLabel
   }
 
 /-- A second state that differs from sampleState only in secret (high-domain) components.
@@ -614,8 +613,7 @@ def runInformationFlowChecks : IO Unit := do
   let publicCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   -- Same-domain send should be allowed (same result as unchecked)
   let testMsg : IpcMessage := { registers := #[], badge := none }
@@ -632,8 +630,7 @@ def runInformationFlowChecks : IO Unit := do
   let secretSenderCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun tid => if tid = ⟨1⟩ then secretLabel else publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
   expect "secret-to-public endpointSendDualChecked returns flowDenied"
@@ -651,8 +648,7 @@ def runInformationFlowChecks : IO Unit := do
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := (SeLe4n.Slot.ofNat 0) }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := (SeLe4n.Slot.ofNat 0) }
@@ -669,8 +665,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨100⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedMint := SeLe4n.Kernel.cspaceMintChecked crossDomainMintCtx srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
   expect "secret-to-public cspaceMintChecked returns flowDenied"
@@ -736,7 +731,6 @@ def runInformationFlowChecks : IO Unit := do
     objectDomainOf := fun oid => if oid = ⟨1⟩ then ⟨0⟩ else ⟨2⟩
     threadDomainOf := fun tid => if tid = ⟨1⟩ then ⟨0⟩ else ⟨1⟩
     endpointDomainOf := fun _ => ⟨1⟩
-    serviceDomainOf := fun _ => ⟨0⟩
   }
 
   expect "generic context: thread 1 (domain 0) → endpoint (domain 1)"
@@ -745,8 +739,8 @@ def runInformationFlowChecks : IO Unit := do
   expect "generic context: thread 2 (domain 1) → endpoint (domain 1) (same domain)"
     (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf ⟨2⟩) (genericCtx.endpointDomainOf ⟨10⟩))
 
-  expect "generic context: object 2 (domain 2) cannot flow to service (domain 0)"
-    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf ⟨2⟩) (genericCtx.serviceDomainOf ⟨1⟩)))
+  expect "generic context: object 2 (domain 2) cannot flow to thread 1 (domain 0)"
+    (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf ⟨2⟩) (genericCtx.threadDomainOf ⟨1⟩)))
 
   -- Test per-endpoint flow policy
   let customEndpointPolicy : SeLe4n.Kernel.DomainFlowPolicy :=
@@ -859,8 +853,7 @@ def runInformationFlowChecks : IO Unit := do
   let secretNotificationCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨10⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
   let deniedWait := SeLe4n.Kernel.notificationWaitChecked secretNotificationCtx ⟨10⟩ ⟨1⟩
     publicEndpointState
   expect "SM8.C: notificationWaitChecked denies a cross-domain wait"
@@ -981,8 +974,7 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeLabeling : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨2⟩ then secretLabel else publicLabel
       threadLabelOf := fun tid => if tid = ⟨2⟩ then secretLabel else publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let cnodePublicProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling reviewer cnodeState
   let cnodeAdminProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling admin cnodeState
@@ -1083,8 +1075,7 @@ def runInformationFlowChecks : IO Unit := do
   let sameDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx ⟨30⟩ ⟨1⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
   let uncheckedSignal := SeLe4n.Kernel.notificationSignal ⟨30⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
@@ -1099,8 +1090,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => secretLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx ⟨30⟩ ⟨1⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
   expect "cross-domain notificationSignalChecked returns flowDenied"
@@ -1138,8 +1128,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainCopyCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun oid => if oid = ⟨40⟩ then secretLabel else publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun _ => publicLabel }
 
   let deniedCopy := SeLe4n.Kernel.cspaceCopyChecked crossDomainCopyCtx copySrc copyDst copyState
   expect "cross-domain cspaceCopyChecked returns flowDenied"
@@ -1168,8 +1157,7 @@ def runInformationFlowChecks : IO Unit := do
   let crossDomainRecvCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun oid => if oid = ⟨50⟩ then secretLabel else publicLabel
-      serviceLabelOf := fun _ => publicLabel }
+      endpointLabelOf := fun oid => if oid = ⟨50⟩ then secretLabel else publicLabel }
 
   let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx ⟨50⟩ ⟨1⟩ none recvEpState
   expect "cross-domain endpointReceiveDualChecked returns flowDenied"
@@ -1202,8 +1190,7 @@ def runInformationFlowChecks : IO Unit := do
     { policy := .linearOrder
       objectDomainOf := fun oid => if oid = ⟨902⟩ then ⟨0⟩ else ⟨2⟩
       threadDomainOf := fun _ => ⟨0⟩
-      endpointDomainOf := fun _ => ⟨0⟩
-      serviceDomainOf := fun _ => ⟨0⟩ }
+      endpointDomainOf := fun _ => ⟨0⟩ }
 
   let declassState :=
     (BootstrapBuilder.empty

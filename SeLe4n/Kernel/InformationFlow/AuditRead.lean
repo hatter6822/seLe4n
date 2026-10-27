@@ -539,8 +539,7 @@ theorem auditMonitorGate_records_derived_unsound :
   refine ⟨{ policy := DomainFlowPolicy.linearOrder
             objectDomainOf := fun _ => SecurityDomain.lowest
             threadDomainOf := fun _ => SecurityDomain.lowest
-            endpointDomainOf := fun _ => SecurityDomain.lowest
-            serviceDomainOf := fun _ => SecurityDomain.lowest },
+            endpointDomainOf := fun _ => SecurityDomain.lowest },
           some ⟨3⟩, ⟨0⟩,
           [{ auditTimestampWitness 0 with srcDomain := ⟨3⟩ }], 1, ?_, ?_, ?_⟩
   · exact ⟨{ auditTimestampWitness 0 with srcDomain := ⟨3⟩ }, by simp, by decide⟩
@@ -3213,8 +3212,7 @@ theorem refusalLedger_records_gate_unsound :
   refine ⟨{ policy := DomainFlowPolicy.linearOrder
             objectDomainOf := fun _ => SecurityDomain.lowest
             threadDomainOf := fun _ => SecurityDomain.lowest
-            endpointDomainOf := fun _ => SecurityDomain.lowest
-            serviceDomainOf := fun _ => SecurityDomain.lowest },
+            endpointDomainOf := fun _ => SecurityDomain.lowest },
           some ⟨3⟩, ⟨0⟩, refusalEvictionWitness, refusalWitnessRecord ⟨0⟩,
           ⟨⟨0, by decide⟩, by decide⟩, by decide, by decide, by decide, by decide⟩
 
@@ -3694,8 +3692,7 @@ theorem auditDrain_moves_partial_readers_status :
   refine ⟨{ policy := DomainFlowPolicy.linearOrder
             objectDomainOf := fun _ => SecurityDomain.lowest
             threadDomainOf := fun _ => SecurityDomain.lowest
-            endpointDomainOf := fun _ => SecurityDomain.lowest
-            serviceDomainOf := fun _ => SecurityDomain.lowest },
+            endpointDomainOf := fun _ => SecurityDomain.lowest },
           some ⟨3⟩, ⟨0⟩,
           [{ auditTimestampWitness 0 with srcDomain := ⟨0⟩, dstDomain := ⟨0⟩ }],
           1, 0, _, _, by decide, rfl, rfl, by decide⟩

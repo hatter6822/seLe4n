@@ -632,23 +632,47 @@ def endpointReceiveDualChecked
 -- WS-Q1: Service registration enforcement wrapper
 -- ============================================================================
 
-/-- WS-Q1/Q1-D: Policy-checked service registration: verifies that information
-may flow from the registering thread's security domain to the service's security
-domain before delegating to `registerService`.
+/-- **The label of a service registration is its endpoint's object label.**
 
-Service registration binds a service identity to an endpoint capability,
-creating a persistent mapping that reveals the registrar's intent. The wrapper
-gates on `securityFlowsTo` from the thread's domain to the service's domain.
+A registration has no identity apart from the endpoint it names: the endpoint
+records it (`Endpoint.serviceCode`), the service query reads it back through a
+capability to that endpoint, and the projection shows it exactly when it shows
+the endpoint (`serviceObservable`).  So writing a registration is a write to the
+endpoint, and reading one is a read of it; the two gates below are the write-up
+and read-down checks on that one label.
 
-Returns `flowDenied` when `securityFlowsTo threadLabel serviceLabel = false`. -/
+A caller may write a registration on `epId` when its label flows to the
+endpoint's. -/
+def serviceEndpointWriteAdmitted (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : Bool :=
+  securityFlowsTo (ctx.threadLabelOf caller) (ctx.objectLabelOf epId)
+
+/-- A caller may read the registration recorded on `epId` when the endpoint's
+label flows to its own. -/
+def serviceEndpointReadAdmitted (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) : Bool :=
+  securityFlowsTo (ctx.objectLabelOf epId) (ctx.threadLabelOf caller)
+
+/-- A registration may be written by `caller` when it names an endpoint the
+caller may write.  One naming no object is refused here, as `registerService`
+would refuse it. -/
+def registrationWriteAdmitted (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration) : Bool :=
+  match reg.endpointCap.target with
+  | .object epId => serviceEndpointWriteAdmitted ctx caller epId
+  | _ => false
+
+/-- WS-Q1/Q1-D: Policy-checked service registration: information must be able
+to flow from the registering thread to the endpoint the registration names
+(`registrationWriteAdmitted`) before `registerService` runs.
+
+Returns `flowDenied` otherwise. -/
 def registerServiceChecked
     (ctx : LabelingContext)
     (caller : SeLe4n.ThreadId)
     (reg : ServiceRegistration) : Kernel Unit :=
   fun st =>
-    let threadLabel := ctx.threadLabelOf caller
-    let serviceLabel := ctx.serviceLabelOf reg.sid
-    if securityFlowsTo threadLabel serviceLabel then
+    if registrationWriteAdmitted ctx caller reg then
       registerService reg st
     else
       .error .flowDenied
@@ -785,8 +809,7 @@ theorem endpointSendDualChecked_endpointPolicy_dependent :
         endpointFlowGate ctx endpointId senderLabel endpointLabel := by
   refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
             threadLabelOf := fun _ => SecurityLabel.publicLabel
-            endpointLabelOf := fun _ => SecurityLabel.publicLabel
-            serviceLabelOf := fun _ => SecurityLabel.publicLabel },
+            endpointLabelOf := fun _ => SecurityLabel.publicLabel },
           { endpointPolicy := fun _ => some { canFlow := fun _ _ => false } },
           ⟨0⟩, SecurityLabel.publicLabel, SecurityLabel.publicLabel, by decide⟩
 

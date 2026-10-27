@@ -629,7 +629,7 @@ private def lowLabel : SecurityLabel := { confidentiality := .low, integrity := 
 private def highLabel : SecurityLabel := { confidentiality := .high, integrity := .trusted }
 private def allPublicCtx : LabelingContext :=
   { objectLabelOf := fun _ => lowLabel, threadLabelOf := fun _ => lowLabel,
-    endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+    endpointLabelOf := fun _ => lowLabel }
 
 private def runCheckedDispatchChecks : IO Unit := do
   IO.println "--- §3.10 checked cross-core dispatch (wait dispatch + bound-signal flow gates, review #3) ---"
@@ -665,7 +665,7 @@ private def runCheckedDispatchChecks : IO Unit := do
       let sigDeniedCtx : LabelingContext :=
         { objectLabelOf := fun _ => lowLabel
           threadLabelOf := fun t => if t == signallerT then highLabel else lowLabel
-          endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+          endpointLabelOf := fun _ => lowLabel }
       let (stD1, resD1) :=
         notificationSignalBoundCrossCoreDispatchChecked sigDeniedCtx nId signallerT badge1 bootCoreId stBound
       assertBool "a high signaller → low notification signal is denied (.flowDenied)"
@@ -677,7 +677,7 @@ private def runCheckedDispatchChecks : IO Unit := do
       let recvDeniedCtx : LabelingContext :=
         { objectLabelOf := fun o => if o == nId then highLabel else lowLabel
           threadLabelOf := fun t => if t == boundT then lowLabel else highLabel
-          endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+          endpointLabelOf := fun _ => lowLabel }
       let (stD2, resD2) :=
         notificationSignalBoundCrossCoreDispatchChecked recvDeniedCtx nId signallerT badge1 bootCoreId stBound
       assertBool "review #3: a bound delivery to a LOW receiver is denied (.flowDenied)"

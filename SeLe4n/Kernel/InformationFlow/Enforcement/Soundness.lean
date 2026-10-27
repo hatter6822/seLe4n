@@ -254,8 +254,7 @@ theorem registerServiceChecked_eq_registerService_when_allowed
     (caller : SeLe4n.ThreadId)
     (reg : ServiceRegistration)
     (st : SystemState)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf caller)
-               (ctx.serviceLabelOf reg.sid) = true) :
+    (hFlow : registrationWriteAdmitted ctx caller reg = true) :
     registerServiceChecked ctx caller reg st =
       registerService reg st := by
   unfold registerServiceChecked
@@ -268,8 +267,7 @@ theorem registerServiceChecked_flowDenied
     (caller : SeLe4n.ThreadId)
     (reg : ServiceRegistration)
     (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
-               (ctx.serviceLabelOf reg.sid) = false) :
+    (hDeny : registrationWriteAdmitted ctx caller reg = false) :
     registerServiceChecked ctx caller reg st =
       .error .flowDenied := by
   unfold registerServiceChecked
@@ -280,8 +278,7 @@ theorem registerServiceChecked_denied_preserves_state
     (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
     (reg : ServiceRegistration)
     (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
-               (ctx.serviceLabelOf reg.sid) = false) :
+    (hDeny : registrationWriteAdmitted ctx caller reg = false) :
     ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st') := by
   intro ⟨st', h⟩
   simp [registerServiceChecked, hDeny] at h
@@ -291,11 +288,11 @@ theorem enforcement_sufficiency_registerService
     (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
     (reg : ServiceRegistration)
     (st : SystemState) :
-    (securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true ∧
+    (registrationWriteAdmitted ctx caller reg = true ∧
        registerServiceChecked ctx caller reg st = registerService reg st) ∨
-    (securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = false ∧
+    (registrationWriteAdmitted ctx caller reg = false ∧
        registerServiceChecked ctx caller reg st = .error .flowDenied) := by
-  cases hFlow : securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) with
+  cases hFlow : registrationWriteAdmitted ctx caller reg with
   | true => left; exact ⟨rfl, by simp [registerServiceChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [registerServiceChecked, hFlow]⟩
 
@@ -305,8 +302,8 @@ theorem enforcementSoundness_registerServiceChecked
     (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
     (st st' : SystemState)
     (hStep : registerServiceChecked ctx caller reg st = .ok ((), st')) :
-    securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true := by
-  cases h : securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) with
+    registrationWriteAdmitted ctx caller reg = true := by
+  cases h : registrationWriteAdmitted ctx caller reg with
   | true => rfl
   | false =>
     have := registerServiceChecked_flowDenied ctx caller reg st h
@@ -884,7 +881,7 @@ theorem checkedDispatch_flowDenied_preserves_state :
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false →
       ¬∃ st', cspaceMintChecked ctx src dst rights badge st = .ok ((), st')) ∧
     (∀ ctx caller reg st,
-      securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = false →
+      registrationWriteAdmitted ctx caller reg = false →
       ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st')) :=
   ⟨fun ctx epId sender payload receiverSlotBase st hDeny =>
     endpointSendDualChecked_denied_preserves_state ctx epId sender payload
@@ -964,10 +961,10 @@ theorem enforcementBridge_to_NonInterferenceStep
     (∀ eid receiver replyId r,
       endpointReceiveDualChecked ctx eid receiver replyId st = .ok (r, st') →
       securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
-    -- 6. registerServiceChecked: success implies caller→service flow allowed
+    -- 6. registerServiceChecked: success implies caller→endpoint flow allowed
     (∀ caller reg,
       registerServiceChecked ctx caller reg st = .ok ((), st') →
-      securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true) ∧
+      registrationWriteAdmitted ctx caller reg = true) ∧
     -- 7. endpointCallChecked: success implies caller→endpoint flow allowed
     (∀ eid caller payload slotBase r,
       endpointCallChecked ctx eid caller payload slotBase st = .ok (r, st') →

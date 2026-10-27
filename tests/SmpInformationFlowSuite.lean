@@ -2993,7 +2993,6 @@ private def cnRoot : SeLe4n.ObjId := ⟨1000⟩
 private def vsRoot : SeLe4n.ObjId := ⟨1001⟩
 private def lowEndpoint : SeLe4n.ObjId := ⟨1002⟩
 private def highEndpoint : SeLe4n.ObjId := ⟨1003⟩
-private def highService : ServiceId := ⟨1005⟩
 private def lowIrq : SeLe4n.Irq := ⟨11⟩
 private def highIrq : SeLe4n.Irq := ⟨12⟩
 private def lowCurrent : SeLe4n.ThreadId := ⟨1010⟩
@@ -3040,8 +3039,8 @@ private def unownedPage : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x40002000
 private def lowDomain : SeLe4n.DomainId := ⟨1⟩
 private def highDomain : SeLe4n.DomainId := ⟨2⟩
 
-/-- The suite's labeling context: the high endpoint, the two high threads (and
-their backing objects) and the high service carry `kernelTrusted`; everything
+/-- The suite's labeling context: the high endpoint and the two high threads (and
+their backing objects) carry `kernelTrusted`; everything
 else carries `publicLabel`.
 
 Deliberately **not** `defaultLabelingContext`, under which every observability
@@ -3058,8 +3057,7 @@ private def probeLabeling : LabelingContext :=
       if tid = highCurrent then highLabel
       else if tid = highQueued then highLabel
       else lowLabel
-    endpointLabelOf := fun oid => if oid = highEndpoint then highLabel else lowLabel
-    serviceLabelOf := fun sid => if sid = highService then highLabel else lowLabel }
+    endpointLabelOf := fun oid => if oid = highEndpoint then highLabel else lowLabel }
 
 /-- `probeLabeling` **with a memory-ownership model configured**.
 
@@ -3240,8 +3238,7 @@ private def runFixtureChecks : IO Unit := do
   assertBool "the probe labeling genuinely separates the two clearances"
     (decide (securityFlowsTo (probeLabeling.threadLabelOf highCurrent) lowLabel = false ∧
              securityFlowsTo (probeLabeling.threadLabelOf lowCurrent) lowLabel = true ∧
-             securityFlowsTo (probeLabeling.objectLabelOf highEndpoint) lowLabel = false ∧
-             securityFlowsTo (probeLabeling.serviceLabelOf highService) lowLabel = false))
+             securityFlowsTo (probeLabeling.objectLabelOf highEndpoint) lowLabel = false))
   assertBool "low entities are observable to the low observer, high ones are not"
     (decide (objectObservable probeLabeling lowObserver lowEndpoint = true ∧
              objectObservable probeLabeling lowObserver highEndpoint = false ∧
@@ -4793,7 +4790,7 @@ so the gate's only remaining input is whether a subject exists. -/
 private def niGenericCtx : GenericLabelingContext :=
   { policy := { canFlow := fun _ _ => true }
     objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
-    endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ }
+    endpointDomainOf := fun _ => ⟨0⟩ }
 
 private def niEpPolicy : EndpointFlowPolicy := { endpointPolicy := fun _ => none }
 
@@ -5634,8 +5631,7 @@ private def declassContext : GenericLabelingContext :=
       if tid = highCurrent then declassSecret
       else if tid = lowCurrent then declassMiddle
       else declassPublic
-    endpointDomainOf := fun oid => if oid = highEndpoint then declassSecret else declassPublic
-    serviceDomainOf := fun _ => declassPublic }
+    endpointDomainOf := fun oid => if oid = highEndpoint then declassSecret else declassPublic }
 
 /-- Authorizes each hop of `2 → 1 → 0` and **not** the composition `2 → 0`. -/
 private def launderingDeclPolicy : DeclassificationPolicy :=
@@ -6506,8 +6502,7 @@ private def legacyPairDeclPolicy : DeclassificationPolicy :=
 private def legacyPairLabeling : LabelingContext :=
   { objectLabelOf := fun _ => legacyDstLabel
     threadLabelOf := fun _ => legacySrcLabel
-    endpointLabelOf := fun _ => legacyDstLabel
-    serviceLabelOf := fun _ => legacyDstLabel }
+    endpointLabelOf := fun _ => legacyDstLabel }
 
 private def runFaithfulLegacyLiftChecks : IO Unit := do
   IO.println "--- §6.15 the faithful lift of the legacy lattice ---"
@@ -11763,8 +11758,7 @@ private def flowLabeling (clientL epL serverL : SecurityLabel) : LabelingContext
       else highLabel
     threadLabelOf := fun t =>
       if t = flowClient then clientL else if t = flowServer then serverL else highLabel
-    endpointLabelOf := fun oid => if oid = flowEp then epL else highLabel
-    serviceLabelOf := fun _ => highLabel }
+    endpointLabelOf := fun oid => if oid = flowEp then epL else highLabel }
 
 /-- Both gates pass: `client(low) ⊑ ep(low)` on the way in, `ep(low) ⊑ server(high)`
 when the server blocked. -/

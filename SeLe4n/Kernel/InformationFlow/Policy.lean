@@ -444,7 +444,6 @@ structure LabelingContext where
   objectLabelOf : SeLe4n.ObjId → SecurityLabel
   threadLabelOf : SeLe4n.ThreadId → SecurityLabel
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
-  serviceLabelOf : ServiceId → SecurityLabel
   memoryOwnership : Option MemoryDomainOwnership := none
   /-- WS-SM SM8.C: the **per-endpoint flow policy** the live IPC gates consult.
 
@@ -553,7 +552,6 @@ def defaultLabelingContext : LabelingContext :=
     objectLabelOf := fun _ => SecurityLabel.publicLabel
     threadLabelOf := fun _ => SecurityLabel.publicLabel
     endpointLabelOf := fun _ => SecurityLabel.publicLabel
-    serviceLabelOf := fun _ => SecurityLabel.publicLabel
   }
 
 /-- V6-K (L-IF-2): Warning theorem — the default labeling context assigns
@@ -711,11 +709,11 @@ theorem defaultLabelingContext_separates_no_threads
 /-- AI5-C (M-19), retained as a **negative fixture** by WS-RR RR5.4: the
     all-public-except-the-sentinel labeling.
 
-    It assigns `kernelTrusted` to thread `0`, object `0`, endpoint `0` and
-    service `0`, and `publicLabel` to every other entity.  Id `0` is the reserved
+    It assigns `kernelTrusted` to thread `0`, object `0` and endpoint `0`,
+    and `publicLabel` to every other entity.  Id `0` is the reserved
     sentinel (`ThreadId.isReserved`; `toObjIdChecked` refuses to turn it into an
     object reference), so *no two entities that can run* are separated: every
-    flow between real threads, objects, endpoints and services is permitted, and
+    flow between real threads, objects and endpoints is permitted, and
     the non-interference results hold vacuously under it.
 
     Its original purpose was to defeat the sentinel-probe guard while staying
@@ -740,9 +738,6 @@ def testLabelingContext : LabelingContext :=
       else SecurityLabel.publicLabel
     endpointLabelOf := fun oid =>
       if oid.toNat == 0 then SecurityLabel.kernelTrusted
-      else SecurityLabel.publicLabel
-    serviceLabelOf := fun sid =>
-      if sid.toNat == 0 then SecurityLabel.kernelTrusted
       else SecurityLabel.publicLabel
   }
 
@@ -845,8 +840,8 @@ theorem isInsecureDefaultContext_false_implies_witness_not_idle
       `true`.  A deployment that wants a TCB object at a *different* label than
       its thread wants an incoherent labeling, which is the thing the conjunct
       forbids.
-    * `endpointLabelOf` / `serviceLabelOf` are independent, because the model
-      reads them through their own accessors and a deployment may confine an
+    * `endpointLabelOf` is independent, because the model
+      reads it through its own accessor and a deployment may confine an
       endpoint more tightly than the objects that hold capabilities to it.
     * `separatedLower` / `separatedUpper` and their three proofs are the
       **non-triviality witness**: two admissible threads (neither the sentinel
@@ -865,8 +860,6 @@ structure DeploymentLabeling where
   entityLabelOf : Nat → SecurityLabel
   /-- The security label of each endpoint. -/
   endpointLabelOf : SeLe4n.ObjId → SecurityLabel
-  /-- The security label of each registered service. -/
-  serviceLabelOf : ServiceId → SecurityLabel
   /-- PR #889 review round 2: the deployment's memory-ownership map, carried by
       the source so a platform binding can configure it — `LabelingContext`'s
       default, `none`. -/
@@ -953,7 +946,6 @@ def deploymentLabelingContext (d : DeploymentLabeling) : LabelingContext :=
   { objectLabelOf          := fun oid => d.entityLabelOf oid.toNat
     threadLabelOf          := fun tid => d.entityLabelOf tid.toNat
     endpointLabelOf        := d.endpointLabelOf
-    serviceLabelOf         := d.serviceLabelOf
     memoryOwnership        := d.memoryOwnership
     endpointPolicy         := d.endpointPolicy
     declassificationPolicy := d.declassificationPolicy
@@ -1076,8 +1068,6 @@ def indexPartitionedDeploymentLabeling
   { entityLabelOf   := indexPartitionedLabel upperDomainBase lowerLabel upperLabel
     endpointLabelOf := fun oid =>
       indexPartitionedLabel upperDomainBase lowerLabel upperLabel oid.toNat
-    serviceLabelOf  := fun sid =>
-      indexPartitionedLabel upperDomainBase lowerLabel upperLabel sid.toNat
     separatedLower  := ⟨lowerWitness⟩
     separatedUpper  := ⟨upperWitnessIndex upperDomainBase⟩
     hLowerReal      := hLowerAdmissible
@@ -1168,7 +1158,7 @@ theorem indexPartitionedLabelingContext_threadLabel_above
 
     A deployment chooses two numbers.  `upperDomainBase` is the entity index at
     which its untrusted domain begins: everything below it (the boot system's
-    threads, objects, endpoints and services) is `lowTrusted`; everything from
+    threads, objects and endpoints) is `lowTrusted`; everything from
     it upward is `highUntrusted`.  `lowerWitness` is the boot-domain thread the
     labeling declares as its separation witness — an installed thread the boot
     state must contain (`Platform.Boot.declaredWitnessesInstalled`), admissible
@@ -1472,7 +1462,6 @@ structure GenericLabelingContext where
   objectDomainOf : SeLe4n.ObjId → SecurityDomain
   threadDomainOf : SeLe4n.ThreadId → SecurityDomain
   endpointDomainOf : SeLe4n.ObjId → SecurityDomain
-  serviceDomainOf : ServiceId → SecurityDomain
 
 /-- WS-E5/H-04: Check whether information may flow from a source entity's
 domain to a destination entity's domain under a generic labeling context. -/
@@ -1804,7 +1793,6 @@ theorem endpointFlowGate_is_not_securityFlowsTo :
   refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
             threadLabelOf := fun _ => SecurityLabel.publicLabel
             endpointLabelOf := fun _ => SecurityLabel.publicLabel
-            serviceLabelOf := fun _ => SecurityLabel.publicLabel
             endpointPolicy := { endpointPolicy := fun _ => some { canFlow := fun _ _ => false } } },
           ⟨0⟩, SecurityLabel.publicLabel, SecurityLabel.publicLabel, by decide, by decide⟩
 
@@ -1851,7 +1839,6 @@ theorem endpointGateRestricted_survives_widening_override :
   refine ⟨{ objectLabelOf := fun _ => SecurityLabel.publicLabel
             threadLabelOf := fun _ => SecurityLabel.publicLabel
             endpointLabelOf := fun _ => SecurityLabel.publicLabel
-            serviceLabelOf := fun _ => SecurityLabel.publicLabel
             endpointPolicy := { endpointPolicy := fun _ => some { canFlow := fun _ _ => true } } },
           ⟨0⟩, SecurityLabel.kernelTrusted, SecurityLabel.publicLabel,
           by decide, by decide, by decide⟩
@@ -1885,7 +1872,6 @@ def liftLegacyContext (ctx : LabelingContext) : GenericLabelingContext :=
     objectDomainOf := fun oid => embedLegacyLabel (ctx.objectLabelOf oid)
     threadDomainOf := fun tid => embedLegacyLabel (ctx.threadLabelOf tid)
     endpointDomainOf := fun oid => embedLegacyLabel (ctx.endpointLabelOf oid)
-    serviceDomainOf := fun sid => embedLegacyLabel (ctx.serviceLabelOf sid)
   }
 
 -- ============================================================================

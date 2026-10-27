@@ -1327,18 +1327,16 @@ private def highLabel : SecurityLabel := { confidentiality := .high, integrity :
 private def callDeniedCtx : LabelingContext :=
   { objectLabelOf := fun _ => lowLabel
     threadLabelOf := fun t => if t == clientA then highLabel else lowLabel
-    endpointLabelOf := fun _ => lowLabel
-    serviceLabelOf := fun _ => lowLabel }
+    endpointLabelOf := fun _ => lowLabel }
 /-- Everything public ⇒ every flow permitted (reflexive `securityFlowsTo`). -/
 private def allPublicCtx : LabelingContext :=
   { objectLabelOf := fun _ => lowLabel, threadLabelOf := fun _ => lowLabel,
-    endpointLabelOf := fun _ => lowLabel, serviceLabelOf := fun _ => lowLabel }
+    endpointLabelOf := fun _ => lowLabel }
 /-- Reply gate is `replier → target`; DENY = HIGH replier (server B) → LOW target. -/
 private def replyDeniedCtx : LabelingContext :=
   { objectLabelOf := fun _ => lowLabel
     threadLabelOf := fun t => if t == serverB then highLabel else lowLabel
-    endpointLabelOf := fun _ => lowLabel
-    serviceLabelOf := fun _ => lowLabel }
+    endpointLabelOf := fun _ => lowLabel }
 
 private def runFlowCheckedChecks : IO Unit := do
   IO.println "--- §3.11 info-flow-checked cross-core dispatch (allowed vs flowDenied) ---"
@@ -1489,8 +1487,7 @@ private def runLiveApiChecks : IO Unit := do
     let apiDeniedCtx : LabelingContext :=
       { objectLabelOf := fun _ => lowLabel
         threadLabelOf := fun t => if t == apiCaller then highLabel else lowLabel
-        endpointLabelOf := fun _ => lowLabel
-        serviceLabelOf := fun _ => lowLabel }
+        endpointLabelOf := fun _ => lowLabel }
     assertBool "live checked .call under a high→low policy fails with flowDenied"
       (match dispatchSyscallCheckedAsCurrent apiDeniedCtx (apiCallDecoded 0) apiCaller bootCoreId stRecv with
        | .error .flowDenied => true | _ => false)

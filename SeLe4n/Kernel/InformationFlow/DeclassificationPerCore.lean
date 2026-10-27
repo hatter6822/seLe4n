@@ -615,7 +615,7 @@ theorem declassificationEventAttributable_not_state_stable :
         ¬ declassificationEventAttributable ctx st' e := by
   refine ⟨{ policy := { canFlow := fun _ _ => false }
             objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨1⟩
-            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+            endpointDomainOf := fun _ => ⟨0⟩ },
           { (default : SystemState) with scheduler :=
               (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some ⟨1⟩) },
           (default : SystemState),
@@ -651,7 +651,7 @@ theorem declassifyStoreOnCore_admits_unattributable :
           (declassifyStoreEvent c actor srcDomain dstDomain targetId st) := by
   refine ⟨{ policy := { canFlow := fun _ _ => false }
             objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
-            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+            endpointDomainOf := fun _ => ⟨0⟩ },
           { canDeclassify := fun _ _ => true }, bootCoreId,
           { subject := ⟨1⟩, domain := ⟨1⟩ }, ⟨1⟩, ⟨0⟩, ⟨7⟩,
           .notification { state := .idle, 
@@ -1546,7 +1546,7 @@ theorem unrestricted_endpointOverride_is_an_unaudited_downgrade :
       ¬ endpointPolicyRestricted_perCore ctx.policy epPolicy := by
   refine ⟨{ policy := { canFlow := fun _ _ => false }
             objectDomainOf := fun _ => ⟨0⟩, threadDomainOf := fun _ => ⟨0⟩
-            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+            endpointDomainOf := fun _ => ⟨0⟩ },
           { endpointPolicy := fun _ => some { canFlow := fun _ _ => true } },
           ⟨0⟩, ⟨2⟩, ⟨0⟩, rfl, rfl, ?_⟩
   intro hRestricted
@@ -2253,7 +2253,7 @@ theorem declassificationSubjectDomain_is_core_selected :
   refine ⟨{ policy := { canFlow := fun _ _ => false }
             objectDomainOf := fun _ => ⟨0⟩
             threadDomainOf := fun tid => ⟨tid.toNat⟩
-            endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
+            endpointDomainOf := fun _ => ⟨0⟩ },
           { (default : SystemState) with scheduler :=
               (((default : SystemState).scheduler.setCurrentOnCore bootCoreId
                  (some ⟨1⟩)).setCurrentOnCore ⟨1, by decide⟩ (some ⟨2⟩)) },
@@ -3233,8 +3233,7 @@ theorem lowEquivalent_does_not_determine_visible_view :
     { policy := DomainFlowPolicy.allowAll
       objectDomainOf := fun _ => SecurityDomain.lowest
       threadDomainOf := fun _ => SecurityDomain.lowest
-      endpointDomainOf := fun _ => SecurityDomain.lowest
-      serviceDomainOf := fun _ => SecurityDomain.lowest },
+      endpointDomainOf := fun _ => SecurityDomain.lowest },
     SecurityDomain.lowest, default,
     { (default : SystemState) with
       declassificationAuditLog := [auditTimestampWitness 0] }, ?_, ?_⟩
