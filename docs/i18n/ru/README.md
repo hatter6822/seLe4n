@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -78,7 +78,7 @@ security model) от seL4, вводя при этом архитектурные
 - **Составной слой доказательств** — `proofLayerInvariantBundle` объединяет 16 пакетов инвариантов подсистем (ядро планировщика + расширения CBS, мандаты, IPC + связка IPC–планировщик, жизненный цикл, сервисы, VSpace, межсистемные инварианты, согласованность TLB, согласованность ожидающих уведомлений, границы pending/ack для TLB shootdown, инвалидация TLB на каждом ядре и когерентность I-cache, а также граница журнала аудита деклассификации) в единое обязательство верхнего уровня, проверяемое от загрузки до всех операций
 - **Трёхфазная архитектура состояния** — фаза построения с свидетелями инвариантов переходит в замороженное неизменяемое представление с доказанной эквивалентностью поиска. 24 замороженные операции зеркалируют активный API
 - **Полный набор операций** — все операции seL4 реализованы с сохранением инвариантов, вплоть до приостановки/возобновления потоков, управления приоритетами (setPriority/setMCPriority) и настройки IPC-буфера
-- **Оркестрация сервисов** — управление жизненным циклом компонентов на уровне ядра с графами зависимостей и доказанной ацикличностью (расширение seLe4n, отсутствует в seL4)
+- **Реестр сервисов** — регистрация и поиск сервисов на уровне ядра через их конечную точку (endpoint), с отметкой на самой конечной точке (расширение seLe4n, отсутствует в seL4); политика зависимостей, как и в seL4, остаётся за менеджером сервисов в пользовательском пространстве
 
 ## Текущее состояние
 
@@ -96,11 +96,11 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.36.144` |
+| **Версия** | `0.36.145` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 515 329 строк в 461 файле |
-| **Тестовый код (Lean LoC)** | 87 628 строк в 70 тест-сьютах |
-| **Доказанные декларации** | 18 849 деклараций theorem/lemma (ноль sorry/axiom) |
+| **Продуктовый код (Lean LoC)** | 512 077 строк в 459 файлах |
+| **Тестовый код (Lean LoC)** | 87 214 строк в 70 тест-сьютах |
+| **Доказанные декларации** | 18 703 декларации theorem/lemma (ноль sorry/axiom) |
 | **Крейты Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) в 80 файлах исходного кода |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Привязка к оборудованию** | **H3 ЗАВЕРШЕНА** (WS-AG AG1–AG10): HAL, GIC-400, таймер, таблицы страниц ARMv8, FFI-мост, загрузка в QEMU |
@@ -203,7 +203,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -241,7 +241,7 @@ tests/                           Исполняемые тест-сьюты + ф
 | **Наследование приоритетов** | PIP на C (ветка MCS) | Машинно-проверяемый транзитивный PIP с отсутствием взаимоблокировок и параметрической границей WCRT |
 | **Ограниченная латентность** | Нет формальной границы WCRT | `WCRT = D × L_max + N × (B + P)`, доказано в 8 модулях liveness |
 | **Хранилища объектов** | Связные списки и массивы | Верифицированные хеш-таблицы Robin Hood (`RHTable`/`RHSet`) с O(1) критическими путями |
-| **Управление сервисами** | Отсутствует в ядре | Полноценная оркестрация с графом зависимостей и доказательствами ацикличности |
+| **Управление сервисами** | Отсутствует в ядре | Реестр сервисов, привязанный к конечным точкам; политика зависимостей в пользовательском пространстве |
 | **Доказательства** | Isabelle/HOL, post-hoc | Type-checker Lean 4, совмещены с переходами — ноль sorry/axiom (число доказанных деклараций — в таблице [Текущее состояние](#текущее-состояние)) |
 | **Платформа** | HAL уровня C | Typeclass `PlatformBinding` с типизированными контрактами границ |
 

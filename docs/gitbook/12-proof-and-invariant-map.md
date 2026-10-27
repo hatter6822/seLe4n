@@ -152,10 +152,10 @@ one on a reachable state (`passiveObjectQuiescent.namedByNone`,
 own links too, the scheduling links that answer every other reference to it
 (`schedContextLinkInvariant`) carried along the whole delete chain with the
 reachable state (`reachableDeleteBundle`) (`schedContextRetirable.namedByNone`); since
-`v0.36.143` each of the three tables that name objects by id outside every slot
+`v0.36.143` each of the tables that name objects by id outside every slot
 is answered by the object it names — an endpoint records its registration's code,
-a notification records the interrupt handler that names it, and the service graph
-holds no entry, stated as one invariant (`SystemState.tableReferencesRecorded`,
+and a notification records the interrupt handler that names it (the service
+graph, which held no entry, is gone since `v0.36.145`), stated as one invariant (`SystemState.tableReferencesRecorded`,
 `Model/TableReferences.lean`) and refused at boot otherwise; since `v0.36.144`
 the boot establishes it, every syscall and kernel entry keeps it, and the retire
 reads the object's own back-links (`SystemState.tableBackLinksClear`) instead of
@@ -593,19 +593,19 @@ holder, since the reclaim resolves its own from the victim's reply frame.
 
 ### 3.5 Cross-subsystem — `SeLe4n/Kernel/CrossSubsystem.lean`
 
-Twelve predicates that no single subsystem owns, because each relates two:
+Ten predicates that no single subsystem owns, because each relates two:
 
 ```
-registryEndpointValid ∧ registryInterfaceValid ∧ registryDependencyConsistent
+registryEndpointValid ∧ registryInterfaceValid
 ∧ noStaleEndpointQueueReferences ∧ noStaleNotificationWaitReferences
-∧ serviceGraphInvariant ∧ schedContextStoreConsistent ∧ schedContextNotDualBound
+∧ schedContextStoreConsistent ∧ schedContextNotDualBound
 ∧ schedContextRunQueueConsistent ∧ blockingAcyclic ∧ lifecycleObjectTypeLockstep
 ∧ untypedRegionsDisjoint
 ```
 
 `blockingAcyclic` is the priority-inheritance blocking graph's acyclicity — the
-property that makes PIP propagation terminate. `serviceGraphInvariant` is the
-service dependency graph's, for the same reason.
+property that makes PIP propagation terminate.  The service dependency graph and
+its two conjuncts were removed at `v0.36.145`.
 
 ### 3.6 Data structures — `RobinHood/`, `RadixTree/`
 

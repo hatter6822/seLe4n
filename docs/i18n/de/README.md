@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -77,7 +77,7 @@ Lean-4-Beweissystem ermöglicht werden:
 - **Komponierte Beweisschicht** — `proofLayerInvariantBundle` komponiert 16 Subsystem-Invariantenbündel (Scheduler-Kern + CBS-Erweiterungen, Capability, IPC + IPC-Scheduler-Kopplung, Lifecycle, Service, VSpace, Cross-Subsystem, TLB-Konsistenz, Notification-Waiter-Konsistenz, Pending/Ack-Schranken des TLB-Shootdowns, TLB-Invalidierung pro Kern und I-Cache-Kohärenz sowie die Schranke des Deklassifizierungs-Audit-Logs) zu einer einzigen übergeordneten Beweisverpflichtung, verifiziert vom Boot durch alle Operationen
 - **Dreiphasen-Zustandsarchitektur** — Builder-Phase mit Invariantenzeugen fließt in eine eingefrorene unveränderliche Darstellung mit bewiesener Lookup-Äquivalenz. 24 eingefrorene Operationen spiegeln die Live-API wider
 - **Vollständiger Operationssatz** — alle seL4-Operationen implementiert mit Invariantenerhaltung, bis hin zu Thread-Suspend/-Resume, Prioritätsverwaltung (setPriority/setMCPriority) und Konfiguration des IPC-Puffers
-- **Service-Orchestrierung** — Kernel-seitige Komponentenlebenszyklusverwaltung mit Abhängigkeitsgraphen und bewiesener Azyklizität (seLe4n-Erweiterung, nicht in seL4)
+- **Service-Registry** — Kernel-seitige Registrierung und Suche von Diensten über ihren Endpunkt, auf dem Endpunkt selbst vermerkt (seLe4n-Erweiterung, nicht in seL4); Abhängigkeitsrichtlinien liegen wie in seL4 bei einem Dienstmanager im Userspace
 
 ## Aktueller Stand
 
@@ -95,11 +95,11 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.36.144` |
+| **Version** | `0.36.145` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 515.329 über 461 Dateien |
-| **Test-LoC (Lean)** | 87.628 über 70 Testsuiten |
-| **Bewiesene Deklarationen** | 18.849 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 512.077 über 459 Dateien |
+| **Test-LoC (Lean)** | 87.214 über 70 Testsuiten |
+| **Bewiesene Deklarationen** | 18.703 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 80 Quelldateien |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware-Anbindung** | **H3 ABGESCHLOSSEN** (WS-AG AG1–AG10): HAL, GIC-400, Timer, ARMv8-Seitentabellen, FFI-Brücke, QEMU-Boot |
@@ -203,7 +203,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -242,7 +242,7 @@ Beweisverpflichtung. Für die vollständige Dateiinventur siehe
 | **Priority Inheritance** | In C implementiertes PIP (MCS-Branch) | Maschinengeprüftes transitives PIP mit Deadlock-Freiheit und parametrischer WCRT-Schranke |
 | **Beschränkte Latenz** | Keine formale WCRT-Schranke | `WCRT = D × L_max + N × (B + P)` bewiesen über 8 Liveness-Module |
 | **Object Stores** | Verkettete Listen und Arrays | Verifizierte Robin-Hood-Hashtabellen (`RHTable`/`RHSet`) mit O(1)-Hotpaths |
-| **Dienstverwaltung** | Nicht im Kernel | Erstklassige Orchestrierung mit Abhängigkeitsgraph und Azyklizitätsbeweisen |
+| **Dienstverwaltung** | Nicht im Kernel | Endpunktgebundene Service-Registry; Abhängigkeitsrichtlinien im Userspace |
 | **Beweise** | Isabelle/HOL, nachträglich | Lean-4-Typprüfer, direkt bei Übergängen platziert — null sorry/axiom (Anzahl bewiesener Deklarationen in der Tabelle [Aktueller Stand](#aktueller-stand)) |
 | **Plattform** | HAL auf C-Ebene | `PlatformBinding`-Typklasse mit typisierten Schnittstellenverträgen |
 

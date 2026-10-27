@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -66,7 +66,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 - **طبقة برهان مركّبة** — يجمع `proofLayerInvariantBundle` 16 حزمة ثوابت أنظمة فرعية (نواة المجدول + امتدادات CBS، الصلاحيات، IPC + اقتران IPC بالمجدول، دورة الحياة، الخدمة، VSpace، العبور بين الأنظمة الفرعية، اتساق TLB، اتساق منتظري الإشعارات، حدود التعليق/الإقرار لإسقاط TLB، إبطال TLB لكل نواة وتماسك I-cache، وحد سجل تدقيق إلغاء التصنيف) في التزام واحد على المستوى الأعلى محقق من الإقلاع عبر جميع العمليات
 - **معمارية حالة ثلاثية الأطوار** — مرحلة بناء مع شواهد ثوابت تتدفق إلى تمثيل مجمّد غير قابل للتغيير مع تكافؤ بحث مُبرهَن. 24 عملية مجمّدة تعكس واجهة API الحية
 - **مجموعة عمليات كاملة** — جميع عمليات seL4 مُنفَّذة مع الحفاظ على الثوابت، وصولًا إلى تعليق الخيوط واستئنافها (suspend/resume)، وإدارة الأولويات (setPriority/setMCPriority)، وتهيئة مخزن IPC المؤقت
-- **تنسيق الخدمات** — دورة حياة مكونات على مستوى النواة مع رسوم بيانية للتبعيات ولاحلقية مُبرهَنة (امتداد seLe4n، غير موجود في seL4)
+- **سجل الخدمات** — تسجيل الخدمات والبحث عنها على مستوى النواة عبر نقطة النهاية (endpoint) الخاصة بها، ويُسجَّل التسجيل على نقطة النهاية نفسها (امتداد seLe4n، غير موجود في seL4)؛ وتُترك سياسة التبعيات، كما في seL4، لمدير خدمات في فضاء المستخدم
 
 ## الحالة الراهنة
 
@@ -80,11 +80,11 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.36.144` |
+| **الإصدار** | `0.36.145` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
-| **أسطر Lean الإنتاجية** | 515,329 عبر 461 ملفًا |
-| **أسطر Lean للاختبارات** | 87,628 عبر 70 مجموعة اختبار |
-| **الإعلانات المُبرهَنة** | 18,849 إعلانًا theorem/lemma (صفر sorry/axiom) |
+| **أسطر Lean الإنتاجية** | 512,077 عبر 459 ملفًا |
+| **أسطر Lean للاختبارات** | 87,214 عبر 70 مجموعة اختبار |
+| **الإعلانات المُبرهَنة** | 18,703 إعلانات theorem/lemma (صفر sorry/axiom) |
 | **حزم Rust (crates)** | 4 (`sele4n-types`، `sele4n-abi`، `sele4n-sys`، `sele4n-hal`) عبر 80 ملفًا مصدريًا |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **الربط بالعتاد** | **H3 مكتمل** (WS-AG AG1–AG10): HAL، GIC-400، المؤقِّت، جداول صفحات ARMv8، جسر FFI، الإقلاع على QEMU |
@@ -185,7 +185,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -223,7 +223,7 @@ tests/                           مجموعات اختبار قابلة للتن
 | **وراثة الأولوية** | PIP مُنفَّذ بـ C (فرع MCS) | PIP متعدٍّ محقق آليًا مع حرية من الجمود وحد WCRT بارامتري |
 | **الكمون المحدود** | لا يوجد حد WCRT رسمي | `WCRT = D × L_max + N × (B + P)` مُبرهَن عبر 8 وحدات حيوية |
 | **مخازن الكائنات** | قوائم مرتبطة ومصفوفات | جداول تجزئة Robin Hood محققة (`RHTable`/`RHSet`) مع مسارات ساخنة بتعقيد O(1) |
-| **إدارة الخدمات** | غير موجودة في النواة | تنسيق من الدرجة الأولى مع رسم بياني للتبعيات وبراهين لاحلقية |
+| **إدارة الخدمات** | غير موجودة في النواة | سجل خدمات مرتبط بنقاط النهاية؛ سياسة التبعيات في فضاء المستخدم |
 | **البراهين** | Isabelle/HOL، بأثر رجعي | مدقق أنماط Lean 4، مشتركة الموقع مع الانتقالات — صفر sorry/axiom (عدد الإعلانات المُبرهَنة في جدول [الحالة الراهنة](#الحالة-الراهنة)) |
 | **المنصة** | HAL على مستوى C | فئة نمطية `PlatformBinding` مع عقود حدود مُنمَّطة |
 

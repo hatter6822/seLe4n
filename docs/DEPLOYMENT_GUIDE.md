@@ -32,8 +32,8 @@ kernel-primitive transitions with per-step and trace-level NI proofs.
 
 **What NI does NOT cover** (see Section 3):
 
-- Service orchestration internals (lifecycle, restart policies, dependency
-  resolution, heartbeat state)
+- The service registry: registrations and the service query's answer (not yet
+  projected; the kernel keeps no service orchestration state)
 - Cache and timing side channels (hardware-level; see F-17 in audit)
 
 ### 1.2 Integrity Model — Non-BIBA Authority Flow (F-04)
@@ -320,17 +320,19 @@ ensure that information flows only through policy-authorized channels.
 
 ### 3.2 What Is NOT Covered
 
-**Service orchestration internals** are explicitly outside the NI boundary.
-
-The `serviceOrchestrationOutsideNiBoundary` theorem
-(`Projection.lean`) formally proves that service orchestration state
-(lifecycle policies, restart state, heartbeat, dependency resolution order)
-is not captured by the NI projection model. Only the service registry layer
-(presence and dependency edges) is observable.
+**The service registry** is outside the NI boundary today.  The kernel keeps
+no service orchestration state (no lifecycle, restart, heartbeat or dependency
+graph; the graph was removed at `v0.36.145`), and the NI projection
+(`ObservableState`) reads neither the registry nor an endpoint's registration
+code, so the service query's answer in `x0` is not covered by any NI theorem.
+Projecting the registry and proving register, revoke and the query NI is
+[`UNTYPED_RESET_PLAN.md`](planning/UNTYPED_RESET_PLAN.md) row 33, registered in
+[`REGISTERED_DEBT.md`](REGISTERED_DEBT.md).
 
 **Implication for deployers**: If your deployment relies on service-layer
-isolation, you must analyze service-layer information flows separately.
-The kernel NI guarantees do not extend to service orchestration semantics.
+isolation, you must analyze service-layer information flows separately: in
+particular, which threads hold capabilities to the endpoints a query names.
+The kernel NI guarantees do not extend to the registry until that row lands.
 
 **Additional exclusions**:
 

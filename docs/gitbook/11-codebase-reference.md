@@ -94,8 +94,7 @@ Machine-readable mirror: [`docs/codebase_map.json`](../../docs/codebase_map.json
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 - `SeLe4n/Kernel/Service/Operations.lean`
 - `SeLe4n/Kernel/Service/Invariant.lean` (re-export hub)
-  - `Invariant/Policy.lean` — policy surface, bridge theorems, bundles.
-  - `Invariant/Acyclicity.lean` — dependency acyclicity proofs (TPI-D07).
+  - `Registry/Invariant.lean` — the registry invariant and its preservation.
 
 ### Architecture boundary
 

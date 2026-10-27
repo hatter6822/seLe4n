@@ -1437,7 +1437,7 @@ the root delete makes no write, the passes already run persist (each a
 the retry continuing from the slots as they stand, as seL4's preempted
 `cteDelete` leaves its Zombie in the slot and is restarted.  On the fuel
 `zombieDeleteAt` gives it the slot is never kept on a reachable state; that the
-fuel always suffices is `docs/planning/UNTYPED_RESET_PLAN.md` row 33
+fuel always suffices is `docs/planning/UNTYPED_RESET_PLAN.md` row 34
 (`docs/REGISTERED_DEBT.md`, "The zombie fuel always suffices on a reachable
 state").  The fuel is a parameter so a test can drive the kept branch. -/
 def zombieDeleteAtFuel (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
@@ -1691,7 +1691,7 @@ root retires the emptied object.  When the passes run out of fuel, or the
 thread no longer passes the checks, the passes' work stands and nothing else is
 written: the caller sees the thread's roots unchanged and retries, as seL4's
 preempted `TCB_SetSpace` is restarted.  Not reachable while the fuel suffices
-(`docs/planning/UNTYPED_RESET_PLAN.md` row 33).  Out of line: only a space
+(`docs/planning/UNTYPED_RESET_PLAN.md` row 34).  Out of line: only a space
 change replacing the last capability to a populated CNode takes it. -/
 @[noinline] def copyThreadSpacesAfterZombie (executingCore : Concurrency.CoreId) (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : SystemState :=
@@ -1787,7 +1787,7 @@ thread before the child itself goes.  A child the zombie delete keeps, its
 passes out of fuel (`zombieDeleteAtFuel`), ends the loop with what it has done,
 as seL4's preempted `cteRevoke` returns and is restarted: the caller sees the
 child's slot still occupied and retries; on a reachable state it never happens
-(the fuel's sufficiency, `docs/planning/UNTYPED_RESET_PLAN.md` row 33).  A child
+(the fuel's sufficiency, `docs/planning/UNTYPED_RESET_PLAN.md` row 34).  A child
 outside every CNode ends the loop,
 which on a state the capability invariants hold in never happens: there the
 loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).

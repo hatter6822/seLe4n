@@ -1,3 +1,58 @@
+## v0.36.145 — WS-ZA ZA5.4 part 32: the service graph removed
+
+The kernel kept a service dependency graph (`SystemState.services`) beside the
+service registry.  seL4 has no counterpart, no kernel entry wrote it, and no
+check read it: isolation between services comes from capabilities, and
+dependency policy belongs to a user-level service manager.  This part deletes
+the graph and everything over it, and keeps the registry (`registerService`,
+`revokeService`, `lookupServiceByRecordedCode`, `serviceRegistry`), as decided
+by Adam on 2026-10-26.
+
+- **Operations and invariants**: the graph's writers (`storeServiceState`,
+  `storeServiceEntry`, `serviceRegisterDependency`), its reads and reachability
+  walk (`lookupService`, `hasIsolationEdge`, `serviceHasPathTo` and its fuel),
+  `ServiceGraphEntry` and `ServiceIdentity` are deleted, and so are
+  `Service/Invariant/Acyclicity.lean` and `Service/Invariant/Policy.lean`.
+  `Service/Operations.lean` and `Service/Invariant.lean` stay as hubs over the
+  registry.  `crossSubsystemInvariant` loses `registryDependencyConsistent`
+  and `serviceGraphInvariant` (12 conjuncts to 10); the policy surface's place
+  in `proofLayerInvariantBundle` is taken by `registryInvariant`, so the
+  bundle's shape is unchanged.
+- **State**: `allTablesInvExtK` loses the graph table (8 conjuncts to 7),
+  `StateField` its `.services` constructor (23 to 22),
+  `SystemState.tableReferencesRecorded` its `servicesEmpty` field (and the
+  `RHTable.slotsEmpty` lemmas only that field read), `SystemState.referenceTables`
+  its third component, and `FrozenSystemState` its graph map.  Every
+  `st'.services = st.services` frame lemma is deleted.
+- **Information flow**: the two graph projections (`ObservableState.services`
+  and `.serviceRegistry`, both read from `st.services`) are deleted with
+  `serviceObservable` and the graph's orchestration-boundary theorems;
+  `ObservableState` goes from 13 fields to 11, its per-core shared fragment from
+  7 to 5, and every per-core non-interference theorem loses its `hServices`
+  hypothesis.  The registry itself was never projected: the service query writes
+  the registration it finds into the caller's `x0` and no non-interference
+  theorem covers that word.  `API.lean`'s coverage docstring now says so, and the
+  projection is a new plan row (row 33), registered in `docs/REGISTERED_DEBT.md`.
+- **Kept**: `KernelError.cyclicDependency` stays as ABI error 16, though no
+  kernel path returns it now.
+- **Tests and fixtures**: the graph's runtime checks, error-matrix rows
+  (`KERRORMATRIX_ROWS` 48 to 46), operation-chain, negative-state and
+  parameterised-topology checks are removed.  The trace harness loses its graph
+  scenarios (the `SST-001`–`SST-020` and `SST-038`/`SST-039` graph lines,
+  `SRG-010`, `KSD-006`); **fixture rationale**: `main_trace_smoke.expected` is
+  regenerated because those lines named state that no longer exists, the
+  topology lines lose their `svcs=` field, and the inter-transition invariant
+  checks run 33 times, not 36 (the three removed were after the graph's store,
+  its dependency write and its registry scenario).  The SMP
+  information-flow fixtures are unchanged.
+- **Plan**: `docs/planning/UNTYPED_RESET_PLAN.md` row 32 is marked landed; a new
+  row 33 projects the registry for non-interference, and the old rows 33 and 34
+  are now 34 and 35, with every citation swept.  `docs/REGISTERED_DEBT.md`
+  closes the graph conjuncts of §C.1 row 21 and rows 11 and 12 (their code is
+  deleted), and registers "The service registry is not projected for
+  non-interference".
+- Exerciser: every QEMU pin unchanged.
+
 ## v0.36.144 — WS-ZA ZA5.4 part 31: the table back-references read
 
 Part 30 recorded each table reference by id on the object it names and stated

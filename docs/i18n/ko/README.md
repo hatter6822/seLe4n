@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -76,7 +76,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 - **합성 증명 계층** — `proofLayerInvariantBundle`이 16개 서브시스템 불변량 번들(스케줄러 코어 + CBS 확장, 능력, IPC + IPC–스케줄러 결합, 생명주기, 서비스, VSpace, 교차 서브시스템, TLB 일관성, 알림 대기자 일관성, TLB 슈트다운 pending/ack 한계, 코어별 TLB 무효화 및 I-캐시 일관성, 그리고 기밀 해제 감사 로그 한계)을 부트에서 모든 연산까지 검증되는 단일 최상위 의무로 합성합니다
 - **3단계 상태 아키텍처** — 불변량 증거를 갖춘 빌더 단계가 증명된 조회 동치를 갖춘 동결 불변 표현으로 이행합니다. 24개 동결 연산이 라이브 API를 반영합니다
 - **완전한 연산 집합** — 스레드 suspend/resume, 우선순위 관리(setPriority/setMCPriority), IPC 버퍼 구성에 이르기까지 모든 seL4 연산이 불변량 보존과 함께 구현되었습니다
-- **서비스 오케스트레이션** — 의존성 그래프와 비순환성 증명을 갖춘 커널 수준 컴포넌트 생명주기 (seL4에 없는 seLe4n 확장)
+- **서비스 레지스트리** — 엔드포인트를 통한 커널 수준 서비스 등록 및 조회, 등록은 엔드포인트 자체에 기록됨 (seL4에 없는 seLe4n 확장); 의존성 정책은 seL4와 마찬가지로 사용자 공간 서비스 관리자가 담당
 
 ## 현재 상태
 
@@ -94,11 +94,11 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.36.144` |
+| **버전** | `0.36.145` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 461개 파일, 515,329줄 |
-| **테스트 Lean LoC** | 70개 테스트 스위트, 87,628줄 |
-| **증명된 선언** | 18,849개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 459개 파일, 512,077줄 |
+| **테스트 Lean LoC** | 70개 테스트 스위트, 87,214줄 |
+| **증명된 선언** | 18,703개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **Rust 크레이트** | 4개(`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 소스 파일 80개 |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **하드웨어 바인딩** | **H3 완료** (WS-AG AG1–AG10): HAL, GIC-400, 타이머, ARMv8 페이지 테이블, FFI 브리지, QEMU 부팅 |
@@ -198,7 +198,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -236,7 +236,7 @@ tests/                           Executable test suites + fixtures
 | **우선순위 상속** | C 구현 PIP (MCS 브랜치) | 교착 상태 자유와 매개변수적 WCRT 한계를 갖춘 기계 검증 전이적 PIP |
 | **유계 지연** | 공식 WCRT 한계 없음 | 8개 활성 모듈에 걸쳐 증명된 `WCRT = D × L_max + N × (B + P)` |
 | **객체 저장소** | 연결 리스트와 배열 | O(1) 핫 패스를 갖춘 검증된 Robin Hood 해시 테이블 (`RHTable`/`RHSet`) |
-| **서비스 관리** | 커널에 없음 | 의존성 그래프와 비순환성 증명을 갖춘 일급 오케스트레이션 |
+| **서비스 관리** | 커널에 없음 | 엔드포인트 기반 서비스 레지스트리; 의존성 정책은 사용자 공간 |
 | **증명** | Isabelle/HOL, 사후(post-hoc) | Lean 4 타입 검사기, 전이와 동일 위치 — sorry/axiom 제로 (증명된 선언 수는 [현재 상태](#현재-상태) 표 참조) |
 | **플랫폼** | C 수준 HAL | 타입된 경계 계약을 갖춘 `PlatformBinding` 타입클래스 |
 

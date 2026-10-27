@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -73,7 +73,7 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 - **合成証明レイヤー** ―― `proofLayerInvariantBundle` が 16 のサブシステム不変条件バンドル（スケジューラコア + CBS 拡張、ケイパビリティ、IPC + IPC–スケジューラ結合、ライフサイクル、サービス、VSpace、クロスサブシステム、TLB 一貫性、通知ウェイター一貫性、TLB シュートダウンの pending/ack 上界、コアごとの TLB 無効化と I キャッシュコヒーレンス、および機密解除監査ログ上界）を単一のトップレベル義務に合成し、ブートからすべての操作まで検証
 - **三段階状態アーキテクチャ** ―― 不変条件ウィットネス付きビルダーフェーズからフリーズされた不変表現へ遷移し、証明済みのルックアップ等価性を保証。24 のフリーズ操作がライブ API をミラー
 - **完全な操作セット** ―― すべての seL4 操作が不変条件保存付きで実装済み。スレッドの suspend/resume、優先度管理（setPriority/setMCPriority）、IPC バッファ設定まで網羅
-- **サービスオーケストレーション** ―― カーネルレベルのコンポーネントライフサイクル管理。依存グラフと証明済み非循環性を備える（seLe4n 独自の拡張、seL4 には存在しない）
+- **サービスレジストリ** ―― エンドポイントを介したカーネルレベルのサービス登録と検索。登録はエンドポイント自体に記録されます（seLe4n 拡張、seL4 には存在しません）。依存関係のポリシーは seL4 と同様にユーザー空間のサービスマネージャーが担います
 
 ## 現在の状態
 
@@ -91,11 +91,11 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.36.144` |
+| **バージョン** | `0.36.145` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 461 ファイルにわたる 515,329 行 |
-| **テスト Lean コード行数** | 70 テストスイートにわたる 87,628 行 |
-| **証明済み宣言数** | 18,849 件の定理/補題宣言（sorry/axiom ゼロ） |
+| **本番 Lean コード行数** | 459 ファイルにわたる 512,077 行 |
+| **テスト Lean コード行数** | 70 テストスイートにわたる 87,214 行 |
+| **証明済み宣言数** | 18,703 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **Rust クレート** | 4 個（`sele4n-types`、`sele4n-abi`、`sele4n-sys`、`sele4n-hal`）、ソースファイル 80 個 |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
 | **ハードウェアバインディング** | **H3 完了**（WS-AG AG1–AG10）：HAL、GIC-400、タイマー、ARMv8 ページテーブル、FFI ブリッジ、QEMU ブート |
@@ -182,7 +182,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -217,7 +217,7 @@ tests/                           Executable test suites + fixtures
 | **優先度継承** | C 実装の PIP（MCS ブランチ） | 機械検証済みの推移的 PIP、デッドロックフリー保証とパラメトリック WCRT 上界付き |
 | **有界レイテンシ** | 形式的な WCRT 上界なし | `WCRT = D × L_max + N × (B + P)` を 8 つの活性モジュールで証明 |
 | **オブジェクトストア** | リンクリストと配列 | 検証済み Robin Hood ハッシュテーブル（`RHTable`/`RHSet`）による O(1) ホットパス |
-| **サービス管理** | カーネル外 | ファーストクラスのオーケストレーション、依存グラフと非循環性証明付き |
+| **サービス管理** | カーネル外 | エンドポイントに紐づくサービスレジストリ。依存関係のポリシーはユーザー空間 |
 | **証明手法** | Isabelle/HOL、事後検証 | Lean 4 型検査器、遷移と共存配置――sorry/axiom ゼロ（証明済み宣言数は[現在の状態](#現在の状態)の表を参照） |
 | **プラットフォーム抽象化** | C レベル HAL | `PlatformBinding` 型クラスと型付き境界コントラクト |
 
