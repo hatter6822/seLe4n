@@ -2180,6 +2180,18 @@ structure MachineConfig where
       with no image (the simulation bindings, the trace harness) reserves
       nothing. -/
   kernelReserved : List MemoryRegion := []
+  /-- The device register windows the kernel itself maps and drives — on the
+      RPi5 its console UART and the GIC's distributor and CPU interface
+      (`RPi5.mmioRegions`).  seL4 hands the root task device untypeds only for
+      devices the kernel does not use; here the boot refuses an untyped, of
+      either kind, that overlaps any of these windows
+      (`Platform.Boot.untypedClearOfKernelDevices`), since a frame carved over
+      one would give its holder the kernel's own interrupt controller or
+      console.  A platform binding supplies the windows it programs, the same
+      list its board check requires the device tree to declare.  The default
+      is empty: a configuration with no devices (the simulation bindings, the
+      trace harness) reserves none. -/
+  kernelDevices : List MemoryRegion := []
   /-- **WS-BP BP7.1**: the pages the boot takes each configured address space's
       top-level translation table from.  A thread's root needs a page of RAM for
       a table walk to start at (`VSpaceRoot.tableBase`); a root carved from an

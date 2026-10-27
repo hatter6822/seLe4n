@@ -3774,6 +3774,15 @@ run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeL
 run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
+# The boot keeps every untyped clear of the devices the kernel drives, as seL4
+# hands out no device untyped over them: the clause is in the placement
+# conjunct, and each binding names the windows it programs.
+run_check "INVARIANT" rg -n '^def untypedClearOfKernelDevices\b' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '          untypedClearOfKernel config\.machineConfig ut &&\n          untypedClearOfKernelDevices config\.machineConfig ut$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    kernelDevices := mmioRegions$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^    kernelDevices := qemuVirtMmioRegions$' SeLe4n/Platform/QemuVirt/Board.lean
+run_check "INVARIANT" rg -n '^theorem rpi5MemoryMapForConfig_ram_below_devices($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def bootRefusesUntypedOverKernelDevice : IO Unit' tests
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
 run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' SeLe4n/Platform/RPi5/Board.lean
 # WS-BP BP8.1: the value lives in the board map (`board.rs`'s `RPI5`), and the

@@ -35,7 +35,7 @@ reset and delete arms keep it.
   - the invariant, its bundle position and the boot establishment;
   - every new preservation theorem;
   - the bundle's last-conjunct pins, which move to the 18th conjunct.
-- **Exerciser**: every pin unchanged; no runtime code changed.
+- **Exerciser**: every pin unchanged.
 - **Split**: `docs/planning/UNTYPED_RESET_PLAN.md` row 37 is landed with its
   forks.
   - New row 38 covers the other arms and the kernel entries:
@@ -46,9 +46,29 @@ reset and delete arms keep it.
   - The retype's reset, previously row 38, is now row 39.
   - The `docs/REGISTERED_DEBT.md` row "A live mapping is not proven to be
     recorded on a capability" is narrowed to those arms.
-- **Registered**: "The boot admits a device untyped over a device the kernel
-  itself drives". The placement check only keeps untypeds clear of the RAM
-  `kernelReserved` extent. No shipped configuration declares a device untyped.
+
+### Security
+
+- **The boot no longer admits an untyped over a device the kernel drives.**
+  - **Before:** the placement check (`untypedPlacementRespected`) kept a boot
+    untyped clear of the kernel's reserved RAM extent only. A configuration
+    could hand out a device untyped over the console UART or the GIC
+    distributor and CPU interface, and a thread could then carve and map a
+    frame over the interrupt controller. seL4 hands out no device untyped
+    over the kernel's own devices.
+  - **Now:** the check also refuses an untyped of either kind that overlaps
+    any window the binding programs (`untypedClearOfKernelDevices`, over the
+    new `MachineConfig.kernelDevices`). The RPi5 binds this to `mmioRegions`
+    and the `virt` binding to `qemuVirtMmioRegions`, the same lists their
+    board checks require the device tree to declare.
+  - **Proof:** the deployment's placement theorem is restated with the new
+    clause. The RAM untypeds lie below every such device
+    (`rpi5MemoryMapForConfig_ram_below_devices`).
+  - **Test:** `ak9_platform_suite`'s `bootRefusesUntypedOverKernelDevice`
+    refuses a device untyped over the GIC distributor and one over the UART,
+    and accepts a control elsewhere in the SoC device window.
+  - **Severity:** Low. Untypeds come only from the integrator's compiled
+    configuration, and no shipped configuration declared a device untyped.
 
 ## v0.36.149 — WS-ZA ZA5.4 part 36: the seL4 reset
 

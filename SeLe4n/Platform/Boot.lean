@@ -1306,6 +1306,17 @@ def untypedClearOfKernel (mc : MachineConfig) (ut : UntypedObject) : Bool :=
     decide (ut.regionBase.toNat + ut.regionSize ≤ k.base.toNat) ||
       decide (k.endAddr ≤ ut.regionBase.toNat))
 
+/-- **The untyped overlaps no device the kernel itself drives**
+    (`MachineConfig.kernelDevices`), as seL4 hands out no device untyped over
+    the kernel's own devices.  Either kind of untyped is refused there: a
+    device untyped would let its holder map the kernel's interrupt controller
+    or console, and a normal one already fails `untypedWithinDeclaredRegion`
+    over device memory, so the check costs it nothing. -/
+def untypedClearOfKernelDevices (mc : MachineConfig) (ut : UntypedObject) : Bool :=
+  mc.kernelDevices.all (fun d =>
+    decide (ut.regionBase.toNat + ut.regionSize ≤ d.base.toNat) ||
+      decide (d.endAddr ≤ ut.regionBase.toNat))
+
 /-- **WS-BP BP3.2**: two entries do not describe overlapping untyped memory —
     vacuous unless both are untypeds, and for one entry compared with
     itself. -/
@@ -1329,12 +1340,15 @@ def untypedEntriesDisjoint (e₁ e₂ : ObjectEntry) : Bool :=
     route to memory the kernel never meant to give out.  seL4's boot derives
     the root task's untypeds from free memory with the kernel image removed;
     this kernel takes them from the integrator's configuration, so it refuses
-    the configurations seL4's derivation cannot produce.  Three conditions:
+    the configurations seL4's derivation cannot produce.  Four conditions:
 
     * **inside one declared region of its own kind** — a normal untyped in
       `.ram`, a device untyped in `.device` (`untypedWithinDeclaredRegion`);
     * **clear of the kernel's reserved extent** (`untypedClearOfKernel`, over
       the bound machine configuration's `kernelReserved`);
+    * **clear of every device the kernel itself drives**
+      (`untypedClearOfKernelDevices`, over `kernelDevices`), as seL4's boot
+      excludes the kernel's devices from the device untypeds it hands out;
     * **disjoint from every other boot untyped** (`untypedEntriesDisjoint`) —
       the runtime check of the config-level `untypedRegionsDisjoint` the proof
       bridge takes as a hypothesis, which nothing on the live path decided
@@ -1349,7 +1363,8 @@ def untypedPlacementRespected (config : PlatformConfig) : Bool :=
     match e.obj with
     | .untyped ut =>
         untypedWithinDeclaredRegion config.machineConfig ut &&
-          untypedClearOfKernel config.machineConfig ut
+          untypedClearOfKernel config.machineConfig ut &&
+          untypedClearOfKernelDevices config.machineConfig ut
     | _ => true) &&
   config.initialObjects.all (fun e₁ =>
     config.initialObjects.all (fun e₂ => untypedEntriesDisjoint e₁ e₂))
@@ -1357,7 +1372,8 @@ def untypedPlacementRespected (config : PlatformConfig) : Bool :=
 /-- The seventh conjunct's diagnostic. -/
 def untypedPlacementBootError : String :=
   "boot: an untyped lies outside every declared region of its kind, overlaps the " ++
-    "kernel's reserved extent, or overlaps another boot untyped (WS-BP BP3.2)"
+    "kernel's reserved extent or a device the kernel drives, or overlaps another " ++
+    "boot untyped (WS-BP BP3.2)"
 
 /-- **WS-BP BP3.2**: the runtime conjunct decides the config-level
     disjointness the proof bridge takes as a hypothesis — strictly more, since
