@@ -5299,17 +5299,40 @@ object first, as seL4's `finaliseSlot` loop does: `zombieDeleteAt`
 (`cspaceDeleteSlotZombie`) and every revoke child (`revokeFirstChildLoop`) run.
 A delete that finalises and retires nothing keeps the in-place fast path.
 Otherwise the loop runs passes (`zombiePasses`), each starting again from the
-slot: it descends through the capabilities to the deepest object that holds
-any (`zombieDescend`, `zombieSlotClass`), and there either deletes that
-object's slots through the finalising delete (`zombieEmptyObject`) or
-finalises a thread it reaches (`zombieFinaliseAt`, `finaliseFinalObject`), whose
-space slots a later pass deletes.  The slot keeps its capability while the
-passes run, as seL4's Zombie does, and nothing is carried from one pass to the
-next, so a preemption point fits between passes; the slot is deleted last.
-**The bound:** `zombieDeleteAt_run` states at most `zombieFuel st + 1` passes,
-where `zombieFuel st = 3 · objects.size + 2` (each pass but the last empties an
-object or finalises a thread, each at most once), each pass a
-`FinalisingDeleteChain`, which gains a `finalise` step.  **The order:** a CNode
+slot (`zombieDescend`, `zombieSlotClass`): a pass finalises a thread it stands
+on that is not yet finalised (`finaliseFinalObject`, seL4's `finaliseCap`),
+deletes the object's next slot through the finalising delete when that slot is
+a leaf and looks at the object again, and goes down when the slot's capability
+names an object that still holds capabilities.  A pass ends when the object it
+stands on holds none, or with a thread the finalisation refuses deleted from
+the slot it stands on.  The way down is bounded by one more than the store
+holds (`zombieDepth`), and the bound never binds on a state the capability
+bundle holds in (`zombieDescend_depth_never_binds`): a pass goes down only
+through a final capability, so the slot naming each object it reaches is the
+one it came through and it visits no object twice (`zombiePath_fresh`).  The
+slot keeps
+its capability while the passes run, as seL4's Zombie does, and nothing is
+carried from one pass to the next, so a preemption point fits between passes;
+the slot is deleted last.  **The bound:** `zombieDeleteAt_run` states at most
+`zombieFuel st + 1` passes, where `zombieFuel st = objects.size + 1`, each pass
+a `FinalisingDeleteChain`, which gains a `finalise` step.  **The fuel
+suffices** (`v0.36.148`, plan row 35): on every state the capability bundle
+holds in, the passes end with the slot naming nothing that holds a capability
+(`zombiePasses_end`, `Capability/Invariant/Preservation/ZombieTermination.lean`).
+The measure is the number of objects the passes can still reach that hold a
+capability (`zombieLive`): the object the slot names and every object a slot of
+a reached object names, the loop's own slot passed over (`ZombieReach`), each
+counted once over the store's keys, so a CNode holding a capability to itself or
+to one above it needs no acyclicity premise.  Every step only empties slots
+(`SlotsShrink`), so the measure never rises; each pass lowers it
+(`zombieDescend_live`): it ends on an object that held a capability and holds
+none, or deletes the slot of a final capability, after which no slot names its
+object (`not_zombieReach_of_final_deleted`).  An object stays reachable while
+its own slots are emptied (`zombieReach_of_own_deleted`), and a pass empties at
+most the occupied slots of the object it stands on (`zombieOccupied`).  The
+measure is at most the store's size (`objectKeys_length`), so the root delete
+always deletes the slot: the out-of-fuel branch is gone from the delete, the
+revoke loop and set-space.  **The order:** a CNode
 carries occupancy links (`SlotOccupancy`: `CNode.occ`, `occHead`, `occ_agree`),
 so the next slot is read off the head rather than scanned for, and the loop
 deletes a CNode's slots most recently filled first.  seL4 goes from the
@@ -5335,13 +5358,7 @@ write cover and cross-core non-interference are proven for the zombie delete
 the freed id's declassification provenance (`withTaintCleared` in
 `retireRecordedObject`, `retireFinalObject_taint_cleared`), so an object carved
 at the id later inherits no stale tag; the reset's removal does not yet
-(`docs/REGISTERED_DEBT.md`).  **Out of fuel:** when the passes end with the
-root slot still non-leaf, the root delete makes no write
-(`zombieDeleteAtFuel`): the passes' deletes persist and the slot keeps its
-capability, so a retry continues from the slot state, as seL4's preempted
-`cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
-fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 35).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5415,8 +5432,10 @@ admission reads, reads no guard of its own: the notification unbind (the
 admission reads `notificationUnbindAdmitted`) and the context deschedule, which
 reads only whether the holder is ready.  The other steps keep their guards,
 which the reply finalisation's steps share or on which a compiled `@[csimp]`
-form rests, and none refuses on an admitted state.  Still open: that the
-zombie fuel always suffices (plan row 35).
+form rests, and none refuses on an admitted state.  **The zombie fuel proven**
+(`v0.36.148`, plan row 35): the passes always end within `zombieFuel`, as
+described above, so the revocation's completeness theorems state the source
+childless with no kept-child case.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
 cells: a thread's space-slot delete keeps the slot's cell as its spare record

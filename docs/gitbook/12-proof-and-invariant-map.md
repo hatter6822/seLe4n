@@ -140,7 +140,8 @@ every caller waiting on it (`finaliseThreadReturnLoan`,
 `finaliseThreadEndWaiters`); since `v0.36.139` an object that still holds
 capabilities — a populated CNode, a thread with space-slot capabilities — is
 emptied first by seL4's zombie loop (`zombieDeleteAt`, bounded by
-`zombieDeleteAt_run`), so a thread's delete of its own last capability runs end
+`zombieDeleteAt_run`, its fuel proven to suffice since `v0.36.148`,
+`zombiePasses_end`), so a thread's delete of its own last capability runs end
 to end, set-space deletes each old root through the same loop, and an untyped
 with children is spliced out of the derivation tree, its recorder adopting
 them (`retireUnrecord`, kept by `TreeShapeOver.retire`); since `v0.36.141` the
