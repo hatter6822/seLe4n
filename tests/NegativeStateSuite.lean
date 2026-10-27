@@ -2308,14 +2308,16 @@ def runWSH16LifecycleChecks : IO Unit := do
   -- rounded up to it (seL4's `alignUp(freeRef, objectSize)`), never refused.
   -- From an index of 16 (an endpoint's worth): a TCB lands at 2048, an endpoint
   -- at 4096, a frame at the next page (8192), and a TCB after the frame on its
-  -- own 2048-byte boundary (12288).
+  -- own 2048-byte boundary (12288).  The index of 16 is reached by carving an
+  -- endpoint, so the capability has a child and the carves start at its free
+  -- index; a childless capability is reset and starts at 0 (seL4's
+  -- `ensureNoChildren` in `decodeUntypedInvocation`).
   let misalignedCarveState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject carveRefusalUtId (.untyped
           { regionBase := SeLe4n.PAddr.ofNat 0x40000, regionSize := 0x4000 })
       |>.withObject carveRefusalCnId (.cnode (CNode.ofList 0 0 0 3 [
-          (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype],
-                                  freeIndex := 16 })
+          (SeLe4n.Slot.ofNat 0, { target := .object carveRefusalUtId, rights := AccessRightSet.ofList [.read, .write, .retype] })
         ]))
       |>.withLifecycleObjectType carveRefusalUtId .untyped
       |>.withLifecycleObjectType carveRefusalCnId .cnode
@@ -2328,15 +2330,18 @@ def runWSH16LifecycleChecks : IO Unit := do
     | .error _ => none
   let indexOf (s : SystemState) : Option Nat :=
     (SystemState.lookupSlotCap s (carveRefusalSlot 0)).map (·.freeIndex)
-  let alignedRun : Option (SystemState × SystemState × SystemState × SystemState) := do
-    let s1 ← carveAt (.tcb ⟨0⟩ bootCoreId) 155 1 misalignedCarveState
+  let alignedRun : Option (SystemState × SystemState × SystemState × SystemState × SystemState) := do
+    let s0 ← carveAt .endpoint 159 5 misalignedCarveState
+    let s1 ← carveAt (.tcb ⟨0⟩ bootCoreId) 155 1 s0
     let s2 ← carveAt .endpoint 156 2 s1
     let s3 ← carveAt .frame 157 3 s2
     let s4 ← carveAt (.tcb ⟨0⟩ bootCoreId) 158 4 s3
-    pure (s1, s2, s3, s4)
+    pure (s0, s1, s2, s3, s4)
   match alignedRun with
   | none => expectCond "H16-NEG-06" "the aligned carve sequence succeeds" false
-  | some (s1, s2, s3, s4) =>
+  | some (s0, s1, s2, s3, s4) =>
+    expectCond "H16-NEG-06" "an endpoint carved first leaves the free index at 16"
+      (indexOf s0 == some 16)
     expectCond "H16-NEG-06" "a TCB at free index 16 is carved at 2048, the index past it 4096"
       (indexOf s1 == some 4096)
     expectCond "H16-NEG-06" "an endpoint after it needs no rounding (index 4112)"
@@ -2373,32 +2378,41 @@ def runWSH16LifecycleChecks : IO Unit := do
     expectCond "H16-NEG-06" "a 2^14-byte child untyped after an endpoint lands on its own size (0x44000, index 32768)"
       (indexOf s1 == some 16 && childBase s2 == some 0x44000 && indexOf s2 == some 32768)
 
-  -- H16-NEG-07: retypeFromUntyped with exhausted untyped (the authority capability's free index at the region boundary) → regionExhausted
-  let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩
-  let h16ExhaustedCnodeId : SeLe4n.ObjId := ⟨161⟩
-  let h16ExhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16ExhaustedCnodeId, slot := SeLe4n.Slot.ofNat 0 }
-  let h16ExhaustedState : SystemState :=
+  -- H16-NEG-07: retypeFromUntyped with exhausted untyped (the authority capability's free index at the region boundary) → regionExhausted.
+  -- The region holds one endpoint, and carving it leaves the capability's free
+  -- index at the region's end with a child; a childless capability would be
+  -- reset to 0 instead (seL4's `ensureNoChildren`), so exhaustion needs a child.
+  let fullRegionUntypedId : SeLe4n.ObjId := ⟨160⟩
+  let fullRegionCnodeId : SeLe4n.ObjId := ⟨161⟩
+  let fullRegionAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := fullRegionCnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let fullRegionFresh : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject h16ExhaustedUntypedId (.untyped {
+      |>.withObject fullRegionUntypedId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x10000)
-        regionSize := 64
+        regionSize := 16
         children := []
         isDevice := false
       })
-      |>.withObject h16ExhaustedCnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject fullRegionCnodeId (.cnode (CNode.ofList 0 0 0 1 [
           (SeLe4n.Slot.ofNat 0, {
-            target := .object h16ExhaustedUntypedId
+            target := .object fullRegionUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            freeIndex := 64   -- the capability's free index is at the region's end: exhausted
           })
-        ])))
-      |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
-      |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
+        ]))
+      |>.withLifecycleObjectType fullRegionUntypedId .untyped
+      |>.withLifecycleObjectType fullRegionCnodeId .cnode
       |>.buildChecked)
-  expectErr "H16 retypeFromUntyped exhausted untyped"
-    (SeLe4n.Kernel.retypeFromUntyped h16ExhaustedAuthSlot h16ExhaustedUntypedId ⟨162⟩
-      (.endpoint {}) 64 h16ExhaustedState)
-    .untypedRegionExhausted
+  match SeLe4n.Kernel.untypedRetypeObject fullRegionAuthSlot ⟨167⟩
+      { cnode := fullRegionCnodeId, slot := SeLe4n.Slot.ofNat 1 } .endpoint fullRegionFresh with
+  | .error e => expectCond "H16-NEG-07" s!"the endpoint filling the region is carved ({reprStr e})" false
+  | .ok ((), fullRegionState) =>
+    expectCond "H16-NEG-07" "the carve leaves the free index at the region's end, with a child"
+      ((SystemState.lookupSlotCap fullRegionState fullRegionAuthSlot).map (·.freeIndex) == some 16 &&
+        SeLe4n.Kernel.hasCdtChildren fullRegionState fullRegionAuthSlot)
+    expectErr "H16 retypeFromUntyped exhausted untyped"
+      (SeLe4n.Kernel.retypeFromUntyped fullRegionAuthSlot fullRegionUntypedId ⟨162⟩
+        (.endpoint {}) 16 fullRegionState)
+      .untypedRegionExhausted
 
   -- H16-NEG-08: retypeFromUntyped with non-untyped source → untypedTypeMismatch
   -- Plan REQ: "retypeFromUntyped with invalid object type → expect error"
@@ -3761,32 +3775,36 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     .untypedTypeMismatch
 
   -- S2-H-04: retypeFromUntyped with insufficient untyped capacity (region exhausted)
-  -- Create an untyped whose authority capability's free index is at the end of its region
+  -- An endpoint fills the untyped's region, leaving its authority capability's
+  -- free index at the end of the region with a child; a childless capability
+  -- would be reset to 0 instead (seL4's `ensureNoChildren`).
   let exhaustedUntypedId : SeLe4n.ObjId := ⟨85⟩
   let exhaustedAuthCnode : SeLe4n.ObjId := ⟨86⟩
   let exhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
     { cnode := exhaustedAuthCnode, slot := SeLe4n.Slot.ofNat 0 }
-  let exhaustedState : SystemState :=
+  let exhaustedFresh : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject exhaustedUntypedId (.untyped {
         regionBase := (SeLe4n.PAddr.ofNat 0x10000)
-        regionSize := 128
+        regionSize := 16
         children := []
         isDevice := false
       })
-      |>.withObject exhaustedAuthCnode (.cnode (SeLe4n.Model.CNode.ofSlots 0 0 0 0 (SeLe4n.UniqueSlotMap.ofListWF [
+      |>.withObject exhaustedAuthCnode (.cnode (CNode.ofList 0 0 0 1 [
           (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
-            freeIndex := 128   -- free index == regionSize → no space left
           })
-        ])))
+        ]))
       |>.withLifecycleObjectType exhaustedUntypedId .untyped
       |>.withLifecycleObjectType exhaustedAuthCnode .cnode
       |>.buildChecked)
+  let (_, exhaustedState) ← expectOkSt "an endpoint filling the region is carved"
+    (SeLe4n.Kernel.untypedRetypeObject exhaustedAuthSlot ⟨94⟩
+      { cnode := exhaustedAuthCnode, slot := SeLe4n.Slot.ofNat 1 } .endpoint exhaustedFresh)
   expectErr "retypeFromUntyped region exhausted"
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
-      (.endpoint {}) 64 exhaustedState)
+      (.endpoint {}) 16 exhaustedState)
     .untypedRegionExhausted
 
   -- S2-H-05: retypeFromUntyped with childId that collides with existing object

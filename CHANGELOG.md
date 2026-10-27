@@ -39,6 +39,11 @@ row of `docs/planning/UNTYPED_RESET_PLAN.md`.
   capability carves at index 0, exactly as a reset followed by the carve; a
   childless duplicate over recorded objects, and an untyped recording a
   carved object, are refused with `.revocationRequired`.
+- **Fixtures** (`negative_state_suite` H16-NEG-06, H16-NEG-07, S2-H-04): three
+  fixtures set a free index by hand on a capability with no child, a state no
+  executable path reaches, and the retype now resets such a capability. They
+  reach their index by carving an endpoint first, so the capability has a
+  child, and every assertion they made stands.
 - **Exerciser**: every retype pin and every other pin unchanged, measured on
   the Lean-linked QEMU image against a fresh archive; `untyped-reset` still
   reads (0, 0).
