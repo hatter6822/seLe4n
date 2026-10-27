@@ -1,3 +1,63 @@
+## v0.36.152 — WS-ZA ZA5.4 part 39: a thread's space slot records no mapping
+
+The thread-space set writes over a thread slot's old capability without
+unmapping what it records.  That keeps every mapping recorded only because no
+thread's space slot ever holds a capability recording a mapping.  This part
+states that fact as part of the invariant, proves boot establishes it and every
+proven step keeps it, and proves the thread-space set keeps the mappings
+recorded.
+
+- **The fact** (`SystemState.threadSlotsRecordNoMapping`,
+  `Model/MappingRecords.lean`): every capability a thread's CSpace or VSpace
+  root slot holds records no mapping (`Capability.mapping = none`).
+- **Folded into the invariant**: `SystemState.liveMappingsRecorded` is now
+  `liveMappingsWitnessed ∧ threadSlotsRecordNoMapping`.  The first half is the
+  part 37 statement, renamed.  The bundle keeps 18 conjuncts, and
+  `MappingStage` and the entries' composition (row 40) are unchanged.
+- **The frame** (`SystemState.threadSlotsDrawnFrom`): every thread slot's
+  capability after a step was that slot's before it, or records nothing.  Every
+  frame lemma now carries it:
+  - kind- and mapping-fact-preserving writes keep every thread's slots;
+  - link writes rewrite link words only;
+  - the insert, the map's record and the free-index write store CNodes;
+  - the core delete empties one slot;
+  - the finalising delete's teardown writes roots, the finalisation keeps
+    every thread's slots, and the retire erases or keeps each object;
+  - a carved thread's slots are empty (`CarveRequest.object_threadSlotsEmpty`).
+- **Boot**: `bootSpaceSlotCapsSafe` now carries `bootSafeCapCheck`'s refusal of
+  a mapping record, and `SystemState.liveMappingsRecorded_of_epochsVacant`
+  takes the thread half from it.
+- **The set** (new module
+  `Capability/Invariant/Preservation/SetSpaceMappingRecords.lean`):
+  - `threadSlotCopied_preserves_liveMappingsRecorded`: the slot copy keeps the
+    records.  The capability it overwrites recorded nothing, and the copy it
+    writes (`TCB.spaceCopyOf`) records nothing.
+  - `retireFinalObject_preserves_liveMappingsRecorded`: a retire whose target
+    no slot names keeps them, since every witness of a live mapping names its
+    frame.
+  - `threadSlotSet_…`, `copyThreadSpaces_…` and
+    `copyThreadSpacesZombie_preserves_liveMappingsRecorded`.  The last carries
+    the zombie passes through `mappingRecordsCarried`, from
+    `capabilityInvariantBundle` and `teardownWellFormed`.
+- **Refactor**: `threadSlotCopied_retireTargetUnnamed` (after a slot copy no
+  slot names the retire's target) is factored out of
+  `threadSlotSet_preserves_capabilityInvariantBundle`.  So are the CSpace-root
+  set's bundle and thread lemmas (`cspaceRootSet_preserves_capabilityInvariantBundle`,
+  `cspaceRootSet_getTcb?`, `sourceAdmitted_notUntyped`), out of
+  `copyThreadSpaces_preserves_capabilityInvariantBundle`.  Both proofs now use
+  them.
+- **Deleted**: `KernelObject.insertSlotCap`, a slot writer for CNodes and
+  threads alike that no code called.
+- **Tests**: Tier 3 anchors pin the fact, its place in the invariant, the boot
+  clause, the carve lemma and the set's theorems.
+- **Exerciser**: every pin unchanged; no runtime code changed.
+- **Docs**: `docs/planning/UNTYPED_RESET_PLAN.md` row 39 is landed with its
+  forks.  The `docs/REGISTERED_DEBT.md` row "A live mapping is not proven to be
+  recorded on a capability" is narrowed to the dispatchers and the entries
+  (row 40).
+- **Found on the way**: no executable path writes a recording capability into
+  a thread's space slot.
+
 ## v0.36.151 — WS-ZA ZA5.4 part 38: the arms' own steps keep the mappings recorded
 
 Part 37 proved the address-space, capability-write, reset and delete arms keep

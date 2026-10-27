@@ -41,6 +41,90 @@ theorem vspaceRootsShrink.mappingRoots {st st' : SystemState} (h : vspaceRootsSh
   obtain ⟨r, hr, ha, hm, he, -⟩ := h rid r' hR
   exact ⟨r, hr, ha, hm, he⟩
 
+-- ============================================================================
+-- Steps that put no record in a thread's space slot
+-- ============================================================================
+
+/-- **A store of an object that is no thread draws every thread slot from the
+pre-state**: it writes one key, which then holds no thread. -/
+theorem storeObject_threadSlotsDrawnFrom {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject} (hInv : st.objects.invExt) (hS : storeObject k obj st = .ok ((), st'))
+    (hNotTcb : ∀ t, obj ≠ .tcb t) : SystemState.threadSlotsDrawnFrom st st' :=
+  SystemState.threadSlotsDrawnFrom.of_key k (fun j hj => storeObject_objects_ne _ _ _ j _ hj hInv hS)
+    fun t' hT => by
+      rw [storeObject_objects_eq _ _ _ _ hInv hS] at hT
+      cases hT; exact absurd rfl (hNotTcb t')
+
+/-- **The core delete draws every thread slot from the pre-state**: it empties
+one slot of a CNode or a thread. -/
+theorem cspaceDeleteSlotCore_threadSlotsDrawnFrom {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    SystemState.threadSlotsDrawnFrom st st' := by
+  obtain ⟨o, hO, -, hS⟩ := cspaceDeleteSlotCore_ok h
+  refine SystemState.threadSlotsDrawnFrom.of_key addr.cnode
+    (fun j hj => storeObject_objects_ne _ _ _ j _ hj hInv hS) fun t' hT s cap hc => ?_
+  rw [storeObject_objects_eq _ _ _ _ hInv hS] at hT
+  cases o with
+  | tcb t =>
+    cases hT
+    exact .inr ⟨t, hO, TCB.spaceSlotCap_removeSpaceCap_back hc⟩
+  | _ => cases hT
+
+/-- **The slot delete draws every thread slot from the pre-state**: the core
+delete, then the splice, which writes links. -/
+theorem cspaceDeleteSlot_threadSlotsDrawnFrom {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : cspaceDeleteSlot addr st = .ok ((), st')) :
+    SystemState.threadSlotsDrawnFrom st st' := by
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  obtain ⟨o, -, -, hS⟩ := cspaceDeleteSlotCore_ok hC
+  have hIC : stC.objects.invExt := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
+  have hSplice : SystemState.threadSlotsDrawnFrom stC (spliceDeletedCdtNode stC addr) :=
+    SystemState.threadSlotsDrawnFrom.of_agreeOffLinks ((spliceDeletedCdtNode_reach stC addr).agree hIC)
+  exact (cspaceDeleteSlotCore_threadSlotsDrawnFrom hInv hC).trans hSplice
+
+/-- **A teardown of roots alone draws every thread slot from the pre-state.** -/
+theorem vspaceRootOnlyWrite.threadSlotsDrawnFrom {st st' : SystemState}
+    (h : vspaceRootOnlyWrite st st') : SystemState.threadSlotsDrawnFrom st st' :=
+  fun tid t' s cap hT hC => by
+    rcases h tid with e | ⟨-, ⟨r', hr'⟩⟩
+    · exact .inr ⟨t', e ▸ hT, hC⟩
+    · rw [hT] at hr'; cases hr'
+
+/-- **The finalisation draws every thread slot from the pre-state**: it keeps
+every key's thread slots (`FinaliseFrameAny.kind`). -/
+theorem FinaliseFrameAny.threadSlotsDrawnFrom {st st' : SystemState} (h : FinaliseFrameAny st st') :
+    SystemState.threadSlotsDrawnFrom st st' :=
+  SystemState.threadSlotsDrawnFrom.of_tcbSlots h.kind.tcbSlots
+
+/-- **The retire draws every thread slot from the pre-state**: every key holds
+what it held, or nothing, or an untyped. -/
+theorem retireFinalObject_threadSlotsDrawnFrom (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    SystemState.threadSlotsDrawnFrom st (retireFinalObject ec target recorder st) :=
+  fun tid t' s cap hT hC => by
+    rcases retireFinalObject_key ec target recorder st hInv tid with e | ⟨-, -, hn | ⟨U, hU⟩⟩
+    · exact .inr ⟨t', e ▸ hT, hC⟩
+    · rw [hT] at hn; cases hn
+    · rw [hT] at hU; cases hU
+
+/-- **The finalising delete draws every thread slot from the pre-state**: the
+slot delete, the teardown of roots, the finalisation and the retire each do. -/
+theorem cspaceDeleteSlotFinalising_threadSlotsDrawnFrom (ec : Concurrency.CoreId)
+    {addr : CSpaceAddr} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    SystemState.threadSlotsDrawnFrom st st' := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
+  have hI1 : st1.objects.invExt := by
+    obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st1 hD
+    obtain ⟨o, -, -, hS⟩ := cspaceDeleteSlotCore_ok hC
+    have hIC : stC.objects.invExt := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
+    exact (spliceDeletedCdtNode_reach stC addr).invExt hIC
+  obtain ⟨hI2, -, -, -, hV2⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st2 hI1 hF
+  have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
+  unfold retireFinalisedObject
+  exact (((cspaceDeleteSlot_threadSlotsDrawnFrom hInv hD).trans hV2.threadSlotsDrawnFrom).trans
+    hFr.threadSlotsDrawnFrom).trans (retireFinalObject_threadSlotsDrawnFrom ec _ _ _ hFr.invExt)
+
 /-- **The finalisation keeps the mappings recorded**: it keeps every root, every
 frame and every slot's capability (`FinaliseFrameAny`). -/
 theorem FinaliseFrameAny.liveMappingsRecorded {st st' : SystemState} (h : FinaliseFrameAny st st')
@@ -50,7 +134,7 @@ theorem FinaliseFrameAny.liveMappingsRecorded {st st' : SystemState} (h : Finali
     (SystemState.mappingRecordsKept.of_fwd
       (fun r cap hc _ => ⟨r, cap, (h.slotCapAt r).trans hc, rfl, rfl⟩)
       (fun _ f hf => ⟨f, h.write.keeps hf (not_finaliseWritableAny_frame f), rfl⟩))
-    hL
+    h.threadSlotsDrawnFrom hL
 
 theorem finaliseFinalObject_preserves_liveMappingsRecorded (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) (hL : st.liveMappingsRecorded) :
@@ -120,10 +204,11 @@ theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded (ec : Concurre
   obtain ⟨hI2, -, hC2, -, hV2⟩ :=
     finaliseDestroyedCapabilities_slots ec _ _ st1 st2 hInv1.2.2.2.2.1 hF
   have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
-  intro rid r' v p perms e hR hM hE
+  refine ⟨fun rid r' v p perms e hR hM hE => ?_,
+    hL.2.of_drawnFrom (cspaceDeleteSlotFinalising_threadSlotsDrawnFrom ec hW.1 h)⟩
   obtain ⟨r, hr, ha, hm, he, -⟩ := hS rid r' hR
   obtain ⟨s, cap, fid, f, hc, ht, hf, hb, hmap⟩ :=
-    hL rid r v p perms e hr (hm v _ hM) (he v e hE)
+    hL.1 rid r v p perms e hr (hm v _ hM) (he v e hE)
   by_cases hs : s = addr
   · subst hs
     exfalso
@@ -181,6 +266,7 @@ theorem cspaceInsertSlot_preserves_liveMappingsRecorded {addr : CSpaceAddr} {cap
   have hPre := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hGet
   refine hL.of_slotWrite (storeObject_slotWriteObjects hInv hStore hPre rfl rfl)
     (fun r c hc _ => ⟨r, c, ?_, rfl, rfl⟩)
+    (storeObject_threadSlotsDrawnFrom hInv hStore fun _ h => by cases h)
   by_cases hr : r = addr
   · subst hr
     rw [SystemState.slotCapAt_of_object hPre] at hc
@@ -205,6 +291,7 @@ theorem setCapFreeIndex_preserves_liveMappingsRecorded {st : SystemState} {addr 
         have hEq : cn.setFreeIndex addr.slot idx = cn := by unfold CNode.setFreeIndex; rw [hLk]
         rw [hEq] at hS
         refine hL.of_slotWrite hObj (fun r c hc _ => ⟨r, c, ?_, rfl, rfl⟩)
+          (storeObject_threadSlotsDrawnFrom hInv hS fun _ h => by cases h)
         rw [SystemState.slotCapAt_eq_bind] at hc ⊢
         by_cases hr : r.cnode = addr.cnode
         · rw [hr, storeObject_objects_eq _ _ _ _ hInv hS]; rw [hr, hO] at hc; exact hc
@@ -212,6 +299,7 @@ theorem setCapFreeIndex_preserves_liveMappingsRecorded {st : SystemState} {addr 
       | some c0 =>
         rw [CNode.setFreeIndex_of_lookup hLk] at hS
         refine hL.of_slotWrite hObj (fun r c hc _ => ?_)
+          (storeObject_threadSlotsDrawnFrom hInv hS fun _ h => by cases h)
         by_cases e : r = addr
         · subst e
           have h0 : st.slotCapAt r = some c0 := (SystemState.slotCapAt_of_object hO).trans hLk
@@ -261,6 +349,7 @@ theorem cspaceDeleteSlotCore_preserves_liveMappingsRecorded {addr : CSpaceAddr}
       KernelObject.removeSlotCap]
   obtain ⟨-, hOther⟩ := cspaceDeleteSlotCore_slotCapAt hInv h
   refine hL.of_slotWrite (storeObject_slotWriteObjects hInv hS hO hp hq) (fun r c hc hm => ?_)
+    (cspaceDeleteSlotCore_threadSlotsDrawnFrom hInv h)
   by_cases hr : r = addr
   · subst hr
     obtain ⟨r', hr', hc'⟩ := hDup c hc hm

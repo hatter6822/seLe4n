@@ -28,9 +28,11 @@ each object's kind and mapping view keeps it too
 the other arms (the IPC paths with their capability transfer, the thread,
 scheduling-context, notification, service, audit and fault arms, the scheduling
 point, the timer tick and the retype) are each a `MappingStage`
-(`Kernel/MappingRecordStage/*.lean`).  The thread-space set, the dispatchers
-and the kernel entries are the `docs/REGISTERED_DEBT.md` row "A live mapping is
-not proven to be recorded on a capability", which plan rows 39 and 40 close.
+(`Kernel/MappingRecordStage/*.lean`), and the thread-space set is proven in
+`Capability/Invariant/Preservation/SetSpaceMappingRecords.lean`.  The
+dispatchers and the kernel entries are the `docs/REGISTERED_DEBT.md` row "A
+live mapping is not proven to be recorded on a capability", which plan row 40
+closes.
 -/
 
 namespace SeLe4n.Kernel
@@ -261,7 +263,7 @@ theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded (tid : SeLe4n.Threa
   have hMI : root.mappings.invExt := hWF.1.1
   have hEI : root.mappingEpochs.invExt := hWF.2.1
   refine SystemState.liveMappingsRecorded.of_step frameSlot args.asid args.vaddr frame.base
-    frame.mapEpoch ?_ ?_ ?_ ?_ (slotWitnessesNoMapping_of_notLive hW hCap hLive) hL
+    frame.mapEpoch ?_ ?_ ?_ ?_ (slotWitnessesNoMapping_of_notLive hW hCap hLive) ?_ hL
   · intro rid r' v p perms e hR' hM hE'
     rw [hObj] at hR'
     by_cases h1 : rid = frameSlot.cnode
@@ -327,6 +329,18 @@ theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded (tid : SeLe4n.Threa
     · rw [h3, hRoot] at hg; cases hg
     rw [if_neg h3]
     exact ⟨g, hg, rfl⟩
+  · intro k t' sl c hT hc
+    rw [hObj] at hT
+    by_cases h1 : k = frameSlot.cnode
+    · rw [if_pos h1] at hT; cases hT
+    rw [if_neg h1] at hT
+    by_cases h2 : k = fid
+    · rw [if_pos h2] at hT; cases hT
+    rw [if_neg h2] at hT
+    by_cases h3 : k = rootId
+    · rw [if_pos h3] at hT; cases hT
+    rw [if_neg h3] at hT
+    exact .inr ⟨t', hT, hc⟩
 
 -- ============================================================================
 -- §3  The address-space arms that remove a mapping or touch none
@@ -345,7 +359,8 @@ theorem liveMappingsRecorded_of_rootShrinkStore {st st' : SystemState} {rootId :
       root.mappingEpochs[v]? = some n)
     (hL : st.liveMappingsRecorded) : st'.liveMappingsRecorded := by
   refine SystemState.liveMappingsRecorded.of_shrink (fun rid r' hR => ?_)
-    (SystemState.mappingRecordsKept.of_fwd (fun r cap hc _ => ?_) (fun fid f hf => ?_)) hL
+    (SystemState.mappingRecordsKept.of_fwd (fun r cap hc _ => ?_) (fun fid f hf => ?_))
+    (SystemState.threadSlotsDrawnFrom.of_key rootId hNe fun t' hT => by rw [hAt] at hT; cases hT) hL
   · by_cases hk : rid = rootId
     · subst hk; rw [hAt] at hR; cases hR; exact ⟨root, hRoot, hAsid, hSub, hEp⟩
     · rw [hNe rid hk] at hR; exact ⟨r', hR, rfl, fun _ _ h => h, fun _ _ h => h⟩

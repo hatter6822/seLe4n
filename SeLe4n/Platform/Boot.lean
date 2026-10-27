@@ -2005,11 +2005,14 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear) := rfl
 
 /-- What a boot thread's two space slots hold: every capability carries a valid
-    badge and none is a reply capability, as `bootSafeCnodeCheck` asks of a
-    CNode's slots. -/
+    badge, none is a reply capability and none records a mapping, as
+    `bootSafeCnodeCheck` asks of a CNode's slots.  The third is what the
+    mapping-record invariant reads of a thread's slots
+    (`SystemState.threadSlotsRecordNoMapping`). -/
 def bootSpaceSlotCapsSafe (tcb : TCB) : Prop :=
   (∀ slot cap badge, tcb.spaceSlotCap slot = some cap → cap.badge = some badge → badge.valid) ∧
-  (∀ slot cap rid, tcb.spaceSlotCap slot = some cap → cap.target ≠ .replyCap rid)
+  (∀ slot cap rid, tcb.spaceSlotCap slot = some cap → cap.target ≠ .replyCap rid) ∧
+  (∀ slot cap, tcb.spaceSlotCap slot = some cap → cap.mapping = none)
 
 /-- ...and no slot holds a derivation link, the tree being empty when the
     configured objects are installed (`linkBootCapabilities` links them last). -/
@@ -2021,20 +2024,22 @@ theorem bootSpaceSlotsSafe_of_check {tcb : TCB}
     (hCaps : tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) = true)
     (hClear : tcb.spaceLinksClear = true) : bootSpaceSlotsSafe tcb := by
   have hc : ∀ {slot cap}, tcb.spaceSlotCap slot = some cap →
-      ((∀ badge, cap.badge = some badge → badge.valid) ∧ (∀ rid, cap.target ≠ .replyCap rid)) := by
+      ((∀ badge, cap.badge = some badge → badge.valid) ∧ (∀ rid, cap.target ≠ .replyCap rid) ∧
+        cap.mapping = none) := by
     intro slot cap hL
     obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hL
     have h := (List.all_eq_true.mp hCaps) _ hm
     simp only at h
     unfold bootSafeCapCheck at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨hBadge, hTarget⟩, _⟩, _⟩ := h
-    refine ⟨fun badge hB => ?_, fun rid hT => ?_⟩
+    obtain ⟨⟨⟨hBadge, hTarget⟩, hMap⟩, _⟩ := h
+    refine ⟨fun badge hB => ?_, fun rid hT => ?_, Option.isNone_iff_eq_none.mp hMap⟩
     · rw [hB] at hBadge
       simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
     · rw [hT] at hTarget
       cases hTarget
-  exact ⟨⟨fun _ _ badge hL hB => (hc hL).1 badge hB, fun _ _ rid hL => (hc hL).2 rid⟩, hClear⟩
+  exact ⟨⟨fun _ _ badge hL hB => (hc hL).1 badge hB, fun _ _ rid hL => (hc hL).2.1 rid,
+    fun _ _ hL => (hc hL).2.2⟩, hClear⟩
 
 /-- `bootSpaceSlotCapsSafe` reads a thread's space slots alone. -/
 theorem bootSpaceSlotCapsSafe_of_cells_eq {t t' : TCB} (hCells : t'.spaceCells = t.spaceCells)
@@ -5822,7 +5827,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       | cnode cn => exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2 slot cap rid hLookupSlot)
       | tcb t =>
         exact absurd hTgt
-          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 slot cap rid hLookupSlot)
+          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 slot cap rid hLookupSlot)
       | _ => simp [KernelObject.slotCap] at hLookupSlot
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
@@ -6266,12 +6271,15 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     rw [hAudit]
     exact SeLe4n.Model.default_auditLogBounded
   -- 17. runQueueRefined: the caller's hypothesis.
-  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 part 37): every boot root's epoch
-  -- table is vacant (`VSpaceRootTableRoom`), so no mapping was made by a
-  -- capability and the invariant holds vacuously.
+  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 parts 37 and 39): every boot root's
+  -- epoch table is vacant (`VSpaceRootTableRoom`), so no mapping was made by a
+  -- capability, and every boot thread's space slots passed `bootSafeCapCheck`,
+  -- which refuses a mapping record (`bootSpaceSlotCapsSafe`).
   have hMappings : ist.state.liveMappingsRecorded :=
-    SystemState.liveMappingsRecorded_of_epochsVacant fun rid root hObj =>
-      ((hBS rid _ hObj).2.2.2.2.1 root rfl).2.2.2
+    SystemState.liveMappingsRecorded_of_epochsVacant
+      (fun rid root hObj => ((hBS rid _ hObj).2.2.2.2.1 root rfl).2.2.2)
+      fun tid t s cap hObj hc =>
+        ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 s cap hc
   -- Compose all 18 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,

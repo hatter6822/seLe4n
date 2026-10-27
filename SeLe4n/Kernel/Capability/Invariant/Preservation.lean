@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Capability.Invariant.Preservation.ThreadSpaceCopy
 import SeLe4n.Kernel.Capability.Invariant.Preservation.Carve
 import SeLe4n.Kernel.Capability.Invariant.Preservation.ZombieTermination
 import SeLe4n.Kernel.Capability.Invariant.Preservation.MappingRecords
+import SeLe4n.Kernel.Capability.Invariant.Preservation.SetSpaceMappingRecords
 
 /-!
 # AN4-F.3 (CAP-M03): `Capability.Invariant.Preservation` hub
@@ -33,13 +34,15 @@ former file — and the original public API is preserved byte-for-byte:
 | `Preservation.Carve`                      | the untyped carve (`retypeFromUntyped`, `untypedRetypeObject`): the carved object's store, the free-index write, the install and its `.retype` edge |
 | `Preservation.ZombieTermination`          | the zombie loop's passes end within `zombieFuel` on every state the capability invariants hold in (`zombiePasses_end`) |
 | `Preservation.MappingRecords`             | the finalising delete, the revocation and the zombie delete keep every live mapping recorded (`cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded`) |
+| `Preservation.SetSpaceMappingRecords`     | the thread-space set keeps every live mapping recorded (`copyThreadSpacesZombie_preserves_liveMappingsRecorded`): no thread's space slot records a mapping |
 
 The children form a linear import chain
 (`Insert ← Delete ← CopyMoveMutate ← EndpointReplyAndLifecycle ←
 BadgeIpcCapsAndCdtMaps ← Revoke`), with `ThreadSpaceCopy` and `ZombieTermination` on
-`Revoke`, `MappingRecords` on `Revoke` and `Carve` on `ThreadSpaceCopy`. The hub
-re-exports the tails of that chain, `ThreadSpaceCopy`, `Carve`, `ZombieTermination` and
-`MappingRecords`, so every downstream
+`Revoke`, `MappingRecords` on `Revoke`, `Carve` on `ThreadSpaceCopy` and
+`SetSpaceMappingRecords` on `ThreadSpaceCopy` and `MappingRecords`. The hub
+re-exports the tails of that chain, `ThreadSpaceCopy`, `Carve`, `ZombieTermination`,
+`MappingRecords` and `SetSpaceMappingRecords`, so every downstream
 consumer sees the union of all preservation theorems.
 
 **Migration discipline**: theorem names, statements, proofs, and relative

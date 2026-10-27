@@ -165,8 +165,10 @@ capability held in some slot, to the frame the mapping names
 (`SystemState.liveMappingsRecorded`), as seL4's frame capability records where
 it mapped its frame.  It is what makes the final delete of a frame's last
 capability, which removes the page that capability records, leave no mapping of
-the frame it retires.  It reads `objects` alone, so every transition that
-writes no object frames it. -/
+the frame it retires.  Since part 39 it also says no thread's space slot holds
+a capability recording a mapping (`SystemState.threadSlotsRecordNoMapping`),
+which keeps the records through the thread-space set.  It reads `objects`
+alone, so every transition that writes no object frames it. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧

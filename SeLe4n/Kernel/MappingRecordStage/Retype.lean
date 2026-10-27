@@ -16,8 +16,9 @@ at an id no object held, sets the authority capability's free index, scrubs the
 child's memory, inserts the child's capability into an empty slot and records the
 derivation edge.  Only the child's store adds an object, and the child holds no
 live mapping: a carved address space has a fresh ASID and no mapping epoch
-(`untypedNextVSpaceRoot`), so it adds no mapping to record, and every frame and
-every capability already recording a mapping keeps its key
+(`untypedNextVSpaceRoot`), so it adds no mapping to record, a carved thread's
+space slots are empty (`carvedTcb`), so it adds no thread slot's record, and
+every frame and every capability already recording a mapping keeps its key
 (`liveMappingsRecorded.of_freshObject`).
 -/
 
@@ -37,6 +38,22 @@ theorem CarveRequest.object_noMappingEpoch (untypedId childId : SeLe4n.ObjId)
   rw [show (untypedNextVSpaceRoot ut idx _).mappingEpochs[v]? = none from
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) v] at hE
   cases hE
+
+/-- **A carved thread's space slots are empty** (`carvedTcb`: seL4's
+`createObject` makes a thread whose `tcbCTable` and `tcbVTable` hold null
+capabilities), so they record no mapping. -/
+theorem CarveRequest.object_threadSlotsEmpty (untypedId childId : SeLe4n.ObjId)
+    (ut : UntypedObject) (idx : Nat) (req : CarveRequest) :
+    ∀ t, req.object untypedId childId ut idx = .tcb t →
+      ∀ (s : SeLe4n.Slot) (cap : Capability), t.spaceSlotCap s = some cap → cap.mapping = none := by
+  intro t hT s cap hc
+  cases req <;> simp only [CarveRequest.object] at hT <;> try cases hT
+  unfold TCB.spaceSlotCap at hc
+  split at hc
+  · next hs =>
+    have : s.toNat = 0 ∨ s.toNat = 1 := by omega
+    rcases this with h | h <;> simp [carvedTcb, h] at hc
+  · cases hc
 
 /-- **The carve keeps the mappings recorded.** -/
 theorem untypedRetypeObject_mappingStage {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
@@ -64,6 +81,7 @@ theorem untypedRetypeObject_mappingStage {src dst : CSpaceAddr} {childId : SeLe4
       hL.of_freshObject hChildNone (storeObject_objects_eq _ _ _ _ hInvUt hStCh)
         (fun j hj => storeObject_objects_ne _ _ _ _ _ hj hInvUt hStCh)
         (CarveRequest.object_noMappingEpoch _ _ _ _ req)
+        (CarveRequest.object_threadSlotsEmpty _ _ _ _ req)
   rw [← CNode.setFreeIndex_of_lookup hLk, setCapFreeIndex_eq_storeObject hOCh] at hStIdx
   cases hStIdx
   refine (((((k1.trans k2).trans ?_).trans

@@ -343,14 +343,6 @@ no slots. -/
   | .tcb t => .tcb (t.removeSpaceCap s)
   | o => o
 
-/-- Write `cap` into slot `s`; the identity on an object with no slots. -/
-@[inline] def insertSlotCap (o : KernelObject) (s : SeLe4n.Slot) (cap : Capability) :
-    KernelObject :=
-  match o with
-  | .cnode cn => .cnode (cn.insert s cap)
-  | .tcb t => .tcb (t.insertSpaceCap s cap)
-  | o => o
-
 theorem linkAt_eq_decode (o : KernelObject) (s : SeLe4n.Slot) (f : LinkField) :
     o.linkAt s f = decodeLink (o.linkNodeWord s f) (o.linkSlotWord s f) := by
   cases o <;> rfl
