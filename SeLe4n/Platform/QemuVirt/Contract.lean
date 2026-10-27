@@ -128,6 +128,14 @@ def qemuVirtInterruptContract : SeLe4n.Kernel.Architecture.InterruptBoundaryCont
     irqLineSupportedDecidable := by intro irq; infer_instance
     irqHandlerMappedDecidable := by intro st irq; infer_instance }
 
+/-- **WS-ZA ZA5.5**: the service interface the `virt` deployment installs, the
+    one a `.serviceRegister` on the exerciser endpoint names.  No syscall adds
+    an interface, so without it every registration was refused
+    (`registerService`'s interface check). -/
+def qemuVirtExerciserInterface : SeLe4n.Model.InterfaceSpec :=
+  { ifaceId := SeLe4n.InterfaceId.ofNat 1, methodCount := 1, maxMessageSize := 4,
+    maxResponseSize := 4, requiresGrant := false }
+
 /-- The QEMU `virt` platform binding. -/
 instance qemuVirtPlatformBinding : SeLe4n.Platform.PlatformBinding QemuVirtPlatform where
   name := "QEMU virt (GICv2 / Cortex-A76 / ARM64)"
@@ -136,6 +144,7 @@ instance qemuVirtPlatformBinding : SeLe4n.Platform.PlatformBinding QemuVirtPlatf
   bootContract := qemuVirtBootContract
   interruptContract := qemuVirtInterruptContract
   bootVSpaceRoot := some qemuVirtBootVSpaceRootEntry
+  serviceInterfaces := [qemuVirtExerciserInterface]
   coreCount := 4
   coreCountPos := by decide
   coreCountLe := by decide

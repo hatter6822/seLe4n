@@ -131,6 +131,28 @@ def registerService (ist : IntermediateState) (sid : ServiceId)
   hLifecycleConsistent := ist.hLifecycleConsistent
 
 -- ============================================================================
+-- registerInterface — insert into interfaceRegistry
+-- ============================================================================
+
+/-- **WS-ZA ZA5.5**: install a service interface in the builder state, under
+its own id.  Only modifies `interfaceRegistry`; all other fields are
+unchanged. -/
+def registerInterface (ist : IntermediateState) (spec : InterfaceSpec) : IntermediateState where
+  state := { ist.state with
+    interfaceRegistry := ist.state.interfaceRegistry.insert spec.ifaceId spec }
+  hAllTables := by
+    have h := ist.hAllTables
+    unfold SystemState.allTablesInvExtK at h ⊢
+    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1,
+           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.1,
+           h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
+  hPerObjectSlots := by
+    intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
+  hPerObjectMappings := by
+    intro id vs hObj; exact ist.hPerObjectMappings id vs hObj
+  hLifecycleConsistent := ist.hLifecycleConsistent
+
+-- ============================================================================
 -- Q3-B.4: createObject — simplified boot-time object creation
 -- ============================================================================
 

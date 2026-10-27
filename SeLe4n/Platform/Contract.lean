@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Model.Object.Structures
+import SeLe4n.Kernel.Service.Interface
 -- WS-SM SM0.G: SharingDomain comes from the SM0.F foundational types
 -- module so the typeclass field can name it without copying the
 -- definition into the Platform namespace.
@@ -111,6 +112,12 @@ class PlatformBinding (platform : Type) where
       EL3/SECURE mode without an MMU; current production bindings
       (RPi5, sim) all override the default. -/
   bootVSpaceRoot : Option BootVSpaceRootEntry := none
+  /-- **WS-ZA ZA5.5**: the service interfaces the binding's boot installs
+      in the interface registry (`PlatformConfig.initialInterfaces`, which
+      `bindPlatformConfig` sets from this).  No syscall adds an interface, so
+      a deployment's services can register only against these.  Empty by
+      default. -/
+  serviceInterfaces : List SeLe4n.Model.InterfaceSpec := []
   /-- **WS-SM SM0.G**: number of cores the platform exposes.
 
       Multi-core (SMP) coordination in WS-SM SM1..SM10

@@ -132,6 +132,14 @@ structure PlatformConfig where
       (`Platform.FFI.bindPlatformConfig`: the labeling's two separation
       witnesses), as it supplies the boot VSpace root. -/
   initialThreads : List SeLe4n.ThreadId := []
+  /-- **WS-ZA ZA5.5**: the service interfaces the boot **installs** in the
+      interface registry (`foldInterfaces`), the specifications a
+      `.serviceRegister` names by id.  No syscall adds an interface, so a
+      service can be registered only against one the configuration installs;
+      before this field the boot left the registry empty and every
+      registration was refused.  Ids are distinct and none is the reserved
+      sentinel (`bootInterfacesWellFormed`).  Empty by default. -/
+  initialInterfaces : List InterfaceSpec := []
 
 -- V7-I: O(n) duplicate detection via HashSet accumulation.
 -- Replaces the O(n²) per-element `List.any` scan with a single-pass fold.
@@ -306,6 +314,112 @@ def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : Intermedi
 def foldObjects (objs : List ObjectEntry) (ist : IntermediateState)
     : IntermediateState :=
   objs.foldl createBootObject ist
+
+/-- **WS-ZA ZA5.5**: install the configured service interfaces, each under its
+    own id (`registerInterface`).  It writes the interface registry and nothing
+    else (`foldInterfaces_state`). -/
+def foldInterfaces (ifaces : List InterfaceSpec) (ist : IntermediateState)
+    : IntermediateState :=
+  ifaces.foldl registerInterface ist
+
+/-- The interface fold writes the interface registry and nothing else. -/
+theorem foldInterfaces_state (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state =
+      { ist.state with interfaceRegistry := (foldInterfaces ifaces ist).state.interfaceRegistry } := by
+  induction ifaces generalizing ist with
+  | nil => rfl
+  | cons spec rest ih =>
+    simp only [foldInterfaces, List.foldl] at ih ⊢
+    rw [ih (registerInterface ist spec)]
+    rfl
+
+/-- The fields the interface fold leaves alone. -/
+theorem foldInterfaces_scheduler (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.scheduler = ist.state.scheduler :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_objects (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.objects = ist.state.objects :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_asidTable (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.asidTable = ist.state.asidTable :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_irqHandlers (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.irqHandlers = ist.state.irqHandlers :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_cdt (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.cdt = ist.state.cdt :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_serviceRegistry (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.serviceRegistry = ist.state.serviceRegistry :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_tlb (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.tlb = ist.state.tlb :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_tlbShootdown (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.tlbShootdown = ist.state.tlbShootdown :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_perCoreTlb (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.perCoreTlb = ist.state.perCoreTlb :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_perCoreICache (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.perCoreICache = ist.state.perCoreICache :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_pendingIcacheMaintenance (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.pendingIcacheMaintenance = ist.state.pendingIcacheMaintenance :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_declassificationAuditLog (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.declassificationAuditLog = ist.state.declassificationAuditLog :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_declassificationAuditEpoch (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.declassificationAuditEpoch = ist.state.declassificationAuditEpoch :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_declassificationRefusals (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.declassificationRefusals = ist.state.declassificationRefusals :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_declassificationTaint (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.declassificationTaint = ist.state.declassificationTaint :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_machine (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.machine = ist.state.machine :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_objectIndex (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.objectIndex = ist.state.objectIndex :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_objectIndexSet (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.objectIndexSet = ist.state.objectIndexSet :=
+  by rw [foldInterfaces_state]
+
+theorem foldInterfaces_lifecycle (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.lifecycle = ist.state.lifecycle :=
+  by rw [foldInterfaces_state]
+
+/-- The interface registry the fold leaves: each configured interface inserted
+    under its id, in order. -/
+theorem foldInterfaces_interfaceRegistry (ifaces : List InterfaceSpec) (ist : IntermediateState) :
+    (foldInterfaces ifaces ist).state.interfaceRegistry =
+      ifaces.foldl (fun r spec => r.insert spec.ifaceId spec) ist.state.interfaceRegistry := by
+  induction ifaces generalizing ist with
+  | nil => rfl
+  | cons spec rest ih =>
+    simp only [foldInterfaces, List.foldl] at ih ⊢
+    exact ih (registerInterface ist spec)
 
 -- ============================================================================
 -- X2-D: Post-boot machine configuration
@@ -717,10 +831,12 @@ def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let initial := mkEmptyIntermediateState
   let withIrqs := foldIrqs config.irqTable initial
   let withObjects := foldObjects config.initialObjects withIrqs
+  -- WS-ZA ZA5.5: the configured service interfaces, which only the boot adds.
+  let withInterfaces := foldInterfaces config.initialInterfaces withObjects
   -- AH2-F: Integrate machine config into boot pipeline to prevent
   -- PA width misconfiguration (M-03/L-16). Previously callers had to
   -- manually chain `applyMachineConfig` after boot.
-  applyMachineConfig withObjects config.machineConfig
+  applyMachineConfig withInterfaces config.machineConfig
 
 /-- AK9-G (P-M06): Full HAL-parity boot — `bootFromPlatform` followed by the
     `bootEnableInterruptsOp` step that mirrors the Rust HAL Phase-3 IRQ
@@ -1528,6 +1644,21 @@ def bootNotificationBindingBootError : String :=
   "boot: a thread and a notification the configuration binds do not name each " ++
     "other (WS-ZA ZA5.4 part 27)"
 
+/-- **WS-ZA ZA5.5**: the twelfth `wellFormed` conjunct — **the configured
+    service interfaces have distinct ids, none the reserved sentinel.**  The
+    fold inserts each under its id (`foldInterfaces`), so a duplicate would be
+    lost silently, the second specification replacing the first; a refusal
+    names it instead.  Not attacker-reachable — the configuration is the
+    integrator's. -/
+def bootInterfacesWellFormed (config : PlatformConfig) : Bool :=
+  listAllDistinct (config.initialInterfaces.map (·.ifaceId.val)) &&
+    config.initialInterfaces.all (fun spec => !spec.ifaceId.isReserved)
+
+/-- The twelfth conjunct's diagnostic. -/
+def bootInterfaceBootError : String :=
+  "boot: two configured service interfaces share an id, or one uses the reserved " ++
+    "sentinel id 0 (WS-ZA ZA5.5)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1537,14 +1668,22 @@ def bootNotificationBindingBootError : String :=
     may describe, (WS-BP BP7.1) gives every configured address space a
     table page of its own, (WS-ZA ZA5.4 part 13) names each boot untyped
     by at most one capability, (part 18) names only objects it installs, and
-    (part 27) binds threads and notifications only in reciprocal pairs. -/
+    (part 27) binds threads and notifications only in reciprocal pairs, and
+    (WS-ZA ZA5.5) installs service interfaces under distinct, non-sentinel
+    ids. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
     untypedPlacementRespected config && bootRootTablesPlaced config &&
     untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&
-    bootNotificationBindingsReciprocal config
+    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config
+
+/-- **WS-ZA ZA5.5**: a well-formed config installs service interfaces with
+    distinct, non-sentinel ids. -/
+theorem PlatformConfig.wellFormed_bootInterfacesWellFormed (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootInterfacesWellFormed config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1619,7 +1758,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (bootRootTablesPlaced config, bootRootTablesBootError),
    (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError),
    (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError),
-   (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError)]
+   (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError),
+   (bootInterfacesWellFormed config, bootInterfaceBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -3433,7 +3573,7 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.scheduler =
     (default : SystemState).scheduler := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_scheduler_eq, foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_scheduler_eq, foldInterfaces_scheduler, foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
 
 -- ============================================================================
 -- WS-SM SM4.G: per-core idle-thread identities (plan §3.7)
@@ -4477,9 +4617,12 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, bootNotificationBindingsReciprocal_withoutExtents] at hRecip
   unfold PlatformConfig.wellFormed at hWf ⊢
   simp only [Bool.and_eq_true] at hWf ⊢
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩
+  have hIfaces : bootInterfacesWellFormed c = bootInterfacesWellFormed c' := by
+    have := congrArg PlatformConfig.initialInterfaces hEq
+    unfold bootInterfacesWellFormed; exact this ▸ rfl
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩, wIf⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -4761,7 +4904,7 @@ theorem bootFromPlatform_objectIndex_length_le (config : PlatformConfig) :
   have := foldObjects_objectIndex_length_le config.initialObjects
     (foldIrqs config.irqTable mkEmptyIntermediateState)
   rw [hEmpty] at this
-  simpa [bootFromPlatform, applyMachineConfig] using this
+  simpa [bootFromPlatform, applyMachineConfig, foldInterfaces_objectIndex] using this
 
 /-- Enabling interrupts touches `machine` only. -/
 @[simp] theorem bootEnableInterruptsOp_objectIndex (ist : IntermediateState) :
@@ -4990,28 +5133,31 @@ theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdt =
     (default : SystemState).cdt := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_cdt_eq, foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_cdt_eq, foldInterfaces_cdt, foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
 
 /-- V4-A3: The post-boot state preserves serviceRegistry from default. -/
 theorem bootFromPlatform_serviceRegistry_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.serviceRegistry =
     (default : SystemState).serviceRegistry := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_serviceRegistry_eq, foldObjects_serviceRegistry, foldIrqs_serviceRegistry, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_serviceRegistry_eq, foldInterfaces_serviceRegistry, foldObjects_serviceRegistry, foldIrqs_serviceRegistry, mkEmpty_state_eq_default]
 
-/-- V4-A3: The post-boot state preserves interfaceRegistry from default. -/
+/-- V4-A3, WS-ZA ZA5.5: the post-boot interface registry is the configured
+    interfaces inserted, in order, into the default's. -/
 theorem bootFromPlatform_interfaceRegistry_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.interfaceRegistry =
-    (default : SystemState).interfaceRegistry := by
+    config.initialInterfaces.foldl (fun r spec => r.insert spec.ifaceId spec)
+      (default : SystemState).interfaceRegistry := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_interfaceRegistry_eq, foldObjects_interfaceRegistry, foldIrqs_interfaceRegistry, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_interfaceRegistry_eq, foldInterfaces_interfaceRegistry,
+    foldObjects_interfaceRegistry, foldIrqs_interfaceRegistry, mkEmpty_state_eq_default]
 
 /-- V4-A7: The post-boot state preserves TLB from default. -/
 theorem bootFromPlatform_tlb_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.tlb =
     (default : SystemState).tlb := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_tlb_eq, foldObjects_tlb, foldIrqs_tlb, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_tlb_eq, foldInterfaces_tlb, foldObjects_tlb, foldIrqs_tlb, mkEmpty_state_eq_default]
 
 /-- WS-SM SM7.B: The post-boot state preserves TLB-shootdown state from
     default — boot never posts a shootdown descriptor, so the post-boot
@@ -5020,7 +5166,7 @@ theorem bootFromPlatform_tlbShootdown_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.tlbShootdown =
     (default : SystemState).tlbShootdown := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_tlbShootdown_eq, foldObjects_tlbShootdown, foldIrqs_tlbShootdown,
+  rw [applyMachineConfig_tlbShootdown_eq, foldInterfaces_tlbShootdown, foldObjects_tlbShootdown, foldIrqs_tlbShootdown,
       mkEmpty_state_eq_default]
 
 /-- WS-SM SM7.C: after boot, every core's TLB view is the empty default —
@@ -5031,7 +5177,7 @@ theorem bootFromPlatform_perCoreTlb_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.perCoreTlb =
     (default : SystemState).perCoreTlb := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_perCoreTlb_eq, foldObjects_perCoreTlb, foldIrqs_perCoreTlb,
+  rw [applyMachineConfig_perCoreTlb_eq, foldInterfaces_perCoreTlb, foldObjects_perCoreTlb, foldIrqs_perCoreTlb,
       mkEmpty_state_eq_default]
 
 /-- WS-SM SM7.D: after boot, every core's instruction cache is the cold default
@@ -5042,7 +5188,7 @@ theorem bootFromPlatform_perCoreICache_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.perCoreICache =
     (default : SystemState).perCoreICache := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_perCoreICache_eq, foldObjects_perCoreICache,
+  rw [applyMachineConfig_perCoreICache_eq, foldInterfaces_perCoreICache, foldObjects_perCoreICache,
       foldIrqs_perCoreICache, mkEmpty_state_eq_default]
 
 /-- WS-SM SM7.D.1: boot owes no instruction-cache maintenance — it fills no
@@ -5054,7 +5200,7 @@ theorem bootFromPlatform_pendingIcacheMaintenance_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.pendingIcacheMaintenance =
     (default : SystemState).pendingIcacheMaintenance := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_pendingIcacheMaintenance_eq,
+  rw [applyMachineConfig_pendingIcacheMaintenance_eq, foldInterfaces_pendingIcacheMaintenance, 
       foldObjects_pendingIcacheMaintenance, foldIrqs_pendingIcacheMaintenance,
       mkEmpty_state_eq_default]
 
@@ -5066,7 +5212,7 @@ theorem bootFromPlatform_declassificationAuditLog_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.declassificationAuditLog =
     (default : SystemState).declassificationAuditLog := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_declassificationAuditLog_eq,
+  rw [applyMachineConfig_declassificationAuditLog_eq, foldInterfaces_declassificationAuditLog, 
       foldObjects_declassificationAuditLog, foldIrqs_declassificationAuditLog,
       mkEmpty_state_eq_default]
 
@@ -5079,7 +5225,7 @@ theorem bootFromPlatform_declassificationAuditEpoch_eq (config : PlatformConfig)
     (bootFromPlatform config).state.declassificationAuditEpoch =
     (default : SystemState).declassificationAuditEpoch := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_declassificationAuditEpoch_eq,
+  rw [applyMachineConfig_declassificationAuditEpoch_eq, foldInterfaces_declassificationAuditEpoch, 
       foldObjects_declassificationAuditEpoch, foldIrqs_declassificationAuditEpoch,
       mkEmpty_state_eq_default]
 
@@ -5092,7 +5238,7 @@ theorem bootFromPlatform_declassificationRefusals_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.declassificationRefusals =
     (default : SystemState).declassificationRefusals := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_declassificationRefusals_eq,
+  rw [applyMachineConfig_declassificationRefusals_eq, foldInterfaces_declassificationRefusals, 
       foldObjects_declassificationRefusals, foldIrqs_declassificationRefusals,
       mkEmpty_state_eq_default]
 
@@ -5106,7 +5252,7 @@ theorem bootFromPlatform_declassificationTaint_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.declassificationTaint =
     (default : SystemState).declassificationTaint := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_declassificationTaint_eq,
+  rw [applyMachineConfig_declassificationTaint_eq, foldInterfaces_declassificationTaint, 
       foldObjects_declassificationTaint, foldIrqs_declassificationTaint,
       mkEmpty_state_eq_default]
 
@@ -5149,7 +5295,7 @@ theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.timer = (default : SystemState).machine.timer ∧
     (bootFromPlatform config).state.machine.systemRegisters = (default : SystemState).machine.systemRegisters ∧
     (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default, MachineState.regs, MachineState.regsOnCore])
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldInterfaces_machine, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default, MachineState.regs, MachineState.regsOnCore])
 
 /-- **WS-SM SM4.G**: the idle-thread boot state's boot-core current thread is in
     the active domain — the idle thread's domain `⟨0⟩` equals the boot active
@@ -5556,6 +5702,7 @@ private theorem bootFromPlatform_objects_bootSafe
     ∀ (oid : SeLe4n.ObjId) (obj : KernelObject), (bootFromPlatform config).state.objects[oid]? = some obj →
     bootSafeObject obj := by
   unfold bootFromPlatform
+  rw [applyMachineConfig_objects_eq, foldInterfaces_objects]
   apply foldObjects_objects_bootSafe
   · -- Base: after foldIrqs, objects = mkEmpty objects = empty → vacuous
     intro oid obj hLookup
@@ -5626,7 +5773,7 @@ theorem idleSlotsFreshAt_of_initialObjects_below_base
           some o := by
       have hb := hLook
       unfold bootFromPlatform at hb
-      rwa [applyMachineConfig_objects_eq] at hb
+      rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hb
     rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
       ⟨e, hMem, hId, _hObj⟩ | hBase
     · -- A config object lives at the idle slot ⟹ its id ≥ base, contradicting hBelow.
@@ -5659,7 +5806,7 @@ theorem idleSlotsFreshAt_of_idleSlotsReserved
           some o := by
       have hb := hLook
       unfold bootFromPlatform at hb
-      rwa [applyMachineConfig_objects_eq] at hb
+      rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hb
     rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
       ⟨e, hMem, hId, _hObj⟩ | hBase
     · exact idleThreadId_toObjId_ne_of_not_isIdleObjId e.id (hObjs e hMem) c hId.symm
@@ -5680,6 +5827,7 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
     Kernel.untypedRegionsDisjoint (bootFromPlatform config).state := by
   intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
   unfold bootFromPlatform at h₁ h₂
+  rw [applyMachineConfig_objects_eq, foldInterfaces_objects] at h₁ h₂
   -- Trace oid₁'s untyped back to initialObjects.
   rcases foldObjects_objects_reachable config.initialObjects
     (foldIrqs config.irqTable mkEmptyIntermediateState) oid₁ _ h₁ with
@@ -6536,7 +6684,7 @@ theorem bootFromPlatformChecked_ok_objects_of_mem (config : PlatformConfig)
   obtain ⟨hWf, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hBase : (bootFromPlatform config).state.objects[e.id]? = some e.obj := by
     unfold bootFromPlatform
-    rw [applyMachineConfig_objects_eq]
+    rw [applyMachineConfig_objects_eq, foldInterfaces_objects]
     exact foldObjects_objects_of_mem _ _ (config.wellFormed_objectIds_pairwise hWf) e hMem
   rcases hShape with ⟨_, rfl⟩ | ⟨entry, hSome, rfl⟩
   · rw [bootEnableInterruptsOp_objects_eq]; exact hBase
@@ -6649,7 +6797,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
         some (KernelObject.tcb tcb) := by
     unfold bootFromPlatform at hPlain
-    rwa [applyMachineConfig_objects_eq] at hPlain
+    rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hPlain
   rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
     ⟨e, hMem, _, hEObj⟩ | hBase
   · have hCheck : bootSafeObjectCheck e.obj = true := List.all_eq_true.mp hSafe e hMem
@@ -6743,7 +6891,7 @@ theorem bootFromPlatformChecked_ok_tcb_not_idle (config : PlatformConfig)
       (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
         some (KernelObject.tcb tcb) := by
     unfold bootFromPlatform at hPlain
-    rwa [applyMachineConfig_objects_eq] at hPlain
+    rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hPlain
   rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
     ⟨e, hMem, hId, _⟩ | hBase
   · have := idleSlotsReserved_initialObjects config
@@ -7476,7 +7624,8 @@ private theorem bootFromPlatform_asidTableConsistent (config : PlatformConfig)
     (fun e _ => hEmptyObj e.id) hIds hAsids (fun _ _ a _ => hEmptyAsid a)
   unfold bootFromPlatform
   unfold Architecture.asidTableConsistent at hFold ⊢
-  rw [applyMachineConfig_objects_eq, applyMachineConfig_asidTable_eq]
+  rw [applyMachineConfig_objects_eq, applyMachineConfig_asidTable_eq, foldInterfaces_objects,
+    foldInterfaces_asidTable]
   exact hFold
 
 /-- **WS-BP BP3.5**: every ASID the plain boot registers is a configured
@@ -7491,7 +7640,7 @@ private theorem bootFromPlatform_asidTable_configured (config : PlatformConfig)
       (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
         some (.vspaceRoot root) := by
     unfold bootFromPlatform at hR
-    rwa [applyMachineConfig_objects_eq] at hR
+    rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hR
   rcases foldObjects_objects_reachable config.initialObjects _ _ _ hR' with
     ⟨e, hMem, _, hEObj⟩ | hBase
   · refine List.mem_filterMap.mpr ⟨e, hMem, ?_⟩
@@ -7540,7 +7689,7 @@ theorem bootFromPlatformChecked_ok_asidTableConsistent (config : PlatformConfig)
               (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[entry.id]? =
                 some o := by
             unfold bootFromPlatform at hL
-            rwa [applyMachineConfig_objects_eq] at hL
+            rwa [applyMachineConfig_objects_eq, foldInterfaces_objects] at hL
           rcases foldObjects_objects_reachable config.initialObjects _ _ _ hL' with
             ⟨e, hMem, hId, _⟩ | hB
           · unfold bootVSpaceRootObjIdDistinct at hDist
@@ -7657,7 +7806,7 @@ theorem bootFromPlatform_objects_of_config (config : PlatformConfig) (oid : SeLe
     (obj : KernelObject) (hB : (bootFromPlatform config).state.objects[oid]? = some obj) :
     ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
   unfold bootFromPlatform at hB
-  rw [applyMachineConfig_objects_eq] at hB
+  rw [applyMachineConfig_objects_eq, foldInterfaces_objects] at hB
   have hB' : (foldObjects config.initialObjects
       (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? = some obj := by
     simp only [RHTable_getElem?_eq_get?]; exact hB
@@ -7831,7 +7980,7 @@ theorem bootFromPlatform_irqHandlers (config : PlatformConfig) :
     (bootFromPlatform config).state.irqHandlers =
       (foldIrqs config.irqTable mkEmptyIntermediateState).state.irqHandlers := by
   unfold bootFromPlatform
-  exact foldObjects_irqHandlers _ _
+  exact (foldInterfaces_irqHandlers _ _).trans (foldObjects_irqHandlers _ _)
 
 /-- ...and so is the checked boot's. -/
 theorem bootFromPlatformChecked_ok_irqHandlers (config : PlatformConfig)

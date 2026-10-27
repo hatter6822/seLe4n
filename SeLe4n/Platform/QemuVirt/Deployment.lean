@@ -228,7 +228,8 @@ def qemuVirtBoundPlatformConfig : PlatformConfig :=
     initialObjects := qemuVirtInitialObjects
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtPlatform)
-    initialThreads := PlatformBinding.initialThreads (platform := QemuVirtPlatform) }
+    initialThreads := PlatformBinding.initialThreads (platform := QemuVirtPlatform)
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := QemuVirtPlatform) }
 
 /-- Binding any account yields the one bound configuration. -/
 theorem bindPlatformConfig_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :

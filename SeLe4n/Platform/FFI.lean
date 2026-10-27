@@ -1352,7 +1352,8 @@ def bindPlatformConfig (platform : Type) [PlatformBinding platform]
   { config with
     machineConfig := PlatformBinding.bindMachineConfig (platform := platform) config.machineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := platform)
-    initialThreads := PlatformBinding.initialThreads (platform := platform) }
+    initialThreads := PlatformBinding.initialThreads (platform := platform)
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := platform) }
 
 theorem bindPlatformConfig_machineConfig (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
@@ -1385,6 +1386,13 @@ theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
   rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
+
+/-- **WS-ZA ZA5.5**: the bound configuration installs the binding's service
+    interfaces. -/
+theorem bindPlatformConfig_initialInterfaces (platform : Type) [PlatformBinding platform]
+    (config : PlatformConfig) :
+    (bindPlatformConfig platform config).initialInterfaces =
+      PlatformBinding.serviceInterfaces (platform := platform) := rfl
 
 /-- **WS-BP BP7.11**: the bound configuration starts the binding's labeling's
 two separation witnesses. -/
