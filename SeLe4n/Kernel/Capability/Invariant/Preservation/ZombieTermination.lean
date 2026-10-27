@@ -42,6 +42,10 @@ breaks.
   occupied slots there, within the budget it is given (`zombieOccupied`).
 * The measure is at most the number of keys, the store's size
   (`objectKeys_length`), so `zombieFuel` passes suffice.
+* A pass never reaches the way down's bound (`zombieDescend_depth_never_binds`):
+  it goes down only through a final capability, so the slot naming each object
+  it reaches is the one it came through and no object is visited twice
+  (`zombiePath_fresh`), and the bound is one more than the store holds.
 -/
 
 namespace SeLe4n.Kernel
@@ -873,5 +877,215 @@ theorem zombiePasses_end (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
   rw [objectKeys_length hB.2.2.2.2.1] at h1
   unfold zombieFuel
   omega
+
+-- ============================================================================
+-- §11  The way down's bound never binds
+-- ============================================================================
+
+/-- A list without repeats inside another is no longer than it. -/
+theorem nodup_length_le {α : Type} [DecidableEq α] :
+    ∀ {l k : List α}, l.Nodup → (∀ a ∈ l, a ∈ k) → l.length ≤ k.length
+  | [], _, _, _ => Nat.zero_le _
+  | a :: l, k, hn, hs => by
+    obtain ⟨ha, hl⟩ := List.nodup_cons.1 hn
+    have hk : a ∈ k := hs a List.mem_cons_self
+    have := nodup_length_le (k := k.erase a) hl fun b hb =>
+      (List.mem_erase_of_ne (fun (e : b = a) => ha (e ▸ hb))).2 (hs b (List.mem_cons_of_mem a hb))
+    rw [List.length_erase_of_mem hk] at this
+    have := List.length_pos_of_mem hk
+    simp only [List.length_cons]; omega
+
+/-- **The way a pass has come down**: the objects it went down to, the one it
+stands on (`x`) first, each once and each under a key; the slot it stands on
+names `x` while its class is not `0`; and each of them is named by the loop's
+own slot or by a slot of an object it went down to before `x`.  The last clause
+is what keeps an object from being visited twice: the slot that names it is
+final, so it is the one the pass came down through. -/
+def ZombiePath (root : SeLe4n.ObjId) (rootSlot : SeLe4n.Slot) (K : List SeLe4n.ObjId)
+    (st : SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (cls : Nat)
+    (x : SeLe4n.ObjId) (rest : List SeLe4n.ObjId) : Prop :=
+  (x :: rest).Nodup ∧ (∀ o ∈ x :: rest, o ∈ K) ∧
+    (cls ≠ 0 → SystemState.namesAt st.slotCapAt ⟨cnode, slot⟩ x) ∧
+    ∀ o ∈ x :: rest, ∃ w : SlotRef, SystemState.namesAt st.slotCapAt w o ∧
+      (w = ⟨root, rootSlot⟩ ∨ w.cnode ∈ rest)
+
+/-- **Emptying a slot of the object a pass stands on keeps the way it came
+down**: no slot it came down through is one of that object's. -/
+theorem zombiePath_witness_keep {root : SeLe4n.ObjId} {rootSlot : SeLe4n.Slot}
+    {s t : SystemState} {x : SeLe4n.ObjId} {rest : List SeLe4n.ObjId} {d : SlotRef}
+    (hd : d ≠ ⟨root, rootSlot⟩) (hdx : d.cnode = x) (hx : x ∉ rest)
+    (hS : ∀ r, r ≠ d → t.slotCapAt r = s.slotCapAt r)
+    (hW : ∀ o ∈ x :: rest, ∃ w : SlotRef, SystemState.namesAt s.slotCapAt w o ∧
+      (w = ⟨root, rootSlot⟩ ∨ w.cnode ∈ rest)) :
+    ∀ o ∈ x :: rest, ∃ w : SlotRef, SystemState.namesAt t.slotCapAt w o ∧
+      (w = ⟨root, rootSlot⟩ ∨ w.cnode ∈ rest) := by
+  intro o ho
+  obtain ⟨w, hw, hwc⟩ := hW o ho
+  have hne : w ≠ d := by
+    intro e
+    subst e
+    rcases hwc with h | h
+    · exact hd h
+    · exact hx (hdx ▸ h)
+  exact ⟨w, (SystemState.namesAt_of_eq (hS w hne)).2 hw, hwc⟩
+
+/-- **An object a final slot of the object a pass stands on names is not one it
+came down through.** -/
+theorem zombiePath_fresh {root : SeLe4n.ObjId} {rootSlot : SeLe4n.Slot} {s : SystemState}
+    {x y : SeLe4n.ObjId} {rest : List SeLe4n.ObjId} {k : SeLe4n.Slot}
+    (hn : SystemState.namesAt s.slotCapAt ⟨x, k⟩ y) (hf : s.capFinalSpec ⟨x, k⟩)
+    (hneR : (⟨x, k⟩ : SlotRef) ≠ ⟨root, rootSlot⟩) (hx : x ∉ rest)
+    (hW : ∀ o ∈ x :: rest, ∃ w : SlotRef, SystemState.namesAt s.slotCapAt w o ∧
+      (w = ⟨root, rootSlot⟩ ∨ w.cnode ∈ rest)) : y ∉ x :: rest := by
+  intro hy
+  obtain ⟨w, hw, hwc⟩ := hW y hy
+  by_cases e : w = ⟨x, k⟩
+  · subst e
+    rcases hwc with h | h
+    · exact hneR h
+    · exact hx h
+  · exact hf y hn w e hw
+
+/-- **A pass ends the same with any deeper bound**: from a way down that has
+visited no object twice, the pass never reaches the bound, since each object it
+goes down to is named by a final slot and so is not one it came through, and
+the store holds fewer objects than the bound leaves room for. -/
+theorem zombieDescend_depth_free (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
+    (rootSlot : SeLe4n.Slot) (K : List SeLe4n.ObjId) :
+    ∀ (depth budget : Nat) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (cls : Nat)
+      (st : SystemState) (x : SeLe4n.ObjId) (rest : List SeLe4n.ObjId) (m : Nat),
+      capabilityInvariantBundle st → (∀ y, zombieHolds root rootSlot st y → y ∈ K) →
+      depth + rest.length = K.length + 1 → cls = zombieSlotClass st root rootSlot cnode slot →
+      ZombiePath root rootSlot K st cnode slot cls x rest →
+      zombieDescend ec root rootSlot depth budget cnode slot cls st =
+        zombieDescend ec root rootSlot (depth + m) budget cnode slot cls st
+  | 0, _, _, _, _, _, x, rest, _, _, _, hLen, _, hP => by
+    have := nodup_length_le hP.1 hP.2.1
+    simp only [List.length_cons] at this
+    omega
+  | depth + 1, 0, cnode, slot, cls, st, _, _, m, _, _, _, _, _ => by
+    rw [show depth + 1 + m = (depth + m) + 1 by omega, zombieDescend, zombieDescend]
+  | depth + 1, budget + 1, cnode, slot, cls, st, x, rest, m, hB, hK, hLen, hcls, hP => by
+    rw [show depth + 1 + m = (depth + m) + 1 by omega, zombieDescend, zombieDescend]
+    dsimp only
+    by_cases hc : cls = 0
+    · rw [if_pos hc, if_pos hc]
+    rw [if_neg hc, if_neg hc]
+    obtain ⟨hNd, hKs, hCur, hW⟩ := hP
+    have hnx := hCur hc
+    have hx : x ∉ rest := (List.nodup_cons.1 hNd).1
+    have hst1 : capabilityInvariantBundle
+          (if cls = 1 then finaliseFinalObject (slotRetireTarget st cnode slot) st else st) ∧
+        ∀ r, (if cls = 1 then finaliseFinalObject (slotRetireTarget st cnode slot) st
+          else st).slotCapAt r = st.slotCapAt r := by
+      split
+      · exact finaliseFinalObject_slots _ hB
+      · exact ⟨hB, fun _ => rfl⟩
+    have hc1 : (if cls = 1 then zombieSlotClass
+          (if cls = 1 then finaliseFinalObject (slotRetireTarget st cnode slot) st else st)
+          root rootSlot cnode slot else cls) =
+        zombieSlotClass
+          (if cls = 1 then finaliseFinalObject (slotRetireTarget st cnode slot) st else st)
+          root rootSlot cnode slot := by
+      split
+      · rfl
+      · exact hcls
+    rw [hc1]
+    generalize (if cls = 1 then finaliseFinalObject (slotRetireTarget st cnode slot) st
+      else st) = st1 at hst1 ⊢
+    obtain ⟨hB1, hE1⟩ := hst1
+    have hSh1 : SlotsShrink st st1 := SlotsShrink.of_eq hE1
+    have hn1 : SystemState.namesAt st1.slotCapAt ⟨cnode, slot⟩ x :=
+      (SystemState.namesAt_of_eq (hE1 _)).2 hnx
+    have hW1 : ∀ o ∈ x :: rest, ∃ w : SlotRef, SystemState.namesAt st1.slotCapAt w o ∧
+        (w = ⟨root, rootSlot⟩ ∨ w.cnode ∈ rest) := fun o ho =>
+      let ⟨w, hw, hwc⟩ := hW o ho; ⟨w, (SystemState.namesAt_of_eq (hE1 _)).2 hw, hwc⟩
+    by_cases hlt : zombieSlotClass st1 root rootSlot cnode slot < 2
+    · rw [if_pos hlt, if_pos hlt]
+    rw [if_neg hlt, if_neg hlt]
+    have hne1 : zombieSlotClass st1 root rootSlot cnode slot ≠ 0 := by omega
+    obtain ⟨x1, o1, hT1, hnx1, -, hO1, hN1, hcl1⟩ := zombieSlotClass_ne_zero hB1 hne1
+    have e : x1 = x := namesAt_unique hnx1 hn1
+    subst e
+    rw [hT1, Nat.add_sub_cancel, objId_ofNat_val]
+    rcases zombieNextSlot_spec o1 (zombieSkip root rootSlot x1) with ⟨h0, -⟩ | ⟨k, hk, -, hkne⟩
+    · exact absurd h0 hN1
+    have hk2 : zombieSlotClass st1 root rootSlot cnode slot - 2 = k := by
+      rw [hcl1 (by omega), hk]; omega
+    rw [hk2]
+    have hneR : (⟨x1, SeLe4n.Slot.ofNat k⟩ : SlotRef) ≠ ⟨root, rootSlot⟩ :=
+      fun e => hkne ((zombieSkip_eq_iff root rootSlot x1 _).2 e)
+    have hK1 : ∀ y, zombieHolds root rootSlot st1 y → y ∈ K :=
+      fun y h => hK y (h.of_shrink hSh1)
+    by_cases hj : zombieSlotClass st1 root rootSlot x1 (SeLe4n.Slot.ofNat k) = 0
+    · rw [if_pos hj, if_pos hj]
+      have hneC : (⟨cnode, slot⟩ : SlotRef) ≠ ⟨x1, SeLe4n.Slot.ofNat k⟩ := by
+        intro e
+        apply hne1
+        have h1 : cnode = x1 := congrArg SlotRef.cnode e
+        have h2 : slot = SeLe4n.Slot.ofNat k := congrArg SlotRef.slot e
+        rw [h1, h2]; exact hj
+      obtain ⟨hB2, -, hE2⟩ := zombieDeleteSlot_slots ec x1 (SeLe4n.Slot.ofNat k) hB1
+      have hSh2 := zombieDeleteSlot_shrink ec x1 (SeLe4n.Slot.ofNat k) hB1
+      generalize zombieDeleteSlot ec x1 (SeLe4n.Slot.ofNat k) st1 = st2 at hB2 hE2 hSh2 ⊢
+      have hP2 : ZombiePath root rootSlot K st2 cnode slot
+          (zombieSlotClass st2 root rootSlot cnode slot) x1 rest :=
+        ⟨hNd, hKs, fun _ => (SystemState.namesAt_of_eq (hE2 _ hneC)).2 hn1,
+          zombiePath_witness_keep hneR rfl hx hE2 hW1⟩
+      have := zombieDescend_depth_free ec root rootSlot K (depth + 1) budget cnode slot _ st2
+        x1 rest m hB2 (fun y h => hK1 y (h.of_shrink hSh2)) hLen rfl hP2
+      rwa [show depth + 1 + m = depth + m + 1 by omega] at this
+    · rw [if_neg hj, if_neg hj]
+      obtain ⟨y, o2, hT2, hn2, hf2, hO2, hN2, -⟩ := zombieSlotClass_ne_zero hB1 hj
+      rw [hT2, Nat.add_sub_cancel, objId_ofNat_val]
+      have hH2 : zombieHolds root rootSlot st1 y :=
+        (zombieHolds_iff root rootSlot st1 y).2 ⟨o2, hO2, hN2⟩
+      have hy := zombiePath_fresh hn2 hf2 hneR hx hW1
+      refine zombieDescend_depth_free ec root rootSlot K depth _ x1 (SeLe4n.Slot.ofNat k) _ st1
+        y (x1 :: rest) m hB1 hK1 (by simp only [List.length_cons]; omega) rfl
+        ⟨List.nodup_cons.2 ⟨hy, hNd⟩, ?_, fun _ => hn2, ?_⟩
+      · intro o ho
+        rcases List.mem_cons.1 ho with rfl | ho
+        · exact hK1 _ hH2
+        · exact hKs o ho
+      · intro o ho
+        rcases List.mem_cons.1 ho with rfl | ho
+        · exact ⟨_, hn2, .inr List.mem_cons_self⟩
+        · obtain ⟨w, hw, hwc⟩ := hW1 o ho
+          exact ⟨w, hw, hwc.imp id (List.mem_cons_of_mem _)⟩
+termination_by depth budget => (depth, budget)
+
+/-- **The way down's bound never binds** (`zombieDepth`): a pass from the
+loop's own slot ends the same with any deeper bound, so it never reaches the
+bound, and the delete the bound's branch makes of a slot whose object still
+holds capabilities never runs on a state the capability invariants hold in. -/
+theorem zombieDescend_depth_never_binds (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
+    (rootSlot : SeLe4n.Slot) {st : SystemState} (hB : capabilityInvariantBundle st)
+    (budget m : Nat) :
+    zombieDescend ec root rootSlot (zombieDepth st) budget root rootSlot
+        (zombieSlotClass st root rootSlot root rootSlot) st =
+      zombieDescend ec root rootSlot (zombieDepth st + m) budget root rootSlot
+        (zombieSlotClass st root rootSlot root rootSlot) st := by
+  by_cases hc : zombieSlotClass st root rootSlot root rootSlot = 0
+  · rw [hc]
+    unfold zombieDepth
+    rw [show st.objects.size + 1 + m = (st.objects.size + m) + 1 by omega]
+    cases budget with
+    | zero => rw [zombieDescend, zombieDescend]
+    | succ b => rw [zombieDescend, zombieDescend]; simp
+  obtain ⟨x, o, -, hn, -, hO, hN, -⟩ := zombieSlotClass_ne_zero hB hc
+  have hH : zombieHolds root rootSlot st x := (zombieHolds_iff root rootSlot st x).2 ⟨o, hO, hN⟩
+  refine zombieDescend_depth_free ec root rootSlot (objectKeys st) _ budget root rootSlot _ st
+    x [] m hB (fun _ h => mem_objectKeys_of_holds h) ?_ rfl
+    ⟨List.nodup_cons.2 ⟨List.not_mem_nil, List.nodup_nil⟩, ?_, fun _ => hn, ?_⟩
+  · rw [objectKeys_length hB.2.2.2.2.1]; rfl
+  · intro o ho
+    rcases List.mem_cons.1 ho with rfl | ho
+    · exact mem_objectKeys_of_holds hH
+    · exact absurd ho List.not_mem_nil
+  · intro o ho
+    rcases List.mem_cons.1 ho with rfl | ho
+    · exact ⟨_, hn, .inl rfl⟩
+    · exact absurd ho List.not_mem_nil
 
 end SeLe4n.Kernel

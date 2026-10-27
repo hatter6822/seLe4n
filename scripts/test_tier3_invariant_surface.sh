@@ -4459,6 +4459,8 @@ run_check "INVARIANT" rg -n -U '  if cspaceDeleteAdmitted ⟨cnode, slot⟩ st t
 run_check "INVARIANT" rg -n -U '^theorem zombiePasses_end [^\n]*(\n[^\n]*){0,6}\n      zombieSlotClass \(zombiePasses ec root rootSlot \(zombieFuel st\) st\)\n        root rootSlot root rootSlot = 0 := by' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
 run_check "INVARIANT" rg -n '^theorem zombieDescend_live ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
 run_check "INVARIANT" rg -n '^theorem zombiePasses_live ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n -U '^theorem zombieDescend_depth_never_binds [^\n]*(\n[^\n]*){0,2}\n    zombieDescend ec root rootSlot \(zombieDepth st\) budget root rootSlot\n        \(zombieSlotClass st root rootSlot root rootSlot\) st =\n      zombieDescend ec root rootSlot \(zombieDepth st \+ m\) budget root rootSlot' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
+run_check "INVARIANT" rg -n '^theorem zombiePath_fresh ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
 run_check "INVARIANT" rg -n '^theorem not_zombieReach_of_final_deleted ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
 run_check "INVARIANT" rg -n '^theorem zombieReach_of_own_deleted ' SeLe4n/Kernel/Capability/Invariant/Preservation/ZombieTermination.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Capability\.Invariant\.Preservation\.ZombieTermination$' SeLe4n/Kernel/Capability/Invariant/Preservation.lean

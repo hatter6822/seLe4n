@@ -1387,7 +1387,11 @@ def zombieDescend (executingCore : Concurrency.CoreId) (root : SeLe4n.ObjId)
             (zombieObjectSlots st1 (SeLe4n.ObjId.ofNat (slotRetireTarget st1 x s - 1))) x s j st1
 termination_by depth budget => (depth, budget)
 
-/-- **The way down's bound**: no more than the store holds, and one more. -/
+/-- **The way down's bound**: one more than the store holds.  A pass goes down
+only through a final capability, so it never visits an object twice, and the
+bound never binds on a state the capability invariants hold in
+(`zombieDescend_depth_never_binds`): the branch that deletes a slot at the bound
+never runs there. -/
 @[inline] def zombieDepth (st : SystemState) : Nat := st.objects.size + 1
 
 /-- **The loop's bound on its passes**: one more than the store holds.  Each
