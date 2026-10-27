@@ -828,13 +828,18 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 
 /-- WS-F2 test: retypeFromUntyped success, free-index advance in the authority
 capability (WS-ZA ZA5.4), region-exhausted error,
-type-mismatch error, device restriction error. -/
+type-mismatch error, device restriction error.  WS-ZA ZA5.4 part 41: the
+success path runs the live carve (`untypedRetypeObject`), which records each
+carved capability as a derivation child of the authority's; a second carve
+through a capability with no child would reset it and, with a carved object
+still recorded, be refused. -/
 private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- F2-01: Successful retype from untyped — carve a new endpoint from the untyped region
   let childEp : SeLe4n.ObjId := ⟨50⟩
   let newEp : KernelObject := .endpoint {}
   let epAllocSize : Nat := SeLe4n.Kernel.objectTypeAllocSize .endpoint
-  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp newEp epAllocSize st1 with
+  let carveDst (n : Nat) : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat n }
+  match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot childEp (carveDst 1) .endpoint st1 with
   | .error err => IO.println s!"[UMT-001] retype-from-untyped success path error: {reprStr err}"
   | .ok (_, stRetyped) =>
       IO.println s!"[UMT-002] retype-from-untyped success object kind: {reprStr <| stRetyped.getObjectType? childEp}"
@@ -848,7 +853,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
       -- part 14: a second endpoint, since a kernel object is carved on a
       -- multiple of its own size and the free index now sits at 16.
       let childEp2 : SeLe4n.ObjId := ⟨51⟩
-      match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childEp2 newEp epAllocSize stRetyped with
+      match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot childEp2 (carveDst 2) .endpoint stRetyped with
       | .error err => IO.println s!"[UMT-006] retype-from-untyped second alloc error: {reprStr err}"
       | .ok (_, stRetyped2) =>
           match stRetyped2.lookupSlotCap untypedAuthSlot with
@@ -856,11 +861,9 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
               IO.println s!"[UMT-007] untyped free index after second retype: {cap2.freeIndex}"
           | none => IO.println "[UMT-008] untyped object missing after second retype"
   -- T7-B: Post-mutation invariant check after double retype from untyped
-  let newEpUT : KernelObject := .endpoint {}
-  let epAllocSizeUT : Nat := SeLe4n.Kernel.objectTypeAllocSize .endpoint
-  match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped ⟨50⟩ newEpUT epAllocSizeUT st1 with
+  match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot ⟨50⟩ (carveDst 1) .endpoint st1 with
   | .ok (_, stRet1) =>
-    match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped ⟨51⟩ newEpUT epAllocSizeUT stRet1 with
+    match SeLe4n.Kernel.untypedRetypeObject untypedAuthSlot ⟨51⟩ (carveDst 2) .endpoint stRet1 with
     | .ok (_, stRet2) => checkInvariants counter "post-untyped-double-retype-mutated" stRet2
     | .error _ => pure ()
   | .error _ => pure ()

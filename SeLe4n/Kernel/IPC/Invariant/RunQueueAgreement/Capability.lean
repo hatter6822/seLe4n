@@ -871,7 +871,7 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
         | _ => exact SystemState.objStateMono_nonTcb rfl rfl)
       (by rw [hChildNone]; cases req <;> rfl)
   have k3 := storeObject_inert_runQueueStage hStIdx hOCh (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
-  have kZ : RunQueueStage st1 (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)) :=
+  have kZ : RunQueueStage st1 (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))) :=
     RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _ _)
       (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler])
       (by cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl)

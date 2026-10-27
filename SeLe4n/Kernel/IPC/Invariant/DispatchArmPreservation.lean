@@ -4490,9 +4490,9 @@ theorem untypedRetypeObject_preserves_ipcInvariantFull
     untypedRetypeObject_ok_decompose src dst childId req st st' hObjInv hStep
   obtain ⟨hInv1, hObjInv1⟩ := retypeFromUntyped_carve_preserves_ipcInvariantFull st st1 src
     untypedId childId ut _ req _ hObjInv hInv hRt
-  have hInvZ : ipcInvariantFull (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)) :=
+  have hInvZ : ipcInvariantFull (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))) :=
     ipcInvariantFull_of_objects_eq (CarveRequest.scrub_objects _ _ _ _) hInv1
-  have hObjInvZ : (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).objects.invExt := by
+  have hObjInvZ : (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).objects.invExt := by
     rw [CarveRequest.scrub_objects]; exact hObjInv1
   exact cdtRecord_bundle_frame st2 src dst DerivationOp.retype
     (cspaceInsertSlot_preserves_objects_invExt _ st2 dst _ hObjInvZ hIns)

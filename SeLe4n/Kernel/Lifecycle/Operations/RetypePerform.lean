@@ -85,11 +85,12 @@ theorem childrenNameNone_eq (childId : SeLe4n.ObjId) (cs : List UntypedChild) :
     · simp [h, ih]
 
 /-- WS-ZA ZA5.4: **`retypeFromUntyped`'s refusals** for an untyped `ut` at
-`untypedId`, the authority capability `authCap` already read, read before any
-write; the carve is at `authCap`'s free index rounded up to the carve's
-boundary (`alignedCarveIndex`).  The new object enters as its type `ty` alone,
-so the check builds no object. -/
-def retypeFromUntypedAdmitted (st : SystemState) (authCap : Capability)
+`untypedId`, the authority capability `authCap` already read from `authority`,
+read before any write; the carve is at the index it starts from
+(`retypeFreeIndex`: `authCap`'s free index, or 0 through a slot with no
+derivation child) rounded up to the carve's boundary (`alignedCarveIndex`).  The
+new object enters as its type `ty` alone, so the check builds no object. -/
+def retypeFromUntypedAdmitted (st : SystemState) (authority : CSpaceAddr) (authCap : Capability)
     (untypedId childId : SeLe4n.ObjId) (ty : KernelObjectType) (size : Nat)
     (ut : UntypedObject) : Bool :=
   !decide (st.objectIndex.length ≥ maxObjects) &&
@@ -100,7 +101,8 @@ def retypeFromUntypedAdmitted (st : SystemState) (authCap : Capability)
   objectIdInAddressSpace st.machine childId &&
   !decide (size < objectTypeAllocSize ty) &&
   lifecycleRetypeAuthority authCap untypedId &&
-  ut.canAllocate (alignedCarveIndex ty size ut authCap.freeIndex) size
+  retypeResetAdmitted st authority ut &&
+  ut.canAllocate (alignedCarveIndex ty size ut (retypeFreeIndex st authority authCap)) size
 
 /-- WS-ZA ZA5.4: **`retypeFromUntyped`'s writes**: the child recorded in the
 untyped at free index `idx`, the new object stored at its id, and the authority
@@ -119,19 +121,20 @@ theorem retypeFromUntyped_of_admitted {st : SystemState} {authority : CSpaceAddr
     {size : Nat} {ut : UntypedObject}
     (hLk : SystemState.lookupSlotCap st authority = some authCap)
     (hUt : st.getObject? untypedId = some (.untyped ut))
-    (hA : retypeFromUntypedAdmitted st authCap untypedId childId newObj.objectType size ut = true) :
+    (hA : retypeFromUntypedAdmitted st authority authCap untypedId childId newObj.objectType size ut
+      = true) :
     retypeFromUntyped authority untypedId childId newObj size st =
       .ok ((), retypeFromUntypedWrites authority
-        (alignedCarveIndex newObj.objectType size ut authCap.freeIndex) untypedId childId newObj size ut
-        st) := by
+        (alignedCarveIndex newObj.objectType size ut (retypeFreeIndex st authority authCap))
+        untypedId childId newObj size ut st) := by
   unfold retypeFromUntypedAdmitted at hA
   rw [childrenNameNone_eq] at hA
   simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hA
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hCap, hSelf⟩, hFresh⟩, hKids⟩, hDev⟩, hAddr⟩, hSize⟩, hAuth⟩, hCan⟩ := hA
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hCap, hSelf⟩, hFresh⟩, hKids⟩, hDev⟩, hAddr⟩, hSize⟩, hAuth⟩, hReset⟩, hCan⟩ := hA
   have hLkS : cspaceLookupSlot authority st = .ok (authCap, st) := by
     unfold cspaceLookupSlot; rw [hLk]
   unfold retypeFromUntyped
-  simp only [hUt, hCap, hSelf, hFresh, hKids, hDev, hAddr, hSize, hLkS, hAuth,
+  simp only [hUt, hCap, hSelf, hFresh, hKids, hDev, hAddr, hSize, hLkS, hAuth, hReset,
     UntypedObject.allocate_eq_allocated ut _ childId size hCan, ↓reduceIte,
     Bool.false_eq_true, storeObject_eq_storedState]
   rfl
@@ -149,7 +152,7 @@ naming an untyped, the destination slot, and the carve's checks. -/
       match st.getUntyped? untypedId with
       | some ut =>
         cspaceDstAdmitted dst st &&
-        retypeFromUntypedAdmitted st utCap untypedId childId req.objectType req.size ut
+        retypeFromUntypedAdmitted st src utCap untypedId childId req.objectType req.size ut
       | none => false
     | _ => false
   | none => false
@@ -164,7 +167,7 @@ def untypedRetypePerformAt (src dst : CSpaceAddr) (childId : SeLe4n.ObjId)
     | .object untypedId =>
       match st.getUntyped? untypedId with
       | some ut =>
-        let idx := req.carveIndex ut utCap.freeIndex
+        let idx := req.carveIndex ut (retypeFreeIndex st src utCap)
         let st1 := retypeFromUntypedWrites src idx untypedId childId
           (req.object untypedId childId ut idx) req.size ut st
         ((req.scrub st1 ut idx).storeCNodeWith dst.cnode
@@ -207,12 +210,12 @@ theorem untypedRetypeObject_of_admitted {src dst : CSpaceAddr} {childId : SeLe4n
           (SystemState.getUntyped?_eq_some_iff st untypedId ut).mp hU
         have hAu : lifecycleRetypeAuthority utCap untypedId = true := by
           revert hR; unfold retypeFromUntypedAdmitted; simp only [Bool.and_eq_true]
-          intro h; exact h.1.2
-        simp only [hAu, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hU]
+          intro h; exact h.1.1.2
+        simp only [hAu, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
         rw [(cspaceDstRefusal_eq_ok_iff dst st).mpr hD]
         dsimp only
         rw [← CarveRequest.object_objectType untypedId childId ut
-          (req.carveIndex ut utCap.freeIndex)] at hR
+          (req.carveIndex ut (retypeFreeIndex st src utCap))] at hR
         rw [retypeFromUntyped_of_admitted hL hUt hR, CarveRequest.object_objectType]
         rfl
     | _ => rw [hT] at hRest; cases hRest
@@ -264,7 +267,7 @@ def untypedRetypePerformWords (srcCnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
     | .object untypedId =>
       match st.getUntyped? untypedId with
       | some ut =>
-        let idx := req.carveIndex ut utCap.freeIndex
+        let idx := req.carveIndex ut (retypeFreeIndex st ⟨srcCnode, srcSlot⟩ utCap)
         let newObj := req.object untypedId childId ut idx
         let base := (untypedNextFrame ut idx).base
         let isDevice := ut.isDevice
@@ -306,7 +309,7 @@ specialised to its function (no closure is built for it). -/
         unfold retypeFromUntypedWrites
         rw [CarveRequest.scrub_eq_scrubAt]
         have hS := SystemState.storeObject_untyped_eq_storeUntypedWith hObj
-          (·.allocated (req.carveIndex ut utCap.freeIndex) childId req.size)
+          (·.allocated (req.carveIndex ut (retypeFreeIndex st ⟨sc, ss⟩ utCap)) childId req.size)
         rw [setCapFreeIndex_eq_impl]
         unfold setCapFreeIndexImpl
         have hF : ∀ cn : CNode, cn.insertObjectCap ds childId req.rights =

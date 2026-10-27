@@ -72,7 +72,11 @@ because the defect lived in dispatch and only dispatch can witness it.
   its own is refused too — and after `.cspaceRevoke`, whose final deletes remove
   the frames' mappings and retire the frames, it writes 0 to the invoked
   capability's free index, so the next carve reuses both the page, zeroed
-  again, and the child id.
+  again, and the child id.  Since WS-ZA ZA5.4 part 41 the carve itself resets a
+  capability with no derivation child (seL4's `decodeUntypedInvocation`): it
+  carves at index 0, as the reset followed by the carve does; through a
+  capability with a child it carves at the free index; and over an untyped that
+  records a carved object it is refused as the reset is.
 * §5f — **WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it
   made.**  `.vspaceMap` records the mapping on the capability; a copy carries
   none; a capability whose mapping is live cannot map again; deleting a frame
@@ -157,6 +161,8 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.untypedResetSlot_ok_freeIndex
 #check @SeLe4n.Kernel.untypedResetSlot_ok_uncarved
 #check @SeLe4n.Kernel.untypedResetFromCap_ok
+#check @SeLe4n.Kernel.retypeFreeIndex
+#check @SeLe4n.Kernel.retypeFromUntyped_ok_resetAdmitted
 
 -- ============================================================================
 -- Scenario fixture
@@ -951,6 +957,80 @@ private def runResetChecks : IO Unit := do
   | .ok ((), stObj) =>
     assertBool "a reset of an untyped recording a carved object is refused (revocationRequired)"
       (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stObj))
+
+/-- WS-ZA ZA5.4 part 41: **the carve resets a capability with no derivation
+child**, as seL4's `decodeUntypedInvocation` does: through such a capability the
+carve starts at index 0, through one with a child at its free index, and an
+untyped whose child list still records a carved object is refused as the reset
+refuses it. -/
+private def runRetypeResetChecks : IO Unit := do
+  IO.println "-- §5e `.untypedRetype` through a childless capability resets it (WS-ZA ZA5.4)"
+  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
+    match r with | .error e' => e' == e | .ok _ => false
+  let carve (slot child dst : Nat) (s : SystemState) :=
+    dispatchSyscallAsCurrent (decodeCarve slot frameTag child slotOwnCnRW dst) carveOwner
+      Concurrency.bootCoreId s
+  match runAll carveScenario
+      [decodeCarve slotUtRetype frameTag 950 slotOwnCnRW slotCarved,
+       decodeCarve slotUtRetype frameTag 951 slotOwnCnRW 9] with
+  | .error e => assertBool s!"the two-carve setup succeeds (got {repr e})" false
+  | .ok st => do
+    assertBool "setup: two carves advanced the invoked capability's free index by two pages"
+      (freeIndexAt st slotUtRetype == some (2 * SeLe4n.pageBytes))
+    -- The capability has derivation children (the two frames), so the carve
+    -- starts at its free index.
+    match carve slotUtRetype 952 10 st with
+    | .error e => assertBool s!"a third carve succeeds (got {repr e})" false
+    | .ok ((), stNext) =>
+      assertBool "a carve through a capability with a child carves at its free index"
+        (frameAt stNext 952 == some { base := SeLe4n.PAddr.ofNat (carveUtBase + 2 * SeLe4n.pageBytes) } &&
+         freeIndexAt stNext slotUtRetype == some (3 * SeLe4n.pageBytes))
+    -- A duplicate placed with no derivation of its own is childless, but the
+    -- untyped records the frames carved through slot 0: the carve resets, and
+    -- the reset refuses.
+    match SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } with
+    | none => assertBool "the untyped capability is in slot 0" false
+    | some utCap =>
+      match SeLe4n.Kernel.cspaceInsertSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat 10 }
+          (utCap.withFreeIndex 0) st with
+      | .error e => assertBool s!"placing the duplicate succeeds (got {repr e})" false
+      | .ok ((), stDup) =>
+        assertBool "a carve through a childless duplicate over recorded objects is refused (revocationRequired)"
+          (isErr .revocationRequired (carve 10 953 11 stDup))
+    -- Revoke the frames: the capability is childless, its index still two pages
+    -- in, and the untyped records nothing.
+    match dispatchSyscallAsCurrent (decodeRevoke slotUtRetype) carveOwner Concurrency.bootCoreId st with
+    | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
+    | .ok ((), stRev) => do
+      assertBool "after the revocation the capability keeps its index and the untyped records nothing"
+        (freeIndexAt stRev slotUtRetype == some (2 * SeLe4n.pageBytes) &&
+         (stRev.getUntyped? carveUt).map (·.children.length) == some 0)
+      match carve slotUtRetype 954 slotCarved stRev with
+      | .error e => assertBool s!"a carve through the childless capability succeeds (got {repr e})" false
+      | .ok ((), stCarved) => do
+        assertBool "a carve through a childless capability carves at index 0 (the region's first page)"
+          (frameAt stCarved 954 == some { base := SeLe4n.PAddr.ofNat carveUtBase } &&
+           freeIndexAt stCarved slotUtRetype == some SeLe4n.pageBytes)
+        -- The carve is the reset's rewind and then the carve.
+        match runAll stRev [decodeReset slotUtRetype,
+            decodeCarve slotUtRetype frameTag 954 slotOwnCnRW slotCarved] with
+        | .error e => assertBool s!"the reset then the carve succeed (got {repr e})" false
+        | .ok stTwo =>
+          assertBool "and it carves what the reset followed by the carve carves"
+            (frameAt stTwo 954 == frameAt stCarved 954 &&
+             freeIndexAt stTwo slotUtRetype == freeIndexAt stCarved slotUtRetype &&
+             (stTwo.getUntyped? carveUt).map (·.children.length) ==
+               (stCarved.getUntyped? carveUt).map (·.children.length))
+  -- An untyped whose child list records a carved object, under a capability
+  -- with no derivation child: the carve resets, and is refused as the reset is.
+  let utWithObjChild : UntypedObject :=
+    { regionBase := SeLe4n.PAddr.ofNat carveUtBase, regionSize := 0x3000,
+      children := [{ objId := carveVsp, offset := 0, size := SeLe4n.pageBytes }] }
+  match storeObject carveUt (.untyped utWithObjChild) carveScenario with
+  | .error _ => assertBool "the recorded-object fixture stores" false
+  | .ok ((), stObj) =>
+    assertBool "a carve over an untyped recording a carved object is refused (revocationRequired)"
+      (isErr .revocationRequired (carve slotUtRetype 955 slotCarved stObj))
 
 -- ============================================================================
 -- §5g  WS-BP BP7.1 slice 4 (`v0.36.8`) — child untypeds, and subtree resets
@@ -3051,6 +3131,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runCarveChecks
   runUntypedCopyChecks
   runResetChecks
+  runRetypeResetChecks
   runChildUntypedChecks
   runCarvedRootChecks
   runSetSpaceChecks
