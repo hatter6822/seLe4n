@@ -452,4 +452,497 @@ theorem threadIpcCancelAdmitted_after_unbind {st : SystemState} {x : SeLe4n.ObjI
       · exact hT
     · exact hT
 
+-- ============================================================================
+-- §4  What the unbind and the cancel keep of the waiters
+-- ============================================================================
+
+/-- **What the finalised thread's unbind and cancel keep of another thread**,
+compared: its two IPC codes, its reply link, its timeout budget and its id, a
+zero run-core code kept zero, and a thread linked into no endpoint queue kept
+so — what a plain waiter's guard reads of its TCB (`plainWaiterOk`). -/
+def TCB.cancelKeptBy (t' t : TCB) : Prop :=
+  t'.ipcObjectCode = t.ipcObjectCode ∧ t'.ipcStateCode = t.ipcStateCode ∧
+    t'.replyObjectCode = t.replyObjectCode ∧ t'.timeoutBudget = t.timeoutBudget ∧ t'.tid = t.tid ∧
+    (t.runCoreCode = 0 → t'.runCoreCode = 0) ∧
+    (t.queueNextCode = 0 → t.queuePrevCode = 0 → t'.queueNextCode = 0 ∧ t'.queuePrevCode = 0)
+
+theorem TCB.cancelKeptBy.refl (t : TCB) : TCB.cancelKeptBy t t :=
+  ⟨rfl, rfl, rfl, rfl, rfl, id, fun a b => ⟨a, b⟩⟩
+
+theorem TCB.cancelKeptBy.trans {a b c : TCB} (h₁ : TCB.cancelKeptBy a b)
+    (h₂ : TCB.cancelKeptBy b c) : TCB.cancelKeptBy a c := by
+  obtain ⟨a1, a2, a3, a4, a5, a6, a7⟩ := h₁
+  obtain ⟨b1, b2, b3, b4, b5, b6, b7⟩ := h₂
+  refine ⟨a1.trans b1, a2.trans b2, a3.trans b3, a4.trans b4, a5.trans b5, fun z => a6 (b6 z),
+    fun n p => ?_⟩
+  obtain ⟨n', p'⟩ := b7 n p
+  exact a7 n' p'
+
+/-- A thread whose key a plain waiter's guard reads is kept is kept so. -/
+theorem TCB.cancelKeptBy.of_waiterKeyEq {a b : TCB} (h : TCB.waiterKeyEq a b)
+    (hz : b.runCoreCode = 0 → a.runCoreCode = 0) : TCB.cancelKeptBy a b :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2, hz,
+    fun n p => ⟨h.2.2.2.1.trans n, h.2.2.2.2.1.trans p⟩⟩
+
+/-- **A step that keeps every plain waiter of a server `x` but `x` itself**:
+every other thread kept as `TCB.cancelKeptBy` reads it, and back with its two
+IPC codes; and every reply heading no stack whose caller is not `x` kept heading
+none, with its caller — its `prev` may move, which no guard of a plain waiter
+reads. -/
+structure CancelFrame (s s' : SystemState) (x : SeLe4n.ThreadId) : Prop where
+  fwd : ∀ (v : SeLe4n.ThreadId) (t : TCB), v ≠ x → s.getTcb? v = some t →
+    ∃ t', s'.getTcb? v = some t' ∧ TCB.cancelKeptBy t' t
+  bwd : ∀ (v : SeLe4n.ThreadId) (t' : TCB), v ≠ x → s'.getTcb? v = some t' →
+    ∃ t, s.getTcb? v = some t ∧ t'.ipcObjectCode = t.ipcObjectCode ∧
+      t'.ipcStateCode = t.ipcStateCode
+  reply : ∀ (k : SeLe4n.ObjId) (r : Reply), s.getObject? k = some (.reply r) → r.next = none →
+    r.callerCode ≠ x.val + 1 →
+    ∃ r', s'.getObject? k = some (.reply r') ∧ r'.callerCode = r.callerCode ∧ r'.next = none
+
+namespace CancelFrame
+
+theorem refl (s : SystemState) (x : SeLe4n.ThreadId) : CancelFrame s s x :=
+  ⟨fun _ t _ h => ⟨t, h, .refl t⟩, fun _ t _ h => ⟨t, h, rfl, rfl⟩,
+    fun _ r h _ _ => ⟨r, h, rfl, by assumption⟩⟩
+
+theorem trans {a b c : SystemState} {x : SeLe4n.ThreadId} (h₁ : CancelFrame a b x)
+    (h₂ : CancelFrame b c x) : CancelFrame a c x := by
+  refine ⟨fun v t hv ht => ?_, fun v t hv ht => ?_, fun k r hk hn hc => ?_⟩
+  · obtain ⟨m, hm, km⟩ := h₁.fwd v t hv ht
+    obtain ⟨n, hn, kn⟩ := h₂.fwd v m hv hm
+    exact ⟨n, hn, kn.trans km⟩
+  · obtain ⟨m, hm, m1, m2⟩ := h₂.bwd v t hv ht
+    obtain ⟨n, hn, n1, n2⟩ := h₁.bwd v m hv hm
+    exact ⟨n, hn, m1.trans n1, m2.trans n2⟩
+  · obtain ⟨m, hm, mc, mn⟩ := h₁.reply k r hk hn hc
+    obtain ⟨n, hn', nc, nn⟩ := h₂.reply k m hm mn (by rw [mc]; exact hc)
+    exact ⟨n, hn', nc.trans mc, nn⟩
+
+/-- A frame that keeps every plain waiter but `x` is a cancel frame at `x`. -/
+theorem of_waiterFrame {a b : SystemState} {x : SeLe4n.ThreadId} (h : WaiterFrame a b (· = x)) :
+    CancelFrame a b x := by
+  refine ⟨fun v t hv ht => ?_, fun v t hv ht => ?_, fun k r hk hn hc => ?_⟩
+  · obtain ⟨t', h', k, z⟩ := h.fwd v t hv ht
+    exact ⟨t', h', .of_waiterKeyEq k z⟩
+  · obtain ⟨t0, h0, k⟩ := h.bwd v t hv ht
+    exact ⟨t0, h0, k.1, k.2.1⟩
+  · exact ⟨r, h.reply k r hk hn (fun e he => he ▸ hc), rfl, hn⟩
+
+/-- A frame keeping every other object is one. -/
+theorem of_objects_eq {a b : SystemState} (x : SeLe4n.ThreadId) (h : b.objects = a.objects) :
+    CancelFrame a b x :=
+  of_waiterFrame (WaiterFrame.of_objects_eq _ h)
+
+/-- **A plain waiter of `x` other than `x` stays one across a cancel frame.** -/
+theorem ready {a b : SystemState} {x v : SeLe4n.ThreadId} (h : CancelFrame a b x)
+    (hv : v ≠ x) (hR : plainWaiterReady a x v) : plainWaiterReady b x v := by
+  obtain ⟨t, r, ht, hr, hok⟩ := hR
+  obtain ⟨t', ht', k1, k2, k3, k4, -, k6, k7⟩ := h.fwd v t hv ht
+  obtain ⟨hvx, hS, hC, hN, hRes, hId, hRun, hIpc, hRO, hQN, hQP, hTB⟩ := hok
+  have hcx : r.callerCode ≠ x.val + 1 := by
+    rw [hC]; intro e; exact hvx (by omega)
+  obtain ⟨r', hr', hc', hn'⟩ := h.reply _ r hr hN hcx
+  have hS' : t'.blockingServer? = some x := by
+    have e : t'.ipcState = t.ipcState := by
+      show ThreadIpcState.ofCodes t'.ipcObjectCode t'.ipcStateCode =
+        ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode
+      rw [k1, k2]
+    unfold TCB.blockingServer?; rw [e]; exact hS
+  obtain ⟨q1, q2⟩ := k7 hQN hQP
+  exact ⟨t', r', ht', by rw [k3]; exact hr', hvx, hS', hc'.trans hC, hn', hRes, hId, k6 hRun,
+    k2 ▸ hIpc, k3 ▸ hRO, q1, q2, k4 ▸ hTB⟩
+
+/-- **A waiter of `x` after the frame waited on `x` before it.** -/
+theorem waiterOf_back {a b : SystemState} {x v : SeLe4n.ThreadId} (h : CancelFrame a b x)
+    (hv : v ≠ x) (hW : ReplyViews.waiterOf b.replyViews v x) :
+    ReplyViews.waiterOf a.replyViews v x := by
+  obtain ⟨t', ht', hs'⟩ := waiterOf_iff.mp hW
+  obtain ⟨t, ht, e1, e2⟩ := h.bwd v t' hv ht'
+  refine waiterOf_iff.mpr ⟨t, ht, ?_⟩
+  have e : t'.ipcState = t.ipcState := by
+    show ThreadIpcState.ofCodes t'.ipcObjectCode t'.ipcStateCode =
+      ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode
+    rw [e1, e2]
+  unfold TCB.blockingServer? at hs' ⊢; rw [← e]; exact hs'
+
+end CancelFrame
+
+-- ============================================================================
+-- §5  What the unbind and the cancel keep of the lender's guard
+-- ============================================================================
+
+/-- **A step that keeps what a lender's guard reads of the store**: every
+thread's two binding codes, every scheduling context, and every reply `K`
+admits. -/
+structure LoanKept (s s' : SystemState) (K : SeLe4n.ObjId → Reply → Prop) : Prop where
+  bind : ∀ (v : SeLe4n.ThreadId) (t : TCB), s.getTcb? v = some t →
+    ∃ t', s'.getTcb? v = some t' ∧ t'.scBindingScCode = t.scBindingScCode ∧
+      t'.scBindingOwnerCode = t.scBindingOwnerCode
+  sc : ∀ (c : SeLe4n.SchedContextId) (sc : SchedContext), s.getSchedContext? c = some sc →
+    s'.getSchedContext? c = some sc
+  reply : ∀ (k : SeLe4n.ObjId) (r : Reply), s.getObject? k = some (.reply r) → K k r →
+    s'.getObject? k = some (.reply r)
+
+namespace LoanKept
+
+variable {K : SeLe4n.ObjId → Reply → Prop}
+
+theorem refl (s : SystemState) (K : SeLe4n.ObjId → Reply → Prop) : LoanKept s s K :=
+  ⟨fun _ t h => ⟨t, h, rfl, rfl⟩, fun _ _ h => h, fun _ _ h _ => h⟩
+
+theorem trans {a b c : SystemState} (h₁ : LoanKept a b K) (h₂ : LoanKept b c K) :
+    LoanKept a c K := by
+  refine ⟨fun v t ht => ?_, fun c sc h => h₂.sc c sc (h₁.sc c sc h),
+    fun k r hk hK => h₂.reply k r (h₁.reply k r hk hK) hK⟩
+  obtain ⟨m, hm, m1, m2⟩ := h₁.bind v t ht
+  obtain ⟨n, hn, n1, n2⟩ := h₂.bind v m hm
+  exact ⟨n, hn, n1.trans m1, n2.trans m2⟩
+
+theorem mono {a b : SystemState} {K' : SeLe4n.ObjId → Reply → Prop} (h : LoanKept a b K)
+    (hK : ∀ k r, K' k r → K k r) : LoanKept a b K' :=
+  ⟨h.bind, h.sc, fun k r hk h' => h.reply k r hk (hK k r h')⟩
+
+theorem of_objects_eq {a b : SystemState} (K : SeLe4n.ObjId → Reply → Prop)
+    (h : b.objects = a.objects) : LoanKept a b K := by
+  have hT : ∀ v, b.getTcb? v = a.getTcb? v := fun v => by unfold SystemState.getTcb?; rw [h]
+  refine ⟨fun v t ht => ⟨t, (hT v).trans ht, rfl, rfl⟩, fun c sc hc => ?_, fun k r hk _ => ?_⟩
+  · unfold SystemState.getSchedContext? at hc ⊢; rw [h]; exact hc
+  · unfold SystemState.getObject? at hk ⊢; rw [h]; exact hk
+
+end LoanKept
+
+/-- **A reply no guard of `x`'s lender reads as `x`'s**: its caller is not `x`,
+and a frame it links up to is a reply whose caller is not `x`. -/
+def notServerReply (s : SystemState) (x : SeLe4n.ThreadId) (r : Reply) : Prop :=
+  r.callerCode ≠ x.val + 1 ∧ ∀ (a : SeLe4n.ReplyId) (ra : Reply), r.next = some (.frame a) →
+    s.getObject? a.toObjId = some (.reply ra) → ra.callerCode ≠ x.val + 1
+
+/-- **The replies a step keeps for `x`'s lender**: every reply that is no
+reply of `x`'s (`notServerReply`) is one `K` admits. -/
+def LoanReplies (s : SystemState) (x : SeLe4n.ThreadId) (K : SeLe4n.ObjId → Reply → Prop) :
+    Prop :=
+  ∀ (k : SeLe4n.ObjId) (r : Reply), s.getObject? k = some (.reply r) → notServerReply s x r →
+    K k r
+
+/-- A reply read through `getReply?` that `K` admits is kept. -/
+theorem LoanKept.getReply? {s s' : SystemState} {K : SeLe4n.ObjId → Reply → Prop}
+    (h : LoanKept s s' K) {rid : SeLe4n.ReplyId} {r : Reply} (hR : s.getReply? rid = some r)
+    (hK : K rid.toObjId r) : s'.getReply? rid = some r := by
+  have hO := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+  have hO' := h.reply rid.toObjId r (by unfold SystemState.getObject?; exact hO) hK
+  unfold SystemState.getObject? at hO'
+  exact (SystemState.getReply?_eq_some_iff _ _ _).mpr hO'
+
+/-- A reply whose caller is the thread `o` has the code `o + 1`. -/
+theorem Reply.callerCode_of_caller {r : Reply} {o : SeLe4n.ThreadId} (h : r.caller = some o) :
+    r.callerCode = o.val + 1 :=
+  (SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp h
+
+/-- **The outer-caller resolution of a context's stack is kept** by a step
+keeping the lender's reads: the head reply and the frame below it are no
+replies of `x`'s — the head's caller is not `x` (`hHead`) and the frame below
+has the outer caller as its caller, not `x` (`hOut`). -/
+theorem replyStackOuterCaller?_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
+    {K : SeLe4n.ObjId → Reply → Prop} (Lk : LoanKept s s' K) (hK : LoanReplies s x K)
+    {c : SeLe4n.SchedContextId} {n : Option SeLe4n.ThreadId}
+    (h : replyStackOuterCaller? s c = .ok n)
+    (hHead : ∀ (sc : SchedContext) (rid : SeLe4n.ReplyId) (r0 : Reply),
+      s.getSchedContext? c = some sc → sc.scReply = some rid → s.getReply? rid = some r0 →
+      r0.callerCode ≠ x.val + 1)
+    (hOut : ∀ o, n = some o → o ≠ x) :
+    replyStackOuterCaller? s' c = .ok n := by
+  unfold replyStackOuterCaller? at h ⊢
+  cases hS : s.getSchedContext? c with
+  | none => rw [hS] at h; cases h
+  | some sc =>
+    rw [hS] at h
+    rw [Lk.sc c sc hS]
+    dsimp only at h ⊢
+    unfold donationHeadOf? at h ⊢
+    cases hRp : sc.scReply with
+    | none => rw [hRp] at h; exact h
+    | some rid =>
+      rw [hRp] at h
+      dsimp only at h ⊢
+      cases hR : s.getReply? rid with
+      | none => rw [hR] at h; cases h
+      | some r0 =>
+        rw [hR] at h
+        dsimp only at h
+        have hn0 : r0.next = some (.head c) := by
+          by_cases hne : r0.next = some (.head c)
+          · exact hne
+          · simp only [bne_iff_ne, ne_eq, hne, not_false_eq_true, if_true] at h
+            cases h
+        have hR0 : (SystemState.getObject? s rid.toObjId) = some (.reply r0) := by
+          unfold SystemState.getObject?; exact (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+        have hR' := Lk.getReply? hR (hK _ r0 hR0 ⟨hHead sc rid r0 hS hRp hR,
+          fun a ra e _ => by rw [hn0] at e; cases e⟩)
+        rw [hR']
+        simp only [hn0, bne_self_eq_false, Bool.false_eq_true, if_false] at h ⊢
+        cases hP : r0.prev with
+        | none => rw [hP] at h; exact h
+        | some below =>
+          rw [hP] at h
+          dsimp only at h ⊢
+          cases hB : s.getReply? below with
+          | none => rw [hB] at h; cases h
+          | some b =>
+            rw [hB] at h
+            dsimp only at h
+            have hbn : b.next = some (.frame rid) := by
+              by_cases hne : b.next = some (.frame rid)
+              · exact hne
+              · simp only [bne_iff_ne, ne_eq, hne, not_false_eq_true, if_true] at h
+                cases h
+            simp only [hbn, bne_self_eq_false, Bool.false_eq_true, if_false] at h
+            cases hC : b.caller with
+            | none => rw [hC] at h; cases h
+            | some outer =>
+              rw [hC] at h
+              cases h
+              have hB0 : (SystemState.getObject? s below.toObjId) = some (.reply b) := by
+                unfold SystemState.getObject?; exact (SystemState.getReply?_eq_some_iff _ _ _).mp hB
+              have hcb : b.callerCode ≠ x.val + 1 := by
+                rw [Reply.callerCode_of_caller hC]
+                intro e; exact hOut outer rfl (by cases outer; cases x; simp at e; subst e; rfl)
+              have hB' := Lk.getReply? hB (hK _ b hB0 ⟨hcb, fun a ra e hra => by
+                rw [hbn] at e; cases e
+                rw [hR0] at hra; cases hra
+                exact hHead sc rid r0 hS hRp hR⟩)
+              rw [hB']
+              simp only [hbn, bne_self_eq_false, Bool.false_eq_true, if_false, hC]
+
+/-- A thread kept with its two IPC codes is read as blocked on the same
+server. -/
+theorem replyCallerServerCode_of_codes {t t' : TCB} (h1 : t'.ipcObjectCode = t.ipcObjectCode)
+    (h2 : t'.ipcStateCode = t.ipcStateCode) : replyCallerServerCode t' = replyCallerServerCode t := by
+  have e : t'.ipcState = t.ipcState := by
+    show ThreadIpcState.ofCodes t'.ipcObjectCode t'.ipcStateCode =
+      ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode
+    rw [h1, h2]
+  unfold replyCallerServerCode TCB.blockingServer?; rw [e]
+
+/-- Two reads of one thread are one TCB. -/
+theorem getTcb?_some_inj {s : SystemState} {v : SeLe4n.ThreadId} {a b : TCB}
+    (ha : s.getTcb? v = some a) (hb : s.getTcb? v = some b) : a = b := by
+  rw [ha] at hb; cases hb; rfl
+
+/-- **The donation return's decision is kept** for the server `x` handing a
+context back to a caller `w` other than `x`, by a step keeping the lender's
+reads, when the reply heading the context is no reply of `x`'s (`hHead`). -/
+theorem donatedReturnCommits_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
+    {K : SeLe4n.ObjId → Reply → Prop} (C : CancelFrame s s' x) (Lk : LoanKept s s' K)
+    (hK : LoanReplies s x K) {c : SeLe4n.SchedContextId} {w : SeLe4n.ThreadId} (hw : w ≠ x)
+    (hHead : ∀ (sc : SchedContext) (rid : SeLe4n.ReplyId) (r0 : Reply),
+      s.getSchedContext? c = some sc → sc.scReply = some rid → s.getReply? rid = some r0 →
+      r0.callerCode ≠ x.val + 1)
+    (h : donatedReturnCommits s x c w = true) : donatedReturnCommits s' x c w = true := by
+  unfold donatedReturnCommits at h ⊢
+  cases hO : replyStackOuterCaller? s c with
+  | error e => rw [hO] at h; cases h
+  | ok n =>
+    rw [hO] at h
+    dsimp only at h
+    cases hS : s.getSchedContext? c with
+    | none => rw [hS] at h; cases h
+    | some sc =>
+      rw [hS] at h
+      dsimp only at h
+      simp only [Bool.and_eq_true] at h
+      obtain ⟨⟨⟨⟨hB, hOut⟩, hRec⟩, hLw⟩, hLx⟩ := h
+      have hOutNe : ∀ o, n = some o → o ≠ x := by
+        intro o e
+        subst e
+        unfold outerCallerAcceptable at hOut
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hOut
+        exact hOut.1.2
+      rw [replyStackOuterCaller?_transport Lk hK hO hHead hOutNe, Lk.sc c sc hS]
+      dsimp only
+      -- The threads the decision reads: the caller and the server, and the outer caller.
+      have hT : ∀ v, v ≠ x → ∀ tv, s.getTcb? v = some tv → ∃ tv', s'.getTcb? v = some tv' ∧
+          tv'.schedContextBinding = tv.schedContextBinding ∧ tv'.ipcState = tv.ipcState := by
+        intro v hv tv htv
+        obtain ⟨tv', h', k⟩ := C.fwd v tv hv htv
+        obtain ⟨tv'', h'', b1, b2⟩ := Lk.bind v tv htv
+        have e := getTcb?_some_inj h' h''
+        subst e
+        refine ⟨tv', h', ?_, ?_⟩
+        · show SchedContextBinding.ofCodes tv'.scBindingScCode tv'.scBindingOwnerCode =
+            SchedContextBinding.ofCodes tv.scBindingScCode tv.scBindingOwnerCode
+          rw [b1, b2]
+        · show ThreadIpcState.ofCodes tv'.ipcObjectCode tv'.ipcStateCode =
+            ThreadIpcState.ofCodes tv.ipcObjectCode tv.ipcStateCode
+          rw [k.1, k.2.1]
+      have hLook : ∀ v, v ≠ x → (lookupTcb s v).isSome = true → ∃ tv tv',
+          lookupTcb s v = some tv ∧ lookupTcb s' v = some tv' ∧
+          tv'.schedContextBinding = tv.schedContextBinding := by
+        intro v hv hs
+        unfold lookupTcb at hs ⊢
+        split at hs
+        · cases hs
+        · rename_i hRes
+          rw [if_neg hRes, if_neg hRes]
+          cases htv : s.getTcb? v with
+          | none => rw [htv] at hs; cases hs
+          | some tv =>
+            obtain ⟨tv', h', b, -⟩ := hT v hv tv htv
+            exact ⟨tv, tv', rfl, h', b⟩
+      have hLx' : (lookupTcb s' x).isSome = true := by
+        unfold lookupTcb at hLx ⊢
+        split at hLx
+        · cases hLx
+        · rename_i hRes
+          rw [if_neg hRes]
+          cases htx : s.getTcb? x with
+          | none => rw [htx] at hLx; cases hLx
+          | some tx =>
+            obtain ⟨tx', h', -, -⟩ := Lk.bind x tx htx
+            rw [h']; rfl
+      obtain ⟨tw, tw', hw1, hw2, hwb⟩ := hLook w hw hLw
+      have hRec' : donationRecipientAcceptable s' w = true := by
+        unfold donationRecipientAcceptable at hRec ⊢
+        rw [hw1] at hRec; rw [hw2]; dsimp only at hRec ⊢; rw [hwb]; exact hRec
+      have hOut' : outerCallerAcceptable s' x w n = true := by
+        cases n with
+        | none => rfl
+        | some o =>
+          unfold outerCallerAcceptable at hOut ⊢
+          simp only [Bool.and_eq_true] at hOut ⊢
+          obtain ⟨hne, hM⟩ := hOut
+          refine ⟨hne, ?_⟩
+          cases hto : s.getTcb? o with
+          | none => rw [hto] at hM; cases hM
+          | some to =>
+            rw [hto] at hM
+            obtain ⟨to', h', b, i⟩ := hT o (hOutNe o rfl) to hto
+            rw [h']
+            dsimp only at hM ⊢
+            rw [b, i]; exact hM
+      simp only [hB, hOut', hRec', hw2, hLx', Option.isSome_some, Bool.and_self]
+
+/-- **A caller's head pop decision is kept**, for a caller `w` other than `x`
+whose reply at `k` names it and whose context the server `x` holds
+(`replyHeadHeldByServer`, read with `w`'s server code `x + 1`). -/
+theorem replyHeadPopCommits_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
+    {K : SeLe4n.ObjId → Reply → Prop} (C : CancelFrame s s' x) (Lk : LoanKept s s' K)
+    (hK : LoanReplies s x K) {k : SeLe4n.ObjId} {r : Reply} {w : SeLe4n.ThreadId} {t : TCB}
+    (hw : w ≠ x) (hRk : s.getObject? k = some (.reply r)) (hcw : r.callerCode = w.val + 1)
+    (hSC : replyCallerServerCode t = x.val + 1) (hHeld : replyHeadHeldByServer s r t = true)
+    (hP : replyHeadPopCommits s k r w = true) : replyHeadPopCommits s' k r w = true := by
+  unfold replyHeadPopCommits at hP ⊢
+  unfold replyHeadHeldByServer at hHeld
+  cases hn : r.next with
+  | none => rfl
+  | some l =>
+    rw [hn] at hP hHeld
+    cases l with
+    | frame a => rfl
+    | head c =>
+      dsimp only at hP hHeld ⊢
+      cases hS : s.getSchedContext? c with
+      | none => rw [hS] at hP; cases hP
+      | some sc =>
+        rw [hS] at hP hHeld
+        rw [Lk.sc c sc hS]
+        dsimp only at hP hHeld ⊢
+        rw [hSC] at hHeld
+        have hbx : sc.boundThreadCode = x.val + 1 := beq_iff_eq.mp hHeld
+        rw [hbx] at hP ⊢
+        dsimp only at hP ⊢
+        simp only [Bool.and_eq_true] at hP ⊢
+        obtain ⟨⟨hRid, hHt⟩, hD⟩ := hP
+        have hxx : (⟨x.val⟩ : SeLe4n.ThreadId) = x := rfl
+        rw [hxx] at hHt hD ⊢
+        refine ⟨⟨hRid, ?_⟩, ?_⟩
+        · cases hX : s.getTcb? x with
+          | none => rw [hX] at hHt; cases hHt
+          | some ht =>
+            rw [hX] at hHt
+            obtain ⟨ht', h', b1, b2⟩ := Lk.bind x ht hX
+            rw [h']; dsimp only at hHt ⊢; rw [b1, b2]; exact hHt
+        · refine donatedReturnCommits_transport C Lk hK hw (fun sc' rid r0 hS' hR' hG => ?_) hD
+          rw [hS] at hS'; cases hS'
+          rw [hR'] at hRid
+          dsimp only at hRid
+          have hk : rid.toObjId = k := by
+            cases rid; cases k; simp only [beq_iff_eq] at hRid; subst hRid; rfl
+          have hO := (SystemState.getReply?_eq_some_iff _ _ _).mp hG
+          unfold SystemState.getObject? at hRk
+          rw [hk, hRk] at hO; cases hO
+          rw [hcw]; intro e; exact hw (by cases w; cases x; simp at e; subst e; rfl)
+
+/-- **A caller's guard as `x`'s waiter is kept** by a step keeping every plain
+waiter and the lender's reads, for a caller `w` other than `x`, kept as
+`TCB.cancelKeptBy` reads it, whose reply links up to no frame. -/
+theorem replyWaiterEndable_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
+    {K : SeLe4n.ObjId → Reply → Prop} (C : CancelFrame s s' x) (Lk : LoanKept s s' K)
+    (hK : LoanReplies s x K) {w : SeLe4n.ThreadId} {t t' : TCB} {r : Reply} (hw : w ≠ x)
+    (kt : TCB.cancelKeptBy t' t)
+    (hR : s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r))
+    (hN : ∀ a, r.next ≠ some (.frame a)) (hG : replyWaiterEndable s x w t = true) :
+    replyWaiterEndable s' x w t' = true := by
+  obtain ⟨k1, k2, k3, k4, -, k6, k7⟩ := kt
+  have hSC' := replyCallerServerCode_of_codes k1 k2
+  unfold replyWaiterEndable replyCallerCancelAdmitted at hG ⊢
+  rw [hR] at hG
+  dsimp only at hG
+  simp only [Bool.and_eq_true] at hG
+  obtain ⟨⟨hwx, hsc⟩, ⟨hc, hF⟩, hH⟩ := hG
+  have hcw : r.callerCode = w.val + 1 := beq_iff_eq.mp hc
+  have hr' : s'.getObject? ⟨t'.replyObjectCode - 1⟩ = some (.reply r) := by
+    rw [k3]
+    refine Lk.reply _ r hR (hK _ r hR ⟨?_, fun a _ e => absurd e (hN a)⟩)
+    rw [hcw]; intro e; exact hw (by cases w; cases x; simp at e; subst e; rfl)
+  rw [hr']
+  dsimp only
+  have hSCx : replyCallerServerCode t = x.val + 1 := beq_iff_eq.mp hsc
+  have hH' : replyHeadHeldByServer s' r t' = true := by
+    unfold replyHeadHeldByServer at hH ⊢
+    cases hn : r.next with
+    | none => rfl
+    | some l =>
+      rw [hn] at hH
+      cases l with
+      | frame _ => rfl
+      | head c =>
+        dsimp only at hH ⊢
+        cases hS : s.getSchedContext? c with
+        | none => rw [hS] at hH; cases hH
+        | some sc => rw [hS] at hH; rw [Lk.sc c sc hS, hSC']; exact hH
+  have hF' : replyCallerFinalisable s' ⟨t'.replyObjectCode - 1⟩ r w t' = true := by
+    rw [k3]
+    unfold replyCallerFinalisable at hF ⊢
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hF ⊢
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨hP, hRes⟩, hId⟩, hRun⟩, hSt⟩, hRO⟩, hQN⟩, hQP⟩, hTB⟩ := hF
+    obtain ⟨q1, q2⟩ := k7 hQN hQP
+    exact ⟨⟨⟨⟨⟨⟨⟨⟨replyHeadPopCommits_transport C Lk hK hw hR hcw hSCx hH hP, hRes⟩, hId⟩,
+      k6 hRun⟩, k2 ▸ hSt⟩, k3 ▸ hRO⟩, q1⟩, q2⟩, k4 ▸ hTB⟩
+  rw [hSC']
+  simp only [hwx, hsc, hc, hF', hH', Bool.and_self]
+
+/-- **`x`'s lender stays endable** across a step keeping every plain waiter and
+the lender's reads, which keeps `x`'s owner code (`ho`). -/
+theorem lenderEndable_transport {s s' : SystemState} {x : SeLe4n.ThreadId}
+    {K : SeLe4n.ObjId → Reply → Prop} (C : CancelFrame s s' x) (Lk : LoanKept s s' K)
+    (hK : LoanReplies s x K) {tx tx' : TCB}
+    (ho : tx'.scBindingOwnerCode = tx.scBindingOwnerCode) (hL : lenderEndable s x tx) :
+    lenderEndable s' x tx' := by
+  intro o hO
+  obtain ⟨tl, r, hT, hRl, hN, hE⟩ := hL o (ho ▸ hO)
+  have hLx : (⟨o⟩ : SeLe4n.ThreadId) ≠ x := by
+    intro e
+    unfold replyWaiterEndable at hE
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hE
+    exact hE.1.1 (by rw [← e])
+  obtain ⟨tl', hT', kt⟩ := C.fwd _ tl hLx hT
+  have hcw : r.callerCode ≠ x.val + 1 := by
+    unfold replyWaiterEndable replyCallerCancelAdmitted at hE
+    rw [hRl] at hE
+    simp only [Bool.and_eq_true, beq_iff_eq] at hE
+    rw [hE.2.1.1]; intro e; exact hLx (by cases x; simp at e; subst e; rfl)
+  refine ⟨tl', r, hT', ?_, hN, replyWaiterEndable_transport C Lk hK hLx kt hRl hN hE⟩
+  rw [kt.2.2.1]
+  exact Lk.reply _ r hRl (hK _ r hRl ⟨hcw, fun a _ e => absurd e (hN a)⟩)
+
 end SeLe4n.Kernel
