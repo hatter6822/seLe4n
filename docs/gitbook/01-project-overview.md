@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.149): 515,763 lines of production Lean across 462 files, 87,194 lines across 70 Lean test suites,
-18,866 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.150): 517,216 lines of production Lean across 465 files, 87,228 lines across 70 Lean test suites,
+18,925 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4

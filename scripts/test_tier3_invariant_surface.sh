@@ -3774,6 +3774,15 @@ run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeL
 run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
+# The boot keeps every untyped clear of the devices the kernel drives, as seL4
+# hands out no device untyped over them: the clause is in the placement
+# conjunct, and each binding names the windows it programs.
+run_check "INVARIANT" rg -n '^def untypedClearOfKernelDevices\b' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '          untypedClearOfKernel config\.machineConfig ut &&\n          untypedClearOfKernelDevices config\.machineConfig ut$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    kernelDevices := mmioRegions$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^    kernelDevices := qemuVirtMmioRegions$' SeLe4n/Platform/QemuVirt/Board.lean
+run_check "INVARIANT" rg -n '^theorem rpi5MemoryMapForConfig_ram_below_devices($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def bootRefusesUntypedOverKernelDevice : IO Unit' tests
 # BP3.2 — the kernel's reserved extent, stated in three places and held equal.
 run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' SeLe4n/Platform/RPi5/Board.lean
 # WS-BP BP8.1: the value lives in the board map (`board.rs`'s `RPI5`), and the
@@ -3996,6 +4005,27 @@ run_check "INVARIANT" rg -n '^  \| \.untypedReset    => \.retype$' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^  \| \.untypedReset          => 37$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedReset = 37,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^pub fn untyped_reset\(untyped_cap: CPtr\)' rust/sele4n-sys/src/lifecycle.rs
+# Every live mapping is recorded on a capability to its frame: the invariant,
+# its place in the bundle, boot's establishment and the arms proven to keep it.
+run_check "INVARIANT" rg -n '^def liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded_of_epochsVacant($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.default_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
+run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n 'SystemState\.liveMappingsRecorded_of_epochsVacant' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotZombie_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem cspaceCopy_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMintWithCdt_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMove_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem mintReplyCapWithCdt_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
+run_check "INVARIANT" rg -n '^theorem pageTableMap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
+run_check "INVARIANT" rg -n '^theorem pageTableUnmap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
+run_check "INVARIANT" rg -n '^theorem untypedResetFromCap_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordPreservation.lean
 # WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
 # map records it on the capability, and refuses a capability whose mapping is
 # still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);
@@ -8669,13 +8699,15 @@ run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord
 # the identifier outright would forbid the carriage too.  What must stay absent
 # is the field being READ as a conjunct: the `st.declassificationRefusals`
 # projection, and anything conjoined after the bundle's last conjunct — which is
-# how every conjunct from the 12th to the 17th was actually added (the 17th,
-# the run-queue link agreement of WS-ZA ZA4.5, is the bundle's last).
+# how every conjunct from the 12th to the 18th was actually added (the 18th,
+# every live mapping recorded on a capability, of WS-ZA ZA5.4 part 37, is the
+# bundle's last).
 run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^    st\.runQueueRefined$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_negative_check "INVARIANT" rg -n 'st\.runQueueRefined ' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.runQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.liveMappingsRecorded$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'st\.liveMappingsRecorded ' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
@@ -22335,9 +22367,10 @@ run_check "INVARIANT" rg -n '^theorem registryEndpointUnique_of_tableReferencesR
 # The registry's own check reads the endpoint's field; the registry fold it
 # replaced is gone, so the two cannot drift apart.
 run_negative_check "INVARIANT" rg -n '\bhasEndpointRegistered\b' SeLe4n tests
-# Every kind-preserving write carries both back-links.  Drop the conjunct and
-# an endpoint write could silently forget the registration recorded on it.
-run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\) : Prop :=(\n([ \t][^\n]*)?)*\n      post\.bindingCodes = pre\.bindingCodes ∧ post\.tableBackLinks = pre\.tableBackLinks$' SeLe4n/Model/State.lean
+# Every kind-preserving write carries both back-links and the mapping view.  Drop
+# a conjunct and an endpoint write could silently forget the registration
+# recorded on it, or a root write a translation no capability records.
+run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\) : Prop :=(\n([ \t][^\n]*)?)*\n      post\.bindingCodes = pre\.bindingCodes ∧ post\.tableBackLinks = pre\.tableBackLinks ∧\n      post\.mappingView = pre\.mappingView$' SeLe4n/Model/State.lean
 # The boot refuses what would come up violating the invariant: an endpoint
 # already carrying a registration, and an interrupt table that is not
 # reciprocal with the notifications' flags -- BOTH directions, since a handler

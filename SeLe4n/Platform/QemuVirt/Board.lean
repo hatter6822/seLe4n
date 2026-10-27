@@ -118,6 +118,16 @@ def qemuVirtBootTablePool : List SeLe4n.PAddr :=
 def qemuVirtBootTablePage (i : Nat) : SeLe4n.PAddr :=
   SeLe4n.PAddr.ofNat (qemuVirtBootTablePoolBase + i * 4096)
 
+/-- The MMIO windows the kernel programs — each inside the register block the
+    device tree declares for that device, which is what
+    `deviceTreeCoversMmioRegions` requires.  The GIC windows are the GIC-400's
+    architectural sizes (4 KiB distributor, 8 KiB CPU interface), which lie
+    inside `virt`'s 64 KiB blocks. -/
+def qemuVirtMmioRegions : List SeLe4n.MemoryRegion :=
+  [ { base := qemuVirtUartBase,            size := 0x1000, kind := .device }
+  , { base := qemuVirtGicDistributorBase,  size := 0x1000, kind := .device }
+  , { base := qemuVirtGicCpuInterfaceBase, size := 0x2000, kind := .device } ]
+
 /-- The `virt` machine configuration.  The PE is QEMU's `cortex-a76`, whose
     `ID_AA64MMFR0_EL1.PARange` is `0b0010` — 40 bits, as on the BCM2712 — and
     `-smp 4` gives it the RPi5's four PEs, so the model's width is this
@@ -131,21 +141,12 @@ def qemuVirtMachineConfig : SeLe4n.MachineConfig :=
     memoryMap := qemuVirtMemoryMap
     declaredCoreCount := 4
     kernelReserved := qemuVirtKernelReserved
+    kernelDevices := qemuVirtMmioRegions
     bootTablePool := qemuVirtBootTablePool }
 
 /-- The machine configuration is well-formed. -/
 theorem qemuVirtMachineConfig_wellFormed : qemuVirtMachineConfig.wellFormed = true := by
   decide
-
-/-- The MMIO windows the kernel programs — each inside the register block the
-    device tree declares for that device, which is what
-    `deviceTreeCoversMmioRegions` requires.  The GIC windows are the GIC-400's
-    architectural sizes (4 KiB distributor, 8 KiB CPU interface), which lie
-    inside `virt`'s 64 KiB blocks. -/
-def qemuVirtMmioRegions : List SeLe4n.MemoryRegion :=
-  [ { base := qemuVirtUartBase,            size := 0x1000, kind := .device }
-  , { base := qemuVirtGicDistributorBase,  size := 0x1000, kind := .device }
-  , { base := qemuVirtGicCpuInterfaceBase, size := 0x2000, kind := .device } ]
 
 /-- The MMIO windows paired with the device that must be at each — `arm,pl011`
     for the console and `arm,cortex-a15-gic` for the GICv2 (the string QEMU

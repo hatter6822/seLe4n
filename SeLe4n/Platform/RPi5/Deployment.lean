@@ -529,13 +529,15 @@ private theorem extensions_pairwise_disjoint (v : BCM2712Config) (hv : v.Admissi
     `lowRamTop - rpi5RamOrigin` (`v0.36.36`), evaluating a symbolic board's
     extensions unfolds `Nat.sub` once per unit of the origin. -/
 private theorem extension_placed (mc : SeLe4n.MachineConfig)
-    (hRes : mc.kernelReserved = rpi5KernelReserved) (x : Nat × Nat)
-    (hx : x ∈ bootRamExtensionsOf mc.memoryMap) :
+    (hRes : mc.kernelReserved = rpi5KernelReserved)
+    (hDev : ∀ r ∈ mc.memoryMap, r.kind = .ram → ∀ d ∈ mc.kernelDevices, r.endAddr ≤ d.base.toNat)
+    (x : Nat × Nat) (hx : x ∈ bootRamExtensionsOf mc.memoryMap) :
     (untypedWithinDeclaredRegion mc (rpi5InitialUntyped x.1 x.2) &&
-      untypedClearOfKernel mc (rpi5InitialUntyped x.1 x.2)) = true := by
+      untypedClearOfKernel mc (rpi5InitialUntyped x.1 x.2) &&
+      untypedClearOfKernelDevices mc (rpi5InitialUntyped x.1 x.2)) = true := by
   obtain ⟨r, hr, hk, hlo, hend, hkre, _⟩ := mem_bootRamExtensionsOf _ _ hx
   simp only [Bool.and_eq_true]
-  refine ⟨?_, ?_⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
   · unfold untypedWithinDeclaredRegion
     refine List.any_eq_true.mpr ⟨r, hr, ?_⟩
     simp only [untypedRegionKind, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
@@ -548,6 +550,13 @@ private theorem extension_placed (mc : SeLe4n.MachineConfig)
       decide_eq_true_eq, rpi5InitialUntyped_base, rpi5InitialUntyped_size]
     right
     simpa [SeLe4n.MemoryRegion.endAddr, SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat] using hkre
+  · unfold untypedClearOfKernelDevices
+    refine List.all_eq_true.mpr fun d hd => ?_
+    simp only [Bool.or_eq_true, decide_eq_true_eq, rpi5InitialUntyped_base,
+      rpi5InitialUntyped_size]
+    left
+    have := hDev r hr hk d hd
+    simpa [SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat, hend] using this
 
 /-- Two untypeds over extensions that do not overlap do not overlap either
     (stated over the extensions, for the reason above). -/
@@ -570,7 +579,8 @@ theorem rpi5BoundPlatformConfigAt_placement (v : BCM2712Config) (hv : v.Admissib
     cases hObj : e.obj with
     | untyped ut =>
         obtain ⟨i, hi, _, rfl⟩ := untyped_of_mem v e ut he hObj
-        exact extension_placed (rpi5MachineConfigForVariant v) rfl _ (List.getElem_mem hi)
+        exact extension_placed (rpi5MachineConfigForVariant v) rfl
+          (rpi5MemoryMapForConfig_ram_below_devices v hv) _ (List.getElem_mem hi)
     | _ => rfl
   · intro e₁ he₁ e₂ he₂
     unfold untypedEntriesDisjoint

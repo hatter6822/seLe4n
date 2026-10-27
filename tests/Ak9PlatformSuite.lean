@@ -1843,6 +1843,39 @@ def bootRefusesConfiguredFrames : IO Unit := do
         | .frame _ => false
         | _ => true)
 
+/-- **The boot keeps every untyped clear of the devices the kernel drives**
+(`untypedClearOfKernelDevices`, over `MachineConfig.kernelDevices`), as seL4
+hands out no device untyped over the kernel's own devices.  A device untyped
+over the GIC distributor lies inside the declared SoC device window, so the
+other placement checks pass it, and only this one refuses it; the control, a
+device untyped elsewhere in that window, is accepted, so the refusal is about
+the kernel's device and not about device untypeds. -/
+def bootRefusesUntypedOverKernelDevice : IO Unit := do
+  let entry (base : PAddr) : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := ObjId.ofNat 200
+      obj := .untyped { regionBase := base, regionSize := 0x1000, isDevice := true }
+      hSlots := fun _ h => nomatch h
+      hMappings := fun _ h => nomatch h }
+  let config (base : PAddr) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], machineConfig := rpi5MachineConfig, initialObjects := [entry base] }
+  expect "the RPi5 configuration names its MMIO windows as the kernel's devices"
+    (decide (rpi5MachineConfig.kernelDevices = mmioRegions))
+  expect "CONTROL a device untyped in the SoC window clear of the kernel's devices is well-formed"
+    ((config socPeripheralBase).wellFormed == true)
+  expect "NEGATIVE a device untyped over the GIC distributor is refused by the placement check"
+    (SeLe4n.Platform.Boot.untypedPlacementRespected (config gicDistributorBase) == false)
+  expect "...and only by the device clearance: it is inside a declared device region"
+    (SeLe4n.Platform.Boot.untypedWithinDeclaredRegion rpi5MachineConfig
+      { regionBase := gicDistributorBase, regionSize := 0x1000, isDevice := true })
+  expect "...and the refusal names the placement conjunct"
+    ((config gicDistributorBase).wellFormed == false &&
+      SeLe4n.Platform.Boot.wellFormedDiagnostic (config gicDistributorBase) ==
+        SeLe4n.Platform.Boot.untypedPlacementBootError)
+  expect "NEGATIVE a device untyped over the console UART is refused too"
+    (SeLe4n.Platform.Boot.untypedPlacementRespected (config uart0Base) == false)
+  expect "NEGATIVE the checked boot refuses the GIC-distributor untyped"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked (config gicDistributorBase)).isOk == false)
+
 /-- **The `v0.36.2` audit**: a boot untyped is *pristine* — nothing carved
 (`children = []`) and no ancestry (`parent = none`).  `bootSafeUntypedCheck`
 accepted every record, so a configuration could ship children naming objects
@@ -2840,6 +2873,7 @@ def main : IO Unit := do
   rangesWalkStarvedOfFuelRefuses
   bootUntypedMustBePristine
   bootRefusesConfiguredFrames
+  bootRefusesUntypedOverKernelDevice
   realFirmwareAccountBindsTheReportedRam
   review9_parser_conformance_and_reservations
   review9_runtime_contract_follows_the_installed_map

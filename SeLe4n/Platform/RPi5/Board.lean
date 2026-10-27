@@ -283,6 +283,25 @@ def rpi5BootTablePool : List SeLe4n.PAddr :=
 def rpi5BootTablePage (i : Nat) : SeLe4n.PAddr :=
   SeLe4n.PAddr.ofNat (rpi5BootTablePoolBase + i * 4096)
 
+/-- Known MMIO peripheral regions on BCM2712 that must not overlap with RAM.
+    Each region covers a specific hardware peripheral's register space, and
+    each is **the register block the device tree declares**, because
+    `deviceTreeCoversMmioRegions` requires the board's block to *contain* the
+    window: a window wider than the block is refused, and the boot halts.
+
+    The UART window is therefore `0x200` bytes, `bcm2712.dtsi`'s
+    `serial@7d001000` `reg = <0x7d001000 0x200>`, not the PL011's nominal
+    4 KiB register page (the `v0.36.2` audit found `0x1000` here against the
+    `0x200` the same file quotes three sections above, which no fixture could
+    show because every fixture's UART node was built from this constant).
+    Every register the console driver touches — `UARTDR` through `UARTICR`,
+    offsets `0x000`–`0x044` — lies inside it. -/
+def mmioRegions : List SeLe4n.MemoryRegion :=
+  [ { base := uart0Base,            size := 0x200,  kind := .device }  -- PL011 UART10
+  , { base := gicDistributorBase,   size := 0x1000, kind := .device }  -- GIC-400 distributor
+  , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
+  ]
+
 /-- ARMv8-A machine configuration for Raspberry Pi 5. -/
 def rpi5MachineConfig : SeLe4n.MachineConfig :=
   {
@@ -311,6 +330,9 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     -- WS-BP BP3.2: the kernel's reserved extent, identical on every variant
     -- (`rpi5MachineConfigForVariant` keeps it), since it is the image's.
     kernelReserved := rpi5KernelReserved
+    -- The devices the kernel drives, identical on every variant: the windows
+    -- it programs, which the boot keeps every untyped clear of.
+    kernelDevices := mmioRegions
     -- WS-BP BP7.1: the table-page pool, identical on every variant.
     bootTablePool := rpi5BootTablePool
   }
@@ -351,25 +373,6 @@ def virtualTimerPpiId : SeLe4n.Irq := ⟨27⟩
 -- ============================================================================
 -- WS-H15b/A-41: MMIO region definitions and disjointness
 -- ============================================================================
-
-/-- Known MMIO peripheral regions on BCM2712 that must not overlap with RAM.
-    Each region covers a specific hardware peripheral's register space, and
-    each is **the register block the device tree declares**, because
-    `deviceTreeCoversMmioRegions` requires the board's block to *contain* the
-    window: a window wider than the block is refused, and the boot halts.
-
-    The UART window is therefore `0x200` bytes, `bcm2712.dtsi`'s
-    `serial@7d001000` `reg = <0x7d001000 0x200>`, not the PL011's nominal
-    4 KiB register page (the `v0.36.2` audit found `0x1000` here against the
-    `0x200` the same file quotes three sections above, which no fixture could
-    show because every fixture's UART node was built from this constant).
-    Every register the console driver touches — `UARTDR` through `UARTICR`,
-    offsets `0x000`–`0x044` — lies inside it. -/
-def mmioRegions : List SeLe4n.MemoryRegion :=
-  [ { base := uart0Base,            size := 0x200,  kind := .device }  -- PL011 UART10
-  , { base := gicDistributorBase,   size := 0x1000, kind := .device }  -- GIC-400 distributor
-  , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
-  ]
 
 /-- **PR #892 review round 8**: the MMIO windows this binding requires, each
 paired with the identity of the device that must be at it.
@@ -648,6 +651,46 @@ BCM2712's and identical across the family: the address widths, the page size,
 the ASID range and the PE count. -/
 def rpi5MachineConfigForVariant (v : BCM2712Config) : SeLe4n.MachineConfig :=
   { rpi5MachineConfig with memoryMap := rpi5MemoryMapForConfig v }
+
+/-- **Every RAM region of an admissible configuration lies below every device
+    the kernel drives**: the RAM ends at the variant's size, at most 16 GiB,
+    and the BCM2712's peripherals sit above 64 GiB.  This is what the boot's
+    device clearance reads for an untyped carved from RAM
+    (`Boot.untypedClearOfKernelDevices`). -/
+theorem rpi5MemoryMapForConfig_ram_below_devices (v : BCM2712Config) (hv : v.Admissible) :
+    ∀ r ∈ rpi5MemoryMapForConfig v, r.kind = .ram →
+      ∀ d ∈ mmioRegions, r.endAddr ≤ d.base.toNat := by
+  have hAll : rpi5Variants.all (fun m => decide (m.ramSize ≤ 16 * 1024 * 1024 * 1024)) = true := by
+    decide
+  have hSize : v.ramSize ≤ 16 * 1024 * 1024 * 1024 := by
+    have := List.all_eq_true.mp hAll _ hv.1
+    simpa [BCM2712Config.uncut] using this
+  have hLow : v.lowRamTop ≤ rpi5FirstGigabyteTop := by
+    have h := hv.2
+    unfold rpi5LowRamTopAdmissible at h
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    exact h.1.2
+  intro r hr hk d hd
+  simp only [mmioRegions, List.mem_cons, List.not_mem_nil, or_false] at hd
+  have hD : 0x107D001000 ≤ d.base.toNat := by
+    rcases hd with rfl | rfl | rfl <;>
+      simp [uart0Base, gicDistributorBase, gicCpuInterfaceBase, SeLe4n.PAddr.ofNat,
+        SeLe4n.PAddr.toNat]
+  refine Nat.le_trans ?_ hD
+  simp only [rpi5MemoryMapForConfig, List.mem_append, List.mem_cons, List.not_mem_nil,
+    or_false] at hr
+  rcases hr with (rfl | hr) | rfl
+  · simp only [SeLe4n.MemoryRegion.endAddr, SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat]
+    unfold rpi5FirstGigabyteTop rpi5RamOrigin at *
+    omega
+  · split at hr
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hr
+      subst hr
+      simp only [SeLe4n.MemoryRegion.endAddr, SeLe4n.PAddr.ofNat, SeLe4n.PAddr.toNat]
+      unfold rpi5FirstGigabyteTop at *
+      omega
+    · simp at hr
+  · simp at hk
 
 /-- The 4 GiB member is the canonical configuration itself. -/
 theorem rpi5MachineConfigForVariant_default :

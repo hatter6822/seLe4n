@@ -169,7 +169,11 @@ or the untyped records a carved object, otherwise a rewind of the capability's
 free index — and keeps the bundle and the untyped invariants, which the boot
 establishes (`untypedResetSlot_preserves_capabilityInvariantBundle`,
 `untypedResetSlot_preserves_untypedMemoryInvariant`,
-`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`);
+`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`); since `v0.36.150`
+every live mapping is recorded on a capability to its frame
+(`SystemState.liveMappingsRecorded`, the proof-layer bundle's 18th conjunct),
+which the boot establishes and the address-space, capability-write, reset and
+delete arms keep (the other arms are a registered debt, plan row 38);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

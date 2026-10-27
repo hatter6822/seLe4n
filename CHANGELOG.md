@@ -1,3 +1,75 @@
+## v0.36.150 — WS-ZA ZA5.4 part 37: every live mapping is recorded
+
+The final delete of a frame's last capability removes the page that capability
+recorded, and then the retire erases the frame.  That leaves no mapping of the
+frame only if every mapping is recorded on some capability.  Since part 36 no
+run-time check backs this, so this part states it as an invariant, carries it in
+the proof-layer bundle, and proves boot and the address-space, capability-write,
+reset and delete arms keep it.
+
+- **The invariant** (`SystemState.liveMappingsRecorded`, new module
+  `Model/MappingRecords.lean`): every translation a VSpace root holds with a
+  mapping epoch is recorded, with the root's ASID, the address and the epoch,
+  on a capability in some slot whose target is a frame based at the
+  translation's page.  The boot's own translations carry no epoch and are not
+  counted.
+- **Carried kernel-wide**: the 18th `proofLayerInvariantBundle` conjunct.  The
+  default state holds it, and the boot establishes it
+  (`proofLayerInvariantBundle_of_bootShape`, through
+  `SystemState.liveMappingsRecorded_of_epochsVacant`).  `kindPreservingWrite`
+  now also keeps each object's mapping view (`KernelObject.mappingView`), so
+  every kind-preserving write keeps the invariant
+  (`SystemState.liveMappingsRecorded.of_kindPreservingWrite`).
+- **Arms proven** (new modules `Kernel/MappingRecordPreservation.lean` and
+  `Capability/Invariant/Preservation/MappingRecords.lean`):
+  - address space: `.vspaceMap`, which records the mapping on the capability
+    that made it; `.vspaceUnmap`; `.vspaceUnifyInstruction`; `.pageTableMap`
+    and `.pageTableUnmap`;
+  - `.untypedReset`;
+  - capability writes: copy, mint with its derivation edge, move, and the
+    reply-cap mint;
+  - deletes: the finalising delete, the revocation and the zombie delete,
+    each on a state with the capability invariants and teardown
+    well-formedness.
+- **Tests**: Tier 3 anchors pin:
+  - the invariant, its bundle position and the boot establishment;
+  - every new preservation theorem;
+  - the bundle's last-conjunct pins, which move to the 18th conjunct.
+- **Exerciser**: every pin unchanged.
+- **Split**: `docs/planning/UNTYPED_RESET_PLAN.md` row 37 is landed with its
+  forks.
+  - New row 38 covers the other arms and the kernel entries:
+    - the IPC paths with their capability transfer;
+    - the thread, scheduling-context, notification, service and audit arms;
+    - the thread-space set;
+    - the retype.
+  - The retype's reset, previously row 38, is now row 39.
+  - The `docs/REGISTERED_DEBT.md` row "A live mapping is not proven to be
+    recorded on a capability" is narrowed to those arms.
+
+### Security
+
+- **The boot no longer admits an untyped over a device the kernel drives.**
+  - **Before:** the placement check (`untypedPlacementRespected`) kept a boot
+    untyped clear of the kernel's reserved RAM extent only. A configuration
+    could hand out a device untyped over the console UART or the GIC
+    distributor and CPU interface, and a thread could then carve and map a
+    frame over the interrupt controller. seL4 hands out no device untyped
+    over the kernel's own devices.
+  - **Now:** the check also refuses an untyped of either kind that overlaps
+    any window the binding programs (`untypedClearOfKernelDevices`, over the
+    new `MachineConfig.kernelDevices`). The RPi5 binds this to `mmioRegions`
+    and the `virt` binding to `qemuVirtMmioRegions`, the same lists their
+    board checks require the device tree to declare.
+  - **Proof:** the deployment's placement theorem is restated with the new
+    clause. The RAM untypeds lie below every such device
+    (`rpi5MemoryMapForConfig_ram_below_devices`).
+  - **Test:** `ak9_platform_suite`'s `bootRefusesUntypedOverKernelDevice`
+    refuses a device untyped over the GIC distributor and one over the UART,
+    and accepts a control elsewhere in the SoC device window.
+  - **Severity:** Low. Untypeds come only from the integrator's compiled
+    configuration, and no shipped configuration declared a device untyped.
+
 ## v0.36.149 — WS-ZA ZA5.4 part 36: the seL4 reset
 
 Syscall 37 is now seL4's `resetUntypedCap` behind `ensureNoChildren`.  It used

@@ -2868,14 +2868,21 @@ kind-preserving chain step.
 And it keeps the object's table back-links (`KernelObject.tableBackLinks`),
 which the table references read: only a service registration, a revocation and
 the boot's interrupt binding write them, and none of those is a kind-preserving
-chain step either. -/
+chain step either.
+
+And it keeps the object's mapping facts (`KernelObject.mappingView`: a root's
+ASID, translations and mapping epochs, a frame's base), which the mapping
+records read (`SystemState.liveMappingsRecorded`): only the address-space
+operations, the carve and the final delete write them, and none of those is a
+kind-preserving chain step. -/
 def kindPreservingWrite (st st' : SystemState) : Prop :=
   ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
     ∃ pre post : KernelObject,
       st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
       post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode ∧
       post.tcbSlots = pre.tcbSlots ∧ post.untyped? = pre.untyped? ∧
-      post.bindingCodes = pre.bindingCodes ∧ post.tableBackLinks = pre.tableBackLinks
+      post.bindingCodes = pre.bindingCodes ∧ post.tableBackLinks = pre.tableBackLinks ∧
+      post.mappingView = pre.mappingView
 
 namespace kindPreservingWrite
 
@@ -2885,21 +2892,21 @@ theorem trans {st st' st'' : SystemState}
     (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
     kindPreservingWrite st st'' := by
   intro oid
-  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂⟩
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
     · exact Or.inl (e₂.trans e₁)
-    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂⟩
-  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂⟩
-    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁⟩
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂, hs₂, hu₂, hb₂, hl₂, hm₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁, hs₁, hu₁, hb₁, hl₁, hm₁⟩
     · rw [hq₁] at hp₂
       cases hp₂
       exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hu₂.trans hu₁,
-        hb₂.trans hb₁, hl₂.trans hl₁⟩
+        hb₂.trans hb₁, hl₂.trans hl₁, hm₂.trans hm₁⟩
 
 /-- Forgetting the binding codes. -/
 theorem upToBindings {st st' : SystemState} (h : kindPreservingWrite st st') :
     kindPreservingWriteUpToBindings st st' := fun oid =>
-  (h oid).imp id fun ⟨pre, post, hp, hq, ht, hn, hs, hu, _, _⟩ =>
+  (h oid).imp id fun ⟨pre, post, hp, hq, ht, hn, hs, hu, _, _, _⟩ =>
     ⟨pre, post, hp, hq, ht, hn, hs, hu⟩
 
 /-- A kind-preserving write keeps every thread's slots, key by key. -/
@@ -2916,7 +2923,7 @@ theorem untyped {st st' : SystemState} (h : kindPreservingWrite st st') (oid : S
 theorem bindingCodes {st st' : SystemState} (h : kindPreservingWrite st st') (oid : SeLe4n.ObjId) :
     (st'.objects[oid]?).map KernelObject.bindingCodes =
       (st.objects[oid]?).map KernelObject.bindingCodes := by
-  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, _, hb, _⟩
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, _, hb, _, _⟩
   · rw [e]
   · rw [hp, hq]; simp only [Option.map_some, hb]
 
@@ -2925,9 +2932,18 @@ theorem tableBackLinks {st st' : SystemState} (h : kindPreservingWrite st st')
     (oid : SeLe4n.ObjId) :
     (st'.objects[oid]?).map KernelObject.tableBackLinks =
       (st.objects[oid]?).map KernelObject.tableBackLinks := by
-  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, _, _, hl⟩
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, _, _, hl, _⟩
   · rw [e]
   · rw [hp, hq]; simp only [Option.map_some, hl]
+
+/-- A kind-preserving write keeps every slot's mapping facts, key by key. -/
+theorem mappingView {st st' : SystemState} (h : kindPreservingWrite st st')
+    (oid : SeLe4n.ObjId) :
+    (st'.objects[oid]?).map KernelObject.mappingView =
+      (st.objects[oid]?).map KernelObject.mappingView := by
+  rcases h oid with e | ⟨_, _, hp, hq, _, _, _, _, _, _, hm⟩
+  · rw [e]
+  · rw [hp, hq]; simp only [Option.map_some, hm]
 
 /-- A kind-preserving write keeps every slot, key by key: a post-state object
 holds the slots of the pre-state object at its key. -/
@@ -2967,14 +2983,18 @@ theorem storeObject_kindPreservingWrite
         | rfl
         | (dsimp only; split <;> rfl)
         | (simp only [KernelObject.tableBackLinks, Endpoint.withSendQ, Endpoint.withReceiveQ]
-            <;> split <;> rfl)) :
+            <;> split <;> rfl))
+    (hMapping : obj.mappingView = pre.mappingView := by
+      first
+        | rfl
+        | (dsimp only; split <;> rfl)) :
     kindPreservingWrite st st' := by
   intro k
   by_cases hEq : k = oid
   · subst hEq
     exact Or.inr ⟨pre, obj, hPre,
       storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode, hSlots, hUntyped,
-      hBindings, hBackLinks⟩
+      hBindings, hBackLinks, hMapping⟩
   · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
 
 /-- A kind-preserving `storeObject` that may move the binding codes: the
@@ -5987,7 +6007,9 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     (hUntyped : ∀ old, st.objects[id]? = some old → new.untyped? = old.untyped?)
     (hBindings : ∀ old, st.objects[id]? = some old → new.bindingCodes = old.bindingCodes)
     (hBackLinks : ∀ old, st.objects[id]? = some old →
-      new.tableBackLinks = old.tableBackLinks := by intro old _; cases old <;> rfl) :
+      new.tableBackLinks = old.tableBackLinks := by intro old _; cases old <;> rfl)
+    (hMapping : ∀ old, st.objects[id]? = some old →
+      new.mappingView = old.mappingView := by intro old _; cases old <;> rfl) :
     kindPreservingWrite st (st.rewriteObject id new h) := by
   intro k
   by_cases hEq : id = k
@@ -5996,7 +6018,7 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
     obtain ⟨pre, hPre, hKind, hNeutral⟩ := hAdm
     refine Or.inr ⟨pre, new, hPre, rewriteObject_objects_self st id new h hInv,
       hKind.symm, ?_, hSlots pre hPre, hUntyped pre hPre, hBindings pre hPre,
-      hBackLinks pre hPre⟩
+      hBackLinks pre hPre, hMapping pre hPre⟩
     intro hCn
     rw [hCn] at hNeutral
     exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
@@ -6016,6 +6038,8 @@ theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.T
     (fun old hOld => by
       rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
       simp only [KernelObject.bindingCodes, hS.2.2])
+    (fun old hOld => by
+      rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl)
     fun old hOld => by
       rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
 
@@ -6714,12 +6738,13 @@ theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
   split
   · next t h _ =>
     refine rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => ?_)
-      (fun old hOld => ?_) (fun old hOld => ?_) fun old hOld => ?_
+      (fun old hOld => ?_) (fun old hOld => ?_) (fun old hOld => ?_) fun old hOld => ?_
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
       simp only [KernelObject.tcbSlots, (hf t).1, (hf t).2.1]
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
       simp only [KernelObject.bindingCodes, (hf t).2.2]
+    · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
   · exact kindPreservingWrite.refl st
 

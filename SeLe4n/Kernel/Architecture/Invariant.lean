@@ -22,6 +22,7 @@ import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 -- AK8-A audit remediation: retype preservation needs `retypeFromUntyped`
 -- definition + structural field-preservation facts from Lifecycle.
 import SeLe4n.Kernel.Lifecycle.Invariant
+import SeLe4n.Model.MappingRecords
 
 /-!
 # Architecture Boundary Invariant Proofs (M6)
@@ -156,7 +157,16 @@ the link codes beside it) and with the core's queue ends
 `tcbSchedNext`/`tcbSchedPrev`.  It is what lets the executed scheduler read
 the links in place of the abstract queue.  It reads `objects` (the TCBs' run
 fields) and `scheduler` (the queues and their ends), so the adapter
-transitions frame it as they frame the scheduler conjuncts. -/
+transitions frame it as they frame the scheduler conjuncts.
+
+WS-ZA ZA5.4 part 37: `liveMappingsRecorded` added as the 18th component —
+every mapping an address space makes under a mapping epoch is recorded on a
+capability held in some slot, to the frame the mapping names
+(`SystemState.liveMappingsRecorded`), as seL4's frame capability records where
+it mapped its frame.  It is what makes the final delete of a frame's last
+capability, which removes the page that capability records, leave no mapping of
+the frame it retires.  It reads `objects` alone, so every transition that
+writes no object frames it. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -174,7 +184,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     icacheCoherent_perCore st ∧
     ackBounded st.tlbShootdown ∧
     auditLogBounded st.declassificationAuditLog ∧
-    st.runQueueRefined
+    st.runQueueRefined ∧
+    st.liveMappingsRecorded
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -661,7 +672,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -721,6 +732,8 @@ theorem default_system_state_proofLayerInvariantBundle :
   · exact default_auditLogBounded
   -- 17. runQueueRefined (WS-ZA ZA4.5: no thread, every queue and its ends empty)
   · exact SystemState.default_runQueueRefined
+  -- 18. liveMappingsRecorded (WS-ZA ZA5.4 part 37: no root, so no mapping)
+  · exact SystemState.default_liveMappingsRecorded
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
