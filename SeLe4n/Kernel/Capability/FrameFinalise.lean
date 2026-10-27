@@ -1212,7 +1212,7 @@ theorem cspaceDeleteSlotFinalising_shrinks (ec : Concurrency.CoreId) {addr : CSp
 /-- **A run of finalising deletes and finalisations**, one after another: what
 seL4's `cteRevoke` and `cteDelete`'s zombie loop are made of.  A finalisation
 step is the finalisation of a thread the zombie loop reaches before it deletes
-the thread's space slots (`zombieFinaliseAt`). -/
+the thread's space slots (`zombieDescend`). -/
 inductive FinalisingDeleteChain (ec : Concurrency.CoreId) : SystemState → SystemState → Prop
   | refl (st : SystemState) : FinalisingDeleteChain ec st st
   | step {s1 s2 s3 : SystemState} (c : CSpaceAddr)
@@ -1340,83 +1340,74 @@ slots stands there (`cspaceDeleteFinalisingAdmitted`); nothing otherwise. -/
     cspaceDeleteFinalisingPerformAt executingCore cnode slot st
   else st
 
-/-- **The thread the final capability in slot `slot` of `cnode` names,
-finalised** (`finaliseFinalObject`, seL4's `finaliseCap` before its zombie's
-slots are emptied); if that leaves it unfinalised (`zombieThreadFinalised`), the
-slot is deleted, as the delete of a thread the finalisation refuses is. -/
-@[inline] def zombieFinaliseAt (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
-  let d := slotRetireTarget st cnode slot
-  let st1 := finaliseFinalObject d st
-  match st1.getObject? (SeLe4n.ObjId.ofNat (d - 1)) with
-  | some (.tcb t) =>
-    if zombieThreadFinalised st1 t then st1 else zombieDeleteSlot executingCore cnode slot st1
-  | _ => zombieDeleteSlot executingCore cnode slot st1
-
-/-- **How many slots of the object at `x` the loop may empty in one pass**: a
-CNode's slot count, a thread's two. -/
+/-- **How many slots of the object at `x` the loop may empty while it stands
+there**: a CNode's slot count, a thread's two. -/
 @[inline] def zombieObjectSlots (st : SystemState) (x : SeLe4n.ObjId) : Nat :=
   match st.getObject? x with
   | some (.cnode cn) => cn.cells.size
   | some (.tcb _) => 2
   | _ => 0
 
-/-- **Empty the object at `x`'s leaf slots**, each by one finalising delete, the
-next slot chosen by `zombieNextSlot`, until it holds no capability or its next
-slot is no leaf; at most `fuel` of them. -/
-def zombieEmptyObject (executingCore : Concurrency.CoreId) (root : SeLe4n.ObjId)
-    (rootSlot : SeLe4n.Slot) (x : SeLe4n.ObjId) : Nat → SystemState → SystemState
-  | 0, st => st
-  | n + 1, st =>
-    match st.getObject? x with
-    | some o =>
-      let k := zombieNextSlot o (zombieSkip root rootSlot x)
-      if k = 0 then st
-      else if zombieSlotClass st root rootSlot x (SeLe4n.Slot.ofNat (k - 1)) = 0 then
-        zombieEmptyObject executingCore root rootSlot x n
-          (zombieDeleteSlot executingCore x (SeLe4n.Slot.ofNat (k - 1)) st)
-      else st
-    | none => st
-
-/-- **One pass of the loop, from slot `slot` of `cnode`, whose class is `cls`**
-(`zombieSlotClass`): a leaf is deleted; a thread not yet finalised is
-finalised; otherwise the pass goes down to the object the slot's final
-capability names, at the slot `zombieNextSlot` chooses, and when that slot is a
-leaf it empties that object (`zombieEmptyObject`).  A tail call, so the pass
-runs in constant stack whatever the nesting; `depth` bounds the way down. -/
+/-- **One pass of the loop, standing at slot `slot` of `cnode`, whose class is
+`cls`** (`zombieSlotClass`), with the slot's final capability naming the object
+being emptied: nothing more when the class is `0` (the object holds no
+capability now); a thread not yet finalised (class `1`) is finalised first
+(`finaliseFinalObject`, seL4's `finaliseCap` before its Zombie's slots are
+emptied), and the slot is deleted if that leaves it unfinalised, as the delete
+of a thread the finalisation refuses is; otherwise the object's next slot
+(`zombieNextSlot`) is a leaf, emptied by one finalising delete before the pass
+looks at the object again, or the pass goes down to the object that slot's
+final capability names.  So a pass empties the object it stands on one leaf at
+a time and goes down whenever it meets an object holding capabilities, and it
+ends when the deepest object it reaches holds none, or with a refused thread's
+slot deleted.  `depth` bounds the way down and `budget` the slots emptied where
+the pass stands (`zombieObjectSlots` of each object it goes down to).  A tail
+call, so the pass runs in constant stack whatever the nesting. -/
 def zombieDescend (executingCore : Concurrency.CoreId) (root : SeLe4n.ObjId)
-    (rootSlot : SeLe4n.Slot) : Nat → SeLe4n.ObjId → SeLe4n.Slot → Nat → SystemState → SystemState
-  | 0, cnode, slot, _, st => zombieDeleteSlot executingCore cnode slot st
-  | depth + 1, cnode, slot, cls, st =>
-    if cls = 0 then zombieDeleteSlot executingCore cnode slot st
-    else if cls = 1 then zombieFinaliseAt executingCore cnode slot st
+    (rootSlot : SeLe4n.Slot) :
+    Nat → Nat → SeLe4n.ObjId → SeLe4n.Slot → Nat → SystemState → SystemState
+  | 0, _, cnode, slot, _, st => zombieDeleteSlot executingCore cnode slot st
+  | _ + 1, 0, _, _, _, st => st
+  | depth + 1, budget + 1, cnode, slot, cls, st =>
+    if cls = 0 then st
     else
-      let x := SeLe4n.ObjId.ofNat (slotRetireTarget st cnode slot - 1)
-      let s := SeLe4n.Slot.ofNat (cls - 2)
-      let j := zombieSlotClass st root rootSlot x s
-      if j = 0 then zombieEmptyObject executingCore root rootSlot x (zombieObjectSlots st x) st
-      else zombieDescend executingCore root rootSlot depth x s j st
+      let st1 := if cls = 1 then finaliseFinalObject (slotRetireTarget st cnode slot) st else st
+      let c1 := if cls = 1 then zombieSlotClass st1 root rootSlot cnode slot else cls
+      if c1 < 2 then zombieDeleteSlot executingCore cnode slot st1
+      else
+        let x := SeLe4n.ObjId.ofNat (slotRetireTarget st1 cnode slot - 1)
+        let s := SeLe4n.Slot.ofNat (c1 - 2)
+        let j := zombieSlotClass st1 root rootSlot x s
+        if j = 0 then
+          let st2 := zombieDeleteSlot executingCore x s st1
+          zombieDescend executingCore root rootSlot (depth + 1) budget cnode slot
+            (zombieSlotClass st2 root rootSlot cnode slot) st2
+        else
+          zombieDescend executingCore root rootSlot depth
+            (zombieObjectSlots st1 (SeLe4n.ObjId.ofNat (slotRetireTarget st1 x s - 1))) x s j st1
+termination_by depth budget => (depth, budget)
 
-/-- **The way down's bound**: the objects a pass passes through are distinct, so
-no more than the store holds. -/
+/-- **The way down's bound**: no more than the store holds, and one more. -/
 @[inline] def zombieDepth (st : SystemState) : Nat := st.objects.size + 1
 
-/-- **The loop's bound on its passes**: `3 · n + 2` for a store of `n` objects.
-Each pass but the last ends with the object it empties holding no capability,
-with that object's next slot naming an object holding capabilities (which a
-later pass empties first), or with a thread finalised; an object is emptied
-once and a thread finalised once, so `2 · n + n` passes and the root's own
-delete suffice. -/
-@[inline] def zombieFuel (st : SystemState) : Nat := 3 * st.objects.size + 2
+/-- **The loop's bound on its passes**: one more than the store holds.  Each
+pass while the loop's slot still names an object holding capabilities takes one
+object out of those its passes can still reach that hold a capability — the
+object the pass ends on holds none after it, or a refused thread or a too-deep
+object is named by no slot after it — and no step brings one back, since every
+step only empties slots; each object counted once, so the store's size bounds
+them (`zombiePasses_end`). -/
+@[inline] def zombieFuel (st : SystemState) : Nat := st.objects.size + 1
 
 /-- **seL4's `finaliseSlot` loop**, from the loop's own slot `rootSlot` of
 `root`: while the slot's final capability names an object that still holds
-capabilities, one pass (`zombieDescend`) empties the deepest object it reaches
-or finalises a thread.  The capability stays in its slot all the while, as
-seL4's Zombie does, and each pass starts again from the slots, not from
-anything the last pass kept, so a preemption point drops in between passes as a
-return and a restart of the call.  At most `fuel` passes; the slot itself is
-deleted after them (`zombieDeleteAt`). -/
+capabilities, one pass (`zombieDescend`) empties the deepest object it reaches.
+The capability stays in its slot all the while, as seL4's Zombie does, and each
+pass starts again from the slots, not from anything the last pass kept, so a
+preemption point drops in between passes as a return and a restart of the call.
+At most `fuel` passes; on the fuel `zombieDeleteAt` gives them they end with the
+slot naming nothing that holds a capability, on every state the capability
+invariants hold in (`zombiePasses_end`). -/
 def zombiePasses (executingCore : Concurrency.CoreId) (root : SeLe4n.ObjId)
     (rootSlot : SeLe4n.Slot) : Nat → SystemState → SystemState
   | 0, st => st
@@ -1425,37 +1416,23 @@ def zombiePasses (executingCore : Concurrency.CoreId) (root : SeLe4n.ObjId)
     if cls = 0 then st
     else
       zombiePasses executingCore root rootSlot n
-        (zombieDescend executingCore root rootSlot (zombieDepth st) root rootSlot cls st)
-
-/-- **The zombie loop's passes on slot `slot` of `cnode`, then the slot's own
-delete**, with at most `fuel` passes: when the passes end with the slot's final
-capability naming nothing that holds a capability (`zombieSlotClass` zero), the
-slot is deleted by the finalising delete that retires what it named; when the
-fuel runs out first, the slot is **kept** — its capability stays in place and
-the root delete makes no write, the passes already run persist (each a
-`FinalisingDeleteChain`), and a caller sees the slot still occupied and retries,
-the retry continuing from the slots as they stand, as seL4's preempted
-`cteDelete` leaves its Zombie in the slot and is restarted.  On the fuel
-`zombieDeleteAt` gives it the slot is never kept on a reachable state; that the
-fuel always suffices is `docs/planning/UNTYPED_RESET_PLAN.md` row 35
-(`docs/REGISTERED_DEBT.md`, "The zombie fuel always suffices on a reachable
-state").  The fuel is a parameter so a test can drive the kept branch. -/
-def zombieDeleteAtFuel (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (fuel : Nat) (st : SystemState) : SystemState :=
-  let s := zombiePasses executingCore cnode slot fuel st
-  if zombieSlotClass s cnode slot cnode slot = 0 then zombieDeleteSlot executingCore cnode slot s
-  else s
+        (zombieDescend executingCore root rootSlot (zombieDepth st)
+          (zombieObjectSlots st (SeLe4n.ObjId.ofNat (slotRetireTarget st root rootSlot - 1)))
+          root rootSlot cls st)
 
 /-- **A final delete of slot `slot` of `cnode`, emptying what it destroys**
 (seL4's `cteDelete`): a capability that finalises and retires nothing is the
 slot emptied and spliced out (`cspaceDeletePerformAt`); any other has the zombie
-loop's passes run on it, at most `zombieFuel`, then the slot is deleted by the
-finalising delete that retires what its capability named, or kept when the
-passes have not ended (`zombieDeleteAtFuel`). -/
+loop's passes run on it (`zombiePasses`, at most `zombieFuel`), which end with
+the slot naming nothing that holds a capability (`zombiePasses_end`), then the
+slot is deleted by the finalising delete that retires what its capability
+named. -/
 @[inline] def zombieDeleteAt (executingCore : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
   if cspaceDeleteAdmitted ⟨cnode, slot⟩ st then cspaceDeletePerformAt cnode slot st
-  else zombieDeleteAtFuel executingCore cnode slot (zombieFuel st) st
+  else
+    zombieDeleteSlot executingCore cnode slot
+      (zombiePasses executingCore cnode slot (zombieFuel st) st)
 
 /-- **`.cspaceDelete`: seL4's `cteDelete`**: when an object holding slots stands
 at the address (`cspaceDeleteFinalisingAdmitted`), the zombie delete of its slot
@@ -1476,54 +1453,52 @@ theorem zombieDeleteSlot_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
   · next hA => exact .step _ (cspaceDeleteSlotFinalising_of_slotHolder hA) (.refl _)
   · exact .refl st
 
-/-- **A thread's finalisation in the loop is a chain**: the finalisation, then
-at most one delete. -/
-theorem zombieFinaliseAt_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (st : SystemState) :
-    FinalisingDeleteChain ec st (zombieFinaliseAt ec cnode slot st) := by
-  unfold zombieFinaliseAt
-  dsimp only
-  refine .finalise (slotRetireTarget st cnode slot) ?_
-  split
-  · split
-    · exact .refl _
-    · exact zombieDeleteSlot_chain ec cnode slot _
-  · exact zombieDeleteSlot_chain ec cnode slot _
-
-/-- **Emptying an object is a chain** of finalising deletes. -/
-theorem zombieEmptyObject_chain (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
-    (rootSlot : SeLe4n.Slot) (x : SeLe4n.ObjId) :
-    ∀ (n : Nat) (st : SystemState),
-      FinalisingDeleteChain ec st (zombieEmptyObject ec root rootSlot x n st)
-  | 0, st => .refl st
-  | n + 1, st => by
-    unfold zombieEmptyObject
-    split
-    · dsimp only
-      split
-      · exact .refl st
-      · split
-        · exact (zombieDeleteSlot_chain ec x _ st).trans
-            (zombieEmptyObject_chain ec root rootSlot x n _)
-        · exact .refl st
-    · exact .refl st
-
 /-- **A pass is a chain** of finalising deletes and finalisations. -/
 theorem zombieDescend_chain (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
     (rootSlot : SeLe4n.Slot) :
-    ∀ (depth : Nat) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (cls : Nat) (st : SystemState),
-      FinalisingDeleteChain ec st (zombieDescend ec root rootSlot depth cnode slot cls st)
-  | 0, cnode, slot, _, st => zombieDeleteSlot_chain ec cnode slot st
-  | depth + 1, cnode, slot, cls, st => by
-    unfold zombieDescend
+    ∀ (depth budget : Nat) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (cls : Nat)
+      (st : SystemState),
+      FinalisingDeleteChain ec st (zombieDescend ec root rootSlot depth budget cnode slot cls st)
+  | 0, _, cnode, slot, _, st => by
+    rw [zombieDescend]; exact zombieDeleteSlot_chain ec cnode slot st
+  | _ + 1, 0, _, _, _, st => by rw [zombieDescend]; exact .refl st
+  | depth + 1, budget + 1, cnode, slot, cls, st => by
+    rw [zombieDescend]
+    dsimp only
     split
-    · exact zombieDeleteSlot_chain ec cnode slot st
-    · split
-      · exact zombieFinaliseAt_chain ec cnode slot st
-      · dsimp only
+    · exact .refl st
+    · have hRest : ∀ s1 c1, FinalisingDeleteChain ec st s1 → FinalisingDeleteChain ec st
+          (if c1 < 2 then zombieDeleteSlot ec cnode slot s1
+           else if zombieSlotClass s1 root rootSlot
+               (SeLe4n.ObjId.ofNat (slotRetireTarget s1 cnode slot - 1))
+               (SeLe4n.Slot.ofNat (c1 - 2)) = 0 then
+             zombieDescend ec root rootSlot (depth + 1) budget cnode slot
+               (zombieSlotClass (zombieDeleteSlot ec
+                 (SeLe4n.ObjId.ofNat (slotRetireTarget s1 cnode slot - 1))
+                 (SeLe4n.Slot.ofNat (c1 - 2)) s1) root rootSlot cnode slot)
+               (zombieDeleteSlot ec (SeLe4n.ObjId.ofNat (slotRetireTarget s1 cnode slot - 1))
+                 (SeLe4n.Slot.ofNat (c1 - 2)) s1)
+           else
+             zombieDescend ec root rootSlot depth
+               (zombieObjectSlots s1 (SeLe4n.ObjId.ofNat (slotRetireTarget s1
+                 (SeLe4n.ObjId.ofNat (slotRetireTarget s1 cnode slot - 1))
+                 (SeLe4n.Slot.ofNat (c1 - 2)) - 1)))
+               (SeLe4n.ObjId.ofNat (slotRetireTarget s1 cnode slot - 1))
+               (SeLe4n.Slot.ofNat (c1 - 2))
+               (zombieSlotClass s1 root rootSlot
+                 (SeLe4n.ObjId.ofNat (slotRetireTarget s1 cnode slot - 1))
+                 (SeLe4n.Slot.ofNat (c1 - 2))) s1) := by
+        intro s1 c1 h1
         split
-        · exact zombieEmptyObject_chain ec root rootSlot _ _ st
-        · exact zombieDescend_chain ec root rootSlot depth _ _ _ st
+        · exact h1.trans (zombieDeleteSlot_chain ec cnode slot s1)
+        · split
+          · exact h1.trans ((zombieDeleteSlot_chain ec _ _ s1).trans
+              (zombieDescend_chain ec root rootSlot (depth + 1) budget cnode slot _ _))
+          · exact h1.trans (zombieDescend_chain ec root rootSlot depth _ _ _ _ s1)
+      split
+      · exact hRest _ _ (.finalise _ (.refl _))
+      · exact hRest _ _ (.refl st)
+termination_by depth budget => (depth, budget)
 
 /-- **The loop's passes, counted**: a run of `n` passes, each a chain. -/
 inductive ZombieRun (ec : Concurrency.CoreId) : Nat → SystemState → SystemState → Prop
@@ -1557,9 +1532,10 @@ theorem zombiePasses_run (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
     split
     · exact ⟨0, by omega, .stop st⟩
     · obtain ⟨n, hn, hR⟩ := zombiePasses_run ec root rootSlot fuel
-        (zombieDescend ec root rootSlot (zombieDepth st) root rootSlot
-          (zombieSlotClass st root rootSlot root rootSlot) st)
-      exact ⟨n + 1, by omega, .pass (zombieDescend_chain ec root rootSlot _ _ _ _ st) hR⟩
+        (zombieDescend ec root rootSlot (zombieDepth st)
+          (zombieObjectSlots st (SeLe4n.ObjId.ofNat (slotRetireTarget st root rootSlot - 1)))
+          root rootSlot (zombieSlotClass st root rootSlot root rootSlot) st)
+      exact ⟨n + 1, by omega, .pass (zombieDescend_chain ec root rootSlot _ _ _ _ _ st) hR⟩
 
 /-- **The zombie delete of a slot**: the plain delete, or the passes then the
 slot's own finalising delete. -/
@@ -1570,58 +1546,29 @@ theorem zombieDeleteAt_cases (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     ∃ n, n ≤ zombieFuel st ∧
       ZombieRun ec n st (zombiePasses ec cnode slot (zombieFuel st) st) ∧
       zombieDeleteAt ec cnode slot st =
-        zombieDeleteAtFuel ec cnode slot (zombieFuel st) st := by
+        zombieDeleteSlot ec cnode slot (zombiePasses ec cnode slot (zombieFuel st) st) := by
   unfold zombieDeleteAt
   split
   · next hD => exact .inl ⟨hD, rfl⟩
   · obtain ⟨n, hn, hR⟩ := zombiePasses_run ec cnode slot (zombieFuel st) st
     exact .inr ⟨n, hn, hR, rfl⟩
 
-/-- **The zombie delete with fuel `fuel` is a run of at most `fuel + 1`
-passes**: the passes, then the slot's own delete or nothing. -/
-theorem zombieDeleteAtFuel_run (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (fuel : Nat) (st : SystemState) :
-    ∃ n, n ≤ fuel + 1 ∧ ZombieRun ec n st (zombieDeleteAtFuel ec cnode slot fuel st) := by
-  obtain ⟨n, hn, hR⟩ := zombiePasses_run ec cnode slot fuel st
-  unfold zombieDeleteAtFuel
-  dsimp only
-  split
-  · exact ⟨n + 1, by omega, hR.append (zombieDeleteSlot_chain ec cnode slot _)⟩
-  · exact ⟨n, by omega, hR⟩
-
-/-- **A kept slot is one whose passes did not end**: when the zombie delete
-returns the passes' state, the slot's class there is nonzero, and otherwise the
-slot's own delete ran. -/
-theorem zombieDeleteAtFuel_kept_or_deleted (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
-    (slot : SeLe4n.Slot) (fuel : Nat) (st : SystemState) :
-    (zombieSlotClass (zombiePasses ec cnode slot fuel st) cnode slot cnode slot = 0 ∧
-      zombieDeleteAtFuel ec cnode slot fuel st =
-        zombieDeleteSlot ec cnode slot (zombiePasses ec cnode slot fuel st)) ∨
-    (zombieSlotClass (zombiePasses ec cnode slot fuel st) cnode slot cnode slot ≠ 0 ∧
-      zombieDeleteAtFuel ec cnode slot fuel st = zombiePasses ec cnode slot fuel st) := by
-  unfold zombieDeleteAtFuel
-  dsimp only
-  split
-  · next h => exact .inl ⟨h, rfl⟩
-  · next h => exact .inr ⟨h, rfl⟩
-
-/-- **The zombie delete of an admitted slot makes at most `zombieFuel` passes**
-(`3 · n + 2` for a store of `n` objects) and the slot's own delete: a run of at
-most `zombieFuel st + 1` passes. -/
+/-- **The zombie delete of a slot makes at most `zombieFuel` passes** (one more
+than the store holds) and the slot's own delete: a run of at most
+`zombieFuel st + 1` passes. -/
 theorem zombieDeleteAt_run (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (st : SystemState) :
     ∃ n, n ≤ zombieFuel st + 1 ∧ ZombieRun ec n st (zombieDeleteAt ec cnode slot st) := by
-  rcases zombieDeleteAt_cases ec cnode slot st with ⟨hD, e⟩ | ⟨-, -, -, e⟩
+  rcases zombieDeleteAt_cases ec cnode slot st with ⟨hD, e⟩ | ⟨n, hn, hR, e⟩
   · rw [e]
     refine ⟨1, by omega, .pass ?_ (.stop _)⟩
     exact .step _ (cspaceDeleteSlotFinalising_of_admitted hD) (.refl _)
   · rw [e]
-    obtain ⟨m, hm, hR'⟩ := zombieDeleteAtFuel_run ec cnode slot (zombieFuel st) st
-    exact ⟨m, hm, hR'⟩
+    exact ⟨n + 1, by omega, hR.append (zombieDeleteSlot_chain ec cnode slot _)⟩
 
 /-- **A successful zombie delete is at most `zombieFuel st + 1` passes**, each a
 chain of finalising deletes and finalisations: the zombie loop's passes, at most
-`zombieFuel st = 3 · n + 2` for a store of `n` objects, then the slot's own
+`zombieFuel st`, one more than the store holds, then the slot's own
 delete. -/
 theorem cspaceDeleteSlotZombie_run (ec : Concurrency.CoreId) (addr : CSpaceAddr)
     {st st' : SystemState} (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
@@ -1667,14 +1614,12 @@ theorem cspaceDeleteSlotZombie_of_target_zero {ec : Concurrency.CoreId} {addr : 
     split
     · next hD => rw [cspaceDeleteSlotFinalising_of_admitted hD]; rfl
     · have hP : zombiePasses ec addr.cnode addr.slot (zombieFuel st) st = st := by
-        show zombiePasses ec addr.cnode addr.slot (3 * st.objects.size + 1 + 1) st = st
+        show zombiePasses ec addr.cnode addr.slot (st.objects.size + 1) st = st
         unfold zombiePasses
         have : zombieSlotClass st addr.cnode addr.slot addr.cnode addr.slot = 0 := by
           unfold zombieSlotClass; simp only [h0, if_true]
         simp only [this, if_true]
-      unfold zombieDeleteAtFuel
-      dsimp only
-      rw [hP, if_pos (by unfold zombieSlotClass; simp only [h0, if_true])]
+      rw [hP]
       unfold zombieDeleteSlot
       rw [if_pos hA, cspaceDeleteSlotFinalising_of_slotHolder hA]
   · rfl
@@ -1683,21 +1628,20 @@ theorem cspaceDeleteSlotZombie_of_target_zero {ec : Concurrency.CoreId} {addr : 
 (`zombieSlotClass` nonzero: the old capability is that object's last), after its
 checks have passed: seL4's `TCB_SetSpace` deletes the old root by `cteDelete`,
 the zombie loop, before it inserts the new one.  The loop's passes run on the
-thread's CSpace root slot (`zombiePasses`); when they end with the slot naming
-nothing that holds a capability, the checks are asked again of the state they
-leave (`copyThreadSpacesAdmitted`, so the set reads no state its checks did not)
-and the two slots are set (`copyThreadSpacesPerform`), whose delete of the old
-root retires the emptied object.  When the passes run out of fuel, or the
-thread no longer passes the checks, the passes' work stands and nothing else is
-written: the caller sees the thread's roots unchanged and retries, as seL4's
-preempted `TCB_SetSpace` is restarted.  Not reachable while the fuel suffices
-(`docs/planning/UNTYPED_RESET_PLAN.md` row 35).  Out of line: only a space
-change replacing the last capability to a populated CNode takes it. -/
+thread's CSpace root slot (`zombiePasses`), and they end with the slot naming
+nothing that holds a capability (`zombiePasses_end`); the checks are then asked
+again of the state they leave (`copyThreadSpacesAdmitted`, so the set reads no
+state its checks did not) and the two slots are set (`copyThreadSpacesPerform`),
+whose delete of the old root retires the emptied object.  When the thread no
+longer passes the checks — the passes may have finalised it, its last
+capability inside the CNode they emptied — the passes' work stands and nothing
+else is written: the caller sees the thread's roots unchanged.  Out of line:
+only a space change replacing the last capability to a populated CNode takes
+it. -/
 @[noinline] def copyThreadSpacesAfterZombie (executingCore : Concurrency.CoreId) (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (cnSrc vrSrc : CSpaceAddr) : SystemState :=
   let s := zombiePasses executingCore vtid.val.toObjId TCB.cspaceRootSlot (zombieFuel st) st
-  if zombieSlotClass s vtid.val.toObjId TCB.cspaceRootSlot vtid.val.toObjId TCB.cspaceRootSlot = 0 &&
-      copyThreadSpacesAdmitted s vtid cnSrc vrSrc then
+  if copyThreadSpacesAdmitted s vtid cnSrc vrSrc then
     copyThreadSpacesPerform executingCore s vtid.val cnSrc.cnode cnSrc.slot vrSrc.cnode vrSrc.slot
   else s
 
@@ -1757,8 +1701,7 @@ theorem copyThreadSpacesZombie_cases {ec : Concurrency.CoreId} {st st' : SystemS
       unfold copyThreadSpacesAfterZombie
       dsimp only
       split
-      · next hB =>
-        exact .inr (copyThreadSpaces_of_admitted ((Bool.and_eq_true _ _).mp hB).2)
+      · next hB => exact .inr (copyThreadSpaces_of_admitted hB)
       · exact .inl rfl
   · exact .inl h
 
@@ -1783,12 +1726,8 @@ descendant without building a list of them; `fuel` bounds it by the tree's
 edges, one of which each splice removes.  Each delete is admitted when its
 CNode exists (`cspaceDeleteFinalisingAdmitted`) and is then the zombie delete
 (`zombieDeleteAt`, seL4's `cteDelete`), which empties a child's CNode or
-thread before the child itself goes.  A child the zombie delete keeps, its
-passes out of fuel (`zombieDeleteAtFuel`), ends the loop with what it has done,
-as seL4's preempted `cteRevoke` returns and is restarted: the caller sees the
-child's slot still occupied and retries; on a reachable state it never happens
-(the fuel's sufficiency, `docs/planning/UNTYPED_RESET_PLAN.md` row 35).  A child
-outside every CNode ends the loop,
+thread before the child itself goes, and always empties the child's slot.  A
+child outside every CNode ends the loop,
 which on a state the capability invariants hold in never happens: there the
 loop ends with the source childless (`cspaceRevokeCdtFinalising_ok_childless`).
 Retiring the stop is a `docs/REGISTERED_DEBT.md` table C row (ZA5.4). -/
@@ -1802,9 +1741,7 @@ def revokeFirstChildLoop (executingCore : Concurrency.CoreId) (cnode : SeLe4n.Ob
       let cc := SeLe4n.ObjId.ofNat (fc - 1)
       let cs := SeLe4n.Slot.ofNat (st.slotLinkSlotWord cnode slot .firstChild - 1)
       if cspaceDeleteFinalisingAdmitted { cnode := cc, slot := cs } st then
-        let s := zombieDeleteAt executingCore cc cs st
-        if zombieSlotClass s cc cs cc cs = 0 then revokeFirstChildLoop executingCore cnode slot n s
-        else s
+        revokeFirstChildLoop executingCore cnode slot n (zombieDeleteAt executingCore cc cs st)
       else st
 
 /-- **The loop is a run of finalising deletes.** -/
@@ -1819,11 +1756,8 @@ theorem revokeFirstChildLoop_chain (ec : Concurrency.CoreId) (cnode : SeLe4n.Obj
     split
     · exact .refl st
     · split
-      · next hA =>
-        split
-        · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain.trans
-            (revokeFirstChildLoop_chain ec cnode slot n _)
-        · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain
+      · exact (zombieDeleteAt_run ec _ _ _).choose_spec.2.chain.trans
+          (revokeFirstChildLoop_chain ec cnode slot n _)
       · exact .refl st
 
 /-- WS-ZA ZA5.3 part 8: **`.cspaceRevoke`'s check**, read before any write: the

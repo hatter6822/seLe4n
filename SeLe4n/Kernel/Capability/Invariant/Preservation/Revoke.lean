@@ -24,10 +24,7 @@ On a state the bundle holds in, the revocation is also **complete**: every
 first child the loop reads lies in a live CNode, so no delete is refused, and
 each delete takes one edge out of the tree, so the fuel the tree's edge bound
 gives is enough; the source has no children afterwards
-(`cspaceRevokeCdtFinalising_ok_childless`), as seL4's `cteRevoke` leaves it,
-unless a child's zombie delete ran out of fuel and kept its slot, which ends the
-revocation for a retry (`docs/planning/UNTYPED_RESET_PLAN.md` row 35 proves the
-fuel suffices).
+(`cspaceRevokeCdtFinalising_ok_childless`), as seL4's `cteRevoke` leaves it.
 -/
 
 namespace SeLe4n.Kernel
@@ -742,9 +739,7 @@ theorem cspaceDeleteFinalisingAdmitted_of_child {st : SystemState} {p c : SlotRe
   exact KernelObject.hasSlot_holdsSlots (KernelObject.hasSlot_of_slotCap hL)
 
 /-- **One zombie delete of a child of the source makes progress**: the tree
-loses an edge, or no edge names the source any more, or the delete kept the
-child's slot, its passes out of fuel (`zombieDeleteAtFuel`), which ends the
-revocation (`revokeFirstChildLoop`).  Every step of the chain
+loses an edge, or no edge names the source any more.  Every step of the chain
 keeps `RevokeProgress`; the last deletes the child, which on a state the
 capability invariants hold in is admitted while it is still the source's
 child. -/
@@ -753,8 +748,7 @@ theorem zombieDeleteAt_revokeProgress (ec : Concurrency.CoreId) {src : SlotRef}
     (hInv : capabilityInvariantBundle st) (hm : ⟨cn, sl⟩ ∈ st.cdt.childrenOf src) :
     capabilityInvariantBundle (zombieDeleteAt ec cn sl st) ∧
       ((zombieDeleteAt ec cn sl st).cdt.edges.length < st.cdt.edges.length ∨
-        CdtAvoids (zombieDeleteAt ec cn sl st).cdt src ∨
-        zombieSlotClass (zombieDeleteAt ec cn sl st) cn sl cn sl ≠ 0) := by
+        CdtAvoids (zombieDeleteAt ec cn sl st).cdt src) := by
   have hAdm := cspaceDeleteFinalisingAdmitted_of_child hInv hm
   have h0 : RevokeProgress src ⟨cn, sl⟩ st.cdt.edges.length st := ⟨hInv, Nat.le_refl _, .inl hm⟩
   -- the child's own delete, from a state with progress
@@ -779,17 +773,10 @@ theorem zombieDeleteAt_revokeProgress (ec : Concurrency.CoreId) {src : SlotRef}
   · rw [e]
     have hStep := cspaceDeleteSlotFinalising_of_admitted (ec := ec) hD
     obtain ⟨hP', hS⟩ := h0.step hStep
-    exact ⟨hP'.1, (hS rfl).imp_right .inl⟩
+    exact ⟨hP'.1, hS rfl⟩
   · rw [e]
-    have hP := hR.chain.closed (RevokeProgress src ⟨cn, sl⟩ st.cdt.edges.length)
-      (fun _ _ _ hs hD => (hs.step hD).1) (fun d _ hs => hs.finalise d) h0
-    rcases zombieDeleteAtFuel_kept_or_deleted ec cn sl (zombieFuel st) st with
-      ⟨-, e'⟩ | ⟨hK, e'⟩
-    · rw [e']
-      obtain ⟨hB, hO⟩ := hLast _ hP
-      exact ⟨hB, hO.imp_right .inl⟩
-    · rw [e']
-      exact ⟨hP.1, .inr (.inr hK)⟩
+    exact hLast _ (hR.chain.closed (RevokeProgress src ⟨cn, sl⟩ st.cdt.edges.length)
+      (fun _ _ _ hs hD => (hs.step hD).1) (fun d _ hs => hs.finalise d) h0)
 
 /-- **On a state the bundle holds in, the loop empties the source of children**
 when its fuel exceeds the tree's edges.  The source's first-child link is the
@@ -797,16 +784,12 @@ head of its children (`cdtLinksAgree`); a child is in the tree, so its CNode is
 a slot of a live object (`cdtCompleteness`) and its delete is admitted, never
 the loop's stop; each child's zombie delete keeps the bundle and either takes an
 edge out of the tree or leaves the source named by no edge, and so childless for
-good (`zombieDeleteAt_revokeProgress`), so the fuel never runs out first — or
-the loop stops at a child whose zombie delete kept its slot, its passes out of
-fuel, which a reachable state never reaches (`docs/planning/UNTYPED_RESET_PLAN.md`
-row 35); the caller then sees that slot occupied and retries. -/
+good (`zombieDeleteAt_revokeProgress`), so the fuel never runs out first. -/
 theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
     (slot : SeLe4n.Slot) :
     ∀ (n : Nat) (st : SystemState), capabilityInvariantBundle st →
       st.cdt.edges.length < n →
-      (revokeFirstChildLoop ec cnode slot n st).cdt.childrenOf ⟨cnode, slot⟩ = [] ∨
-        ∃ cc cs, zombieSlotClass (revokeFirstChildLoop ec cnode slot n st) cc cs cc cs ≠ 0
+      (revokeFirstChildLoop ec cnode slot n st).cdt.childrenOf ⟨cnode, slot⟩ = []
   | 0, _, _, hn => absurd hn (Nat.not_lt_zero _)
   | n + 1, st, hInv, hn => by
     have hHead := hInv.linksAgree.firstChild ⟨cnode, slot⟩
@@ -816,7 +799,7 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
     split
     · next h0 =>
       rw [h0] at hHead
-      exact .inl (List.head?_eq_none_iff.1 (by simpa [decodeLink] using hHead.symm))
+      exact List.head?_eq_none_iff.1 (by simpa [decodeLink] using hHead.symm)
     · next h0 =>
       simp only [decodeLink, h0, if_false] at hHead
       have hMem := List.mem_of_mem_head? hHead.symm
@@ -834,23 +817,18 @@ theorem revokeFirstChildLoop_childless (ec : Concurrency.CoreId) (cnode : SeLe4n
         exact KernelObject.hasSlot_holdsSlots (KernelObject.hasSlot_of_slotCap hL)
       rw [if_pos hAdm]
       obtain ⟨hInv2, hProg⟩ := zombieDeleteAt_revokeProgress ec hInv hMem
-      split
-      · next hK =>
-        rcases hProg with hLt | hAv | hK'
-        · exact revokeFirstChildLoop_childless ec cnode slot n _ hInv2 (by omega)
-        · exact .inl ((revokeFirstChildLoop_chain ec cnode slot n _).avoids hAv).childless
-        · exact absurd hK hK'
-      · next hK => exact .inr ⟨_, _, hK⟩
+      rcases hProg with hLt | hAv
+      · exact revokeFirstChildLoop_childless ec cnode slot n _ hInv2 (by omega)
+      · exact ((revokeFirstChildLoop_chain ec cnode slot n _).avoids hAv).childless
 
 /-- **The revocation is complete**: on a state the capability invariants hold
 in, a successful revocation leaves its source with no children, as seL4's
-`cteRevoke` does, or stops at a child whose zombie delete kept its slot, its
-passes out of fuel (`revokeFirstChildLoop_childless`), and is retried.  The loop's fuel, one more than the tree's edge bound, exceeds
-its edges (`CapDerivationTree.edges_length_le`). -/
+`cteRevoke` does (`revokeFirstChildLoop_childless`).  The loop's fuel, one more
+than the tree's edge bound, exceeds its edges (`CapDerivationTree.edges_length_le`). -/
 theorem cspaceRevokeCdtFinalising_ok_childless (ec : Concurrency.CoreId) (addr : CSpaceAddr)
     (st st' : SystemState) (hInv : capabilityInvariantBundle st)
     (h : cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    st'.cdt.childrenOf addr = [] ∨ ∃ cc cs, zombieSlotClass st' cc cs cc cs ≠ 0 := by
+    st'.cdt.childrenOf addr = [] := by
   unfold cspaceRevokeCdtFinalising at h
   split at h
   · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
