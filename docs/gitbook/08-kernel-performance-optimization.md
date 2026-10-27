@@ -152,7 +152,8 @@ Closes F-P04, F-P11.
 ### WS-G8: Graph traversal optimization (v0.12.13)
 
 Rewrote `serviceHasPathTo` from O(n^2) BFS with `List ServiceId` visited
-set to O(n+e) DFS with `Std.HashSet ServiceId`.
+set to O(n+e) DFS with `Std.HashSet ServiceId`.  (The walk was deleted with
+the service graph at `v0.36.145`.)
 
 Extended `CapDerivationTree` with `childMap : Std.HashMap CdtNodeId
 (List CdtNodeId)` — a parent-indexed edge index enabling O(1)

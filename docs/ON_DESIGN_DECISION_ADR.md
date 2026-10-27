@@ -9,7 +9,8 @@
 > verified `RHTable`/`RHSet`). The hot-path collections in the "Context"
 > table were migrated to O(1) hash-based structures; deliberately-List
 > survivors remain where order is semantic or sizes are small
-> (`domainSchedule`, `ServiceGraphEntry.dependencies`), and
+> (`domainSchedule`; `ServiceGraphEntry.dependencies` was one until the service
+> graph was removed at `v0.36.145`), and
 > `SchedulerState.runnable` is today a compatibility view over the SM4
 > per-core structures. The "Decision"
 > and "Migration path" sections describe the rationale and strategy that were
@@ -32,7 +33,7 @@ collections:
 | CNode slots | `List (Slot × Capability)` | `CNode.slots` |
 | VSpace mappings | `List PageTableEntry` | `VSpaceRoot.mappings` |
 | Endpoint queues | intrusive queue boundaries + TCB links | `Endpoint.queue/sendQ/receiveQ` + `TCB.queuePrev/queueNext` |
-| Service dependencies | `List ServiceId` | `ServiceGraphEntry.dependencies` |
+| Service dependencies | `List ServiceId` | `ServiceGraphEntry.dependencies` (removed with the service graph at `v0.36.145`) |
 | Domain schedule | `List DomainScheduleEntry` | `SchedulerState.domainSchedule` |
 
 Operations that scan these lists — `chooseBestRunnable`, `filterByDomain`,

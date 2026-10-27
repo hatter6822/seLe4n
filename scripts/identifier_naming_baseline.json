@@ -557,17 +557,15 @@
  },
  "h10": {
   "SeLe4n/Kernel/Architecture/Invariant.lean": 12,
-  "SeLe4n/Kernel/CrossSubsystem.lean": 4,
+  "SeLe4n/Kernel/CrossSubsystem.lean": 2,
   "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2
  },
  "h11": {
   "SeLe4n/Kernel/Architecture/Invariant.lean": 12,
-  "SeLe4n/Kernel/CrossSubsystem.lean": 4,
-  "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2
+  "SeLe4n/Kernel/CrossSubsystem.lean": 2
  },
  "h12": {
   "SeLe4n/Kernel/Architecture/Invariant.lean": 6,
-  "SeLe4n/Kernel/CrossSubsystemPerCore.lean": 2,
   "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2,
   "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean": 15,
   "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean": 4,

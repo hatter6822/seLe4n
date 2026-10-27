@@ -64,19 +64,6 @@ theorem frozenStoreObject_preserves_objectIndex
   subst hSt; rfl
 
 -- ============================================================================
--- Q7-E: Additional frozenStoreObject Frame Lemmas via extracts_state
--- ============================================================================
-
-/-- Q7-E: `frozenStoreObject` preserves the services map. -/
-theorem frozenStoreObject_preserves_services
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.services = st.services := by
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  subst hSt; rfl
-
--- ============================================================================
 -- Q7-E: Read-Only Operation Preservation
 -- ============================================================================
 

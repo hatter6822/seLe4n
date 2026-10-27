@@ -6457,7 +6457,7 @@ is dischargeable per-dispatch-arm using existing subsystem preservation theorems
 - CSpace mint/copy/move/delete: `Capability/Invariant/Preservation.lean`
 - Untyped carve: `Lifecycle/Operations/ScrubAndUntyped.lean`
 - VSpace map/unmap: `Architecture/VSpaceInvariant.lean`
-- Service start/stop: `Service/Invariant/Policy.lean`
+- Service register/revoke: `Service/Registry/Invariant.lean`
 - IPC send/call/reply/recv: `IPC/Invariant/EndpointPreservation.lean`
 
 This theorem witnesses that the composition is structurally complete. -/
@@ -6494,21 +6494,35 @@ theorem dispatchWithCap_preservation_composition_witness :
     **Closure status (v0.29.12, post-audit classification):** `hArmProj`
     remains externally-supplied, BUT every cap-only arm now has a NAMED
     per-op preservation theorem in `InformationFlow/Invariant/Operations.lean`
-    that the caller can directly reference. The 14 arms fall into THREE
+    that the caller can directly reference. The 14 arms fall into FOUR
     substantiveness tiers:
 
     **Fully substantive (5/14)** — proof uses only observability
     hypotheses and pre-proven frame lemmas; NO abstract closures:
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
-    - `.serviceQuery` → `lookupServiceByRecordedCode_preserves_projection` (AK6F.11,
-       state is unchanged, projection follows)
+    - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12);
+       the registry erase is outside the projection and the endpoint's
+       `serviceCode` is erased by it (closure-free since WS-ZA ZA5.4 part 32
+       removed the service graph the revoke used to fold)
     - `.tcbSetIPCBuffer` → `setIPCBufferOp_preserves_projection`
     - `.vspaceMap` → `vspaceMapPageCheckedWithFlushFromState_preserves_projection`
     - `.vspaceUnmap` → `vspaceUnmapPageWithFlush_preserves_projection`
 
-    **Hybrid substantive + legitimate closure (3/14)** — proof body
+    **The lookup only (1/14)** — the theorem covers the operation's state,
+    not the arm's answer:
+    - `.serviceQuery` → `lookupServiceByRecordedCode_preserves_projection`
+       (AK6F.11) proves the lookup leaves the state unchanged.  The arm then
+       stages the resolved registration's `ServiceId` into the caller's `x0`,
+       and that word is read from `serviceRegistry`, which no projection
+       carries; NOTHING here proves the answer is the same in two
+       low-equivalent states.  Projecting the registry and proving the
+       register, revoke and query arms against it, the query's `x0` word
+       included, is `UNTYPED_RESET_PLAN.md` part 33 (registered in
+       `docs/REGISTERED_DEBT.md`).
+
+    **Hybrid substantive + legitimate closure (2/14)** — proof body
     uses frame lemmas for most phases but takes ONE closure over an
-    external call (schedule/RHTable-fold) whose preservation depends on
+    external call (the schedule) whose preservation depends on
     invariants varying per caller:
     - `.tcbSetPriority` → `setPriorityOnCore_preserves_projection` (WS-SM SM8.B;
       the arm was rerouted off the boot-pinned `setPriorityOp` in PR #861 review
@@ -6519,10 +6533,6 @@ theorem dispatchWithCap_preservation_composition_witness :
       for the optional local preemption branch.
     - `.tcbSetMCPriority` → `setMCPriorityOnCore_preserves_projection` (WS-SM
       SM8.B; same reroute) mirror structure to setPriorityOnCore.
-    - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12)
-      body uses `congr 1` over all 13 `projectState` components;
-      takes `hServiceProjEq` for the `removeDependenciesOf` fold-induction
-      at the service-projection layer only.
 
     **Closure-form (6/14)** — theorem takes `hProjEq` abstract closure;
     body is `hProjEq st' hStep`. NOT tautological for callers — each has

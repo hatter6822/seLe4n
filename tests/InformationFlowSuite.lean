@@ -36,27 +36,10 @@ private def reviewer : SeLe4n.Kernel.IfObserver :=
 private def admin : SeLe4n.Kernel.IfObserver :=
   { clearance := secretLabel }
 
-private def sampleServiceEntry : ServiceGraphEntry :=
-  {
-    identity := { sid := ⟨1⟩, backingObject := ⟨1⟩, owner := ⟨1⟩ }
-    dependencies := []
-    isolatedFrom := []
-  }
-
-/-- A public-level service entry visible to the low observer. -/
-private def publicServiceEntry : ServiceGraphEntry :=
-  {
-    identity := { sid := ⟨2⟩, backingObject := ⟨3⟩, owner := ⟨3⟩ }
-    dependencies := []
-    isolatedFrom := []
-  }
-
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject ⟨1⟩ (.endpoint {})
     |>.withObject ⟨2⟩ (.notification { state := .active, hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 7) })
-    |>.withService ⟨1⟩ sampleServiceEntry
-    |>.withService ⟨2⟩ publicServiceEntry
     -- Y3-A: current thread set for projection tests (not in runnable → check 7 passes).
     -- No runnable list needed: information flow projection doesn't use scheduler state.
     |>.withCurrent (some ⟨2⟩)
@@ -84,8 +67,6 @@ private def altState : SystemState :=
     |>.withObject ⟨1⟩ (.endpoint {})
     -- Secret object differs: different notification state and no pending badge
     |>.withObject ⟨2⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-    |>.withService ⟨1⟩ sampleServiceEntry
-    |>.withService ⟨2⟩ publicServiceEntry
     -- Current thread differs: none (vs some tid=2 in sampleState).
     -- Both project to none for the public observer since tid=2 is secret.
     |>.withCurrent none
@@ -592,43 +573,17 @@ def runInformationFlowChecks : IO Unit := do
 
   -- Full structural low-equivalence check across distinct states.
   -- Function-level equality is not decidable at runtime, so we check point-wise
-  -- on all object IDs and service IDs present in the test fixtures.
+  -- on all object IDs present in the test fixtures.
   let knownOids : List SeLe4n.ObjId := [⟨1⟩, ⟨2⟩]
-  let knownSids : List ServiceId := [⟨1⟩, ⟨2⟩]
   let objectsMatch := knownOids.all (fun oid =>
     publicProjectionSample.objects oid == publicProjectionAlt.objects oid)
-  let servicesMatch := knownSids.all (fun sid =>
-    publicProjectionSample.services sid = publicProjectionAlt.services sid)
   let fullLowEq := objectsMatch
     && publicProjectionSample.runnable = publicProjectionAlt.runnable
     && publicProjectionSample.current = publicProjectionAlt.current
-    && servicesMatch
   expect "full low-equivalence holds between distinct states for public observer"
     fullLowEq
 
   IO.println "information-flow check passed [lowEquivalent distinct-state witness (replaces reflexive tautology)]"
-
-  -- === F-04/Q1 fix: Service projection with visible service below observer ===
-  -- Service 2 has publicLabel in sampleLabeling, so it IS visible to the reviewer (public observer).
-  -- Q1: projectServicePresence returns Bool (service presence), not Option ServiceStatus.
-  let publicServiceProjection := SeLe4n.Kernel.projectServicePresence sampleLabeling reviewer sampleState
-
-  expect "public observer CAN see public service presence"
-    (publicServiceProjection ⟨2⟩ = true)
-
-  -- Secret service (sid=1) should still be hidden from public observer
-  expect "public observer cannot see secret service presence"
-    (publicServiceProjection ⟨1⟩ = false)
-
-  -- === F-04/Q1 fix: Explicit projectServicePresence coverage ===
-  -- Verify projectServicePresence returns true for admin observer on secret service
-  let adminServiceProjection := SeLe4n.Kernel.projectServicePresence sampleLabeling admin sampleState
-  expect "admin observer can see secret service presence"
-    (adminServiceProjection ⟨1⟩ = true)
-
-  -- Admin can also see public service
-  expect "admin observer can see public service presence"
-    (adminServiceProjection ⟨2⟩ = true)
 
   -- === F-04 fix: Observer discrimination test ===
   -- High-clearance observer (admin) sees MORE than low-clearance observer (reviewer) on the same state.
@@ -645,18 +600,6 @@ def runInformationFlowChecks : IO Unit := do
   -- Admin sees current thread that public cannot
   expect "admin sees current thread that public cannot"
     (adminProjection.current.isSome && publicProjection.current.isNone)
-
-  -- Admin sees secret service that public cannot
-  let adminSvc1 := (SeLe4n.Kernel.projectServicePresence sampleLabeling admin sampleState) ⟨1⟩
-  let publicSvc1 := (SeLe4n.Kernel.projectServicePresence sampleLabeling reviewer sampleState) ⟨1⟩
-  expect "admin sees secret service that public cannot"
-    (adminSvc1 && !publicSvc1)
-
-  -- Both see public service (no discrimination on public data)
-  let adminSvc2 := (SeLe4n.Kernel.projectServicePresence sampleLabeling admin sampleState) ⟨2⟩
-  let publicSvc2 := (SeLe4n.Kernel.projectServicePresence sampleLabeling reviewer sampleState) ⟨2⟩
-  expect "both observers see public service"
-    (adminSvc2 && publicSvc2)
 
   -- === WS-D2 enforcement boundary checks (F-02) ===
 
@@ -1103,61 +1046,23 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "CNode slot filtering checks passed"
 
-  -- ---------- Full 7-field low-equivalence ----------
-  -- Extend the distinct-state comparison to all 7 ObservableState fields.
+  -- ---------- Six-field low-equivalence ----------
+  -- Extend the distinct-state comparison to six ObservableState fields.
   let knownIrqs : List SeLe4n.Irq := [⟨0⟩, ⟨1⟩, ⟨2⟩, ⟨3⟩]
   let irqMatch := knownIrqs.all (fun irq =>
     publicProjectionSample.irqHandlers irq = publicProjectionAlt.irqHandlers irq)
-  let fullLowEq7 := objectsMatch
+  let fullLowEq6 := objectsMatch
     && publicProjectionSample.runnable = publicProjectionAlt.runnable
     && publicProjectionSample.current = publicProjectionAlt.current
-    && servicesMatch
     && publicProjectionSample.activeDomain = publicProjectionAlt.activeDomain
     && irqMatch
     && publicProjectionSample.objectIndex = publicProjectionAlt.objectIndex
 
-  expect "full 7-field low-equivalence holds between distinct states"
-    fullLowEq7
+  expect "six-field low-equivalence holds between distinct states"
+    fullLowEq6
 
-  IO.println "full 7-field low-equivalence check passed"
+  IO.println "six-field low-equivalence check passed"
 
-  -- ---------- Q1: Service registry projection (serviceRestartChecked removed) ----------
-  -- Build a state with a registered service for presence projection testing.
-  let registryServiceEntry : ServiceGraphEntry :=
-    { identity := { sid := ⟨10⟩, backingObject := ⟨20⟩, owner := ⟨1⟩ }
-      dependencies := []
-      isolatedFrom := [] }
-
-  let registryState :=
-    (BootstrapBuilder.empty
-      |>.withObject ⟨20⟩ (.endpoint {})
-      |>.withService ⟨10⟩ registryServiceEntry
-      |>.withService ⟨5⟩ { identity := { sid := ⟨5⟩, backingObject := ⟨25⟩, owner := ⟨1⟩ }, dependencies := [], isolatedFrom := [] }
-      |>.buildChecked)
-
-  -- Same-domain projection: public observer can see public service presence
-  let sameDomainRegistryCtx : SeLe4n.Kernel.LabelingContext :=
-    { objectLabelOf := fun _ => publicLabel
-      threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun _ => publicLabel }
-
-  let publicPresence := SeLe4n.Kernel.projectServicePresence sameDomainRegistryCtx reviewer registryState
-  expect "public observer sees registered service presence"
-    (publicPresence ⟨10⟩ = true)
-
-  -- Cross-domain projection: public observer cannot see secret-domain service
-  let crossDomainRegistryCtx : SeLe4n.Kernel.LabelingContext :=
-    { objectLabelOf := fun _ => publicLabel
-      threadLabelOf := fun _ => publicLabel
-      endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun sid => if sid = ⟨10⟩ then secretLabel else publicLabel }
-
-  let hiddenPresence := SeLe4n.Kernel.projectServicePresence crossDomainRegistryCtx reviewer registryState
-  expect "public observer cannot see secret-domain service"
-    (hiddenPresence ⟨10⟩ = false)
-
-  IO.println "service registry projection checks passed"
   IO.println "all WS-F3 information-flow completeness checks passed"
 
   -- ========================================================================
@@ -1384,9 +1289,10 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.2: 25, the per-context thread index retired.
   -- WS-ZA ZA5.3 part 2: 22, the slot is the derivation node (three CDT index fields gone).
   -- WS-ZA ZA5.4: 23, the physical-write ledger's drained flag.
-  expect "StateField enum has 23 variants, one per SystemState field"
+  -- WS-ZA ZA5.4 part 32: 22, the service graph removed.
+  expect "StateField enum has 22 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
-       .services, .scheduler, .irqHandlers, .lifecycle,
+       .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt,
        .tlb,
@@ -1394,23 +1300,23 @@ def runInformationFlowChecks : IO Unit := do
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .physicalWrites,
        .physicalWritesDrained,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 23)
+       .declassificationRefusals, .declassificationTaint ].length = 22)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
-  -- AM4 audit remediation: field-set catalog extended from 10 to 11
-  -- entries with `lifecycleObjectTypeLockstep_fields` (AL6-C / AM4).
-  expect "+ AM4: crossSubsystemFieldSets has 11 entries"
-    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 11)
+  -- AM4 audit remediation added `lifecycleObjectTypeLockstep_fields`; the
+  -- service graph's removal took its two entries out.
+  expect "crossSubsystemFieldSets has 9 entries"
+    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 9)
   -- Verify disjointness witnesses compile and have expected values
-  expect "regDepConsistent disjoint from staleEndpoint"
-    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields
+  expect "registryInterfaceValid disjoint from staleEndpoint"
+    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryInterfaceValid_fields
                     SeLe4n.Kernel.noStaleEndpointQueueReferences_fields = true)
   expect "staleEndpoint shares staleNotification (objects overlap)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.noStaleEndpointQueueReferences_fields
                     SeLe4n.Kernel.noStaleNotificationWaitReferences_fields = false)
-  expect "regDepConsistent shares serviceGraph (services overlap)"
-    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields
-                    SeLe4n.Kernel.serviceGraphInvariant_fields = false)
+  expect "registryEndpointValid shares registryInterfaceValid (serviceRegistry overlap)"
+    (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryEndpointValid_fields
+                    SeLe4n.Kernel.registryInterfaceValid_fields = false)
 
   IO.println "cross-subsystem field-disjointness checks passed"
 
@@ -1425,14 +1331,6 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.bibaIntegrityFlowsTo .untrusted .trusted = true)
 
   IO.println "BIBA integrity comparison verified"
-
-  -- V6-E: serviceRegistry projection
-  let svcRegProjection := SeLe4n.Kernel.projectStateByLinks sameDomainNtfnCtx
-    { clearance := publicLabel } (BootstrapBuilder.empty.buildChecked)
-  expect "serviceRegistry field exists in projection"
-    (svcRegProjection.serviceRegistry ⟨999⟩ == none)
-
-  IO.println "serviceRegistry projection verified"
 
   -- V6-F: Enforcement boundary completeness
   let boundary := SeLe4n.Kernel.enforcementBoundary

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -73,7 +73,7 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 - **组合证明层** —— `proofLayerInvariantBundle` 将 16 个子系统不变量束（调度器核心 + CBS 扩展、能力、IPC + IPC–调度器耦合、生命周期、服务、VSpace、跨子系统、TLB 一致性、通知等待者一致性、TLB 击落 pending/ack 上界、每核 TLB 失效与 I-cache 一致性，以及降密审计日志上界）组合为单一顶层义务，从引导到所有操作均经过验证
 - **三阶段状态架构** —— 带不变量见证的构建阶段流向冻结的不可变表示，具有经过证明的查找等价性。24 个冻结操作镜像活跃 API
 - **完整操作集** —— 所有 seL4 操作均已实现并保持不变量，涵盖线程挂起/恢复（suspend/resume）、优先级管理（setPriority/setMCPriority）以及 IPC 缓冲区配置
-- **服务编排** —— 内核级组件生命周期管理，带依赖图和经过证明的无环性（seLe4n 扩展，seL4 中不存在）
+- **服务注册表** —— 通过端点进行的内核级服务注册与查找，注册记录在端点本身上（seLe4n 扩展，seL4 中不存在）；依赖策略与 seL4 一样交由用户态服务管理器负责
 
 ## 当前状态
 
@@ -91,11 +91,11 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.36.144` |
+| **版本** | `0.36.145` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 515,329 行，分布于 461 个文件 |
-| **测试代码行数** | 87,628 行，分布于 70 个测试套件 |
-| **已证明的声明** | 18,849 个定理/引理声明（零 sorry/axiom） |
+| **生产代码行数** | 512,077 行，分布于 459 个文件 |
+| **测试代码行数** | 87,214 行，分布于 70 个测试套件 |
+| **已证明的声明** | 18,703 个定理/引理声明（零 sorry/axiom） |
 | **Rust crate** | 4 个（`sele4n-types`、`sele4n-abi`、`sele4n-sys`、`sele4n-hal`），共 80 个源文件 |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **硬件绑定** | **H3 已完成**（WS-AG AG1–AG10）：HAL、GIC-400、定时器、ARMv8 页表、FFI 桥接、QEMU 启动 |
@@ -182,7 +182,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -217,7 +217,7 @@ tests/                           Executable test suites + fixtures
 | **优先级继承** | C 实现的 PIP（MCS 分支） | 机器验证的传递性 PIP，具有无死锁保证和参数化 WCRT 上界 |
 | **有界延迟** | 无形式化 WCRT 上界 | `WCRT = D × L_max + N × (B + P)`，在 8 个活性模块中证明 |
 | **对象存储** | 链表和数组 | 经过验证的 Robin Hood 哈希表（`RHTable`/`RHSet`），O(1) 热路径 |
-| **服务管理** | 不在内核中 | 一等服务编排，带依赖图和无环性证明 |
+| **服务管理** | 不在内核中 | 基于端点的服务注册表；依赖策略位于用户态 |
 | **证明方法论** | Isabelle/HOL，事后验证 | Lean 4 类型检查器，证明与转换并置——零 sorry/axiom（已证明声明数见[当前状态](#当前状态)表） |
 | **平台抽象** | C 级 HAL | `PlatformBinding` 类型类，带类型化边界契约 |
 

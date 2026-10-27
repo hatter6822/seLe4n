@@ -412,7 +412,6 @@ structure FrozenSystemState where
   asidTable         : FrozenMap SeLe4n.ASID SeLe4n.ObjId
   serviceRegistry   : FrozenMap ServiceId ServiceRegistration
   interfaceRegistry : FrozenMap SeLe4n.InterfaceId InterfaceSpec
-  services          : FrozenMap ServiceId ServiceGraphEntry
 
   -- CDT: the tree, its edges a ghost (the slots' derivation links read it)
   cdt               : CapDerivationTree
@@ -677,7 +676,6 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     asidTable := freezeMap st.asidTable
     serviceRegistry := freezeMap st.serviceRegistry
     interfaceRegistry := freezeMap st.interfaceRegistry
-    services := freezeMap st.services
     cdt := st.cdt
     scheduler := freezeScheduler st
     objectTypes := freezeMap st.lifecycle.objectTypes

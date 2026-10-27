@@ -61,7 +61,7 @@ THEOREM_CHECK_TARGETS=(
   "SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean"
   "SeLe4n/Kernel/IPC/Invariant/Structural.lean"
   "SeLe4n/Kernel/Lifecycle/Invariant.lean"
-  "SeLe4n/Kernel/Service/Invariant/Acyclicity.lean"
+  "SeLe4n/Kernel/Service/Registry/Invariant.lean"
   "SeLe4n/Kernel/Architecture/VSpaceInvariant.lean"
   "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean"
   "SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean"

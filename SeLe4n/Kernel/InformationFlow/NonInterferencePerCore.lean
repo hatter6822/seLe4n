@@ -98,46 +98,41 @@ which is exactly the situation every non-interference hypothesis sets up.
 structure sharedViewUnchanged (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) : Prop where
   objects : projectObjects ctx observer st' = projectObjects ctx observer st
-  services : projectServicePresence ctx observer st' = projectServicePresence ctx observer st
   irqHandlers : projectIrqHandlers ctx observer st' = projectIrqHandlers ctx observer st
   objectIndex : projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st
   domainSchedule : projectDomainSchedule ctx observer st' = projectDomainSchedule ctx observer st
   memory : projectMemory ctx observer st' = projectMemory ctx observer st
-  serviceRegistry :
-    projectServiceRegistry ctx observer st' = projectServiceRegistry ctx observer st
 
 theorem sharedViewUnchanged_refl (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) : sharedViewUnchanged ctx observer st st :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 theorem sharedViewUnchanged_trans {ctx : LabelingContext} {observer : IfObserver}
     {st stMid st' : SystemState}
     (h₁ : sharedViewUnchanged ctx observer st stMid)
     (h₂ : sharedViewUnchanged ctx observer stMid st') :
     sharedViewUnchanged ctx observer st st' :=
-  ⟨h₂.objects.trans h₁.objects, h₂.services.trans h₁.services,
+  ⟨h₂.objects.trans h₁.objects,
    h₂.irqHandlers.trans h₁.irqHandlers, h₂.objectIndex.trans h₁.objectIndex,
-   h₂.domainSchedule.trans h₁.domainSchedule, h₂.memory.trans h₁.memory,
-   h₂.serviceRegistry.trans h₁.serviceRegistry⟩
+   h₂.domainSchedule.trans h₁.domainSchedule, h₂.memory.trans h₁.memory⟩
 
 /-- SM8.B.2 (the constructor the single-core NI surface supplies): preserving
 the whole global projection preserves its shared half.
 
-The seven components are read off `projectState` by `congrArg`, which is what
+The five components are read off `projectState` by `congrArg`, which is what
 makes `nonInterference_perCore` a corollary of the existing
 `step_preserves_projection` rather than a re-proof of it. -/
 theorem sharedViewUnchanged_of_globalProjection (ctx : LabelingContext)
     (observer : IfObserver) {st st' : SystemState}
     (h : projectState ctx observer st' = projectState ctx observer st) :
     sharedViewUnchanged ctx observer st st' :=
-  ⟨congrArg ObservableState.objects h, congrArg ObservableState.services h,
+  ⟨congrArg ObservableState.objects h,
    congrArg ObservableState.irqHandlers h, congrArg ObservableState.objectIndex h,
-   congrArg ObservableState.domainSchedule h, congrArg ObservableState.memory h,
-   congrArg ObservableState.serviceRegistry h⟩
+   congrArg ObservableState.domainSchedule h, congrArg ObservableState.memory h⟩
 
 /-- SM8.B.2 (the constructor a *state-level* frame supplies): a transition that
 leaves every **observable** object alone, and leaves the object index, the
-service store, the IRQ table, physical memory and the domain schedule alone,
+IRQ table, physical memory and the domain schedule alone,
 does not move the shared half of any observer's view.
 
 The `objects` premise is restricted to observable ids deliberately: it is the
@@ -149,24 +144,21 @@ theorem sharedViewUnchanged_of_state_frames (ctx : LabelingContext) (observer : 
     (hObjects : ∀ oid, objectObservable ctx observer oid = true →
       st'.objects[oid]? = st.objects[oid]?)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hServices : st'.services = st.services)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     sharedViewUnchanged ctx observer st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · funext oid
     simp only [projectObjects, SystemState.getObject?]
     by_cases hObs : objectObservable ctx observer oid = true
     · rw [if_pos hObs, if_pos hObs, hObjects oid hObs]
     · simp only [Bool.not_eq_true] at hObs
       rw [if_neg (by simp [hObs]), if_neg (by simp [hObs])]
-  · funext sid; simp only [projectServicePresence, lookupService]; rw [hServices]
   · funext irq; simp only [projectIrqHandlers]; rw [hIrq]
   · simp only [projectObjectIndex]; rw [hIndex]
   · simp only [projectDomainSchedule]; rw [hDomSched]
   · exact projectMemory_eq_of_memory_eq _ _ _ _ hMemory
-  · exact projectServiceRegistry_eq_of_services_eq _ _ _ _ hServices
 
 -- ============================================================================
 -- §1b  The per-core view's two fragments, spelled out
@@ -179,12 +171,10 @@ Stated for a general `IfObserver` (SM8.A's `onCore_sharedFragment` is the
     (observer : IfObserver) (st : SystemState) (c : CoreId) :
     (projectStateOnCore ctx observer st c).sharedFragment =
       { objects := projectObjects ctx observer st
-        services := projectServicePresence ctx observer st
         irqHandlers := projectIrqHandlers ctx observer st
         objectIndex := projectObjectIndex ctx observer st
         domainSchedule := projectDomainSchedule ctx observer st
-        memory := projectMemory ctx observer st
-        serviceRegistry := projectServiceRegistry ctx observer st } := rfl
+        memory := projectMemory ctx observer st } := rfl
 
 /-- Definition-pinning: the per-core fragment of the SM4.D per-core projection —
 every component an `…OnCore c` read, core `c` and no other. -/
@@ -231,8 +221,8 @@ theorem crossCoreNonInterference_of_agreeOn (ctx : LabelingContext) (observer : 
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
   refine ObservableState.ext_fragments ?_ ?_
   · simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq]
-    exact ⟨hShared.objects, hShared.services, hShared.irqHandlers, hShared.objectIndex,
-      hShared.domainSchedule, hShared.memory, hShared.serviceRegistry⟩
+    exact ⟨hShared.objects, hShared.irqHandlers, hShared.objectIndex,
+      hShared.domainSchedule, hShared.memory⟩
   · simp only [projectStateOnCore_perCoreFragment, PerCoreObservableFragment.mk.injEq]
     exact ⟨projectRunnableOnCore_frame _ _ hAgree.runQueue,
       projectCurrentOnCore_frame _ _ hAgree.current,
@@ -304,13 +294,12 @@ theorem crossCoreNonInterference_of_state_frames (ctx : LabelingContext)
     (hObjects : ∀ oid, objectObservable ctx observer oid = true →
       st'.objects[oid]? = st.objects[oid]?)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hServices : st'.services = st.services)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference ctx observer hne hRuns
-    (sharedViewUnchanged_of_state_frames ctx observer hObjects hIndex hServices hIrq
+    (sharedViewUnchanged_of_state_frames ctx observer hObjects hIndex hIrq
       hMemory hDomSched)
 
 -- ============================================================================
@@ -350,8 +339,7 @@ theorem sharedViewUnchanged_of_projectionOnCore (ctx : LabelingContext)
   have hFrag : (projectStateOnCore ctx observer st' c).sharedFragment
       = (projectStateOnCore ctx observer st c).sharedFragment := congrArg _ h
   simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq] at hFrag
-  exact ⟨hFrag.1, hFrag.2.1, hFrag.2.2.1, hFrag.2.2.2.1, hFrag.2.2.2.2.1,
-    hFrag.2.2.2.2.2.1, hFrag.2.2.2.2.2.2⟩
+  exact ⟨hFrag.1, hFrag.2.1, hFrag.2.2.1, hFrag.2.2.2.1, hFrag.2.2.2.2⟩
 
 /-- SM8.B.1 (**the same bridge at an arbitrary core**): per-core preservation on
 the one core a transition writes, plus confinement to that core, gives
@@ -2289,7 +2277,6 @@ theorem projectState_eq_of_objects_projection_eq (ctx : LabelingContext) (observ
     (st st' : SystemState)
     (hObjects : projectObjects ctx observer st' = projectObjects ctx observer st)
     (hSched : st'.scheduler = st.scheduler)
-    (hServices : st'.services = st.services)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hIndex : st'.objectIndex = st.objectIndex)
     (hMachine : st'.machine = st.machine) :
@@ -2302,10 +2289,8 @@ theorem projectState_eq_of_objects_projection_eq (ctx : LabelingContext) (observ
       | simp [projectRunnable, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
               projectDomainSchedule, projectDomainScheduleIndex, projectMachineRegs, hSched,
               hMachine]
-      | (funext sid; simp only [projectServicePresence, lookupService, hServices])
       | (funext irq; simp only [projectIrqHandlers, hIrq])
       | exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
-      | exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
 
 /-- SM8.B.4: the whole 2PL bracket is invisible to the projection whenever the
 guarded action is.
@@ -2371,12 +2356,11 @@ theorem crossCoreNonInterference_of_disjoint_lockSet (ctx : LabelingContext)
     (hDisjoint : ∀ oid, oid ∈ writeSet → objectObservable ctx observer oid = false)
     (hWrites : ∀ oid, oid ∉ writeSet → st'.objects[oid]? = st.objects[oid]?)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hServices : st'.services = st.services)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
-  refine crossCoreNonInterference_of_state_frames ctx observer hne hRuns ?_ hIndex hServices
+  refine crossCoreNonInterference_of_state_frames ctx observer hne hRuns ?_ hIndex
     hIrq hMemory hDomSched
   intro oid hObs
   by_cases hMem : oid ∈ writeSet
@@ -2393,8 +2377,8 @@ fragment.**
 For an observer on core `c`, a transition confined to a different core `c'`
 leaves core `c`'s per-core fragment *provably* untouched, and consequently the
 observer's view moves **if and only if** the shared fragment moves.  So the
-channel from core `c'` to the observer is exactly the seven label-filtered
-shared components — six of the thirteen `ObservableState` components carry no
+channel from core `c'` to the observer is exactly the five label-filtered
+shared components — six of the eleven `ObservableState` components carry no
 cross-core flow at all.
 
 The `↔` is what makes this a bound rather than a remark: it says the shared

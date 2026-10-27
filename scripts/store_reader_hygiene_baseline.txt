@@ -17,7 +17,7 @@ raw_match_cnode          = 0
 raw_match_vspaceroot     = 13
 raw_match_total          = 40
 raw_match_unclassified   = 3
-store_read_spec          = 6857 (diagnostic)
+store_read_spec          = 6852 (diagnostic)
 store_write_spec         = 382 (diagnostic)
 
 ## Typed-helper adoption (should-grow)
@@ -41,7 +41,7 @@ sentinel_check_dispatch  = 67
 ## Regression test counts (should-grow)
 
 reader_hygiene_suite_tests           = 45
-kerrormatrix_rows        = 48
+kerrormatrix_rows        = 46
 
 ## Proof-surface health and reader hygiene (should-stay-zero)
 
@@ -368,7 +368,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/Capability/Operations.lean|setCapFreeIndex_ob
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Capability/Operations.lean|setCapFreeIndex_preserves_dstAdmitted|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Capability/Operations.lean|setCapFreeIndex_preserves_objects_invExt|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Capability/Operations.lean|setCapFreeIndex_scheduler|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Capability/Operations.lean|setCapFreeIndex_services|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean|footprintCoversWrites|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/Serializability.lean|objStoreEquiv|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Concurrency/Locks/Serializability.lean|updateObjectAt_get?|6
@@ -610,7 +609,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointQueueRem
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointQueueRemoveDual_writes_queueRemoveBoundary|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointQueueRemove_cdt_eq|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointQueueRemove_lifecycle_eq|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|endpointQueueRemove_services_eq|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/DualQueue/Transport.lean|tid_not_reserved_of_enqueue|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean|applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean|rendezvousReceiverFlow|1
@@ -2524,9 +2522,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/TcbWriteCommute.lean|getReply?_mapT
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/TcbWriteCommute.lean|getSchedContext?_mapTcbInPlace|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/TcbWriteCommute.lean|objects_get?_of_getTcb?|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Scheduler/TcbWriteCommute.lean|updateTcb_eq_mapTcbInPlace|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Service/Invariant/Policy.lean|bridgeSignatureWitness|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Service/Invariant/Policy.lean|policyBackingObjectTyped_of_lifecycleInvariant|1
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/Service/Invariant/Policy.lean|servicePolicySurfaceInvariant_of_lifecycleInvariant|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Service/Registry.lean|clearEndpointServiceCode_cases|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Service/Registry.lean|clearEndpointServiceCode_objects_none_iff|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/Service/Registry.lean|registerService_error_no_write_right|1
@@ -3049,7 +3044,7 @@ RAW_MATCH_VSPACEROOT=13
 RAW_MATCH_TOTAL=40
 RAW_MATCH_UNCLASSIFIED=3
 STORE_READ_CODE=0
-STORE_READ_SPEC=6857
+STORE_READ_SPEC=6852
 STORE_WRITE_CODE=0
 STORE_WRITE_SPEC=382
 GETTCB_ADOPTION=3458
@@ -3062,6 +3057,6 @@ GETVSPACEROOT_ADOPTION=103
 STOREOBJECTCHECKED_ADOPTION=16
 SENTINEL_CHECK_DISPATCH=67
 READER_HYGIENE_SUITE_TESTS=45
-KERRORMATRIX_ROWS=48
+KERRORMATRIX_ROWS=46
 SORRY_COUNT=0
 AXIOM_COUNT=0

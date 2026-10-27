@@ -1131,7 +1131,6 @@ structure SystemState where
       both. The list remains the proof anchor (monotonic, append-only);
       this set is the runtime fast path. -/
   objectIndexSet : RHSet SeLe4n.ObjId := default
-  services : RHTable ServiceId ServiceGraphEntry
   scheduler : SchedulerState
   irqHandlers : RHTable SeLe4n.Irq SeLe4n.ObjId
   lifecycle : LifecycleMetadata
@@ -1679,7 +1678,6 @@ instance : Inhabited SystemState where
     objects := {}
     objectIndex := []
     objectIndexSet := default
-    services := {}
     scheduler := default
     irqHandlers := {}
     lifecycle := {
@@ -1756,7 +1754,7 @@ satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys �
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation.
 
-AI6-D (L-02): This predicate uses an 8-deep conjunction (∧-chain) over the
+AI6-D (L-02): This predicate uses a 7-deep conjunction (∧-chain) over the
 RHTable/RHSet instances in the state.  The run queue's two tables are not in
 it: `RunQueue` carries their invariants as its own fields (WS-ZA ZA4.5). Tuple projection (e.g., `h.2.2.1`) is
 structurally fragile — adding a new table field shifts all subsequent
@@ -1773,8 +1771,7 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.asidTable.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
-  -- Service and registry
-  st.services.invExtK ∧
+  -- Service and interface registries
   st.interfaceRegistry.invExtK ∧
   st.serviceRegistry.invExtK ∧
   -- RHSet invExtK (via table field)
@@ -1783,7 +1780,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -1948,7 +1944,7 @@ theorem default_auditLogBounded :
   SeLe4n.Kernel.auditLogBounded_nil
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 8 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 7 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -1956,7 +1952,6 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.irqHandlers.invExtK ∧
     st.asidTable.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
-    st.services.invExtK ∧
     st.interfaceRegistry.invExtK ∧
     st.serviceRegistry.invExtK ∧
     st.objectIndexSet.table.invExtK := h
@@ -2543,59 +2538,6 @@ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := st.scheduler.setCurrentOnCore bootCoreId tid
     .ok ((), { st with scheduler := sched })
-
-/-- Read one service graph entry. -/
-def lookupService (st : SystemState) (sid : ServiceId) : Option ServiceGraphEntry :=
-  st.services[sid]?
-
-/-- Determine whether `sid` lists `dependency` as a declared dependency edge. -/
-def hasServiceDependency (st : SystemState) (sid dependency : ServiceId) : Bool :=
-  match lookupService st sid with
-  | some svc => dependency ∈ svc.dependencies
-  | none => false
-
-/-- Determine whether two services are explicitly isolated from one another. -/
-def hasIsolationEdge (st : SystemState) (lhs rhs : ServiceId) : Bool :=
-  match lookupService st lhs, lookupService st rhs with
-  | some lhsSvc, some rhsSvc => rhs ∈ lhsSvc.isolatedFrom || lhs ∈ rhsSvc.isolatedFrom
-  | _, _ => false
-
-/-- Deterministic pure state helper: replace one service graph entry. -/
-def storeServiceState (sid : ServiceId) (entry : ServiceGraphEntry) (st : SystemState) : SystemState :=
-  {
-    st with
-      services := st.services.insert sid entry
-  }
-
-theorem storeServiceState_lookup_eq
-    (st : SystemState)
-    (sid : ServiceId)
-    (entry : ServiceGraphEntry)
-    (hInv : st.services.invExt) :
-    lookupService (storeServiceState sid entry st) sid = some entry := by
-  simp only [lookupService, storeServiceState]
-  exact RHTable.getElem?_insert_self st.services sid entry hInv
-
-theorem storeServiceState_lookup_ne
-    (st : SystemState)
-    (sid sid' : ServiceId)
-    (entry : ServiceGraphEntry)
-    (hNe : sid' ≠ sid)
-    (hInv : st.services.invExt) :
-    lookupService (storeServiceState sid entry st) sid' = lookupService st sid' := by
-  simp only [lookupService, storeServiceState]
-  have hNeBeq : ¬((sid == sid') = true) := by
-    intro hEq; exact hNe (eq_of_beq hEq).symm
-  exact RHTable.getElem?_insert_ne st.services sid sid' entry hNeBeq hInv
-
-theorem storeObject_preserves_services
-    (st st' : SystemState)
-    (id : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.services = st.services := by
-  unfold storeObject at hStore; cases hStore
-  rfl
 
 theorem storeObject_objects_eq'
     (st : SystemState)
@@ -5680,7 +5622,7 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
 
     The proof works by showing that `storeObject` only modifies fields via
     `insert`, `filter`, or `erase` — all of which preserve `invExt` — and
-    leaves unchanged fields (scheduler, CDT maps, services) structurally equal
+    leaves unchanged fields (scheduler, CDT maps, registries) structurally equal
     to the pre-state. -/
 theorem storeObject_preserves_allTablesInvExtK
     (st st' : SystemState)
@@ -5697,10 +5639,9 @@ theorem storeObject_preserves_allTablesInvExtK
   have hIrq := hAll.2.1
   have hAsid := hAll.2.2.1
   have hObjTypes := hAll.2.2.2.1
-  have hServices := hAll.2.2.2.2.1
-  have hIfaceReg := hAll.2.2.2.2.2.1
-  have hSvcReg := hAll.2.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2.2
+  have hIfaceReg := hAll.2.2.2.2.1
+  have hSvcReg := hAll.2.2.2.2.2.1
+  have hObjIdxSet := hAll.2.2.2.2.2.2
   -- Prove objectIndexSet insert preserves invExtK
   have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
@@ -5727,8 +5668,8 @@ theorem storeObject_preserves_allTablesInvExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
   have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
-  -- Compose all 8 components
-  exact ⟨hObj', hIrq, hAsid', hObjTypes', hServices, hIfaceReg, hSvcReg,
+  -- Compose all 7 components
+  exact ⟨hObj', hIrq, hAsid', hObjTypes', hIfaceReg, hSvcReg,
          hObjIdxSet'⟩
 
 -- ============================================================================

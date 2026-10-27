@@ -269,8 +269,8 @@ inventory was written:
 
 - `SeLe4n/Model/Builder.lean` (Q3-B)
   - 7 builder operations for invariant-preserving state construction:
-    `registerIrq`, `registerService`, `addServiceGraph`, `createObject`,
-    `deleteObject`, `insertCap`, `mapPage`.
+    `registerIrq`, `registerService`, `createObject`, `insertCap`,
+    `markRunnable`, `withTaint`, `mapPage`.
 
 ### Scheduler subsystem
 
@@ -429,22 +429,26 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 
 ### Service subsystem *(seLe4n extension — not present in seL4)*
 
-The Service orchestration layer is a **seLe4n-specific extension** with no
-analogue in real seL4. seL4 delegates service lifecycle entirely to user-level
-components. seLe4n models it as a kernel abstraction to enable machine-checked
-reasoning about dependency satisfaction, isolation enforcement, and lifecycle
-determinism. See `Service/Operations.lean` for the full design rationale.
+The service registry is a **seLe4n-specific extension** with no analogue in
+real seL4, which delegates services entirely to user-level components.  The
+kernel keeps one table: a registration names the endpoint that serves it and is
+recorded on that endpoint.  There is no dependency graph (removed at
+`v0.36.145`): isolation between services comes from capabilities, and
+dependency policy belongs to a user-level service manager.  See
+`Service/Operations.lean` for the design rationale; the registry's specification
+and its non-interference status are in
+[`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §11.2.
 
-- `SeLe4n/Kernel/Service/Operations.lean`
-  - registry operations (`lookupService`, `storeServiceEntry`, `serviceRegisterDependency`),
-  - graph queries (`serviceHasPathTo`, `hasIsolationEdge`, `serviceBfsFuel`),
-  - explicit `cyclicDependency` and error branches.
+- `SeLe4n/Kernel/Service/Operations.lean` (re-export hub)
+  - `Registry.lean` — `registerService`, `revokeService` and the lookups
+    (`lookupServiceByRecordedCode`, which the kernel runs, and the
+    specification fold `lookupServiceByCap`).
+- `SeLe4n/Kernel/Service/Interface.lean` — the registry's types
+  (`ServiceRegistration`, interface specifications), imported by the model.
   *(WS-Q1: `serviceStart`/`serviceStop`/`serviceRestart` lifecycle transitions removed.)*
 - `SeLe4n/Kernel/Service/Invariant.lean` (re-export hub)
-  - `Invariant/Policy.lean` — reusable policy predicate components and
-    `servicePolicySurfaceInvariant`, bridge lemmas connecting service policy
-    assumptions to lifecycle/capability bundles.
-  - `Invariant/Acyclicity.lean` — dependency acyclicity proofs (TPI-D07).
+  - `Registry/Invariant.lean` — `registryInvariant` and its preservation by
+    register and revoke.
 
 ### Architecture subsystem
 

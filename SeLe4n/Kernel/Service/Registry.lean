@@ -8,7 +8,6 @@
 -/
 
 import SeLe4n.Model.State
-import SeLe4n.Kernel.Service.Operations
 
 /-! # Service Registry Operations — seLe4n Extension
 
@@ -155,10 +154,9 @@ returned as it is. -/
 
 /-- Remove a service registration by ServiceId.
 Returns `objectNotFound` if no such registration exists.
-R4-D.1 (M-15): After erasing the registration, also cleans the dependency
-graph by calling `removeDependenciesOf` to remove all edges involving `sid`.
-WS-ZA ZA5.4 part 30: and clears the registration's record on its endpoint
-(`clearEndpointServiceCode`). -/
+WS-ZA ZA5.4 part 30: after erasing the registration, clears its record on its
+endpoint (`clearEndpointServiceCode`).  (Until part 32 it also cleaned the
+kernel's service dependency graph, which the kernel no longer keeps.) -/
 def revokeService (sid : ServiceId) : Kernel Unit :=
   fun st =>
     match st.serviceRegistry[sid]? with
@@ -166,13 +164,7 @@ def revokeService (sid : ServiceId) : Kernel Unit :=
     | some reg =>
       let st' := { st with
         serviceRegistry := st.serviceRegistry.erase sid }
-      .ok ((), removeDependenciesOf (clearEndpointServiceCode st' reg.endpointCap sid) sid)
-
-/-- U4-I: removeDependenciesOf preserves interfaceRegistry. -/
-theorem removeDependenciesOf_interfaceRegistry_eq
-    (st : SystemState) (sid : ServiceId) :
-    (removeDependenciesOf st sid).interfaceRegistry = st.interfaceRegistry := by
-  unfold removeDependenciesOf; rfl
+      .ok ((), clearEndpointServiceCode st' reg.endpointCap sid)
 
 
 -- ============================================================================
@@ -205,16 +197,6 @@ theorem registerInterface_preserves_objects
     (st st' : SystemState) (spec : InterfaceSpec)
     (hStep : registerInterface spec st = .ok ((), st')) :
     st'.objects = st.objects := by
-  unfold registerInterface at hStep
-  split at hStep
-  · cases hStep
-  · simp at hStep; cases hStep; rfl
-
-/-- Interface registration preserves services. -/
-theorem registerInterface_preserves_services
-    (st st' : SystemState) (spec : InterfaceSpec)
-    (hStep : registerInterface spec st = .ok ((), st')) :
-    st'.services = st.services := by
   unfold registerInterface at hStep
   split at hStep
   · cases hStep
@@ -324,13 +306,12 @@ theorem clearEndpointServiceCode_scheduler (st : SystemState) (cap : Capability)
   rcases clearEndpointServiceCode_cases st cap sid with h | ⟨_, _, _, _, _, h⟩ <;> rw [h]
 
 /-- WS-ZA ZA5.4 part 30: **a successful revocation** erases a present
-registration, clears its record on its endpoint and drops its dependency edges. -/
+registration and clears its record on its endpoint. -/
 theorem revokeService_ok {sid : ServiceId} {st st' : SystemState}
     (hStep : revokeService sid st = .ok ((), st')) :
     ∃ reg, st.serviceRegistry[sid]? = some reg ∧
-      st' = removeDependenciesOf
-        (clearEndpointServiceCode { st with serviceRegistry := st.serviceRegistry.erase sid }
-          reg.endpointCap sid) sid := by
+      st' = clearEndpointServiceCode { st with serviceRegistry := st.serviceRegistry.erase sid }
+          reg.endpointCap sid := by
   unfold revokeService at hStep
   split at hStep
   · cases hStep
@@ -345,7 +326,6 @@ theorem revokeService_success_removes
     (hStep : revokeService sid st = .ok ((), st')) :
     st'.serviceRegistry[sid]? = none := by
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [removeDependenciesOf_serviceRegistry_eq]
   rcases clearEndpointServiceCode_cases { st with serviceRegistry := st.serviceRegistry.erase sid }
     reg.endpointCap sid with h | ⟨_, _, _, _, _, h⟩ <;> rw [h] <;>
   · simp only [RHTable_getElem?_eq_get?]
@@ -357,7 +337,7 @@ theorem revokeService_preserves_scheduler
     (hStep : revokeService sid st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [removeDependenciesOf_scheduler_eq, clearEndpointServiceCode_scheduler]
+  rw [clearEndpointServiceCode_scheduler]
 
 /-- The registration's endpoint write writes the object store alone. -/
 theorem clearEndpointServiceCode_eq_withObjects (st : SystemState) (cap : Capability)
@@ -387,8 +367,7 @@ theorem revokeService_serviceRegistry {sid : ServiceId} {st st' : SystemState}
     st'.serviceRegistry = st.serviceRegistry.erase sid ∧
     st'.interfaceRegistry = st.interfaceRegistry := by
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [removeDependenciesOf_serviceRegistry_eq, removeDependenciesOf_interfaceRegistry_eq,
-    clearEndpointServiceCode_eq_withObjects]
+  rw [clearEndpointServiceCode_eq_withObjects]
   exact ⟨rfl, rfl⟩
 
 /-- A successful revocation keeps every key present or absent. -/
@@ -396,7 +375,6 @@ theorem revokeService_objects_none_iff {sid : ServiceId} {st st' : SystemState}
     (hStep : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) : st'.objects[k]? = none ↔ st.objects[k]? = none := by
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [removeDependenciesOf_objects_eq]
   exact clearEndpointServiceCode_objects_none_iff
     { st with serviceRegistry := st.serviceRegistry.erase sid } _ _ hInv k
 
@@ -430,7 +408,6 @@ theorem revokeService_serviceCodeRewrite {sid : ServiceId} {st st' : SystemState
     (hStep : revokeService sid st = .ok ((), st')) :
     ServiceCodeRewrite st.objects st'.objects := by
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [removeDependenciesOf_objects_eq]
   rcases clearEndpointServiceCode_cases { st with serviceRegistry := st.serviceRegistry.erase sid }
     reg.endpointCap sid with h | ⟨e, ep, _, hE, _, h⟩ <;> rw [h]
   · exact .inl rfl

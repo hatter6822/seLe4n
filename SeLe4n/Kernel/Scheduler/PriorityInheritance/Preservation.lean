@@ -131,12 +131,6 @@ theorem updatePipBoost_preserves_interfaceRegistry (st : SystemState) (tid : Thr
   updatePipBoost_frame (fun s => s.interfaceRegistry) st tid
     (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
-/-- D4-P: `updatePipBoost` preserves `services`. -/
-theorem updatePipBoost_preserves_services (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).services = st.services :=
-  updatePipBoost_frame (fun s => s.services) st tid
-    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
-
 /-- D4-P: `updatePipBoost` preserves `tlb`. -/
 theorem updatePipBoost_preserves_tlb (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).tlb = st.tlb :=
@@ -348,18 +342,6 @@ theorem propagate_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId
     · rw [ih]; exact updatePipBoost_preserves_interfaceRegistry st tid
     · exact updatePipBoost_preserves_interfaceRegistry st tid
 
-/-- D4-P: `propagatePriorityInheritance` preserves `services`. -/
-theorem propagate_preserves_services (st : SystemState) (tid : ThreadId)
-    (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).services = st.services := by
-  induction fuel generalizing st tid with
-  | zero => simp [propagatePriorityInheritance]
-  | succ n ih =>
-    simp only [propagatePriorityInheritance]
-    split
-    · rw [ih]; exact updatePipBoost_preserves_services st tid
-    · exact updatePipBoost_preserves_services st tid
-
 /-- D4-P: `propagatePriorityInheritance` preserves `tlb`. -/
 theorem propagate_preserves_tlb (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
@@ -470,11 +452,6 @@ theorem revert_preserves_objectIndex (st : SystemState) (tid : ThreadId) (fuel :
 theorem revert_preserves_cdt (st : SystemState) (tid : ThreadId) (fuel : Nat) :
     (revertPriorityInheritance st tid fuel).cdt = st.cdt := by
   rw [revert_eq_propagate]; exact propagate_preserves_cdt st tid fuel
-
-/-- D4-P: `revertPriorityInheritance` preserves `services`. -/
-theorem revert_preserves_services (st : SystemState) (tid : ThreadId) (fuel : Nat) :
-    (revertPriorityInheritance st tid fuel).services = st.services := by
-  rw [revert_eq_propagate]; exact propagate_preserves_services st tid fuel
 
 /-- D4-P: `revertPriorityInheritance` preserves `tlb`. -/
 theorem revert_preserves_tlb (st : SystemState) (tid : ThreadId) (fuel : Nat) :

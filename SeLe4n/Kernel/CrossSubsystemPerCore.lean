@@ -23,7 +23,7 @@ imports the per-subsystem per-core invariant slices landed by SM4.D
 per-core layer, and assembles:
 
 1. **`crossSubsystemInvariant_perCore`** — the per-core form of the
-   master 12-conjunct `crossSubsystemInvariant` (`CrossSubsystem.lean`).
+   master 10-conjunct `crossSubsystemInvariant` (`CrossSubsystem.lean`).
    Only its ninth conjunct (`schedContextRunQueueConsistent`) reads
    scheduler state; SM4.C already migrated it to
    `schedContextRunQueueConsistent_perCore`, so the per-core master
@@ -60,16 +60,14 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- §1  Per-core master cross-subsystem invariant
 -- ============================================================================
 
-/-- SM4.D: per-core form of `crossSubsystemInvariant`.  Eleven conjuncts
-are core-independent and unchanged; the ninth (`schedContextRunQueueConsistent`)
+/-- SM4.D: per-core form of `crossSubsystemInvariant`.  Nine conjuncts
+are core-independent and unchanged; the seventh (`schedContextRunQueueConsistent`)
 is replaced by the SM4.C per-core form `schedContextRunQueueConsistent_perCore`. -/
 def crossSubsystemInvariant_perCore (st : SystemState) (c : CoreId) : Prop :=
   registryEndpointValid st ∧
   registryInterfaceValid st ∧
-  registryDependencyConsistent st ∧
   noStaleEndpointQueueReferences st ∧
   noStaleNotificationWaitReferences st ∧
-  serviceGraphInvariant st ∧
   schedContextStoreConsistent st ∧
   schedContextNotDualBound st ∧
   schedContextRunQueueConsistent_perCore st c ∧
@@ -78,7 +76,7 @@ def crossSubsystemInvariant_perCore (st : SystemState) (c : CoreId) : Prop :=
   untypedRegionsDisjoint st
 
 /-- SM4.D: the per-core master invariant at `bootCoreId` is the live
-single-core `crossSubsystemInvariant` (the ninth conjunct bridges via
+single-core `crossSubsystemInvariant` (the seventh conjunct bridges via
 the SM4.C `schedContextRunQueueConsistent_perCore_bootCore_iff`). -/
 theorem crossSubsystemInvariant_perCore_bootCore_iff (st : SystemState) :
     crossSubsystemInvariant_perCore st bootCoreId ↔ crossSubsystemInvariant st := by
@@ -104,15 +102,15 @@ theorem crossSubsystemInvariant_smp_to_singleCore (st : SystemState)
 per-core master invariant. -/
 theorem crossSubsystemInvariant_perCore_to_schedContextRunQueueConsistent
     {st : SystemState} {c : CoreId} (h : crossSubsystemInvariant_perCore st c) :
-    schedContextRunQueueConsistent_perCore st c := h.2.2.2.2.2.2.2.2.1
+    schedContextRunQueueConsistent_perCore st c := h.2.2.2.2.2.2.1
 
 theorem default_crossSubsystemInvariant_perCore (c : CoreId) :
     crossSubsystemInvariant_perCore (default : SystemState) c := by
   have h := default_crossSubsystemInvariant
   unfold crossSubsystemInvariant at h
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, _h9, h10, h11, h12⟩ := h
-  exact ⟨h1, h2, h3, h4, h5, h6, h7, h8,
-    default_schedContextRunQueueConsistent_perCore c, h10, h11, h12⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6, _h7, h8, h9, h10⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, h6,
+    default_schedContextRunQueueConsistent_perCore c, h8, h9, h10⟩
 
 theorem default_crossSubsystemInvariant_smp :
     crossSubsystemInvariant_smp (default : SystemState) :=

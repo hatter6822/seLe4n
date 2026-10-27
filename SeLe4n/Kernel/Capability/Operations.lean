@@ -46,9 +46,9 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
   RHTable rehash on load-factor crossings does NOT affect lookup semantics
   (key→value mapping is preserved across rehashes by
   `RHTable.insert_preserves_invExt` + `getElem?_insert_self/_ne`).
-- **C-L8 (`serviceCountBounded` boot-time exposure):** the accessor
-  `crossSubsystemInvariant_to_serviceGraphInvariant.2` extracts the
-  bounded count from the cross-subsystem invariant bundle.
+- **C-L8 (`serviceCountBounded` boot-time exposure):** retired with the
+  service dependency graph (WS-ZA ZA5.4 part 32); there is no service count
+  bound left to expose.
 - **C-L9 (abstract object sizes vs seL4 RPi5):** documented in
   `docs/spec/SELE4N_SPEC.md` §6.3 "Object size abstractions". The Lean
   model uses abstract `objectTypeAllocSize` which does not bind
@@ -727,16 +727,6 @@ theorem cspaceInsertSlot_preserves_scheduler
     cspaceInsertSlot_ok_decompose st st' addr cap hStep
   exact storeObject_scheduler_eq _ _ _ _ hStore
 
-theorem cspaceInsertSlot_preserves_services
-    (st st' : SystemState)
-    (addr : CSpaceAddr)
-    (cap : Capability)
-    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.services = st.services := by
-  obtain ⟨cn, _, _, _, hStore⟩ :=
-    cspaceInsertSlot_ok_decompose st st' addr cap hStep
-  exact storeObject_preserves_services _ _ _ _ hStore
-
 theorem cspaceInsertSlot_preserves_objects_ne
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -789,7 +779,7 @@ theorem cspaceInsertSlot_preserves_machine
 and nothing else.
 
 Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`:
-a *frame over a primitive* belongs beside the primitive, so the CDT pair reads like the scheduler, services,
+a *frame over a primitive* belongs beside the primitive, so the CDT pair reads like the scheduler,
 machine and IRQ frames above rather than like an invariant argument. -/
 theorem cspaceInsertSlot_cdt_eq
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
@@ -1154,15 +1144,6 @@ theorem setCapFreeIndex_machine (st : SystemState) (addr : CSpaceAddr) (idx : Na
     | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
   | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
 
-theorem setCapFreeIndex_services (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
-    (setCapFreeIndex st addr idx).services = st.services := by
-  cases hO : st.objects[addr.cnode]? with
-  | some o =>
-    cases o with
-    | cnode cn => exact storeObject_preserves_services _ _ _ _ (setCapFreeIndex_eq_storeObject hO)
-    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
-  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
-
 /-- What a free-index write leaves in the slot's CNode. -/
 theorem setCapFreeIndex_objects_self {st : SystemState} {addr : CSpaceAddr} {idx : Nat}
     {cn : CNode} (hInv : st.objects.invExt) (h : st.objects[addr.cnode]? = some (.cnode cn)) :
@@ -1286,12 +1267,6 @@ theorem untypedSourceSetFull_machine (st : SystemState) (src : CSpaceAddr) (cap 
     (untypedSourceSetFull st src cap).machine = st.machine :=
   untypedSourceSetFull_of (P := fun s => s.machine = st.machine) rfl
     fun idx => setCapFreeIndex_machine st src idx
-
-/-- Setting the source full leaves the services. -/
-theorem untypedSourceSetFull_services (st : SystemState) (src : CSpaceAddr) (cap : Capability) :
-    (untypedSourceSetFull st src cap).services = st.services :=
-  untypedSourceSetFull_of (P := fun s => s.services = st.services) rfl
-    fun idx => setCapFreeIndex_services st src idx
 
 /-- A free-index write keeps the object table's extension invariant, so setting
 the source full does. -/
@@ -1722,11 +1697,6 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
 @[simp] theorem detachRevokedSlots_objectIndexSet (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndexSet = st.objectIndexSet := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
-
-@[simp] theorem detachRevokedSlots_services (st : SystemState) (cnodeId : SeLe4n.ObjId)
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
-    (detachRevokedSlots st cnodeId cn sourceSlot target).services = st.services := by
   obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_irqHandlers (st : SystemState) (cnodeId : SeLe4n.ObjId)
@@ -2993,19 +2963,6 @@ theorem ipcTransferSingleCap_preserves_objects_ne
     exact (untypedSourceSetFull_agreesOffDerivationMetadata hAdd.2 oid).trans
       ((SystemState.objectAgreesOffDerivationMetadataAt.of_links (hAdd.1 oid)).trans
         (.of_eq hObjIns))
-
-theorem ipcTransferSingleCap_preserves_services
-    (cap : Capability) (srcNode : SlotRef)
-    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
-    (scanLimit : Nat) (st st' : SystemState)
-    (result : CapTransferResult)
-    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) :
-    st'.services = st.services := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
-  · rfl
-  · rw [untypedSourceSetFull_services, SystemState.cdtAddChild_services]
-    exact cspaceInsertSlot_preserves_services _ _ _ _ hIns
 
 /-- ipcTransferSingleCap preserves `objects.invExt`. -/
 theorem ipcTransferSingleCap_preserves_objects_invExt

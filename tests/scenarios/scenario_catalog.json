@@ -34,16 +34,6 @@
       "expected_trace_fragment": "vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault"
     },
     {
-      "id": "SCN-SVC-POLICY-DENY",
-      "subsystem": "service",
-      "risk_tags": [
-        "security",
-        "policy"
-      ],
-      "replay_tier": "smoke",
-      "expected_trace_fragment": "register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency"
-    },
-    {
       "id": "SCN-CSPACE-DEEP-RADIX",
       "subsystem": "cspace",
       "risk_tags": [
@@ -74,16 +64,6 @@
       "expected_trace_fragment": "multi-endpoint receive senders: 1, 12"
     },
     {
-      "id": "SCN-SVC-DEPTH-5-CHAIN",
-      "subsystem": "service",
-      "risk_tags": [
-        "integration",
-        "scale"
-      ],
-      "replay_tier": "smoke",
-      "expected_trace_fragment": "service dependency chain path chainTop→chainRoot: true"
-    },
-    {
       "id": "SCN-ARCH-HIGH-ADDRESS",
       "subsystem": "architecture",
       "risk_tags": [
@@ -102,7 +82,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 7,
-      "expected_trace_fragment": "service isolation api↔denied: true"
+      "expected_trace_fragment": "lookup by cap found sid: 501"
     },
     {
       "id": "SCN-SEQ-SEED-13",
@@ -113,7 +93,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 13,
-      "expected_trace_fragment": "service isolation api↔denied: true"
+      "expected_trace_fragment": "lookup by cap found sid: 501"
     },
     {
       "id": "SCN-SEQ-SEED-29",
@@ -124,7 +104,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 29,
-      "expected_trace_fragment": "service isolation api↔denied: true"
+      "expected_trace_fragment": "lookup by cap found sid: 501"
     },
     {
       "id": "SCN-SEQ-SEED-47",
@@ -135,7 +115,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 47,
-      "expected_trace_fragment": "service isolation api↔denied: true"
+      "expected_trace_fragment": "lookup by cap found sid: 501"
     },
     {
       "id": "SCN-SEQ-SEED-101",
@@ -146,7 +126,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 101,
-      "expected_trace_fragment": "service isolation api↔denied: true"
+      "expected_trace_fragment": "lookup by cap found sid: 501"
     },
     {
       "id": "SCN-H2-CHILDID-SELF-OVERWRITE",

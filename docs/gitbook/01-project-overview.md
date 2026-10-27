@@ -19,15 +19,15 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.144): 515,329 lines of production Lean across 461 files, 87,628 lines across 70 Lean test suites,
-18,849 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.145): 512,077 lines of production Lean across 459 files, 87,214 lines across 70 Lean test suites,
+18,703 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
 
 | Area | seL4 | seLe4n |
 |------|------|--------|
-| **Service lifecycle** | No kernel-level concept | Dependency graphs with acyclic enforcement |
+| **Service registry** | No kernel-level concept | Endpoint-backed registration and lookup; dependency policy in user space |
 | **CDT** | Mutable doubly-linked list | Node-stable with O(1) slot transfer |
 | **IPC queuing** | Intrusive linked list | Dual-queue with O(1) arbitrary removal |
 | **Information flow** | Binary partition | Parameterized N-domain labels |
@@ -39,7 +39,7 @@ Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` 
 ### Completed milestone slices
 
 Bootstrap, M1 (scheduler), M2 (capability), M3/M3.5 (IPC + coherence),
-M4-A/M4-B (lifecycle), M5 (service graph), M6 (architecture boundary),
+M4-A/M4-B (lifecycle), M5 (service graph; removed at `v0.36.145`, the registry kept), M6 (architecture boundary),
 M7 (audit remediation).
 
 ### Where the project is

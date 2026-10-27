@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -67,7 +67,7 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 - **संयुक्त प्रमाण परत** — `proofLayerInvariantBundle` 16 उपप्रणाली अपरिवर्तनीय बंडलों (शेड्यूलर कोर + CBS विस्तार, क्षमता, IPC + IPC–शेड्यूलर युग्मन, जीवनचक्र, सेवा, VSpace, अंतर-उपप्रणाली, TLB संगति, अधिसूचना-प्रतीक्षक संगति, TLB-शूटडाउन लंबित/पावती सीमाएँ, प्रति-कोर TLB अमान्यकरण और I-कैश सुसंगति, और अवर्गीकरण लेखापरीक्षा-लॉग सीमा) को बूट से सभी संचालनों तक सत्यापित एकल शीर्ष-स्तर दायित्व में संयोजित करता है
 - **त्रि-चरण स्थिति वास्तुकला** — अपरिवर्तनीय साक्षियों सहित बिल्डर चरण प्रमाणित लुकअप तुल्यता सहित जमे हुए अपरिवर्तनीय प्रतिनिधित्व में प्रवाहित होता है। 24 जमे हुए संचालन लाइव API को दर्पणित करते हैं
 - **पूर्ण संचालन समूह** — थ्रेड suspend/resume, प्राथमिकता प्रबंधन (setPriority/setMCPriority) और IPC-बफ़र कॉन्फ़िगरेशन तक, अपरिवर्तनीय संरक्षण के साथ सभी seL4 संचालन कार्यान्वित
-- **सेवा समन्वय** — निर्भरता ग्राफ़ और प्रमाणित अचक्रीयता सहित कर्नेल-स्तर घटक जीवनचक्र (seLe4n विस्तार, seL4 में नहीं)
+- **सेवा रजिस्ट्री** — एंडपॉइंट के माध्यम से कर्नेल-स्तर सेवा पंजीकरण और खोज, पंजीकरण स्वयं एंडपॉइंट पर दर्ज (seLe4n विस्तार, seL4 में नहीं); निर्भरता नीति, seL4 की तरह, यूज़र-स्पेस सेवा प्रबंधक का काम है
 
 ## वर्तमान स्थिति
 
@@ -81,11 +81,11 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.36.144` |
+| **संस्करण** | `0.36.145` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 461 फ़ाइलों में 515,329 |
-| **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 87,628 |
-| **प्रमाणित घोषणाएँ** | 18,849 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **उत्पादन Lean LoC** | 459 फ़ाइलों में 512,077 |
+| **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 87,214 |
+| **प्रमाणित घोषणाएँ** | 18,703 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **Rust क्रेट्स** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 80 स्रोत फ़ाइलों में |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **हार्डवेयर बाइंडिंग** | **H3 पूर्ण** (WS-AG AG1–AG10): HAL, GIC-400, टाइमर, ARMv8 पेज टेबल, FFI ब्रिज, QEMU बूट |
@@ -188,7 +188,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -226,7 +226,7 @@ tests/                           निष्पादन योग्य पर
 | **प्राथमिकता वंशानुक्रम** | C-कार्यान्वित PIP (MCS शाखा) | गतिरोध स्वतंत्रता और पैरामीट्रिक WCRT सीमा सहित मशीन-जाँचित सकर्मक PIP |
 | **परिबद्ध विलंबता** | कोई औपचारिक WCRT सीमा नहीं | 8 सजीवता मॉड्यूल में प्रमाणित `WCRT = D × L_max + N × (B + P)` |
 | **ऑब्जेक्ट स्टोर** | लिंक्ड लिस्ट और एरे | O(1) हॉट पाथ सहित सत्यापित Robin Hood हैश टेबल (`RHTable`/`RHSet`) |
-| **सेवा प्रबंधन** | कर्नेल में नहीं | निर्भरता ग्राफ़ और अचक्रीयता प्रमाणों सहित प्रथम-श्रेणी समन्वय |
+| **सेवा प्रबंधन** | कर्नेल में नहीं | एंडपॉइंट-आधारित सेवा रजिस्ट्री; निर्भरता नीति यूज़र-स्पेस में |
 | **प्रमाण** | Isabelle/HOL, पश्चवर्ती (post-hoc) | Lean 4 प्रकार-परीक्षक, संक्रमणों के साथ सह-स्थित — शून्य sorry/axiom (प्रमाणित-घोषणा गणना [वर्तमान स्थिति](#वर्तमान-स्थिति) तालिका में) |
 | **प्लेटफ़ॉर्म** | C-स्तरीय HAL | टाइप्ड सीमा अनुबंधों सहित `PlatformBinding` typeclass |
 

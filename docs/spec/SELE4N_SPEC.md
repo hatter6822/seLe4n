@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.144` (`lakefile.toml`) |
+| **Package version** | `0.36.145` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 515,329 across 461 Lean files |
-| **Test LoC** | 87,628 across 70 Lean test suites |
-| **Proved declarations** | 18,849 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 512,077 across 459 Lean files |
+| **Test LoC** | 87,214 across 70 Lean test suites |
+| **Proved declarations** | 18,703 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -83,7 +83,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 
 | Area | seL4 | seLe4n Improvement |
 |------|------|-------------------|
-| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (12 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic, AM4 +lifecycleObjectTypeLockstep, AK8-A +untypedRegionsDisjoint) in `proofLayerInvariantBundle` |
+| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry: a registration names the endpoint that serves it, recorded on the endpoint (`Endpoint.serviceCode`), and a lookup reads that record (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. The kernel keeps no service dependency graph (removed at `v0.36.145`): isolation between services comes from capabilities, and dependency policy belongs to a user-level service manager, as in seL4. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), `crossSubsystemInvariant` bundle (10 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic, AM4 +lifecycleObjectTypeLockstep, AK8-A +untypedRegionsDisjoint, WS-ZA ZA5.4 part 32 −registryDependencyConsistent −serviceGraphInvariant) in `proofLayerInvariantBundle` |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) and back-pointer agreement — `queuePPrev` against `queuePrev`, which is what makes the O(1) removal's own precondition discharged rather than assumed (`dualQueueRemovalGuardHolds`, WS-RR RR8.3).  That pairing is *pointwise*, so it cannot reach a queue's **head**, whose `queuePrev = none` is legitimate; the head's back-pointer is therefore a clause of the **queue's** own boundary (`intrusiveQueueWellFormed`'s P2, `v0.35.106`), preserved through a fifth bundle conjunct that a thread heads at most one endpoint queue (`endpointQueueHeadDisjoint`) — itself a consequence of `queueHeadBlockedConsistent` rather than a new assumption (`queueHeadExclusive`), so a removal's `queuePPrev` hypothesis is now discharged for **any** member of a well-formed queue, head included (`dualQueueRemovalGuardHolds_of_member`).  Both the pairing and the head-disjointness conjunct are **checked at runtime** as well as proved (`queuePPrevAgreesWithPrevChecks`, `endpointQueueHeadDisjointChecks`); the second arrived a cut later than its conjunct, and until `v0.35.108` no check in `stateInvariantChecksFor` was cross-endpoint at all, so a state the bundle refuses — two endpoints sharing one singleton head — passed the whole harness surface; all three removals write one definition of what unlinking does — `queueUnlinkPredecessor` / `queueUnlinkSuccessor` to the neighbours (WS-OD OD3.9) and `queueRemoveBoundary` to the queue's own head and tail (WS-RR RR8.4), the latter reading `q.tail = some tid` rather than inferring tail-ness from the removed thread's `queueNext`, with the two readings' agreement checked by the removal's guard.  The removal's whole store-free precondition is one **model**-level predicate over an `IntrusiveQueue` and a `TCB` (`dualQueueRemovalEnabled`, `Model/Object/Types.lean`), so the frozen execution mirror — which imports no kernel module — refuses exactly what the live removal refuses rather than a subset of it (`v0.35.59`); its *discharges* stay in the kernel layer, where the invariants that entail them are |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
@@ -3905,8 +3905,8 @@ share the AN9-J runtime gating.
 
 The canonical inventory lives in
 `SeLe4n/Kernel/Concurrency/Assumptions.lean` as
-`def smpLatentInventory : List SmpLatentAssumption` with 8 entries
-(`smpLatentInventory_count : smpLatentInventory.length = 8` is the
+`def smpLatentInventory : List SmpLatentAssumption` with 7 entries
+(`smpLatentInventory_count : smpLatentInventory.length = 7` is the
 machine-checked size witness). Each entry carries five fields
 (`identifier`, `singleCoreWitness`, `smpDischarge`, `sourceTheorem`,
 `auditReference`).
@@ -3916,11 +3916,13 @@ machine-checked size witness). Each entry carries five fields
 | 1 | `cspaceLookupMultiLevel` resolved-CNode validity | H-05 / AN4-D |
 | 2 | `cspaceCopy/Move/Mutate` CDT post-state composition | AK7-F.cascade / AN10-B |
 | 3 | `lifecyclePreRetypeCleanup` sequential cleanup ordering | C-M04 / AN9-D |
-| 4 | `serviceHasPathTo` graph traversal | SVC-M01 / AN4-H |
-| 5 | `timerTickWithBudget` replenishment pipeline | AK2-K / AN5-D |
-| 6 | `typedIdDisjointness` invariant | H-10 / AN2-D |
-| 7 | `Architecture/Assumptions.lean` single-core kernel model | AG-* baseline |
-| 8 | `bootFromPlatform` boot-core / current-core | CX-M03 / AN6-F |
+| 4 | `timerTickWithBudget` replenishment pipeline | AK2-K / AN5-D |
+| 5 | `typedIdDisjointness` invariant | H-10 / AN2-D |
+| 6 | `Architecture/Assumptions.lean` single-core kernel model | AG-* baseline |
+| 7 | `bootFromPlatform` boot-core / current-core | CX-M03 / AN6-F |
+
+The service graph's traversal (`serviceHasPathTo`, SVC-M01 / AN4-H) was an
+eighth entry until `v0.36.145`, when the graph was removed from the kernel.
 
 The inventory is wired into `SeLe4n.Platform.Staged` so `lake build
 SeLe4n.Platform.Staged` (and therefore tier-1 CI) forces the module to
@@ -3976,17 +3978,17 @@ a convention.  All axiom-clean.
 
 `SeLe4n/Kernel/Concurrency/Assumptions.lean` also adds the **retirement
 ledger** `def smpRetiredInventory : List SmpRetiredAssumption` (SM4.E.5):
-an 8-entry list mirroring `smpLatentInventory` one-to-one by `identifier`
+a 7-entry list mirroring `smpLatentInventory` one-to-one by `identifier`
 (`smpRetiredInventory_covers_latent`), tracking the retirement of each
 latent assumption toward the v1.0.0 SMP release. Each entry carries a
 `SmpRetirementStatus` — `.pathARetired` for the two assumptions SM4 path-a
 genuinely retires (the scheduler-state shape and the boot-core current),
-`.perCoreBracketGated` for the six whose single-core property is preserved
+`.perCoreBracketGated` for the five whose single-core property is preserved
 per-core by the FFI interrupt-disabled dispatch bracket (full cross-core
 retirement gated on SM5+). The honest current disposition is pinned by the
 full partition `smpRetiredInventory_pathARetired_count` (= 2 at SM4.E) /
-`smpRetiredInventory_perCoreBracketGated_count` (= 6) and the size by
-`smpRetiredInventory_count` (= 8); WS-SM SM10 (release closure) flips the
+`smpRetiredInventory_perCoreBracketGated_count` (= 5) and the size by
+`smpRetiredInventory_count` (= 7); WS-SM SM10 (release closure) flips the
 gated entries and proves `smpRetiredInventory_complete` once SM5..SM8 land.
 The ledger's per-entry names are build-anchored in `Concurrency.Anchors`
 alongside the latent inventory (closing SMP-H3).
@@ -5338,7 +5340,7 @@ root slot still non-leaf, the root delete makes no write
 capability, so a retry continues from the slot state, as seL4's preempted
 `cteDelete` does, and a revoke that keeps a child stops with `.ok`.  That the
 fuel always suffices on a reachable state is not yet proven
-(`docs/REGISTERED_DEBT.md`, plan row 33).  **Set-space** deletes each old root
+(`docs/REGISTERED_DEBT.md`, plan row 34).  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
 remote writer, in the capability-destroy footprint group.  **An untyped with
@@ -5371,7 +5373,9 @@ they name — an endpoint records its registration's code (`Endpoint.serviceCode
 written by `registerService`, cleared by `revokeService`), a notification
 records the interrupt handler that names it (`Notification.irqBound`, set by the
 boot), and the service graph holds no entry — stated as one invariant
-(`SystemState.tableReferencesRecorded`) and refused at boot when a configuration
+(`SystemState.tableReferencesRecorded`; the graph and its emptiness clause are
+gone since `v0.36.145`, plan row 32, so the invariant states the two tables'
+references) and refused at boot when a configuration
 would come up violating it (`bootSafeEndpointCheck`,
 `irqHandlersAndNotificationsReciprocal`).  **The table back-references read**
 (`v0.36.144`, plan row 31): the boot establishes the invariant
@@ -5390,8 +5394,12 @@ it, and the service syscalls' lock footprints name the endpoint (written by
 the register and the revoke, read by the query).  The pre-retype cleanup has no
 endpoint arm: the registry sweep it ran (`cleanupEndpointServiceRegistrations`)
 could find no registration on an endpoint whose back-links are clear, and is
-deleted.  Still open:
-the finalise's admission is not carried across its own steps (plan row 33);
+deleted.  **The service graph removed** (`v0.36.145`, plan row 32): the
+kernel's service dependency graph (`SystemState.services`), which no kernel
+entry wrote, is deleted with its operations, its acyclicity and policy proofs,
+the two `crossSubsystemInvariant` conjuncts over it, its frozen copy and its
+information-flow projections; the registry stays.  Still open:
+the finalise's admission is not carried across its own steps (plan row 34);
 each step and the retire re-check their guards.
 Exerciser: `populated-cnode-delete`, `space-cnode-cap-delete`,
 `spaced-tcb-delete`, `tcb-set-space` and `set-carved-tcb-space` read 0 heap
@@ -5881,7 +5889,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`untypedResetFromCap`) and first refuses (`.revocationRequired`) while that
   slot has a derivation child, seL4's per-slot `ensureNoChildren`
   (`untypedResetFromCap_ok`); the store-wide check stays beside it until the
-  reset is restated as seL4's (WS-ZA ZA5.4 part 34, `docs/REGISTERED_DEBT.md`).
+  reset is restated as seL4's (WS-ZA ZA5.4 part 35, `docs/REGISTERED_DEBT.md`).
   Then every
   mapping of a page meeting the region is removed through the `.vspaceUnmap`
   arm's own transition — TLB flush, shootdown round, initiator drain,
@@ -9798,39 +9806,35 @@ capability operations, lifecycle, and decode/dispatch paths. The
 `dispatchSyscallChecked_preserves_projection` theorem (`API.lean`) bridges
 per-operation NI proofs to the full 25-arm syscall dispatch path.
 
-**Service orchestration is explicitly outside the kernel NI boundary.** The
-`serviceOrchestrationOutsideNiBoundary` theorem (`Projection.lean`)
-formally proves that service orchestration internals (lifecycle policies,
-restart state, heartbeat, dependency resolution order) are not captured by the
-NI projection model. Only the service registry layer (presence and dependency
-edges) is observable.
+**The service registry is outside the kernel NI projection.** The kernel
+holds no service orchestration state (no lifecycle, restart, heartbeat or
+dependency graph; the graph was removed at `v0.36.145`), and `ObservableState`
+projects neither the service registry (`st.serviceRegistry`) nor an
+endpoint's registration code (`Endpoint.serviceCode`).  `registerService` and
+`revokeService` are proven to preserve the projection, which therefore says
+nothing about the registry they write; the service query writes the
+registration it finds into the caller's `x0`, and no NI theorem covers that
+word.  Projecting the registry, filtered by the observer's clearance, and
+proving NI for register, revoke and the query (with its return word) is
+`docs/planning/UNTYPED_RESET_PLAN.md` row 33, registered in
+`docs/REGISTERED_DEBT.md`; until it lands, the NI claim excludes the registry.
 
 Deployers requiring service-layer information-flow isolation must analyze
 service-layer flows independently of kernel NI guarantees. See
 [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) Section 3 for deployment
 implications.
 
-#### 11.2.1 Service-presence covert channels
-WS-AN Phase AN6-E.1 formalizes the scope of `serviceObservable`
-(`Kernel/InformationFlow/Projection.lean`): the predicate covers
-**boolean service presence only**, not internal state. Cross-service
-covert channels — for example, one service observing another's restart
-cadence via service-presence sampling — are **NOT** closed by the kernel
-NI property. These are accepted covert channels at v1.0.0.
+#### 11.2.1 Service-layer covert channels
+Cross-service covert channels — for example, one service observing another's
+registration through the service query — are **NOT** closed by the kernel NI
+property, because the registry is not projected (above).  The `serviceObservable`
+presence filter that scoped the deleted graph projections went with them at
+`v0.36.145`; row 33's projection restates it over the registry.  A
+deployment that requires NI at the service layer before that lands must treat
+the service layer as a separate trusted component outside the NI analysis
+boundary.
 
-The formal justification for the acceptance is that service
-orchestration operates above the kernel-primitive NI boundary: services
-are trusted components that the kernel merely tracks presence for. A
-deployment that requires NI at the service-orchestration layer must
-either:
-
-1. Model service state in the projection explicitly (a deployer-specific
-   model-refinement effort — the kernel model does not ship with
-   service-state-aware projection), or
-2. Treat the service layer as a separate trusted component outside the
-   NI analysis boundary.
-
-The kernel model at v1.0.0 does not attempt to close this gap. Four
+The scheduler's observable channels are a separate, accepted gap.  Four
 regression tests in `tests/InformationFlowSuite.lean` (`NI-L3/1..4`)
 guard the four known observable scheduler channels (current thread,
 active domain, time-remaining, schedule index) against silent closure

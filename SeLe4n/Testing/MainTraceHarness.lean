@@ -55,25 +55,14 @@ def demoNotification : SeLe4n.ObjId := ⟨31⟩
 def demoUntyped : SeLe4n.ObjId := ⟨40⟩
 def untypedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 6 }
 
-def svcDb : ServiceId := ⟨100⟩
-def svcApi : ServiceId := ⟨101⟩
-def svcDenied : ServiceId := ⟨102⟩
-def svcBroken : ServiceId := ⟨103⟩
-def svcRestart : ServiceId := ⟨104⟩
-def svcRestartBroken : ServiceId := ⟨105⟩
-def svcMissingBacking : ServiceId := ⟨106⟩
-
 def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
   [⟨1⟩, ⟨10⟩, ⟨11⟩, ⟨12⟩, ⟨20⟩, demoEndpoint, demoNotification, demoUntyped]
-
-def bootstrapServiceIds : List ServiceId :=
-  [svcDb, svcApi, svcDenied, svcRestart, svcMissingBacking]
 
 /-- WS-I1/R-01: Inter-transition invariant check with counter tracking.
 Runs `assertStateInvariantsFor` (which applies `syncThreadStates` internally)
 and AG1-F cross-subsystem invariant checks, then increments the shared check counter. -/
 private def checkInvariants (counter : IO.Ref Nat) (label : String) (st : SystemState) : IO Unit := do
-  assertStateInvariantsFor label bootstrapInvariantObjectIds st bootstrapServiceIds
+  assertStateInvariantsFor label bootstrapInvariantObjectIds st
   assertCrossSubsystemInvariant label st
   counter.modify (· + 1)
 
@@ -125,31 +114,6 @@ def bootstrapState : SystemState :=
       children := []
       isDevice := false
     })
-    |>.withService svcDb {
-      identity := { sid := svcDb, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-      dependencies := []
-      isolatedFrom := []
-    }
-    |>.withService svcApi {
-      identity := { sid := svcApi, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-      dependencies := [svcDb]
-      isolatedFrom := [svcDenied]
-    }
-    |>.withService svcDenied {
-      identity := { sid := svcDenied, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-      dependencies := []
-      isolatedFrom := []
-    }
-    |>.withService svcRestart {
-      identity := { sid := svcRestart, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-      dependencies := [svcDb]
-      isolatedFrom := []
-    }
-    |>.withService svcMissingBacking {
-      identity := { sid := svcMissingBacking, backingObject := ⟨9999⟩, owner := ⟨10⟩ }
-      dependencies := []
-      isolatedFrom := []
-    }
     |>.withRunnable [⟨1⟩, ⟨12⟩]
     |>.withLifecycleObjectType ⟨1⟩ .tcb
     |>.withLifecycleObjectType ⟨10⟩ .cnode
@@ -260,61 +224,8 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   checkInvariants counter "post-adapter-register-memory" st1
 
 private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
-  -- Q1: Service lifecycle (start/stop/restart) removed — test service registry operations
-  -- SST-001/002: Service lookup (present)
-  IO.println s!"[SST-001] service lookup svcApi: {reprStr <| (SeLe4n.Model.lookupService st1 svcApi).map ServiceGraphEntry.identity}"
-  -- SST-003/004: Service lookup (absent)
-  IO.println s!"[SST-003] service lookup absent ⟨9998⟩: {reprStr <| SeLe4n.Model.lookupService st1 ⟨9998⟩}"
-  -- SST-005/006: Store a new service entry
-  let newSid : ServiceId := ⟨200⟩
-  let newEntry : ServiceGraphEntry := {
-    identity := { sid := newSid, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-    dependencies := [svcDb]
-    isolatedFrom := []
-  }
-  match SeLe4n.Kernel.storeServiceEntry newSid newEntry st1 with
-  | .error err => IO.println s!"[SST-005] store service entry error: {reprStr err}"
-  | .ok (_, stStored) =>
-      IO.println s!"[SST-006] store service entry lookup: {reprStr <| (SeLe4n.Model.lookupService stStored newSid).map ServiceGraphEntry.identity}"
-  -- SST-007/008: Register dependency (acyclic)
-  match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb st1 with
-  | .error err => IO.println s!"[SST-007] register dependency svcApi→svcDb: {reprStr err}"
-  | .ok (_, stDep) =>
-      IO.println s!"[SST-008] register dependency result: {reprStr <| (SeLe4n.Model.lookupService stDep svcApi).map ServiceGraphEntry.dependencies}"
-  -- SST-009/010: Register dependency (self-loop rejection)
-  match SeLe4n.Kernel.serviceRegisterDependency svcApi svcApi st1 with
-  | .error err => IO.println s!"[SST-009] register self-loop dependency: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-010] unexpected self-loop dependency success"
-  -- SST-011/012: Path reachability
-  let fuel := SeLe4n.Kernel.serviceBfsFuel st1
-  IO.println s!"[SST-011] service path svcApi→svcDb: {reprStr <| SeLe4n.Kernel.serviceHasPathTo st1 svcApi svcDb fuel}"
-  IO.println s!"[SST-012] service path svcApi→svcDenied: {reprStr <| SeLe4n.Kernel.serviceHasPathTo st1 svcApi svcDenied fuel}"
-  -- SST-013..018: Service isolation edge checks
-  IO.println s!"[SST-013] service isolation api↔denied: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDenied}"
-  IO.println s!"[SST-014] service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
-  -- SST-019/020: Service entry with missing backing object (still stored — backing check is caller responsibility)
-  IO.println s!"[SST-019] service lookup missing-backing: {reprStr <| (SeLe4n.Model.lookupService st1 svcMissingBacking).map ServiceGraphEntry.identity}"
-  -- SST-020: Broken-dependency fixture injected inline (not in bootstrap) to
-  -- preserve crossSubsystemInvariant for the shared state.  The lookup runs
-  -- against a local copy so the fixture never leaks into checked states.
-  let stBrokenLocal := SeLe4n.Model.storeServiceState svcBroken {
-    identity := { sid := svcBroken, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-    dependencies := [⟨999⟩]
-    isolatedFrom := []
-  } st1
-  IO.println s!"[SST-020] service lookup svcBroken deps: {reprStr <| (SeLe4n.Model.lookupService stBrokenLocal svcBroken).map ServiceGraphEntry.dependencies}"
-  -- V8-C: Post-mutation invariant checks on service registry result states
-  match SeLe4n.Kernel.storeServiceEntry newSid newEntry st1 with
-  | .ok (_, stStoredMut) => checkInvariants counter "post-service-store-mutated" stStoredMut
-  | .error _ => pure ()
-  match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb st1 with
-  | .ok (_, stDepMut) => checkInvariants counter "post-service-dep-mutated" stDepMut
-  | .error _ => pure ()
-  checkInvariants counter "post-service-registry" st1
-
   -- =========================================================================
-  -- WS-Q1-F: Service Registry Tests (SRG-001 through SRG-010)
+  -- WS-Q1-F: Service Registry Tests (SRG-001 through SRG-009)
   -- =========================================================================
 
   -- SRG-001: Register service with valid endpoint + interface
@@ -409,15 +320,6 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       let chainSvcId : ServiceId := ⟨601⟩
       IO.println s!"[SRG-009] chain success: iface={stChain.interfaceRegistry[chainIfaceId]? != none} svc={stChain.serviceRegistry[chainSvcId]? != none}"
 
-  -- SRG-010: Dependency cycle detection still works
-  match SeLe4n.Kernel.serviceRegisterDependency svcDb svcApi st1 with
-  | .error err => IO.println s!"[SRG-010] cycle detection: {reprStr err}"
-  | .ok (_, stDepOk) =>
-    -- Now try to create a cycle: svcApi already depends on svcDb (from SST-007 path),
-    -- but in st1 there's no edge yet. Register svcApi→svcDb then try svcDb→svcApi.
-    match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb stDepOk with
-    | .error err => IO.println s!"[SRG-010] reverse edge: {reprStr err}"
-    | .ok _ => IO.println "[SRG-010] unexpected cycle allowed"
   checkInvariants counter "post-SRG-tests" st1
 
   let deepRadixCNode : CNode := (SeLe4n.Model.CNode.ofSlots 14 2 3 12 (SeLe4n.UniqueSlotMap.ofListWF [
@@ -478,51 +380,6 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
               | .error err => IO.println s!"[SST-036] multi-endpoint receive B error: {reprStr err}"
               | .ok (senderB, _) =>
                   IO.println s!"[SST-037] multi-endpoint receive senders: {senderA}, {senderB}"
-
-  let chainRoot : ServiceId := ⟨205⟩
-  let chainL4 : ServiceId := ⟨204⟩
-  let chainL3 : ServiceId := ⟨203⟩
-  let chainL2 : ServiceId := ⟨202⟩
-  let chainL1 : ServiceId := ⟨201⟩
-  let chainTop : ServiceId := ⟨200⟩
-  let servicesChain :=
-    (((((st1.services
-      |>.insert chainRoot {
-        identity := { sid := chainRoot, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        dependencies := []
-        isolatedFrom := []
-      })
-      |>.insert chainL4 {
-        identity := { sid := chainL4, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        dependencies := [chainRoot]
-        isolatedFrom := []
-      })
-      |>.insert chainL3 {
-        identity := { sid := chainL3, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        dependencies := [chainL4]
-        isolatedFrom := []
-      })
-      |>.insert chainL2 {
-        identity := { sid := chainL2, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        dependencies := [chainL3]
-        isolatedFrom := []
-      })
-      |>.insert chainL1 {
-        identity := { sid := chainL1, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        dependencies := [chainL2]
-        isolatedFrom := []
-      })
-      |>.insert chainTop {
-        identity := { sid := chainTop, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        dependencies := [chainL1]
-        isolatedFrom := []
-      }
-  let stServiceChain : SystemState :=
-    { st1 with services := servicesChain }
-  -- Q1: Test dependency chain reachability (serviceStart removed)
-  let chainFuel := SeLe4n.Kernel.serviceBfsFuel stServiceChain
-  IO.println s!"[SST-038] service dependency chain path chainTop→chainRoot: {reprStr <| SeLe4n.Kernel.serviceHasPathTo stServiceChain chainTop chainRoot chainFuel}"
-  IO.println s!"[SST-039] service dependency chain lookup chainTop: {reprStr <| (SeLe4n.Model.lookupService stServiceChain chainTop).map ServiceGraphEntry.dependencies}"
 
   match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll (SeLe4n.PAddr.ofNat 0) st1 with
   | .error err => IO.println s!"[SST-040] boundary memory low-address error: {reprStr err}"
@@ -1636,27 +1493,6 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       | .ok (pa, _) =>
         IO.println s!"[KSD-005] vspaceMap via decoded regs paddr: {pa.toNat}"
 
-  -- KSD-006: Service start with config-sourced policy — success
-  let ksdSvcId : ServiceId := ⟨900⟩
-  let ksdSvcBackingId : SeLe4n.ObjId := ⟨901⟩
-  let stSvc : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject ksdSvcBackingId (.tcb {
-        tid := ⟨901⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        })
-      |>.withService ksdSvcId {
-        identity := { sid := ksdSvcId, backingObject := ksdSvcBackingId, owner := ⟨10⟩ }
-        dependencies := []
-        isolatedFrom := []
-      }
-      |>.withRunnable [⟨901⟩]
-      |>.withLifecycleObjectType ksdSvcBackingId .tcb
-      |>.buildChecked)
-  -- Q1: Service lifecycle removed — test registry lookup instead
-  let svcPresent := (SeLe4n.Model.lookupService stSvc ksdSvcId).isSome
-  IO.println s!"[KSD-006] service registry lookup present: {reprStr svcPresent}"
-
   -- KSD-007: IPC send with populated message body
   let msgRegsArr : Array SeLe4n.RegValue := #[⟨111⟩, ⟨222⟩, ⟨333⟩, ⟨444⟩]
   let msgInfo : MessageInfo := { length := 4, extraCaps := 0, label := 0 }
@@ -1770,7 +1606,7 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
     -- A5: Post-dispatch invariant preservation check
     let pipeObjIds : List SeLe4n.ObjId := [pipeTid, pipeEp, pipeNtfn, pipeCn, pipeVs]
     let stCheckedSynced := SeLe4n.Kernel.syncThreadStates stChecked
-    let pipeChecks := stateInvariantChecksFor pipeObjIds stCheckedSynced []
+    let pipeChecks := stateInvariantChecksFor pipeObjIds stCheckedSynced
     let pipeFailures := pipeChecks.filterMap fun (name, ok) => if ok then none else some name
     if pipeFailures.isEmpty then
       IO.println s!"[PIP-005] A5 post-dispatch invariants preserved ({pipeChecks.length} checks)"
@@ -3103,7 +2939,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       | none => IO.println s!"[Z8J-003] SchedContext lookup after bind: not found"
 
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
-  assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
+  assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1
   let counter ← IO.mkRef (0 : Nat)
   match SeLe4n.Kernel.cspaceLookupSlot rootSlot st1 with
   | .error err => IO.println s!"[ENT-001] source lookup error: {reprStr err}"
@@ -3151,10 +2987,10 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
 
 /-- Build a topology with `threadCount` threads at varying priorities, a CNode with
 the given `radix`, `asidCount` VSpace roots with distinct ASIDs, an endpoint,
-a notification, and `svcCount` services with a linear dependency chain. -/
+a notification. -/
 private def buildParameterizedTopology
-    (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat)
-    (svcCount : Nat := 0) : SystemState :=
+    (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) :
+    SystemState :=
   let threads : List (SeLe4n.ObjId × KernelObject) :=
     (List.range threadCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨1000 + i⟩
@@ -3186,43 +3022,34 @@ private def buildParameterizedTopology
       ++ [(⟨2000⟩, .cnode)]
       ++ (vspaceRoots.map fun (oid, _) => (oid, .vspaceRoot))
       ++ [(⟨4000⟩, .endpoint), (⟨4001⟩, .notification)]
-  -- Build a linear service dependency chain: svc0 → svc1 → ... → svc(n-1) (acyclic).
-  let serviceEntries : List (ServiceId × ServiceGraphEntry) :=
-    (List.range svcCount).map fun i =>
-      let sid : ServiceId := ⟨5000 + i⟩
-      let deps := if i + 1 < svcCount then [⟨5000 + i + 1⟩] else []
-      (sid, { identity := { sid := sid, backingObject := ⟨5000 + i⟩, owner := ⟨1000⟩ },
-              dependencies := deps, isolatedFrom := [] })
   let builder := BootstrapBuilder.empty
     |>.withRunnable runnableThreads
   let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder
   let builder := lifecycleTypes.foldl (fun b (oid, ty) => b.withLifecycleObjectType oid ty) builder
-  let builder := serviceEntries.foldl (fun b (sid, entry) => b.withService sid entry) builder
   builder.buildChecked
 
 /-- Exercise invariant checks over a parameterized topology configuration. -/
 private def runParameterizedTopologyCheck
-    (label : String) (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat)
-    (svcCount : Nat := 0) : IO Unit := do
-  let stRaw := buildParameterizedTopology threadCount basePriority radix asidCount svcCount
+    (label : String) (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat) :
+    IO Unit := do
+  let stRaw := buildParameterizedTopology threadCount basePriority radix asidCount
   let st := SeLe4n.Kernel.syncThreadStates stRaw
   let allIds := st.objectIndex
-  let svcIds : List ServiceId := (List.range svcCount).map fun i => ⟨5000 + i⟩
-  let checks := stateInvariantChecksFor allIds st svcIds
+  let checks := stateInvariantChecksFor allIds st
   let failures := checks.filterMap fun (name, ok) => if ok then none else some name
   if failures.isEmpty then
-    IO.println s!"[PTY-001] parameterized topology ok: {label} (threads={threadCount} prio={basePriority} radix={radix} asids={asidCount} svcs={svcCount})"
+    IO.println s!"[PTY-001] parameterized topology ok: {label} (threads={threadCount} prio={basePriority} radix={radix} asids={asidCount})"
   else
     throw <| IO.userError s!"{label}: parameterized topology invariant check failed: {reprStr failures}"
 
 /-- M-10: run at least 3 distinct configurations per subsystem to supplement hardcoded fixtures. -/
 private def runParameterizedTopologies : IO Unit := do
-  -- Configuration 1: single thread, minimal radix, single ASID, 1 service
-  runParameterizedTopologyCheck "minimal" 1 50 4 1 1
-  -- Configuration 2: four threads, varied priorities, medium radix, two ASIDs, 2-service chain
-  runParameterizedTopologyCheck "medium" 4 10 8 2 2
-  -- Configuration 3: eight threads, high priority base, large radix, four ASIDs, 4-service chain
-  runParameterizedTopologyCheck "large" 8 100 16 4 4
+  -- Configuration 1: single thread, minimal radix, single ASID
+  runParameterizedTopologyCheck "minimal" 1 50 4 1
+  -- Configuration 2: four threads, varied priorities, medium radix, two ASIDs
+  runParameterizedTopologyCheck "medium" 4 10 8 2
+  -- Configuration 3: eight threads, high priority base, large radix, four ASIDs
+  runParameterizedTopologyCheck "large" 8 100 16 4
 
 /-- Q8-D: RUST-XVAL cross-validation test vectors.
     Encodes known values through the Lean encode/decode pipeline and prints
@@ -3292,13 +3119,13 @@ private def runRustXvalVectors : IO Unit := do
   | .error e => throw <| IO.userError s!"[XVAL-005] SetIPCBufferArgs decode error: {reprStr e}"
 
 def runMainTrace : IO Unit := do
-  assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds
+  assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState
   match bootSchedule bootstrapState with
   | .error err => IO.println s!"[ENT-000] scheduler error: {reprStr err}"
   | .ok (_, st1raw) =>
       -- V8-G7: Sync threadState after schedule (threadState not updated by operations)
       let st1 := SeLe4n.Kernel.syncThreadStates st1raw
-      assertStateInvariantsFor "post-schedule" bootstrapInvariantObjectIds st1 bootstrapServiceIds
+      assertStateInvariantsFor "post-schedule" bootstrapInvariantObjectIds st1
       IO.println s!"[ENT-000] scheduled thread: {reprStr ((st1.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
       runMainTraceFrom st1
   runParameterizedTopologies

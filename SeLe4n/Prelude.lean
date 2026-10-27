@@ -468,7 +468,7 @@ instance : ToString Irq where
 
 end Irq
 
-/-- Identifier for graph-level services in the orchestration layer. -/
+/-- Identifier for a service in the kernel's service registry. -/
 structure ServiceId where
   val : Nat
 deriving DecidableEq, Repr, Inhabited

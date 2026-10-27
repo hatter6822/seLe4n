@@ -341,52 +341,6 @@ theorem ipcUnwrapCaps_preserves_machine
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
   · exact ipcUnwrapCapsLoop_preserves_machine _ _ _ _ _ _ _ _ _ hStep
 
-theorem ipcUnwrapCapsLoop_preserves_services
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.services = st.services := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; rfl
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; rfl
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hSvc := ipcTransferSingleCap_preserves_services tc.cap _ receiverRoot nextBase
-          maxExtraCaps st stNext result hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => rw [ih _ _ _ _ hStep, hSvc]
-        | noSlot => rw [ih _ _ _ _ hStep, hSvc]
-        | grantDenied => rw [ih _ _ _ _ hStep, hSvc]
-        | sourceRevoked => rw [ih _ _ _ _ hStep, hSvc]
-
-theorem ipcUnwrapCaps_preserves_services
-    (caps : Array TransferCap)
-    (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    st'.services = st.services := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-  · exact ipcUnwrapCapsLoop_preserves_services _ _ _ _ _ _ _ _ _ hStep
-
 theorem ipcUnwrapCapsLoop_preserves_objects_ne
     (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)

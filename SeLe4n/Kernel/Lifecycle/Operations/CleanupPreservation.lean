@@ -2314,7 +2314,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
 TLB-shootdown state — every step (the reservation arm: an unbind or a
 migrating return, since `v0.35.164`; the TCB reference scrub, endpoint
 service detachment, CDT slot detachment, reply/TCB in-use rejects) is an
-objects/scheduler/CDT/services-level mutation.  The `pendingBounded` bundle-carriage link for
+objects/scheduler/CDT/registry-level mutation.  The `pendingBounded` bundle-carriage link for
 the SM7.B.11 retype-with-shootdown wrapper; mirrors the case structure
 of `lifecyclePreRetypeCleanup_flat_subset`. -/
 theorem lifecyclePreRetypeCleanup_tlbShootdown_eq

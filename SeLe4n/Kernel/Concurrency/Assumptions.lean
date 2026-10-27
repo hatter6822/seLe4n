@@ -121,18 +121,6 @@ def lifecyclePreRetypeCleanup_smpLatent : SmpLatentAssumption :=
     sourceTheorem     := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
     auditReference    := "C-M04 / AN9-D" }
 
-/-- SVC-M01 / AN4-H: serviceHasPathTo non-atomic graph traversal. -/
-def serviceHasPathTo_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Kernel.serviceHasPathTo
-    singleCoreWitness :=
-      "Single-core: BFS over the registry's dependency map sees a stable \
-       snapshot — no concurrent registerService can extend the graph mid-walk."
-    smpDischarge      :=
-      "SMP: ServiceRegistry mutations route through capability operations; \
-       AN9-D bracket discipline serialises them on the calling core."
-    sourceTheorem     := `SeLe4n.Kernel.serviceHasPathTo
-    auditReference    := "SVC-M01 / AN4-H" }
-
 /-- AK2-K / AN5-D: timer-tick + replenishment-pipeline atomicity. -/
 def timerTickReplenishmentPipeline_smpLatent : SmpLatentAssumption :=
   { identifier        := `SeLe4n.Kernel.timerTickWithBudget
@@ -207,37 +195,36 @@ def bootFromPlatform_currentCore_is_zero_smpLatent : SmpLatentAssumption :=
     sourceTheorem     := `SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone
     auditReference    := "CX-M03 / AN6-F / SM4.E.4" }
 
-/-- AN12-B.4: aggregator. The full inventory aggregates the 8 entries above
+/-- AN12-B.4: aggregator. The full inventory aggregates the 7 entries above
 into a single value that downstream tooling (e.g. `audit_testing_framework.sh`)
 can grep / decide on. -/
 def smpLatentInventory : List SmpLatentAssumption :=
   [ cspaceLookupMultiLevel_smpLatent
   , cspaceCopyMoveMutate_smpLatent
   , lifecyclePreRetypeCleanup_smpLatent
-  , serviceHasPathTo_smpLatent
   , timerTickReplenishmentPipeline_smpLatent
   , typedIdDisjointness_smpLatent
   , architecture_singleCoreOnly_smpLatent
   , bootFromPlatform_currentCore_is_zero_smpLatent ]
 
-/-- AN12-B.4: tier-3-anchorable size witness. The inventory has exactly 8
+/-- AN12-B.4: tier-3-anchorable size witness. The inventory has exactly 7
 entries at v0.30.11; if a future entry is added or removed, this theorem
 must be updated in the same PR (it is the single point that pins the
 inventory cardinality). -/
-theorem smpLatentInventory_count : smpLatentInventory.length = 8 := by decide
+theorem smpLatentInventory_count : smpLatentInventory.length = 7 := by decide
 
 /-- AN12-B.4: structural decidability — every entry's `identifier` is
-non-empty (sanity check for the inventory schema). Each of the 8 entries
+non-empty (sanity check for the inventory schema). Each of the 7 entries
 is a literal record with a fully-qualified `Lean.Name`, so the
 non-anonymous predicate is decidable per-entry by `simp` on the field. -/
 theorem smpLatentInventory_identifiers_nonAnonymous :
     ∀ entry ∈ smpLatentInventory, entry.identifier ≠ Lean.Name.anonymous := by
   intro entry hEntry
   simp [smpLatentInventory] at hEntry
-  rcases hEntry with h|h|h|h|h|h|h|h <;>
+  rcases hEntry with h|h|h|h|h|h|h <;>
     subst h <;>
     simp [cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
-          lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+          lifecyclePreRetypeCleanup_smpLatent,
           timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
           architecture_singleCoreOnly_smpLatent,
           bootFromPlatform_currentCore_is_zero_smpLatent]
@@ -245,18 +232,18 @@ theorem smpLatentInventory_identifiers_nonAnonymous :
 /-- **WS-SM SM0.D** (closes SMP-L1): structural pinning that no two
 inventory entries share an `identifier`.
 
-The 8-entry size is witnessed by `smpLatentInventory_count`, but a
+The 7-entry size is witnessed by `smpLatentInventory_count`, but a
 maintainer who *renames* one entry's `identifier` to collide with
 another existing entry would slip past the size check.  This NoDup
 witness catches the collision at build time: `decide` performs the
-8 × 7 / 2 = 28 pairwise inequality checks on the `Lean.Name`
+7 × 6 / 2 = 21 pairwise inequality checks on the `Lean.Name`
 literals and fails to elaborate if any pair matches. -/
 theorem smpLatentInventory_identifiers_nodup :
     (smpLatentInventory.map (·.identifier)).Nodup := by
   unfold smpLatentInventory
   simp only [List.map_cons, List.map_nil,
     cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
-    lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+    lifecyclePreRetypeCleanup_smpLatent,
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
     bootFromPlatform_currentCore_is_zero_smpLatent]
@@ -273,7 +260,7 @@ theorem smpLatentInventory_sourceTheorems_nodup :
   unfold smpLatentInventory
   simp only [List.map_cons, List.map_nil,
     cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
-    lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+    lifecyclePreRetypeCleanup_smpLatent,
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
     bootFromPlatform_currentCore_is_zero_smpLatent]
@@ -284,7 +271,7 @@ theorem smpLatentInventory_sourceTheorems_nodup :
 SM4 path-a (the per-core `Vector` replacement of the singular
 `SchedulerState` fields) begins discharging the SMP-latent single-core
 assumptions recorded in `smpLatentInventory`.  `smpRetiredInventory` is the
-companion ledger that tracks the retirement of each of the 8 latent
+companion ledger that tracks the retirement of each of the 7 latent
 assumptions toward the v1.0.0 SMP release; it mirrors `smpLatentInventory`
 one-to-one by `identifier` (`smpRetiredInventory_covers_latent`).
 
@@ -293,7 +280,7 @@ scheduler-state shape (`Architecture.ArchAssumption`) and the boot-core
 current-thread shape (`Platform.Boot.bootFromPlatform`) — because SM4.B
 made `SchedulerState.current` (and the other six per-core fields) a
 `Vector α numCores`, so the single-core *state shape* no longer applies.
-The other six remain `perCoreBracketGated`: their single-core property is
+The other five remain `perCoreBracketGated`: their single-core property is
 preserved per-core by the FFI interrupt-disabled dispatch bracket, with
 full cross-core retirement tracked against WS-SM SM5 (the per-core
 scheduler) and SM6 (cross-core IPC).  This honest disposition is pinned by
@@ -363,17 +350,6 @@ def lifecyclePreRetypeCleanup_smpRetired : SmpRetiredAssumption :=
     anchor         := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
     auditReference := "C-M04 / AN9-D" }
 
-/-- SVC-M01 / AN4-H: serviceHasPathTo graph traversal. -/
-def serviceHasPathTo_smpRetired : SmpRetiredAssumption :=
-  { identifier     := `SeLe4n.Kernel.serviceHasPathTo
-    status         := .perCoreBracketGated
-    retirement     :=
-      "Per-core: ServiceRegistry mutations route through capability ops, \
-       serialised on the calling core by the AN9-D bracket. Cross-core \
-       retirement tracked against SM5."
-    anchor         := `SeLe4n.Kernel.serviceHasPathTo
-    auditReference := "SVC-M01 / AN4-H" }
-
 /-- AK2-K / AN5-D: timer-tick + replenishment-pipeline atomicity. -/
 def timerTickReplenishmentPipeline_smpRetired : SmpRetiredAssumption :=
   { identifier     := `SeLe4n.Kernel.timerTickWithBudget
@@ -429,17 +405,16 @@ def smpRetiredInventory : List SmpRetiredAssumption :=
   [ cspaceLookupMultiLevel_smpRetired
   , cspaceCopyMoveMutate_smpRetired
   , lifecyclePreRetypeCleanup_smpRetired
-  , serviceHasPathTo_smpRetired
   , timerTickReplenishmentPipeline_smpRetired
   , typedIdDisjointness_smpRetired
   , architecture_singleCoreOnly_smpRetired
   , bootFromPlatform_currentCore_is_zero_smpRetired ]
 
 /-- WS-SM SM4.E.5: tier-3-anchorable size witness — the retirement ledger has
-exactly 8 entries, one per `smpLatentInventory` entry.  Pinned so a future
+exactly 7 entries, one per `smpLatentInventory` entry.  Pinned so a future
 entry added to (or removed from) either inventory without updating the other
 fails this size check (in concert with `smpRetiredInventory_covers_latent`). -/
-theorem smpRetiredInventory_count : smpRetiredInventory.length = 8 := by decide
+theorem smpRetiredInventory_count : smpRetiredInventory.length = 7 := by decide
 
 /-- WS-SM SM4.E.5: structural mirror — the retirement ledger covers exactly
 the SMP-latent assumptions, in the same order.  This is the substantive
@@ -451,12 +426,12 @@ theorem smpRetiredInventory_covers_latent :
   unfold smpRetiredInventory smpLatentInventory
   simp only [List.map_cons, List.map_nil,
     cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
-    lifecyclePreRetypeCleanup_smpRetired, serviceHasPathTo_smpRetired,
+    lifecyclePreRetypeCleanup_smpRetired,
     timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
     architecture_singleCoreOnly_smpRetired,
     bootFromPlatform_currentCore_is_zero_smpRetired,
     cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
-    lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+    lifecyclePreRetypeCleanup_smpLatent,
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
     bootFromPlatform_currentCore_is_zero_smpLatent]
@@ -470,7 +445,7 @@ theorem smpRetiredInventory_identifiers_nodup :
   unfold smpRetiredInventory
   simp only [List.map_cons, List.map_nil,
     cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
-    lifecyclePreRetypeCleanup_smpRetired, serviceHasPathTo_smpRetired,
+    lifecyclePreRetypeCleanup_smpRetired,
     timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
     architecture_singleCoreOnly_smpRetired,
     bootFromPlatform_currentCore_is_zero_smpRetired]
@@ -478,13 +453,13 @@ theorem smpRetiredInventory_identifiers_nodup :
 
 /-- WS-SM SM4.E.5: NoDup on the `anchor` projection — every retirement
 record cites a distinct anchoring theorem (the two `.pathARetired` boot
-witnesses plus the six per-core-bracket consumers). -/
+witnesses plus the five per-core-bracket consumers). -/
 theorem smpRetiredInventory_anchor_nodup :
     (smpRetiredInventory.map (·.anchor)).Nodup := by
   unfold smpRetiredInventory
   simp only [List.map_cons, List.map_nil,
     cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
-    lifecyclePreRetypeCleanup_smpRetired, serviceHasPathTo_smpRetired,
+    lifecyclePreRetypeCleanup_smpRetired,
     timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
     architecture_singleCoreOnly_smpRetired,
     bootFromPlatform_currentCore_is_zero_smpRetired]
@@ -492,10 +467,10 @@ theorem smpRetiredInventory_anchor_nodup :
 
 /-- WS-SM SM4.E.5: honest disposition pin — at SM4.E exactly **two** entries
 are genuinely retired by path-a (the scheduler-state shape and the boot-core
-current-thread shape); the other six are `perCoreBracketGated` (single-core
+current-thread shape); the other five are `perCoreBracketGated` (single-core
 property preserved per-core by the FFI bracket, full retirement gated on
 SM5+).  This count is the honest current state per the implement-the-improvement
-rule — it deliberately does NOT claim all 8 are retired.  WS-SM SM10 (release
+rule — it deliberately does NOT claim all 7 are retired.  WS-SM SM10 (release
 closure) flips the gated entries to retired as SM5..SM8 land and proves
 `smpRetiredInventory_complete`. -/
 theorem smpRetiredInventory_pathARetired_count :
@@ -503,15 +478,15 @@ theorem smpRetiredInventory_pathARetired_count :
   decide
 
 /-- WS-SM SM4.E.5: the complementary half of the disposition partition — the
-remaining **six** entries are `perCoreBracketGated` (single-core property
+remaining **five** entries are `perCoreBracketGated` (single-core property
 preserved per-core by the FFI bracket; full cross-core retirement gated on
 SM5+).  Pinned explicitly (rather than left implied by
 `smpRetiredInventory_pathARetired_count` + `smpRetiredInventory_count`) so the
 partition stays robust if a future `SmpRetirementStatus` constructor is added,
 and so a mis-statused entry is caught at this file's build step.  Together
-with the path-a count this exhausts the 8 entries (2 + 6 = 8). -/
+with the path-a count this exhausts the 7 entries (2 + 5 = 7). -/
 theorem smpRetiredInventory_perCoreBracketGated_count :
-    (smpRetiredInventory.filter (fun e => decide (e.status = .perCoreBracketGated))).length = 6 := by
+    (smpRetiredInventory.filter (fun e => decide (e.status = .perCoreBracketGated))).length = 5 := by
   decide
 
 end SeLe4n.Kernel.Concurrency

@@ -12,10 +12,10 @@
         {
           "name": "smpLatentInventory",
           "module": "SeLe4n/Kernel/Concurrency/Assumptions.lean",
-          "count": 8
+          "count": 7
         }
       ],
-      "entryCount": 8,
+      "entryCount": 7,
       "theoremCount": 0
     },
     {
@@ -76,10 +76,10 @@
         {
           "name": "smpRetiredInventory",
           "module": "SeLe4n/Kernel/Concurrency/Assumptions.lean",
-          "count": 8
+          "count": 7
         }
       ],
-      "entryCount": 8,
+      "entryCount": 7,
       "theoremCount": 0
     },
     {
@@ -180,8 +180,8 @@
   ],
   "entryTotal": 958,
   "theoremTotal": 780,
-  "ledgerEntryTotal": 16,
-  "registeredEntryTotal": 974,
+  "ledgerEntryTotal": 14,
+  "registeredEntryTotal": 972,
   "theoremInventoryCount": 12,
   "ledgerInventoryCount": 2
 }

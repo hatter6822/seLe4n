@@ -429,10 +429,6 @@ theorem applyMachineConfig_registerCount (ist : IntermediateState) (config : Mac
 theorem applyMachineConfig_cdt_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.cdt = ist.state.cdt := rfl
 
-/-- AH2-F: `applyMachineConfig` preserves services. -/
-theorem applyMachineConfig_services_eq (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.services = ist.state.services := rfl
-
 /-- AH2-F: `applyMachineConfig` preserves serviceRegistry. -/
 theorem applyMachineConfig_serviceRegistry_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.serviceRegistry = ist.state.serviceRegistry := rfl
@@ -3039,7 +3035,7 @@ modified. The proof shows that the new entry is consistent.
 `registerIrq` only modifies `st.irqHandlers`. All 12 components of
 `proofLayerInvariantBundle` are independent of `irqHandlers`:
 
-- Components 1–8 read scheduler, objects, CDT, services, serviceRegistry,
+- Components 1–8 read scheduler, objects, CDT, serviceRegistry,
   interfaceRegistry, asidTable, lifecycle, and TLB — none of which include
   `irqHandlers`.
 - Component 9 (`tlbConsistent`) reads TLB entries and objects/asidTable.
@@ -3057,7 +3053,6 @@ private theorem registerIrq_state_fields_eq (ist : IntermediateState)
     st'.scheduler = st.scheduler ∧
     st'.objects = st.objects ∧
     st'.cdt = st.cdt ∧
-    st'.services = st.services ∧
     st'.serviceRegistry = st.serviceRegistry ∧
     st'.interfaceRegistry = st.interfaceRegistry ∧
     st'.asidTable = st.asidTable ∧
@@ -3106,8 +3101,6 @@ or satisfy the boot preconditions.
     (registerIrq ist irq handler).state.scheduler = ist.state.scheduler := rfl
 @[simp] private theorem registerIrq_cdt (ist : IntermediateState) irq handler :
     (registerIrq ist irq handler).state.cdt = ist.state.cdt := rfl
-@[simp] private theorem registerIrq_services (ist : IntermediateState) irq handler :
-    (registerIrq ist irq handler).state.services = ist.state.services := rfl
 @[simp] private theorem registerIrq_serviceRegistry (ist : IntermediateState) irq handler :
     (registerIrq ist irq handler).state.serviceRegistry = ist.state.serviceRegistry := rfl
 @[simp] private theorem registerIrq_interfaceRegistry (ist : IntermediateState) irq handler :
@@ -3131,8 +3124,6 @@ or satisfy the boot preconditions.
     (createObject ist id obj hS hM).state.scheduler = ist.state.scheduler := rfl
 @[simp] private theorem createObject_cdt (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.cdt = ist.state.cdt := rfl
-@[simp] private theorem createObject_services (ist : IntermediateState) id obj hS hM :
-    (createObject ist id obj hS hM).state.services = ist.state.services := rfl
 @[simp] private theorem createObject_serviceRegistry (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.serviceRegistry = ist.state.serviceRegistry := rfl
 @[simp] private theorem createObject_interfaceRegistry (ist : IntermediateState) id obj hS hM :
@@ -3154,8 +3145,6 @@ or satisfy the boot preconditions.
     (createBootObject ist e).state.scheduler = ist.state.scheduler := rfl
 @[simp] private theorem createBootObject_cdt (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.cdt = ist.state.cdt := rfl
-@[simp] private theorem createBootObject_services (ist : IntermediateState) (e : ObjectEntry) :
-    (createBootObject ist e).state.services = ist.state.services := rfl
 @[simp] private theorem createBootObject_serviceRegistry (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.serviceRegistry = ist.state.serviceRegistry := rfl
 @[simp] private theorem createBootObject_interfaceRegistry (ist : IntermediateState) (e : ObjectEntry) :
@@ -3202,12 +3191,6 @@ private theorem foldIrqs_cdt (irqs : List IrqEntry) (ist : IntermediateState) :
 
 private theorem foldIrqs_objects (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.objects = ist.state.objects := by
-  induction irqs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldIrqs_services (irqs : List IrqEntry) (ist : IntermediateState) :
-    (foldIrqs irqs ist).state.services = ist.state.services := by
   induction irqs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
@@ -3327,12 +3310,6 @@ private theorem foldObjects_scheduler (objs : List ObjectEntry) (ist : Intermedi
 
 private theorem foldObjects_cdt (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.cdt = ist.state.cdt := by
-  induction objs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldObjects_services (objs : List ObjectEntry) (ist : IntermediateState) :
-    (foldObjects objs ist).state.services = ist.state.services := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -4994,13 +4971,6 @@ theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_cdt_eq, foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
 
-/-- V4-A3: The post-boot state preserves services from default. -/
-theorem bootFromPlatform_services_eq (config : PlatformConfig) :
-    (bootFromPlatform config).state.services =
-    (default : SystemState).services := by
-  show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_services_eq, foldObjects_services, foldIrqs_services, mkEmpty_state_eq_default]
-
 /-- V4-A3: The post-boot state preserves serviceRegistry from default. -/
 theorem bootFromPlatform_serviceRegistry_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.serviceRegistry =
@@ -5736,12 +5706,11 @@ production boot are its two instances.
 -/
 
 /-- **WS-BP BP3.5**: the fields a booted state leaves at their defaults — the
-    service registries, every TLB and instruction-cache view, the shootdown
+    service registry, every TLB and instruction-cache view, the shootdown
     state and the audit trail.  Boot writes none of them: it installs objects,
     registers ASIDs, stores the idle threads, starts the initial threads and
     links the capabilities, and each of those is framed here. -/
 def bootQuiescentFieldsOffCdt (st : SystemState) : Prop :=
-  st.services = (default : SystemState).services ∧
   st.serviceRegistry = (default : SystemState).serviceRegistry ∧
   st.tlb = (default : SystemState).tlb ∧
   st.tlbShootdown = (default : SystemState).tlbShootdown ∧
@@ -5812,16 +5781,11 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hRun : ist.state.runQueueRefined)
     (hBindings : notificationBindingReciprocal ist.state) :
     Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
+  obtain ⟨hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape⟩ := hTree
   have hAllTables := ist.hAllTables
   have hBS := hShape
   have h1 := hSched
-  -- lookupService returns none (services empty)
-  have hLookupSvcNone : ∀ sid,
-      lookupService ist.state sid = none := by
-    intro sid; unfold lookupService; rw [hSvc]
-    exact RHTable_get?_empty 16 (by omega)
   -- 2. capabilityInvariantBundle
   have hCapBundle : capabilityInvariantBundle ist.state := by
     -- The per-CNode `slotsUnique` and slot-count invariants are carried
@@ -6057,22 +6021,14 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · unfold currentThreadIpcReady; rw [hCur]; trivial
       · unfold currentNotEndpointQueueHead; rw [hCur]; trivial
       · unfold currentNotOnNotificationWaitList; rw [hCur]; trivial
-  -- 6. serviceLifecycleCapabilityInvariantBundle
-  have hServiceBundle : serviceLifecycleCapabilityInvariantBundle
-      ist.state := by
-    apply serviceLifecycleCapabilityInvariantBundle_of_components
-    · -- servicePolicySurfaceInvariant (services empty → vacuous)
-      intro sid svc hLookupSvc
-      rw [hLookupSvcNone] at hLookupSvc; exact absurd hLookupSvc (by simp)
-    · exact hLifeBundle
-    · exact hCapBundle
-    · -- registryInvariant (serviceRegistry empty → vacuous)
-      constructor <;> {
-        intro sid reg hLookup; rw [hSvcR] at hLookup
-        have : (default : SystemState).serviceRegistry[sid]? = none := by
-          simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-        rw [this] at hLookup; exact absurd hLookup (by simp)
-      }
+  -- 6. registryInvariant (serviceRegistry empty → vacuous)
+  have hServiceBundle : registryInvariant ist.state := by
+    constructor <;> {
+      intro sid reg hLookup; rw [hSvcR] at hLookup
+      have : (default : SystemState).serviceRegistry[sid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    }
   -- 7. vspaceInvariantBundle (WS-BP BP3.5): the ASID half is the table's
   -- consistency — two roots on one ASID would be registered at one key, so the
   -- table's completeness names them the same object — and the three
@@ -6100,9 +6056,9 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       obtain ⟨hLt, hCap, hVac⟩ := ((hBS oid _ hObj).2.2.2.2.1 root rfl).2
       exact ⟨⟨ist.hPerObjectMappings oid root hObj, hLt, hCap⟩,
         SeLe4n.Kernel.RobinHood.RHTable.vacant_invExtK _ hVac⟩
-  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 predicates)
+  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 10 predicates)
   have hCrossBundle : crossSubsystemInvariant ist.state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
@@ -6111,11 +6067,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     · -- AE5-C: registryInterfaceValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [this] at hLookup; exact absurd hLookup (by simp)
-    · -- registryDependencyConsistent
-      intro sid entry hLookup; rw [hSvc] at hLookup
-      have : (default : SystemState).services[sid]? = none := by
         simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
       rw [this] at hLookup; exact absurd hLookup (by simp)
     · -- noStaleEndpointQueueReferences
@@ -6137,22 +6088,6 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       have hNtfn := (hBS oid _ hObj).2.1 notif rfl
       rw [Notification.mem_queueEnds, hNtfn.2.1, hNtfn.2.2.1] at hMem
       simp at hMem
-    · -- serviceGraphInvariant
-      constructor
-      · -- serviceDependencyAcyclic
-        intro sid hPath
-        cases hPath with
-        | single h =>
-          obtain ⟨svc, hL, _⟩ := h
-          rw [hLookupSvcNone] at hL; exact absurd hL (by simp)
-        | cons h _ =>
-          obtain ⟨svc, hL, _⟩ := h
-          rw [hLookupSvcNone] at hL; exact absurd hL (by simp)
-      · -- serviceCountBounded
-        refine ⟨[], ⟨List.nodup_nil, ?_, ?_⟩, ?_⟩
-        · intro sid hLookup; exact absurd (hLookupSvcNone sid) hLookup
-        · intro sid hMem; contradiction
-        · simp [serviceBfsFuel]
     · -- Z9-A: schedContextStoreConsistent — all TCBs have .unbound binding at boot
       intro tid tcb hObj scId hBinding
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
@@ -7263,7 +7198,7 @@ theorem foldl_storeIdleThread_bootQuiescentFields
 theorem bootFromPlatform_bootQuiescentFields (config : PlatformConfig) :
     bootQuiescentFields (bootFromPlatform config).state :=
   ⟨bootFromPlatform_cdt_eq config,
-   bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
+   bootFromPlatform_serviceRegistry_eq config,
    bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
    bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
    bootFromPlatform_declassificationAuditLog_eq config⟩
@@ -7914,10 +7849,10 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
   obtain ⟨hI1, hI2⟩ := hIrq
   have hEmptyObj : ∀ k : SeLe4n.ObjId, (default : SystemState).objects[k]? = none := fun k => by
     simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · rw [hQ.2.1]; exact hD.registryInvExtK
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · rw [hQ.1]; exact hD.registryInvExtK
   · intro sid reg hs
-    rw [hQ.2.1] at hs
+    rw [hQ.1] at hs
     obtain ⟨_, _, h1⟩ := hD.registry sid reg hs
     rw [hEmptyObj] at h1; cases h1
   · intro e n hn
@@ -7971,7 +7906,6 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
           foldIrqs_irqHandlers_of_mem _ _ (config.wellFormed_irqs_pairwise hWf) ie hieMem,
           hieH, hId]
       | _ => simp [KernelObject.tableBackLinks] at hn
-  · rw [hQ.1]; exact hD.servicesEmpty
 
 /-- The idle store writes no reference table. -/
 theorem foldl_storeIdleThread_referenceTables (L : List SeLe4n.Kernel.Concurrency.CoreId)

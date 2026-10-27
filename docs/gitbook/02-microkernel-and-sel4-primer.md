@@ -78,7 +78,7 @@ seLe4n does not replicate seL4's proof corpus. Instead, it takes a fundamentally
 | **Information flow** | Binary high/low partition | N-domain configurable flow policy | Richer security policies |
 | **CDT** | Mutable doubly-linked list | Links in the slots (parent, first child, siblings), proven to agree with an edge-list tree | Eliminates dangling pointers |
 | **Scheduler** | Priority round-robin | Priority-bucketed + EDF with domain partitioning | O(1) operations, temporal isolation |
-| **Service management** | Not in kernel | Service orchestration layer | Dependency graphs, partial-failure |
+| **Service management** | Not in kernel | Endpoint-backed service registry | Lookup by the serving endpoint; dependency policy stays in user space |
 | **Data structures** | Arrays and linked lists | Verified Robin Hood tables (`RHTable`/`RHSet`) throughout | O(1) hot paths |
 | **Error handling** | Some paths use assertions | All paths return typed errors | Complete modeled error coverage |
 

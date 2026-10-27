@@ -1295,8 +1295,8 @@ def crossSubsystemInvariant_default_has_lockstep : IO Unit := do
   let _ := hLockstep
 
 /-- `crossSubsystemInvariant_to_blockingAcyclic` still
-resolves correctly after the 11-tuple extension (the projection
-reindexes from `h.2.2.2.2.2.2.2.2.2` to `h.2.2.2.2.2.2.2.2.2.1`). -/
+resolves correctly in the 10-tuple (the projection is
+`h.2.2.2.2.2.2.2.1`, no longer the last conjunct). -/
 def blockingAcyclic_projection_reindex_ok : IO Unit := do
   let st : SystemState := default
   let hBundle := SeLe4n.Kernel.default_crossSubsystemInvariant
@@ -1306,16 +1306,17 @@ def blockingAcyclic_projection_reindex_ok : IO Unit := do
   expect "blockingAcyclic projection reindexed" true
 
 /-- (audit remediation): `checkCrossSubsystemInvariant` in
-`Testing/InvariantChecks.lean` runs all 11 predicate checks (extended
-(extended post-audit to cover the lockstep
-predicate).  Guards against future regressions where the Prop-level
-bundle is extended but the boolean runtime check drifts out of sync. -/
+`Testing/InvariantChecks.lean` runs all 9 predicate checks (extended
+post-audit to cover the lockstep predicate; the two service-graph checks
+left with the graph).  Guards against future regressions where the
+Prop-level bundle is extended but the boolean runtime check drifts out of
+sync. -/
 def checkCrossSubsystemInvariant_covers_all_predicates : IO Unit := do
   let st : SystemState := default
   let checks := SeLe4n.Testing.checkCrossSubsystemInvariant st
-  -- Must have exactly 11 entries (not 10).
-  expect "runtime check list has 11 entries"
-    (checks.length = 11)
+  -- Must have exactly 9 entries.
+  expect "runtime check list has 9 entries"
+    (checks.length = 9)
   -- The new entry must be named and must pass on the default (empty) state.
   let lockstepEntry := checks.find? (fun (n, _) =>
     n = "crossSub:lifecycleObjectTypeLockstep")
@@ -2000,11 +2001,11 @@ def an6f_cxm04_interruptsEnabled_bundle_inhabited : IO Unit := do
       == st.machine.interruptsEnabled)
 
 /-- AN6-F (CX-M05): Positive-state smoke test: the default `SystemState`
-    inhabits `crossSubsystemInvariant`, confirming the 12-predicate
+    inhabits `crossSubsystemInvariant`, confirming the 10-predicate
     conjunction is not only a Prop but holds at a concrete state.
     Anchors the "a post-boot valid state exists" requirement.
 
-    **AN6 post-audit**: each of the 12 conjuncts is individually
+    **AN6 post-audit**: each of the 10 conjuncts is individually
     projected via its dedicated extraction theorem (catches any
     bundle-reordering regression), and the `crossSubsystemInvariant`
     witness is type-ascribed so any future widening/narrowing of the
@@ -2024,12 +2025,12 @@ def an6f_cxm05_crossSubsystemInvariant_positive : IO Unit := do
   let _ := SeLe4n.Kernel.crossSubsystemInvariant_to_schedContextStoreConsistent st bundle
   let _ := SeLe4n.Kernel.crossSubsystemInvariant_to_schedContextNotDualBound st bundle
   let _ := SeLe4n.Kernel.crossSubsystemInvariant_to_schedContextRunQueueConsistent st bundle
-  -- Composition gap documentation theorem extracts all 12 conjuncts as a tuple.
+  -- Composition gap documentation theorem extracts all 10 conjuncts as a tuple.
   let comp := SeLe4n.Kernel.crossSubsystemInvariant_composition_gap_documented st bundle
   expect "CX-M05 default state: registry endpoint valid (1st conjunct)"
     ((fun _ => True) comp.1)
-  expect "CX-M05 default state: untypedRegionsDisjoint (last, 12th conjunct)"
-    ((fun _ => True) comp.2.2.2.2.2.2.2.2.2.2.2)
+  expect "CX-M05 default state: untypedRegionsDisjoint (last, 10th conjunct)"
+    ((fun _ => True) comp.2.2.2.2.2.2.2.2.2)
 
 /-- AN6-C.1 (H-09): `UntypedObject.parent` field defaults to `none` on
     empty-state untypeds and carries through named-field syntax. -/
@@ -2303,7 +2304,7 @@ def main : IO Unit := do
   crossSubsystemInvariant_default_has_lockstep
   blockingAcyclic_projection_reindex_ok
   storeObject_preserves_lockstep_under_crossSubsystemInvariant
-  -- crossSubsystemInvariant 11-predicate integration audit remediation: runtime check covers 11 predicates + detects violations
+  -- crossSubsystemInvariant integration audit remediation: runtime check covers its 9 predicates + detects violations
   checkCrossSubsystemInvariant_covers_all_predicates
   checkCrossSubsystemInvariant_detects_lockstep_violation
   -- cross-cutting integration — defense-in-depth covering

@@ -384,20 +384,28 @@ makes by id is recorded on the object it names, and the retire reads the
 object's own back-links (`SystemState.tableBackLinksClear`): an endpoint carries its registration's code
 (`Endpoint.serviceCode`, written by `registerService` and cleared by
 `revokeService`), a notification carries the interrupt flag
-(`Notification.irqBound`, set by the boot alone), and the service graph holds no
-entry — one invariant, `SystemState.tableReferencesRecorded` (since
-`v0.36.143`), established at boot and carried by every syscall and kernel
+(`Notification.irqBound`, set by the boot alone) — one invariant,
+`SystemState.tableReferencesRecorded` (since `v0.36.143`), established at boot and carried by every syscall and kernel
 entry through the run-queue link stage (`RunQueueLinkStage.tables`, one
 `TableReferenceFrame` for a step that writes no table and no back-link) and
 along the delete chain in `reachableDeleteBundle`.  The service lookup reads the
 endpoint's code (`lookupServiceByRecordedCode`), so new code must not reintroduce
-a registry fold on a syscall path.  New code that writes either field must write the table entry in
+a registry fold on a syscall path.  Since `v0.36.145` the kernel has no
+service dependency graph (`SystemState.services` and everything over it is
+deleted, plan row 32): service isolation comes from capabilities and dependency
+policy belongs to a user-level service manager, as in seL4, so new code must not
+reintroduce a kernel-side dependency table.  The registry itself is not yet
+projected for non-interference: `ObservableState` reads neither
+`st.serviceRegistry` nor an endpoint's `serviceCode`, and the service query's
+return word is unproven (plan row 33, `docs/REGISTERED_DEBT.md`), so new code
+that reads the registry on a syscall path must not assume a non-interference
+theorem covers it.  New code that writes either field must write the table entry in
 the same step, as the registry's two writers do; new code that writes the
 interrupt-handler table must set the flag on the notification it names, and
 every other step must leave both fields as it found them, which a
 kind-preserving write already does (`kindPreservingWrite` carries
 `KernelObject.tableBackLinks`).  The finalise's admission is not yet
-carried across its steps (each step re-checks; plan row 33,
+carried across its steps (each step re-checks; plan row 34,
 `docs/REGISTERED_DEBT.md`).  The reply stack's links are reciprocal both ways
 (`donationChainWellFormed.nextLinkReciprocal`, since `v0.36.140`), so new code
 that clears a frame's `prev` must clear in the same step the `next` of the frame
@@ -7429,9 +7437,9 @@ code may assume:
   things new code must respect.  (1) **Declaring a write-set obliges you to
   prove it**: `preservesFieldsOutside fs st st'` says every `StateField`
   outside `fs` is unchanged, quantified over the whole field type rather than
-  over whatever the author enumerated, and **every one of the six lists carries
+  over whatever the author enumerated, and **every one of the lists carries
   a `_preservesFieldsOutside` theorem at its own list** — `storeObject`,
-  `revokeService`, `serviceRegisterDependency`, the retype, the four capability
+  `revokeService`, the retype, the four capability
   operations (`cspaceMintWithCdt`, `cspaceCopy`, `cspaceMove`,
   `cspaceDeleteSlot`) and both dual-queue operations — each false at an
   under-declared list.  (2) **`StateField` is total over `SystemState`, and the

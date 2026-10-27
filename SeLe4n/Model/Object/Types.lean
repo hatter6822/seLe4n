@@ -21,24 +21,6 @@ import SeLe4n.Model.Object.SlotOccupancy
 namespace SeLe4n.Model
 
 
-/-- Stable service identity metadata for graph-level orchestration. -/
-structure ServiceIdentity where
-  sid : ServiceId
-  backingObject : SeLe4n.ObjId
-  owner : SeLe4n.ObjId
-  deriving Repr, DecidableEq
-
-/-- Declared service dependencies and isolation edges.
-
-WS-Q1-E1: `status` field removed — runtime lifecycle state is no longer tracked
-in the service graph. The capability-indexed service registry
-(`SystemState.serviceRegistry`) replaces lifecycle-focused orchestration. -/
-structure ServiceGraphEntry where
-  identity : ServiceIdentity
-  dependencies : List ServiceId
-  isolatedFrom : List ServiceId
-  deriving Repr, DecidableEq
-
 inductive AccessRight where
   | read
   | write

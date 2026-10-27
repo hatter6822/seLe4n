@@ -486,7 +486,7 @@ run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite
 # writes and the read-set-excluded fields (replenishment queue, machine timer)
 # — including the load-bearing negative that the SAME write on the observer's
 # own core IS visible — clearance monotonicity with per-component strictness
-# (current, run queue, object index, services, IRQ routing, object visibility),
+# (current, run queue, object index, IRQ routing, object visibility),
 # per-core scheduling transparency (accepted covert channel CC-1, one copy per
 # core), and the cross-core invisibility of a purely high remote reshuffle.
 run_check_with_timeout "TRACE" lake exe smp_information_flow_suite

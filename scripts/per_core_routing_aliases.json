@@ -3,7 +3,6 @@
   "setIPCBuffer": "setIPCBufferOp",
   "setPriority": "setPriorityOnCore",
   "setMCPriority": "setMCPriorityOnCore",
-  "lookupService": "lookupServiceByRecordedCode",
   "setThreadCpuAffinity": "setThreadCpuAffinityOp",
   "schedContextUnbind": "schedContextUnbindOnCore",
   "_alt_note": "Round 20: a `<label>#alt` entry names the OTHER production root of a syscall that has two dispatch arms — the unchecked arm alongside the information-flow-checked one.  Both are walked.  Before this the arms were concatenated and only the mapped root was scanned, so a boot-pinned regression confined to the unchecked arm left the gate green.",

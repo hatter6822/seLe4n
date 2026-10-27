@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -78,7 +78,7 @@ demostración de Lean 4:
 - **Capa de demostración compuesta** — `proofLayerInvariantBundle` compone 16 paquetes de invariantes de subsistema (núcleo del planificador + extensiones CBS, capacidad, IPC + acoplamiento IPC–planificador, ciclo de vida, servicio, VSpace, intersubsistema, consistencia de TLB, consistencia de los esperadores de notificación, cotas de pending/ack del TLB shootdown, invalidación de TLB por núcleo y coherencia de la I-cache, y la cota del registro de auditoría de desclasificación) en una única obligación de nivel superior verificada desde el arranque a través de todas las operaciones
 - **Arquitectura de estado en tres fases** — la fase de construcción con testigos de invariantes alimenta una representación inmutable congelada con equivalencia de consulta demostrada. 24 operaciones congeladas replican la API en vivo
 - **Conjunto completo de operaciones** — todas las operaciones de seL4 implementadas con preservación de invariantes, incluidas la suspensión/reanudación de hilos, la gestión de prioridades (setPriority/setMCPriority) y la configuración del búfer de IPC
-- **Orquestación de servicios** — ciclo de vida de componentes a nivel de kernel con grafos de dependencia y demostraciones de aciclicidad (extensión de seLe4n, no presente en seL4)
+- **Registro de servicios** — registro y búsqueda de servicios a nivel de kernel a través de su endpoint, anotados en el propio endpoint (extensión de seLe4n, no presente en seL4); la política de dependencias corresponde, como en seL4, a un gestor de servicios en espacio de usuario
 
 ## Estado actual
 
@@ -96,11 +96,11 @@ demostración de Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.36.144` |
+| **Versión** | `0.36.145` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 515.329 en 461 archivos |
-| **LoC de pruebas en Lean** | 87.628 en 70 suites de pruebas |
-| **Declaraciones demostradas** | 18.849 declaraciones theorem/lemma (cero sorry/axiom) |
+| **LoC de producción en Lean** | 512.077 en 459 archivos |
+| **LoC de pruebas en Lean** | 87.214 en 70 suites de pruebas |
+| **Declaraciones demostradas** | 18.703 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Crates de Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) en 80 archivos fuente |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Integración con el hardware** | **H3 COMPLETADO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tablas de páginas ARMv8, puente FFI, arranque en QEMU |
@@ -204,7 +204,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -243,7 +243,7 @@ en `Operations.lean`, las demostraciones en `Invariant.lean`. El
 | **Herencia de prioridad** | PIP implementado en C (rama MCS) | PIP transitivo verificado por máquina con libertad de interbloqueo y cota WCRT paramétrica |
 | **Latencia acotada** | Sin cota WCRT formal | `WCRT = D × L_max + N × (B + P)` demostrada en 8 módulos de vivacidad |
 | **Almacenes de objetos** | Listas enlazadas y arreglos | Tablas hash Robin Hood verificadas (`RHTable`/`RHSet`) con rutas críticas en O(1) |
-| **Gestión de servicios** | No existe en el kernel | Orquestación de primera clase con grafo de dependencias y demostraciones de aciclicidad |
+| **Gestión de servicios** | No existe en el kernel | Registro de servicios ligado a endpoints; política de dependencias en espacio de usuario |
 | **Demostraciones** | Isabelle/HOL, posteriores al hecho | Comprobador de tipos de Lean 4, ubicadas junto a las transiciones — cero sorry/axiom (recuento de declaraciones demostradas en la tabla [Estado actual](#estado-actual)) |
 | **Plataforma** | HAL a nivel de C | Typeclass `PlatformBinding` con contratos de frontera tipados |
 

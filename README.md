@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.144-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.145-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -76,7 +76,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 16 subsystem invariant bundles (scheduler core + CBS extensions, capability, IPC + IPC–scheduler coupling, lifecycle, service, VSpace, cross-subsystem, TLB consistency, notification-waiter consistency, TLB-shootdown pending/ack bounds, per-core TLB invalidation and I-cache coherence, and the declassification audit-log bound) into a single top-level obligation verified from boot through all operations
 - **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 24 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, through thread suspend/resume, priority management (setPriority/setMCPriority), and IPC-buffer configuration
-- **Service orchestration** — kernel-level component lifecycle with dependency graphs and proven acyclicity (seLe4n extension, not in seL4)
+- **Service registry** — kernel-level service registration and lookup through the serving endpoint, recorded on the endpoint itself (seLe4n extension, not in seL4); dependency policy is left, as in seL4, to a user-level service manager
 
 ## Current state
 
@@ -86,11 +86,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.36.144` |
+| **Version** | `0.36.145` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 515,329 across 461 files |
-| **Test Lean LoC** | 87,628 across 70 test suites |
-| **Proved declarations** | 18,849 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 512,077 across 459 files |
+| **Test Lean LoC** | 87,214 across 70 test suites |
+| **Proved declarations** | 18,703 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 80 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -192,7 +192,7 @@ SeLe4n/
 │   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
 │   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
 │   ├── Lifecycle/               Object retype, thread suspend/resume
-│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Service/                 Service registry and its invariants
 │   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
@@ -230,7 +230,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 8 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
-| **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
+| **Service management** | Not in kernel | Endpoint-backed service registry; dependency policy in user space |
 | **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions — zero sorry/axiom (proved-declaration count in the [Current state](#current-state) table) |
 | **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 

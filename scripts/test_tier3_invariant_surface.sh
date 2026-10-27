@@ -428,29 +428,11 @@ run_check "INVARIANT" rg -n '^\s*\| illegalState' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| illegalAuthority' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| invalidTypeTag' SeLe4n/Model/KernelError.lean
 
-# M5-B/Q1: Service registry transition anchors (lifecycle ops removed in Q1).
-run_check "INVARIANT" rg -n '^def storeServiceEntry($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceHasPathTo($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceRegisterDependency($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+# M5-B/Q1: Service error-code anchors.  The graph transitions these sat beside
+# (storeServiceEntry, serviceHasPathTo, serviceRegisterDependency) were removed
+# with the kernel service graph in WS-ZA ZA5.4 part 32.
 run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/KernelError.lean
-
-# M5-C policy-surface anchors must remain present.
-run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^def policyBackingObjectTyped($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-# v0.35.78: the surface is the typing component alone -- its second component
-# was an implication whose antecedent read `lookupSlotCap` through the retired
-# `lookupCapabilityRefMeta`, i.e. a tautology (see the v0.35.78 block below).
-run_check "INVARIANT" rg -U -n '^def servicePolicySurfaceInvariant \(st : SystemState\) : Prop :=\n  ∀ sid svc,\n    lookupService st sid = some svc →\n      policyBackingObjectTyped st svc$' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-# M5-D/Q1: proof-package anchors (lifecycle preservation theorems removed in Q1).
-run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_servicePolicySurfaceInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
 
 # WS-D3 F-06/TPI-D04 badge-override safety anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated_with_badge_override($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
@@ -473,18 +455,9 @@ run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_of_asidTable_entry($|[ ({:
 run_check "INVARIANT" rg -n '^def vspaceAsidRootsUnique($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
 run_check "INVARIANT" rg -n '^def asidTableConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 
-# WS-D4 F-07 service dependency cycle detection anchors must remain present.
-run_check "INVARIANT" rg -n '^def serviceBfsFuel($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceHasPathTo($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceRegisterDependency($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+# WS-D4 F-07: the service dependency graph and its cycle detection were removed
+# in WS-ZA ZA5.4 part 32; the error variant keeps its ABI code (16).
 run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-
-# WS-D4 F-11/Q1: serviceRestart failure anchors removed in Q1; replaced with graph invariant anchors.
-run_check "INVARIANT" rg -n 'theorem serviceGraphInvariant_of_storeServiceState_sameDeps($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_serviceGraphInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-D4 F-12 double-wait prevention + uniqueness invariant anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/KernelError.lean
@@ -553,18 +526,15 @@ run_check "TRACE" rg -n 'adapter register write unsupported branch: SeLe4n.Model
 run_check "TRACE" rg -n 'endpointReceiveDual demoEndpoint ⟨12⟩' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
-# Q1: Service lifecycle trace anchors replaced with registry trace anchors.
-run_check "TRACE" rg -n 'service lookup svcApi' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'store service entry' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'register dependency' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'register self-loop dependency' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service path svcApi' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service isolation api↔denied' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service isolation api↔db' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service isolation api↔db: false' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency' tests/fixtures/main_trace_smoke.expected
-
+# Service registry trace anchors.  The service-graph scenarios (lookup, store,
+# dependency registration, path reachability, isolation edges) were removed with
+# the kernel service graph in WS-ZA ZA5.4 part 32.
+run_check "TRACE" rg -n 'register service success' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'revoke service success' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'lookup by cap found sid' SeLe4n/Testing/MainTraceHarness.lean
+run_prose_check "TRACE" rg -n '^\[SRG-001\] register service success: true$' tests/fixtures/main_trace_smoke.expected
+run_prose_check "TRACE" rg -n '^\[SRG-005\] revoke service success: true$' tests/fixtures/main_trace_smoke.expected
+run_prose_check "TRACE" rg -n '^\[SRG-007\] lookup by cap found sid: 501$' tests/fixtures/main_trace_smoke.expected
 
 # Full-suite contract should continue to include Tier 3.
 
@@ -585,7 +555,6 @@ run_check "INVARIANT" rg -n '@[0-9a-f]{40}' .github/workflows/platform_security_
 run_check "INVARIANT" rg -n 'cspaceSlotCoherencyChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'capabilityRightsStructuralChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'lifecycleMetadataChecks' SeLe4n/Testing/InvariantChecks.lean
-run_check "INVARIANT" rg -n 'serviceGraphAcyclicityChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'vspaceAsidUniquenessChecks' SeLe4n/Testing/InvariantChecks.lean
 # WS-G3/F-P06: ASID table consistency runtime checks must remain present.
 run_check "INVARIANT" rg -n 'asidTableConsistencyChecks' SeLe4n/Testing/InvariantChecks.lean
@@ -666,7 +635,7 @@ run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace($|[ ({:\[\]]
 run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'CNode slot filtering' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'six-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
@@ -6266,7 +6235,7 @@ run_check "INVARIANT" rg -n '^structure SharedObservableFragment($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^structure PerCoreObservableFragment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem ObservableState.ext_fragments($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^def ObservableState.ofFragments($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-# The `@[simp]` layer: the fragment round-trip and the thirteen component
+# The `@[simp]` layer: the fragment round-trip and the eleven component
 # accessors.  Each is `rfl`, so they are the definition-pinning anchors —
 # re-pointing a component at a different projection breaks its `rfl`, and a
 # rename would silently drop the pin without these.
@@ -6288,8 +6257,6 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_objects' SeLe4n/Kernel/In
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_perCoreFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_perCoreSlice' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_runnable' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_serviceRegistry' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_services' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_sharedFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem ObservableState.fragments_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_eq_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -6332,7 +6299,6 @@ run_check "INVARIANT" rg -n '^theorem onCore_tlb ' SeLe4n/Kernel/InformationFlow
 # SM8.A.5 gate monotonicity + the visibility order + the CC-1 restatement.
 run_check "INVARIANT" rg -n '^theorem objectObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem threadObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem serviceObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem capTargetObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem memoryAddressObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem projectCNode_lookup_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -10015,7 +9981,7 @@ run_check "INVARIANT" rg -n '^  \| \.tlb, +st, st. => st.\.tlb = st\.tlb' SeLe4n
 # ties the operation named in the step hypothesis to the list in the conclusion
 # on the very next line — no wildcard, so a conclusion moved to another list, or
 # a theorem restated about another operation, fails it.
-run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : serviceRegisterDependency svcId depId st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside serviceRegisterDependency_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : revokeService sid st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside revokeService_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMintWithCdt src dst rights badge st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceCopy src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMove src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
@@ -10036,7 +10002,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 23 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 22 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -10052,8 +10018,7 @@ run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : to
 # disturb the predicate.  It consumes BOTH families, which is what makes an
 # under-declared write-set a soundness problem rather than stale documentation.
 run_check "INVARIANT" rg -n '^theorem predicateFramedByDisjointWrites($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_preserves_registryDependencyConsistent($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_preserves_registryInterfaceValid\n(    [^\n]*\n)*    registryInterfaceValid st. :=\n  predicateFramedByDisjointWrites" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 # The load-bearing negative: the disjointness premise is not decoration.
 # `storeObject` writes `.objects` and the queue-reference invariant reads it, so
@@ -10818,10 +10783,6 @@ run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreT
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-
-# WS-F6/D4: serviceCountBounded and serviceGraphInvariant default-state proofs.
-run_check "INVARIANT" rg -n '^theorem default_serviceCountBounded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem default_serviceGraphInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-F6/D6: vspaceCrossAsidIsolation in VSpace invariant bundle.
 run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
@@ -12655,7 +12616,7 @@ import SeLe4n.Kernel.Scheduler.Operations.Preservation
 import SeLe4n.Kernel.Capability.Invariant.Preservation
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
 import SeLe4n.Kernel.Lifecycle.Invariant
-import SeLe4n.Kernel.Service.Invariant.Acyclicity
+import SeLe4n.Kernel.Service.Invariant
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 import SeLe4n.Kernel.API
@@ -12670,7 +12631,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.untypedRetypeObject_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.untypedRetypeFromCap_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.endpointSendDual_preserves_ipcInvariant
-#check @SeLe4n.Kernel.serviceRegisterDependency_preserves_serviceGraphInvariant
+#check @SeLe4n.Kernel.revokeService_preserves_registryInvariant
 #check @SeLe4n.Kernel.Architecture.vspaceMapPage_success_preserves_vspaceInvariantBundle
 #check @SeLe4n.Kernel.step_preserves_projection
 #check @SeLe4n.Kernel.composedNonInterference_step
@@ -22325,15 +22286,14 @@ run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSol
 run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
 
 # --- The tables that name objects by id, and the objects' back-links to them ---
-# Three tables name kernel objects outside every slot (the service registry,
-# the interrupt-handler table, the service graph).  Each reference is answered
-# by the object it names, or by the table holding no entry at all; these
-# anchors hold the relation, not the names.
+# Two tables name kernel objects outside every slot (the service registry and
+# the interrupt-handler table).  Each reference is answered by the object it
+# names; these anchors hold the relation, not the names.
 #
 # The invariant states each direction, so a back-link can be read in place of a
-# table walk.  The registry's two directions, the interrupt table's two, and
-# the service graph's emptiness, in one structure.
-run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),(\n([ \t][^\n]*)?)*\n  serviceCodes : ∀ \(e : SeLe4n\.ObjId\) \(n : Nat\), \(objTableBackLinks st\.objects\[e\]\?\)\.1 = n \+ 1 →(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →(\n([ \t][^\n]*)?)*\n  servicesEmpty : st\.services\.slotsEmpty$' SeLe4n/Model/TableReferences.lean
+# table walk.  The registry's two directions and the interrupt table's two, in
+# one structure, which ends there.
+run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),(\n([ \t][^\n]*)?)*\n  serviceCodes : ∀ \(e : SeLe4n\.ObjId\) \(n : Nat\), \(objTableBackLinks st\.objects\[e\]\?\)\.1 = n \+ 1 →(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
 # The consumer: clear back-links mean no table names the object.  Without this
 # the fields would be recorded and never read.
 run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean

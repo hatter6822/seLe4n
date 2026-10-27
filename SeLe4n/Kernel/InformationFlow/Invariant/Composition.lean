@@ -303,11 +303,12 @@ inductive NonInterferenceStep
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
-  /-- R5-B/M-02: Service registration — registerService modifies only
-      serviceRegistry which is not part of the projected observable state
-      (projectServicePresence is gated by serviceObservable, which depends
-      on the labeling context, not the registry contents). Therefore
-      registerService unconditionally preserves projection. -/
+  /-- R5-B/M-02: Service registration — registerService writes only
+      `serviceRegistry`, which no projection reads, and its endpoint's
+      `serviceCode`, which the object projection erases.  Therefore
+      registerService unconditionally preserves projection.  Projecting the
+      registry, and proving this arm against that projection, is
+      `UNTYPED_RESET_PLAN.md` part 33. -/
   | registerServiceChecked
       (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
       (hStep : registerServiceChecked ctx caller reg st = .ok ((), st'))
@@ -388,9 +389,6 @@ theorem step_preserves_projection
         · simp [projectObjects, hObs]
       · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
-      · funext sid
-        simp only [projectServicePresence, lookupService,
-          cspaceInsertSlot_preserves_services st st' dst c hInsert]
       · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · funext irq; simp only [projectIrqHandlers]
         rw [cspaceInsertSlot_preserves_irqHandlers st st' dst c hInsert]
@@ -403,9 +401,6 @@ theorem step_preserves_projection
       · -- R5-C.1: memory
         exact projectMemory_eq_of_memory_eq ctx observer st' st
           (by rw [cspaceInsertSlot_preserves_machine st st' dst c hInsert])
-      · -- V6-E: serviceRegistry
-        exact projectServiceRegistry_eq_of_services_eq ctx observer st' st
-          (cspaceInsertSlot_preserves_services st st' dst c hInsert)
   | cspaceRevoke addr hAddrH hOp =>
     exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hObjInv hOp
   | retypeFromUntyped authority untypedId childId newObj allocSize hUH hCH hAH hOp =>
@@ -434,8 +429,6 @@ theorem step_preserves_projection
       · simp [projectObjects, hObs]
     · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
-    · funext sid; simp only [projectServicePresence, lookupService,
-        cspaceInsertSlot_preserves_services st st' dst cap hOp]
     · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · funext irq; simp only [projectIrqHandlers]
       rw [cspaceInsertSlot_preserves_irqHandlers st st' dst cap hOp]
@@ -448,9 +441,6 @@ theorem step_preserves_projection
     · -- R5-C.1: memory
       exact projectMemory_eq_of_memory_eq ctx observer st' st
         (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hOp])
-    · -- V6-E: serviceRegistry
-      exact projectServiceRegistry_eq_of_services_eq ctx observer st' st
-        (cspaceInsertSlot_preserves_services st st' dst cap hOp)
   | schedule hCurH hAllR hOp =>
     exact schedule_preserves_projection ctx observer st st' hCurH hAllR hObjInv hOp
   | vspaceMapPage asid vaddr paddr hRH hOp =>

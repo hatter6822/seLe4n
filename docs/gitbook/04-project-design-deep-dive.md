@@ -82,7 +82,7 @@ A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo`
 
 **Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 34 syscalls are fully wired — zero `.illegalState` stubs remain (25 at the WS-K closure; the surface has since grown through WS-SM SM9's `declassifySignal` = 33).
 
-**Service registry (WS-Q1):** The service subsystem uses a stateless registry model — services are registered entries with identity, dependencies, and isolation edges. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates. Graph invariants (acyclicity, bounded service count) are preserved by `serviceRegisterDependency`.
+**Service registry (WS-Q1):** The service subsystem uses a stateless registry model — a registration names the endpoint that serves it and is recorded on that endpoint. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates, and since `v0.36.145` no dependency graph: isolation between services comes from capabilities, as in seL4.
 
 **IPC message population:** `extractMessageRegisters` converts `Array RegValue` → `Array Nat` with a triple bound (info.length, maxMessageRegisters, msgRegs.size). IPC send/call/reply dispatch arms populate message bodies from decoded registers instead of empty arrays.
 

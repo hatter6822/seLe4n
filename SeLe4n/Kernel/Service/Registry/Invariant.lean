@@ -350,12 +350,6 @@ theorem clearEndpointServiceCode_of_recorded (st : SystemState) (cap : Capabilit
   · rename_i hne
     exact absurd hE (hne ep)
 
-/-- An empty service graph has no dependency to remove. -/
-theorem removeDependenciesOf_of_slotsEmpty (st : SystemState) (sid : ServiceId)
-    (h : st.services.slotsEmpty) : removeDependenciesOf st sid = st := by
-  unfold removeDependenciesOf
-  simp only [RHTable.erase_of_slotsEmpty h, RHTable.fold_of_slotsEmpty h]
-
 /-- **A registration keeps the references recorded**: it records itself on the
 endpoint it names, which recorded none (the duplicate check). -/
 theorem registerService_preserves_tableReferencesRecorded {reg : ServiceRegistration}
@@ -366,8 +360,7 @@ theorem registerService_preserves_tableReferencesRecorded {reg : ServiceRegistra
   have hO := fun j => getElem?_insert_ite st.objects epId j
     (.endpoint { ep with serviceCode := reg.sid.val + 1 }) hObjInv
   have hS := fun j => getElem?_insert_ite st.serviceRegistry reg.sid j reg hR.registryInvExtK.1
-  refine ⟨RHTable.insert_preserves_invExtK _ _ _ hR.registryInvExtK, ?_, ?_, ?_, ?_,
-    hR.servicesEmpty⟩
+  refine ⟨RHTable.insert_preserves_invExtK _ _ _ hR.registryInvExtK, ?_, ?_, ?_, ?_⟩
   · intro sid r h
     simp only at h ⊢
     rw [hS] at h
@@ -422,13 +415,11 @@ theorem revokeService_preserves_tableReferencesRecorded {sid : ServiceId}
   obtain ⟨e1, he1, hc1⟩ := hR.registry sid reg hReg
   obtain ⟨ep1, hE1, hCode1⟩ := objTableBackLinks_code_succ hc1
   rw [clearEndpointServiceCode_of_recorded { st with serviceRegistry := st.serviceRegistry.erase sid }
-    reg.endpointCap sid he1 hE1 hCode1,
-    removeDependenciesOf_of_slotsEmpty _ _ (by exact hR.servicesEmpty)]
+    reg.endpointCap sid he1 hE1 hCode1]
   have hO := fun j => getElem?_insert_ite st.objects e1 j
     (.endpoint { ep1 with serviceCode := 0 }) hObjInv
   have hS := fun j => getElem?_erase_ite st.serviceRegistry sid j hR.registryInvExtK
-  refine ⟨RHTable.erase_preserves_invExtK _ _ hR.registryInvExtK, ?_, ?_, ?_, ?_,
-    hR.servicesEmpty⟩
+  refine ⟨RHTable.erase_preserves_invExtK _ _ hR.registryInvExtK, ?_, ?_, ?_, ?_⟩
   · intro s r h
     simp only at h ⊢
     rw [hS] at h

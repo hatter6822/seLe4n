@@ -75,9 +75,8 @@ abbrev lifecycleIdentityAliasingInvariant (st : SystemState) : Prop :=
 /-- Full lifecycle invariant bundle for M4-A step-3.  Since `v0.35.78` it is the
 identity/aliasing layer alone — the capability-reference layer it was conjoined
 with was a family of tautologies (see the module docstring) — and it keeps its
-name as the lifecycle subsystem's bundle: `proofLayerInvariantBundle` and
-`serviceLifecycleCapabilityInvariantBundle` name it, and a conjunct the
-subsystem earns joins it here. -/
+name as the lifecycle subsystem's bundle: `proofLayerInvariantBundle` names
+it, and a conjunct the subsystem earns joins it here. -/
 def lifecycleInvariantBundle (st : SystemState) : Prop :=
   lifecycleIdentityAliasingInvariant st
 

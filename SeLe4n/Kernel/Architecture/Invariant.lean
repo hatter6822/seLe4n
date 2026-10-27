@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Architecture.PerCoreTlbModel
 -- WS-SM SM7.D.4: the per-core instruction-cache coherency invariant — the
 -- 14th `proofLayerInvariantBundle` conjunct.
 import SeLe4n.Kernel.Architecture.PerCoreCacheModel
+import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Service.Invariant
 import SeLe4n.Kernel.CrossSubsystem
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
@@ -162,7 +163,7 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     coreIpcInvariantBundle st ∧
     ipcSchedulerCouplingInvariantBundle st ∧
     lifecycleInvariantBundle st ∧
-    serviceLifecycleCapabilityInvariantBundle st ∧
+    registryInvariant st ∧
     vspaceInvariantBundle st ∧
     crossSubsystemInvariant st ∧
     tlbConsistent st st.tlb ∧
@@ -418,7 +419,7 @@ private theorem default_currentOnCore_none :
 /-- L-06/WS-E3: The default (empty) `SystemState` satisfies the full composed
 `proofLayerInvariantBundle`. This provides the base case for invariant induction:
 the system starts in a valid state. All invariant components hold vacuously
-because the empty state has no objects, no threads, no services, and an empty
+because the empty state has no objects, no threads, no registered services, and an empty
 scheduler. -/
 private theorem default_schedulerInvariantBundle :
     schedulerInvariantBundle (default : SystemState) := by
@@ -674,17 +675,8 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_currentThreadDequeueCoherent⟩
   -- 5. lifecycleInvariantBundle
   · exact default_lifecycleInvariantBundle
-  -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability ∧ registry
-  · exact serviceLifecycleCapabilityInvariantBundle_of_components (default : SystemState)
-      (by
-        intro sid svc hSvc
-        unfold lookupService at hSvc
-        have hNone : (default : SystemState).services[sid]? = none := RHTable_get?_empty 16 (by omega)
-        rw [hNone] at hSvc
-        cases hSvc)
-      default_lifecycleInvariantBundle
-      default_capabilityInvariantBundle
-      default_registryInvariant
+  -- 6. registryInvariant
+  · exact default_registryInvariant
   -- 7. vspaceInvariantBundle (8-conjunct: uniqueness ∧ nonOverlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation ∧ canonicalAddr ∧ mappingsWellFormed)
   · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; exact default_objects_absurd hObj₁
@@ -697,7 +689,7 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
     · intro oid root hObj; exact default_objects_absurd hObj
-  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B + AM4/AL6-C: 11 predicates)
+  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B + AM4/AL6-C + AK8-A: 10 predicates)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
   · exact tlbConsistent_empty (default : SystemState)
@@ -859,7 +851,7 @@ private example : proofLayerInvariantBundle (default : SystemState) :=
 
 The adapter state transformations (`advanceTimerState`, `writeRegisterState`)
 only modify `SystemState.machine` fields. The `proofLayerInvariantBundle`
-components primarily examine `objects`, `scheduler`, `lifecycle`, `services`,
+components primarily examine `objects`, `scheduler`, `lifecycle`, the registries,
 and `asidTable` — fields unchanged by machine-only modifications.
 
 **Timer advancement** (`advanceTimerState`): modifies only `machine.timer`.
@@ -956,22 +948,6 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
       | .single _ _ tcb hObj hN => .single _ _ tcb (hObjs ▸ hObj) hN
       | .cons _ _ _ tcb hObj hN tail => .cons _ _ _ tcb (hObjs ▸ hObj) hN (transportPath hObjs tail)
 
-/-- U4-G/U4-H: serviceEdge transfer — if two states have the same `services` field,
-    a serviceEdge in one is a serviceEdge in the other. -/
-private theorem serviceEdge_of_services_eq {st st' : SystemState}
-    (hSvc : st'.services = st.services) {a b : ServiceId}
-    (h : serviceEdge st' a b) : serviceEdge st a b := by
-  obtain ⟨svc, hL, hM⟩ := h
-  exact ⟨svc, by rw [lookupService, ← hSvc, ← lookupService]; exact hL, hM⟩
-
-/-- U4-G/U4-H: serviceNontrivialPath transfer — same-services states have identical paths. -/
-private theorem serviceNontrivialPath_of_services_eq {st st' : SystemState}
-    (hSvc : st'.services = st.services) {a b : ServiceId}
-    (h : serviceNontrivialPath st' a b) : serviceNontrivialPath st a b := by
-  induction h with
-  | single hedge => exact .single (serviceEdge_of_services_eq hSvc hedge)
-  | cons hedge _ ih => exact .cons (serviceEdge_of_services_eq hSvc hedge) ih
-
 -- ============================================================================
 -- WS-SM SM7.F.5 — bundle carriage across a `perCoreTlb` write
 -- ============================================================================
@@ -980,8 +956,8 @@ private theorem serviceNontrivialPath_of_services_eq {st st' : SystemState}
 `perCoreTlb`, and twelve of them transport **definitionally**: a structure
 update to a field a predicate does not project is invisible to that predicate.
 
-Three atomic predicates block the remaining two, for two structural reasons —
-neither of which is term size or proof budget, so neither is fixable by raising
+Two atomic predicates block the remaining two, for one structural reason —
+which is not term size or proof budget, so it is not fixable by raising
 `maxHeartbeats`:
 
 * **A `match` stuck on a symbolic `Nat`.** `PriorityInheritance.blockingChain`
@@ -992,16 +968,13 @@ neither of which is term size or proof budget, so neither is fixable by raising
   same `rfl` succeeds, which is how this was localised.)  The same shape
   reaches the bundle a second time through `dualQueueSystemInvariant`, whose
   queue-chain acyclicity is fuel-recursive in the same way.
-* **An `inductive` family parameterised by the state.**
-  `serviceNontrivialPath (st : SystemState) : ServiceId → ServiceId → Prop`
-  applied to two different states yields two different *types*; definitional
-  equality of the applications demands definitional equality of the parameters,
-  which is precisely what fails here.  No amount of unfolding can bridge it.
+
+(A third, an `inductive` family parameterised by the state — the service
+graph's dependency paths — left with the graph in WS-ZA ZA5.4 part 32.)
 
 Each is bridged by a congruence lemma the codebase already carries
-(`dualQueueSystemInvariant_of_readViewAgreement`, `blockingAcyclic_frame`,
-`serviceNontrivialPath_of_services_eq`), so the carriage below is composition
-rather than new proof.
+(`dualQueueSystemInvariant_of_readViewAgreement`, `blockingAcyclic_frame`),
+so the carriage below is composition rather than new proof.
 
 The thirteenth conjunct, `tlbInvalidationConsistent_perCore`, genuinely reads
 the field, so it is supplied by the caller: this is a **carriage** lemma, not
@@ -1020,25 +993,16 @@ private theorem ipcInvariantFull_setPerCoreTlb {st : SystemState}
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
-/-- The service graph transports: acyclicity rides the inductive-path
-    congruence, the count bound is definitional. -/
-private theorem serviceGraphInvariant_setPerCoreTlb {st : SystemState}
-    {t : Vector TlbState Concurrency.numCores} (h : serviceGraphInvariant st) :
-    serviceGraphInvariant { st with perCoreTlb := t } :=
-  ⟨fun sid hp =>
-     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
-                (st' := { st with perCoreTlb := t }) rfl hp), h.2⟩
-
 /-- The cross-subsystem bundle transports; only the service graph and the
     blocking-chain acyclicity need their congruences. -/
 private theorem crossSubsystemInvariant_setPerCoreTlb {st : SystemState}
     {t : Vector TlbState Concurrency.numCores} (h : crossSubsystemInvariant st) :
     crossSubsystemInvariant { st with perCoreTlb := t } := by
-  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
-  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setPerCoreTlb d6, d7, d8, d9,
-         PriorityInheritance.blockingAcyclic_frame st _ d10
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, d6, d7,
+         PriorityInheritance.blockingAcyclic_frame st _ d8
            (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
-         d11, d12⟩
+         d9, d10⟩
 
 private theorem coreIpcInvariantBundle_setPerCoreTlb {st : SystemState}
     {t : Vector TlbState Concurrency.numCores} (h : coreIpcInvariantBundle st) :
@@ -1054,9 +1018,8 @@ private theorem ipcSchedulerCouplingInvariantBundle_setPerCoreTlb {st : SystemSt
 /-! ### WS-SM SM8.C.8 — `proofLayerInvariantBundle` carriage across an audit-trail write
 
 The same five-lemma shape as the `perCoreTlb` layer above, and for the same
-reason: twelve of the sixteen conjuncts transport definitionally, but three do
-not — `dualQueueSystemInvariant` recurses on a fuel that stays symbolic,
-`serviceNontrivialPath` is an inductive family *parameterised by the state*, and
+reason: twelve of the sixteen conjuncts transport definitionally, but two do
+not — `dualQueueSystemInvariant` recurses on a fuel that stays symbolic, and
 `blockingChain` has the same stuck-fuel shape.  None of those is about proof
 budget; each needs its own congruence, which the tree already has. -/
 
@@ -1072,26 +1035,16 @@ private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
-private theorem serviceGraphInvariant_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
-    (h : serviceGraphInvariant st) :
-    serviceGraphInvariant
-      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } :=
-  ⟨fun sid hp =>
-     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
-                (st' := { st with declassificationAuditLog := log,
-                                  declassificationAuditEpoch := epoch }) rfl hp), h.2⟩
-
 private theorem crossSubsystemInvariant_setDeclassificationAuditLog {st : SystemState}
     {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
     (h : crossSubsystemInvariant st) :
     crossSubsystemInvariant
       { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
-  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
-  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationAuditLog d6, d7, d8, d9,
-         PriorityInheritance.blockingAcyclic_frame st _ d10
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, d6, d7,
+         PriorityInheritance.blockingAcyclic_frame st _ d8
            (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
-         d11, d12⟩
+         d9, d10⟩
 
 private theorem coreIpcInvariantBundle_setDeclassificationAuditLog {st : SystemState}
     {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
@@ -1171,21 +1124,14 @@ private theorem ipcInvariantFull_setDeclassificationRefusals {st : SystemState}
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
-private theorem serviceGraphInvariant_setDeclassificationRefusals {st : SystemState}
-    {L : SeLe4n.Kernel.RefusalLedger} (h : serviceGraphInvariant st) :
-    serviceGraphInvariant { st with declassificationRefusals := L } :=
-  ⟨fun sid hp =>
-     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
-                (st' := { st with declassificationRefusals := L }) rfl hp), h.2⟩
-
 private theorem crossSubsystemInvariant_setDeclassificationRefusals {st : SystemState}
     {L : SeLe4n.Kernel.RefusalLedger} (h : crossSubsystemInvariant st) :
     crossSubsystemInvariant { st with declassificationRefusals := L } := by
-  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
-  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationRefusals d6, d7, d8, d9,
-         PriorityInheritance.blockingAcyclic_frame st _ d10
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, d6, d7,
+         PriorityInheritance.blockingAcyclic_frame st _ d8
            (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
-         d11, d12⟩
+         d9, d10⟩
 
 private theorem coreIpcInvariantBundle_setDeclassificationRefusals {st : SystemState}
     {L : SeLe4n.Kernel.RefusalLedger} (h : coreIpcInvariantBundle st) :
@@ -1205,10 +1151,9 @@ field.
 Stated once for *any* ledger writer, so the FFI refusal seam
 (`Platform.FFI.recordSyscallRefusal`) and any future one discharge it the same
 way.  Without this layer a bundle-preservation proof for the committed dispatch
-would be blocked exactly where the v0.32.151 diagnosis says it would: three
-conjuncts fail `isDefEq` outright, for reasons that are structural (a `match`
-stuck on a symbolic `Nat`, an `inductive` family parameterised by the state) and
-not about proof budget. -/
+would be blocked exactly where the v0.32.151 diagnosis says it would: two
+conjuncts fail `isDefEq` outright, for a reason that is structural (a `match`
+stuck on a symbolic `Nat`) and not about proof budget. -/
 theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
     (L : SeLe4n.Kernel.RefusalLedger)
     (h : proofLayerInvariantBundle st) :
@@ -1225,9 +1170,8 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
 
 /-! ### WS-SM SM9.D.2 — `proofLayerInvariantBundle` carriage across a taint write
 
-The same three conjuncts again, for the same structural reasons (v0.32.151: a
-`match` stuck on a symbolic `Nat`, an `inductive` family parameterised by the
-state).  Like the refusal ledger's and unlike the trail's, the carriage is
+The same two conjuncts again, for the same structural reason (v0.32.151: a
+`match` stuck on a symbolic `Nat`).  Like the refusal ledger's and unlike the trail's, the carriage is
 **unconditional**: each taint value is bounded by its own type
 (`DeclassificationTaint.tags_bounded`), so no bundle conjunct reads the mounted
 table and a writer owes nothing to the sixteen that are already there.
@@ -1246,23 +1190,15 @@ private theorem ipcInvariantFull_setDeclassificationTaint {st : SystemState}
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
-private theorem serviceGraphInvariant_setDeclassificationTaint {st : SystemState}
-    {T : SeLe4n.Kernel.TaintTable}
-    (h : serviceGraphInvariant st) :
-    serviceGraphInvariant { st with declassificationTaint := T } :=
-  ⟨fun sid hp =>
-     h.1 sid (serviceNontrivialPath_of_services_eq (st := st)
-                (st' := { st with declassificationTaint := T }) rfl hp), h.2⟩
-
 private theorem crossSubsystemInvariant_setDeclassificationTaint {st : SystemState}
     {T : SeLe4n.Kernel.TaintTable}
     (h : crossSubsystemInvariant st) :
     crossSubsystemInvariant { st with declassificationTaint := T } := by
-  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩ := h
-  exact ⟨d1, d2, d3, d4, d5, serviceGraphInvariant_setDeclassificationTaint d6, d7, d8, d9,
-         PriorityInheritance.blockingAcyclic_frame st _ d10
+  obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10⟩ := h
+  exact ⟨d1, d2, d3, d4, d5, d6, d7,
+         PriorityInheritance.blockingAcyclic_frame st _ d8
            (fun tid => PriorityInheritance.blockingServer_congr_objects _ _ tid rfl) rfl,
-         d11, d12⟩
+         d9, d10⟩
 
 private theorem coreIpcInvariantBundle_setDeclassificationTaint {st : SystemState}
     {T : SeLe4n.Kernel.TaintTable}
@@ -1318,23 +1254,6 @@ theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, hPerCoreTlbConsistent,
          bIcache, bAck⟩
 
-/-- U4-G/U4-H: advanceTimerState preserves serviceGraphInvariant.
-    advanceTimerState only modifies machine.timer; services and objects are unchanged. -/
-private theorem advanceTimerState_preserves_serviceGraphInvariant
-    (ticks : Nat) (st : SystemState)
-    (h : serviceGraphInvariant st) :
-    serviceGraphInvariant (advanceTimerState ticks st) := by
-  obtain ⟨hAcyc, hBound⟩ := h
-  have hSvcEq : (advanceTimerState ticks st).services = st.services := rfl
-  constructor
-  · -- serviceDependencyAcyclic
-    intro a hPath
-    exact hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath)
-  · -- serviceCountBounded: depends on services + objectIndex, both unchanged
-    -- Since advanceTimerState only touches machine.timer, the serviceCountBounded
-    -- proposition is definitionally equal between the two states
-    exact hBound
-
 theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
@@ -1355,21 +1274,18 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
             advanceTimerState_preserves_capabilityInvariantBundle ticks st hC,
             advanceTimerState_preserves_ipcInvariantFull ticks st hI⟩,
            by exact hCoh, by exact hCtx, by exact hDeq⟩
-  -- serviceLifecycleCapabilityInvariantBundle
-  · obtain ⟨hP, hL, hC, hR⟩ := hSvc
-    exact ⟨by exact hP, by exact hL,
-           advanceTimerState_preserves_capabilityInvariantBundle ticks st hC,
-           by exact hR⟩
+  -- registryInvariant
+  · exact hSvc
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
-  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 conjuncts)
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := hCross
+  -- crossSubsystemInvariant (T5-J + Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 10 conjuncts)
+  · obtain ⟨h1, h1i, h3, h4, h6, h7, h8, h9, h10, h11⟩ := hCross
     have hObjEq : (advanceTimerState ticks st).objects = st.objects := by
       simp [advanceTimerState]
     have hTyEq : (advanceTimerState ticks st).lifecycle.objectTypes
         = st.lifecycle.objectTypes := by
       simp [advanceTimerState]
-    refine ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
+    refine ⟨h1, h1i, h3, h4,
            h6, h7, h8,
            PriorityInheritance.blockingAcyclic_frame st (advanceTimerState ticks st) h9
              (fun _ => by
@@ -1453,7 +1369,7 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
     `contextMatchesCurrent` holds for the post-state.
 
     `writeRegisterState` only modifies `machine.regs`. All other system state
-    fields (objects, scheduler, services, lifecycle, etc.) are definitionally
+    fields (objects, scheduler, registries, lifecycle, etc.) are definitionally
     unchanged. The only non-trivial predicate is `contextMatchesCurrent`, which
     compares `machine.regs` with the current TCB's `registerContext`. This is
     provided as a hypothesis — the RPi5 production contract validates it via
@@ -1468,7 +1384,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
   have hEq : writeRegisterState reg value st =
       { st with machine := st.machine.setRegsOnCore bootCoreId (SeLe4n.writeReg st.machine.regs reg value) } :=
     rfl
-  -- Most predicates transfer via `by exact` since objects/scheduler/services are unchanged
+  -- Most predicates transfer via `by exact` since objects/scheduler/registries are unchanged
   -- at the struct level; others need the rewrite for Lean to see through the record update
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
@@ -1489,20 +1405,12 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
             writeRegisterState_preserves_capabilityInvariantBundle reg value st hC,
             writeRegisterState_preserves_ipcInvariantFull reg value st hI⟩,
            by exact hCoh, hCtx, by exact hDeq⟩
-  -- serviceLifecycleCapabilityInvariantBundle
-  · obtain ⟨hP, hL, hC, hR⟩ := hSvc
-    exact ⟨by exact hP, by exact hL,
-           writeRegisterState_preserves_capabilityInvariantBundle reg value st hC,
-           by exact hR⟩
-  -- crossSubsystemInvariant: objects/scheduler/services unchanged (AM4-A + AK8-A: 12 conjuncts)
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := hCross
-    have hSvcEq : (writeRegisterState reg value st).services = st.services := rfl
-    refine ⟨by exact h1, by exact h1i, by exact h2, by exact h3, by exact h4, ?_,
+  -- registryInvariant
+  · exact hSvc
+  -- crossSubsystemInvariant: objects/scheduler unchanged (AM4-A + AK8-A: 10 conjuncts)
+  · obtain ⟨h1, h1i, h3, h4, h6, h7, h8, h9, h10, h11⟩ := hCross
+    refine ⟨by exact h1, by exact h1i, by exact h3, by exact h4,
            by exact h6, by exact h7, by exact h8, ?_, ?_, ?_⟩
-    -- serviceGraphInvariant
-    · obtain ⟨hAcyc, hBound⟩ := h5
-      exact ⟨fun a hPath => hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath),
-             hBound⟩
     -- blockingAcyclic
     · exact PriorityInheritance.blockingAcyclic_frame st (writeRegisterState reg value st) h9
         (fun _ => by
@@ -1600,7 +1508,7 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
 
     `contextSwitchState` atomically sets `scheduler.current := some newTid`
     and `machine.regs := newRegs`. All other fields (objects, runnable queue,
-    services, lifecycle, etc.) are unchanged. Current-thread-dependent predicates
+    registries, lifecycle, etc.) are unchanged. Current-thread-dependent predicates
     are re-established from the explicit hypotheses; all other predicates are
     preserved by frame reasoning (unchanged fields).
 
@@ -1714,21 +1622,12 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩, hC,
             contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI⟩,
            hCoh, hCtxPost, ⟨hIpcReadyPost, hNotEpHead, hNotNtfnWait⟩⟩
-  -- 6. serviceLifecycleCapabilityInvariantBundle
-  · obtain ⟨hP, hL, hC, hR⟩ := hSvc
-    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hC
-    exact ⟨by exact hP, by exact hL,
-           ⟨by exact h1, by exact h2, by exact h3, by exact h4, by exact h5, by exact h6⟩,
-           by exact hR⟩
-  -- 8. crossSubsystemInvariant: objects/services/serviceRegistry unchanged (AM4-A + AK8-A: 12 conjuncts)
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := hCross
-    have hSvcEq : (contextSwitchState newTid newRegs st).services = st.services := rfl
-    refine ⟨by exact h1, by exact h1i, by exact h2, by exact h3, by exact h4, ?_,
+  -- 6. registryInvariant
+  · exact hSvc
+  -- 8. crossSubsystemInvariant: objects/serviceRegistry unchanged (AM4-A + AK8-A: 10 conjuncts)
+  · obtain ⟨h1, h1i, h3, h4, h6, h7, h8, h9, h10, h11⟩ := hCross
+    refine ⟨by exact h1, by exact h1i, by exact h3, by exact h4,
            by exact h6, by exact h7, by exact h8, ?_, ?_, ?_⟩
-    -- serviceGraphInvariant
-    · obtain ⟨hAcyc, hBound⟩ := h5
-      exact ⟨fun a hPath => hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath),
-             hBound⟩
     -- blockingAcyclic
     · exact PriorityInheritance.blockingAcyclic_frame st (contextSwitchState newTid newRegs st) h9
         (fun _ => by

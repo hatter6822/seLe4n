@@ -33,14 +33,6 @@ theorem storeObject_preserves_projectMemory
     projectMemory ctx observer st' = projectMemory ctx observer st :=
   projectMemory_eq_of_memory_eq ctx observer st' st (by rw [storeObject_machine_eq st st' oid obj hStore])
 
-/-- V6-E: storeObject preserves service registry projection. -/
-theorem storeObject_preserves_projectServiceRegistry
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hStore : storeObject oid obj st = .ok ((), st')) :
-    projectServiceRegistry ctx observer st' = projectServiceRegistry ctx observer st :=
-  projectServiceRegistry_eq_of_services_eq ctx observer st' st (storeObject_preserves_services st st' oid obj hStore)
-
 -- ============================================================================
 -- WS-F3: storeObject objectIndex filter preservation
 -- ============================================================================
@@ -95,8 +87,6 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     congrArg ObservableState.runnable hLow
   have hCurLow : projectCurrent ctx observer s₁ = projectCurrent ctx observer s₂ :=
     congrArg ObservableState.current hLow
-  have hSvcLow : projectServicePresence ctx observer s₁ = projectServicePresence ctx observer s₂ :=
-    congrArg ObservableState.services hLow
   have hDomLow : projectActiveDomain ctx observer s₁ = projectActiveDomain ctx observer s₂ :=
     congrArg ObservableState.activeDomain hLow
   have hIrqLow : projectIrqHandlers ctx observer s₁ = projectIrqHandlers ctx observer s₂ :=
@@ -127,10 +117,6 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
     have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
     simpa [projectCurrent, hSched₁, hSched₂] using hCurLow
-  have hSvc' : projectServicePresence ctx observer s₁' = projectServicePresence ctx observer s₂' := by
-    unfold storeObject at hStore₁ hStore₂
-    cases hStore₁; cases hStore₂
-    simpa [projectServicePresence] using hSvcLow
   have hDom' : projectActiveDomain ctx observer s₁' = projectActiveDomain ctx observer s₂' := by
     have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
     have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
@@ -174,14 +160,8 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     rw [projectMemory_eq_of_memory_eq ctx observer s₁' s₁ (by rw [hM₁]),
         projectMemory_eq_of_memory_eq ctx observer s₂' s₂ (by rw [hM₂])]
     exact hMemLow
-  have hSvcReg : projectServiceRegistry ctx observer s₁' = projectServiceRegistry ctx observer s₂' := by
-    have hSvcRegLow : projectServiceRegistry ctx observer s₁ = projectServiceRegistry ctx observer s₂ :=
-      congrArg ObservableState.serviceRegistry hLow
-    unfold storeObject at hStore₁ hStore₂
-    cases hStore₁; cases hStore₂
-    simpa [projectServiceRegistry] using hSvcRegLow
   unfold lowEquivalent
-  simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
+  simp [projectState, hObj', hRun', hCur', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem]
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -324,8 +304,6 @@ theorem removeRunnable_preserves_projection
       · rw [if_neg hEq]
   have hObj : projectObjects ctx observer (removeRunnable st tid) = projectObjects ctx observer st :=
     projectObjects_of_objectsAgreeOffRunLinks ctx observer (removeRunnable_objectsAgreeOffRunLinks st tid)
-  have hSvc : projectServicePresence ctx observer (removeRunnable st tid) =
-      projectServicePresence ctx observer st := funext fun _ => by rw [hD]; rfl
   have hDom : projectActiveDomain ctx observer (removeRunnable st tid) =
       projectActiveDomain ctx observer st := by
     rw [hD]; first | rfl | simp [projectActiveDomain, hS]
@@ -359,9 +337,7 @@ theorem removeRunnable_preserves_projection
   have hMem : projectMemory ctx observer (removeRunnable st tid) =
       projectMemory ctx observer st :=
     projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st (by rw [hD])
-  have hSvcReg : projectServiceRegistry ctx observer (removeRunnable st tid) =
-      projectServiceRegistry ctx observer st := funext fun _ => by rw [hD]; rfl
-  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
+  simp only [projectState, hObj, hRun, hCur, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 theorem ensureRunnable_preserves_projection
@@ -438,8 +414,6 @@ theorem storeTcbIpcState_preserves_projection
         simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · -- projectCurrent: scheduler preserved by storeObject
         simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · -- projectServicePresence: services unchanged
-        unfold storeObject at hStore; cases hStore; funext sid; rfl
       · -- activeDomain: scheduler preserved by storeObject
         simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · -- irqHandlers: preserved by storeObject
@@ -457,8 +431,6 @@ theorem storeTcbIpcState_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
-      · -- V6-E: serviceRegistry
-        exact storeObject_preserves_projectServiceRegistry ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- WS-H9: storeTcbPendingMessage at a non-observable object preserves projection. -/
 theorem storeTcbPendingMessage_preserves_projection
@@ -487,7 +459,6 @@ theorem storeTcbPendingMessage_preserves_projection
         · simp [projectObjects, hObs]
       · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · unfold storeObject at hStore; cases hStore; funext sid; rfl
       · simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st pair.2 tid.toObjId _ hStore]
       · exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
@@ -498,8 +469,6 @@ theorem storeTcbPendingMessage_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
-      · -- V6-E: serviceRegistry
-        exact storeObject_preserves_projectServiceRegistry ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- WS-H9: storeTcbIpcStateAndMessage at a non-observable object preserves projection. -/
 theorem storeTcbIpcStateAndMessage_preserves_projection
@@ -530,7 +499,6 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
         · simp [projectObjects, hObs]
       · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · unfold storeObject at hStore; cases hStore; funext sid; rfl
       · simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st pair.2 tid.toObjId _ hStore]
       · exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
@@ -541,8 +509,6 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
-      · -- V6-E: serviceRegistry
-        exact storeObject_preserves_projectServiceRegistry ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 theorem storeObject_preserves_projection
@@ -563,7 +529,6 @@ theorem storeObject_preserves_projection
     · simp [projectObjects, hObs]
   · simp [projectRunnable, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid obj hStore]
-  · unfold storeObject at hStore; cases hStore; funext sid; rfl
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid obj hStore]
   · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' oid obj hStore]
   · exact storeObject_preserves_projectObjectIndex ctx observer st st' oid obj hOidHigh hStore
@@ -574,8 +539,6 @@ theorem storeObject_preserves_projection
           storeObject_machine_eq st st' oid obj hStore]
   · -- R5-C.1: memory
     exact storeObject_preserves_projectMemory ctx observer st st' oid obj hStore
-  · -- V6-E: serviceRegistry
-    exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid obj hStore
 
 /-- Finding F-1: `storeTcbReceiveComplete` at a non-observable object preserves
 projection.  The store touches only the (non-observable) target TCB; the extra
@@ -639,7 +602,6 @@ theorem storeObject_projectionStable_preserves_projection
     · simp [projectObjects, hObs]
   · simp [projectRunnable, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid _ hStore]
-  · unfold storeObject at hStore; cases hStore; funext sid; rfl
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid _ hStore]
   · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' oid _ hStore]
   · unfold storeObject at hStore; cases hStore
@@ -650,7 +612,6 @@ theorem storeObject_projectionStable_preserves_projection
   · simp [projectMachineRegs, storeObject_scheduler_eq st st' oid _ hStore,
           storeObject_machine_eq st st' oid _ hStore]
   · exact storeObject_preserves_projectMemory ctx observer st st' oid _ hStore
-  · exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid _ hStore
 
 /-- WS-OD OD3.2: **the donation return's reply-stack head clear is invisible to
 every observer.**
@@ -1187,8 +1148,6 @@ theorem cspaceMint_preserves_lowEquivalent
       have hCurLow := congrArg ObservableState.current hLow
       have hSched₁ := cspaceInsertSlot_preserves_scheduler s₁ s₁' dst c₁ hInsert₁
       have hSched₂ := cspaceInsertSlot_preserves_scheduler s₂ s₂' dst c₂ hInsert₂
-      have hSvc₁ := cspaceInsertSlot_preserves_services s₁ s₁' dst c₁ hInsert₁
-      have hSvc₂ := cspaceInsertSlot_preserves_services s₂ s₂' dst c₂ hInsert₂
       unfold lowEquivalent projectState
       congr 1
       · funext oid
@@ -1204,11 +1163,6 @@ theorem cspaceMint_preserves_lowEquivalent
         · simp [projectObjects, hObs]
       · simpa [projectRunnable, hSched₁, hSched₂] using hRunLow
       · simpa [projectCurrent, hSched₁, hSched₂] using hCurLow
-      · funext sid
-        simp only [projectServicePresence, lookupService]
-        rw [show s₁'.services = s₁.services from hSvc₁, show s₂'.services = s₂.services from hSvc₂]
-        have hBase := congrArg ObservableState.services hLow
-        exact congrFun hBase sid
       · -- activeDomain
         simpa [projectActiveDomain, hSched₁, hSched₂] using congrArg ObservableState.activeDomain hLow
       · -- irqHandlers
@@ -1238,10 +1192,6 @@ theorem cspaceMint_preserves_lowEquivalent
             projectMemory_eq_of_memory_eq ctx observer s₂' s₂
               (by rw [cspaceInsertSlot_preserves_machine s₂ s₂' dst c₂ hInsert₂])]
         exact congrArg ObservableState.memory hLow
-      · -- V6-E: serviceRegistry
-        rw [projectServiceRegistry_eq_of_services_eq ctx observer s₁' s₁ hSvc₁,
-            projectServiceRegistry_eq_of_services_eq ctx observer s₂' s₂ hSvc₂]
-        exact congrArg ObservableState.serviceRegistry hLow
 
 -- ============================================================================
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
@@ -1331,7 +1281,6 @@ theorem cspaceRevoke_preserves_lowEquivalent
   have hObjLow := congrArg ObservableState.objects hLow
   have hRunLow := congrArg ObservableState.runnable hLow
   have hCurLow := congrArg ObservableState.current hLow
-  have hSvcLow := congrArg ObservableState.services hLow
   obtain ⟨par₁, cn₁, t₁, _, hCn₁, hS₁, rfl⟩ := cspaceRevoke_ok_decompose addr s₁ s₁' hStep₁
   obtain ⟨par₂, cn₂, t₂, _, hCn₂, hS₂, rfl⟩ := cspaceRevoke_ok_decompose addr s₂ s₂' hStep₂
   -- The revoked siblings leave the tree and the slot maps, which the observer
@@ -1350,10 +1299,9 @@ theorem cspaceRevoke_preserves_lowEquivalent
   cases hS₁; cases hS₂
   unfold projectState
   -- `v0.35.78`: past the detach the state is `storeObject`'s record (the
-  -- revoke stores once), so its `scheduler` and `services` fields are
-  -- `s₁`'s / `s₂`'s definitionally and `congr 1` closes the runnable,
-  -- current and services components from `hRunLow`, `hCurLow` and
-  -- `hSvcLow` by assumption; the bullets below are the rest.
+  -- revoke stores once), so its `scheduler` field is `s₁`'s / `s₂`'s
+  -- definitionally and `congr 1` closes the runnable and current components
+  -- from `hRunLow` and `hCurLow` by assumption; the bullets below are the rest.
   congr 1
   · funext oid
     by_cases hObs : objectObservable ctx observer oid
@@ -1399,9 +1347,6 @@ theorem cspaceRevoke_preserves_lowEquivalent
   · -- R5-C.1: memory
     funext paddr; simp only [projectMemory]
     exact congrFun (congrArg ObservableState.memory hLow) paddr
-  · -- V6-E: serviceRegistry
-    funext sid; simp only [projectServiceRegistry]
-    exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
 
 -- ============================================================================
 -- WS-F3/F-21: notificationSignal non-interference
@@ -1652,8 +1597,6 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     lowEquivalent ctx observer s₁' s₂' := by
   have hSched₁ := cspaceInsertSlot_preserves_scheduler s₁ s₁' dst cap hStep₁
   have hSched₂ := cspaceInsertSlot_preserves_scheduler s₂ s₂' dst cap hStep₂
-  have hSvc₁ := cspaceInsertSlot_preserves_services s₁ s₁' dst cap hStep₁
-  have hSvc₂ := cspaceInsertSlot_preserves_services s₂ s₂' dst cap hStep₂
   unfold lowEquivalent projectState; congr 1
   · funext oid
     by_cases hObs : objectObservable ctx observer oid
@@ -1667,11 +1610,6 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     · simp [projectObjects, hObs]
   · simpa [projectRunnable, hSched₁, hSched₂] using congrArg ObservableState.runnable hLow
   · simpa [projectCurrent, hSched₁, hSched₂] using congrArg ObservableState.current hLow
-  · funext sid; simp only [projectServicePresence, lookupService]
-    rw [show s₁'.services = s₁.services from hSvc₁, show s₂'.services = s₂.services from hSvc₂]
-    have h := congrFun (congrArg ObservableState.services hLow) sid
-    simp only [projectState, projectServicePresence] at h
-    exact h
   · simpa [projectActiveDomain, hSched₁, hSched₂] using congrArg ObservableState.activeDomain hLow
   · funext irq; simp only [projectIrqHandlers]
     rw [cspaceInsertSlot_preserves_irqHandlers s₁ s₁' dst cap hStep₁,
@@ -1697,9 +1635,5 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
         projectMemory_eq_of_memory_eq ctx observer s₂' s₂
           (by rw [cspaceInsertSlot_preserves_machine s₂ s₂' dst cap hStep₂])]
     exact congrArg ObservableState.memory hLow
-  · -- V6-E: serviceRegistry
-    rw [projectServiceRegistry_eq_of_services_eq ctx observer s₁' s₁ hSvc₁,
-        projectServiceRegistry_eq_of_services_eq ctx observer s₂' s₂ hSvc₂]
-    exact congrArg ObservableState.serviceRegistry hLow
 
 

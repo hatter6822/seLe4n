@@ -17,6 +17,7 @@ import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 
 import SeLe4n.Kernel.Capability.Operations
+import SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation

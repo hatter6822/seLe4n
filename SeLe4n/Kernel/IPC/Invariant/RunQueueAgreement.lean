@@ -767,7 +767,7 @@ theorem untypedSourceSetFull_referenceTables (st : SystemState) (src : CSpaceAdd
 theorem cdtAddChild_referenceTables (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).referenceTables = st.referenceTables := by
   simp only [SystemState.referenceTables, SystemState.cdtAddChild_serviceRegistry,
-    SystemState.cdtAddChild_irqHandlers, SystemState.cdtAddChild_services]
+    SystemState.cdtAddChild_irqHandlers]
 
 /-- A slot insert writes no reference table. -/
 theorem cspaceInsertSlot_referenceTables {st st' : SystemState} {addr : CSpaceAddr}
