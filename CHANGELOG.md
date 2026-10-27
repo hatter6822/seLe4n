@@ -47,7 +47,11 @@ by Adam on 2026-10-26.
   topology lines lose their `svcs=` field, and the inter-transition invariant
   checks run 33 times, not 36 (the three removed were after the graph's store,
   its dependency write and its registry scenario).  The SMP
-  information-flow fixtures are unchanged.
+  information-flow fixtures are unchanged.  The scenario catalog
+  (`tests/scenarios/scenario_catalog.json`) drops its two graph scenarios
+  (`SCN-SVC-POLICY-DENY`, `SCN-SVC-DEPTH-5-CHAIN`), and its five nightly seed
+  scenarios, which used a deleted graph line as their fixture anchor, are
+  re-anchored on the registry lookup line (`lookup by cap found sid: 501`).
 - **Plan**: `docs/planning/UNTYPED_RESET_PLAN.md` row 32 is marked landed; a new
   row 33 projects the registry for non-interference, and the old rows 33 and 34
   are now 34 and 35, with every citation swept.  `docs/REGISTERED_DEBT.md`
