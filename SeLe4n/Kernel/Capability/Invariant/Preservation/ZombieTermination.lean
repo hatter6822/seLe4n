@@ -826,7 +826,7 @@ theorem zombieDescend_live (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
         have := hlt2 hj
         have := zombieLive_le (root := root) (rootSlot := rootSlot) (K := K) hSh1
         omega
-termination_by depth budget => (depth, budget)
+  termination_by depth budget => (depth, budget)
 
 -- ============================================================================
 -- §10  The passes end within the fuel
@@ -1053,7 +1053,7 @@ theorem zombieDescend_depth_free (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
         · exact ⟨_, hn2, .inr List.mem_cons_self⟩
         · obtain ⟨w, hw, hwc⟩ := hW1 o ho
           exact ⟨w, hw, hwc.imp id (List.mem_cons_of_mem _)⟩
-termination_by depth budget => (depth, budget)
+  termination_by depth budget => (depth, budget)
 
 /-- **The way down's bound never binds** (`zombieDepth`): a pass from the
 loop's own slot ends the same with any deeper bound, so it never reaches the

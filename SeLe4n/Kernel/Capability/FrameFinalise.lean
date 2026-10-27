@@ -1385,7 +1385,7 @@ def zombieDescend (executingCore : Concurrency.CoreId) (root : SeLe4n.ObjId)
         else
           zombieDescend executingCore root rootSlot depth
             (zombieObjectSlots st1 (SeLe4n.ObjId.ofNat (slotRetireTarget st1 x s - 1))) x s j st1
-termination_by depth budget => (depth, budget)
+  termination_by depth budget => (depth, budget)
 
 /-- **The way down's bound**: one more than the store holds.  A pass goes down
 only through a final capability, so it never visits an object twice, and the
@@ -1502,7 +1502,7 @@ theorem zombieDescend_chain (ec : Concurrency.CoreId) (root : SeLe4n.ObjId)
       split
       · exact hRest _ _ (.finalise _ (.refl _))
       · exact hRest _ _ (.refl st)
-termination_by depth budget => (depth, budget)
+  termination_by depth budget => (depth, budget)
 
 /-- **The loop's passes, counted**: a run of `n` passes, each a chain. -/
 inductive ZombieRun (ec : Concurrency.CoreId) : Nat → SystemState → SystemState → Prop
