@@ -1091,4 +1091,295 @@ theorem LoanKept.modifyObject (st : SystemState) (k : SeLe4n.ObjId)
   · unfold SystemState.getObject? at hk ⊢
     exact (modifyObject_keepsKinds st k hInv hf _ (Or.inr (Or.inl ⟨r, rfl⟩))).mpr hk
 
+-- ============================================================================
+-- §7  The notification unbind keeps both frames
+-- ============================================================================
+
+/-- **A step keeping the cancel's reads keeps the waiters' frame**: it moves a
+thread's bound-notification code alone, which no plain waiter's guard reads. -/
+theorem CancelReadsKept.cancelFrame {s s' : SystemState} (h : CancelReadsKept s' s)
+    (x : SeLe4n.ThreadId) : CancelFrame s s' x := by
+  refine ⟨fun v t _ ht => ?_, fun v t' _ ht' => ?_, fun k r hk hn _ => ⟨r, ?_, rfl, hn⟩⟩
+  · rcases h.getTcb? v with ⟨e1, -⟩ | ⟨t0, b, e1, e2⟩
+    · rw [e1] at ht; cases ht
+    · rw [e1] at ht; cases ht
+      exact ⟨_, e2, ⟨rfl, rfl, rfl, rfl, rfl, id, fun a b => ⟨a, b⟩⟩⟩
+  · rcases h.getTcb? v with ⟨-, e2⟩ | ⟨t0, b, e1, e2⟩
+    · rw [e2] at ht'; cases ht'
+    · rw [e2] at ht'; cases ht'
+      exact ⟨t0, e1, rfl, rfl⟩
+  · unfold SystemState.getObject? at hk ⊢
+    exact (h.reply k r).mpr hk
+
+/-- **A step keeping the cancel's reads keeps the lender's reads.** -/
+theorem CancelReadsKept.loanKept {s s' : SystemState} (h : CancelReadsKept s' s)
+    (K : SeLe4n.ObjId → Reply → Prop) : LoanKept s s' K := by
+  refine ⟨fun v t ht => ?_, fun c sc hc => by rw [h.schedContext c]; exact hc,
+    fun k r hk _ => ?_⟩
+  · rcases h.getTcb? v with ⟨e1, -⟩ | ⟨t0, b, e1, e2⟩
+    · rw [e1] at ht; cases ht
+    · rw [e1] at ht; cases ht
+      exact ⟨_, e2, rfl, rfl⟩
+  · unfold SystemState.getObject? at hk ⊢
+    exact (h.reply k r).mpr hk
+
+/-- **The notification unbind keeps both frames**: it writes nothing a plain
+waiter's guard or the lender's guard reads. -/
+theorem finaliseThreadUnbindNotification_frames (st : SystemState) (x : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (K : SeLe4n.ObjId → Reply → Prop) :
+    CancelFrame st (finaliseThreadUnbindNotification st x) x ∧
+      LoanKept st (finaliseThreadUnbindNotification st x) K := by
+  unfold finaliseThreadUnbindNotification
+  dsimp only
+  split
+  · exact ⟨.refl st x, .refl st K⟩
+  · split
+    · split
+      · rename_i hG
+        simp only [Bool.and_eq_true] at hG
+        have h := CancelReadsKept.storeUnbindNotification st x ⟨boundNotificationCodeOf st x - 1⟩ hInv hG.2
+        exact ⟨h.cancelFrame x, h.loanKept K⟩
+      · exact ⟨.refl st x, .refl st K⟩
+    · exact ⟨.refl st x, .refl st K⟩
+
+-- ============================================================================
+-- §8  The notification and endpoint cancels keep both frames
+-- ============================================================================
+
+/-- **A step keeping every reply and scheduling context**, read at any key. -/
+def replyContextKept (s s' : SystemState) : Prop :=
+  ∀ (k : SeLe4n.ObjId) (o : KernelObject), s.objects[k]? = some o →
+    ((∃ r, o = .reply r) ∨ ∃ sc, o = .schedContext sc) → s'.objects[k]? = some o
+
+namespace replyContextKept
+
+theorem refl (s : SystemState) : replyContextKept s s := fun _ _ h _ => h
+
+theorem trans {a b c : SystemState} (h₁ : replyContextKept a b) (h₂ : replyContextKept b c) :
+    replyContextKept a c := fun k o h hk => h₂ k o (h₁ k o h hk) hk
+
+theorem updateTcb (st : SystemState) (w : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : replyContextKept st (st.updateTcb w f) := by
+  intro k o h hk
+  refine updateTcb_keeps_nonTcb st w f hInv h (fun t e => ?_)
+  rcases hk with ⟨r, rfl⟩ | ⟨sc, rfl⟩ <;> cases e
+
+theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) {f : KernelObject → KernelObject}
+    (hInv : st.objects.invExt) (hf : keepsThreadReplyContext f) :
+    replyContextKept st (st.modifyObject k f) := by
+  intro y o h hk
+  refine (modifyObject_keepsKinds st k hInv hf y ?_).mpr h
+  rcases hk with h' | h'
+  · exact Or.inr (Or.inl h')
+  · exact Or.inr (Or.inr h')
+
+end replyContextKept
+
+/-- **A step writing none of the scheduling links and keeping every reply and
+context keeps the lender's reads.** -/
+theorem LoanKept.of_schedLinkFrame {s s' : SystemState} (F : SchedLinkFrame s s')
+    (hk : replyContextKept s s') (K : SeLe4n.ObjId → Reply → Prop) : LoanKept s s' K := by
+  refine ⟨fun v t ht => ?_, fun c sc hc => ?_, fun k r hr _ => ?_⟩
+  · have e := F.binding v.toObjId
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp ht] at e
+    cases h' : s'.objects[v.toObjId]? with
+    | none => rw [h'] at e; cases e
+    | some o =>
+      rw [h'] at e
+      cases o with
+      | tcb t' =>
+        simp only [schedBindingLinksOf, Option.some.injEq, Sum.inl.injEq, Prod.mk.injEq] at e
+        exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h', e.1, e.2⟩
+      | schedContext _ => cases e
+      | _ => cases e
+  · rw [SystemState.getSchedContext?_eq_some_iff] at hc ⊢
+    exact hk _ _ hc (Or.inr ⟨sc, rfl⟩)
+  · unfold SystemState.getObject? at hr ⊢
+    exact hk _ _ hr (Or.inl ⟨r, rfl⟩)
+
+/-- **A notification-queue unlink keeps both frames**: it rewrites
+notifications and the threads' notification links alone. -/
+theorem ntfnUnlinkReach_frames {s s' : SystemState} (h : ntfnUnlinkReach s s')
+    (x : SeLe4n.ThreadId) : CancelFrame s s' x ∧ replyContextKept s s' := by
+  have hKind : replyContextKept s s' := by
+    intro k o hk hko
+    rcases h.2 k with e | ⟨n, n', h0, -, -⟩ | ⟨t, t', h0, -, -⟩
+    · rw [e]; exact hk
+    · rw [hk] at h0; cases h0
+      rcases hko with ⟨_, e⟩ | ⟨_, e⟩ <;> cases e
+    · rw [hk] at h0; cases h0
+      rcases hko with ⟨_, e⟩ | ⟨_, e⟩ <;> cases e
+  refine ⟨⟨fun v t _ ht => ?_, fun v t' _ ht' => ?_, fun k r hk hn _ => ⟨r, ?_, rfl, hn⟩⟩, hKind⟩
+  · have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
+    rcases h.2 v.toObjId with e | ⟨n, n', h0, -, -⟩ | ⟨t0, t1, h0, h1, np, nn, e⟩
+    · exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e.trans hO), .refl t⟩
+    · rw [hO] at h0; cases h0
+    · rw [hO] at h0; cases h0
+      exact ⟨t1, (SystemState.getTcb?_eq_some_iff _ _ _).mpr h1, by
+        subst e; exact ⟨rfl, rfl, rfl, rfl, rfl, id, fun a b => ⟨a, b⟩⟩⟩
+  · have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht'
+    rcases h.2 v.toObjId with e | ⟨n, n', -, h1, -⟩ | ⟨t0, t1, h0, h1, np, nn, e⟩
+    · exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e.symm.trans hO), rfl, rfl⟩
+    · rw [hO] at h1; cases h1
+    · rw [hO] at h1; cases h1
+      exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ _ _).mpr h0, by subst e; rfl, by subst e; rfl⟩
+  · unfold SystemState.getObject? at hk ⊢
+    exact hKind k _ hk (Or.inl ⟨r, rfl⟩)
+
+/-- **The notification cancel keeps both frames**: the unlink, then the
+cancelled thread's own restore. -/
+theorem notificationCancel_frames (st : SystemState) (x : SeLe4n.ThreadId) (tcb : TCB)
+    (n : SeLe4n.ObjId) (hInv : st.objects.invExt)
+    (hB : tcb.ipcState = .blockedOnNotification n) (K : SeLe4n.ObjId → Reply → Prop) :
+    CancelFrame st (Lifecycle.Suspend.cancelIpcBlocking st x tcb) x ∧
+      LoanKept st (Lifecycle.Suspend.cancelIpcBlocking st x tcb) K := by
+  have F := SchedLinkFrame.notificationCancel st x tcb n hInv hB
+  have hEq : Lifecycle.Suspend.cancelIpcBlocking st x tcb =
+      Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue st x) x := by
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+  rw [hEq] at F ⊢
+  have hR := removeFromNotificationWaitQueue_reach st x hInv
+  obtain ⟨C1, k1⟩ := ntfnUnlinkReach_frames hR x
+  unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging at F ⊢
+  refine ⟨C1.trans (CancelFrame.updateTcb _ x x _ hR.1 (fun h => absurd rfl h)),
+    LoanKept.of_schedLinkFrame F (k1.trans (replyContextKept.updateTcb _ x _ hR.1)) K⟩
+
+/-- An endpoint rewrite keeps every thread, reply and scheduling context. -/
+theorem keepsThreadReplyContext.endpoint {f : KernelObject → KernelObject}
+    (hE : ∀ e, ∃ e', f (.endpoint e) = .endpoint e')
+    (hO : ∀ o, (∀ e, o ≠ .endpoint e) → f o = o) : keepsThreadReplyContext f :=
+  keepsThreadReplyContext.of_kind
+    (fun o => by
+      by_cases h : ∃ e, o = .endpoint e
+      · exact Or.inl h
+      · exact Or.inr (Or.inr (hO o (fun e he => h ⟨e, he⟩))))
+    (fun o h => by
+      rcases h with ⟨e, rfl⟩ | ⟨n, rfl⟩
+      · exact Or.inl (hE e)
+      · exact Or.inr ⟨n, hO _ (fun _ e => by cases e)⟩)
+
+/-- **The removal of `x` from an endpoint queue keeps both frames**: it writes
+the endpoint, `x`, and `x`'s two neighbours' queue links — a neighbour linked to
+`x` (the removal's own check for the predecessor, the queue's link integrity
+for the successor), so linked into a queue, which no plain waiter is. -/
+theorem storeQueueRemove_frames (st : SystemState) (e : SeLe4n.ObjId) (q : Bool)
+    (x : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) (hInv : st.objects.invExt)
+    (hL : tcbQueueLinkIntegrity st) (hX : st.getTcb? x = some tcb)
+    (hG : queueRemoveInPlace st e q x ep tcb = true) :
+    CancelFrame st (storeQueueRemove st e q x ep tcb) x ∧
+      replyContextKept st (storeQueueRemove st e q x ep tcb) := by
+  have hKE : ∀ c, keepsThreadReplyContext (headAdvancedEndpoint q c) := fun c =>
+    keepsThreadReplyContext.endpoint (fun e => by simp only [headAdvancedEndpoint]; exact ⟨_, rfl⟩)
+      (fun o h => by cases o <;> first | rfl | exact absurd rfl (h _))
+  have hKS : ∀ h t, keepsThreadReplyContext (endsSetEndpoint q h t) := fun h t =>
+    keepsThreadReplyContext.endpoint (fun e => by simp only [endsSetEndpoint]; exact ⟨_, rfl⟩)
+      (fun o h => by cases o <;> first | rfl | exact absurd rfl (h _))
+  -- The predecessor's write.
+  have h1 : (match tcb.queuePPrev with
+      | some .endpointHead => st.modifyObject e (headAdvancedEndpoint q tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st).objects.invExt ∧
+      CancelFrame st (match tcb.queuePPrev with
+      | some .endpointHead => st.modifyObject e (headAdvancedEndpoint q tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st) x ∧
+      replyContextKept st (match tcb.queuePPrev with
+      | some .endpointHead => st.modifyObject e (headAdvancedEndpoint q tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st) ∧
+      ∀ (v : SeLe4n.ThreadId) (t : TCB), (match tcb.queuePPrev with
+      | some .endpointHead => st.modifyObject e (headAdvancedEndpoint q tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st).getTcb? v = some t →
+        ∃ t0, st.getTcb? v = some t0 ∧ t.queuePrevCode = t0.queuePrevCode := by
+    split
+    · refine ⟨modifyObject_preserves_objects_invExt hInv,
+        CancelFrame.modifyObject st e x hInv (hKE _), replyContextKept.modifyObject st e hInv (hKE _),
+        fun v t ht => ⟨t, ?_, rfl⟩⟩
+      rw [SystemState.getTcb?_eq_some_iff] at ht ⊢
+      exact (modifyObject_keepsKinds st e hInv (hKE _) _ (Or.inl ⟨t, rfl⟩)).mp ht
+    · rename_i p hP
+      have hPre : ∃ pt, st.getTcb? p = some pt ∧ pt.queueNext = some x := by
+        unfold queueRemoveInPlace at hG
+        rw [hP] at hG
+        simp only [Bool.and_eq_true] at hG
+        have h' := hG.1.2.2.2
+        cases hp : st.getTcb? p with
+        | none => rw [hp] at h'; cases h'
+        | some pt => rw [hp] at h'; exact ⟨pt, rfl, by simpa using h'⟩
+      obtain ⟨pt, hpt, hpn⟩ := hPre
+      refine ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv,
+        CancelFrame.updateTcb st p x _ hInv (fun _ t ht => ?_), replyContextKept.updateTcb st p _ hInv,
+        fun v t ht => ?_⟩
+      · rw [hpt] at ht; cases ht
+        have hc : pt.queueNextCode = x.val + 1 := by
+          have := congrArg SeLe4n.ThreadId.optCode hpn
+          rw [TCB.optCode_queueNext] at this; exact this
+        exact ⟨⟨rfl, rfl, rfl, rfl, rfl, id, fun a _ => absurd a (by rw [hc]; omega)⟩, rfl, rfl⟩
+      · by_cases hvp : v = p
+        · subst hvp
+          rw [SystemState.updateTcb_getTcb?_self st v _ hInv, hpt] at ht; cases ht
+          exact ⟨pt, hpt, rfl⟩
+        · rw [SystemState.updateTcb_getTcb?_ne st p _ hInv v
+            (SeLe4n.Kernel.threadId_toObjId_ne hvp)] at ht
+          exact ⟨t, ht, rfl⟩
+    · exact ⟨hInv, .refl st x, .refl st, fun v t ht => ⟨t, ht, rfl⟩⟩
+  -- The successor's write.
+  have h2 : ∀ s1 : SystemState, s1.objects.invExt → CancelFrame st s1 x → replyContextKept st s1 →
+      (∀ (v : SeLe4n.ThreadId) (t : TCB), s1.getTcb? v = some t →
+        ∃ t0, st.getTcb? v = some t0 ∧ t.queuePrevCode = t0.queuePrevCode) →
+      (match tcb.queueNext with
+        | some n => s1.updateTcb n (queueUnlinkSuccessor tcb)
+        | none => s1).objects.invExt ∧
+      CancelFrame st (match tcb.queueNext with
+        | some n => s1.updateTcb n (queueUnlinkSuccessor tcb)
+        | none => s1) x ∧
+      replyContextKept st (match tcb.queueNext with
+        | some n => s1.updateTcb n (queueUnlinkSuccessor tcb)
+        | none => s1) := by
+    intro s1 i1 c1 k1 b1
+    split
+    · rename_i n hn
+      obtain ⟨tn, htn, hnp⟩ := hL.1 x tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hX) n hn
+      refine ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ i1,
+        c1.trans (CancelFrame.updateTcb s1 n x _ i1 (fun _ t ht => ?_)),
+        k1.trans (replyContextKept.updateTcb s1 n _ i1)⟩
+      obtain ⟨t0, h0, e0⟩ := b1 n t ht
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr htn] at h0; cases h0
+      have hc : t.queuePrevCode = x.val + 1 := by
+        rw [e0]
+        have := congrArg SeLe4n.ThreadId.optCode hnp
+        rw [TCB.optCode_queuePrev] at this; exact this
+      exact ⟨⟨rfl, rfl, rfl, rfl, rfl, id, fun _ b => absurd b (by rw [hc]; omega)⟩, rfl, rfl⟩
+    · exact ⟨i1, c1, k1⟩
+  have hFin : ∀ (s2 : SystemState) (h t : Nat), s2.objects.invExt → CancelFrame st s2 x →
+      replyContextKept st s2 →
+      CancelFrame st ((s2.modifyObject e (endsSetEndpoint q h t)).updateTcb x tcbOffQueue) x ∧
+        replyContextKept st ((s2.modifyObject e (endsSetEndpoint q h t)).updateTcb x tcbOffQueue) := by
+    intro s2 h t i2 c2 k2
+    have i3 := modifyObject_preserves_objects_invExt (k := e) (f := endsSetEndpoint q h t) i2
+    exact ⟨(c2.trans (CancelFrame.modifyObject s2 e x i2 (hKS _ _))).trans
+        (CancelFrame.updateTcb _ x x _ i3 (fun h => absurd rfl h)),
+      (k2.trans (replyContextKept.modifyObject s2 e i2 (hKS _ _))).trans
+        (replyContextKept.updateTcb _ x _ i3)⟩
+  obtain ⟨i1, c1, k1, b1⟩ := h1
+  have r := h2 _ i1 c1 k1 b1
+  unfold storeQueueRemove
+  exact hFin _ _ _ r.1 r.2.1 r.2.2
+
+/-- **The endpoint cancel keeps both frames**: the removal, then the cancelled
+thread's own rewrite. -/
+theorem storeEndpointBlockedCancelled_frames (st : SystemState) (e : SeLe4n.ObjId) (q : Bool)
+    (x : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) (hInv : st.objects.invExt)
+    (hL : tcbQueueLinkIntegrity st) (hX : st.getTcb? x = some tcb)
+    (hG : queueRemoveInPlace st e q x ep tcb = true) (K : SeLe4n.ObjId → Reply → Prop) :
+    CancelFrame st (storeEndpointBlockedCancelled st e q x ep tcb) x ∧
+      LoanKept st (storeEndpointBlockedCancelled st e q x ep tcb) K := by
+  obtain ⟨C, k⟩ := storeQueueRemove_frames st e q x ep tcb hInv hL hX hG
+  have I := (FinaliseFrame.storeQueueRemove st e q x ep tcb hInv).invExt
+  have F := SchedLinkFrame.storeEndpointBlockedCancelled st e q x ep tcb hInv
+  unfold storeEndpointBlockedCancelled at F ⊢
+  exact ⟨C.trans (CancelFrame.updateTcb _ x x _ I (fun h => absurd rfl h)),
+    LoanKept.of_schedLinkFrame F (k.trans (replyContextKept.updateTcb _ x _ I)) K⟩
+
 end SeLe4n.Kernel
