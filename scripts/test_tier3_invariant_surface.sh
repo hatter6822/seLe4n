@@ -4057,6 +4057,30 @@ run_check "INVARIANT" rg -n '^theorem threadSlotCopied_preserves_liveMappingsRec
 run_check "INVARIANT" rg -n '^theorem threadSlotSet_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpaces_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/SetSpaceMappingRecords.lean
+# Every entry keeps the mappings recorded: the arms' premises, the dispatchers
+# and the committing entries, each a `MappingStage`.
+run_check "INVARIANT" rg -n '^structure MappingArmPremises($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem of_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotZombie_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem copyThreadSpacesZombie_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Capability.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 # WS-BP BP7.1 (`v0.36.7`): a frame capability owns the mapping it made.  The
 # map records it on the capability, and refuses a capability whose mapping is
 # still live; a copy or an IPC transfer carries no record (seL4's `deriveCap`);
