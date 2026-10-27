@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/retype-resets-unused-untyped",
-      "commit_sha": "870fac94427004d7dcaaa067ff22398ed1cff2b0",
-      "tree_sha": "59d310a1a14ae3764cb82ad2f40907196a432512",
-      "committed_at_utc": "2026-10-27T20:08:25+00:00"
+      "commit_sha": "2e814f99c456ca5e19352e59efa7c53cd43fe012",
+      "tree_sha": "e37bfbedbf39a37cf2954b6ec114e7206ded1a74",
+      "committed_at_utc": "2026-10-27T21:50:39+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9d85d1000f2430a9c4d24211fc897001de207bfb7f8965c00f07e8c729ce3279"
+    "source_digest": "dd65cbe5625b4da58aa6d626b6e9ac35358a9d56620b64bcd38b459a6cc5b589"
   },
   "summary": {
     "module_count": 547,
@@ -27,9 +27,9 @@
     "version": "0.36.154",
     "lean_toolchain": "v4.28.0",
     "production_files": 477,
-    "production_loc": 521803,
+    "production_loc": 521807,
     "test_files": 70,
-    "test_loc": 87309,
+    "test_loc": 87327,
     "proved_theorem_lemma_decls": 19173,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -241380,9 +241380,8 @@
           "kind": "def",
           "name": "retypeFromUntypedAdmitted",
           "full_name": "SeLe4n.Kernel.retypeFromUntypedAdmitted",
-          "line": 93,
+          "line": 94,
           "called": [
-            "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.alignedCarveIndex",
             "SeLe4n.Kernel.childrenNameNone",
             "SeLe4n.Kernel.lifecycleRetypeAuthority",
@@ -241398,14 +241397,15 @@
             "SeLe4n.Model.UntypedObject",
             "SeLe4n.Model.UntypedObject.canAllocate",
             "SeLe4n.Model.maxObjects",
-            "SeLe4n.ObjId"
+            "SeLe4n.ObjId",
+            "SeLe4n.Slot"
           ]
         },
         {
           "kind": "def",
           "name": "retypeFromUntypedWrites",
           "full_name": "SeLe4n.Kernel.retypeFromUntypedWrites",
-          "line": 110,
+          "line": 113,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.setCapFreeIndex",
@@ -241421,7 +241421,7 @@
           "kind": "theorem",
           "name": "retypeFromUntyped_of_admitted",
           "full_name": "SeLe4n.Kernel.retypeFromUntyped_of_admitted",
-          "line": 119,
+          "line": 122,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.alignedCarveIndex",
@@ -241447,7 +241447,7 @@
           "kind": "def",
           "name": "untypedRetypeAdmittedAt",
           "full_name": "SeLe4n.Kernel.untypedRetypeAdmittedAt",
-          "line": 145,
+          "line": 148,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -241467,7 +241467,7 @@
           "kind": "def",
           "name": "untypedRetypePerformAt",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformAt",
-          "line": 162,
+          "line": 166,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -241490,7 +241490,7 @@
           "kind": "theorem",
           "name": "untypedRetypeObject_of_admitted",
           "full_name": "SeLe4n.Kernel.untypedRetypeObject_of_admitted",
-          "line": 180,
+          "line": 184,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -241517,7 +241517,7 @@
           "kind": "def",
           "name": "CarveRequest.scrubAt",
           "full_name": "SeLe4n.Kernel.CarveRequest.scrubAt",
-          "line": 225,
+          "line": 229,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.PhysicalWriteLedger.pushAfter",
@@ -241532,7 +241532,7 @@
           "kind": "theorem",
           "name": "CarveRequest.scrub_eq_scrubAt",
           "full_name": "SeLe4n.Kernel.CarveRequest.scrub_eq_scrubAt",
-          "line": 249,
+          "line": 253,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.CarveRequest.scrub",
@@ -241546,7 +241546,7 @@
           "kind": "def",
           "name": "untypedRetypePerformWords",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformWords",
-          "line": 261,
+          "line": 265,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.CarveRequest.carveIndex",
@@ -241571,7 +241571,7 @@
           "kind": "def",
           "name": "untypedRetypePerformImpl",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformImpl",
-          "line": 288,
+          "line": 292,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.CarveRequest",
@@ -241584,7 +241584,7 @@
           "kind": "theorem",
           "name": "untypedRetypePerformAt_eq_impl",
           "full_name": "SeLe4n.Kernel.untypedRetypePerformAt_eq_impl",
-          "line": 292,
+          "line": 296,
           "called": [
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.CarveRequest.capability",
@@ -419602,6 +419602,7 @@
             "SeLe4n.Kernel.CarveRequest",
             "SeLe4n.Kernel.CarveRequest.object",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
+            "SeLe4n.Kernel.hasCdtChildren",
             "SeLe4n.Kernel.retypeFromUntyped",
             "SeLe4n.Kernel.untypedRetypeObject",
             "SeLe4n.Model.AccessRightSet.ofList",
@@ -419629,7 +419630,7 @@
           "kind": "def",
           "name": "runWSJ1DecodeChecks",
           "full_name": "SeLe4n.Testing.runWSJ1DecodeChecks",
-          "line": 2450,
+          "line": 2464,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo",
@@ -419653,7 +419654,7 @@
           "kind": "def",
           "name": "runWSKGCSpaceChecks",
           "full_name": "SeLe4n.Testing.runWSKGCSpaceChecks",
-          "line": 2609,
+          "line": 2623,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs",
@@ -419681,7 +419682,7 @@
           "kind": "def",
           "name": "runWSKGLifecycleVSpaceChecks",
           "full_name": "SeLe4n.Testing.runWSKGLifecycleVSpaceChecks",
-          "line": 2674,
+          "line": 2688,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.CPtr.ofNat",
@@ -419713,7 +419714,7 @@
           "kind": "def",
           "name": "runWSKGServiceIpcChecks",
           "full_name": "SeLe4n.Testing.runWSKGServiceIpcChecks",
-          "line": 2754,
+          "line": 2768,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -419729,7 +419730,7 @@
           "kind": "def",
           "name": "runWSKGDeterminismChecks",
           "full_name": "SeLe4n.Testing.runWSKGDeterminismChecks",
-          "line": 2789,
+          "line": 2803,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
@@ -419753,7 +419754,7 @@
           "kind": "def",
           "name": "runWSKGChecks",
           "full_name": "SeLe4n.Testing.runWSKGChecks",
-          "line": 2866,
+          "line": 2880,
           "called": [
             "SeLe4n.Testing.runWSKGCSpaceChecks",
             "SeLe4n.Testing.runWSKGDeterminismChecks",
@@ -419765,7 +419766,7 @@
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
           "full_name": "SeLe4n.Testing.runWSL4BlockedThreadChecks",
-          "line": 2881,
+          "line": 2895,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Kernel.endpointReceiveDual",
@@ -419790,7 +419791,7 @@
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
           "full_name": "SeLe4n.Testing.runWSM3CapTransferNegativeChecks",
-          "line": 2953,
+          "line": 2967,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Kernel.ipcTransferSingleCap",
@@ -419811,7 +419812,7 @@
           "kind": "def",
           "name": "runL13CapTransferShortCircuitChecks",
           "full_name": "SeLe4n.Testing.runL13CapTransferShortCircuitChecks",
-          "line": 3014,
+          "line": 3028,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Kernel.ipcUnwrapCapsLoop",
@@ -419836,7 +419837,7 @@
           "kind": "def",
           "name": "runWSM4GuardOnlyChecks",
           "full_name": "SeLe4n.Testing.runWSM4GuardOnlyChecks",
-          "line": 3108,
+          "line": 3122,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.resolveCapAddress",
@@ -419855,7 +419856,7 @@
           "kind": "def",
           "name": "runWSM4SmallBitsChecks",
           "full_name": "SeLe4n.Testing.runWSM4SmallBitsChecks",
-          "line": 3145,
+          "line": 3159,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.resolveCapAddress",
@@ -419875,7 +419876,7 @@
           "kind": "def",
           "name": "runWSM4GuardMismatchChecks",
           "full_name": "SeLe4n.Testing.runWSM4GuardMismatchChecks",
-          "line": 3197,
+          "line": 3211,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.resolveCapAddress",
@@ -419894,7 +419895,7 @@
           "kind": "def",
           "name": "runWSM4MaxDepthLoopChecks",
           "full_name": "SeLe4n.Testing.runWSM4MaxDepthLoopChecks",
-          "line": 3260,
+          "line": 3274,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat",
@@ -419915,7 +419916,7 @@
           "kind": "def",
           "name": "runWSM4SlotEdgeChecks",
           "full_name": "SeLe4n.Testing.runWSM4SlotEdgeChecks",
-          "line": 3313,
+          "line": 3327,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.resolveCapAddress",
@@ -419935,7 +419936,7 @@
           "kind": "def",
           "name": "runWSM4WrapperIntegrationChecks",
           "full_name": "SeLe4n.Testing.runWSM4WrapperIntegrationChecks",
-          "line": 3372,
+          "line": 3386,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.cspaceLookupMultiLevel",
@@ -419954,7 +419955,7 @@
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
           "full_name": "SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks",
-          "line": 3415,
+          "line": 3429,
           "called": [
             "SeLe4n.Testing.runWSM4GuardMismatchChecks",
             "SeLe4n.Testing.runWSM4GuardOnlyChecks",
@@ -419968,7 +419969,7 @@
           "kind": "def",
           "name": "runRevocationRefusalChecks",
           "full_name": "SeLe4n.Testing.runRevocationRefusalChecks",
-          "line": 3436,
+          "line": 3450,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -419987,7 +419988,7 @@
           "kind": "def",
           "name": "runThreadSlotInvocationRefusalChecks",
           "full_name": "SeLe4n.Testing.runThreadSlotInvocationRefusalChecks",
-          "line": 3459,
+          "line": 3473,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -420020,7 +420021,7 @@
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
           "full_name": "SeLe4n.Testing.runWSR4CoherenceChecks",
-          "line": 3515,
+          "line": 3529,
           "called": [
             "SeLe4n.InterfaceId",
             "SeLe4n.Kernel.lookupServiceByRecordedCode",
@@ -420046,7 +420047,7 @@
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
           "full_name": "SeLe4n.Testing.runS2GCapabilityErrorTests",
-          "line": 3637,
+          "line": 3651,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -420081,12 +420082,13 @@
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
           "full_name": "SeLe4n.Testing.runS2HLifecycleErrorTests",
-          "line": 3737,
+          "line": 3751,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.retypeFromUntyped",
+            "SeLe4n.Kernel.untypedRetypeObject",
             "SeLe4n.Model.AccessRightSet.ofList",
-            "SeLe4n.Model.CNode.ofSlots",
+            "SeLe4n.Model.CNode.ofList",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB.spaceCellsOf",
             "SeLe4n.ObjId",
@@ -420100,6 +420102,7 @@
             "SeLe4n.Testing.cnodeId",
             "SeLe4n.Testing.endpointId",
             "SeLe4n.Testing.expectErr",
+            "SeLe4n.Testing.expectOkSt",
             "SeLe4n.Testing.f2DeviceState",
             "SeLe4n.Testing.f2DeviceUntypedId",
             "SeLe4n.Testing.f2UntypedAuthCnode",
@@ -420107,7 +420110,6 @@
             "SeLe4n.Testing.f2UntypedObjId",
             "SeLe4n.Testing.f2UntypedState",
             "SeLe4n.Testing.slot0",
-            "SeLe4n.UniqueSlotMap.ofListWF",
             "SeLe4n.VAddr.ofNat"
           ],
           "private": true
@@ -420116,7 +420118,7 @@
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
           "full_name": "SeLe4n.Testing.runX2RuntimeInvariantTests",
-          "line": 3809,
+          "line": 3827,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState",
@@ -420165,7 +420167,7 @@
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
           "full_name": "SeLe4n.Testing.runZ8SchedContextNegativeChecks",
-          "line": 4017,
+          "line": 4035,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHSet.insert",
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
@@ -420190,7 +420192,7 @@
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
           "full_name": "SeLe4n.Testing.runAC1BudgetFailClosedChecks",
-          "line": 4085,
+          "line": 4103,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Kernel.SchedContext.empty",
@@ -420210,7 +420212,7 @@
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
           "full_name": "SeLe4n.Testing.runAC1CdtTrackingChecks",
-          "line": 4141,
+          "line": 4159,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHSet.insert",
@@ -420233,7 +420235,7 @@
           "kind": "def",
           "name": "r1EpId",
           "full_name": "SeLe4n.Testing.r1EpId",
-          "line": 4193,
+          "line": 4211,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -420243,7 +420245,7 @@
           "kind": "def",
           "name": "r1CallerTid",
           "full_name": "SeLe4n.Testing.r1CallerTid",
-          "line": 4194,
+          "line": 4212,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -420253,7 +420255,7 @@
           "kind": "def",
           "name": "r1ReceiverTid",
           "full_name": "SeLe4n.Testing.r1ReceiverTid",
-          "line": 4195,
+          "line": 4213,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -420263,7 +420265,7 @@
           "kind": "def",
           "name": "r1CallerCNode",
           "full_name": "SeLe4n.Testing.r1CallerCNode",
-          "line": 4196,
+          "line": 4214,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -420273,7 +420275,7 @@
           "kind": "def",
           "name": "r1ReceiverCNode",
           "full_name": "SeLe4n.Testing.r1ReceiverCNode",
-          "line": 4197,
+          "line": 4215,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -420283,7 +420285,7 @@
           "kind": "def",
           "name": "r1TargetObj",
           "full_name": "SeLe4n.Testing.r1TargetObj",
-          "line": 4198,
+          "line": 4216,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -420293,7 +420295,7 @@
           "kind": "def",
           "name": "r1ReplyId",
           "full_name": "SeLe4n.Testing.r1ReplyId",
-          "line": 4201,
+          "line": 4219,
           "called": [
             "SeLe4n.ReplyId"
           ],
@@ -420303,7 +420305,7 @@
           "kind": "def",
           "name": "r1Cap",
           "full_name": "SeLe4n.Testing.r1Cap",
-          "line": 4203,
+          "line": 4221,
           "called": [
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.Capability",
@@ -420315,7 +420317,7 @@
           "kind": "def",
           "name": "r1Framed",
           "full_name": "SeLe4n.Testing.r1Framed",
-          "line": 4209,
+          "line": 4227,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.IpcMessage.empty",
@@ -420329,7 +420331,7 @@
           "kind": "def",
           "name": "r1EndpointRights",
           "full_name": "SeLe4n.Testing.r1EndpointRights",
-          "line": 4212,
+          "line": 4230,
           "called": [
             "SeLe4n.Model.AccessRightSet",
             "SeLe4n.Model.AccessRightSet.ofList"
@@ -420340,7 +420342,7 @@
           "kind": "def",
           "name": "r1BaseState",
           "full_name": "SeLe4n.Testing.r1BaseState",
-          "line": 4215,
+          "line": 4233,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Model.CNode.ofSlots",
@@ -420370,7 +420372,7 @@
           "kind": "def",
           "name": "r1QueuedState",
           "full_name": "SeLe4n.Testing.r1QueuedState",
-          "line": 4235,
+          "line": 4253,
           "called": [
             "SeLe4n.Kernel.endpointReceiveDual",
             "SeLe4n.Model.KernelError",
@@ -420386,7 +420388,7 @@
           "kind": "def",
           "name": "r1FaultyState",
           "full_name": "SeLe4n.Testing.r1FaultyState",
-          "line": 4240,
+          "line": 4258,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
             "SeLe4n.Model.SystemState",
@@ -420399,7 +420401,7 @@
           "kind": "def",
           "name": "r1CheckHealthyState",
           "full_name": "SeLe4n.Testing.r1CheckHealthyState",
-          "line": 4243,
+          "line": 4261,
           "called": [
             "SeLe4n.Kernel.endpointCallWithCaps",
             "SeLe4n.Model.AccessRightSet.mem",
@@ -420416,7 +420418,7 @@
           "kind": "def",
           "name": "r1CheckFaultyState",
           "full_name": "SeLe4n.Testing.r1CheckFaultyState",
-          "line": 4253,
+          "line": 4271,
           "called": [
             "SeLe4n.Kernel.endpointCallWithCaps",
             "SeLe4n.Model.AccessRightSet.mem",
@@ -420433,7 +420435,7 @@
           "kind": "def",
           "name": "r1CheckLookupCspaceRoot",
           "full_name": "SeLe4n.Testing.r1CheckLookupCspaceRoot",
-          "line": 4264,
+          "line": 4282,
           "called": [
             "SeLe4n.Kernel.lookupCspaceRoot",
             "SeLe4n.Model.SystemState",
@@ -420445,7 +420447,7 @@
           "kind": "def",
           "name": "runR1IpcCallPathSymmetryChecks",
           "full_name": "SeLe4n.Testing.runR1IpcCallPathSymmetryChecks",
-          "line": 4294,
+          "line": 4312,
           "called": [
             "SeLe4n.Testing.r1CheckFaultyState",
             "SeLe4n.Testing.r1CheckHealthyState",
@@ -420458,7 +420460,7 @@
           "kind": "def",
           "name": "r5eOrphanedScId",
           "full_name": "SeLe4n.Testing.r5eOrphanedScId",
-          "line": 4319,
+          "line": 4337,
           "called": [
             "SeLe4n.SchedContextId"
           ],
@@ -420468,7 +420470,7 @@
           "kind": "def",
           "name": "r5eOrphanedTid",
           "full_name": "SeLe4n.Testing.r5eOrphanedTid",
-          "line": 4321,
+          "line": 4339,
           "called": [
             "SeLe4n.ThreadId"
           ],
@@ -420478,7 +420480,7 @@
           "kind": "def",
           "name": "r5eOrphanedBoundState",
           "full_name": "SeLe4n.Testing.r5eOrphanedBoundState",
-          "line": 4323,
+          "line": 4341,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -420499,7 +420501,7 @@
           "kind": "def",
           "name": "runR5EOrphanedSchedContextChecks",
           "full_name": "SeLe4n.Testing.runR5EOrphanedSchedContextChecks",
-          "line": 4341,
+          "line": 4359,
           "called": [
             "SeLe4n.Kernel.timerTickBudget",
             "SeLe4n.Model.KernelError",
@@ -420514,7 +420516,7 @@
           "kind": "def",
           "name": "unguardedInsertSlot",
           "full_name": "SeLe4n.Testing.unguardedInsertSlot",
-          "line": 4379,
+          "line": 4397,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Model.Capability",
@@ -420528,7 +420530,7 @@
           "kind": "def",
           "name": "runWSRR8CSpaceSlotRangeChecks",
           "full_name": "SeLe4n.Testing.runWSRR8CSpaceSlotRangeChecks",
-          "line": 4399,
+          "line": 4417,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
@@ -420563,7 +420565,7 @@
           "kind": "def",
           "name": "runZombieDeleteCompletesChecks",
           "full_name": "SeLe4n.Testing.runZombieDeleteCompletesChecks",
-          "line": 4504,
+          "line": 4522,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -420600,7 +420602,7 @@
           "kind": "def",
           "name": "runUntypedRetireSpliceChecks",
           "full_name": "SeLe4n.Testing.runUntypedRetireSpliceChecks",
-          "line": 4598,
+          "line": 4616,
           "called": [
             "SeLe4n.Kernel.CSpaceAddr",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -420626,7 +420628,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 4645,
+          "line": 4663,
           "called": [
             "SeLe4n.Testing.runAC1BudgetFailClosedChecks",
             "SeLe4n.Testing.runAC1CdtTrackingChecks",
