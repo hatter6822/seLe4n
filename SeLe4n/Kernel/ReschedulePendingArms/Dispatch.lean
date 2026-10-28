@@ -45,10 +45,10 @@ theorem clearWokenReceiverStash_keyFrame (receiver? : Option SeLe4n.ThreadId) {s
       · cases h; exact capabilityKeyFrame_refl hInv
     · cases h; exact capabilityKeyFrame_refl hInv
 
-/-- The registry's one object write — an endpoint's `serviceCode` — feeds no
+/-- The registry's one object write — an endpoint's `serviceRegistered` — feeds no
 key: an endpoint holds no key input. -/
-theorem serviceCodeRewrite_keyFrame {st st' : SystemState} (hInv : st.objects.invExt)
-    (hW : ServiceCodeRewrite st.objects st'.objects) (hS : st'.scheduler = st.scheduler) :
+theorem registrationFlagRewrite_keyFrame {st st' : SystemState} (hInv : st.objects.invExt)
+    (hW : RegistrationFlagRewrite st.objects st'.objects) (hS : st'.scheduler = st.scheduler) :
     capabilityKeyFrame st st' :=
   ⟨fun oid => by
     rcases hW.lookup hInv oid with h | ⟨_, _, h0, h1⟩
@@ -58,28 +58,28 @@ theorem serviceCodeRewrite_keyFrame {st st' : SystemState} (hInv : st.objects.in
 theorem registerService_keyFrame {reg : ServiceRegistration} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : registerService reg st = .ok ((), st')) :
     capabilityKeyFrame st st' :=
-  serviceCodeRewrite_keyFrame hInv (registerService_serviceCodeRewrite h)
+  registrationFlagRewrite_keyFrame hInv (registerService_registrationFlagRewrite h)
     (registerService_preserves_scheduler _ _ _ h)
 
 theorem revokeService_keyFrame {sid : ServiceId} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : revokeService sid st = .ok ((), st')) :
     capabilityKeyFrame st st' :=
-  serviceCodeRewrite_keyFrame hInv (revokeService_serviceCodeRewrite h)
+  registrationFlagRewrite_keyFrame hInv (revokeService_registrationFlagRewrite h)
     (revokeService_preserves_scheduler _ _ _ h)
 
 /-- WS-ZA ZA5.5: the release of a final endpoint's registration feeds no key: it
 is a revocation or nothing. -/
 theorem releaseFinalRegistration_keyFrame (target : Nat) (st : SystemState)
     (hInv : st.objects.invExt) : capabilityKeyFrame st (releaseFinalRegistration target st) := by
-  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, _, hR⟩
+  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, hR⟩
   · rw [hE]; exact capabilityKeyFrame_refl hInv
   · exact revokeService_keyFrame hInv hR
 
 /-- ...and so is the revoke the kernel runs, through the invoked endpoint. -/
-theorem revokeServiceByRecordedCode_keyFrame {epId : SeLe4n.ObjId} {st st' : SystemState}
-    (hInv : st.objects.invExt) (h : revokeServiceByRecordedCode epId st = .ok ((), st')) :
+theorem revokeServiceByRecordedRegistration_keyFrame {epId : SeLe4n.ObjId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : revokeServiceByRecordedRegistration epId st = .ok ((), st')) :
     capabilityKeyFrame st st' := by
-  obtain ⟨_, h⟩ := revokeServiceByRecordedCode_revokeService h
+  obtain ⟨_, h⟩ := revokeServiceByRecordedRegistration_revokeService h
   exact revokeService_keyFrame hInv h
 
 /-- The declassified signal covers: the bound signal, then the audit records,
@@ -586,7 +586,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
-    | exact (revokeServiceByRecordedCode_keyFrame hInv h).stepCoversInv
+    | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
     | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h)
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
@@ -594,7 +594,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv
     | (cases h; rename_i hU
        first
-        | (rw [lookupServiceByRecordedCode_preserves_state _ _ _ _ hU]
+        | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
            exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv)
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv

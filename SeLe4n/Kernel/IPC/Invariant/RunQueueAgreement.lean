@@ -119,11 +119,11 @@ theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
 theorem storeObject_endpoint_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {ep ep' : Endpoint} (hOld : st.objects[k]? = some (.endpoint ep))
     (hS : storeObject k (.endpoint ep') st = .ok ((), st'))
-    (hC : ep'.serviceCode = ep.serviceCode := by
+    (hC : ep'.serviceRegistered = ep.serviceRegistered := by
       first
         | rfl
         | (split <;> rfl)
-        | (rw [apply_ite Endpoint.serviceCode]; split <;> rfl)
+        | (rw [apply_ite Endpoint.serviceRegistered]; split <;> rfl)
         | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; rfl)
     (SystemState.objStateMono_nonTcb (by rw [hOld]; rfl) rfl)

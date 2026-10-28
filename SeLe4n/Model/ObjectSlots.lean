@@ -439,17 +439,17 @@ reads. -/
   | .notification n => (0, n.boundTCBCode)
   | _ => (0, 0)
 
-/-- **The table back-links an object holds**: an endpoint's registration code
-(`s + 1` for the service `⟨s⟩` registered on it, `0` for none) and a
-notification's interrupt flag; every other kind holds neither.  The part of the
+/-- **The table back-links an object holds**: an endpoint's registration flag
+(set while a service is registered on it) and a notification's interrupt flag;
+every other kind holds neither.  The part of the
 store the table references read: a registration names an endpoint, an interrupt
 names a notification, and each of those objects records the entry that names it
 (`SystemState.tableReferencesRecorded`). -/
-@[inline] def tableBackLinks (o : KernelObject) : Nat × Bool :=
+@[inline] def tableBackLinks (o : KernelObject) : Bool × Bool :=
   match o with
-  | .endpoint ep => (ep.serviceCode, false)
-  | .notification n => (0, n.irqBound)
-  | _ => (0, false)
+  | .endpoint ep => (ep.serviceRegistered, false)
+  | .notification n => (false, n.irqBound)
+  | _ => (false, false)
 
 /-- **The mapping facts an object holds**: a VSpace root's ASID, translations
 and mapping epochs, and a frame's base; every other kind holds none.  The part

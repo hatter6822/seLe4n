@@ -216,7 +216,7 @@ theorem revokeService_preserves_registryInvariant
 /-- AE5-B (U-20): No two distinct service registrations target the same endpoint.
     This ensures `lookupServiceByCap` returns a deterministic result regardless of
     `RHTable` iteration order. The runtime check in `registerService` (the
-    endpoint's own registration code, `Endpoint.serviceCode`) enforces this at
+    endpoint's own registration flag, `Endpoint.serviceRegistered`) enforces this at
     registration time, and `SystemState.tableReferencesRecorded` implies it
     (`registryEndpointUnique_of_tableReferencesRecorded`). -/
 def registryEndpointUnique (st : SystemState) : Prop :=
@@ -252,7 +252,7 @@ theorem registerInterface_preserves_registryEndpointUnique
 
 /-- AE5-B: `registerService` preserves `registryEndpointUnique`.
     The duplicate check reads the endpoint's own record of its registration
-    (`Endpoint.serviceCode`), which `SystemState.tableReferencesRecorded` holds
+    (`Endpoint.serviceRegistered`), which `SystemState.tableReferencesRecorded` holds
     equal to the registry's: a clear record means no registration targets the
     endpoint, so the new entry is the only one that does. -/
 theorem registerService_preserves_registryEndpointUnique
@@ -331,16 +331,14 @@ private theorem getElem?_erase_ite {α β : Type} [BEq α] [Hashable α] [Lawful
   · simp only [RHTable_getElem?_eq_get?, if_neg hk]
     exact RHTable.getElem?_erase_ne_K t k j (fun hb => hk (eq_of_beq hb)) h
 
-private theorem serviceId_eq_of_val {a b : ServiceId} (h : a.val + 1 = b.val + 1) : a = b := by
-  cases a; cases b; simp only [Nat.add_right_cancel_iff] at h; subst h; rfl
-
 /-- The revocation's endpoint write, when the endpoint records the service. -/
-theorem clearEndpointServiceCode_of_recorded (st : SystemState) (cap : Capability)
+theorem clearEndpointRegistration_of_recorded (st : SystemState) (cap : Capability)
     (sid : ServiceId) {e : SeLe4n.ObjId} {ep : Endpoint} (ht : cap.target = .object e)
-    (hE : st.objects[e]? = some (.endpoint ep)) (hc : ep.serviceCode = sid.val + 1) :
-    clearEndpointServiceCode st cap sid =
-      { st with objects := st.objects.insert e (.endpoint { ep with serviceCode := 0 }) } := by
-  unfold clearEndpointServiceCode
+    (hE : st.objects[e]? = some (.endpoint ep))
+    (hc : ep.serviceRegistered = true ∧ sid = ServiceId.ofNat e.toNat) :
+    clearEndpointRegistration st cap sid =
+      { st with objects := st.objects.insert e (.endpoint { ep with serviceRegistered := false }) } := by
+  unfold clearEndpointRegistration
   simp only [ht]
   split
   · rename_i ep' hg
@@ -358,7 +356,7 @@ theorem registerService_preserves_tableReferencesRecorded {reg : ServiceRegistra
     st'.tableReferencesRecorded := by
   obtain ⟨epId, ep, hTarget, hObj, hFree, hClear, rfl⟩ := registerService_ok hStep
   have hO := fun j => getElem?_insert_ite st.objects epId j
-    (.endpoint { ep with serviceCode := reg.sid.val + 1 }) hObjInv
+    (.endpoint { ep with serviceRegistered := true }) hObjInv
   have hS := fun j => getElem?_insert_ite st.serviceRegistry reg.sid j reg hR.registryInvExtK.1
   refine ⟨RHTable.insert_preserves_invExtK _ _ _ hR.registryInvExtK, ?_, ?_, ?_, ?_⟩
   · intro sid r h
@@ -366,26 +364,23 @@ theorem registerService_preserves_tableReferencesRecorded {reg : ServiceRegistra
     rw [hS] at h
     by_cases hs : reg.sid = sid
     · rw [if_pos hs] at h; cases h; subst hs
-      exact ⟨epId, hTarget, by rw [hO, if_pos rfl]; rfl⟩
+      exact ⟨epId, hTarget, ServiceRegistration.sid_of_target hTarget,
+        by rw [hO, if_pos rfl]; rfl⟩
     · rw [if_neg hs] at h
-      obtain ⟨e, he, hc⟩ := hR.registry sid r h
-      refine ⟨e, he, ?_⟩
+      obtain ⟨e, he, hsE, hc⟩ := hR.registry sid r h
+      refine ⟨e, he, hsE, ?_⟩
       rw [hO]
       by_cases hk : epId = e
       · subst hk; rw [hObj] at hc; simp [KernelObject.tableBackLinks, hClear] at hc
       · rw [if_neg hk]; exact hc
-  · intro e n h
+  · intro e h
     simp only at h ⊢
     rw [hO] at h
     by_cases hk : epId = e
     · subst hk
-      rw [if_pos rfl] at h
-      simp only [objTableBackLinks_some, KernelObject.tableBackLinks] at h
-      have hn : n = reg.sid.val := by omega
-      subst hn
-      exact ⟨reg, by rw [hS, if_pos rfl], hTarget⟩
+      exact ⟨reg, by rw [hS, if_pos (ServiceRegistration.sid_of_target hTarget)], hTarget⟩
     · rw [if_neg hk] at h
-      obtain ⟨r, hr, ht⟩ := hR.serviceCodes e n h
+      obtain ⟨r, hr, ht⟩ := hR.serviceFlags e h
       refine ⟨r, ?_, ht⟩
       rw [hS, if_neg]
       · exact hr
@@ -412,12 +407,12 @@ theorem revokeService_preserves_tableReferencesRecorded {sid : ServiceId}
     (hObjInv : st.objects.invExt) (hR : st.tableReferencesRecorded) :
     st'.tableReferencesRecorded := by
   obtain ⟨reg, hReg, rfl⟩ := revokeService_ok hStep
-  obtain ⟨e1, he1, hc1⟩ := hR.registry sid reg hReg
-  obtain ⟨ep1, hE1, hCode1⟩ := objTableBackLinks_code_succ hc1
-  rw [clearEndpointServiceCode_of_recorded { st with serviceRegistry := st.serviceRegistry.erase sid }
-    reg.endpointCap sid he1 hE1 hCode1]
+  obtain ⟨e1, he1, hsid1, hc1⟩ := hR.registry sid reg hReg
+  obtain ⟨ep1, hE1, hFlag1⟩ := objTableBackLinks_registered hc1
+  rw [clearEndpointRegistration_of_recorded { st with serviceRegistry := st.serviceRegistry.erase sid }
+    reg.endpointCap sid he1 hE1 ⟨hFlag1, hsid1⟩]
   have hO := fun j => getElem?_insert_ite st.objects e1 j
-    (.endpoint { ep1 with serviceCode := 0 }) hObjInv
+    (.endpoint { ep1 with serviceRegistered := false }) hObjInv
   have hS := fun j => getElem?_erase_ite st.serviceRegistry sid j hR.registryInvExtK
   refine ⟨RHTable.erase_preserves_invExtK _ _ hR.registryInvExtK, ?_, ?_, ?_, ?_⟩
   · intro s r h
@@ -426,19 +421,19 @@ theorem revokeService_preserves_tableReferencesRecorded {sid : ServiceId}
     by_cases hs : sid = s
     · rw [if_pos hs] at h; cases h
     · rw [if_neg hs] at h
-      obtain ⟨e, he, hc⟩ := hR.registry s r h
-      refine ⟨e, he, ?_⟩
+      obtain ⟨e, he, hsE, hc⟩ := hR.registry s r h
+      refine ⟨e, he, hsE, ?_⟩
       rw [hO]
       by_cases hk : e1 = e
-      · subst hk; rw [hc1] at hc; exact absurd (serviceId_eq_of_val hc) hs
+      · subst hk; exact absurd (hsid1.trans hsE.symm) hs
       · rw [if_neg hk]; exact hc
-  · intro e n h
+  · intro e h
     simp only at h ⊢
     rw [hO] at h
     by_cases hk : e1 = e
     · subst hk; rw [if_pos rfl] at h; simp [KernelObject.tableBackLinks] at h
     · rw [if_neg hk] at h
-      obtain ⟨r, hr, ht⟩ := hR.serviceCodes e n h
+      obtain ⟨r, hr, ht⟩ := hR.serviceFlags e h
       refine ⟨r, ?_, ht⟩
       rw [hS, if_neg]
       · exact hr
@@ -464,21 +459,20 @@ theorem revokeService_preserves_tableReferencesRecorded {sid : ServiceId}
 off the records: a registration's endpoint records it, so it is there. -/
 theorem registryEndpointValid_of_tableReferencesRecorded {st : SystemState}
     (hR : st.tableReferencesRecorded) : registryEndpointValid st := fun sid reg h => by
-  obtain ⟨e, he, hc⟩ := hR.registry sid reg h
+  obtain ⟨e, he, -, hc⟩ := hR.registry sid reg h
   refine ⟨e, he, fun hn => ?_⟩
   rw [hn] at hc; cases hc
 
 /-- **No two registrations share an endpoint** — `registryEndpointUnique`, read
-off the records: an endpoint records one service. -/
+off the records: a registration is keyed by its endpoint's own id. -/
 theorem registryEndpointUnique_of_tableReferencesRecorded {st : SystemState}
     (hR : st.tableReferencesRecorded) : registryEndpointUnique st := by
   intro sid₁ sid₂ reg₁ reg₂ epId h₁ h₂ ht₁ ht₂
-  obtain ⟨e₁, he₁, hc₁⟩ := hR.registry sid₁ reg₁ h₁
-  obtain ⟨e₂, he₂, hc₂⟩ := hR.registry sid₂ reg₂ h₂
+  obtain ⟨e₁, he₁, hs₁, -⟩ := hR.registry sid₁ reg₁ h₁
+  obtain ⟨e₂, he₂, hs₂, -⟩ := hR.registry sid₂ reg₂ h₂
   rw [ht₁] at he₁; cases he₁
   rw [ht₂] at he₂; cases he₂
-  rw [hc₁] at hc₂
-  exact serviceId_eq_of_val hc₂
+  exact hs₁.trans hs₂.symm
 
 
 /-- The specification's fold body: the first registration naming `epId`. -/
@@ -538,28 +532,30 @@ private theorem lookupServiceFold_complete (st : SystemState) (epId : SeLe4n.Obj
 
 
 /-- **The O(1) service lookup is the specification wherever the table
-references are recorded.**  A registration naming the endpoint records its
-code there (`registry`), and the code names that registration
-(`serviceCodes`), so reading the endpoint's code finds what the fold over the
-registry finds — and finds nothing exactly when the fold finds nothing. -/
-theorem lookupServiceByRecordedCode_eq_lookupServiceByCap {st : SystemState}
+references are recorded.**  A registration naming the endpoint sets its flag
+there, under the endpoint's own id (`registry`), and the flag names that
+registration (`serviceFlags`), so reading the endpoint's flag finds what the
+fold over the registry finds — and finds nothing exactly when the fold finds
+nothing. -/
+theorem lookupServiceByRecordedRegistration_eq_lookupServiceByCap {st : SystemState}
     (hR : st.tableReferencesRecorded) (epId : SeLe4n.ObjId) :
-    lookupServiceByRecordedCode epId st = lookupServiceByCap epId st := by
+    lookupServiceByRecordedRegistration epId st = lookupServiceByCap epId st := by
   have hExt : st.serviceRegistry.invExt := RHTable.invExtK_invExt hR.registryInvExtK
   have hSpec : lookupServiceByCap epId st =
       (match st.serviceRegistry.fold (init := none) (lookupServiceStep epId) with
         | some reg => .ok (reg, st)
         | none => .error .objectNotFound) := rfl
   rw [hSpec]
-  unfold lookupServiceByRecordedCode
+  unfold lookupServiceByRecordedRegistration
   simp only [SystemState.getObject?]
   cases hF : st.serviceRegistry.fold (init := none) (lookupServiceStep epId) with
   | some reg =>
     obtain ⟨sid, hs, hT⟩ := lookupServiceFold_sound st epId hExt reg hF
-    obtain ⟨e, he, hc⟩ := hR.registry sid reg hs
+    obtain ⟨e, he, hsid, hc⟩ := hR.registry sid reg hs
     rw [hT] at he; cases he
-    obtain ⟨ep, hObj, hCode⟩ := objTableBackLinks_code_succ hc
+    obtain ⟨ep, hObj, hCode⟩ := objTableBackLinks_registered hc
     simp only [hObj, hCode]
+    rw [← hsid]
     exact (show st.serviceRegistry[sid]? = some reg from hs) ▸ rfl
   | none =>
     cases hObj : st.objects[epId]? with
@@ -568,15 +564,15 @@ theorem lookupServiceByRecordedCode_eq_lookupServiceByCap {st : SystemState}
       cases o with
       | endpoint ep =>
         simp only []
-        cases hc : ep.serviceCode with
-        | zero => rfl
-        | succ n =>
+        cases hc : ep.serviceRegistered with
+        | false => rfl
+        | true =>
           simp only []
-          cases hs : st.serviceRegistry[(⟨n⟩ : ServiceId)]? with
+          cases hs : st.serviceRegistry[ServiceId.ofNat epId.toNat]? with
           | none => rfl
           | some reg =>
             exfalso
-            obtain ⟨reg', hs', hT'⟩ := hR.serviceCodes epId n (by
+            obtain ⟨reg', hs', hT'⟩ := hR.serviceFlags epId (by
               rw [hObj]; simp [KernelObject.tableBackLinks, hc])
             exact lookupServiceFold_complete st epId hExt _ reg' hs' hT' hF
       | _ => rfl

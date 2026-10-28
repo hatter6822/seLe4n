@@ -4438,12 +4438,12 @@ run_check "INVARIANT" rg -n -U 'def finaliseFinalObject[^\n]*\n  if target = 0 t
 run_negative_check "INVARIANT" rg -n 'registryNamesNone|servicesNameNone|irqHandlersNameNone' SeLe4n
 # v0.36.144 (part 31): the table references are established at boot, carried by
 # every entry's link stage and along the delete chain, and the service lookup
-# reads its endpoint's recorded code.
+# reads its endpoint's registration flag.
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem RunQueueEntryStage\.tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
 run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s ∧ s\.tableReferencesRecorded$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
-run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedCode_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
-run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedCode epId st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedRegistration_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedRegistration epId st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U 'def frozenLookupServiceByCap[^\n]*\n[^\n]*\n  fun st =>\n    match frozenLookupEndpoint st epId with' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*\n[^\n]*\n  lockSetOfList\n[^\n]*\n[^\n]*\n     \(endpointLock endpointObjId, \.read\)," SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -10975,7 +10975,7 @@ run_check "INVARIANT" rg -n '^def registerServiceChecked($|[ ({:\[\]])' SeLe4n/K
 run_check "INVARIANT" rg -n '^def lookupServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^def revokeServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^def dispatchCapabilityOnlyChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def revokeServiceByRecordedCode($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^def revokeServiceByRecordedRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^  \| some k => dispatchCapabilityOnlyChecked ctx decoded\.syscallId tid cap k$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceRevoke =>\n    match cap\.target with\n    \| \.object epId => revokeServiceChecked ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId$' SeLe4n/Kernel/API.lean
@@ -22398,7 +22398,7 @@ run_check "INVARIANT" rg -n '^theorem sid_of_target($|[ ({:\[\]])' SeLe4n/Kernel
 run_negative_check "INVARIANT" rg -n '^def registerService \(ist : IntermediateState\)' SeLe4n/Model/Builder.lean
 # The query and the revoke through the endpoint read the recorded registration
 # first and then write in place.
-run_check "INVARIANT" rg -n '^theorem revokeServiceByRecordedCode_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^theorem revokeServiceByRecordedRegistration_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^theorem serviceQueryStaged_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^        \(serviceEndpointReadAdmitted ctx tid epId && recordedRegistrationPresent st epId\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^        \(serviceEndpointWriteAdmitted ctx tid epId && recordedRegistrationPresent st epId\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
@@ -22406,9 +22406,9 @@ run_check "INVARIANT" rg -n '^        \(serviceEndpointWriteAdmitted ctx tid epI
 # record is cleared in its slot.
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_ofWord_eq_words($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^        st\.updateTcb caller \(TCB\.withReturnWords · reg\.sid\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearEndpointServiceCode_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearEndpointRegistration_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem registerServicePerform_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
-run_check "INVARIANT" rg -n '^        clearEndpointServiceCode \(eraseServiceRegistration st ⟨n⟩\) reg\.endpointCap ⟨n⟩$' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^        clearEndpointRegistration \(eraseServiceRegistration st ⟨n⟩\) reg\.endpointCap ⟨n⟩$' SeLe4n/Kernel/Service/Registry.lean
 run_negative_check "INVARIANT" rg -n '\bdecodeSyscallArgsFromState_of_routedConfigure\b' SeLe4n/
 # WS-ZA ZA5.5 (fix): an endpoint's final delete drops its service registration
 # before the finalisation, so the endpoint retires and its untyped resets.
@@ -22464,11 +22464,11 @@ run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityI
 # The invariant states each direction, so a back-link can be read in place of a
 # table walk.  The registry's two directions and the interrupt table's two, in
 # one structure, which ends there.
-run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),(\n([ \t][^\n]*)?)*\n  serviceCodes : ∀ \(e : SeLe4n\.ObjId\) \(n : Nat\), \(objTableBackLinks st\.objects\[e\]\?\)\.1 = n \+ 1 →(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),\n    st\.serviceRegistry\[sid\]\? = some reg →\n    ∃ e, reg\.endpointCap\.target = \.object e ∧ sid = ServiceId\.ofNat e\.toNat ∧\n      \(objTableBackLinks st\.objects\[e\]\?\)\.1 = true(\n([ \t][^\n]*)?)*\n  serviceFlags : ∀ e : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[e\]\?\)\.1 = true →\n    ∃ reg, st\.serviceRegistry\[ServiceId\.ofNat e\.toNat\]\? = some reg ∧\n      reg\.endpointCap\.target = \.object e(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
 # The consumer: clear back-links mean no table names the object.  Without this
 # the fields would be recorded and never read.
 run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
-# The two writers of a registration code keep the invariant.  A writer that
+# The two writers of a registration flag keep the invariant.  A writer that
 # stopped preserving it would leave the back-link and the table disagreeing.
 run_check "INVARIANT" rg -n '^theorem registerService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem revokeService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
@@ -22488,6 +22488,12 @@ run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\
 # reciprocal with the notifications' flags -- BOTH directions, since a handler
 # whose notification does not record it and a notification recording an
 # interrupt no IRQ names each break a different conjunct.
-run_check "INVARIANT" rg -n -U '^def bootSafeEndpointCheck[^\n]*(\n([ \t][^\n]*)?)*ep\.serviceCode == 0' SeLe4n/Platform/Boot.lean
+# The endpoint records only THAT a service is registered on it: a presence
+# flag, since the registration's id is the endpoint's own.  A number stored here
+# would be a second answer to "which service is this" that the id already gives.
+run_check "INVARIANT" rg -n -U '^structure Endpoint where(\n([ \t][^\n]*)?)*\n  serviceRegistered : Bool := false$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def objTableBackLinks : Option KernelObject → Bool × Bool$' SeLe4n/Model/TableReferences.lean
+run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
+run_check "INVARIANT" rg -n -U '^def bootSafeEndpointCheck[^\n]*(\n([ \t][^\n]*)?)*&& !ep\.serviceRegistered$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^def irqHandlersAndNotificationsReciprocal \(config : PlatformConfig\) : Bool :=\n  config\.irqTable\.all \(fun irq =>(\n([ \t][^\n]*)?)*\n      \| \.notification n => n\.irqBound(\n([ \t][^\n]*)?)*\n  config\.initialObjects\.all fun e =>(\n([ \t][^\n]*)?)*\n      !n\.irqBound \|\| config\.irqTable\.any fun irq => irq\.handler == e\.id' SeLe4n/Platform/Boot.lean
 finalize_report

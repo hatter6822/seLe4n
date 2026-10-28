@@ -22,8 +22,9 @@ notification capability in the interrupt's own slot, where finality sees it.
 Here each table reference is answered by the object, as seL4's objects answer
 the references to them:
 
-* a registration is recorded on its endpoint (`Endpoint.serviceCode`, written
-  by `registerService` and cleared by `revokeService`);
+* a registration is recorded on its endpoint (`Endpoint.serviceRegistered`,
+  set by `registerService` and cleared by `revokeService`); a service's
+  identity is its endpoint's, so the flag names it;
 * an interrupt handler is recorded on its notification (`Notification.irqBound`,
   set by the boot for every notification the interrupt table names; nothing
   after the boot writes the table).
@@ -45,18 +46,18 @@ namespace SeLe4n.Model
 open SeLe4n.Kernel.RobinHood
 
 /-- The table back-links an object slot holds; an empty slot holds none. -/
-@[inline] def objTableBackLinks : Option KernelObject → Nat × Bool
+@[inline] def objTableBackLinks : Option KernelObject → Bool × Bool
   | some o => o.tableBackLinks
-  | none => (0, false)
+  | none => (false, false)
 
-@[simp] theorem objTableBackLinks_none : objTableBackLinks none = (0, false) := rfl
+@[simp] theorem objTableBackLinks_none : objTableBackLinks none = (false, false) := rfl
 
 @[simp] theorem objTableBackLinks_some (o : KernelObject) :
     objTableBackLinks (some o) = o.tableBackLinks := rfl
 
 /-- The back-links of a slot, read off the object the slot maps to. -/
 theorem objTableBackLinks_eq_map (o : Option KernelObject) :
-    objTableBackLinks o = (o.map KernelObject.tableBackLinks).getD (0, false) := by
+    objTableBackLinks o = (o.map KernelObject.tableBackLinks).getD (false, false) := by
   cases o <;> rfl
 
 /-- The two tables that name objects by id outside every slot. -/
@@ -66,8 +67,8 @@ theorem objTableBackLinks_eq_map (o : Option KernelObject) :
 
 /-- **Every table reference by id is recorded on the object it names, and
 every back-link an object holds answers a table entry.**  A registration names
-an endpoint whose code is its service's (`registry`), and an endpoint's code
-names a registration of it (`serviceCodes`); an interrupt names a notification
+an endpoint whose flag is set, under the endpoint's own id (`registry`), and a
+set flag names a registration of its endpoint (`serviceFlags`); an interrupt names a notification
 whose flag is set (`irqHandlers`), and a set flag is named by an interrupt
 (`irqBound`).  Established
 by the boot and kept by every syscall and kernel entry (the run-queue stages
@@ -76,13 +77,15 @@ it retires (`tableBackLinksClear`) instead of walking the tables. -/
 structure SystemState.tableReferencesRecorded (st : SystemState) : Prop where
   /-- The registry's table invariant, which its erase reads. -/
   registryInvExtK : st.serviceRegistry.invExtK
-  /-- A registration names an endpoint recording its service. -/
+  /-- A registration names an endpoint recording it, under that endpoint's id. -/
   registry : ∀ (sid : ServiceId) (reg : ServiceRegistration),
     st.serviceRegistry[sid]? = some reg →
-    ∃ e, reg.endpointCap.target = .object e ∧ (objTableBackLinks st.objects[e]?).1 = sid.val + 1
-  /-- An endpoint's registration code names a registration of it. -/
-  serviceCodes : ∀ (e : SeLe4n.ObjId) (n : Nat), (objTableBackLinks st.objects[e]?).1 = n + 1 →
-    ∃ reg, st.serviceRegistry[(⟨n⟩ : ServiceId)]? = some reg ∧ reg.endpointCap.target = .object e
+    ∃ e, reg.endpointCap.target = .object e ∧ sid = ServiceId.ofNat e.toNat ∧
+      (objTableBackLinks st.objects[e]?).1 = true
+  /-- An endpoint's registration flag names a registration of it. -/
+  serviceFlags : ∀ e : SeLe4n.ObjId, (objTableBackLinks st.objects[e]?).1 = true →
+    ∃ reg, st.serviceRegistry[ServiceId.ofNat e.toNat]? = some reg ∧
+      reg.endpointCap.target = .object e
   /-- An interrupt names a notification recording it. -/
   irqHandlers : ∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n →
     (objTableBackLinks st.objects[n]?).2 = true
@@ -90,22 +93,22 @@ structure SystemState.tableReferencesRecorded (st : SystemState) : Prop where
   irqBound : ∀ n : SeLe4n.ObjId, (objTableBackLinks st.objects[n]?).2 = true →
     ∃ irq : SeLe4n.Irq, st.irqHandlers[irq]? = some n
 
-/-- A nonzero registration code is an endpoint's. -/
-theorem objTableBackLinks_code_succ {o : Option KernelObject} {m : Nat}
-    (h : (objTableBackLinks o).1 = m + 1) :
-    ∃ ep, o = some (.endpoint ep) ∧ ep.serviceCode = m + 1 := by
+/-- A set registration flag is an endpoint's. -/
+theorem objTableBackLinks_registered {o : Option KernelObject}
+    (h : (objTableBackLinks o).1 = true) :
+    ∃ ep, o = some (.endpoint ep) ∧ ep.serviceRegistered = true := by
   cases o with
   | none => cases h
   | some o => cases o <;> first | (cases h; done) | exact ⟨_, rfl, h⟩
 
-/-- **An endpoint whose registration code is clear is the target of no
+/-- **An endpoint whose registration flag is clear is the target of no
 registration.** -/
 theorem SystemState.tableReferencesRecorded.notTargeted {st : SystemState}
     (hR : st.tableReferencesRecorded) {e : SeLe4n.ObjId} {ep : Endpoint}
-    (hObj : st.objects[e]? = some (.endpoint ep)) (h0 : ep.serviceCode = 0)
+    (hObj : st.objects[e]? = some (.endpoint ep)) (h0 : ep.serviceRegistered = false)
     (sid : ServiceId) (reg : ServiceRegistration) (hs : st.serviceRegistry[sid]? = some reg) :
     reg.endpointCap.target ≠ .object e := fun ht => by
-  obtain ⟨e', he', hc⟩ := hR.registry sid reg hs
+  obtain ⟨e', he', -, hc⟩ := hR.registry sid reg hs
   rw [ht] at he'; cases he'
   rw [hObj] at hc
   simp [KernelObject.tableBackLinks, h0] at hc
@@ -146,9 +149,9 @@ theorem preserves {st st' : SystemState} (h : TableReferenceFrame st st')
   exact ⟨hReg ▸ hR.registryInvExtK,
     fun sid reg h => by
       rw [hReg] at h
-      obtain ⟨e, he, hc⟩ := hR.registry sid reg h
-      exact ⟨e, he, by rw [hB]; exact hc⟩,
-    fun e n h => by rw [hB] at h; rw [hReg]; exact hR.serviceCodes e n h,
+      obtain ⟨e, he, hs, hc⟩ := hR.registry sid reg h
+      exact ⟨e, he, hs, by rw [hB]; exact hc⟩,
+    fun e h => by rw [hB] at h; rw [hReg]; exact hR.serviceFlags e h,
     fun irq n h => by rw [hIrq] at h; rw [hB]; exact hR.irqHandlers irq n h,
     fun n h => by rw [hB] at h; rw [hIrq]; exact hR.irqBound n h⟩
 
@@ -299,12 +302,12 @@ table -- under `tableReferencesRecorded` the two
 questions have the same answer (`tableBackLinksClear.namedByNone`). -/
 @[inline] def SystemState.tableBackLinksClear (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
-  | some (.endpoint ep) => ep.serviceCode == 0
+  | some (.endpoint ep) => !ep.serviceRegistered
   | some (.notification n) => !n.irqBound
   | _ => true
 
 theorem SystemState.tableBackLinksClear_iff (st : SystemState) (x : SeLe4n.ObjId) :
-    st.tableBackLinksClear x = true ↔ objTableBackLinks st.objects[x]? = (0, false) := by
+    st.tableBackLinksClear x = true ↔ objTableBackLinks st.objects[x]? = (false, false) := by
   unfold tableBackLinksClear getObject?
   cases st.objects[x]? with
   | none => simp
@@ -321,7 +324,7 @@ theorem SystemState.tableBackLinksClear.namedByNone {st : SystemState} {x : SeLe
     (∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n → n ≠ x) := by
   rw [tableBackLinksClear_iff] at h
   refine ⟨fun sid reg hs => ?_, fun irq n hi hn => ?_⟩
-  · obtain ⟨e, he, hc⟩ := hR.registry sid reg hs
+  · obtain ⟨e, he, -, hc⟩ := hR.registry sid reg hs
     refine ⟨e, he, fun hn => ?_⟩
     subst hn
     rw [h] at hc
@@ -338,7 +341,7 @@ theorem SystemState.default_tableReferencesRecorded :
   registry := fun sid reg h => by
     have : (default : SystemState).serviceRegistry[sid]? = none := RHTable_get?_empty 16 (by omega)
     rw [this] at h; cases h
-  serviceCodes := fun e n h => by
+  serviceFlags := fun e h => by
     have : (default : SystemState).objects[e]? = none := RHTable_get?_empty 16 (by omega)
     rw [this] at h; cases h
   irqHandlers := fun irq n h => by

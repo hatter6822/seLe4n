@@ -329,10 +329,10 @@ theorem untypedResetSlot_runQueueStage {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe
     RunQueueStage st st' := by
   rw [untypedResetSlot_ok_frame h]; exact setCapFreeIndex_runQueueStage _ _ _
 
-/-- The registry's one object write — an endpoint's `serviceCode` — moves no
+/-- The registry's one object write — an endpoint's `serviceRegistered` — moves no
 run-queue link: the endpoint holds none, before or after. -/
-theorem serviceCodeRewrite_runQueueStage {st st' : SystemState}
-    (hW : ServiceCodeRewrite st.objects st'.objects)
+theorem registrationFlagRewrite_runQueueStage {st st' : SystemState}
+    (hW : RegistrationFlagRewrite st.objects st'.objects)
     (hS : st'.scheduler = st.scheduler)
     (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded) :
     RunQueueStage st st' := by
@@ -345,7 +345,7 @@ theorem serviceCodeRewrite_runQueueStage {st st' : SystemState}
 (`revokeService_preserves_tableReferencesRecorded`). -/
 theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : RunQueueStage st st' :=
-  serviceCodeRewrite_runQueueStage (revokeService_serviceCodeRewrite h)
+  registrationFlagRewrite_runQueueStage (revokeService_registrationFlagRewrite h)
     (revokeService_preserves_scheduler st st' sid h)
     fun hInv hR => revokeService_preserves_tableReferencesRecorded h hInv hR
 
@@ -353,7 +353,7 @@ theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
 (`registerService_preserves_tableReferencesRecorded`). -/
 theorem registerService_runQueueStage {reg : ServiceRegistration} {st st' : SystemState}
     (h : registerService reg st = .ok ((), st')) : RunQueueStage st st' :=
-  serviceCodeRewrite_runQueueStage (registerService_serviceCodeRewrite h)
+  registrationFlagRewrite_runQueueStage (registerService_registrationFlagRewrite h)
     (registerService_preserves_scheduler st st' reg h)
     fun hInv hR => registerService_preserves_tableReferencesRecorded h hInv hR
 
@@ -365,10 +365,10 @@ theorem releaseFinalRegistration_runQueueStage (target : Nat) (st : SystemState)
     (fun _ _ _ hQ hR => hQ.trans (revokeService_runQueueStage hR)) target st
     (RunQueueStage.refl st)
 
-theorem lookupServiceByRecordedCode_runQueueStage {epId : SeLe4n.ObjId} {st st' : SystemState}
-    {reg : ServiceRegistration} (h : lookupServiceByRecordedCode epId st = .ok (reg, st')) :
+theorem lookupServiceByRecordedRegistration_runQueueStage {epId : SeLe4n.ObjId} {st st' : SystemState}
+    {reg : ServiceRegistration} (h : lookupServiceByRecordedRegistration epId st = .ok (reg, st')) :
     RunQueueStage st st' :=
-  RunQueueStage.of_eq (lookupServiceByRecordedCode_preserves_state epId st reg st' h)
+  RunQueueStage.of_eq (lookupServiceByRecordedRegistration_preserves_state epId st reg st' h)
 
 /-! ### One-field TCB rewrites -/
 

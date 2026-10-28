@@ -515,7 +515,7 @@ theorem spliceOutMidQueueNode_tableReferenceFrame (st : SystemState) (tid : SeLe
     (fun k o hNot => spliceOutMidQueueNode_nonTcb st tid hInv k o hNot)
 
 /-- The endpoint sweep rewrites queue ends only, so it keeps every endpoint's
-registration code. -/
+registration flag. -/
 theorem removeFromAllEndpointQueues_tableReferenceFrame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     SystemState.TableReferenceFrame st (removeFromAllEndpointQueues st tid) := by

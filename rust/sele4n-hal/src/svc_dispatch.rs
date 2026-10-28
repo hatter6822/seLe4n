@@ -283,7 +283,7 @@ impl SyscallId {
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
             // The revoke removes the registration the invoked endpoint
-            // records (`revokeServiceByRecordedCode`) and reads no message
+            // records (`revokeServiceByRecordedRegistration`) and reads no message
             // register, like the query below.
             Self::ServiceRevoke => 0,
             // WS-RA RA.D.1 (found by the wrapper-length conformance pin):

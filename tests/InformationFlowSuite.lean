@@ -1415,7 +1415,7 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.4 part 14: 35 → 33, `lifecycleRetypeObject` and
   -- `lifecycleRevokeDeleteRetype` removed with the in-place retype.
   -- 33 → 32 and read-only 4 → 3: `revokeService` and
-  -- `lookupServiceByRecordedCode` are replaced by their policy-gated wrappers.
+  -- `lookupServiceByRecordedRegistration` are replaced by their policy-gated wrappers.
   expect "enforcement boundary has 32 capability-only"
     (coCount = 32)
   expect "enforcement boundary has 3 read-only"

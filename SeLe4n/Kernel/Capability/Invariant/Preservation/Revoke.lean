@@ -417,7 +417,7 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
   -- The finalisation writes threads, endpoints and notifications only, each
   -- keeping its kind and slots (`FinaliseFrame`).
   -- The release of an endpoint's registration first (`releaseFinalRegistration`)
-  -- writes one endpoint's `serviceCode` and the registry, which is one more such
+  -- writes one endpoint's `serviceRegistered` and the registry, which is one more such
   -- write (`finaliseReleased_frame`).
   have hFr := finaliseReleased_frame (slotRetireTarget st addr.cnode addr.slot) st2
     h2.2.2.2.2.1

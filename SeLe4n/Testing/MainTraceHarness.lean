@@ -255,19 +255,19 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       | .ok _ => IO.println "[SRG-002] unexpected duplicate success"
 
       -- SRG-005: Revoke the registration the endpoint records
-      match SeLe4n.Kernel.revokeServiceByRecordedCode demoEndpoint stSvc with
+      match SeLe4n.Kernel.revokeServiceByRecordedRegistration demoEndpoint stSvc with
       | .error err => IO.println s!"[SRG-005] revoke service error: {reprStr err}"
       | .ok (_, stRevoked) =>
         IO.println s!"[SRG-005] revoke service success: {stRevoked.serviceRegistry[srgSid]? == none}"
 
       -- SRG-007: Lookup by matching capability
-      match SeLe4n.Kernel.lookupServiceByRecordedCode demoEndpoint stSvc with
+      match SeLe4n.Kernel.lookupServiceByRecordedRegistration demoEndpoint stSvc with
       | .error err => IO.println s!"[SRG-007] lookup by cap error: {reprStr err}"
       | .ok (reg, _) =>
         IO.println s!"[SRG-007] lookup by cap found sid: {reg.sid.toNat}"
 
       -- SRG-008: Lookup by non-matching capability
-      match SeLe4n.Kernel.lookupServiceByRecordedCode ⟨9999⟩ stSvc with
+      match SeLe4n.Kernel.lookupServiceByRecordedRegistration ⟨9999⟩ stSvc with
       | .error err => IO.println s!"[SRG-008] lookup non-matching: {reprStr err}"
       | .ok _ => IO.println "[SRG-008] unexpected lookup success"
 
@@ -298,7 +298,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     | .ok _ => IO.println "[SRG-004] unexpected success with invalid endpoint"
 
   -- SRG-006: Revoke through an object recording no registration
-  match SeLe4n.Kernel.revokeServiceByRecordedCode ⟨9998⟩ st1 with
+  match SeLe4n.Kernel.revokeServiceByRecordedRegistration ⟨9998⟩ st1 with
   | .error err => IO.println s!"[SRG-006] revoke non-existent: {reprStr err}"
   | .ok _ => IO.println "[SRG-006] unexpected revoke success"
 

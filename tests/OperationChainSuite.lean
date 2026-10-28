@@ -2799,7 +2799,7 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- (`SystemState.tableReferencesRecorded`).
   expect "chain33: the endpoint records the registration"
     (match st2.objects[epId1]? with
-     | some (.endpoint ep) => ep.serviceCode == svcId1.val + 1
+     | some (.endpoint ep) => ep.serviceRegistered
      | _ => false)
   expect "chain33: the registered endpoint's back-links are not clear"
     (st2.tableBackLinksClear epId1 == false)
@@ -2823,7 +2823,7 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- back-link readable in place of the registry walk.
   expect "chain33: the revocation clears the endpoint's record"
     (match st5.objects[epId1]? with
-     | some (.endpoint ep) => ep.serviceCode == 0
+     | some (.endpoint ep) => !ep.serviceRegistered
      | _ => false)
   expect "chain33: the revoked endpoint's back-links are clear"
     (st5.tableBackLinksClear epId1 == true)

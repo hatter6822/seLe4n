@@ -3597,7 +3597,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
         if stSvc3.tableBackLinksClear epForRetype then
           throw <| IO.userError "registered endpoint's back-links read clear"
         -- The O(1) lookup finds the registration through the endpoint's code
-        match SeLe4n.Kernel.lookupServiceByRecordedCode epForRetype stSvc3 with
+        match SeLe4n.Kernel.lookupServiceByRecordedRegistration epForRetype stSvc3 with
         | .error _ => throw <| IO.userError "recorded-code lookup missed the registration"
         | .ok (found, _) =>
           if found.sid != svcSid then
@@ -3609,7 +3609,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
           if !stRevoked3.tableBackLinksClear epForRetype then
             throw <| IO.userError "revoked endpoint still records the registration"
           expectErr "recorded-code lookup after revocation"
-            (SeLe4n.Kernel.lookupServiceByRecordedCode epForRetype stRevoked3)
+            (SeLe4n.Kernel.lookupServiceByRecordedRegistration epForRetype stRevoked3)
             .objectNotFound
         IO.println "negative check passed [R4-NEG-03: a registered endpoint's back-links hold the retire until revocation]"
 
