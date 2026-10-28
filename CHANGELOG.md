@@ -1,3 +1,71 @@
+## v0.36.159 — WS-ZA ZA5.9: the service registry table retires; the registry is the endpoints' records
+
+The registry table is deleted. A registration lives on its endpoint and nowhere
+else, so the register writes only its endpoint's slot, as the query and the
+revoke already did.
+
+- **The table and its field go.** `SystemState.serviceRegistry` was an
+  `RHTable ServiceId ServiceRegistration`; it is now a computable reader
+  (`ServiceRegistryView`, keeping the `[sid]?` notation). The reader reads the
+  one object `sid` names through `getEndpoint?`, and returns the registration
+  its record holds while its flag is set (`EndpointService.registrationAt`).
+  That is one read at one key, never a scan. `StateField.serviceRegistry`, the
+  frozen state's copy and its `freezeMap` line go with it.
+- **The compiled path never calls the reader.** Register, query and revoke read
+  the endpoint's flag in place (`recordedRegistrationPresent`) and write through
+  `modifyObject` (`registerServicePerform_eq_impl`, `clearServiceRecord_eq_impl`).
+- **The register arm builds no registration.** The compiled arm
+  (`dispatchServiceRegisterByRImpl`, `@[csimp]` by
+  `dispatchServiceRegisterByR_eq_impl`) reads its checks off the decoded words
+  and the invoked capability. It writes the record from them
+  (`registerServiceWordsPerform`, `serviceRecordOfWords`), so an admitted call
+  allocates neither the interface record nor the registration. Only a refusal
+  builds one, to run the specification for its error. These were the
+  register's last two cells.
+- **Revoke and release clear the endpoint's record.** `clearServiceRecord`
+  replaces `clearEndpointRegistration`, `insertServiceRegistration` and
+  `eraseServiceRegistration`, which are deleted. The final-capability release
+  revokes through it.
+- **Two invariants become theorems.** `registryEndpointValid` and
+  `registryEndpointUnique` hold of every state (`registryEndpointValid_holds`,
+  `registryEndpointUnique_holds`). So do the registry halves of
+  `tableReferencesRecorded` (`serviceRegistry_names`, `serviceRegistry_stored`,
+  `serviceRegistry_of_endpoint`); the structure keeps only the interrupt
+  table's two directions. `registryInterfaceValid` stays an invariant, because
+  it relates the endpoints to the separate interface registry.
+- **Named projections.** The positional `allTablesInvExtK` chains give way to
+  named projections (`objects`, `irqHandlers`, `asidTable`, `objectTypes`,
+  `interfaceRegistry`, `objectIndexSet`) as the registry's conjunct leaves.
+- **The boot.** A boot endpoint's shape now states `serviceRegistered = false`.
+  `bootSafeEndpointCheck` already decided this. The boot's empty registry is
+  read off it (`serviceRegistry_none_of_bootShape`) rather than off a default
+  table.
+- **Information flow.** `ObservableState` loses its `serviceRegistry`
+  component and `projectServiceRegistry`, a second copy of the projected
+  endpoints. Low-equivalence is unchanged:
+  - an observer reads a registration exactly when it may see the endpoint
+    (`serviceRegistry_of_projectObjects`);
+  - two low-equivalent states read one registry there
+    (`serviceRegistry_eq_of_projectObjects_eq`).
+
+  The per-core shared fragment has five components.
+- **The cross-subsystem field sets.** `registryInterfaceValid` reads `.objects`
+  and `.interfaceRegistry`, so every predicate now shares `.objects`, and
+  `crossSubsystemInvariant_composition_complete` states the three former
+  SchedContext disjoint pairs as sharing. `storeObject_preserves_registryInterfaceValid`
+  gives way to `registerInterface_preserves_noStaleEndpointQueueReferences`
+  as the `predicateFramedByDisjointWrites` consumer.
+- **Retired with the table.** Every `_serviceRegistry` frame lemma is deleted,
+  together with the `hRegistry`, `hRegInv` and `hRec` premises that only fed
+  it (the `OffSchedulerAgrees` and `sharedViewUnchanged` fields, and the
+  checked NI steps' premises).
+- **Lock footprints.** The service footprints are unchanged. The endpoint lock
+  they already declare now serialises the registry. The state-level member
+  remains for the register's interface-registry read, and over-declares on the
+  revoke and the query.
+- **Measured** (fresh untraced archive, `--lean-kernel`): `service-register` reads 0 on its first call and 0 in steady state (6 and 4
+  before); `service-query` and `service-revoke` stay at 0.
+
 ## v0.36.158 — WS-ZA ZA5.8: the endpoint holds the registration, and the lookups read it
 
 The endpoint now holds the words of the service registered on it, beside its

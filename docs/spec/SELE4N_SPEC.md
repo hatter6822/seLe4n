@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.158` (`lakefile.toml`) |
+| **Package version** | `0.36.159` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 523,072 across 477 Lean files |
-| **Test LoC** | 87,398 across 70 Lean test suites |
-| **Proved declarations** | 19,241 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 522,284 across 477 Lean files |
+| **Test LoC** | 87,396 across 70 Lean test suites |
+| **Proved declarations** | 19,182 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5405,8 +5405,9 @@ endpoint's), a notification
 records the interrupt handler that names it (`Notification.irqBound`, set by the
 boot), and the service graph holds no entry — stated as one invariant
 (`SystemState.tableReferencesRecorded`; the graph and its emptiness clause are
-gone since `v0.36.145`, plan row 32, so the invariant states the two tables'
-references) and refused at boot when a configuration
+gone since `v0.36.145`, plan row 32, and the registry table since `v0.36.159`,
+WS-ZA ZA5.9, so the invariant states the interrupt table's references and the
+registry's hold by construction) and refused at boot when a configuration
 would come up violating it (`bootSafeEndpointCheck`,
 `irqHandlersAndNotificationsReciprocal`).  **The table back-references read**
 (`v0.36.144`, plan row 31): the boot establishes the invariant
@@ -5418,8 +5419,9 @@ holds at every entry) — and the delete chain carries it in
 (`SystemState.tableBackLinksClear`, inside `passiveObjectRetirable`) in place of
 the registry, interrupt-handler and service-graph walks, which are deleted; a
 thread's retire asks no table.  The service lookup reads the code its endpoint
-records (`lookupServiceByRecordedRegistration`, O(1)), equal to the registry fold
-`lookupServiceByCap` wherever the references are recorded
+records (`lookupServiceByRecordedRegistration`, O(1)), equal to the specification
+fold `lookupServiceByCap` (over the object store since ZA5.9) wherever the object
+store is well formed
 (`lookupServiceByRecordedRegistration_eq_lookupServiceByCap`); the frozen lookup mirrors
 it, and the service syscalls' lock footprints name the endpoint (written by
 the register and the revoke, read by the query).  The pre-retype cleanup has no
@@ -5709,30 +5711,36 @@ Every kernel object has a decidable well-formedness predicate:
   only that a service is registered on it** (since `v0.36.157`, WS-ZA ZA5.7):
   `Endpoint.serviceRegistered` is a flag, and every reader names the service
   by the endpoint's id (`ServiceId.ofNat e.toNat`), so the endpoint cannot
-  record an identity other than its own; `SystemState.tableReferencesRecorded`
-  states the identity (`registry`: a registration's id is its endpoint's, whose
-  flag is set; `serviceFlags`: a set flag names a registration under the
-  endpoint's id).  **The endpoint holds the registration's words** (since
+  record an identity other than its own.  **The endpoint holds the registration's words** (since
   `v0.36.158`, WS-ZA ZA5.8): the interface and the kept capability, less its
   target, as scalar fields beside the flag (`Endpoint.service`, written by
   `Endpoint.withService`), written by the register in the endpoint's slot and
-  cleared by the revoke.  The registry table and the words are two copies of
-  one registration for one row only, held equal by `serviceStored` (a set flag
-  names, under the endpoint's id, the registration its record holds,
-  `EndpointService.registrationAt`), until ZA5.9 deletes the table; the lookup
-  and the frozen lookup read the endpoint's record and no table, and the query
-  stages the endpoint's own id.  The query and the revoke
+  cleared by the revoke; the lookup and the frozen lookup read the endpoint's
+  record, and the query stages the endpoint's own id.  **The registry table
+  retires** (since `v0.36.159`, WS-ZA ZA5.9): `SystemState` holds no service
+  table, and `SystemState.serviceRegistry` is a computable reader, keeping the
+  `[sid]?` notation, that reads the one object `sid` names
+  (`st.objects[ObjId.ofNat sid.toNat]?`) and returns the registration its
+  record holds while its flag is set (`EndpointService.registrationAt`) — one
+  read at one key, never a scan, and no second copy to agree with.  The
+  compiled register, query and revoke never call it: they read the endpoint's
+  flag in place (`recordedRegistrationPresent`), and the register's compiled
+  arm builds the endpoint's record from the decoded words without building a
+  registration (`dispatchServiceRegisterByRImpl`,
+  `dispatchServiceRegisterByR_eq_impl`).  `registryEndpointValid` and
+  `registryEndpointUnique` hold of every state (`registryEndpointValid_holds`,
+  `registryEndpointUnique_holds`); `registryInterfaceValid`, which relates the
+  endpoints to the separate interface registry, stays an invariant.  The query and the revoke
   through the endpoint read its recorded registration first
   (`recordedRegistrationPresent`, with the flow check) and then write in place:
   the query stages the registration's id as the return word
-  (`serviceQueryPerform`), the revoke erases the entry and clears the flag
-  (`revokeServiceByRecordedRegistrationPerform`; `serviceQueryStaged_of_admitted`,
+  (`serviceQueryPerform`), the revoke clears the endpoint's service record
+  (`revokeServiceByRecordedRegistrationPerform`, `clearServiceRecord`; `serviceQueryStaged_of_admitted`,
   `revokeServiceChecked_of_admitted`).  The writes are compiled in place, each
   by a proven equation: the query's word as the frame's six words
-  (`writeReturnFrameToTcb_ofWord_eq_words`), the endpoint's `serviceRegistered` flag in
-  its slot (`clearEndpointRegistration_eq_impl`,
-  `registerServicePerform_eq_impl`), and the registry's erase and insert each
-  by its own call.  **The boot installs the
+  (`writeReturnFrameToTcb_ofWord_eq_words`), and the endpoint's service record
+  in its slot (`clearServiceRecord_eq_impl`, `registerServicePerform_eq_impl`) —
+  since ZA5.9 the register's and the revoke's only write.  **The boot installs the
   configured interfaces** (`PlatformConfig.initialInterfaces`,
   `foldInterfaces`, supplied by a binding's `PlatformBinding.serviceInterfaces`):
   no syscall adds an interface, so a registration names one the configuration
@@ -9971,13 +9979,13 @@ per-operation NI proofs to the full 25-arm syscall dispatch path.
 **The service registry is inside the kernel NI projection** (since
 `v0.36.146`).  The kernel holds no service orchestration state (no lifecycle,
 restart, heartbeat or dependency graph; the graph was removed at `v0.36.145`).
-A registration is labelled by the endpoint that serves it: `ObservableState`
-carries the registry (`ObservableState.serviceRegistry`,
-`projectServiceRegistry`), each entry kept only when
-`serviceObservable` admits it, that is when the observer may see the endpoint
-the registration names (`objectObservable` of the endpoint), and an endpoint's
-registration flag (`Endpoint.serviceRegistered`) is projected with the endpoint, so
-the two agree on what an observer sees.  The three service arms are gated on
+A registration is labelled by the endpoint that serves it: since `v0.36.159`
+(WS-ZA ZA5.9) it is that endpoint's record, projected with the endpoint, so the
+registry an observer sees is exactly the registrations of the endpoints it may
+see (`serviceRegistry_of_projectObjects`, `serviceObservable`), and
+`ObservableState` carries no second copy (its `serviceRegistry` component,
+`projectServiceRegistry`, `v0.36.146`–`v0.36.158`, is deleted; two low-equivalent
+states read one registry, `serviceRegistry_eq_of_projectObjects_eq`).  The three service arms are gated on
 the endpoint's label, never on a separate service label:
 
 * **register** (`registerServiceChecked`): the caller's label must flow to the
@@ -10097,8 +10105,8 @@ is the boot-core member of the per-core family.
 Three properties bound what the per-core observer can learn.
 
 1. **The observable state's components partition into shared and
-   per-core.** Six components (`objects`, `irqHandlers`,
-   `objectIndex`, `domainSchedule`, `memory`, `serviceRegistry`) are
+   per-core.** Five components (`objects`, `irqHandlers`,
+   `objectIndex`, `domainSchedule`, `memory`) are
    filtered by the observer's *label* only and are identical from every
    core; six (`runnable`, `current`, `activeDomain`,
    `domainTimeRemaining`, `domainScheduleIndex`, `machineRegs`) are
