@@ -22387,6 +22387,19 @@ run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/K
 run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+# The query and the revoke through the endpoint read the recorded registration
+# first and then write in place.
+run_check "INVARIANT" rg -n '^theorem revokeServiceByRecordedCode_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^theorem serviceQueryStaged_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^        \(serviceEndpointReadAdmitted ctx tid epId && recordedRegistrationPresent st epId\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^        \(serviceEndpointWriteAdmitted ctx tid epId && recordedRegistrationPresent st epId\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+# The query's word is written as the frame's six words, and the endpoint's
+# record is cleared in its slot.
+run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_ofWord_eq_words($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^        st\.updateTcb caller \(TCB\.withReturnWords · reg\.sid\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearEndpointServiceCode_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem registerServicePerform_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^        clearEndpointServiceCode \(eraseServiceRegistration st ⟨n⟩\) reg\.endpointCap ⟨n⟩$' SeLe4n/Kernel/Service/Registry.lean
 run_negative_check "INVARIANT" rg -n '\bdecodeSyscallArgsFromState_of_routedConfigure\b' SeLe4n/
 # WS-ZA ZA5.5 (fix): an endpoint's final delete drops its service registration
 # before the finalisation, so the endpoint retires and its untyped resets.

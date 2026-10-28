@@ -819,6 +819,24 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
             (fun st => untypedResetPerformAt srcCnode srcSlot st)
             (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
+  -- WS-ZA ZA5.5: the revoke and the query through the endpoint read its
+  -- recorded registration first and then write in place.
+  | .serviceRevoke =>
+    match cap.target with
+    | .object epId =>
+      RefusalCarrying.ofChecked
+        (serviceEndpointWriteAdmitted ctx tid epId && recordedRegistrationPresent st epId)
+        (fun st => revokeServiceByRecordedCodePerform st epId)
+        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .serviceQuery =>
+    match cap.target with
+    | .object epId =>
+      RefusalCarrying.ofChecked
+        (serviceEndpointReadAdmitted ctx tid epId && recordedRegistrationPresent st epId)
+        (fun st => serviceQueryPerform st tid epId)
+        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
     | .error e => .error (e, st)
@@ -1332,6 +1350,22 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         intro hA
         simp only [dispatchInvocationBy, untypedResetFromCap, resolveCallerCapSlotK_eq, hR,
           untypedResetSlot_of_admitted hA]
+    all_goals rfl
+  case serviceRevoke =>
+    cases target
+    case object epId =>
+      dsimp only
+      apply RefusalCarrying.ofChecked_eq
+      intro hA
+      simp only [dispatchInvocationBy, revokeServiceChecked_of_admitted ctx tid epId st hA]
+    all_goals rfl
+  case serviceQuery =>
+    cases target
+    case object epId =>
+      dsimp only
+      apply RefusalCarrying.ofChecked_eq
+      intro hA
+      simp only [dispatchInvocationBy, serviceQueryStaged_of_admitted ctx tid epId st hA]
     all_goals rfl
   all_goals
     dsimp only [RefusalCarrying.ofKernel]

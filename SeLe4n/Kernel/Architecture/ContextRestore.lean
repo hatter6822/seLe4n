@@ -139,18 +139,6 @@ theorem stageCallerReturnFor_destroyed (tid : SeLe4n.ThreadId) (post : SystemSta
   | blocks => rfl
   | faulted => rfl
 
-/-- WS-ZA ZA4: a return frame's six words written into `x0`-`x5`
-(`stageReturnFrame` of the frame they make).  A call, so the file arrives as
-an owned argument and an exclusive one is written in place. -/
-def stageReturnWords (rf : SeLe4n.RegisterFile) (w0 w1 w2 w3 w4 w5 : UInt64) :
-    SeLe4n.RegisterFile :=
-  { rf with x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
-
-/-- WS-ZA ZA4: `TCB.withReturnFrame` from the frame's six words.  A call, so
-the TCB arrives owned and its context is handed on with one reference. -/
-def _root_.SeLe4n.Model.TCB.withReturnWords (t : TCB) (w0 w1 w2 w3 w4 w5 : UInt64) : TCB :=
-  { t with registerContext := stageReturnWords t.registerContext w0 w1 w2 w3 w4 w5 }
-
 /-- WS-ZA ZA4: `stageCallerReturnFor` from the outcome's boundary words
 (`SyscallOutcome.words`, `stageCallerReturnFor_eq_words`): a returning
 caller's frame is written from the six words straight into its saved context
