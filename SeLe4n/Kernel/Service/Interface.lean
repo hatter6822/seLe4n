@@ -60,20 +60,35 @@ end InterfaceSpec
 /-- Capability-mediated service registration binding a service to an
 interface specification and the endpoint through which it is accessible.
 
-- `sid`: the service identity in the service graph
 - `iface`: the interface specification this service implements
-- `endpointCap`: the capability for the service's endpoint object -/
+- `endpointCap`: the capability for the service's endpoint object
+
+A service's identity is its endpoint's (`ServiceRegistration.sid`, derived
+from `endpointCap`): one registration per endpoint, so no registration can name
+an identity its endpoint does not have. -/
 structure ServiceRegistration where
-  sid         : ServiceId
   iface       : InterfaceSpec
   endpointCap : Capability
   deriving Repr, DecidableEq
 
 namespace ServiceRegistration
 
+/-- **WS-ZA ZA5.6: a service's identity is its endpoint's id**, derived from
+the capability the registration keeps, so it has one owner.  A capability that
+names no object gives the sentinel; `registerService` refuses such a target, so
+no registry entry has it. -/
+@[inline] def sid (reg : ServiceRegistration) : ServiceId :=
+  match reg.endpointCap.target with
+  | .object e => ServiceId.ofNat e.toNat
+  | _ => ServiceId.sentinel
+
+/-- The identity of a registration whose capability names the object `e`. -/
+theorem sid_of_target {reg : ServiceRegistration} {e : SeLe4n.ObjId}
+    (h : reg.endpointCap.target = .object e) : reg.sid = ServiceId.ofNat e.toNat := by
+  unfold sid; rw [h]
+
 instance : Inhabited ServiceRegistration where
   default := {
-    sid := ServiceId.sentinel
     iface := default
     endpointCap := { target := .object ⟨0⟩, rights := .empty }
   }

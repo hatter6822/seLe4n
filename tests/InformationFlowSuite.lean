@@ -537,8 +537,8 @@ private def runServiceRegistryFlowChecks : IO Unit := do
       |>.buildChecked)
   let capTo (oid : SeLe4n.ObjId) : Capability :=
     { target := .object oid, rights := .ofList [.read, .write] }
-  let highReg : ServiceRegistration := { sid := ⟨41⟩, iface := iface, endpointCap := capTo highEp }
-  let lowReg : ServiceRegistration := { sid := ⟨40⟩, iface := iface, endpointCap := capTo lowEp }
+  let highReg : ServiceRegistration := { iface := iface, endpointCap := capTo highEp }
+  let lowReg : ServiceRegistration := { iface := iface, endpointCap := capTo lowEp }
   match SeLe4n.Kernel.registerInterface iface st0 with
   | .error _ => throw <| IO.userError "service flow checks: interface registration failed"
   | .ok (_, stI) =>

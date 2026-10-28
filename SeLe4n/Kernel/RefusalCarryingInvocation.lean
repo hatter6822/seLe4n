@@ -1604,8 +1604,7 @@ register file `regs` through `layout` and then the overflow word `w`
     | .error e => .error e
     | .ok args =>
       registerServiceChecked ctx tid
-        { sid := ServiceId.ofNat epId.toNat
-          iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+        { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
                      maxMessageSize := args.maxMessageSize
                      maxResponseSize := args.maxResponseSize
                      requiresGrant := args.requiresGrant }
@@ -1643,8 +1642,7 @@ alone (`registerServicePerform`); a refusal is in the state handed in
     | .error e => .error (e, st)
     | .ok args =>
       let reg : ServiceRegistration :=
-        { sid := ServiceId.ofNat epId.toNat
-          iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+        { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
                      maxMessageSize := args.maxMessageSize
                      maxResponseSize := args.maxResponseSize
                      requiresGrant := args.requiresGrant }

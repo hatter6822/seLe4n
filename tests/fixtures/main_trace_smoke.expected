@@ -19,7 +19,7 @@
 [SRG-001] register service success: true
 [SRG-002] duplicate register: SeLe4n.Model.KernelError.illegalState
 [SRG-005] revoke service success: true
-[SRG-007] lookup by cap found sid: 501
+[SRG-007] lookup by cap found sid: 30
 [SRG-008] lookup non-matching: SeLe4n.Model.KernelError.objectNotFound
 [SRG-003] unknown interface: SeLe4n.Model.KernelError.objectNotFound
 [SRG-004] invalid endpoint: SeLe4n.Model.KernelError.invalidCapability

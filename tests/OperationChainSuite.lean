@@ -2731,8 +2731,9 @@ private def chain33ServiceLifecycle : IO Unit := do
   let epId2 : SeLe4n.ObjId := ⟨961⟩
   let nonEpId : SeLe4n.ObjId := ⟨962⟩  -- notification, not endpoint
   let ifaceId1 : SeLe4n.InterfaceId := ⟨100⟩
-  let svcId1 : ServiceId := ⟨300⟩
-  let svcId2 : ServiceId := ⟨301⟩
+  -- A service's identity is its endpoint's (`ServiceRegistration.sid`).
+  let svcId1 : ServiceId := ServiceId.ofNat epId1.toNat
+  let svcId2 : ServiceId := ServiceId.ofNat epId2.toNat
   let svcIdMissing : ServiceId := ⟨399⟩
   let iface1 : InterfaceSpec := {
     ifaceId := ifaceId1
@@ -2765,36 +2766,34 @@ private def chain33ServiceLifecycle : IO Unit := do
   expectErr "chain33: registerInterface duplicate"
     (SeLe4n.Kernel.registerInterface iface1 st1) .illegalState
   -- === W5-C-4: registerService success ===
-  let reg1 : ServiceRegistration := { sid := svcId1, iface := iface1, endpointCap := epCap1 }
+  let reg1 : ServiceRegistration := { iface := iface1, endpointCap := epCap1 }
   let (_, st2) ← expectOkSt "chain33: registerService success"
     (SeLe4n.Kernel.registerService reg1 st1)
   expect "chain33: service in registry" (st2.serviceRegistry[svcId1]? != none)
   -- === W5-C-5: registerService error paths ===
+  -- A service's identity is its endpoint's, so a check on the registered
+  -- endpoint's own capability runs against the state before it registered.
   -- 5a: Missing interface
   let bogusIface : InterfaceSpec := { iface1 with ifaceId := ⟨999⟩ }
-  let regBogus : ServiceRegistration := { sid := ⟨350⟩, iface := bogusIface, endpointCap := epCap1 }
+  let regBogus : ServiceRegistration := { iface := bogusIface, endpointCap := epCap1 }
   expectErr "chain33: registerService missing interface"
-    (SeLe4n.Kernel.registerService regBogus st2) .objectNotFound
+    (SeLe4n.Kernel.registerService regBogus st1) .objectNotFound
   -- 5b: Non-endpoint target (notification)
-  let regNonEp : ServiceRegistration := { sid := ⟨351⟩, iface := iface1, endpointCap := nonEpCap }
+  let regNonEp : ServiceRegistration := { iface := iface1, endpointCap := nonEpCap }
   expectErr "chain33: registerService non-endpoint target"
     (SeLe4n.Kernel.registerService regNonEp st2) .invalidCapability
   -- 5c: Missing write right
-  let regNoWrite : ServiceRegistration := { sid := ⟨352⟩, iface := iface1, endpointCap := noWriteCap }
+  let regNoWrite : ServiceRegistration := { iface := iface1, endpointCap := noWriteCap }
   expectErr "chain33: registerService no write right"
-    (SeLe4n.Kernel.registerService regNoWrite st2) .illegalAuthority
+    (SeLe4n.Kernel.registerService regNoWrite st1) .illegalAuthority
   -- 5d: Duplicate service ID
   expectErr "chain33: registerService duplicate"
     (SeLe4n.Kernel.registerService reg1 st2) .illegalState
   -- 5e: Non-existent endpoint ObjId (capability targets ObjId not in state)
   let missingEpCap : Capability := { target := .object ⟨999⟩, rights := writeRights }
-  let regMissingEp : ServiceRegistration := { sid := ⟨353⟩, iface := iface1, endpointCap := missingEpCap }
+  let regMissingEp : ServiceRegistration := { iface := iface1, endpointCap := missingEpCap }
   expectErr "chain33: registerService non-existent endpoint"
     (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
-  -- 5f: Duplicate endpoint — different service ID but same endpoint as svc1 (AE5-B / U-20)
-  let regDupEp : ServiceRegistration := { sid := ⟨354⟩, iface := iface1, endpointCap := epCap1 }
-  expectErr "chain33: registerService duplicate endpoint"
-    (SeLe4n.Kernel.registerService regDupEp st2) .illegalState
   -- The registration is recorded on the endpoint it names, so a final delete
   -- can read the endpoint instead of walking the registry
   -- (`SystemState.tableReferencesRecorded`).
@@ -2808,7 +2807,7 @@ private def chain33ServiceLifecycle : IO Unit := do
   assertInvariants "chain33: invariants after registerService" st2
   -- A second registration on its own endpoint, so the revocation below is
   -- checked to leave every other service's record in place.
-  let reg2 : ServiceRegistration := { sid := svcId2, iface := iface1, endpointCap := epCap2 }
+  let reg2 : ServiceRegistration := { iface := iface1, endpointCap := epCap2 }
   let (_, st4) ← expectOkSt "chain33: registerService svc2"
     (SeLe4n.Kernel.registerService reg2 st2)
   assertInvariants "chain33: invariants after second registerService" st4

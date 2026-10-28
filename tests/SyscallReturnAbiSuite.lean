@@ -540,7 +540,8 @@ shape the blocked orderings do not exercise): a service registered on the
 endpoint, resolved through the endpoint capability, its `ServiceId` staged
 as the caller's return word and carried in the outcome frame — the answer
 the pre-WS-RA arm computed and discarded. -/
-private def queriedSid : Nat := 77
+-- A service's identity is its endpoint's (`ServiceRegistration.sid`).
+private def queriedSid : Nat := epId.toNat
 
 private def serviceQueryScenario :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
@@ -549,7 +550,7 @@ private def serviceQueryScenario :
       maxResponseSize := 64, requiresGrant := false }
   let ((), st1) ← Kernel.registerInterface iface twoThreadState
   let ((), st2) ← Kernel.registerService
-    { sid := ⟨queriedSid⟩, iface := iface, endpointCap := epCap } st1
+    { iface := iface, endpointCap := epCap } st1
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.serviceQuery.toNat 0 epCapPtr.toUInt64 0 0 0 st2
 
@@ -780,7 +781,7 @@ private def returnAbiTraceLines : List String :=
      | .error e => s!"[ret-abi] staged completed-sender unit frame: dispatch-error {reprStr e}")
   -- RA.B.8: the `.word` shape's live outcome (the fourth value shape,
   -- completing the fixture's coverage of the value surface).
-  , outcomeLine "word query (registered service 77)" serviceQueryScenario
+  , outcomeLine "word query (registered service 905)" serviceQueryScenario
   -- WS-SM SM9.A.10: the two audit accessors, the sixth and seventh members of
   -- the value-returning surface.  Recorded here rather than only asserted,
   -- because "the reader hands back a word it computed rather than the caller's

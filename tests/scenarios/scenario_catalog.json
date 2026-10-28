@@ -82,7 +82,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 7,
-      "expected_trace_fragment": "lookup by cap found sid: 501"
+      "expected_trace_fragment": "lookup by cap found sid: 30"
     },
     {
       "id": "SCN-SEQ-SEED-13",
@@ -93,7 +93,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 13,
-      "expected_trace_fragment": "lookup by cap found sid: 501"
+      "expected_trace_fragment": "lookup by cap found sid: 30"
     },
     {
       "id": "SCN-SEQ-SEED-29",
@@ -104,7 +104,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 29,
-      "expected_trace_fragment": "lookup by cap found sid: 501"
+      "expected_trace_fragment": "lookup by cap found sid: 30"
     },
     {
       "id": "SCN-SEQ-SEED-47",
@@ -115,7 +115,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 47,
-      "expected_trace_fragment": "lookup by cap found sid: 501"
+      "expected_trace_fragment": "lookup by cap found sid: 30"
     },
     {
       "id": "SCN-SEQ-SEED-101",
@@ -126,7 +126,7 @@
       ],
       "replay_tier": "nightly",
       "deterministic_seed": 101,
-      "expected_trace_fragment": "lookup by cap found sid: 501"
+      "expected_trace_fragment": "lookup by cap found sid: 30"
     },
     {
       "id": "SCN-H2-CHILDID-SELF-OVERWRITE",

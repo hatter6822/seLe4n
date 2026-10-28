@@ -3959,7 +3959,6 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
             requiresGrant   := args.requiresGrant
           }
           let reg : ServiceRegistration := {
-            sid := ServiceId.ofNat epId.toNat
             iface := iface
             endpointCap := cap
           }
@@ -4478,7 +4477,6 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             requiresGrant   := args.requiresGrant
           }
           let reg : ServiceRegistration := {
-            sid := ServiceId.ofNat epId.toNat
             iface := iface
             endpointCap := cap
           }

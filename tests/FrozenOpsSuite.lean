@@ -457,19 +457,19 @@ private def fo010_vspaceLookupMissing : IO Unit := do
 /-- FO-011: frozenLookupServiceByCap — find service by endpoint -/
 private def fo011_serviceLookup : IO Unit := do
   let reg : ServiceRegistration := {
-    sid := ⟨1⟩
     iface := { ifaceId := ⟨1⟩, methodCount := 1, maxMessageSize := 64,
                maxResponseSize := 64, requiresGrant := false }
     endpointCap := { target := .object ⟨42⟩, rights := .ofNat 7 }
   }
-  let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨1⟩ reg
+  -- A service's identity is its endpoint's: `⟨42⟩`.
+  let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨42⟩ reg
   -- The endpoint records its registration's code `sid + 1`, which the lookup reads.
   let objsMap := (RHTable.empty 16 : RHTable ObjId FrozenKernelObject).insert ⟨42⟩
-    (FrozenKernelObject.endpoint { serviceCode := 2 })
+    (FrozenKernelObject.endpoint { serviceCode := 43 })
   let fst := { emptyFrozenState with
     objects := freezeMap objsMap, serviceRegistry := freezeMap regRt }
   match frozenLookupServiceByCap ⟨42⟩ fst with
-  | .ok (found, _) => expect "found service" (found.sid == ⟨1⟩)
+  | .ok (found, _) => expect "found service" (found.sid == ⟨42⟩)
   | .error _ => throw <| IO.userError "service lookup should succeed"
 
 /-- FO-012: frozenLookupServiceByCap — missing service returns error -/
