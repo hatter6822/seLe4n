@@ -631,7 +631,7 @@ def endpointReceiveDualChecked
 /-- **The label of a service registration is its endpoint's object label.**
 
 A registration has no identity apart from the endpoint it names: the endpoint
-records it (`Endpoint.serviceCode`), the service query reads it back through a
+records it (`Endpoint.serviceRegistered`), the service query reads it back through a
 capability to that endpoint, and the projection shows it exactly when it shows
 the endpoint (`serviceObservable`).  So writing a registration is a write to the
 endpoint, and reading one is a read of it; the two gates below are the write-up
@@ -699,7 +699,7 @@ def lookupServiceChecked
     (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
   fun st =>
     if serviceEndpointReadAdmitted ctx caller epId then
-      lookupServiceByRecordedCode epId st
+      lookupServiceByRecordedRegistration epId st
     else
       .error .flowDenied
 
@@ -719,7 +719,7 @@ def serviceQueryStaged
 
 /-- Policy-checked service revocation: the caller's label must flow to the
 endpoint's (`serviceEndpointWriteAdmitted`) before the registration that
-endpoint records is removed (`revokeServiceByRecordedCode`).
+endpoint records is removed (`revokeServiceByRecordedRegistration`).
 
 Returns `flowDenied` otherwise. -/
 def revokeServiceChecked
@@ -728,7 +728,7 @@ def revokeServiceChecked
     (epId : SeLe4n.ObjId) : Kernel Unit :=
   fun st =>
     if serviceEndpointWriteAdmitted ctx caller epId then
-      revokeServiceByRecordedCode epId st
+      revokeServiceByRecordedRegistration epId st
     else
       .error .flowDenied
 
@@ -741,10 +741,10 @@ out. -/
     (epId : SeLe4n.ObjId) : SystemState :=
   match st.getObject? epId with
   | some (.endpoint ep) =>
-    match ep.serviceCode with
-    | 0 => st
-    | n + 1 =>
-      match st.serviceRegistry[(⟨n⟩ : ServiceId)]? with
+    match ep.serviceRegistered with
+    | false => st
+    | true =>
+      match st.serviceRegistry[ServiceId.ofNat epId.toNat]? with
       | none => st
       | some reg =>
         -- The frame's words written in place, no frame record built
@@ -762,31 +762,31 @@ theorem serviceQueryStaged_of_admitted (ctx : LabelingContext) (caller : SeLe4n.
   simp only [Bool.and_eq_true] at h
   obtain ⟨hF, hP⟩ := h
   unfold recordedRegistrationPresent at hP
-  unfold serviceQueryStaged lookupServiceChecked lookupServiceByRecordedCode serviceQueryPerform
+  unfold serviceQueryStaged lookupServiceChecked lookupServiceByRecordedRegistration serviceQueryPerform
   rw [if_pos hF]
   split at hP
   · next ep hObj =>
     split at hP
     · cases hP
-    · next n hC =>
-      cases hR : st.serviceRegistry[(⟨n⟩ : ServiceId)]? with
+    · next hC =>
+      cases hR : st.serviceRegistry[ServiceId.ofNat epId.toNat]? with
       | none => rw [hR] at hP; cases hP
       | some reg =>
         simp only [hObj, hC, hR, Architecture.writeReturnFrameToTcb_ofWord_eq_words]
   · cases hP
 
 /-- An admitted checked revoke — the write flow and the recorded registration —
-succeeds as `revokeServiceByRecordedCodePerform`. -/
+succeeds as `revokeServiceByRecordedRegistrationPerform`. -/
 theorem revokeServiceChecked_of_admitted (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (st : SystemState)
     (h : (serviceEndpointWriteAdmitted ctx caller epId && recordedRegistrationPresent st epId) =
       true) :
     revokeServiceChecked ctx caller epId st =
-      .ok ((), revokeServiceByRecordedCodePerform st epId) := by
+      .ok ((), revokeServiceByRecordedRegistrationPerform st epId) := by
   simp only [Bool.and_eq_true] at h
   unfold revokeServiceChecked
   rw [if_pos h.1]
-  exact revokeServiceByRecordedCode_of_admitted st epId h.2
+  exact revokeServiceByRecordedRegistration_of_admitted st epId h.2
 
 -- ============================================================================
 -- U5-B/U-M01: endpointCall enforcement wrapper

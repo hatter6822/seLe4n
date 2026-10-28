@@ -108,7 +108,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
-| `registerService`, `revokeService`, `lookupServiceByRecordedCode` | Service (WS-Q1) | Stable |
+| `registerService`, `revokeService`, `lookupServiceByRecordedRegistration` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
 | `vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A/X2-E: production uses state-aware WithFlush variant) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
@@ -2789,15 +2789,15 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .serviceRevoke =>
     -- The revoke removes the registration the invoked endpoint records: the
     -- capability to the endpoint is the authority, and no service id is read
-    -- from the caller's registers (`revokeServiceByRecordedCode`).
+    -- from the caller's registers (`revokeServiceByRecordedRegistration`).
     some <| match cap.target with
-    | .object epId => fun st => revokeServiceByRecordedCode epId st
+    | .object epId => fun st => revokeServiceByRecordedRegistration epId st
     | _ => fun _ => .error .invalidCapability
   | .serviceQuery =>
     some <| match cap.target with
     | .object epId =>
       fun st =>
-        match lookupServiceByRecordedCode epId st with
+        match lookupServiceByRecordedRegistration epId st with
         | .ok (reg, st') =>
             -- WS-RA RA.B.7: the query answers — the resolved registration's
             -- `ServiceId` is staged as the caller's return word instead of
@@ -3317,19 +3317,19 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      obtain ⟨_, hRev⟩ := revokeServiceByRecordedCode_revokeService hStep
+      obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
       exact revokeService_preserves_ipcInvariantFull st st' _ hObjInv hInv hRev
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object epId =>
       try dsimp only [] at hStep
-      cases hLkS : lookupServiceByRecordedCode epId st with
+      cases hLkS : lookupServiceByRecordedRegistration epId st with
       | error e => simp only [hLkS] at hStep; cases hStep
       | ok pair =>
           obtain ⟨reg, st1⟩ := pair
           simp only [hLkS] at hStep
-          have hStEq : st1 = st := lookupServiceByRecordedCode_preserves_state epId st reg st1 hLkS
+          have hStEq : st1 = st := lookupServiceByRecordedRegistration_preserves_state epId st reg st1 hLkS
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
@@ -5066,20 +5066,21 @@ theorem dispatchWithCapChecked_serviceRevoke_refuses_unwritable_endpoint
   simp [revokeServiceChecked, hAdm]
 
 /-- **The revoke removes the registration the invoked endpoint records, and no
-other.**  The service is named by the endpoint's `serviceCode`, never by a
-caller-supplied word: the arm reads no message register. -/
+other.**  The service is the one the endpoint records (`serviceRegistered`,
+under the endpoint's own id), never named by a caller-supplied word: the arm
+reads no message register. -/
 theorem dispatchWithCapChecked_serviceRevoke_removes_recorded_registration
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
-    (ep : Endpoint) (n : Nat)
+    (ep : Endpoint)
     (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
     (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true)
-    (hEp : st.objects[epId]? = some (.endpoint ep)) (hCode : ep.serviceCode = n + 1) :
+    (hEp : st.objects[epId]? = some (.endpoint ep)) (hCode : ep.serviceRegistered = true) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      revokeService ⟨n⟩ st := by
+      revokeService (ServiceId.ofNat epId.toNat) st := by
   rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
     hSyscall hTarget]
-  simp [revokeServiceChecked, hAdm, revokeServiceByRecordedCode, SystemState.getObject?, hEp,
+  simp [revokeServiceChecked, hAdm, revokeServiceByRecordedRegistration, SystemState.getObject?, hEp,
     hCode]
 
 /-- **A revoke through a capability to an object that records no service fails
@@ -5091,12 +5092,12 @@ theorem dispatchWithCapChecked_serviceRevoke_objectNotFound_of_unrecorded
     (gate : SyscallGate) (cap : Capability) (epId : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .serviceRevoke) (hTarget : cap.target = .object epId)
     (hAdm : serviceEndpointWriteAdmitted ctx tid epId = true)
-    (hNone : ∀ ep, st.objects[epId]? = some (.endpoint ep) → ep.serviceCode = 0) :
+    (hNone : ∀ ep, st.objects[epId]? = some (.endpoint ep) → ep.serviceRegistered = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .objectNotFound := by
   rw [dispatchWithCapChecked_serviceRevoke_eq ctx decoded tid executingCore gate cap epId
     hSyscall hTarget]
   simp only [revokeServiceChecked, hAdm, if_true]
-  unfold revokeServiceByRecordedCode SystemState.getObject?
+  unfold revokeServiceByRecordedRegistration SystemState.getObject?
   split
   · rename_i ep hEp
     rw [hNone ep hEp]
@@ -6182,7 +6183,7 @@ theorem dispatchArm_serviceQuery_matches_returnShape
     (reg : ServiceRegistration) (tcb : TCB)
     (hSyscall : decoded.syscallId = .serviceQuery)
     (hTarget : cap.target = .object epId)
-    (hLookup : lookupServiceByRecordedCode epId st = .ok (reg, st'))
+    (hLookup : lookupServiceByRecordedRegistration epId st = .ok (reg, st'))
     (hTcb : st'.getTcb? tid = some tcb)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .serviceQuery = .word ∧
@@ -6669,7 +6670,7 @@ theorem dispatchWithCap_preservation_composition_witness :
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
     - `.serviceRevoke` → `revokeServiceChecked_preserves_projection`; the
        admitted revoke removes the registration the invoked endpoint records
-       (`revokeServiceByRecordedCode_preserves_projection`), which the
+       (`revokeServiceByRecordedRegistration_preserves_projection`), which the
        projected registry hides because its endpoint is one the caller may
        write and so one the observer cannot see.  Paired NI:
        `revokeServiceChecked_NI`.
@@ -6743,7 +6744,7 @@ theorem dispatchWithCap_preservation_composition_witness :
     | `.vspaceMap` | `vspaceMapPage_preserves_projection` (Operations.lean:753); requires `hRootHigh` via ASID resolution |
     | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
     | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
-    | `.serviceQuery` | read-only (`lookupServiceByRecordedCode` does not mutate state) |
+    | `.serviceQuery` | read-only (`lookupServiceByRecordedRegistration` does not mutate state) |
     | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |

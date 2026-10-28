@@ -1169,7 +1169,7 @@ def capabilityOp_modifiedFields : List StateField :=
 
 /-- W2-A1: Fields modified by `revokeService`: it erases from
     `serviceRegistry` and clears the service's record on its endpoint
-    (`objects`, the endpoint's `serviceCode`). -/
+    (`objects`, the endpoint's `serviceRegistered`). -/
 def revokeService_modifiedFields : List StateField :=
   [.serviceRegistry, .objects]
 
@@ -1404,7 +1404,7 @@ theorem revokeService_preservesFieldsOutside
     preservesFieldsOutside revokeService_modifiedFields st st' := by
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
   intro f hf
-  rw [clearEndpointServiceCode_eq_withObjects]
+  rw [clearEndpointRegistration_eq_withObjects]
   cases f <;> first
     | rfl
     | exact (hf (by decide)).elim
@@ -2010,11 +2010,11 @@ theorem noStaleNotificationWaitReferences_frame
   rw [hObjects]
   exact hInv oid notif hLookup tid hMem
 
-/-- An endpoint's `serviceCode` rewrite — the registry's one object write —
+/-- An endpoint's `serviceRegistered` rewrite — the registry's one object write —
 keeps both queue-reference invariants: it keeps every key's presence, every
 TCB, and the queues of the endpoint it rewrites. -/
-theorem noStaleQueueReferences_of_serviceCodeRewrite {st st' : SystemState}
-    (hW : ServiceCodeRewrite st.objects st'.objects) (hInv : st.objects.invExt) :
+theorem noStaleQueueReferences_of_registrationFlagRewrite {st st' : SystemState}
+    (hW : RegistrationFlagRewrite st.objects st'.objects) (hInv : st.objects.invExt) :
     (noStaleEndpointQueueReferences st → noStaleEndpointQueueReferences st') ∧
     (noStaleNotificationWaitReferences st → noStaleNotificationWaitReferences st') := by
   have hNone : ∀ k : SeLe4n.ObjId, st.objects[k]? ≠ none → st'.objects[k]? ≠ none := by
@@ -2164,8 +2164,8 @@ theorem revokeService_preserves_noStaleEndpointQueueReferences
     (hObjInv : st.objects.invExt)
     (hInv : noStaleEndpointQueueReferences st) :
     noStaleEndpointQueueReferences st' :=
-  (noStaleQueueReferences_of_serviceCodeRewrite
-    (revokeService_serviceCodeRewrite hStep) hObjInv).1 hInv
+  (noStaleQueueReferences_of_registrationFlagRewrite
+    (revokeService_registrationFlagRewrite hStep) hObjInv).1 hInv
 
 /-- **WS-RR RR7.19 (the load-bearing negative)**: the disjointness premise is
 not decoration.  `storeObject` writes `.objects`, and
@@ -2226,7 +2226,7 @@ theorem schedContextRunQueueConsistent_frame
 -- ============================================================================
 
 /-- X2-G/X2-H: Service revocation preserves notification wait-list validity.
-    `revokeService`'s one object write is its endpoint's `serviceCode`, which
+    `revokeService`'s one object write is its endpoint's `serviceRegistered`, which
     keeps every notification and every key's presence — no notification
     wait-list cleanup is needed during service revocation. -/
 theorem revokeService_preserves_noStaleNotificationWaitReferences
@@ -2235,8 +2235,8 @@ theorem revokeService_preserves_noStaleNotificationWaitReferences
     (hPre : noStaleNotificationWaitReferences st)
     (hStep : revokeService svcId st = .ok ((), st')) :
     noStaleNotificationWaitReferences st' :=
-  (noStaleQueueReferences_of_serviceCodeRewrite
-    (revokeService_serviceCodeRewrite hStep) hObjInv).2 hPre
+  (noStaleQueueReferences_of_registrationFlagRewrite
+    (revokeService_registrationFlagRewrite hStep) hObjInv).2 hPre
 
 -- ============================================================================
 -- X3-C (H-4, part 1): Sharing predicate pair preservation
@@ -2294,7 +2294,7 @@ theorem sharingPair23_objects_frame
    noStaleNotificationWaitReferences_frame st st' hObjects hPre3⟩
 
 /-- X3-C (H-4): **revokeService preserves both queue-reading predicates.**
-    Its one object write is an endpoint's `serviceCode`, which keeps every
+    Its one object write is an endpoint's `serviceRegistered`, which keeps every
     queue and every key's presence. -/
 theorem revokeService_preserves_sharingPairs_objects
     (st st' : SystemState) (svcId : ServiceId)
@@ -2303,8 +2303,8 @@ theorem revokeService_preserves_sharingPairs_objects
     (hPre3 : noStaleNotificationWaitReferences st)
     (hStep : revokeService svcId st = .ok ((), st')) :
     noStaleEndpointQueueReferences st' ∧ noStaleNotificationWaitReferences st' :=
-  let h := noStaleQueueReferences_of_serviceCodeRewrite
-    (revokeService_serviceCodeRewrite hStep) hObjInv
+  let h := noStaleQueueReferences_of_registrationFlagRewrite
+    (revokeService_registrationFlagRewrite hStep) hObjInv
   ⟨h.1 hPre2, h.2 hPre3⟩
 
 /-- X3-C (H-4): **Cross-subsystem invariant preservation under objects-only changes.**

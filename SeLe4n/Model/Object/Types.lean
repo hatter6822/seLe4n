@@ -2996,14 +2996,15 @@ structure Endpoint where
   recvHeadCode : Nat := 0
   /-- The receive queue's tail, as a scalar code. -/
   recvTailCode : Nat := 0
-  /-- **The service registration that holds a capability to this endpoint**,
-      as a scalar code (`s + 1` for the service `⟨s⟩`, `0` for none): written by
-      `registerService`, cleared by the revocation of that registration.  A
+  /-- **Whether a service registration holds a capability to this endpoint**:
+      set by `registerService`, cleared by the revocation of that registration.
+      A service's identity is its endpoint's (`ServiceRegistration.sid`), so the
+      flag names the registration without encoding an identity of its own.  A
       registration keeps its endpoint capability outside every slot, so the
       finality the tree answers does not see it; this back-reference is what a
       final delete reads instead of walking the registry
-      (`SystemState.tableReferencesRecorded`).  A carved endpoint starts at `0`. -/
-  serviceCode : Nat := 0
+      (`SystemState.tableReferencesRecorded`).  A carved endpoint starts clear. -/
+  serviceRegistered : Bool := false
   deriving Repr, DecidableEq
 
 /-- The send queue's boundaries, read from their codes.  The endpoint keeps
@@ -3101,7 +3102,7 @@ theorem withSendQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
 /-- An endpoint is its two queues and the registration it records: equal
     queues and equal registrations, equal endpoints. -/
 theorem ext_queues {a b : Endpoint} (hs : a.sendQ = b.sendQ) (hr : a.receiveQ = b.receiveQ)
-    (hc : a.serviceCode = b.serviceCode) : a = b := by
+    (hc : a.serviceRegistered = b.serviceRegistered) : a = b := by
   obtain ⟨a1, a2, a3, a4, a5⟩ := a
   obtain ⟨b1, b2, b3, b4, b5⟩ := b
   simp only [sendQ, receiveQ, IntrusiveQueue.mk.injEq] at hs hr hc
@@ -3112,7 +3113,7 @@ theorem ext_queues {a b : Endpoint} (hs : a.sendQ = b.sendQ) (hr : a.receiveQ = 
   rw [inj hs.1, inj hs.2, inj hr.1, inj hr.2]
 
 theorem ext_queues_iff {a b : Endpoint} :
-    a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ ∧ a.serviceCode = b.serviceCode :=
+    a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ ∧ a.serviceRegistered = b.serviceRegistered :=
   ⟨fun h => h ▸ ⟨rfl, rfl, rfl⟩, fun ⟨hs, hr, hc⟩ => ext_queues hs hr hc⟩
 
 @[simp] theorem withSendQ_sendQ (e : Endpoint) : e.withSendQ e.sendQ = e :=
@@ -3121,11 +3122,11 @@ theorem ext_queues_iff {a b : Endpoint} :
 @[simp] theorem withReceiveQ_receiveQ (e : Endpoint) : e.withReceiveQ e.receiveQ = e :=
   ext_queues rfl (by simp) rfl
 
-@[simp] theorem serviceCode_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
-    (e.withSendQ q).serviceCode = e.serviceCode := rfl
+@[simp] theorem serviceRegistered_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withSendQ q).serviceRegistered = e.serviceRegistered := rfl
 
-@[simp] theorem serviceCode_withReceiveQ (e : Endpoint) (q : IntrusiveQueue) :
-    (e.withReceiveQ q).serviceCode = e.serviceCode := rfl
+@[simp] theorem serviceRegistered_withReceiveQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withReceiveQ q).serviceRegistered = e.serviceRegistered := rfl
 
 end Endpoint
 

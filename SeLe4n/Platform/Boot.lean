@@ -911,7 +911,7 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     be classified. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered⟩ =>
     ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
     ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
@@ -1959,20 +1959,20 @@ object to `bootSafeVSpaceRootCheck`, so there is no enumeration here to drift �
 a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 
 /-- A boot **endpoint** is inert: both intrusive queues empty, and no service
-    registered on it.  The registration code is the registry's back-link
+    registered on it.  The registration flag is the registry's back-link
     (`SystemState.tableReferencesRecorded`), and the boot installs no service
     registration, so an endpoint that came up carrying one would record a
     registration no table holds. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceCode⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
-    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && ep.serviceCode == 0
+    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && !ep.serviceRegistered
 
 @[simp] theorem bootSafeEndpointCheck_def (ep : Endpoint) :
     bootSafeEndpointCheck ep =
       (ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
-       ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && ep.serviceCode == 0) := rfl
+       ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && !ep.serviceRegistered) := rfl
 
 /-- A boot **notification** is idle, unwaited and unbadged.  `boundTCB` is
     unconstrained here — a boot notification may be pre-bound to a config
@@ -7997,7 +7997,7 @@ theorem bootFromPlatformChecked_ok_irqHandlers (config : PlatformConfig)
 theorem bootFromPlatformChecked_ok_backLinkedObject_of_config (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
     (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ (0, false)) :
+    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ (false, false)) :
     ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
   have hBase := bootFromPlatform_objects_of_config config oid obj
   obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
@@ -8012,7 +8012,7 @@ theorem bootFromPlatformChecked_ok_backLinkedObject_of_config (config : Platform
 
 /-- **The checked boot records its table references.**  The registry and the
     service graph are empty (`bootQuiescentFields`), and no configured endpoint
-    carries a registration code (`bootSafeEndpointCheck`); an interrupt names
+    carries a registration flag (`bootSafeEndpointCheck`); an interrupt names
     the notification of its table entry, which records it, and a notification
     recording an interrupt is named by one (`irqHandlersAndNotificationsReciprocal`,
     with the interrupts distinct, `irqsUnique`). -/
@@ -8032,14 +8032,14 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
   · rw [hQ.1]; exact hD.registryInvExtK
   · intro sid reg hs
     rw [hQ.1] at hs
-    obtain ⟨_, _, h1⟩ := hD.registry sid reg hs
+    obtain ⟨_, _, _, h1⟩ := hD.registry sid reg hs
     rw [hEmptyObj] at h1; cases h1
-  · intro e n hn
+  · intro e hn
     cases hO : ist.state.objects[e]? with
     | none => rw [hO] at hn; cases hn
     | some o =>
       rw [hO] at hn
-      obtain ⟨ep, hep, hc⟩ := objTableBackLinks_code_succ hn
+      obtain ⟨ep, hep, hc⟩ := objTableBackLinks_registered hn
       cases hep
       obtain ⟨en, hMem, _, hEo⟩ := bootFromPlatformChecked_ok_backLinkedObject_of_config config
         ist h e _ hO (fun h0 => by

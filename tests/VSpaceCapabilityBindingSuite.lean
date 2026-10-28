@@ -2158,7 +2158,7 @@ private def runPassiveRetireChecks : IO Unit := do
   -- capability's delete drops the registration it carries
   -- (`releaseFinalRegistration`, seL4's `finaliseCap` tearing down what the
   -- endpoint holds), so the endpoint is retired and its untyped resets.
-  -- Before, the recorded `serviceCode` kept the endpoint out of the
+  -- Before, the recorded `serviceRegistered` kept the endpoint out of the
   -- retirable kinds and no capability was left to revoke the service
   -- through, so the endpoint and its untyped's space were held for good.
   match runAll carveScenario [decodeCarve slotUtRetype endpointTag 960 slotOwnCnRW 12] with
@@ -2178,7 +2178,7 @@ private def runPassiveRetireChecks : IO Unit := do
         assertBool "setup: the registry holds the service and the endpoint records it"
           (st.serviceRegistry[sid]?.isSome &&
             (match st.getObject? (SeLe4n.ObjId.ofNat 960) with
-              | some (.endpoint ep) => ep.serviceCode == 961
+              | some (.endpoint ep) => ep.serviceRegistered
               | _ => false))
         match runAll st [decodeDelete 12] with
         | .error e => assertBool s!"deleting the registered endpoint's last capability succeeds (got {repr e})" false

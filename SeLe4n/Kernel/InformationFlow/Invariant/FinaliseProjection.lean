@@ -1921,7 +1921,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     projectState ctx observer (retireFinalisedObject ec target recorder st) =
       projectState ctx observer st := by
   unfold retireFinalisedObject
-  rcases releaseFinalRegistration_cases target st with hE | ⟨ep, n, h0, hEp, hC, hRev⟩
+  rcases releaseFinalRegistration_cases target st with hE | ⟨ep, h0, hEp, hC, hRev⟩
   · rw [hE]
     exact finaliseThenRetire_preserves_projection ctx observer ec target recorder h hLc hx hW hBd
       hTF hSF hRF hFlow hValid hIdx hSet hBlockingChainHigh hU hK hR
@@ -1934,8 +1934,8 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   have hX := hx h0
   rw [SystemState.getObject?_eq_getElem] at hEp
   have hP0 : projectState ctx observer s0 = projectState ctx observer st :=
-    revokeServiceByRecordedCode_preserves_projection ctx observer _ st s0 hX hObjInv hRec
-      (by unfold revokeServiceByRecordedCode; rw [SystemState.getObject?_eq_getElem, hEp]
+    revokeServiceByRecordedRegistration_preserves_projection ctx observer _ st s0 hX hObjInv hRec
+      (by unfold revokeServiceByRecordedRegistration; rw [SystemState.getObject?_eq_getElem, hEp]
           simp only [hC]; exact hRev)
   have hBk := fun {k} {o} (ho : s0.objects[k]? = some o) (hN : ∀ e, o ≠ .endpoint e) =>
     revokeService_back hRev hObjInv ho hN
@@ -1944,7 +1944,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   have hUt := hFr.getUntyped?
   have hSetEq : s0.objectIndexSet = st.objectIndexSet := by
     obtain ⟨reg, _, rfl⟩ := revokeService_ok hRev
-    rw [clearEndpointServiceCode_eq_withObjects]
+    rw [clearEndpointRegistration_eq_withObjects]
   refine (finaliseThenRetire_preserves_projection ctx observer ec target recorder
     (revokeService_preserves_ipcReachable h hRev)
     (hLc.of_loanWrite (revokeService_loanWrite hRev hObjInv)) hx

@@ -793,13 +793,13 @@ theorem finaliseFinalObject_preserves_finalisingDeleteBundle (target : Nat) (st 
     finaliseFinalObject_preserves_schedContextLinkInvariant target st h.1.2.1 h.2⟩
 
 /-- **WS-ZA ZA5.5: a revocation keeps the bundle the delete carries**: it
-rewrites one endpoint's `serviceCode`, which no conjunct reads
+rewrites one endpoint's `serviceRegistered`, which no conjunct reads
 (`revokeService_preserves_ipcInvariantFull`), keeps every other object, and
 writes no thread, context or reply and no scheduler field. -/
 theorem revokeService_preserves_finalisingDeleteBundle {sid : ServiceId} {st st' : SystemState}
     (h : finalisingDeleteBundle st) (hR : revokeService sid st = .ok ((), st')) :
     finalisingDeleteBundle st' := by
-  have hRw := revokeService_serviceCodeRewrite hR
+  have hRw := revokeService_registrationFlagRewrite hR
   have hL := hRw.lookup h.1.2.1
   have hS := revokeService_preserves_scheduler st st' sid hR
   have hLoan := revokeService_loanWrite hR h.1.2.1

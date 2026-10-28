@@ -4193,7 +4193,7 @@ could race with concurrent endpoint writers (e.g., IPC queue
 mutations from `endpointSend` / `endpointReceive`) and observe a
 mid-transition `KernelObject` variant.  The lock is a **write** lock:
 `registerService` records the registration's code on the endpoint
-(`Endpoint.serviceCode`, a read-modify-write of the endpoint object), so
+(`Endpoint.serviceRegistered`, a read-modify-write of the endpoint object), so
 it excludes the endpoint's other writers. -/
 def lockSet_serviceRegister (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
@@ -4205,9 +4205,9 @@ def lockSet_serviceRegister (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
-`revokeServiceByRecordedCode epId` reads the registration the invoked endpoint
+`revokeServiceByRecordedRegistration epId` reads the registration the invoked endpoint
 records, erases it from `serviceRegistry` and clears its code on that endpoint
-(`clearEndpointServiceCode`, a read-modify-write of it), so the footprint is
+(`clearEndpointRegistration`, a read-modify-write of it), so the footprint is
 the caller TCB, its CNode, the invoked endpoint in **write** mode and the
 state-level lock that serialises the registry. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
@@ -4220,7 +4220,7 @@ def lockSet_serviceRevoke (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceQuery`.
 
-`lookupServiceByRecordedCode epId` reads the endpoint `st.objects[epId]?`
+`lookupServiceByRecordedRegistration epId` reads the endpoint `st.objects[epId]?`
 for the code it records and then that one key of `serviceRegistry`, so the
 endpoint is in **read** mode and the state-level lock (the registry) too.
 
@@ -4269,7 +4269,7 @@ path's cleanup swept it too until WS-ZA ZA5.4 part 31 deleted the sweep (the
 retire admits only an endpoint no registration names).  A new registry writer
 must extend this theorem.
 
-The query is the reader — `lookupServiceByRecordedCode` reads one key of the map — so it
+The query is the reader — `lookupServiceByRecordedRegistration` reads one key of the map — so it
 takes the member in **read** mode, exactly as `lockSet_auditRead` does for the
 trail.  Read/read does not conflict, so two queries still run concurrently;
 what the member buys is that a query cannot observe a half-applied register or
@@ -5025,8 +5025,8 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .auditRead | .auditDrain =>
       [.tcb, .cnode, .objStore]
   -- Service syscalls.  Each reads or writes the endpoint its registration
-  -- names: `.serviceRegister` and `.serviceRevoke` write its recorded code
-  -- (`Endpoint.serviceCode`) and `.serviceQuery` reads it.
+  -- names: `.serviceRegister` and `.serviceRevoke` write its registration flag
+  -- (`Endpoint.serviceRegistered`) and `.serviceQuery` reads it.
   -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
   -- `SystemState`-level map, exactly like the audit trail, and the member that
   -- serialises it is `stateLevelLock` (kind `.objStore`, hierarchy level 0, so

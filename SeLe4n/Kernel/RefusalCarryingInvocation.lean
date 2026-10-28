@@ -826,7 +826,7 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
     | .object epId =>
       RefusalCarrying.ofChecked
         (serviceEndpointWriteAdmitted ctx tid epId && recordedRegistrationPresent st epId)
-        (fun st => revokeServiceByRecordedCodePerform st epId)
+        (fun st => revokeServiceByRecordedRegistrationPerform st epId)
         (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .serviceQuery =>

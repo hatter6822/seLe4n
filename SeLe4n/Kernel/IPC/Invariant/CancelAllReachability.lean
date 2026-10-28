@@ -1971,12 +1971,12 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
     ((finaliseFinalObject_runQueueEntryStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩
 
 /-- **WS-ZA ZA5.5: a revocation keeps the reachable state**: it rewrites one
-endpoint's `serviceCode`, which nothing the reachable state reads, and keeps
+endpoint's `serviceRegistered`, which nothing the reachable state reads, and keeps
 every thread, notification, reply and scheduling context, and the scheduler. -/
 theorem revokeService_preserves_ipcReachable {sid : ServiceId} {st st' : SystemState}
     (h : ipcReachable st) (hR : revokeService sid st = .ok ((), st')) : ipcReachable st' := by
   have hObjInv := h.objects_invExt
-  have hRw := revokeService_serviceCodeRewrite hR
+  have hRw := revokeService_registrationFlagRewrite hR
   have hL := hRw.lookup hObjInv
   have hBack : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st'.objects[k]? = some o →
       (∀ ep, o ≠ .endpoint ep) → st.objects[k]? = some o := fun k o ho hN => by

@@ -1555,7 +1555,7 @@ theorem vspaceLookup_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)
   observableSlotsConfinedToCore_of_eq c₀ (vspaceLookup_preserves_state st asid vaddr paddr st' hStep)
 
 /-- SM8.B.3: `registerService` writes the service registry and its endpoint's
-`serviceCode` — neither the scheduler nor the machine. -/
+`serviceRegistered` — neither the scheduler nor the machine. -/
 theorem registerService_confinedToCore (st st' : SystemState) (reg : ServiceRegistration)
     (c₀ : CoreId) (hStep : registerService reg st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
@@ -1575,14 +1575,14 @@ theorem registerServiceChecked_confinedToCore (ctx : LabelingContext) (st st' : 
   exact registerService_confinedToCore st st' reg c₀ hStep
 
 /-- SM8.B.3: `revokeService` erases a registration and clears its endpoint's
-`serviceCode` — neither the scheduler nor the machine. -/
+`serviceRegistered` — neither the scheduler nor the machine. -/
 theorem revokeService_confinedToCore (st st' : SystemState) (sid : ServiceId)
     (c₀ : CoreId) (hStep : revokeService sid st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
     (revokeService_preserves_scheduler st st' sid hStep) ?_
   obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [clearEndpointServiceCode_eq_withObjects]
+  rw [clearEndpointRegistration_eq_withObjects]
 
 /-- SM8.B.3: the checked revoke is the revoke of the registration its endpoint
 records, or a denial, so it is confined too. -/
@@ -1592,7 +1592,7 @@ theorem revokeServiceChecked_confinedToCore (ctx : LabelingContext) (st st' : Sy
     observableSlotsConfinedToCore st st' c₀ := by
   have hFlow := enforcementSoundness_revokeServiceChecked ctx caller epId st st' hStep
   rw [revokeServiceChecked_eq_revoke_when_allowed ctx caller epId st hFlow] at hStep
-  obtain ⟨sid, hRev⟩ := revokeServiceByRecordedCode_revokeService hStep
+  obtain ⟨sid, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
   exact revokeService_confinedToCore st st' sid c₀ hRev
 
 /-- SM8.B.3: the checked query writes its caller's return frame only — a TCB's
@@ -1608,7 +1608,7 @@ theorem serviceQueryStaged_confinedToCore (ctx : LabelingContext) (st st' : Syst
     have hU := hLk
     unfold lookupServiceChecked at hU
     split at hU
-    · rw [lookupServiceByRecordedCode_preserves_state epId st reg st₁ hU]
+    · rw [lookupServiceByRecordedRegistration_preserves_state epId st reg st₁ hU]
       exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
         (Architecture.writeReturnFrameToTcb_scheduler_eq st caller _)
         (Architecture.writeReturnFrameToTcb_machine_eq st caller _)

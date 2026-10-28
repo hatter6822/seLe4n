@@ -930,9 +930,9 @@ private def runPermittedKindsChecks : IO Unit := do
   -- registerService reads st.objects[epId]? to verify endpoint kind.
   assertBool "permittedKinds .serviceRegister (audit-pass-6 .endpoint + the registry's state-level lock)"
     (decide (permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore]))
-  assertBool "permittedKinds .serviceRevoke (the endpoint's recorded code + the registry's state-level lock)"
+  assertBool "permittedKinds .serviceRevoke (the endpoint's registration flag + the registry's state-level lock)"
     (decide (permittedKinds .serviceRevoke = [.tcb, .cnode, .endpoint, .objStore]))
-  assertBool "permittedKinds .serviceQuery (the endpoint's recorded code + the registry's state-level lock)"
+  assertBool "permittedKinds .serviceQuery (the endpoint's registration flag + the registry's state-level lock)"
     (decide (permittedKinds .serviceQuery = [.tcb, .cnode, .endpoint, .objStore]))
 
 private def runLockKindHelpersChecks : IO Unit := do

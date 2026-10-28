@@ -305,7 +305,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- notification's queues, an address space's mappings, an untyped's extent, a
   -- frame's `base` and `isDevice` (WS-BP BP7.1: *which* physical memory the
   -- object is), and a page table's `base` and `installedIn`.
-  -- An endpoint's `serviceCode` names the service registered on it (seL4
+  -- An endpoint's `serviceRegistered` names the service registered on it (seL4
   -- has no such registry; it is the back-link the query, the revoke and the
   -- final delete read).  It is kept: a registration is labelled with the
   -- endpoint it names (`serviceObservable`), so the registry projection shows
@@ -666,7 +666,7 @@ def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : Sys
 registry is reached only through an endpoint: the register writes the
 registration of the endpoint the invoked capability names, and the query and
 the revoke read and remove the registration that endpoint records
-(`Endpoint.serviceCode`).  So a registration is observable exactly when its
+(`Endpoint.serviceRegistered`).  So a registration is observable exactly when its
 endpoint is, and a registration naming no object (which `registerService`
 never builds) is observable to no one. -/
 def serviceObservable (ctx : LabelingContext) (observer : IfObserver)

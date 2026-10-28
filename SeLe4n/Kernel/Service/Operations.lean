@@ -18,9 +18,9 @@ orchestration are left to user-level components (a component framework such
 as CAmkES).  seLe4n keeps one kernel table for services, the
 capability-indexed **service registry** (`Service/Registry.lean`): a
 registration names an interface and an endpoint capability, the endpoint
-records the registration it carries (`Endpoint.serviceCode`), and the
+records the registration it carries (`Endpoint.serviceRegistered`), and the
 operations are `registerInterface`, `registerService`, `revokeService` and the
-O(1) lookup `lookupServiceByRecordedCode` (specified by `lookupServiceByCap`).
+O(1) lookup `lookupServiceByRecordedRegistration` (specified by `lookupServiceByCap`).
 
 This module re-exports those operations, beside `Service/Invariant.lean`,
 which re-exports their invariants, as every subsystem splits its operations

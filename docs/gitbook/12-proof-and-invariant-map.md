@@ -160,8 +160,8 @@ graph, which held no entry, is gone since `v0.36.145`), stated as one invariant 
 `Model/TableReferences.lean`) and refused at boot otherwise; since `v0.36.144`
 the boot establishes it, every syscall and kernel entry keeps it, and the retire
 reads the object's own back-links (`SystemState.tableBackLinksClear`) instead of
-walking those tables, the service lookup reading the endpoint's recorded code
-(`lookupServiceByRecordedCode`); since `v0.36.147` a thread's finalisation
+walking those tables, the service lookup reading the endpoint's registration flag
+(`lookupServiceByRecordedRegistration`); since `v0.36.147` a thread's finalisation
 checks before it writes, its pre-state admission carried to the state each
 later step runs on (`finaliseThread_admissionCarried`); since `v0.36.149` the
 untyped reset is seL4's — refused while the invoked slot has a derivation child
@@ -186,6 +186,8 @@ since `v0.36.155` a registered endpoint's final delete drops its service
 registration before it retires the endpoint (`releaseFinalRegistration`);
 since `v0.36.156` a service's identity is its endpoint's
 (`ServiceRegistration.sid`, derived from the capability it keeps);
+since `v0.36.157` the endpoint records only that a service is registered on
+it (`Endpoint.serviceRegistered`), the service named by the endpoint's id;
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

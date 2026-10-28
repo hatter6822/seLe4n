@@ -273,7 +273,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      obtain ⟨_, hRev⟩ := revokeServiceByRecordedCode_revokeService hStep
+      obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
       refine RunQueueStage.entry ?_
       exact revokeService_runQueueStage hRev
     all_goals try cases hStep
@@ -281,12 +281,12 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object epId =>
       try dsimp only [] at hStep
-      cases hLkS : lookupServiceByRecordedCode epId st with
+      cases hLkS : lookupServiceByRecordedRegistration epId st with
       | error e => simp only [hLkS] at hStep; cases hStep
       | ok pair =>
           obtain ⟨reg, st1⟩ := pair
           simp only [hLkS] at hStep
-          have hStEq : st1 = st := lookupServiceByRecordedCode_preserves_state epId st reg st1 hLkS
+          have hStEq : st1 = st := lookupServiceByRecordedRegistration_preserves_state epId st reg st1 hLkS
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep

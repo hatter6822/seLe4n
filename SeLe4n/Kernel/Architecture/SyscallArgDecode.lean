@@ -917,7 +917,7 @@ structure ServiceRegisterArgs where
 
 /-- Per-syscall argument structure for `serviceRevoke`.
     No message registers: the revoke removes the registration the invoked
-    endpoint records (`revokeServiceByRecordedCode`), so the endpoint comes
+    endpoint records (`revokeServiceByRecordedRegistration`), so the endpoint comes
     from the capability target and the caller names no service. -/
 structure ServiceRevokeArgs where
   deriving Repr, DecidableEq

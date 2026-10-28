@@ -318,7 +318,7 @@ lookup. -/
 theorem lookupServiceChecked_eq_lookup_when_allowed
     (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (st : SystemState) (hFlow : serviceEndpointReadAdmitted ctx caller epId = true) :
-    lookupServiceChecked ctx caller epId st = lookupServiceByRecordedCode epId st := by
+    lookupServiceChecked ctx caller epId st = lookupServiceByRecordedRegistration epId st := by
   simp [lookupServiceChecked, hFlow]
 
 /-- Otherwise it is `flowDenied`, whatever the registry holds. -/
@@ -333,7 +333,7 @@ theorem enforcement_sufficiency_lookupService
     (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (st : SystemState) :
     (serviceEndpointReadAdmitted ctx caller epId = true ∧
-       lookupServiceChecked ctx caller epId st = lookupServiceByRecordedCode epId st) ∨
+       lookupServiceChecked ctx caller epId st = lookupServiceByRecordedRegistration epId st) ∨
     (serviceEndpointReadAdmitted ctx caller epId = false ∧
        lookupServiceChecked ctx caller epId st = .error .flowDenied) := by
   cases h : serviceEndpointReadAdmitted ctx caller epId with
@@ -355,7 +355,7 @@ revoke through the endpoint. -/
 theorem revokeServiceChecked_eq_revoke_when_allowed
     (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (st : SystemState) (hFlow : serviceEndpointWriteAdmitted ctx caller epId = true) :
-    revokeServiceChecked ctx caller epId st = revokeServiceByRecordedCode epId st := by
+    revokeServiceChecked ctx caller epId st = revokeServiceByRecordedRegistration epId st := by
   simp [revokeServiceChecked, hFlow]
 
 /-- Otherwise it is `flowDenied`. -/
@@ -378,7 +378,7 @@ theorem enforcement_sufficiency_revokeService
     (ctx : LabelingContext) (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (st : SystemState) :
     (serviceEndpointWriteAdmitted ctx caller epId = true ∧
-       revokeServiceChecked ctx caller epId st = revokeServiceByRecordedCode epId st) ∨
+       revokeServiceChecked ctx caller epId st = revokeServiceByRecordedRegistration epId st) ∨
     (serviceEndpointWriteAdmitted ctx caller epId = false ∧
        revokeServiceChecked ctx caller epId st = .error .flowDenied) := by
   cases h : serviceEndpointWriteAdmitted ctx caller epId with

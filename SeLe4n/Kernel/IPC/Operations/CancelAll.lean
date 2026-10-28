@@ -1701,7 +1701,8 @@ registration's endpoint capability is held outside every slot, so the slot's
 delete is final; without this step the registration outlived the endpoint's
 last capability, no capability could revoke it, and the endpoint and the
 untyped space it was carved from could never be reclaimed.  The registration
-the endpoint records (`Endpoint.serviceCode`, `sid + 1`) is revoked
+the endpoint records (`Endpoint.serviceRegistered`, under the endpoint's own id)
+is revoked
 (`revokeService`), which clears the record, so the endpoint's back-links are
 clear and the finalisation and retire after it run as for any endpoint.  Any
 other object, and an endpoint recording none, is returned as it is: a read of
@@ -1711,10 +1712,10 @@ one field. -/
   else
     match st.getObject? (SeLe4n.ObjId.ofNat (target - 1)) with
     | some (.endpoint ep) =>
-      match ep.serviceCode with
-      | 0 => st
-      | n + 1 =>
-        match revokeService ⟨n⟩ st with
+      match ep.serviceRegistered with
+      | false => st
+      | true =>
+        match revokeService (ServiceId.ofNat (target - 1)) st with
         | .ok ((), st') => st'
         | .error _ => st
     | _ => st
@@ -1723,9 +1724,10 @@ one field. -/
 registration the target endpoint records. -/
 theorem releaseFinalRegistration_cases (target : Nat) (st : SystemState) :
     releaseFinalRegistration target st = st ∨
-      ∃ ep n, target ≠ 0 ∧ st.getObject? (SeLe4n.ObjId.ofNat (target - 1)) = some (.endpoint ep) ∧
-        ep.serviceCode = n + 1 ∧
-        revokeService ⟨n⟩ st = .ok ((), releaseFinalRegistration target st) := by
+      ∃ ep, target ≠ 0 ∧ st.getObject? (SeLe4n.ObjId.ofNat (target - 1)) = some (.endpoint ep) ∧
+        ep.serviceRegistered = true ∧
+        revokeService (ServiceId.ofNat (target - 1)) st =
+          .ok ((), releaseFinalRegistration target st) := by
   unfold releaseFinalRegistration
   split
   · exact .inl rfl
@@ -1734,9 +1736,9 @@ theorem releaseFinalRegistration_cases (target : Nat) (st : SystemState) :
   · next ep hEp =>
     split
     · exact .inl rfl
-    · next n hC =>
+    · next hC =>
       split
-      · next st' hR => exact .inr ⟨ep, n, h0, hEp, hC, hR⟩
+      · next st' hR => exact .inr ⟨ep, h0, hEp, hC, hR⟩
       · exact .inl rfl
   · exact .inl rfl
 
@@ -1745,7 +1747,7 @@ theorem releaseFinalRegistration_closed (P : SystemState → Prop)
     (hRev : ∀ (s s' : SystemState) (sid : ServiceId), P s → revokeService sid s = .ok ((), s') →
       P s')
     (target : Nat) (st : SystemState) (h : P st) : P (releaseFinalRegistration target st) := by
-  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, _, hR⟩
+  rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, hR⟩
   · rw [hE]; exact h
   · exact hRev _ _ _ h hR
 

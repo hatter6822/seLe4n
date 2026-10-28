@@ -306,7 +306,7 @@ inductive NonInterferenceStep
   /-- R5-B/M-02: Service registration by a caller the observer cannot see.
       A registration carries its endpoint's label (`serviceObservable`), and
       the write gate puts the endpoint's label above the caller's, so the
-      registration and its endpoint's `serviceCode` are both unobservable
+      registration and its endpoint's `serviceRegistered` are both unobservable
       (`registerServiceChecked_preserves_projection`). -/
   | registerServiceChecked
       (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)

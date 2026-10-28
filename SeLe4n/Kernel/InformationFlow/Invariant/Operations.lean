@@ -4902,23 +4902,23 @@ theorem setMCPriorityOnCore_preserves_projection
 /-! A registration carries the label of the endpoint it names
 (`serviceObservable`), so every service operation is a read or a write of that
 endpoint: the register writes the registration and the endpoint's
-`serviceCode`, the revoke erases both, and the query reads them.  The
+`serviceRegistered`, the revoke erases both, and the query reads them.  The
 theorems below prove the writes invisible when the endpoint is, the checked
 writes invisible when their caller is (the write gate puts the endpoint above
 the caller), and the query's answer — the word it stages in the caller's
 `x0` — determined by the observer's projection whenever the caller is
 observable (`lookupServiceChecked_answer_lowEquivalent`). -/
 
-/-- AK6-F.11: the service lookup the kernel runs, `lookupServiceByRecordedCode`,
+/-- AK6-F.11: the service lookup the kernel runs, `lookupServiceByRecordedRegistration`,
     is a read-only state query. On success it returns `(reg, st)` with state
     unchanged; on error it returns `.error _`. This helper extracts the state
     equality from a success result. -/
-theorem lookupServiceByRecordedCode_preserves_state
+theorem lookupServiceByRecordedRegistration_preserves_state
     (epId : SeLe4n.ObjId) (st : SystemState)
     (reg : SeLe4n.Model.ServiceRegistration) (st' : SystemState)
-    (hStep : SeLe4n.Kernel.lookupServiceByRecordedCode epId st = .ok (reg, st')) :
+    (hStep : SeLe4n.Kernel.lookupServiceByRecordedRegistration epId st = .ok (reg, st')) :
     st' = st := by
-  unfold SeLe4n.Kernel.lookupServiceByRecordedCode at hStep
+  unfold SeLe4n.Kernel.lookupServiceByRecordedRegistration at hStep
   repeat' split at hStep
   all_goals first
     | (simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm)
@@ -4985,7 +4985,7 @@ theorem serviceObservable_false_endpoint {ctx : LabelingContext} {observer : IfO
   exact h
 
 /-- R5-B.2/M-02: `registerService` of a registration the observer cannot see
-preserves the projection: its endpoint's `serviceCode` write is at an
+preserves the projection: its endpoint's `serviceRegistered` write is at an
 unobservable object, and the registration lands at a key that held none. -/
 theorem registerService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -4996,7 +4996,7 @@ theorem registerService_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨epId, ep, hT, -, hAbsent, -, rfl⟩ := registerService_ok hStep
   exact (projectState_withServiceRegistry ctx observer
-      { st with objects := st.objects.insert epId (.endpoint { ep with serviceCode := reg.sid.val + 1 }) }
+      { st with objects := st.objects.insert epId (.endpoint { ep with serviceRegistered := true }) }
       (st.serviceRegistry.insert reg.sid reg)
       (projectServiceRegistry_insert_unobservable ctx observer _ reg.sid reg hRegInv hAbsent hHigh)).trans
     (objects_insert_preserves_projection_high ctx observer st epId _
@@ -5004,7 +5004,7 @@ theorem registerService_preserves_projection
 
 /-- AK6-F.12: `revokeService` of a registration the observer cannot see
 preserves the projection: the erase removes an unobservable registration, and
-the `serviceCode` clear is at its unobservable endpoint. -/
+the `serviceRegistered` clear is at its unobservable endpoint. -/
 theorem revokeService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (sid : SeLe4n.ServiceId) (st st' : SystemState)
@@ -5016,7 +5016,7 @@ theorem revokeService_preserves_projection
   obtain ⟨reg, hReg, rfl⟩ := SeLe4n.Kernel.revokeService_ok hStep
   have hErase := projectState_withServiceRegistry ctx observer st (st.serviceRegistry.erase sid)
     (projectServiceRegistry_erase_unobservable ctx observer st sid hRegK hHigh)
-  rcases SeLe4n.Kernel.clearEndpointServiceCode_cases
+  rcases SeLe4n.Kernel.clearEndpointRegistration_cases
       { st with serviceRegistry := st.serviceRegistry.erase sid } reg.endpointCap sid with
     h | ⟨e, ep, hT, -, -, h⟩
   · rw [h]; exact hErase
@@ -5028,12 +5028,12 @@ theorem revokeService_preserves_projection
 /-- The registration an endpoint records names that endpoint, wherever the
 table references are recorded. -/
 theorem recordedRegistration_names_endpoint {st : SystemState} {epId : SeLe4n.ObjId}
-    {ep : Endpoint} {n : Nat} {reg : ServiceRegistration}
+    {ep : Endpoint} {reg : ServiceRegistration}
     (hRec : st.tableReferencesRecorded) (hEp : st.objects[epId]? = some (.endpoint ep))
-    (hCode : ep.serviceCode = n + 1)
-    (hReg : st.serviceRegistry[(⟨n⟩ : ServiceId)]? = some reg) :
+    (hCode : ep.serviceRegistered = true)
+    (hReg : st.serviceRegistry[ServiceId.ofNat epId.toNat]? = some reg) :
     reg.endpointCap.target = .object epId := by
-  obtain ⟨reg', hReg', hT⟩ := hRec.serviceCodes epId n (by rw [hEp]; exact hCode)
+  obtain ⟨reg', hReg', hT⟩ := hRec.serviceFlags epId (by rw [hEp]; exact hCode)
   rw [hReg] at hReg'
   cases hReg'
   exact hT
@@ -5041,15 +5041,15 @@ theorem recordedRegistration_names_endpoint {st : SystemState} {epId : SeLe4n.Ob
 /-- The revoke the kernel runs, at an endpoint the observer cannot see,
 preserves the projection: the registration it removes is the one that endpoint
 records, which names it (`recordedRegistration_names_endpoint`). -/
-theorem revokeServiceByRecordedCode_preserves_projection
+theorem revokeServiceByRecordedRegistration_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (epId : SeLe4n.ObjId) (st st' : SystemState)
     (hEpHigh : objectObservable ctx observer epId = false)
     (hObjInv : st.objects.invExt) (hRec : st.tableReferencesRecorded)
-    (hStep : SeLe4n.Kernel.revokeServiceByRecordedCode epId st = .ok ((), st')) :
+    (hStep : SeLe4n.Kernel.revokeServiceByRecordedRegistration epId st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨ep, n, hEp, hCode, hRev⟩ := SeLe4n.Kernel.revokeServiceByRecordedCode_ok hStep
-  refine revokeService_preserves_projection ctx observer ⟨n⟩ st st' ?_ hObjInv
+  obtain ⟨ep, hEp, hCode, hRev⟩ := SeLe4n.Kernel.revokeServiceByRecordedRegistration_ok hStep
+  refine revokeService_preserves_projection ctx observer _ st st' ?_ hObjInv
     hRec.registryInvExtK hRev
   intro reg hReg
   unfold serviceObservable
@@ -5123,7 +5123,7 @@ theorem revokeServiceChecked_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   have hAdm := enforcementSoundness_revokeServiceChecked ctx caller epId st st' hStep
   rw [revokeServiceChecked_eq_revoke_when_allowed ctx caller epId st hAdm] at hStep
-  exact revokeServiceByRecordedCode_preserves_projection ctx observer epId st st'
+  exact revokeServiceByRecordedRegistration_preserves_projection ctx observer epId st st'
     (serviceEndpoint_unobservable_of_writeAdmitted hCallerHigh hAdm) hObjInv hRec hStep
 
 /-- Two runs of a checked revoke by an unobservable caller keep their states
@@ -5163,7 +5163,7 @@ theorem serviceQueryStaged_preserves_projection
     have hU := hLk
     unfold lookupServiceChecked at hU
     split at hU
-    · rw [lookupServiceByRecordedCode_preserves_state epId st reg st₁ hU]
+    · rw [lookupServiceByRecordedRegistration_preserves_state epId st reg st₁ hU]
       exact writeReturnFrameToTcb_preserves_projection ctx observer st caller _ hObjInv
     · cases hU
   · cases hStep
@@ -5185,7 +5185,7 @@ theorem serviceQueryStaged_NI
   exact hLow
 
 /-- A visible endpoint reads back as the same endpoint in a low-equivalent
-state: the object projection keeps an endpoint whole, its `serviceCode`
+state: the object projection keeps an endpoint whole, its `serviceRegistered`
 included. -/
 theorem endpoint_of_lowEquivalent {ctx : LabelingContext} {observer : IfObserver}
     {s₁ s₂ : SystemState} {epId : SeLe4n.ObjId} {ep : Endpoint}
@@ -5204,66 +5204,66 @@ theorem endpoint_of_lowEquivalent {ctx : LabelingContext} {observer : IfObserver
     rfl
 
 /-- The lookup at an object that is no endpoint finds nothing. -/
-theorem lookupServiceByRecordedCode_not_endpoint {s : SystemState} {epId : SeLe4n.ObjId}
+theorem lookupServiceByRecordedRegistration_not_endpoint {s : SystemState} {epId : SeLe4n.ObjId}
     (h : ∀ ep, s.objects[epId]? ≠ some (.endpoint ep)) :
-    lookupServiceByRecordedCode epId s = .error .objectNotFound := by
-  unfold lookupServiceByRecordedCode SystemState.getObject?
+    lookupServiceByRecordedRegistration epId s = .error .objectNotFound := by
+  unfold lookupServiceByRecordedRegistration SystemState.getObject?
   split
   · rename_i ep hE
     exact absurd hE (h ep)
   · rfl
 
-/-- The lookup at an endpoint reads its code and the registry key it names. -/
-theorem lookupServiceByRecordedCode_of_endpoint {s : SystemState} {epId : SeLe4n.ObjId}
+/-- The lookup at an endpoint reads its flag and the registry key of its own id. -/
+theorem lookupServiceByRecordedRegistration_of_endpoint {s : SystemState} {epId : SeLe4n.ObjId}
     {ep : Endpoint} (h : s.objects[epId]? = some (.endpoint ep)) :
-    lookupServiceByRecordedCode epId s =
-      match ep.serviceCode with
-      | 0 => .error .objectNotFound
-      | n + 1 =>
-        match s.serviceRegistry[(⟨n⟩ : ServiceId)]? with
+    lookupServiceByRecordedRegistration epId s =
+      match ep.serviceRegistered with
+      | false => .error .objectNotFound
+      | true =>
+        match s.serviceRegistry[ServiceId.ofNat epId.toNat]? with
         | some reg => .ok (reg, s)
         | none => .error .objectNotFound := by
-  unfold lookupServiceByRecordedCode
+  unfold lookupServiceByRecordedRegistration
   simp only [SystemState.getObject?, h]
   rfl
 
 /-- **The lookup at a visible endpoint answers alike in low-equivalent
-states.**  The endpoint, its recorded code with it, is projected whole; the
-registration its code names names it (the table references are recorded), so
+states.**  The endpoint, its recorded flag with it, is projected whole; the
+registration its flag names names it (the table references are recorded), so
 it is projected too, and the two states hold the same one. -/
-theorem lookupServiceByRecordedCode_answer_lowEquivalent
+theorem lookupServiceByRecordedRegistration_answer_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver) (epId : SeLe4n.ObjId)
     (s₁ s₂ : SystemState)
     (hObs : objectObservable ctx observer epId = true)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hRec₁ : s₁.tableReferencesRecorded) (hRec₂ : s₂.tableReferencesRecorded) :
-    (lookupServiceByRecordedCode epId s₁).map Prod.fst =
-      (lookupServiceByRecordedCode epId s₂).map Prod.fst := by
+    (lookupServiceByRecordedRegistration epId s₁).map Prod.fst =
+      (lookupServiceByRecordedRegistration epId s₂).map Prod.fst := by
   by_cases hE : ∃ ep, s₁.objects[epId]? = some (.endpoint ep)
   · obtain ⟨ep, h₁⟩ := hE
     have h₂ := endpoint_of_lowEquivalent hLow hObs h₁
-    rw [lookupServiceByRecordedCode_of_endpoint h₁, lookupServiceByRecordedCode_of_endpoint h₂]
-    cases hc : ep.serviceCode with
-    | zero => rfl
-    | succ n =>
-      obtain ⟨r₁, hr₁, -⟩ := hRec₁.serviceCodes epId n (by rw [h₁]; exact hc)
-      obtain ⟨r₂, hr₂, -⟩ := hRec₂.serviceCodes epId n (by rw [h₂]; exact hc)
+    rw [lookupServiceByRecordedRegistration_of_endpoint h₁, lookupServiceByRecordedRegistration_of_endpoint h₂]
+    cases hc : ep.serviceRegistered with
+    | false => rfl
+    | true =>
+      obtain ⟨r₁, hr₁, -⟩ := hRec₁.serviceFlags epId (by rw [h₁]; exact hc)
+      obtain ⟨r₂, hr₂, -⟩ := hRec₂.serviceFlags epId (by rw [h₂]; exact hc)
       have ht₁ := recordedRegistration_names_endpoint hRec₁ h₁ hc hr₁
       have ht₂ := recordedRegistration_names_endpoint hRec₂ h₂ hc hr₂
-      have hp := congrFun (congrArg ObservableState.serviceRegistry hLow) ⟨n⟩
+      have hp := congrFun (congrArg ObservableState.serviceRegistry hLow) (ServiceId.ofNat epId.toNat)
       simp only [projectState, projectServiceRegistry, hr₁, hr₂, serviceObservable, ht₁, ht₂,
         hObs, if_true, Option.some.injEq] at hp
       simp only [hr₁, hr₂, hp]
       rfl
-  · rw [lookupServiceByRecordedCode_not_endpoint (fun ep h => hE ⟨ep, h⟩),
-      lookupServiceByRecordedCode_not_endpoint (fun ep h =>
+  · rw [lookupServiceByRecordedRegistration_not_endpoint (fun ep h => hE ⟨ep, h⟩),
+      lookupServiceByRecordedRegistration_not_endpoint (fun ep h =>
         hE ⟨ep, endpoint_of_lowEquivalent (lowEquivalent_symm ctx observer s₁ s₂ hLow) hObs h⟩)]
 
 /-- **The checked query's answer is determined by the observer's projection
 whenever its caller is observable.**  A refused query is `flowDenied` in both
 states; an admitted one reads an endpoint whose label flows to the caller's,
 hence to the observer's, and answers alike
-(`lookupServiceByRecordedCode_answer_lowEquivalent`). -/
+(`lookupServiceByRecordedRegistration_answer_lowEquivalent`). -/
 theorem lookupServiceChecked_answer_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (s₁ s₂ : SystemState)
@@ -5275,7 +5275,7 @@ theorem lookupServiceChecked_answer_lowEquivalent
   unfold lookupServiceChecked
   by_cases hA : serviceEndpointReadAdmitted ctx caller epId = true
   · simp only [if_pos hA]
-    refine lookupServiceByRecordedCode_answer_lowEquivalent ctx observer epId s₁ s₂ ?_ hLow
+    refine lookupServiceByRecordedRegistration_answer_lowEquivalent ctx observer epId s₁ s₂ ?_ hLow
       hRec₁ hRec₂
     unfold serviceEndpointReadAdmitted at hA
     unfold threadObservable at hCallerLow
@@ -5309,7 +5309,7 @@ theorem serviceQueryStaged_answer_lowEquivalent
     intro s reg s' h
     unfold lookupServiceChecked at h
     split at h
-    · exact lookupServiceByRecordedCode_preserves_state _ _ _ _ h
+    · exact lookupServiceByRecordedRegistration_preserves_state _ _ _ _ h
     · cases h
   unfold serviceQueryStaged
   cases h₁ : lookupServiceChecked ctx caller epId s₁ with
