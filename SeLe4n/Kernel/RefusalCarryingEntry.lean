@@ -88,8 +88,9 @@ specification's form. -/
         -- read from the caller's registers.
         | .invoke sid capAddr =>
           dispatchInvocationCheckedR ctx sid capAddr tcb.registerContext tid executingCore st
-        -- WS-ZA ZA5.2: a scheduling-context configure, its fifth word read from
-        -- overflow slot 0 of the caller's IPC buffer.  The decode's walk fills
+        -- WS-ZA ZA5.2, ZA5.5: a scheduling-context configure or a service
+        -- register, its fifth word read from overflow slot 0 of the caller's
+        -- IPC buffer.  The decode's walk fills
         -- this core's TLB; when the core already caches the translation the
         -- fill writes nothing (`tlbFillIpcBufferOnCore_of_held`, the check read
         -- in place by `ipcBufferFillHeldOne`) and the
@@ -97,15 +98,16 @@ specification's form. -/
         -- one write before the checks, and a refusal hands back the TLB the
         -- entry held, its entries back on the spares
         -- (`tlbUndoFillOnCore_tlbFillIpcBufferOnCore`).
-        | .configure capAddr =>
+        | .overflowOne sid capAddr =>
           SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
             (fun _ => .error (.invalidMessageInfo, st))
             (fun w =>
               if SeLe4n.Kernel.Architecture.ipcBufferFillHeldOne st executingCore tid then
-                dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore st
+                dispatchOverflowOneCheckedR ctx sid capAddr tcb.registerContext w tid executingCore st
               else
                 let n0 := (SeLe4n.Kernel.Architecture.tlbOnCore st executingCore).entries.length
-                match dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore
+                match dispatchOverflowOneCheckedR ctx sid capAddr tcb.registerContext w tid
+                    executingCore
                     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) with
                 | .error (e, stF) =>
                   .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
@@ -240,10 +242,10 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
-        · next capAddr hCfgRegs =>
-          obtain ⟨msgInfo, hDec⟩ :=
-            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedConfigure
-              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr hCfgRegs
+        · next sid capAddr hCfgRegs =>
+          obtain ⟨hRouted, msgInfo, hDec⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedOverflowOne
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hCfgRegs
           rw [SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq]
           cases hR : SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 with
           | error e =>
@@ -251,12 +253,12 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR,
               Bool.false_eq_true, ↓reduceIte]
           | ok w =>
-            have hD := dispatchConfigureCheckedR_eq ctx
-              { capAddr, msgInfo, syscallId := .schedContextConfigure,
+            have hD := dispatchOverflowOneCheckedR_eq ctx
+              { capAddr, msgInfo, syscallId := sid,
                 msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext) ++
                   #[(⟨w.toNat⟩ : RegValue)],
                 inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 }
-              tcb.registerContext w tid executingCore rfl rfl
+              tcb.registerContext w tid executingCore hRouted rfl
             simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
               SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR,
               Bool.false_eq_true, ↓reduceIte]

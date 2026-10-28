@@ -1,3 +1,73 @@
+## v0.36.155 — WS-ZA ZA5.5: the service syscalls are routed, and a deployment can register a service
+
+The service register runs on the register file and checks before it writes;
+the boot installs the service interfaces a deployment configures, so a
+registration can succeed on one; and a registered endpoint's final delete
+drops its registration.  The ZA5.5 row is split: the registry's storage, the
+audit ring and the declassification and audit routing are new rows ZA5.6,
+ZA5.7 and ZA5.8.
+
+- **Fix: a registered endpoint's final delete drops its registration**
+  (`releaseFinalRegistration`, `IPC/Operations/CancelAll.lean`, run by
+  `retireFinalisedObject` before the finalisation).  Before, the endpoint's
+  recorded `serviceCode` kept it out of the retirable kinds, and no capability
+  was left to revoke the service through, so the endpoint and its untyped's
+  space were held for good.  As seL4's `finaliseCap` tears down what the object
+  holds, the delete now revokes the registration (`revokeService`) and clears
+  `serviceCode`, so the endpoint retires and its untyped resets.  A delete still
+  never refuses and its check order is unchanged.  Proven for the release: the
+  finalisation frame (`revokeService_finaliseFrameAny`,
+  `finaliseReleased_frame`), the capability bundle, the finalising-delete
+  bundle, `ipcReachable`, the run-queue and table-reference stages, the
+  mapping records and the projection (`retireFinalisedObject_preserves_projection`
+  now takes `tableReferencesRecorded`).  Regression check
+  (`vspace_capability_binding_suite` §5m): register on a carved endpoint,
+  delete its last capability, and the entry is gone, the endpoint retired and
+  the untyped reset.
+- **The boot installs the configured interfaces.**  No syscall adds an
+  interface and the boot left the interface registry empty, so every
+  registration on a deployment was refused.  `PlatformConfig.initialInterfaces`
+  is folded in at boot (`foldInterfaces`, the builder's `registerInterface`); a
+  binding supplies its interfaces (`PlatformBinding.serviceInterfaces`, set by
+  `bindPlatformConfig`); a twelfth `wellFormed` conjunct refuses a duplicate or
+  sentinel id with its own diagnostic (`bootInterfacesWellFormed`).  The QEMU
+  binding installs one interface (`qemuVirtExerciserInterface`); RPi5 none.
+- **The service register is routed.**  The register route's configure arm is
+  now the one-overflow-word arm (`RegisterRoutedSyscall.overflowOne`,
+  `routedOverflowOne`: the configure and the register), its fifth word read
+  from overflow slot 0 of the IPC buffer.  The register runs checks first
+  (`registerServiceAdmitted`, the write alone in `registerServicePerform`,
+  `registerServiceChecked_of_admitted`, `RefusalCarrying.ofChecked`), its
+  arguments read as words (`decodeServiceRegisterArgsBy`), proven equal to the
+  specification arm (`dispatchServiceRegisterCheckedR_eq`,
+  `dispatchOverflowOneCheckedR_eq`, `syscallEntryCheckedR_eq`).
+- **The query and the revoke check first.**  Routed since ZA5.1 but never
+  measured (no service was in the image), both ran in the general
+  refusal-carrying form, which keeps the pre-state alive across the write.
+  They now read the recorded registration first (`recordedRegistrationPresent`,
+  with the flow check) and write in place (`serviceQueryPerform`,
+  `revokeServiceByRecordedCodePerform`; `serviceQueryStaged_of_admitted`,
+  `revokeServiceChecked_of_admitted`).  The query's word is written as the
+  frame's six words (`TCB.withReturnWords`, moved beside `returnFrameOfWord`;
+  `writeReturnFrameToTcb_ofWord_eq_words`), so no frame record is built, and
+  the endpoint's record is cleared in its slot
+  (`clearEndpointServiceCodeImpl`, `clearEndpointServiceCode_eq_impl`), so
+  neither the endpoint nor its object cell is rebuilt; the registry entry is
+  erased by its own call (`eraseServiceRegistration`), so the state is written
+  in place.
+- **Exerciser**: `service-register`, `service-query` and `service-revoke` on the
+  image's endpoint, in the IPC-buffer group.  Query and revoke read 0 (11 and
+  12 in the general form, first call and steady state alike); the register
+  reads 6 on its first call and 4 in steady state (9 and 7 before its endpoint
+  write was put in its slot and the registry insert given its own call,
+  `registerServicePerformImpl`, `registerServicePerform_eq_impl`), the
+  registration's own cells, pinned until ZA5.6 stores the registry in the
+  endpoint's own fields.
+- **Docs**: the plan's ZA5.5 row landed with its forks and split into ZA5.5 to
+  ZA5.8, ZA5.1's citation updated; spec, claim index, workstream context and
+  GitBook 12; Tier 3 anchors for the route, the admission, the release, the
+  interface fold and the conjunct.
+
 ## v0.36.154 — WS-ZA ZA5.4 part 41: the retype resets when its capability has no children
 
 As seL4's `decodeUntypedInvocation`, a carve through an untyped capability

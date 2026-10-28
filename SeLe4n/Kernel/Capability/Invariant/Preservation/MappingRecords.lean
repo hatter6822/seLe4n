@@ -120,7 +120,7 @@ theorem cspaceDeleteSlotFinalising_threadSlotsDrawnFrom (ec : Concurrency.CoreId
     have hIC : stC.objects.invExt := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
     exact (spliceDeletedCdtNode_reach stC addr).invExt hIC
   obtain ⟨hI2, -, -, -, hV2⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st2 hI1 hF
-  have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
+  have hFr := finaliseReleased_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
   unfold retireFinalisedObject
   exact (((cspaceDeleteSlot_threadSlotsDrawnFrom hInv hD).trans hV2.threadSlotsDrawnFrom).trans
     hFr.threadSlotsDrawnFrom).trans (retireFinalObject_threadSlotsDrawnFrom ec _ _ _ hFr.invExt)
@@ -203,7 +203,7 @@ theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded (ec : Concurre
   have hInv1 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st st1 addr hInv hD
   obtain ⟨hI2, -, hC2, -, hV2⟩ :=
     finaliseDestroyedCapabilities_slots ec _ _ st1 st2 hInv1.2.2.2.2.1 hF
-  have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
+  have hFr := finaliseReleased_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
   refine ⟨fun rid r' v p perms e hR hM hE => ?_,
     hL.2.of_drawnFrom (cspaceDeleteSlotFinalising_threadSlotsDrawnFrom ec hW.1 h)⟩
   obtain ⟨r, hr, ha, hm, he, -⟩ := hS rid r' hR

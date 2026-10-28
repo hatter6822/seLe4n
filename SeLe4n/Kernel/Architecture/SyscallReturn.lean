@@ -1092,6 +1092,25 @@ reads): the word in `x0`, success `x1`, no message registers. -/
 def returnFrameOfWord (w : UInt64) : SyscallReturnFrame :=
   { x0 := w }
 
+/-- WS-ZA ZA4: a return frame's six words written into `x0`-`x5`
+(`stageReturnFrame` of the frame they make).  A call, so the file arrives as
+an owned argument and an exclusive one is written in place. -/
+def stageReturnWords (rf : SeLe4n.RegisterFile) (w0 w1 w2 w3 w4 w5 : UInt64) :
+    SeLe4n.RegisterFile :=
+  { rf with x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
+
+/-- WS-ZA ZA4: `TCB.withReturnFrame` from the frame's six words.  A call, so
+the TCB arrives owned and its context is handed on with one reference. -/
+def _root_.SeLe4n.Model.TCB.withReturnWords (t : TCB) (w0 w1 w2 w3 w4 w5 : UInt64) : TCB :=
+  { t with registerContext := stageReturnWords t.registerContext w0 w1 w2 w3 w4 w5 }
+
+/-- **WS-ZA ZA5.5**: a queried word's frame staged as its six words — the word
+in `x0`, the rest zero — so a writer builds no frame record. -/
+theorem writeReturnFrameToTcb_ofWord_eq_words (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) :
+    writeReturnFrameToTcb st tid (returnFrameOfWord w) =
+      st.updateTcb tid (SeLe4n.Model.TCB.withReturnWords · w 0 0 0 0 0) := rfl
+
 -- ============================================================================
 -- §4d  Staging for a woken counterparty (RA.B.5b)
 -- ============================================================================

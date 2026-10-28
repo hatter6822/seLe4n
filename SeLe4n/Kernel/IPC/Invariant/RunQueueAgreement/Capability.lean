@@ -357,6 +357,14 @@ theorem registerService_runQueueStage {reg : ServiceRegistration} {st st' : Syst
     (registerService_preserves_scheduler st st' reg h)
     fun hInv hR => registerService_preserves_tableReferencesRecorded h hInv hR
 
+/-- WS-ZA ZA5.5: the release of a final endpoint's registration is a revocation
+or nothing (`releaseFinalRegistration_cases`). -/
+theorem releaseFinalRegistration_runQueueStage (target : Nat) (st : SystemState) :
+    RunQueueStage st (releaseFinalRegistration target st) :=
+  releaseFinalRegistration_closed (RunQueueStage st)
+    (fun _ _ _ hQ hR => hQ.trans (revokeService_runQueueStage hR)) target st
+    (RunQueueStage.refl st)
+
 theorem lookupServiceByRecordedCode_runQueueStage {epId : SeLe4n.ObjId} {st st' : SystemState}
     {reg : ServiceRegistration} (h : lookupServiceByRecordedCode epId st = .ok (reg, st')) :
     RunQueueStage st st' :=
@@ -738,9 +746,10 @@ theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
     (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  exact ((((cspaceDeleteSlot_runQueueStage hD).trans
-    (finaliseDestroyedCapabilities_runQueueStage hF)).entry.trans
-    (finaliseFinalObject_runQueueEntryStage _ st2)).trans
+  exact (((((cspaceDeleteSlot_runQueueStage hD).trans
+    (finaliseDestroyedCapabilities_runQueueStage hF)).trans
+    (releaseFinalRegistration_runQueueStage _ st2)).entry.trans
+    (finaliseFinalObject_runQueueEntryStage _ _)).trans
     (retireFinalObject_runQueueStage ec _ _ _).entry)
 
 theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}

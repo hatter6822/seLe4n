@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.154` (`lakefile.toml`) |
+| **Package version** | `0.36.155` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 521,807 across 477 Lean files |
-| **Test LoC** | 87,327 across 70 Lean test suites |
-| **Proved declarations** | 19,173 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 522,889 across 477 Lean files |
+| **Test LoC** | 87,395 across 70 Lean test suites |
+| **Proved declarations** | 19,226 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4978,7 +4978,8 @@ seL4's `replyTCB`), and the retire re-checks that thread
 leaves the store first (`retirePassiveObject`), then its recorder's child list,
 through the same `retireRecordedObject` as a carved object.  **A kernel object
 that is not quiescent, or is named outside a slot, still outlives its last
-capability**, as every kernel object did before `v0.36.133`, and stays recorded
+capability** (an endpoint's service registration excepted since `v0.36.155`:
+the final delete drops it first, `releaseFinalRegistration`), as every kernel object did before `v0.36.133`, and stays recorded
 by its untyped: an endpoint or notification with waiters or a bound thread
 until `v0.36.134` (row 23 of `docs/planning/UNTYPED_RESET_PLAN.md`, below), a TCB or scheduling context
 until row 24, a busy reply or a scheduling context with a reply stack until
@@ -5684,9 +5685,43 @@ Every kernel object has a decidable well-formedness predicate:
   `RegisterRoutedSyscall.invoke`, reading each argument as the register's
   word (`msgRegOfFile`; each decoder's register-file form is equal to it,
   `decodeXArgs_eq_by`).  `dispatchInvocationCheckedR_eq` makes the routed arm
-  `dispatchSyscallChecked`.  The in-place retype, service register, the
-  declassifications and the audit calls keep the general decode; the
-  scheduling-context configure is routed at `v0.36.98`.
+  `dispatchSyscallChecked`.  The declassifications and the audit calls keep
+  the general decode (ZA5.8); the in-place retype is deleted; the
+  scheduling-context configure is routed at `v0.36.98` and the service
+  register at `v0.36.155`, both as the one-overflow-word arm below.
+- **The service syscalls** (`v0.36.155`, WS-ZA ZA5.5).  The register route's
+  one-overflow-word arm (`RegisterRoutedSyscall.overflowOne`, the syscalls
+  `routedOverflowOne` names: the configure and the service register) reads the
+  fifth argument from overflow slot 0 of the IPC buffer and dispatches by
+  syscall (`dispatchOverflowOneCheckedR`, equal to `dispatchSyscallChecked` by
+  `dispatchOverflowOneCheckedR_eq`).  The service register runs every check
+  before its write: the flow check and `registerServiceAdmitted` (the service
+  id free, the interface installed, an endpoint target, the write right, no
+  registration recorded on the endpoint) read the pre-state, and
+  `registerServicePerform` writes the endpoint's `serviceCode` and the registry
+  entry (`registerServiceChecked_of_admitted`).  The query and the revoke
+  through the endpoint read its recorded registration first
+  (`recordedRegistrationPresent`, with the flow check) and then write in place:
+  the query stages the registration's id as the return word
+  (`serviceQueryPerform`), the revoke erases the entry and clears the code
+  (`revokeServiceByRecordedCodePerform`; `serviceQueryStaged_of_admitted`,
+  `revokeServiceChecked_of_admitted`).  The writes are compiled in place, each
+  by a proven equation: the query's word as the frame's six words
+  (`writeReturnFrameToTcb_ofWord_eq_words`), the endpoint's `serviceCode` in
+  its slot (`clearEndpointServiceCode_eq_impl`,
+  `registerServicePerform_eq_impl`), and the registry's erase and insert each
+  by its own call.  **The boot installs the
+  configured interfaces** (`PlatformConfig.initialInterfaces`,
+  `foldInterfaces`, supplied by a binding's `PlatformBinding.serviceInterfaces`):
+  no syscall adds an interface, so a registration names one the configuration
+  installs; `bootInterfacesWellFormed`, the twelfth `wellFormed` conjunct,
+  refuses a duplicate or sentinel id.  **A registered endpoint's final delete
+  drops its registration** (`releaseFinalRegistration`, run by
+  `retireFinalisedObject` before the finalisation, as seL4's `finaliseCap`
+  tears down what an object holds): the registry entry is revoked and
+  `serviceCode` cleared, so the endpoint is retired with its last capability
+  and its untyped can be reset; before `v0.36.155` the recorded code kept it
+  out of the retirable kinds with no capability left to revoke through.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any

@@ -382,7 +382,8 @@ def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
     initialObjects := rpi5InitialObjectsFor v
     machineConfig := rpi5MachineConfigForVariant v
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform)
-    initialThreads := PlatformBinding.initialThreads (platform := RPi5Platform) }
+    initialThreads := PlatformBinding.initialThreads (platform := RPi5Platform)
+    initialInterfaces := PlatformBinding.serviceInterfaces (platform := RPi5Platform) }
 
 /-- **WS-BP BP4.4**: binding a board account is choosing a variant — the bound
     configuration depends on the account only through `rpi5VariantFor`. -/

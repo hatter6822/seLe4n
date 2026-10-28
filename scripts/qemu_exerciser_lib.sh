@@ -261,6 +261,9 @@ for driver in drivers:
             "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
             "sched-context-unbind", "sched-context-rebind", "tcb-resume-bound",
             "tcb-suspend-bound",
+            # WS-ZA ZA5.5: a service query reads the code its endpoint records,
+            # and a revoke clears it and erases the registry entry in place.
+            "service-query", "service-revoke",
             # WS-ZA ZA5.3: the capability operations write each slot's own
             # record in place and the derivation links in the slots.
             "cspace-copy", "cspace-move", "cspace-delete", "cspace-mint",
@@ -411,6 +414,13 @@ for driver in drivers:
             # invoked capability's free index, so its dispatch runs through
             # `RefusalCarrying.ofChecked` and keeps no pre-state.
             "untyped-reset": (0, 0),
+            # WS-ZA ZA5.5 (`v0.36.155`): a service register reads its
+            # registration's own cells: the record the arguments make and its
+            # registry entry (4 steady, 6 the first call; not yet traced cell
+            # by cell).  The endpoint's record is written in its slot and the
+            # state in place (`registerServicePerformImpl`; 9 and 7 before).
+            # ZA5.6 stores the registry in the endpoint's own fields.
+            "service-register": (6, 4),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

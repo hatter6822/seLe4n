@@ -1970,15 +1970,66 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC', hCh',
     ((finaliseFinalObject_runQueueEntryStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩
 
+/-- **WS-ZA ZA5.5: a revocation keeps the reachable state**: it rewrites one
+endpoint's `serviceCode`, which nothing the reachable state reads, and keeps
+every thread, notification, reply and scheduling context, and the scheduler. -/
+theorem revokeService_preserves_ipcReachable {sid : ServiceId} {st st' : SystemState}
+    (h : ipcReachable st) (hR : revokeService sid st = .ok ((), st')) : ipcReachable st' := by
+  have hObjInv := h.objects_invExt
+  have hRw := revokeService_serviceCodeRewrite hR
+  have hL := hRw.lookup hObjInv
+  have hBack : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st'.objects[k]? = some o →
+      (∀ ep, o ≠ .endpoint ep) → st.objects[k]? = some o := fun k o ho hN => by
+    rcases hL k with e | ⟨ep, c, h0, h1⟩
+    · rw [← e]; exact ho
+    · rw [h1] at ho; cases ho; exact absurd rfl (hN _)
+  have hFwd : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st.objects[k]? = some o →
+      (∀ ep, o ≠ .endpoint ep) → st'.objects[k]? = some o := fun k o ho hN => by
+    rcases hL k with e | ⟨ep, c, h0, h1⟩
+    · rw [e]; exact ho
+    · rw [h0] at ho; cases ho; exact absurd rfl (hN _)
+  have hRL : ∀ k, replyStackLinks? st'.objects[k]? = replyStackLinks? st.objects[k]? := fun k => by
+    rcases hL k with e | ⟨ep, c, h0, h1⟩
+    · rw [e]
+    · rw [h0, h1]; rfl
+  have hSH : ∀ k, schedContextStackHead? st'.objects[k]? = schedContextStackHead? st.objects[k]? :=
+    fun k => by
+      rcases hL k with e | ⟨ep, c, h0, h1⟩
+      · rw [e]
+      · rw [h0, h1]; rfl
+  have hViews : st'.replyViews = st.replyViews := funext fun k => by
+    unfold SystemState.replyViews SystemState.getObject?
+    rcases hL k with e | ⟨ep, c, h0, h1⟩
+    · rw [e]
+    · rw [h0, h1]; rfl
+  refine ⟨revokeService_preserves_ipcInvariantFull st st' sid hObjInv h.ipcInvariantFull hR,
+    hRw.invExt hObjInv,
+    fun tid tcb hT => h.allTimeoutBudgetsNone tid tcb (hBack _ _ hT (fun _ e => by cases e)),
+    notificationWaiterConsistent_of_tcbLinkFrame h.notificationWaiterConsistent
+      (fun k n hn => hBack k _ hn (fun _ e => by cases e))
+      (fun k n hn => hFwd k _ hn (fun _ e => by cases e))
+      (fun k ty hy => ⟨ty, hFwd k _ hy (fun _ e => by cases e), rfl, rfl, rfl⟩)
+      (fun k tx hx => ⟨tx, hBack k _ hx (fun _ e => by cases e), rfl, rfl, rfl⟩),
+    donationChainWellFormed_of_frame ⟨hRL, hSH, fun oid r' hr hc =>
+      ⟨r', hBack oid _ hr (fun _ e => by cases e), hc⟩⟩ h.donationChainWellFormed,
+    ((revokeService_runQueueStage hR).entry.1 hObjInv h.runQueueRefined).2,
+    SystemState.replyWaitersConsistent.of_views hViews h.replyWaitersConsistent⟩
+
 /-- **The retire after the finalisation keeps the reachable state**: the
-finalisation's (`finaliseFinalObject_preserves_ipcReachable`), then the
-retire's (`retireFinalObject_preserves_ipcReachable`). -/
+release's (`revokeService_preserves_ipcReachable`), the finalisation's
+(`finaliseFinalObject_preserves_ipcReachable`), then the retire's
+(`retireFinalObject_preserves_ipcReachable`). -/
 theorem retireFinalisedObject_preserves_ipcReachable (ec : Concurrency.CoreId)
     (target recorder : Nat) {st : SystemState} (h : ipcReachable st)
     (hW : lentContextHeadsLenderFrame st) :
-    ipcReachable (retireFinalisedObject ec target recorder st) :=
-  retireFinalObject_preserves_ipcReachable ec target recorder
-    (finaliseFinalObject_preserves_ipcReachable target h hW)
+    ipcReachable (retireFinalisedObject ec target recorder st) := by
+  have h0 := releaseFinalRegistration_closed
+    (fun s => ipcReachable s ∧ lentContextHeadsLenderFrame s)
+    (fun _ _ _ hs hR => ⟨revokeService_preserves_ipcReachable hs.1 hR,
+      hs.2.of_loanWrite (revokeService_loanWrite hR hs.1.objects_invExt)⟩)
+    target st ⟨h, hW⟩
+  exact retireFinalObject_preserves_ipcReachable ec target recorder
+    (finaliseFinalObject_preserves_ipcReachable target h0.1 h0.2)
 
 
 /-- **The compiled splice keeps the donation chain.**  The in-place form a final

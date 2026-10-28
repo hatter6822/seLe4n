@@ -340,8 +340,9 @@ theorem retireFinalisedObject_preserves_reachableDeleteBundle (ec : CoreId)
     reachableDeleteBundle (retireFinalisedObject ec target recorder st) :=
   ⟨retireFinalisedObject_preserves_ipcReachable ec target recorder h.1 h.2.1.1.2.2,
     retireFinalisedObject_preserves_finalisingDeleteBundle ec target recorder st h.2.1,
-    ((finaliseFinalObject_runQueueEntryStage target st).1.trans
-      (retireFinalObject_runQueueStage ec target recorder _).1).tableReferencesRecorded_of_reachable
+    ((releaseFinalRegistration_runQueueStage target st).1.trans
+      ((finaliseFinalObject_runQueueEntryStage target _).1.trans
+        (retireFinalObject_runQueueStage ec target recorder _).1)).tableReferencesRecorded_of_reachable
       h.1 h.2.2⟩
 
 /-- **The slot delete and the page teardown keep the reachable state and the

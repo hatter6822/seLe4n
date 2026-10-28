@@ -416,10 +416,13 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
   obtain ⟨hC1n, hC1, hU1⟩ := cspaceDeleteSlot_slots hInv.2.2.2.2.1 hD
   -- The finalisation writes threads, endpoints and notifications only, each
   -- keeping its kind and slots (`FinaliseFrame`).
-  have hFr := finaliseFinalObject_frame (slotRetireTarget st addr.cnode addr.slot) st2
+  -- The release of an endpoint's registration first (`releaseFinalRegistration`)
+  -- writes one endpoint's `serviceCode` and the registry, which is one more such
+  -- write (`finaliseReleased_frame`).
+  have hFr := finaliseReleased_frame (slotRetireTarget st addr.cnode addr.slot) st2
     h2.2.2.2.2.1
-  have h3 := finaliseFinalObject_preserves_capabilityInvariantBundle
-    (slotRetireTarget st addr.cnode addr.slot) st2 h2
+  have h3 := capabilityInvariantBundle_of_kindPreservingUpToBindings h2 hFr.cdt hFr.invExt
+    hFr.kind
   refine retireFinalObject_preserves_capabilityInvariantBundle ec _ _ _ h3
     (fun hT r hr => ?_) (fun hT => ?_)
   · obtain ⟨c, hc, ht, hFin⟩ := slotRetireTarget_spec hInv hT
@@ -528,7 +531,7 @@ theorem cspaceDeleteSlotFinalising_ok_cdt {ec : Concurrency.CoreId} {addr : CSpa
   subst hF
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st1 hD
   rw [retireFinalisedObject, retireFinalObject_cdt, finaliseFinalObject_cdt,
-    finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
+    releaseFinalRegistration_cdt, finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
     cspaceDeleteSlotCore_cdt_eq st stC addr hC]
 
 /-- A slot's link, read as the loop reads it: its two words, decoded. -/

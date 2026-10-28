@@ -1118,6 +1118,9 @@ def nonExecutedTransitionsPlain : List Name :=
   -- WS-ZA ZA5.2: the routed configure's specification arm; the entry runs its
   -- refusal-carrying form `dispatchConfigureByR` (`dispatchConfigureByR_eq`).
   , `SeLe4n.Kernel.dispatchConfigureBy
+  -- WS-ZA ZA5.5: the routed service register's specification arm; the entry
+  -- runs `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq`).
+  , `SeLe4n.Kernel.dispatchServiceRegisterBy
   , `SeLe4n.Kernel.dispatchSyscall
   , `SeLe4n.Kernel.dispatchWithCap
   , `SeLe4n.Kernel.donationChainWitness
