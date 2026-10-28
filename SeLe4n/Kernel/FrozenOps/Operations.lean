@@ -258,13 +258,10 @@ currently holds rather than everything it ever held. -/
 notification at `k` become `T`'s; any other key is left as it is. -/
 private def frozenWriteTaintWords (st : FrozenSystemState) (k : SeLe4n.ObjId)
     (T : SeLe4n.Kernel.DeclassificationTaint) : FrozenSystemState :=
-  let stored := fun (o : FrozenKernelObject) =>
-    match st.objects.set k o with
-    | some objects' => { st with objects := objects' }
-    | none => st
   match st.getObject? k with
-  | some (.tcb t) => stored (.tcb (t.withTaintWords T.toWords))
-  | some (.notification n) => stored (.notification (n.withTaintWords T.toWords))
+  | some (.tcb t) => frozenRewriteObject st k (.tcb (t.withTaintWords T.toWords))
+  | some (.notification n) =>
+    frozenRewriteObject st k (.notification (n.withTaintWords T.toWords))
   | _ => st
 
 /-- WS-ZA ZA5.11: the frozen mirror of the live guard (`taintHolderAt`). -/

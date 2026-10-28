@@ -1353,10 +1353,10 @@ the words, so an id carved again starts clean.  `taintHolderAt_false_no_content`
 is the companion that says a dropped key holds no tracked content. -/
 
 /-- WS-ZA ZA5.11: **the committed state holds taint words at `k`** — a thread or
-a notification is stored there.  Compiled, the lookup's `some` meets the match
-and is never built. -/
+a notification is stored there.  A kind-agnostic read (`getObject?`); compiled,
+the lookup's `some` meets the match and is never built. -/
 @[inline] def taintHolderAt (st : SystemState) (k : SeLe4n.ObjId) : Bool :=
-  objHoldsTaint st.objects[k]?
+  objHoldsTaint (st.getObject? k)
 
 /-- WS-ZA ZA5.11 (**the guard's companion**): a key the guard drops holds no
 tracked content — no thread (so no `pendingMessage`) and no notification (so no
@@ -1365,7 +1365,7 @@ theorem taintHolderAt_false_no_content {st : SystemState} {k : SeLe4n.ObjId}
     (h : taintHolderAt st k = false) :
     (∀ t : TCB, st.objects[k]? ≠ some (.tcb t)) ∧
       (∀ n : Notification, st.objects[k]? ≠ some (.notification n)) := by
-  unfold taintHolderAt at h
+  unfold taintHolderAt SystemState.getObject? at h
   refine ⟨fun t ht => ?_, fun n hn => ?_⟩
   · rw [ht] at h; cases h
   · rw [hn] at h; cases h
@@ -1456,7 +1456,7 @@ theorem objTaint_map_withTaintWords (o : Option KernelObject) (T : Declassificat
 /-- A word write keeps every key's holder probe. -/
 @[simp] theorem taintHolderAt_writeTaintWordsAt (s : SystemState) (k j : SeLe4n.ObjId)
     (T : DeclassificationTaint) : taintHolderAt (s.writeTaintWordsAt k T) j = taintHolderAt s j := by
-  unfold taintHolderAt
+  unfold taintHolderAt SystemState.getObject?
   rw [SystemState.writeTaintWordsAt_objects]
   split
   · cases s.objects[j]? with
@@ -1487,7 +1487,7 @@ theorem tableReferencesRecorded_writeTaint {s : SystemState} (hR : s.tableRefere
     · subst hj
       rw [if_pos rfl, TaintTable.set_self, objTaint_map_withTaintWords]
       rcases hV with hH | hE
-      · unfold taintHolderAt at hH; rw [if_pos hH]
+      · unfold taintHolderAt SystemState.getObject? at hH; rw [if_pos hH]
       · split <;> simp [hE]
     · rw [if_neg hj, TaintTable.set_ne _ (Ne.symm hj)]
       exact hR.taintStored j
@@ -1581,7 +1581,7 @@ theorem foldl_joinTaintAt_declassificationTaint {α : Type _} (key : α → SeLe
       have hH : ∀ j, taintHolderAt (joinTaintAt s (key a) (val a)) j = taintHolderAt s j :=
         fun j => taintHolderAt_joinTaintAt _ _ _ _
       simp only [hH, joinTaintAt_declassificationTaint]
-      cases h : taintHolderAt s (key a) <;> simp [List.filter_cons, h]
+      cases h : taintHolderAt s (key a) <;> simp [h]
 
 theorem foldl_clearTaintAt_declassificationTaint :
     ∀ (L : List SeLe4n.ObjId) (s : SystemState),
@@ -1632,7 +1632,10 @@ theorem applyTaintStep_frame (plan : TaintPlan) (origins : List (SeLe4n.ObjId ×
   have R := foldl_taintStep_rel
     (fun s s' => ∃ T O, s' = { s with declassificationTaint := T, objects := O })
     (fun s => ⟨s.declassificationTaint, s.objects, rfl⟩)
-    (fun a b c ⟨T1, O1, h1⟩ ⟨T2, O2, h2⟩ => ⟨T2, O2, by rw [h2, h1]⟩)
+    (fun a b c h1 h2 => by
+      obtain ⟨T1, O1, h1⟩ := h1
+      obtain ⟨T2, O2, h2⟩ := h2
+      exact ⟨T2, O2, by rw [h2, h1]⟩)
   have hJ : ∀ s k T, ∃ T' O, joinTaintAt s k T = { s with declassificationTaint := T', objects := O } :=
     fun s k T => by
       unfold joinTaintAt; dsimp only

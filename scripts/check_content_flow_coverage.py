@@ -123,6 +123,14 @@ DECLARED_TAINT_WRITERS = {
     # provenance (`retireFinalObject_taint_cleared`), a clear, never a join,
     # so it can only drop a tag of an object that no longer exists.
     "SeLe4n.Kernel.withTaintCleared",
+    # WS-ZA ZA5.11: the step as a fold of per-key joins and clears, each writing
+    # the table entry and the key's taint words together (`joinTaintAt`,
+    # `clearTaintAt`); `applyTaintStep` is the fold and `taintStepTable` the
+    # table it writes (`applyTaintStep_declassificationTaint`).
+    "SeLe4n.Kernel.joinTaintAt",
+    "SeLe4n.Kernel.clearTaintAt",
+    "SeLe4n.Kernel.applyTaintStep",
+    "SeLe4n.Kernel.taintStepTable",
 }
 
 # **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
@@ -148,9 +156,11 @@ DECLARED_TAINT_WRITERS = {
 # censuses — which is why `DECLARED_TAINT_CONSUMERS`'s own note below records a
 # "frozen/live taint-layer mismatch" that survived until a differential scenario
 # could start from a tagged state.  This is that gap given a declaration.
+# WS-ZA ZA5.11: each mirror writes the table entry with `TaintTable.set`, as
+# `joinTaintAt` / `clearTaintAt` do, beside the frozen taint words.
 DECLARED_FROZEN_TAINT_WRITERS = {
-    "private@SeLe4n.Kernel.FrozenOps.frozenTaintFlow": "SeLe4n.Kernel.TaintTable.joinAt",
-    "private@SeLe4n.Kernel.FrozenOps.frozenTaintClear": "SeLe4n.Kernel.TaintTable.clearAt",
+    "private@SeLe4n.Kernel.FrozenOps.frozenTaintFlow": "SeLe4n.Kernel.TaintTable.set",
+    "private@SeLe4n.Kernel.FrozenOps.frozenTaintClear": "SeLe4n.Kernel.TaintTable.set",
 }
 
 # The two content channels, as (structure, field) pairs.  Named because they are
@@ -213,6 +223,10 @@ DECLARED_TAINT_CONSUMERS = {
 # everything else must route through it or leave the field alone.
 DECLARED_FIELD_WRITERS = {
     "SeLe4n.Kernel.applySyscallTaint",
+    # WS-ZA ZA5.11: the per-key join and clear the step folds; since then the
+    # step writes the field only through these two.
+    "SeLe4n.Kernel.joinTaintAt",
+    "SeLe4n.Kernel.clearTaintAt",
     # The same apply step in its compiled forms (see `DECLARED_TAINT_WRITERS`).
     "SeLe4n.Kernel.applySyscallTaintAfter",
     "SeLe4n.Kernel.signalTaintStep",
@@ -1380,10 +1394,10 @@ def main() -> int:
         # has gone blind reports zero unexpected writers for the same reason it
         # would miss a rogue one, so its bite is asserted here rather than
         # trusted.
-        if "SeLe4n.Kernel.applySyscallTaint" not in field_writers:
+        if "SeLe4n.Kernel.joinTaintAt" not in field_writers:
             print("FAIL: --self-test — the direct-field-writer sweep did not detect")
-            print("      `applySyscallTaint`, the one definition that writes")
-            print("      `SystemState.declassificationTaint`.  The sweep is blind:")
+            print("      `joinTaintAt`, the step's join, which writes")
+            print("      `SystemState.declassificationTaint` outright.  The sweep is blind:")
             print("      a rogue writer would pass check (C2) for the same reason.")
             return 1
         # …and it must detect one that hides behind `private`.  Both sweeps

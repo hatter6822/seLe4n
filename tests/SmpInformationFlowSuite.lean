@@ -11101,8 +11101,10 @@ private def runTaintFootprintChecks : IO Unit := do
   -- keys literally untouched, which is the model content of "the key's own lock
   -- is a sufficient serialization subject".  Were the update not key-local, an
   -- unrelated plan would move the endpoint's entry and this would fail.
+  -- WS-ZA ZA5.11: the other plan's sink is a notification, since a flow joins
+  -- only at a thread or a notification (`taintHolderAt`).
   let otherPlan : TaintPlan :=
-    { edges := [{ sink := lowEndpoint, source := lowCurrent.toObjId }] }
+    { edges := [{ sink := lowNotification, source := lowCurrent.toObjId }] }
   -- Both the endpoint this plan does *not* name and the source the other plan
   -- reads carry content, so the second half of the assertion below is a real
   -- observation rather than the inert plan's `rfl`.
@@ -11122,7 +11124,7 @@ private def runTaintFootprintChecks : IO Unit := do
      -- and it genuinely did write its own key, so the check above is not
      -- reporting an inert plan.
      ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
-        lowEndpoint) != (taggedBase.declassificationTaint lowEndpoint))
+        lowNotification) != (taggedBase.declassificationTaint lowNotification))
   assertBool "the propagation is confined to no core, and invisible on every one"
     (let plan : TaintPlan := { edges := [{ sink := lowCurrent.toObjId, source := declassTargetA }] }
      let after := applySyscallTaint plan niState niState

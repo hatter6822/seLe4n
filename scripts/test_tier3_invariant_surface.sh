@@ -10702,7 +10702,7 @@ run_check "INVARIANT" rg -n '^theorem getElem\?_eq($|[ ({:\[\]])' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_size($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applyTaintStep_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem applyTaintStep_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem applyTaintStep_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem liveTaintEdges_mem_or_no_content($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem projectState_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
@@ -22524,14 +22524,15 @@ run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\
 # flag, since the registration's id is the endpoint's own.  A number stored here
 # would be a second answer to "which service is this" that the id already gives.
 run_check "INVARIANT" rg -n -U '^structure Endpoint where(\n([ \t][^\n]*)?)*\n  serviceRegistered : Bool := false$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def objTableBackLinks : Option KernelObject → EndpointService × Bool$' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def objTableBackLinks :\n    Option KernelObject → EndpointService × Bool × SeLe4n\.Kernel\.TaintWords$' SeLe4n/Model/TableReferences.lean
 run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
 # The endpoint holds the registration's words beside its flag, and since the
 # table retired (WS-ZA ZA5.9) the registry reads them at the endpoint.  The
 # back-link is the record while the flag is set and the clear record otherwise,
 # so a clear flag is a clear back-link whatever words an endpoint carries.
 run_check "INVARIANT" rg -n '^structure EndpointService where$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false\)$' SeLe4n/Model/ObjectSlots.lean
+# Since WS-ZA ZA5.11 the third component is the taint words; an endpoint holds none.
+run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false, \{\}\)$' SeLe4n/Model/ObjectSlots.lean
 run_check "INVARIANT" rg -n '^theorem registrationAt_ofRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Interface.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.serviceRegistry_of_endpoint($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
 # The register's one write: its endpoint's slot, and nothing beside it.
