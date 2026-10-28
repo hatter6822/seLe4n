@@ -27,11 +27,21 @@ namespace SeLe4n.Model
 namespace TCB
 
 /-- The capability a thread's space slot `s` holds; slots 0 and 1 only.  Out
-of line, so its bound check is no branch of its caller: a caller that rebuilds
-the thread after reading a slot (`removeSpaceCapImpl`) rebuilds it over the old
-thread's cell when that is unshared. -/
+of line, so its bound check is no branch of its caller. -/
 @[noinline] def spaceSlotCap (t : TCB) (s : SeLe4n.Slot) : Option Capability :=
   if h : s.toNat < 2 then t.spaceCells[s.toNat] else none
+
+/-- The cell of slot `s` of a thread's space cells, read from the cells alone
+(`spaceCellAt_eq`).  Out of line and taking only the cells, so a caller that
+rebuilds the thread after reading a slot (`removeSpaceCapImpl`) hands the
+thread to no call and rebuilds it over the old thread's cell when that is
+unshared. -/
+@[noinline] def spaceCellAt (cells : Vector (Option Capability) 2) (s : SeLe4n.Slot) :
+    Option Capability :=
+  if h : s.toNat < 2 then cells[s.toNat] else none
+
+theorem spaceCellAt_eq (t : TCB) (s : SeLe4n.Slot) :
+    spaceCellAt t.spaceCells s = t.spaceSlotCap s := rfl
 
 /-- The object word of link `f` of the thread's space slot `s` (0 past slot 1). -/
 @[inline] def spaceLinkNodeWord (t : TCB) (s : SeLe4n.Slot) (f : LinkField) : Nat :=
@@ -73,7 +83,7 @@ before the slot is written, is kept as the slot's spare record
 (`TCB.spaceSpare`, `SpareCells.keep`), so the next capability written there
 overwrites it in place (`removeSpaceCap_eq_impl`). -/
 @[inline] def removeSpaceCapImpl (t : TCB) (s : SeLe4n.Slot) : TCB :=
-  let o := t.spaceSlotCap s
+  let o := spaceCellAt t.spaceCells s
   { t with
     spaceCells := t.spaceCells.setIfInBounds s.toNat none
     spaceSpare := t.spaceSpare.keep s.toNat o }

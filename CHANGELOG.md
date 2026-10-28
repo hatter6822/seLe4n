@@ -72,7 +72,15 @@ at every id; ZA5.12 retires it.
   `applySyscallTaint_objectsAgreeOffTaint` replaces it.
 - **The plan.** The table's retirement is ZA5.12 and the routing ZA5.13. Every
   citation is swept.
-- **Measured** (fresh untraced archive, `--lean-kernel`): MEASURED_PLACEHOLDER.
+- **Measured** (fresh untraced archive, `--lean-kernel`): every pin is
+  unchanged.
+  - The widened thread first read 2 on each space set and on a spaced
+    thread's delete.
+  - The slot clear (`TCB.removeSpaceCapImpl`) handed the thread to the
+    out-of-line slot read, and on the wider record that lost the rebuild over
+    the thread's own cell.
+  - The clear now reads the slot from the cells alone (`TCB.spaceCellAt`,
+    equal to `TCB.spaceSlotCap`), and rebuilds in place again.
 
 ## v0.36.160 — WS-ZA ZA5.10: the audit trail is a fixed ring written in place
 
