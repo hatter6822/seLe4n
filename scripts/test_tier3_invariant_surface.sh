@@ -4393,9 +4393,10 @@ run_check "INVARIANT" rg -n -U '      spaceSpare := Quot\.lift \(fun a => Squash
 # A thread slot's delete keeps its cell as the slot's spare, and the set writes
 # over that spare.
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem removeSpaceCap_eq_impl : @removeSpaceCap = @removeSpaceCapImpl' SeLe4n/Model/ObjectSlots.lean
-run_check "INVARIANT" rg -n -U '  let o := t\.spaceSlotCap s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
-# The slot read is out of line, so the thread is rebuilt in its own cell.
-run_check "INVARIANT" rg -n '^@\[noinline\] def spaceSlotCap ' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '  let o := spaceCellAt t\.spaceCells s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
+# The slot read is out of line and takes only the cells, so the clear hands the
+# thread to no call and the thread is rebuilt in its own cell.
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 2\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
 # The set reads the spare record, takes it out of the spares, then writes the
 # capability and its object target over it, before the one rebuild.
 run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
