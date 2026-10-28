@@ -83,7 +83,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 
 | Area | seL4 | seLe4n Improvement |
 |------|------|-------------------|
-| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry: a registration names the endpoint that serves it, recorded on the endpoint (`Endpoint.serviceCode`), and a lookup reads that record (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. The kernel keeps no service dependency graph (removed at `v0.36.145`): isolation between services comes from capabilities, and dependency policy belongs to a user-level service manager, as in seL4. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), `crossSubsystemInvariant` bundle (10 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic, AM4 +lifecycleObjectTypeLockstep, AK8-A +untypedRegionsDisjoint, WS-ZA ZA5.4 part 32 −registryDependencyConsistent −serviceGraphInvariant) in `proofLayerInvariantBundle` |
+| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry: a registration names the endpoint that serves it, recorded on the endpoint (`Endpoint.serviceRegistered`, a presence flag: the registration's id is the endpoint's), and a lookup reads that record (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. The kernel keeps no service dependency graph (removed at `v0.36.145`): isolation between services comes from capabilities, and dependency policy belongs to a user-level service manager, as in seL4. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), `crossSubsystemInvariant` bundle (10 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic, AM4 +lifecycleObjectTypeLockstep, AK8-A +untypedRegionsDisjoint, WS-ZA ZA5.4 part 32 −registryDependencyConsistent −serviceGraphInvariant) in `proofLayerInvariantBundle` |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) and back-pointer agreement — `queuePPrev` against `queuePrev`, which is what makes the O(1) removal's own precondition discharged rather than assumed (`dualQueueRemovalGuardHolds`, WS-RR RR8.3).  That pairing is *pointwise*, so it cannot reach a queue's **head**, whose `queuePrev = none` is legitimate; the head's back-pointer is therefore a clause of the **queue's** own boundary (`intrusiveQueueWellFormed`'s P2, `v0.35.106`), preserved through a fifth bundle conjunct that a thread heads at most one endpoint queue (`endpointQueueHeadDisjoint`) — itself a consequence of `queueHeadBlockedConsistent` rather than a new assumption (`queueHeadExclusive`), so a removal's `queuePPrev` hypothesis is now discharged for **any** member of a well-formed queue, head included (`dualQueueRemovalGuardHolds_of_member`).  Both the pairing and the head-disjointness conjunct are **checked at runtime** as well as proved (`queuePPrevAgreesWithPrevChecks`, `endpointQueueHeadDisjointChecks`); the second arrived a cut later than its conjunct, and until `v0.35.108` no check in `stateInvariantChecksFor` was cross-endpoint at all, so a state the bundle refuses — two endpoints sharing one singleton head — passed the whole harness surface; all three removals write one definition of what unlinking does — `queueUnlinkPredecessor` / `queueUnlinkSuccessor` to the neighbours (WS-OD OD3.9) and `queueRemoveBoundary` to the queue's own head and tail (WS-RR RR8.4), the latter reading `q.tail = some tid` rather than inferring tail-ness from the removed thread's `queueNext`, with the two readings' agreement checked by the removal's guard.  The removal's whole store-free precondition is one **model**-level predicate over an `IntrusiveQueue` and a `TCB` (`dualQueueRemovalEnabled`, `Model/Object/Types.lean`), so the frozen execution mirror — which imports no kernel module — refuses exactly what the live removal refuses rather than a subset of it (`v0.35.59`); its *discharges* stay in the kernel layer, where the invariants that entail them are |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
@@ -5398,8 +5398,10 @@ context's own-link read** (`v0.36.142`, plan row 29): a context is retired on
 its own links, the scheduling links that answer every other reference to it
 carried along the delete chain, as described above.  **The table back-references** (`v0.36.143`, plan row 30): the three
 tables that name objects by id outside every slot are answered by the objects
-they name — an endpoint records its registration's code (`Endpoint.serviceCode`,
-written by `registerService`, cleared by `revokeService`), a notification
+they name — an endpoint records that a service is registered on it
+(`Endpoint.serviceRegistered`, written by `registerService`, cleared by
+`revokeService`; a flag since `v0.36.157`, the registration's id being the
+endpoint's), a notification
 records the interrupt handler that names it (`Notification.irqBound`, set by the
 boot), and the service graph holds no entry — stated as one invariant
 (`SystemState.tableReferencesRecorded`; the graph and its emptiness clause are
@@ -5416,9 +5418,9 @@ holds at every entry) — and the delete chain carries it in
 (`SystemState.tableBackLinksClear`, inside `passiveObjectRetirable`) in place of
 the registry, interrupt-handler and service-graph walks, which are deleted; a
 thread's retire asks no table.  The service lookup reads the code its endpoint
-records (`lookupServiceByRecordedCode`, O(1)), equal to the registry fold
+records (`lookupServiceByRecordedRegistration`, O(1)), equal to the registry fold
 `lookupServiceByCap` wherever the references are recorded
-(`lookupServiceByRecordedCode_eq_lookupServiceByCap`); the frozen lookup mirrors
+(`lookupServiceByRecordedRegistration_eq_lookupServiceByCap`); the frozen lookup mirrors
 it, and the service syscalls' lock footprints name the endpoint (written by
 the register and the revoke, read by the query).  The pre-retype cleanup has no
 endpoint arm: the registry sweep it ran (`cleanupEndpointServiceRegistrations`)
@@ -5686,7 +5688,7 @@ Every kernel object has a decidable well-formedness predicate:
   word (`msgRegOfFile`; each decoder's register-file form is equal to it,
   `decodeXArgs_eq_by`).  `dispatchInvocationCheckedR_eq` makes the routed arm
   `dispatchSyscallChecked`.  The declassifications and the audit calls keep
-  the general decode (ZA5.9); the in-place retype is deleted; the
+  the general decode (ZA5.10); the in-place retype is deleted; the
   scheduling-context configure is routed at `v0.36.98` and the service
   register at `v0.36.155`, both as the one-overflow-word arm below.
 - **The service syscalls** (`v0.36.155`, WS-ZA ZA5.5).  The register route's
@@ -5698,21 +5700,28 @@ Every kernel object has a decidable well-formedness predicate:
   before its write: the flow check and `registerServiceAdmitted` (the service
   id free, the interface installed, an endpoint target, the write right, no
   registration recorded on the endpoint) read the pre-state, and
-  `registerServicePerform` writes the endpoint's `serviceCode` and the registry
-  entry (`registerServiceChecked_of_admitted`).  **A service's identity is its
+  `registerServicePerform` sets the endpoint's `serviceRegistered` flag and
+  writes the registry entry (`registerServiceChecked_of_admitted`).  **A service's identity is its
   endpoint's** (since `v0.36.156`, WS-ZA ZA5.6): a registration carries no
   identity of its own, and `ServiceRegistration.sid` is derived from the
   capability it keeps, so no registration can name an identity its endpoint does
-  not have, and the query answers the endpoint's id.  The query and the revoke
+  not have, and the query answers the endpoint's id.  **The endpoint records
+  only that a service is registered on it** (since `v0.36.157`, WS-ZA ZA5.7):
+  `Endpoint.serviceRegistered` is a flag, and every reader names the service
+  by the endpoint's id (`ServiceId.ofNat e.toNat`), so the endpoint cannot
+  record an identity other than its own; `SystemState.tableReferencesRecorded`
+  states the identity (`registry`: a registration's id is its endpoint's, whose
+  flag is set; `serviceFlags`: a set flag names a registration under the
+  endpoint's id).  The query and the revoke
   through the endpoint read its recorded registration first
   (`recordedRegistrationPresent`, with the flow check) and then write in place:
   the query stages the registration's id as the return word
-  (`serviceQueryPerform`), the revoke erases the entry and clears the code
-  (`revokeServiceByRecordedCodePerform`; `serviceQueryStaged_of_admitted`,
+  (`serviceQueryPerform`), the revoke erases the entry and clears the flag
+  (`revokeServiceByRecordedRegistrationPerform`; `serviceQueryStaged_of_admitted`,
   `revokeServiceChecked_of_admitted`).  The writes are compiled in place, each
   by a proven equation: the query's word as the frame's six words
-  (`writeReturnFrameToTcb_ofWord_eq_words`), the endpoint's `serviceCode` in
-  its slot (`clearEndpointServiceCode_eq_impl`,
+  (`writeReturnFrameToTcb_ofWord_eq_words`), the endpoint's `serviceRegistered` flag in
+  its slot (`clearEndpointRegistration_eq_impl`,
   `registerServicePerform_eq_impl`), and the registry's erase and insert each
   by its own call.  **The boot installs the
   configured interfaces** (`PlatformConfig.initialInterfaces`,
@@ -5723,8 +5732,8 @@ Every kernel object has a decidable well-formedness predicate:
   drops its registration** (`releaseFinalRegistration`, run by
   `retireFinalisedObject` before the finalisation, as seL4's `finaliseCap`
   tears down what an object holds): the registry entry is revoked and
-  `serviceCode` cleared, so the endpoint is retired with its last capability
-  and its untyped can be reset; before `v0.36.155` the recorded code kept it
+  `serviceRegistered` cleared, so the endpoint is retired with its last capability
+  and its untyped can be reset; before `v0.36.155` the recorded registration kept it
   out of the retirable kinds with no capability left to revoke through.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
@@ -9958,7 +9967,7 @@ carries the registry (`ObservableState.serviceRegistry`,
 `projectServiceRegistry`), each entry kept only when
 `serviceObservable` admits it, that is when the observer may see the endpoint
 the registration names (`objectObservable` of the endpoint), and an endpoint's
-registration code (`Endpoint.serviceCode`) is projected with the endpoint, so
+registration flag (`Endpoint.serviceRegistered`) is projected with the endpoint, so
 the two agree on what an observer sees.  The three service arms are gated on
 the endpoint's label, never on a separate service label:
 
@@ -9966,7 +9975,7 @@ the endpoint's label, never on a separate service label:
   endpoint's (`registrationWriteAdmitted`), otherwise `flowDenied`;
 * **revoke** (`revokeServiceChecked`): the same write gate, and the arm removes
   the registration the invoked endpoint records
-  (`revokeServiceByRecordedCode`); it reads no message register, so a
+  (`revokeServiceByRecordedRegistration`); it reads no message register, so a
   capability to one endpoint cannot revoke another's registration
   (`dispatchWithCapChecked_serviceRevoke_removes_recorded_registration`,
   `dispatchWithCapChecked_serviceRevoke_objectNotFound_of_unrecorded`);

@@ -1573,13 +1573,13 @@
             "SeLe4n.Kernel.cspaceDeleteSlotZombie",
             "SeLe4n.Kernel.cspaceRevokeCdtFinalising",
             "SeLe4n.Kernel.decodeAffinity",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.mintReplyCapWithCdt",
             "SeLe4n.Kernel.resolveCallerCapObject",
             "SeLe4n.Kernel.resolveSchedContextBindThread",
             "SeLe4n.Kernel.resolveSetSpace",
             "SeLe4n.Kernel.retirePendingFaultForResume",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Kernel.setThreadCpuAffinityOnCore",
             "SeLe4n.Kernel.setThreadFaultHandlerOp",
             "SeLe4n.Kernel.syscallLookupCap",
@@ -1665,8 +1665,8 @@
             "SeLe4n.Kernel.decodeAffinity",
             "SeLe4n.Kernel.dispatchCapabilityOnly",
             "SeLe4n.Kernel.ipcInvariantFull",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.mintReplyCapWithCdt_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.pageTableMap_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.pageTableUnmap_preserves_ipcInvariantFull",
@@ -1677,7 +1677,7 @@
             "SeLe4n.Kernel.retirePendingFaultForResume",
             "SeLe4n.Kernel.retirePendingFaultForResume_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.retirePendingFaultForResume_preserves_objects_invExt",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
             "SeLe4n.Kernel.revokeService_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.schedContextBind_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.schedContextBindingBidirectional_of_consistent",
@@ -2182,7 +2182,7 @@
             "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.dispatchWithCapChecked_serviceRevoke_eq",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.serviceEndpointWriteAdmitted",
             "SeLe4n.Model.Capability",
@@ -2205,7 +2205,7 @@
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.dispatchWithCapChecked",
             "SeLe4n.Kernel.dispatchWithCapChecked_serviceRevoke_eq",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.serviceEndpointWriteAdmitted",
             "SeLe4n.Model.Capability",
@@ -3104,7 +3104,7 @@
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.dispatchCapabilityOnly",
             "SeLe4n.Kernel.dispatchWithCap",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.ServiceRegistration.sid",
@@ -78414,7 +78414,7 @@
           "full_name": "SeLe4n.Kernel.revokeService_preservesFieldsOutside",
           "line": 1401,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+            "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
             "SeLe4n.Kernel.preservesFieldsOutside",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_modifiedFields",
@@ -78980,12 +78980,12 @@
         },
         {
           "kind": "theorem",
-          "name": "noStaleQueueReferences_of_serviceCodeRewrite",
-          "full_name": "SeLe4n.Kernel.noStaleQueueReferences_of_serviceCodeRewrite",
+          "name": "noStaleQueueReferences_of_registrationFlagRewrite",
+          "full_name": "SeLe4n.Kernel.noStaleQueueReferences_of_registrationFlagRewrite",
           "line": 2016,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Kernel.collectQueueMembers_congr",
             "SeLe4n.Kernel.collectQueueMembers_fuel_mono",
             "SeLe4n.Kernel.noStaleEndpointQueueReferences",
@@ -79080,9 +79080,9 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.noStaleEndpointQueueReferences",
-            "SeLe4n.Kernel.noStaleQueueReferences_of_serviceCodeRewrite",
+            "SeLe4n.Kernel.noStaleQueueReferences_of_registrationFlagRewrite",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -79137,9 +79137,9 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.noStaleNotificationWaitReferences",
-            "SeLe4n.Kernel.noStaleQueueReferences_of_serviceCodeRewrite",
+            "SeLe4n.Kernel.noStaleQueueReferences_of_registrationFlagRewrite",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -79181,9 +79181,9 @@
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.noStaleEndpointQueueReferences",
             "SeLe4n.Kernel.noStaleNotificationWaitReferences",
-            "SeLe4n.Kernel.noStaleQueueReferences_of_serviceCodeRewrite",
+            "SeLe4n.Kernel.noStaleQueueReferences_of_registrationFlagRewrite",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -118721,10 +118721,10 @@
           "called": [
             "SeLe4n.Kernel.FinaliseFrameAny",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+            "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_ok",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -118737,7 +118737,7 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
@@ -118752,7 +118752,7 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
@@ -118767,7 +118767,7 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.ServiceId",
@@ -118784,7 +118784,7 @@
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.loanWrite",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
@@ -118810,7 +118810,7 @@
           "full_name": "SeLe4n.Kernel.releaseFinalRegistration_cdt",
           "line": 2319,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+            "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
             "SeLe4n.Kernel.releaseFinalRegistration",
             "SeLe4n.Kernel.revokeService_ok",
             "SeLe4n.Model.SystemState"
@@ -119553,7 +119553,7 @@
             "SeLe4n.Kernel.revokeService_loanWrite",
             "SeLe4n.Kernel.revokeService_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.revokeService_preserves_scheduler",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -121376,7 +121376,7 @@
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_preserves_ipcInvariantFull",
             "SeLe4n.Kernel.revokeService_runQueueStage",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Kernel.schedContextStackHead?",
             "SeLe4n.Model.KernelObject",
             "SeLe4n.Model.SystemState",
@@ -130836,12 +130836,12 @@
         },
         {
           "kind": "theorem",
-          "name": "ipcInvariantFull_of_serviceCodeRewrite",
-          "full_name": "SeLe4n.Kernel.ipcInvariantFull_of_serviceCodeRewrite",
+          "name": "ipcInvariantFull_of_registrationFlagRewrite",
+          "full_name": "SeLe4n.Kernel.ipcInvariantFull_of_registrationFlagRewrite",
           "line": 107,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Kernel.capabilityBadgesWellFormed",
             "SeLe4n.Kernel.capabilityBadgesWellFormed_of_slotCap_back",
             "SeLe4n.Kernel.ipcInvariantFull",
@@ -130859,9 +130859,9 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcInvariantFull",
-            "SeLe4n.Kernel.ipcInvariantFull_of_serviceCodeRewrite",
+            "SeLe4n.Kernel.ipcInvariantFull_of_registrationFlagRewrite",
             "SeLe4n.Kernel.registerService",
-            "SeLe4n.Kernel.registerService_serviceCodeRewrite",
+            "SeLe4n.Kernel.registerService_registrationFlagRewrite",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState"
           ]
@@ -130874,9 +130874,9 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.ipcInvariantFull",
-            "SeLe4n.Kernel.ipcInvariantFull_of_serviceCodeRewrite",
+            "SeLe4n.Kernel.ipcInvariantFull_of_registrationFlagRewrite",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -153752,8 +153752,8 @@
         },
         {
           "kind": "theorem",
-          "name": "spliceEndpoint_serviceCode",
-          "full_name": "SeLe4n.Kernel.spliceEndpoint_serviceCode",
+          "name": "spliceEndpoint_serviceRegistered",
+          "full_name": "SeLe4n.Kernel.spliceEndpoint_serviceRegistered",
           "line": 75,
           "called": [
             "SeLe4n.Kernel.spliceEndpoint",
@@ -158390,12 +158390,12 @@
         },
         {
           "kind": "theorem",
-          "name": "serviceCodeRewrite_runQueueStage",
-          "full_name": "SeLe4n.Kernel.serviceCodeRewrite_runQueueStage",
+          "name": "registrationFlagRewrite_runQueueStage",
+          "full_name": "SeLe4n.Kernel.registrationFlagRewrite_runQueueStage",
           "line": 334,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.RunQueueStage",
             "SeLe4n.Model.SystemState.RunQueueStage.insertWith",
@@ -158413,8 +158413,8 @@
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_preserves_scheduler",
             "SeLe4n.Kernel.revokeService_preserves_tableReferencesRecorded",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
-            "SeLe4n.Kernel.serviceCodeRewrite_runQueueStage",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
+            "SeLe4n.Kernel.registrationFlagRewrite_runQueueStage",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.RunQueueStage",
             "SeLe4n.ServiceId"
@@ -158429,8 +158429,8 @@
             "SeLe4n.Kernel.registerService",
             "SeLe4n.Kernel.registerService_preserves_scheduler",
             "SeLe4n.Kernel.registerService_preserves_tableReferencesRecorded",
-            "SeLe4n.Kernel.registerService_serviceCodeRewrite",
-            "SeLe4n.Kernel.serviceCodeRewrite_runQueueStage",
+            "SeLe4n.Kernel.registerService_registrationFlagRewrite",
+            "SeLe4n.Kernel.registrationFlagRewrite_runQueueStage",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.RunQueueStage"
@@ -158452,12 +158452,12 @@
         },
         {
           "kind": "theorem",
-          "name": "lookupServiceByRecordedCode_runQueueStage",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode_runQueueStage",
+          "name": "lookupServiceByRecordedRegistration_runQueueStage",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration_runQueueStage",
           "line": 368,
           "called": [
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.RunQueueStage",
@@ -159368,8 +159368,8 @@
             "SeLe4n.Kernel.cspaceRevokeCdtFinalising_runQueueEntryStage",
             "SeLe4n.Kernel.decodeAffinity",
             "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.mintReplyCapWithCdt_runQueueStage",
             "SeLe4n.Kernel.pageTableMap_runQueueStage",
             "SeLe4n.Kernel.pageTableUnmap_runQueueStage",
@@ -159379,7 +159379,7 @@
             "SeLe4n.Kernel.resumeThreadOnCore_runQueueEntryStage",
             "SeLe4n.Kernel.retirePendingFaultForResume",
             "SeLe4n.Kernel.retirePendingFaultForResume_runQueueStage",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
             "SeLe4n.Kernel.revokeService_runQueueStage",
             "SeLe4n.Kernel.schedContextBind_runQueueStage",
             "SeLe4n.Kernel.schedContextConfigure_runQueueStage",
@@ -208051,7 +208051,7 @@
           "line": 318,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.serviceEndpointReadAdmitted",
             "SeLe4n.Model.SystemState",
@@ -208080,7 +208080,7 @@
           "line": 332,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.lookupServiceChecked_eq_lookup_when_allowed",
             "SeLe4n.Kernel.lookupServiceChecked_flowDenied",
@@ -208113,7 +208113,7 @@
           "line": 355,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.serviceEndpointWriteAdmitted",
             "SeLe4n.Model.SystemState",
@@ -208157,7 +208157,7 @@
           "line": 377,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.revokeServiceChecked_eq_revoke_when_allowed",
             "SeLe4n.Kernel.revokeServiceChecked_flowDenied",
@@ -209175,7 +209175,7 @@
           "line": 696,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.serviceEndpointReadAdmitted",
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.ServiceRegistration",
@@ -209205,7 +209205,7 @@
           "line": 725,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Kernel.serviceEndpointWriteAdmitted",
             "SeLe4n.Model.Kernel",
             "SeLe4n.ObjId",
@@ -209235,7 +209235,7 @@
           "called": [
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_ofWord_eq_words",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.recordedRegistrationPresent",
             "SeLe4n.Kernel.serviceEndpointReadAdmitted",
@@ -209255,8 +209255,8 @@
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.recordedRegistrationPresent",
-            "SeLe4n.Kernel.revokeServiceByRecordedCodePerform",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_of_admitted",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistrationPerform",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_of_admitted",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.serviceEndpointWriteAdmitted",
             "SeLe4n.Model.SystemState",
@@ -214382,7 +214382,7 @@
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
             "SeLe4n.Kernel.RobinHood.RHSet",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+            "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
             "SeLe4n.Kernel.donationOwnerFlowsToHolder",
             "SeLe4n.Kernel.finaliseThenRetire_preserves_projection",
             "SeLe4n.Kernel.ipcReachable",
@@ -214394,8 +214394,8 @@
             "SeLe4n.Kernel.replyDonationReturn?",
             "SeLe4n.Kernel.replyFinaliseHidden",
             "SeLe4n.Kernel.retireFinalisedObject",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_preserves_projection",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_preserves_projection",
             "SeLe4n.Kernel.revokeService_back",
             "SeLe4n.Kernel.revokeService_finaliseFrameAny",
             "SeLe4n.Kernel.revokeService_getTcb?",
@@ -218691,11 +218691,11 @@
         },
         {
           "kind": "theorem",
-          "name": "lookupServiceByRecordedCode_preserves_state",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+          "name": "lookupServiceByRecordedRegistration_preserves_state",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
           "line": 4916,
           "called": [
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
@@ -218807,7 +218807,7 @@
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
-            "SeLe4n.Kernel.clearEndpointServiceCode_cases",
+            "SeLe4n.Kernel.clearEndpointRegistration_cases",
             "SeLe4n.Kernel.objects_insert_preserves_projection_high",
             "SeLe4n.Kernel.projectServiceRegistry_erase_unobservable",
             "SeLe4n.Kernel.projectState",
@@ -218837,8 +218837,8 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeServiceByRecordedCode_preserves_projection",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode_preserves_projection",
+          "name": "revokeServiceByRecordedRegistration_preserves_projection",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration_preserves_projection",
           "line": 5044,
           "called": [
             "SeLe4n.Kernel.IfObserver",
@@ -218847,8 +218847,8 @@
             "SeLe4n.Kernel.objectObservable",
             "SeLe4n.Kernel.projectState",
             "SeLe4n.Kernel.recordedRegistration_names_endpoint",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_ok",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_ok",
             "SeLe4n.Kernel.revokeService_preserves_projection",
             "SeLe4n.Kernel.serviceObservable",
             "SeLe4n.Model.SystemState",
@@ -218924,7 +218924,7 @@
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.enforcementSoundness_revokeServiceChecked",
             "SeLe4n.Kernel.projectState",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_preserves_projection",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_preserves_projection",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.revokeServiceChecked_eq_revoke_when_allowed",
             "SeLe4n.Kernel.serviceEndpoint_unobservable_of_writeAdmitted",
@@ -218963,7 +218963,7 @@
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.projectState",
             "SeLe4n.Kernel.serviceQueryStaged",
@@ -219012,11 +219012,11 @@
         },
         {
           "kind": "theorem",
-          "name": "lookupServiceByRecordedCode_not_endpoint",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode_not_endpoint",
+          "name": "lookupServiceByRecordedRegistration_not_endpoint",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration_not_endpoint",
           "line": 5207,
           "called": [
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.ObjId"
@@ -219024,11 +219024,11 @@
         },
         {
           "kind": "theorem",
-          "name": "lookupServiceByRecordedCode_of_endpoint",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode_of_endpoint",
+          "name": "lookupServiceByRecordedRegistration_of_endpoint",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration_of_endpoint",
           "line": 5217,
           "called": [
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Model.Endpoint",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -219038,17 +219038,17 @@
         },
         {
           "kind": "theorem",
-          "name": "lookupServiceByRecordedCode_answer_lowEquivalent",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode_answer_lowEquivalent",
+          "name": "lookupServiceByRecordedRegistration_answer_lowEquivalent",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration_answer_lowEquivalent",
           "line": 5234,
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.ObservableState",
             "SeLe4n.Kernel.endpoint_of_lowEquivalent",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_not_endpoint",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_of_endpoint",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_not_endpoint",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_of_endpoint",
             "SeLe4n.Kernel.lowEquivalent",
             "SeLe4n.Kernel.lowEquivalent_symm",
             "SeLe4n.Kernel.objectObservable",
@@ -219069,7 +219069,7 @@
           "called": [
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_answer_lowEquivalent",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_answer_lowEquivalent",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.lowEquivalent",
             "SeLe4n.Kernel.objectObservable",
@@ -219092,7 +219092,7 @@
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb",
             "SeLe4n.Kernel.IfObserver",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.lookupServiceChecked_answer_lowEquivalent",
             "SeLe4n.Kernel.lowEquivalent",
@@ -222158,7 +222158,7 @@
           "line": 1579,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+            "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
             "SeLe4n.Kernel.observableSlotsConfinedToCore",
             "SeLe4n.Kernel.observableSlotsConfinedToCore_of_scheduler_machine_eq",
             "SeLe4n.Kernel.revokeService",
@@ -222178,7 +222178,7 @@
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.enforcementSoundness_revokeServiceChecked",
             "SeLe4n.Kernel.observableSlotsConfinedToCore",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
             "SeLe4n.Kernel.revokeServiceChecked",
             "SeLe4n.Kernel.revokeServiceChecked_eq_revoke_when_allowed",
             "SeLe4n.Kernel.revokeService_confinedToCore",
@@ -222197,7 +222197,7 @@
             "SeLe4n.Kernel.Architecture.writeReturnFrameToTcb_scheduler_eq",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.lookupServiceChecked",
             "SeLe4n.Kernel.observableSlotsConfinedToCore",
             "SeLe4n.Kernel.observableSlotsConfinedToCore_of_scheduler_machine_eq",
@@ -247170,8 +247170,8 @@
             "SeLe4n.Kernel.cspaceRevokeCdtFinalising_mappingStage",
             "SeLe4n.Kernel.decodeAffinity",
             "SeLe4n.Kernel.dispatchCapabilityOnly",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.mintReplyCapWithCdt_mappingStage",
             "SeLe4n.Kernel.pageTableMap_mappingStage",
             "SeLe4n.Kernel.pageTableUnmap_mappingStage",
@@ -247181,7 +247181,7 @@
             "SeLe4n.Kernel.resumeThreadOnCore_mappingStage",
             "SeLe4n.Kernel.retirePendingFaultForResume",
             "SeLe4n.Kernel.retirePendingFaultForResume_mappingStage",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
             "SeLe4n.Kernel.revokeService_mappingStage",
             "SeLe4n.Kernel.schedContextBind_mappingStage",
             "SeLe4n.Kernel.schedContextConfigure_mappingStage",
@@ -250251,11 +250251,11 @@
         },
         {
           "kind": "theorem",
-          "name": "serviceCodeRewrite_mappingStage",
-          "full_name": "SeLe4n.Kernel.serviceCodeRewrite_mappingStage",
+          "name": "registrationFlagRewrite_mappingStage",
+          "full_name": "SeLe4n.Kernel.registrationFlagRewrite_mappingStage",
           "line": 131,
           "called": [
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Model.KernelObject.objectType",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.MappingStage",
@@ -250269,8 +250269,8 @@
           "line": 138,
           "called": [
             "SeLe4n.Kernel.registerService",
-            "SeLe4n.Kernel.registerService_serviceCodeRewrite",
-            "SeLe4n.Kernel.serviceCodeRewrite_mappingStage",
+            "SeLe4n.Kernel.registerService_registrationFlagRewrite",
+            "SeLe4n.Kernel.registrationFlagRewrite_mappingStage",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.MappingStage"
@@ -250283,8 +250283,8 @@
           "line": 142,
           "called": [
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
-            "SeLe4n.Kernel.serviceCodeRewrite_mappingStage",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
+            "SeLe4n.Kernel.registrationFlagRewrite_mappingStage",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.MappingStage",
             "SeLe4n.ServiceId"
@@ -250292,12 +250292,12 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeServiceByRecordedCode_mappingStage",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode_mappingStage",
+          "name": "revokeServiceByRecordedRegistration_mappingStage",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration_mappingStage",
           "line": 146,
           "called": [
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
             "SeLe4n.Kernel.revokeService_mappingStage",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.MappingStage",
@@ -254062,7 +254062,7 @@
             "SeLe4n.Kernel.resolveUntypedRetypeK",
             "SeLe4n.Kernel.resolveVSpaceMapFrameK",
             "SeLe4n.Kernel.retirePendingFaultForResume",
-            "SeLe4n.Kernel.revokeServiceByRecordedCodePerform",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistrationPerform",
             "SeLe4n.Kernel.securityFlowsTo",
             "SeLe4n.Kernel.serviceEndpointReadAdmitted",
             "SeLe4n.Kernel.serviceEndpointWriteAdmitted",
@@ -256612,12 +256612,12 @@
         },
         {
           "kind": "theorem",
-          "name": "serviceCodeRewrite_keyFrame",
-          "full_name": "SeLe4n.Kernel.serviceCodeRewrite_keyFrame",
+          "name": "registrationFlagRewrite_keyFrame",
+          "full_name": "SeLe4n.Kernel.registrationFlagRewrite_keyFrame",
           "line": 50,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Kernel.capabilityKeyFrame",
             "SeLe4n.Model.SystemState"
           ]
@@ -256632,8 +256632,8 @@
             "SeLe4n.Kernel.capabilityKeyFrame",
             "SeLe4n.Kernel.registerService",
             "SeLe4n.Kernel.registerService_preserves_scheduler",
-            "SeLe4n.Kernel.registerService_serviceCodeRewrite",
-            "SeLe4n.Kernel.serviceCodeRewrite_keyFrame",
+            "SeLe4n.Kernel.registerService_registrationFlagRewrite",
+            "SeLe4n.Kernel.registrationFlagRewrite_keyFrame",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState"
           ]
@@ -256648,8 +256648,8 @@
             "SeLe4n.Kernel.capabilityKeyFrame",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_preserves_scheduler",
-            "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
-            "SeLe4n.Kernel.serviceCodeRewrite_keyFrame",
+            "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
+            "SeLe4n.Kernel.registrationFlagRewrite_keyFrame",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
           ]
@@ -256670,14 +256670,14 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeServiceByRecordedCode_keyFrame",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode_keyFrame",
+          "name": "revokeServiceByRecordedRegistration_keyFrame",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration_keyFrame",
           "line": 79,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.capabilityKeyFrame",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
             "SeLe4n.Kernel.revokeService_keyFrame",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
@@ -257233,14 +257233,14 @@
             "SeLe4n.Kernel.cspaceRevokeCdtFinalising_stepCovers",
             "SeLe4n.Kernel.dispatchCapabilityOnly",
             "SeLe4n.Kernel.finalisingDeleteBundle",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration_preserves_state",
             "SeLe4n.Kernel.mintReplyCapWithCdt_keyFrame",
             "SeLe4n.Kernel.pageTableMap_keyFrame",
             "SeLe4n.Kernel.pageTableUnmap_keyFrame",
             "SeLe4n.Kernel.placedThreadsHaveTcbs",
             "SeLe4n.Kernel.resumeThreadOnCore_stepCovers",
             "SeLe4n.Kernel.retirePendingFaultForResume_keyFrame",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_keyFrame",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_keyFrame",
             "SeLe4n.Kernel.schedContextBind_stepCovers",
             "SeLe4n.Kernel.schedContextConfigure_stepCovers",
             "SeLe4n.Kernel.schedContextUnbindOnCore_stepCovers",
@@ -328082,12 +328082,12 @@
         },
         {
           "kind": "theorem",
-          "name": "clearEndpointServiceCode_of_recorded",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode_of_recorded",
+          "name": "clearEndpointRegistration_of_recorded",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration_of_recorded",
           "line": 338,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Endpoint",
             "SeLe4n.Model.SystemState",
@@ -328125,7 +328125,7 @@
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
             "SeLe4n.Kernel.RobinHood.RHTable.erase_preserves_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.clearEndpointServiceCode_of_recorded",
+            "SeLe4n.Kernel.clearEndpointRegistration_of_recorded",
             "SeLe4n.Kernel.getElem?_erase_ite",
             "SeLe4n.Kernel.getElem?_insert_ite",
             "SeLe4n.Kernel.revokeService",
@@ -328135,7 +328135,7 @@
             "SeLe4n.Model.KernelObject.tableBackLinks",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.tableReferencesRecorded",
-            "SeLe4n.Model.objTableBackLinks_code_succ",
+            "SeLe4n.Model.objTableBackLinks_registered",
             "SeLe4n.ServiceId"
           ]
         },
@@ -328211,15 +328211,15 @@
         },
         {
           "kind": "theorem",
-          "name": "lookupServiceByRecordedCode_eq_lookupServiceByCap",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode_eq_lookupServiceByCap",
+          "name": "lookupServiceByRecordedRegistration_eq_lookupServiceByCap",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration_eq_lookupServiceByCap",
           "line": 545,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.fold",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt",
             "SeLe4n.Kernel.lookupServiceByCap",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.lookupServiceFold_complete",
             "SeLe4n.Kernel.lookupServiceFold_sound",
             "SeLe4n.Kernel.lookupServiceStep",
@@ -328227,7 +328227,7 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.Model.SystemState.tableReferencesRecorded",
-            "SeLe4n.Model.objTableBackLinks_code_succ",
+            "SeLe4n.Model.objTableBackLinks_registered",
             "SeLe4n.ObjId",
             "SeLe4n.ServiceId"
           ]
@@ -328379,8 +328379,8 @@
         },
         {
           "kind": "def",
-          "name": "lookupServiceByRecordedCode",
-          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedCode",
+          "name": "lookupServiceByRecordedRegistration",
+          "full_name": "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
           "line": 241,
           "called": [
             "SeLe4n.Model.Kernel",
@@ -328391,8 +328391,8 @@
         },
         {
           "kind": "def",
-          "name": "clearEndpointServiceCode",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode",
+          "name": "clearEndpointRegistration",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration",
           "line": 257,
           "called": [
             "SeLe4n.Model.Capability",
@@ -328404,8 +328404,8 @@
         },
         {
           "kind": "def",
-          "name": "clearEndpointServiceCodeImpl",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCodeImpl",
+          "name": "clearEndpointRegistrationImpl",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistrationImpl",
           "line": 274,
           "called": [
             "SeLe4n.Kernel.setServiceCodeObject",
@@ -328418,13 +328418,13 @@
         },
         {
           "kind": "theorem",
-          "name": "clearEndpointServiceCode_eq_impl",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode_eq_impl",
+          "name": "clearEndpointRegistration_eq_impl",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration_eq_impl",
           "line": 284,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.modify_of_get?",
-            "SeLe4n.Kernel.clearEndpointServiceCode",
-            "SeLe4n.Kernel.clearEndpointServiceCodeImpl",
+            "SeLe4n.Kernel.clearEndpointRegistration",
+            "SeLe4n.Kernel.clearEndpointRegistrationImpl",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.modifyObject",
@@ -328437,15 +328437,15 @@
           "full_name": "SeLe4n.Kernel.revokeService",
           "line": 312,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Model.Kernel",
             "SeLe4n.ServiceId"
           ]
         },
         {
           "kind": "def",
-          "name": "revokeServiceByRecordedCode",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode",
+          "name": "revokeServiceByRecordedRegistration",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
           "line": 332,
           "called": [
             "SeLe4n.Kernel.revokeService",
@@ -328478,11 +328478,11 @@
         },
         {
           "kind": "def",
-          "name": "revokeServiceByRecordedCodePerform",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCodePerform",
+          "name": "revokeServiceByRecordedRegistrationPerform",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistrationPerform",
           "line": 362,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Kernel.eraseServiceRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
@@ -328492,14 +328492,14 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeServiceByRecordedCode_of_admitted",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode_of_admitted",
+          "name": "revokeServiceByRecordedRegistration_of_admitted",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration_of_admitted",
           "line": 376,
           "called": [
             "SeLe4n.Kernel.recordedRegistrationPresent",
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
-            "SeLe4n.Kernel.revokeServiceByRecordedCodePerform",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistrationPerform",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
             "SeLe4n.ServiceId"
@@ -328507,12 +328507,12 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeServiceByRecordedCode_ok",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode_ok",
+          "name": "revokeServiceByRecordedRegistration_ok",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration_ok",
           "line": 394,
           "called": [
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getObject?",
             "SeLe4n.ObjId"
@@ -328520,13 +328520,13 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeServiceByRecordedCode_revokeService",
-          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+          "name": "revokeServiceByRecordedRegistration_revokeService",
+          "full_name": "SeLe4n.Kernel.revokeServiceByRecordedRegistration_revokeService",
           "line": 408,
           "called": [
             "SeLe4n.Kernel.revokeService",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode_ok",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration_ok",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
           ]
@@ -328651,12 +328651,12 @@
         },
         {
           "kind": "theorem",
-          "name": "clearEndpointServiceCode_cases",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode_cases",
+          "name": "clearEndpointRegistration_cases",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration_cases",
           "line": 531,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
@@ -328664,11 +328664,11 @@
         },
         {
           "kind": "theorem",
-          "name": "clearEndpointServiceCode_scheduler",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode_scheduler",
+          "name": "clearEndpointRegistration_scheduler",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration_scheduler",
           "line": 548,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
@@ -328681,7 +328681,7 @@
           "line": 554,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
@@ -328709,7 +328709,7 @@
           "full_name": "SeLe4n.Kernel.revokeService_preserves_scheduler",
           "line": 579,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode_scheduler",
+            "SeLe4n.Kernel.clearEndpointRegistration_scheduler",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_ok",
             "SeLe4n.Model.SystemState",
@@ -328718,11 +328718,11 @@
         },
         {
           "kind": "theorem",
-          "name": "clearEndpointServiceCode_eq_withObjects",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+          "name": "clearEndpointRegistration_eq_withObjects",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
           "line": 587,
           "called": [
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ServiceId"
@@ -328730,14 +328730,14 @@
         },
         {
           "kind": "theorem",
-          "name": "clearEndpointServiceCode_objects_none_iff",
-          "full_name": "SeLe4n.Kernel.clearEndpointServiceCode_objects_none_iff",
+          "name": "clearEndpointRegistration_objects_none_iff",
+          "full_name": "SeLe4n.Kernel.clearEndpointRegistration_objects_none_iff",
           "line": 594,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne",
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.clearEndpointServiceCode",
+            "SeLe4n.Kernel.clearEndpointRegistration",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
@@ -328752,7 +328752,7 @@
           "line": 609,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
-            "SeLe4n.Kernel.clearEndpointServiceCode_eq_withObjects",
+            "SeLe4n.Kernel.clearEndpointRegistration_eq_withObjects",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_ok",
             "SeLe4n.Model.SystemState",
@@ -328767,7 +328767,7 @@
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.clearEndpointServiceCode_objects_none_iff",
+            "SeLe4n.Kernel.clearEndpointRegistration_objects_none_iff",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_ok",
             "SeLe4n.Model.SystemState",
@@ -328794,8 +328794,8 @@
         },
         {
           "kind": "def",
-          "name": "ServiceCodeRewrite",
-          "full_name": "SeLe4n.Kernel.ServiceCodeRewrite",
+          "name": "RegistrationFlagRewrite",
+          "full_name": "SeLe4n.Kernel.RegistrationFlagRewrite",
           "line": 641,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
@@ -328806,11 +328806,11 @@
         },
         {
           "kind": "theorem",
-          "name": "registerService_serviceCodeRewrite",
-          "full_name": "SeLe4n.Kernel.registerService_serviceCodeRewrite",
+          "name": "registerService_registrationFlagRewrite",
+          "full_name": "SeLe4n.Kernel.registerService_registrationFlagRewrite",
           "line": 645,
           "called": [
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Kernel.registerService",
             "SeLe4n.Kernel.registerService_ok",
             "SeLe4n.Model.ServiceRegistration",
@@ -328819,12 +328819,12 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeService_serviceCodeRewrite",
-          "full_name": "SeLe4n.Kernel.revokeService_serviceCodeRewrite",
+          "name": "revokeService_registrationFlagRewrite",
+          "full_name": "SeLe4n.Kernel.revokeService_registrationFlagRewrite",
           "line": 651,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.erase",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.Kernel.revokeService",
             "SeLe4n.Kernel.revokeService_ok",
             "SeLe4n.Model.SystemState",
@@ -328833,37 +328833,37 @@
         },
         {
           "kind": "theorem",
-          "name": "ServiceCodeRewrite.lookup",
-          "full_name": "SeLe4n.Kernel.ServiceCodeRewrite.lookup",
+          "name": "RegistrationFlagRewrite.lookup",
+          "full_name": "SeLe4n.Kernel.RegistrationFlagRewrite.lookup",
           "line": 662,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne",
             "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.ObjId",
             "SeLe4n.RHTable_getElem?_eq_get?"
           ]
         },
         {
           "kind": "theorem",
-          "name": "ServiceCodeRewrite.invExt",
-          "full_name": "SeLe4n.Kernel.ServiceCodeRewrite.invExt",
+          "name": "RegistrationFlagRewrite.invExt",
+          "full_name": "SeLe4n.Kernel.RegistrationFlagRewrite.invExt",
           "line": 676,
           "called": [
-            "SeLe4n.Kernel.ServiceCodeRewrite"
+            "SeLe4n.Kernel.RegistrationFlagRewrite"
           ]
         },
         {
           "kind": "theorem",
-          "name": "ServiceCodeRewrite.size_le",
-          "full_name": "SeLe4n.Kernel.ServiceCodeRewrite.size_le",
+          "name": "RegistrationFlagRewrite.size_le",
+          "full_name": "SeLe4n.Kernel.RegistrationFlagRewrite.size_le",
           "line": 682,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.RobinHood.RHTable.size_insert_le_of_get?",
-            "SeLe4n.Kernel.ServiceCodeRewrite",
+            "SeLe4n.Kernel.RegistrationFlagRewrite",
             "SeLe4n.RHTable_getElem?_eq_get?"
           ]
         }
@@ -371650,8 +371650,8 @@
         },
         {
           "kind": "theorem",
-          "name": "objTableBackLinks_code_succ",
-          "full_name": "SeLe4n.Model.objTableBackLinks_code_succ",
+          "name": "objTableBackLinks_registered",
+          "full_name": "SeLe4n.Model.objTableBackLinks_registered",
           "line": 94,
           "called": [
             "SeLe4n.Model.KernelObject",
@@ -381206,7 +381206,7 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.default_tableReferencesRecorded",
             "SeLe4n.Model.SystemState.tableReferencesRecorded",
-            "SeLe4n.Model.objTableBackLinks_code_succ",
+            "SeLe4n.Model.objTableBackLinks_registered",
             "SeLe4n.Model.objTableBackLinks_some",
             "SeLe4n.ObjId",
             "SeLe4n.Platform.Boot.PlatformConfig",
@@ -400278,10 +400278,10 @@
             "SeLe4n.Kernel.endpointReceiveDual",
             "SeLe4n.Kernel.endpointSendDualChecked",
             "SeLe4n.Kernel.harnessLabelingContext",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.registerInterface",
             "SeLe4n.Kernel.registerService",
-            "SeLe4n.Kernel.revokeServiceByRecordedCode",
+            "SeLe4n.Kernel.revokeServiceByRecordedRegistration",
             "SeLe4n.MachineState.regs",
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.Model.AccessRightSet.singleton",
@@ -421284,7 +421284,7 @@
           "line": 3529,
           "called": [
             "SeLe4n.InterfaceId",
-            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedRegistration",
             "SeLe4n.Kernel.registerInterface",
             "SeLe4n.Kernel.registerService",
             "SeLe4n.Kernel.revokeService",

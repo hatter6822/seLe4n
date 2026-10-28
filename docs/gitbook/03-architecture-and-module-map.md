@@ -441,7 +441,7 @@ and its non-interference status are in
 
 - `SeLe4n/Kernel/Service/Operations.lean` (re-export hub)
   - `Registry.lean` — `registerService`, `revokeService` and the lookups
-    (`lookupServiceByRecordedCode`, which the kernel runs, and the
+    (`lookupServiceByRecordedRegistration`, which the kernel runs, and the
     specification fold `lookupServiceByCap`).
 - `SeLe4n/Kernel/Service/Interface.lean` — the registry's types
   (`ServiceRegistration`, interface specifications), imported by the model.
