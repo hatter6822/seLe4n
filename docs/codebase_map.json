@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "za/service-registry-table-retired",
-      "commit_sha": "5708c11681a4fa4ce91ddb9d1d343b079fb19594",
-      "tree_sha": "4bea2c29b341ffa57e5346017dda6f4b747280c8",
-      "committed_at_utc": "2026-10-28T08:45:20+00:00"
+      "branch": "main",
+      "commit_sha": "5a2dd47748ca608bb9d5aa58fd9fa88b8b3755c1",
+      "tree_sha": "490598edfcf15a2cddfd825c12ec77510f179369",
+      "committed_at_utc": "2026-10-28T13:47:11-04:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5ece0b781e1c219ced7a1299e9a7071a00db6998712ff9d548b9b2e0950fc283"
+    "source_digest": "aa608741a18ca7eb6bfd510bbb050080d1bdade11ca17eafba7be55e886549bc"
   },
   "summary": {
     "module_count": 547,
@@ -29,7 +29,7 @@
     "production_files": 477,
     "production_loc": 522284,
     "test_files": 70,
-    "test_loc": 87396,
+    "test_loc": 87401,
     "proved_theorem_lemma_decls": 19182,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -406859,6 +406859,7 @@
             "SeLe4n.Kernel.fieldsDisjoint",
             "SeLe4n.Kernel.ipcEndpointOp_modifiedFields",
             "SeLe4n.Kernel.noStaleEndpointQueueReferences_fields",
+            "SeLe4n.Kernel.registerInterface_modifiedFields",
             "SeLe4n.Kernel.registryInterfaceValid_fields",
             "SeLe4n.Kernel.revokeService_modifiedFields",
             "SeLe4n.Kernel.storeObject_modifiedFields",
@@ -406870,7 +406871,7 @@
           "kind": "def",
           "name": "writeSetSurfaceElaborates",
           "full_name": "SeLe4n.Testing.CrossSubsystemPerCore.writeSetSurfaceElaborates",
-          "line": 592,
+          "line": 597,
           "called": [
             "SeLe4n.Kernel.SystemState.eq_of_fieldEq_all",
             "SeLe4n.Kernel.cspaceCopy_preservesFieldsOutside",
@@ -406888,7 +406889,7 @@
           "kind": "def",
           "name": "runCrossSubsystemPerCoreChecks",
           "full_name": "SeLe4n.Testing.CrossSubsystemPerCore.runCrossSubsystemPerCoreChecks",
-          "line": 604,
+          "line": 609,
           "called": [
             "SeLe4n.Testing.CrossSubsystemPerCore.assertBool",
             "SeLe4n.Testing.CrossSubsystemPerCore.runArchitectureChecks",
@@ -406908,7 +406909,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 624,
+          "line": 629,
           "called": [
             "SeLe4n.Testing.CrossSubsystemPerCore.runCrossSubsystemPerCoreChecks"
           ]
