@@ -135,11 +135,11 @@ by its own call; the cells left are the registration's own. -/
 def registerServicePerformImpl (st : SystemState) (reg : ServiceRegistration) : SystemState :=
   match reg.endpointCap.target with
   | .object epId =>
-    match st.objects[epId]? with
-    | some (.endpoint _) =>
+    match st.getEndpoint? epId with
+    | some _ =>
       insertServiceRegistration
         (st.modifyObject epId (setServiceCodeObject (reg.sid.val + 1))) reg
-    | _ => st
+    | none => st
   | _ => st
 
 @[csimp] theorem registerServicePerform_eq_impl :
@@ -151,7 +151,7 @@ def registerServicePerformImpl (st : SystemState) (reg : ServiceRegistration) : 
     split
     · next ep h =>
       have h' : st.objects[epId]? = some (.endpoint ep) := h
-      rw [h']
+      rw [(SystemState.getEndpoint?_eq_some_iff st epId ep).mpr h']
       dsimp only
       unfold insertServiceRegistration SystemState.rewriteObject SystemState.modifyObject
       rw [RHTable.modify_of_get? h']
@@ -159,7 +159,7 @@ def registerServicePerformImpl (st : SystemState) (reg : ServiceRegistration) : 
     · next hN =>
       have hN' : ∀ ep, st.objects[epId]? ≠ some (.endpoint ep) := hN
       split
-      · next ep h => exact absurd h (hN' ep)
+      · next ep h => exact absurd ((SystemState.getEndpoint?_eq_some_iff st epId ep).mp h) (hN' ep)
       · rfl
   all_goals rfl
 
@@ -275,10 +275,10 @@ def clearEndpointServiceCodeImpl (st : SystemState) (cap : Capability) (sid : Se
     SystemState :=
   match cap.target with
   | .object e =>
-    match st.objects[e]? with
-    | some (.endpoint ep) =>
+    match st.getEndpoint? e with
+    | some ep =>
       if ep.serviceCode = sid.val + 1 then st.modifyObject e (setServiceCodeObject 0) else st
-    | _ => st
+    | none => st
   | _ => st
 
 @[csimp] theorem clearEndpointServiceCode_eq_impl :
@@ -290,7 +290,7 @@ def clearEndpointServiceCodeImpl (st : SystemState) (cap : Capability) (sid : Se
     split
     · next ep h =>
       have h' : st.objects[e]? = some (.endpoint ep) := h
-      rw [h']
+      rw [(SystemState.getEndpoint?_eq_some_iff st e ep).mpr h']
       dsimp only
       split
       · unfold SystemState.rewriteObject SystemState.modifyObject
@@ -300,7 +300,7 @@ def clearEndpointServiceCodeImpl (st : SystemState) (cap : Capability) (sid : Se
     · next hN =>
       have hN' : ∀ ep, st.objects[e]? ≠ some (.endpoint ep) := hN
       split
-      · next ep h => exact absurd h (hN' ep)
+      · next ep h => exact absurd ((SystemState.getEndpoint?_eq_some_iff st e ep).mp h) (hN' ep)
       · rfl
   all_goals rfl
 
