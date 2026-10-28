@@ -1771,9 +1771,6 @@ theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp
 @[simp] theorem cdtAddChild_declassificationRefusals (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).declassificationRefusals = st.declassificationRefusals := by rw [cdtAddChild_fields]
 
-@[simp] theorem cdtAddChild_declassificationTaint (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).declassificationTaint = st.declassificationTaint := by rw [cdtAddChild_fields]
-
 theorem cdtAddChild_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (p c : SlotRef) (op : DerivationOp) :
     objectsAgreeOffDerivationLinks (st.cdtAddChild p c op) st ∧ (st.cdtAddChild p c op).objects.invExt :=
   ⟨(cdtAddChild_reach st p c op).agree hInv, (cdtAddChild_reach st p c op).invExt hInv⟩
@@ -1836,9 +1833,6 @@ theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
 @[simp] theorem cdtSplice_declassificationRefusals (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).declassificationRefusals = st.declassificationRefusals := by rw [cdtSplice_fields]
 
-@[simp] theorem cdtSplice_declassificationTaint (st : SystemState) (n : SlotRef) :
-    (st.cdtSplice n).declassificationTaint = st.declassificationTaint := by rw [cdtSplice_fields]
-
 theorem cdtSplice_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (n : SlotRef) :
     objectsAgreeOffDerivationLinks (st.cdtSplice n) st ∧ (st.cdtSplice n).objects.invExt :=
   ⟨(cdtSplice_reach st n).agree hInv, (cdtSplice_reach st n).invExt hInv⟩
@@ -1900,9 +1894,6 @@ theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
 
 @[simp] theorem cdtMove_declassificationRefusals (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).declassificationRefusals = st.declassificationRefusals := by rw [cdtMove_fields]
-
-@[simp] theorem cdtMove_declassificationTaint (st : SystemState) (old new : SlotRef) :
-    (st.cdtMove old new).declassificationTaint = st.declassificationTaint := by rw [cdtMove_fields]
 
 theorem cdtMove_agreeObjects {st : SystemState} (hInv : st.objects.invExt) (old new : SlotRef) :
     objectsAgreeOffDerivationLinks (st.cdtMove old new) st ∧ (st.cdtMove old new).objects.invExt :=

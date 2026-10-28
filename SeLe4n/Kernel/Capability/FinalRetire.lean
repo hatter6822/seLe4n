@@ -747,37 +747,19 @@ theorem mem_retiredChildren {st : SystemState} {x : SeLe4n.ObjId} {c : UntypedCh
     rw [hX] at h
     exact (childListRecords_iff _ _).mpr ⟨c, h, rfl⟩
 
-/-- **The declassification provenance of `x` forgotten** (`TaintTable.clearAt`):
-a removed object's id leaves the taint table with it, so a later carve at that
-id starts with none (seL4 has no such table; the clear is what keeps the model's
-detector from reporting a link through a destroyed object). -/
-@[inline] def withTaintCleared (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
-  { st with declassificationTaint := st.declassificationTaint.clearAt x }
-
-@[simp] theorem withTaintCleared_objects (st : SystemState) (x : SeLe4n.ObjId) :
-    (withTaintCleared st x).objects = st.objects := rfl
-@[simp] theorem withTaintCleared_scheduler (st : SystemState) (x : SeLe4n.ObjId) :
-    (withTaintCleared st x).scheduler = st.scheduler := rfl
-@[simp] theorem withTaintCleared_machine (st : SystemState) (x : SeLe4n.ObjId) :
-    (withTaintCleared st x).machine = st.machine := rfl
-@[simp] theorem withTaintCleared_cdt (st : SystemState) (x : SeLe4n.ObjId) :
-    (withTaintCleared st x).cdt = st.cdt := rfl
-@[simp] theorem withTaintCleared_asidTable (st : SystemState) (x : SeLe4n.ObjId) :
-    (withTaintCleared st x).asidTable = st.asidTable := rfl
-@[simp] theorem withTaintCleared_declassificationTaint (st : SystemState) (x : SeLe4n.ObjId) :
-    (withTaintCleared st x).declassificationTaint = st.declassificationTaint.clearAt x := rfl
-
 /-- **The retire after the passive erase**: `x` leaves the child list of its
 recorder (`recorder`, a word as `slotRetireRecorder` reads it), the recorder
 adopting `x`'s own children (`retireUnrecord`), a carved `x`
-leaves the store, a root's ASID gets its acknowledged round, and `x`'s
-declassification provenance is cleared (`withTaintCleared`). -/
+leaves the store, and a root's ASID gets its acknowledged round.  `x`'s
+declassification provenance leaves with it: a thread or a notification at `x`
+is an erasable kind, so the passive erase takes its taint words out
+(`retireFinalObject_taint_cleared`). -/
 def retireRecordedObject (executingCore : Concurrency.CoreId) (recorder : Nat) (x : SeLe4n.ObjId)
     (st : SystemState) : SystemState :=
   let st1 := retireUnrecord recorder x st
   match st1.getVSpaceRoot? x with
-  | some root => withTaintCleared (asidReleaseRound executingCore root.asid (retireCarvedObject st1 x)) x
-  | none => withTaintCleared (retireCarvedObject st1 x) x
+  | some root => asidReleaseRound executingCore root.asid (retireCarvedObject st1 x)
+  | none => retireCarvedObject st1 x
 
 /-- **Retire what a final delete destroyed** (`target`, `recorder`: the words
 `slotRetireTarget` and `slotRetireRecorder` read before the slot was emptied):
@@ -1431,10 +1413,10 @@ theorem retireRecordedObject_frame (ec : Concurrency.CoreId) (recorder : Nat) (x
       fun oid => ?_⟩
     rw [hO]; exact hW oid
   split
-  · exact hAll _ ((withTaintCleared_objects _ _).trans (asidReleaseRound_objects _ _ _))
-      ((withTaintCleared_scheduler _ _).trans (asidReleaseRound_scheduler _ _ _))
-      ((withTaintCleared_machine _ _).trans (asidReleaseRound_machine _ _ _))
-      ((withTaintCleared_cdt _ _).trans (asidReleaseRound_cdt _ _ _))
+  · exact hAll _ ((asidReleaseRound_objects _ _ _))
+      ((asidReleaseRound_scheduler _ _ _))
+      ((asidReleaseRound_machine _ _ _))
+      ((asidReleaseRound_cdt _ _ _))
   · exact hAll _ rfl rfl rfl rfl
 
 /-- **The retire's frame**: the table keeps its invariant; the scheduler, the
@@ -1581,10 +1563,9 @@ theorem retireRecordedObject_unrecorded (ec : Concurrency.CoreId) (recorder : Na
       exact h1 u U' hu
   split
   · intro u U' hu
-    rw [withTaintCleared_objects, asidReleaseRound_objects] at hu
+    rw [asidReleaseRound_objects] at hu
     exact hR u U' hu
   · intro u U' hu
-    rw [withTaintCleared_objects] at hu
     exact hR u U' hu
 
 /-- **After the recorded retire `x` is no untyped**: an untyped is carved, and
@@ -1604,8 +1585,8 @@ theorem retireRecordedObject_target_gone (ec : Concurrency.CoreId) (recorder : N
       rw [hu] at this; cases this
     · rw [hn] at hu; cases hu
   split
-  · rw [withTaintCleared_objects, asidReleaseRound_objects]; exact hX
-  · rw [withTaintCleared_objects]; exact hX
+  · rw [asidReleaseRound_objects]; exact hX
+  · exact hX
 
 /-- **After the retire no untyped records its target**, when the recorder word
 answers truly and at most one untyped recorded the target — or the retire
@@ -2224,16 +2205,14 @@ theorem retireRecordedObject_preserves_teardownWellFormed (ec : Concurrency.Core
   obtain ⟨hW2, hS2⟩ := retireCarvedObject_preserves_teardownWellFormed st1 x hW1 hRoom1
   split
   · refine ⟨teardownWellFormed_of_tables_eq
-      ((withTaintCleared_objects _ _).trans (asidReleaseRound_objects _ _ _))
-      ((withTaintCleared_asidTable _ _).trans (asidReleaseRound_asidTable _ _ _)) hW2, ?_⟩
+      ((asidReleaseRound_objects _ _ _))
+      ((asidReleaseRound_asidTable _ _ _)) hW2, ?_⟩
     refine hS1'.trans (hS2.trans ?_)
     intro oid r' h'
-    rw [withTaintCleared_objects, asidReleaseRound_objects] at h'
+    rw [asidReleaseRound_objects] at h'
     exact ⟨r', h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
-  · refine ⟨teardownWellFormed_of_tables_eq (withTaintCleared_objects _ _)
-      (withTaintCleared_asidTable _ _) hW2, hS1'.trans (hS2.trans ?_)⟩
+  · refine ⟨teardownWellFormed_of_tables_eq rfl rfl hW2, hS1'.trans (hS2.trans ?_)⟩
     intro oid r' h'
-    rw [withTaintCleared_objects] at h'
     exact ⟨r', h', rfl, fun _ _ hm => hm, fun _ _ he => he, fun _ hs => hs⟩
 
 /-- **The passive erase keeps the teardown's state well formed and keeps every
@@ -2300,40 +2279,11 @@ theorem retireRecordedObject_fields (ec : Concurrency.CoreId) (recorder : Nat) (
   generalize retireUnrecord recorder x st = st1 at h1
   obtain ⟨s2, m2, c2⟩ := retireCarvedObject_scheduler_machine_cdt st1 x
   split
-  · rw [withTaintCleared_cdt, withTaintCleared_scheduler, withTaintCleared_machine,
-      asidReleaseRound_cdt, asidReleaseRound_scheduler, asidReleaseRound_machine,
+  · rw [asidReleaseRound_cdt, asidReleaseRound_scheduler, asidReleaseRound_machine,
       c2, s2, m2]
     exact h1
-  · rw [withTaintCleared_cdt, withTaintCleared_scheduler, withTaintCleared_machine, c2, s2, m2]
+  · rw [c2, s2, m2]
     exact h1
-
-/-- **The recorded retire forgets the retired object's declassification
-provenance**: the id it frees carries no taint afterwards, so an object a later
-carve puts at it inherits none (`withTaintCleared`). -/
-theorem retireRecordedObject_taint_cleared (ec : Concurrency.CoreId) (recorder : Nat)
-    (x : SeLe4n.ObjId) (st : SystemState) :
-    (retireRecordedObject ec recorder x st).declassificationTaint x =
-      DeclassificationTaint.empty := by
-  unfold retireRecordedObject
-  dsimp only
-  split <;> exact TaintTable.clearAt_self _ _
-
-/-- **A retire either writes nothing or clears its target's taint**: when it
-retires, the id it frees carries no declassification provenance. -/
-theorem retireFinalObject_taint_cleared (ec : Concurrency.CoreId) (target recorder : Nat)
-    (st : SystemState) :
-    retireFinalObject ec target recorder st = st ∨
-      (retireFinalObject ec target recorder st).declassificationTaint
-        (SeLe4n.ObjId.ofNat (target - 1)) = DeclassificationTaint.empty := by
-  unfold retireFinalObject
-  split
-  · exact .inl rfl
-  · split
-    · dsimp only
-      split
-      · exact .inr (retireRecordedObject_taint_cleared _ _ _ _)
-      · exact .inl rfl
-    · exact .inl rfl
 
 /-- **The retire writes no derivation edge, no scheduler and no machine
 state.** -/
@@ -2381,15 +2331,12 @@ theorem retireUnrecord_referenceTables (recorder : Nat) (x : SeLe4n.ObjId) (st :
   · exact hR _ st
   · rw [storeUntypedWith_referenceTables, hR]
 
-/-- **The retire writes no interrupt table, and clears its target's taint
-entry, or writes nothing**: it erases objects and rewrites untypeds' records, and
-forgets the provenance of the object it retires (`withTaintCleared`). -/
+/-- **The retire writes no interrupt table, or writes nothing**: it erases
+objects and rewrites untypeds' records. -/
 theorem retireFinalObject_referenceTables (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) :
     retireFinalObject ec target recorder st = st ∨
     ((retireFinalObject ec target recorder st).irqHandlers = st.irqHandlers ∧
-     (retireFinalObject ec target recorder st).declassificationTaint =
-       st.declassificationTaint.clearAt (SeLe4n.ObjId.ofNat (target - 1)) ∧
      target ≠ 0 ∧ st.objects.size < st.objects.capacity ∧
      finalRetireAdmitted st (SeLe4n.ObjId.ofNat (target - 1)) = true ∧
      retireFinalObject ec target recorder st =
@@ -2407,21 +2354,12 @@ theorem retireFinalObject_referenceTables (ec : Concurrency.CoreId) (target reco
     dsimp only
     split
     · next hAdm =>
-      refine .inr ⟨?_, ?_, hT, hSz, hAdm, rfl⟩
-      · unfold retireRecordedObject
-        dsimp only
-        split
-        · exact congrArg Prod.fst
-            ((hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _)))
-        · exact congrArg Prod.fst
-            ((hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _)))
-      · unfold retireRecordedObject
-        dsimp only
-        split
-        · exact congrArg (TaintTable.clearAt · _) (congrArg Prod.snd
-            ((hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _))))
-        · exact congrArg (TaintTable.clearAt · _) (congrArg Prod.snd
-            ((hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _))))
+      refine .inr ⟨?_, hT, hSz, hAdm, rfl⟩
+      unfold retireRecordedObject
+      dsimp only
+      split
+      · exact (hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _))
+      · exact (hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _))
     · exact .inl rfl
   · exact .inl rfl
 
@@ -2484,32 +2422,45 @@ theorem retireFinalObject_target_taint_empty (ec : Concurrency.CoreId) (recorder
   · exact absurd rfl hne
 
 /-- **The retire keeps the table references recorded**: it writes no interrupt
-table, keeps every object's interrupt back-link and service record, rewrites no
-thread's or notification's taint words but its target's, which it erases, and
-clears its target's taint entry with it. -/
+table and keeps every object's interrupt back-link and service record. -/
 theorem retireFinalObject_preserves_tableReferencesRecorded (ec : Concurrency.CoreId)
     (target recorder : Nat) (st : SystemState) (hInv : st.objects.invExt)
     (hR : st.tableReferencesRecorded) :
     (retireFinalObject ec target recorder st).tableReferencesRecorded := by
-  rcases retireFinalObject_referenceTables ec target recorder st with hEq | ⟨hI, hD, -, hSz, -, hSt⟩
+  rcases retireFinalObject_referenceTables ec target recorder st with hEq | ⟨hI, -, -, -, -⟩
   · rw [hEq]; exact hR
   have hB := retireFinalObject_serviceIrqBackLinks ec target recorder st hInv
-  refine ⟨fun irq n h => ?_, fun n h => ?_, fun k => ?_⟩
+  refine ⟨fun irq n h => ?_, fun n h => ?_⟩
   · rw [hI] at h
     have := congrArg Prod.snd (hB n); simp only at this
     rw [this]; exact hR.irqHandlers irq n h
   · have := congrArg Prod.snd (hB n); simp only at this
     rw [this] at h; rw [hI]; exact hR.irqBound n h
-  · rw [hD]
-    by_cases hk : k = SeLe4n.ObjId.ofNat (target - 1)
-    · subst hk
-      rw [TaintTable.clearAt_self, hSt, retireFinalObject_target_taint_empty ec recorder _ st hInv hSz]
-    · rw [TaintTable.clearAt_ne _ hk, hR.taintStored k]
-      rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 k with
-        e | ⟨hxo, -, -⟩ | ⟨U, U', -, hU, hU', -⟩
-      · rw [e]
-      · exact absurd hxo hk
-      · rw [hU, hU']; rfl
+
+/-- **The retire forgets its target's declassification provenance and keeps
+every other object's**, or writes nothing: a thread or a notification at the
+target is an erasable kind, so the passive erase takes its taint words out
+(`retireFinalObject_target_taint_empty`), and the retire rewrites no other
+thread's or notification's words.  So the id it frees carries no taint, and an
+object a later carve puts there inherits none. -/
+theorem retireFinalObject_taint_cleared (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    retireFinalObject ec target recorder st = st ∨
+      (retireFinalObject ec target recorder st).declassificationTaint =
+        st.declassificationTaint.clearAt (SeLe4n.ObjId.ofNat (target - 1)) := by
+  rcases retireFinalObject_referenceTables ec target recorder st with hEq | ⟨-, -, hSz, -, hSt⟩
+  · exact .inl hEq
+  refine .inr (funext fun k => ?_)
+  by_cases hk : k = SeLe4n.ObjId.ofNat (target - 1)
+  · subst hk
+    rw [TaintMap.clearAt_self, SystemState.taintStored, hSt,
+      retireFinalObject_target_taint_empty ec recorder _ st hInv hSz]
+  · rw [TaintMap.clearAt_ne _ hk, SystemState.taintStored, SystemState.taintStored]
+    rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 k with
+      e | ⟨hxo, -, -⟩ | ⟨U, U', -, hU, hU', -⟩
+    · rw [e]
+    · exact absurd hxo hk
+    · rw [hU, hU']; rfl
 
 /-- **The retire writes no derivation edge.** -/
 theorem retireFinalObject_cdt (ec : Concurrency.CoreId) (target recorder : Nat) (st : SystemState) :

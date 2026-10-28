@@ -936,7 +936,7 @@ inductive StateField where
   | perCoreTlb | perCoreICache | pendingIcacheMaintenance | physicalWrites
   | physicalWritesDrained
   | declassificationAudit
-  | declassificationRefusals | declassificationTaint
+  | declassificationRefusals
   deriving DecidableEq, Repr
 
 /-- V6-A2 + Z9-E: Field read-sets for each cross-subsystem predicate.
@@ -1269,7 +1269,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .physicalWritesDrained,      st, st' => st'.physicalWritesDrained = st.physicalWritesDrained
   | .declassificationAudit,      st, st' => st'.declassificationAudit = st.declassificationAudit
   | .declassificationRefusals,   st, st' => st'.declassificationRefusals = st.declassificationRefusals
-  | .declassificationTaint,      st, st' => st'.declassificationTaint = st.declassificationTaint
 
 /-- **`StateField` is total over `SystemState`** (WS-RR RR7 audit round,
 v0.34.109): two states that agree on every named field are the same state.
@@ -1294,7 +1293,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .perCoreTlb, Vector.ext fun _ _ => Subsingleton.elim _ _, h .perCoreICache, h .pendingIcacheMaintenance, h .physicalWrites,
     h .physicalWritesDrained,
     h .declassificationAudit,
-    h .declassificationRefusals, h .declassificationTaint⟩
+    h .declassificationRefusals⟩
 
 /-- **WS-RR RR7.19**: `st'` differs from `st` in no field outside `fs`.
 

@@ -1018,7 +1018,7 @@ downgrade behind it would record no predecessor.  That is a *missed* chain, the
 direction a detector must never err in, so the clear is restricted to the
 ordering where delivery provably empties the object.  On the bound path with no
 badge stored the clear would have been a no-op anyway
-(`TaintTable.clearAt_eq_of_empty`), so nothing is lost by omitting it.
+(`TaintMap.clearAt_eq_of_empty`), so nothing is lost by omitting it.
 
 **The parked waiter is deliberately not cleared either.**  `notificationWait`
 against an *idle* notification parks the caller and discards the
@@ -1135,12 +1135,12 @@ the tie that lets a consumer read either one. -/
 
 /-- WS-SM SM9.D.8: apply the declared flows, reading every source from the
 **pre**-state table so the update is simultaneous rather than order-dependent. -/
-def applyTaintFlow (pre : TaintTable) (edges : List TaintFlowEdge) (tbl : TaintTable) :
-    TaintTable :=
+def applyTaintFlow (pre : TaintMap) (edges : List TaintFlowEdge) (tbl : TaintMap) :
+    TaintMap :=
   edges.foldl (fun t e => t.joinAt e.sink (pre e.source)) tbl
 
 /-- WS-SM SM9.D.12: forget the provenance of every destroyed object. -/
-def applyTaintClears (cleared : List SeLe4n.ObjId) (tbl : TaintTable) : TaintTable :=
+def applyTaintClears (cleared : List SeLe4n.ObjId) (tbl : TaintMap) : TaintMap :=
   cleared.foldl (fun t o => t.clearAt o) tbl
 
 /-- WS-SM SM9.D.13a: **the events this syscall recorded**, recovered from the
@@ -1281,8 +1281,22 @@ def originationTags (noRelease : List SeLe4n.ObjId)
     else [(e.targetObject, e.timestamp), (e.sourceSubject, e.timestamp)]
 
 /-- WS-SM SM9.D.13a: apply the origination tags. -/
-def applyOrigination (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable) : TaintTable :=
+def applyOrigination (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintMap) : TaintMap :=
   origins.foldl (fun t p => t.joinAt p.1 (DeclassificationTaint.singleton p.2)) tbl
+
+/-- WS-ZA ZA5.12: the origination seed at a key reads the map it seeds only at
+that key. -/
+theorem applyOrigination_congr_at {P Q : TaintMap} {k : SeLe4n.ObjId} :
+    ∀ (origins : List (SeLe4n.ObjId × Nat)), P k = Q k →
+      applyOrigination origins P k = applyOrigination origins Q k
+  | [], h => h
+  | p :: rest, h => by
+      unfold applyOrigination
+      rw [List.foldl_cons, List.foldl_cons]
+      refine applyOrigination_congr_at (P := P.joinAt p.1 _) (Q := Q.joinAt p.1 _) rest ?_
+      by_cases hk : k = p.1
+      · subst hk; rw [TaintMap.joinAt_self, TaintMap.joinAt_self, h]
+      · rw [TaintMap.joinAt_ne _ hk, TaintMap.joinAt_ne _ hk, h]
 
 /-- WS-SM SM9.D.13a: **the diff, taken only when the syscall could have appended.**
 
@@ -1335,23 +1349,27 @@ theorem planOriginationTags_eq_of_no_events (plan : TaintPlan) (pre post : Syste
   | true => rfl
   | false => rw [h hp]; simp [originationTags]
 
-/-! ### WS-ZA ZA5.11: the step, its guard and its word writes
+/-! ### WS-ZA ZA5.11 / ZA5.12: the step, its guard and its word writes
 
 The taint lives in the object it describes: a thread's or a notification's
-taint words (`TCB.taintWords`, `Notification.taintWords`).  For ZA5.11 the
-table is kept beside the words as a deliberate second copy, held equal by
-`SystemState.tableReferencesRecorded.taintStored`; the step therefore writes
-both, the table first and then the words of every key whose entry moved.
+taint words (`TCB.taintWords`, `Notification.taintWords`), and since ZA5.12 it
+lives nowhere else — `SystemState.declassificationTaint` reads it off the
+store.  The step is a fold of per-key joins and clears on the words, each
+written in the key's slot (`RHTable.mapValueAt`): a join's words are the join
+of the slot's words and the source's (`KernelObject.joinTaintWords`, compiled
+on scalars, `TaintWords.join_eq_flat`), a clear writes the carved words.  A
+join whose source words name no provenance and a clear of words naming none
+are elided before anything else is read, so a step with nothing to move is the
+identity and an untainted IPC writes nothing.
 
 **The guard.**  Content only lives in a holder — a thread's `pendingMessage` or
 a notification's badge (`contentTrackedFields`) — so a flow or an origination
 whose key the committed state does not hold as a thread or a notification
-lands on nothing.  The step drops it (`liveTaintEdges`,
-`liveOriginationTags`) rather than tag a dead key, which keeps the agreement
-exact: a key with no holder reads the empty taint, both in the table and through
-the words, so an id carved again starts clean.  `taintHolderAt_false_no_content`
-is the companion that says a dropped key holds no tracked content. -/
-
+lands on nothing: the slot write leaves every other kind as it is
+(`KernelObject.withTaintWords`), and a key with no object is not written.  A
+key with no holder reads the empty taint, so an id carved again starts clean.
+`taintHolderAt_false_no_content` is the companion that says such a key holds
+no tracked content. -/
 /-- WS-ZA ZA5.11: **the committed state holds taint words at `k`** — a thread or
 a notification is stored there.  A kind-agnostic read (`getObject?`); compiled,
 the lookup's `some` meets the match and is never built. -/
@@ -1400,164 +1418,230 @@ theorem liveTaintEdges_mem_or_no_content (post : SystemState) {edges : List Tain
   | true => exact .inl (List.mem_filter.mpr ⟨h, hL⟩)
   | false => exact .inr (taintHolderAt_false_no_content hL)
 
-/-- WS-ZA ZA5.11: **the table the step writes**: flows (sources read from the
-origination-seeded pre-table), then clears, then origination — the flows and
+/-- WS-ZA ZA5.11: **the taint the step leaves**: flows (sources read from the
+origination-seeded pre-state taint), then clears, then origination — the flows and
 the originations on the keys the committed state holds as a thread or a
 notification (the guard). -/
 def taintStepTable (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
-    (preTaint : TaintTable) (post : SystemState) : TaintTable :=
+    (preTaint : TaintMap) (post : SystemState) : TaintMap :=
   applyOrigination (liveOriginationTags plan post origins)
     (applyTaintClears plan.cleared
       (applyTaintFlow (applyOrigination origins preTaint)
         (liveTaintEdges post plan.edges) post.declassificationTaint))
 
-/-- WS-ZA ZA5.11: **one key's words written in its slot**: the object's taint
-words become `T`'s, by the store's in-place slot write (`RHTable.mapValueAt`,
-the run queue's link write) — no probe for a free slot, no resize, and a frame
-that holds on every table.  An absent key and a kind holding no words are left
-as they are (`KernelObject.withTaintWords`). -/
-@[inline] def _root_.SeLe4n.Model.SystemState.writeTaintWordsAt (s : SystemState)
-    (k : SeLe4n.ObjId) (T : DeclassificationTaint) : SystemState :=
-  { s with objects := s.objects.mapValueAt k (·.withTaintWords T.toWords) }
+/-- WS-ZA ZA5.11: **one key's slot rewritten in place** by `f`, the store's
+in-place slot write (`RHTable.mapValueAt`, the run queue's link write) — no
+probe for a free slot, no resize, and a frame that holds on every table.  An
+absent key is left as it is. -/
+@[inline] def _root_.SeLe4n.Model.SystemState.mapObjectAt (s : SystemState)
+    (k : SeLe4n.ObjId) (f : KernelObject → KernelObject) : SystemState :=
+  { s with objects := s.objects.mapValueAt k f }
 
-/-- One word write, at every key: the key it names is its object with the new
-words, every other key is as it was — on every table. -/
-theorem _root_.SeLe4n.Model.SystemState.writeTaintWordsAt_objects (s : SystemState)
-    (k j : SeLe4n.ObjId) (T : DeclassificationTaint) :
-    (s.writeTaintWordsAt k T).objects[j]? =
-      (if k = j then (s.objects[j]?).map (·.withTaintWords T.toWords) else s.objects[j]?) := by
-  unfold SystemState.writeTaintWordsAt
+/-- One slot write, at every key: the key it names is its object rewritten,
+every other key is as it was — on every table. -/
+theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_objects (s : SystemState)
+    (k j : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (s.mapObjectAt k f).objects[j]? =
+      (if k = j then (s.objects[j]?).map f else s.objects[j]?) := by
+  unfold SystemState.mapObjectAt
   simp only [RHTable_getElem?_eq_get?, SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt,
     beq_iff_eq]
 
-theorem _root_.SeLe4n.Model.SystemState.writeTaintWordsAt_invExt {s : SystemState}
-    (hInv : s.objects.invExt) (k : SeLe4n.ObjId) (T : DeclassificationTaint) :
-    (s.writeTaintWordsAt k T).objects.invExt :=
+theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_invExt {s : SystemState}
+    (hInv : s.objects.invExt) (k : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (s.mapObjectAt k f).objects.invExt :=
   SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_invExt _ _ _ hInv
 
-/-- The taint a slot reads after a word write: the written taint at a holder,
-the empty taint elsewhere. -/
-theorem objTaint_map_withTaintWords (o : Option KernelObject) (T : DeclassificationTaint) :
-    objTaint (o.map (·.withTaintWords T.toWords)) =
-      if objHoldsTaint o then T else DeclassificationTaint.empty := by
+@[simp] theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_size (s : SystemState)
+    (k : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (s.mapObjectAt k f).objects.size = s.objects.size :=
+  SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_size _ _ _
+
+/-- WS-ZA ZA5.12: **the slot's words name no provenance**, read on scalars at
+one probe (`taintEmptyAt_eq`): the clear's elision, building no words. -/
+@[inline] def taintEmptyAt (s : SystemState) (k : SeLe4n.ObjId) : Bool :=
+  match s.getObject? k with
+  | some (.tcb t) => t.taintCount == 0 && !t.taintSaturated
+  | some (.notification n) => n.taintCount == 0 && !n.taintSaturated
+  | _ => true
+
+theorem taintEmptyAt_eq (s : SystemState) (k : SeLe4n.ObjId) :
+    taintEmptyAt s k = (s.taintWordsAt k).isEmpty := by
+  unfold taintEmptyAt SystemState.taintWordsAt
+  rcases s.getObject? k with _ | o
+  · rfl
+  · cases o <;> rfl
+
+/-- The taint at a key whose words name none is the empty taint. -/
+theorem declassificationTaint_of_taintEmptyAt {s : SystemState} {k : SeLe4n.ObjId}
+    (h : taintEmptyAt s k = true) : s.declassificationTaint k = DeclassificationTaint.empty := by
+  rw [taintEmptyAt_eq] at h
+  exact (TaintWords.decode_eq_empty_iff _).mpr h
+
+/-- WS-ZA ZA5.12: **one join**: `w`'s taint joins the words at `k`, written in
+the key's slot (`KernelObject.joinTaintWords`) — a thread or a notification;
+every other kind, and an absent key, is left as it is (the guard).  The
+elision comes first: words that name no provenance read nothing and write
+nothing.  Compiled, the source words reach the slot's join as scalars
+(`KernelObject.joinTaintScalars`), so the step builds no `TaintWords`. -/
+@[inline] def joinTaintAt (s : SystemState) (k : SeLe4n.ObjId) (w : TaintWords) : SystemState :=
+  if w.isEmpty then s
+  else
+    let t0 := w.tag0
+    let t1 := w.tag1
+    let t2 := w.tag2
+    let t3 := w.tag3
+    let t4 := w.tag4
+    let t5 := w.tag5
+    let t6 := w.tag6
+    let t7 := w.tag7
+    let c := w.count
+    let sat := w.saturated
+    s.mapObjectAt k (·.joinTaintScalars t0 t1 t2 t3 t4 t5 t6 t7 c sat)
+
+/-- `joinTaintAt` read as the slot write it is. -/
+theorem joinTaintAt_eq (s : SystemState) (k : SeLe4n.ObjId) (w : TaintWords) :
+    joinTaintAt s k w = if w.isEmpty then s else s.mapObjectAt k (·.joinTaintWords w) := by
+  unfold joinTaintAt
+  rfl
+
+/-- WS-ZA ZA5.12: **one clear**: the words at `k` carved clean, elided when they
+name no provenance (`taintEmptyAt`).  A clear is not guarded: it writes the
+carved words, which a key holding none already reads. -/
+@[inline] def clearTaintAt (s : SystemState) (k : SeLe4n.ObjId) : SystemState :=
+  if taintEmptyAt s k then s else s.mapObjectAt k (·.withTaintWords {})
+
+/-- WS-ZA ZA5.12: **a join reads only what the words decode to**: two source
+words naming one taint join alike. -/
+theorem joinTaintAt_congr (s : SystemState) (k : SeLe4n.ObjId) {w v : TaintWords}
+    (h : w.decode = v.decode) : joinTaintAt s k w = joinTaintAt s k v := by
+  have hE : w.isEmpty = v.isEmpty := by
+    rw [Bool.eq_iff_iff, ← TaintWords.decode_eq_empty_iff, ← TaintWords.decode_eq_empty_iff, h]
+  rw [joinTaintAt_eq, joinTaintAt_eq, hE]
+  have hF : (fun o : KernelObject => o.joinTaintWords w) = (·.joinTaintWords v) := by
+    funext o
+    unfold KernelObject.joinTaintWords TaintWords.join
+    rw [h]
+  rw [hF]
+
+/-- WS-ZA ZA5.12: a join of a taint's own words is the join of any words naming
+it (`joinTaintAt_congr`, `DeclassificationTaint.decode_toWords`). -/
+theorem joinTaintAt_toWords (s : SystemState) (k : SeLe4n.ObjId) (w : TaintWords) :
+    joinTaintAt s k w.decode.toWords = joinTaintAt s k w :=
+  joinTaintAt_congr s k (DeclassificationTaint.decode_toWords _)
+
+/-- WS-ZA ZA5.11: **the taint step** — flows, then clears, then origination
+(the cleared and bypassed keys left out), each a join or a clear of the words
+of its key.  The flows' sources are read from `preTaint`, the pre-state's
+taint seeded with this commit's originations. -/
+def applyTaintStep (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintMap) (post : SystemState) : SystemState :=
+  let seed := applyOrigination origins preTaint
+  let s₁ := plan.edges.foldl (fun s e => joinTaintAt s e.sink (seed e.source).toWords) post
+  let s₂ := plan.cleared.foldl clearTaintAt s₁
+  (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).foldl
+    (fun s p => joinTaintAt s p.1 (TaintWords.singletonWords p.2)) s₂
+
+/-- The taint a slot reads after a join: the joined taint at a holder, the
+empty taint elsewhere. -/
+theorem objTaint_map_joinTaintWords (o : Option KernelObject) (w : TaintWords) :
+    objTaint (o.map (·.joinTaintWords w)) =
+      if objHoldsTaint o then DeclassificationTaint.join (objTaint o) w.decode
+      else DeclassificationTaint.empty := by
   cases o with
   | none => rfl
   | some o =>
     simp only [Option.map_some, objHoldsTaint_some]
     cases hH : o.holdsTaint with
     | true =>
-      show ((o.withTaintWords _).taintWords).decode = _
-      rw [KernelObject.taintWords_withTaintWords hH, DeclassificationTaint.decode_toWords]; rfl
+      show ((o.joinTaintWords w).taintWords).decode = _
+      unfold KernelObject.joinTaintWords
+      rw [KernelObject.taintWords_withTaintWords hH]
+      unfold TaintWords.join
+      rw [DeclassificationTaint.decode_toWords]
+      rfl
     | false =>
-      show ((o.withTaintWords _).taintWords).decode = _
-      rw [KernelObject.taintWords_of_not_holdsTaint (by rw [KernelObject.holdsTaint_withTaintWords]; exact hH)]
+      show ((o.joinTaintWords w).taintWords).decode = _
+      rw [KernelObject.taintWords_of_not_holdsTaint
+        (by rw [KernelObject.holdsTaint_joinTaintWords]; exact hH)]
       rfl
 
-/-- A word write keeps every key's holder probe. -/
-@[simp] theorem taintHolderAt_writeTaintWordsAt (s : SystemState) (k j : SeLe4n.ObjId)
-    (T : DeclassificationTaint) : taintHolderAt (s.writeTaintWordsAt k T) j = taintHolderAt s j := by
+/-- The taint a slot reads after the carved words are written: the empty taint. -/
+theorem objTaint_map_eraseTaint (o : Option KernelObject) :
+    objTaint (o.map (·.withTaintWords {})) = DeclassificationTaint.empty := by
+  cases o with
+  | none => rfl
+  | some o =>
+    show ((o.withTaintWords {}).taintWords).decode = _
+    cases hH : o.holdsTaint with
+    | true => rw [KernelObject.taintWords_withTaintWords hH]; rfl
+    | false =>
+      rw [KernelObject.taintWords_of_not_holdsTaint
+        (by rw [KernelObject.holdsTaint_withTaintWords]; exact hH)]
+      rfl
+
+/-- A slot write that keeps every kind keeps every key's holder probe. -/
+theorem taintHolderAt_mapObjectAt (s : SystemState) (k j : SeLe4n.ObjId)
+    {f : KernelObject → KernelObject} (hf : ∀ o, (f o).holdsTaint = o.holdsTaint) :
+    taintHolderAt (s.mapObjectAt k f) j = taintHolderAt s j := by
   unfold taintHolderAt SystemState.getObject?
-  rw [SystemState.writeTaintWordsAt_objects]
+  rw [SystemState.mapObjectAt_objects]
   split
   · cases s.objects[j]? with
     | none => rfl
-    | some o => simp only [Option.map_some, objHoldsTaint_some, KernelObject.holdsTaint_withTaintWords]
+    | some o => simp only [Option.map_some, objHoldsTaint_some, hf]
   · rfl
 
-/-- **A table entry and its words written together keep the agreement**, at a
-holder or with the empty taint. -/
-theorem tableReferencesRecorded_writeTaint {s : SystemState} (hR : s.tableReferencesRecorded)
-    (k : SeLe4n.ObjId) (V : DeclassificationTaint)
-    (hV : taintHolderAt s k = true ∨ V = DeclassificationTaint.empty) :
-    ({ s with declassificationTaint := s.declassificationTaint.set k V }.writeTaintWordsAt k V
-      ).tableReferencesRecorded := by
-  have h2 : ∀ j, (objTableBackLinks
-      ({ s with declassificationTaint := s.declassificationTaint.set k V }.writeTaintWordsAt k V
-        ).objects[j]?).2.1 = (objTableBackLinks s.objects[j]?).2.1 := fun j => by
-    rw [SystemState.writeTaintWordsAt_objects]; dsimp only; split
-    · cases s.objects[j]? <;> simp
-    · rfl
-  refine ⟨fun irq n hn => ?_, fun n hn => ?_, fun j => ?_⟩
-  · rw [h2]; exact hR.irqHandlers irq n hn
-  · rw [h2] at hn; exact hR.irqBound n hn
-  · show (s.declassificationTaint.set k V) j = _
-    rw [SystemState.writeTaintWordsAt_objects]
-    dsimp only
+theorem joinTaintAt_declassificationTaint (s : SystemState) (k : SeLe4n.ObjId)
+    (w : TaintWords) :
+    (joinTaintAt s k w).declassificationTaint =
+      if taintHolderAt s k then s.declassificationTaint.joinAt k w.decode
+      else s.declassificationTaint := by
+  rw [joinTaintAt_eq]
+  by_cases hE : w.isEmpty = true
+  · rw [if_pos hE, (TaintWords.decode_eq_empty_iff w).mpr hE,
+      TaintMap.joinAt_eq_of_join_eq _ _ _ (DeclassificationTaint.join_empty _)]
+    split <;> rfl
+  · rw [if_neg hE]
+    funext j
+    rw [SystemState.taintStored, SystemState.mapObjectAt_objects]
     by_cases hj : k = j
     · subst hj
-      rw [if_pos rfl, TaintTable.set_self, objTaint_map_withTaintWords]
-      rcases hV with hH | hE
-      · unfold taintHolderAt SystemState.getObject? at hH; rw [if_pos hH]
-      · split <;> simp [hE]
-    · rw [if_neg hj, TaintTable.set_ne _ (Ne.symm hj)]
-      exact hR.taintStored j
-
-/-- WS-ZA ZA5.11: **one join, the table and the words**: `T` joins the entry at
-`k`, and the words at `k` become the new entry's — when the join moves the
-entry and `k` holds a thread or a notification (the guard).  The elision comes
-first: a join that moves nothing reads no object and writes nothing, so a step
-with nothing to join is the identity; compiled, the probe's lookup meets its
-match and builds no `Option` (`taintHolderAt`). -/
-@[inline] def joinTaintAt (s : SystemState) (k : SeLe4n.ObjId) (T : DeclassificationTaint) :
-    SystemState :=
-  let old := s.declassificationTaint k
-  let joined := DeclassificationTaint.join old T
-  if joined = old then s
-  else if taintHolderAt s k then
-    { s with declassificationTaint := s.declassificationTaint.set k joined }.writeTaintWordsAt k
-      joined
-  else s
-
-/-- WS-ZA ZA5.11: **one clear, the table and the words**: the entry at `k`
-emptied and its words with it; elided on an empty entry.  A clear is not
-guarded: it writes the empty taint, which a key holding nothing already reads. -/
-@[inline] def clearTaintAt (s : SystemState) (k : SeLe4n.ObjId) : SystemState :=
-  if s.declassificationTaint k = DeclassificationTaint.empty then s
-  else
-    { s with declassificationTaint := s.declassificationTaint.set k DeclassificationTaint.empty
-      }.writeTaintWordsAt k DeclassificationTaint.empty
-
-/-- WS-ZA ZA5.11: **the taint step** — flows, then clears, then origination
-(the cleared and bypassed keys left out), each a join or a clear of the table
-entry and the words together. -/
-def applyTaintStep (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
-    (preTaint : TaintTable) (post : SystemState) : SystemState :=
-  let seed := applyOrigination origins preTaint
-  let s₁ := plan.edges.foldl (fun s e => joinTaintAt s e.sink (seed e.source)) post
-  let s₂ := plan.cleared.foldl clearTaintAt s₁
-  (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).foldl
-    (fun s p => joinTaintAt s p.1 (DeclassificationTaint.singleton p.2)) s₂
-
-theorem joinTaintAt_declassificationTaint (s : SystemState) (k : SeLe4n.ObjId)
-    (T : DeclassificationTaint) :
-    (joinTaintAt s k T).declassificationTaint =
-      if taintHolderAt s k then s.declassificationTaint.joinAt k T else s.declassificationTaint := by
-  unfold joinTaintAt TaintTable.joinAt
-  dsimp only
-  by_cases hJ : DeclassificationTaint.join (s.declassificationTaint k) T = s.declassificationTaint k
-  · simp only [hJ, if_true]; split <;> rfl
-  · simp only [hJ, if_false]; split <;> rfl
+      rw [if_pos rfl, objTaint_map_joinTaintWords]
+      unfold taintHolderAt SystemState.getObject?
+      split
+      · next hH => rw [TaintMap.joinAt_self, SystemState.taintStored]
+      · next hH =>
+        rw [SystemState.taintStored, objTaint_of_not_holds (by simpa using hH)]
+    · rw [if_neg hj, ← SystemState.taintStored]
+      split
+      · rw [TaintMap.joinAt_ne _ (Ne.symm hj)]
+      · rfl
 
 theorem clearTaintAt_declassificationTaint (s : SystemState) (k : SeLe4n.ObjId) :
     (clearTaintAt s k).declassificationTaint = s.declassificationTaint.clearAt k := by
-  unfold clearTaintAt TaintTable.clearAt
-  split <;> rfl
+  unfold clearTaintAt
+  split
+  · next hE => exact (TaintMap.clearAt_eq_of_empty _ _ (declassificationTaint_of_taintEmptyAt hE)).symm
+  · funext j
+    rw [SystemState.taintStored, SystemState.mapObjectAt_objects]
+    by_cases hj : k = j
+    · subst hj; rw [if_pos rfl, objTaint_map_eraseTaint, TaintMap.clearAt_self]
+    · rw [if_neg hj, ← SystemState.taintStored, TaintMap.clearAt_ne _ (Ne.symm hj)]
 
 @[simp] theorem taintHolderAt_joinTaintAt (s : SystemState) (k j : SeLe4n.ObjId)
-    (T : DeclassificationTaint) : taintHolderAt (joinTaintAt s k T) j = taintHolderAt s j := by
-  unfold joinTaintAt; dsimp only
+    (w : TaintWords) : taintHolderAt (joinTaintAt s k w) j = taintHolderAt s j := by
+  rw [joinTaintAt_eq]
   split
   · rfl
-  · split
-    · rw [taintHolderAt_writeTaintWordsAt]; rfl
-    · rfl
+  · exact taintHolderAt_mapObjectAt _ _ _ (KernelObject.holdsTaint_joinTaintWords · w)
 
 @[simp] theorem taintHolderAt_clearTaintAt (s : SystemState) (k j : SeLe4n.ObjId) :
     taintHolderAt (clearTaintAt s k) j = taintHolderAt s j := by
   unfold clearTaintAt
   split
   · rfl
-  · rw [taintHolderAt_writeTaintWordsAt]; rfl
+  · exact taintHolderAt_mapObjectAt _ _ _ (KernelObject.holdsTaint_withTaintWords · {})
 
 /-- A relation every step keeps is kept by a fold of steps. -/
 theorem foldl_taintStep_rel (R : SystemState → SystemState → Prop)
@@ -1567,14 +1651,14 @@ theorem foldl_taintStep_rel (R : SystemState → SystemState → Prop)
   | [], s => hRefl s
   | a :: L, s => hTrans _ _ _ (hf s a) (foldl_taintStep_rel R hRefl hTrans f hf L (f s a))
 
-/-- A fold of guarded joins writes the table the guarded fold of `joinAt`
+/-- A fold of guarded joins writes the taint the guarded fold of `joinAt`
 writes, reading the guard off the state it starts from. -/
 theorem foldl_joinTaintAt_declassificationTaint {α : Type _} (key : α → SeLe4n.ObjId)
-    (val : α → DeclassificationTaint) :
+    (val : α → TaintWords) :
     ∀ (L : List α) (s : SystemState),
       (L.foldl (fun s a => joinTaintAt s (key a) (val a)) s).declassificationTaint =
         (L.filter (fun a => taintHolderAt s (key a))).foldl
-          (fun t a => t.joinAt (key a) (val a)) s.declassificationTaint
+          (fun t a => t.joinAt (key a) (val a).decode) s.declassificationTaint
   | [], _ => rfl
   | a :: L, s => by
       rw [List.foldl_cons, foldl_joinTaintAt_declassificationTaint key val L]
@@ -1594,7 +1678,7 @@ theorem foldl_clearTaintAt_declassificationTaint :
 
 /-- **The taint step keeps every holder probe**: no word write changes a kind. -/
 theorem applyTaintStep_taintHolderAt (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
-    (preTaint : TaintTable) (post : SystemState) (j : SeLe4n.ObjId) :
+    (preTaint : TaintMap) (post : SystemState) (j : SeLe4n.ObjId) :
     taintHolderAt (applyTaintStep plan origins preTaint post) j = taintHolderAt post j := by
   have R := foldl_taintStep_rel (fun s s' => ∀ j, taintHolderAt s' j = taintHolderAt s j)
     (fun _ _ => rfl) (fun _ _ _ h1 h2 j => (h2 j).trans (h1 j))
@@ -1603,9 +1687,9 @@ theorem applyTaintStep_taintHolderAt (plan : TaintPlan) (origins : List (SeLe4n.
   refine ((R _ (fun s k j => taintHolderAt_clearTaintAt s k j) _ _) j).trans ?_
   exact (R _ (fun s e j => taintHolderAt_joinTaintAt s _ j _) _ _) j
 
-/-- WS-ZA ZA5.11: **the table the step writes is the pipeline's.** -/
+/-- WS-ZA ZA5.11: **the taint the step leaves is the pipeline's.** -/
 @[simp] theorem applyTaintStep_declassificationTaint (plan : TaintPlan)
-    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintTable) (post : SystemState) :
+    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintMap) (post : SystemState) :
     (applyTaintStep plan origins preTaint post).declassificationTaint =
       taintStepTable plan origins preTaint post := by
   have R := foldl_taintStep_rel (fun s s' => ∀ j, taintHolderAt s' j = taintHolderAt s j)
@@ -1615,156 +1699,185 @@ theorem applyTaintStep_taintHolderAt (plan : TaintPlan) (origins : List (SeLe4n.
     foldl_joinTaintAt_declassificationTaint]
   have hH : ∀ j, taintHolderAt (plan.cleared.foldl clearTaintAt
       (plan.edges.foldl (fun s e => joinTaintAt s e.sink
-        (applyOrigination origins preTaint e.source)) post)) j = taintHolderAt post j := fun j =>
+        (applyOrigination origins preTaint e.source).toWords) post)) j = taintHolderAt post j :=
+    fun j =>
     ((R _ (fun s k j => taintHolderAt_clearTaintAt s k j) _ _) j).trans
       ((R _ (fun s e j => taintHolderAt_joinTaintAt s _ j _) _ _) j)
-  simp only [hH]
+  simp only [hH, DeclassificationTaint.decode_toWords, TaintWords.singletonWords_eq]
   rw [List.filter_filter]
   rfl
 
-/-- **The taint step writes the table and the store alone.** -/
+/-- **The taint step writes the store alone.** -/
 theorem applyTaintStep_frame (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
-    (preTaint : TaintTable) (post : SystemState) :
+    (preTaint : TaintMap) (post : SystemState) :
     applyTaintStep plan origins preTaint post =
-      { post with
-          declassificationTaint := taintStepTable plan origins preTaint post
-          objects := (applyTaintStep plan origins preTaint post).objects } := by
+      { post with objects := (applyTaintStep plan origins preTaint post).objects } := by
   have R := foldl_taintStep_rel
-    (fun s s' => ∃ T O, s' = { s with declassificationTaint := T, objects := O })
-    (fun s => ⟨s.declassificationTaint, s.objects, rfl⟩)
+    (fun s s' => ∃ O, s' = { s with objects := O })
+    (fun s => ⟨s.objects, rfl⟩)
     (fun a b c h1 h2 => by
-      obtain ⟨T1, O1, h1⟩ := h1
-      obtain ⟨T2, O2, h2⟩ := h2
-      exact ⟨T2, O2, by rw [h2, h1]⟩)
-  have hJ : ∀ s k T, ∃ T' O, joinTaintAt s k T = { s with declassificationTaint := T', objects := O } :=
-    fun s k T => by
-      unfold joinTaintAt; dsimp only
+      obtain ⟨O1, h1⟩ := h1
+      obtain ⟨O2, h2⟩ := h2
+      exact ⟨O2, by rw [h2, h1]⟩)
+  have hJ : ∀ s k w, ∃ O, joinTaintAt s k w = { s with objects := O } :=
+    fun s k w => by
+      rw [joinTaintAt_eq]
       split
-      · exact ⟨_, _, rfl⟩
-      · split
-        · exact ⟨_, _, rfl⟩
-        · exact ⟨_, _, rfl⟩
-  have hC : ∀ s k, ∃ T' O, clearTaintAt s k = { s with declassificationTaint := T', objects := O } :=
+      · exact ⟨_, rfl⟩
+      · exact ⟨_, rfl⟩
+  have hC : ∀ s k, ∃ O, clearTaintAt s k = { s with objects := O } :=
     fun s k => by
       unfold clearTaintAt
       split
-      · exact ⟨_, _, rfl⟩
-      · exact ⟨_, _, rfl⟩
-  rw [← applyTaintStep_declassificationTaint]
-  obtain ⟨T, O, h⟩ : ∃ T O, applyTaintStep plan origins preTaint post =
-      { post with declassificationTaint := T, objects := O } := by
+      · exact ⟨_, rfl⟩
+      · exact ⟨_, rfl⟩
+  obtain ⟨O, h⟩ : ∃ O, applyTaintStep plan origins preTaint post = { post with objects := O } := by
     unfold applyTaintStep; dsimp only
-    obtain ⟨T1, O1, h1⟩ := R _ (fun s e => hJ s _ _) plan.edges post
-    obtain ⟨T2, O2, h2⟩ := R _ (fun s k => hC s k) plan.cleared
-      (plan.edges.foldl (fun s e => joinTaintAt s e.sink (applyOrigination origins preTaint e.source)) post)
-    obtain ⟨T3, O3, h3⟩ := R _ (fun s p => hJ s _ _)
+    obtain ⟨O1, h1⟩ := R _ (fun s e => hJ s _ _) plan.edges post
+    obtain ⟨O2, h2⟩ := R _ (fun s k => hC s k) plan.cleared
+      (plan.edges.foldl (fun s e => joinTaintAt s e.sink
+        (applyOrigination origins preTaint e.source).toWords) post)
+    obtain ⟨O3, h3⟩ := R _ (fun s p => hJ s _ _)
       (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
       (plan.cleared.foldl clearTaintAt
-        (plan.edges.foldl (fun s e => joinTaintAt s e.sink (applyOrigination origins preTaint e.source)) post))
-    exact ⟨T3, O3, by rw [h3, h2, h1]⟩
+        (plan.edges.foldl (fun s e => joinTaintAt s e.sink
+          (applyOrigination origins preTaint e.source).toWords) post))
+    exact ⟨O3, by rw [h3, h2, h1]⟩
   rw [h]
 
 /-- WS-ZA ZA5.11 (**the one frame**): the taint step moves the store only in
 its taint words — every key's object, its words erased, is the committed one's. -/
 theorem applyTaintStep_objectsAgreeOffTaint (plan : TaintPlan)
-    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintTable) (post : SystemState) :
+    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintMap) (post : SystemState) :
     post.objectsAgreeOffTaint (applyTaintStep plan origins preTaint post) := by
-  have hW : ∀ (s : SystemState) k (T : TaintTable) (V : DeclassificationTaint),
-      s.objectsAgreeOffTaint ({ s with declassificationTaint := T }.writeTaintWordsAt k V) :=
-      fun s k T V j => by
-    rw [SystemState.writeTaintWordsAt_objects]
-    dsimp only
+  have hW : ∀ (s : SystemState) k (f : KernelObject → KernelObject),
+      (∀ o, (f o).eraseTaint = o.eraseTaint) → s.objectsAgreeOffTaint (s.mapObjectAt k f) :=
+      fun s k f hf j => by
+    rw [SystemState.mapObjectAt_objects]
     split
-    · simp only [Option.map_map, Function.comp_def, KernelObject.eraseTaint_withTaintWords]
+    · simp only [Option.map_map, Function.comp_def, hf]
     · rfl
   have R := foldl_taintStep_rel (fun (s s' : SystemState) => s.objectsAgreeOffTaint s')
     SystemState.objectsAgreeOffTaint.refl (fun _ _ _ h1 h2 => h1.trans h2)
-  have hJ : ∀ (s : SystemState) k T, s.objectsAgreeOffTaint (joinTaintAt s k T) := fun s k T => by
-    unfold joinTaintAt; dsimp only
+  have hJ : ∀ (s : SystemState) k w, s.objectsAgreeOffTaint (joinTaintAt s k w) := fun s k w => by
+    rw [joinTaintAt_eq]
     split
     · exact .refl s
-    · split
-      · exact hW s _ _ _
-      · exact .refl s
+    · exact hW s _ _ (KernelObject.eraseTaint_joinTaintWords · w)
   have hC : ∀ (s : SystemState) k, s.objectsAgreeOffTaint (clearTaintAt s k) := fun s k => by
     unfold clearTaintAt
     split
     · exact .refl s
-    · exact hW s _ _ _
+    · exact hW s _ _ (KernelObject.eraseTaint_withTaintWords · {})
   unfold applyTaintStep; dsimp only
   exact ((R _ (fun s e => hJ s _ _) _ _).trans (R _ (fun s k => hC s k) _ _)).trans
     (R _ (fun s p => hJ s _ _) _ _)
 
 /-- The taint step keeps the store's table invariant. -/
 theorem applyTaintStep_invExt (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
-    (preTaint : TaintTable) {post : SystemState} (h : post.objects.invExt) :
+    (preTaint : TaintMap) {post : SystemState} (h : post.objects.invExt) :
     (applyTaintStep plan origins preTaint post).objects.invExt := by
   have R := foldl_taintStep_rel (fun s s' => s.objects.invExt → s'.objects.invExt)
     (fun _ h => h) (fun _ _ _ h1 h2 h => h2 (h1 h))
-  have hJ : ∀ s k T, s.objects.invExt → (joinTaintAt s k T).objects.invExt := fun s k T h => by
-    unfold joinTaintAt; dsimp only
+  have hJ : ∀ s k w, s.objects.invExt → (joinTaintAt s k w).objects.invExt := fun s k w h => by
+    rw [joinTaintAt_eq]
     split
     · exact h
-    · split
-      · exact SystemState.writeTaintWordsAt_invExt h _ _
-      · exact h
+    · exact SystemState.mapObjectAt_invExt h _ _
   have hC : ∀ s k, s.objects.invExt → (clearTaintAt s k).objects.invExt := fun s k h => by
     unfold clearTaintAt
     split
     · exact h
-    · exact SystemState.writeTaintWordsAt_invExt h _ _
+    · exact SystemState.mapObjectAt_invExt h _ _
   unfold applyTaintStep; dsimp only
   exact R _ (fun s p => hJ s _ _) _ _ (R _ (fun s k => hC s k) _ _ (R _ (fun s e => hJ s _ _) _ _ h))
 
 /-- The step keeps the store's size: each word write is an in-place slot write. -/
 theorem applyTaintStep_size (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
-    (preTaint : TaintTable) (post : SystemState) :
+    (preTaint : TaintMap) (post : SystemState) :
     (applyTaintStep plan origins preTaint post).objects.size = post.objects.size := by
   have R := foldl_taintStep_rel (fun s s' => s'.objects.size = s.objects.size)
     (fun _ => rfl) (fun _ _ _ h1 h2 => h2.trans h1)
-  have hJ : ∀ s k T, (joinTaintAt s k T).objects.size = s.objects.size := fun s k T => by
-    unfold joinTaintAt; dsimp only
+  have hJ : ∀ s k w, (joinTaintAt s k w).objects.size = s.objects.size := fun s k w => by
+    rw [joinTaintAt_eq]
     split
     · rfl
-    · split
-      · exact SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_size _ _ _
-      · rfl
+    · exact SystemState.mapObjectAt_size _ _ _
   have hC : ∀ s k, (clearTaintAt s k).objects.size = s.objects.size := fun s k => by
     unfold clearTaintAt
     split
     · rfl
-    · exact SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_size _ _ _
+    · exact SystemState.mapObjectAt_size _ _ _
   unfold applyTaintStep; dsimp only
   exact (R _ (fun s p => hJ s _ _) _ _).trans
     ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
 
-/-- WS-ZA ZA5.11 (**the step keeps the agreement**): every join and every clear
-writes the table entry and the words of its key together, a join only at a
-holder (the guard) and a clear only the empty taint, so the table and the words
-stay one value; the interrupt table and every interrupt flag are as committed. -/
+/-- A slot write keeping every interrupt back-link keeps the references
+recorded. -/
+theorem tableReferencesRecorded_mapObjectAt {s : SystemState} (hR : s.tableReferencesRecorded)
+    (k : SeLe4n.ObjId) {f : KernelObject → KernelObject}
+    (hf : ∀ o, (f o).tableBackLinks.2.1 = o.tableBackLinks.2.1) :
+    (s.mapObjectAt k f).tableReferencesRecorded :=
+  SystemState.tableReferencesRecorded.of_irqBackLinks (st := s) (st' := s.mapObjectAt k f) rfl
+    (fun j => by
+    rw [SystemState.mapObjectAt_objects]
+    by_cases hkj : k = j
+    · rw [if_pos hkj]
+      cases s.objects[j]? with
+      | none => rfl
+      | some o => exact hf o
+    · rw [if_neg hkj]) hR
+
+/-- WS-ZA ZA5.11 (**the step keeps the references recorded**): every join and
+every clear writes words alone, so the interrupt table and every interrupt flag
+are as committed. -/
 theorem applyTaintStep_preserves_tableReferencesRecorded (plan : TaintPlan)
-    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintTable) {post : SystemState}
+    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintMap) {post : SystemState}
     (hR : post.tableReferencesRecorded) :
     (applyTaintStep plan origins preTaint post).tableReferencesRecorded := by
   have R := foldl_taintStep_rel
     (fun s s' => s.tableReferencesRecorded → s'.tableReferencesRecorded)
     (fun _ h => h) (fun _ _ _ h1 h2 h => h2 (h1 h))
-  have hJ : ∀ s k T, s.tableReferencesRecorded → (joinTaintAt s k T).tableReferencesRecorded :=
-    fun s k T h => by
-      unfold joinTaintAt; dsimp only
+  have hJ : ∀ s k w, s.tableReferencesRecorded → (joinTaintAt s k w).tableReferencesRecorded :=
+    fun s k w h => by
+      rw [joinTaintAt_eq]
       split
       · exact h
-      · split
-        · rename_i hH; exact tableReferencesRecorded_writeTaint h _ _ (.inl hH)
-        · exact h
+      · exact tableReferencesRecorded_mapObjectAt h _
+          (fun o => KernelObject.tableBackLinks_withTaintWords_irq o _)
   have hC : ∀ s k, s.tableReferencesRecorded → (clearTaintAt s k).tableReferencesRecorded :=
     fun s k h => by
       unfold clearTaintAt
       split
       · exact h
-      · exact tableReferencesRecorded_writeTaint h _ _ (.inr rfl)
+      · exact tableReferencesRecorded_mapObjectAt h _
+          (fun o => KernelObject.tableBackLinks_withTaintWords_irq o _)
   unfold applyTaintStep; dsimp only
   exact R _ (fun s p => hJ s _ _) _ _ (R _ (fun s k => hC s k) _ _ (R _ (fun s e => hJ s _ _) _ _ hR))
+
+/-- Two folds whose steps agree on every element of the list agree. -/
+theorem foldl_congr_of_mem {α β : Type _} {f g : α → β → α} :
+    ∀ (l : List β) (a : α), (∀ b ∈ l, ∀ x, f x b = g x b) → l.foldl f a = l.foldl g a
+  | [], _, _ => rfl
+  | b :: l, a, h => by
+      rw [List.foldl_cons, List.foldl_cons, h b (List.mem_cons_self ..) a]
+      exact foldl_congr_of_mem l _ (fun b' hb' => h b' (List.mem_cons_of_mem _ hb'))
+
+/-- WS-ZA ZA5.12: **the step reads its source taint only at the plan's flow
+sources**: two source maps agreeing there step alike.  What lets a compiled
+dispatcher hand the step the sources' words captured before the arm instead of
+the pre-state (`applySyscallTaintAfter_congr`). -/
+theorem applyTaintStep_congr (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    {P Q : TaintMap} (h : ∀ e ∈ plan.edges, P e.source = Q e.source) (post : SystemState) :
+    applyTaintStep plan origins P post = applyTaintStep plan origins Q post := by
+  have hSeed : ∀ e ∈ plan.edges,
+      applyOrigination origins P e.source = applyOrigination origins Q e.source := by
+    intro e he
+    exact applyOrigination_congr_at origins (h e he)
+  unfold applyTaintStep; dsimp only
+  congr 1
+  congr 1
+  exact foldl_congr_of_mem _ _ (fun e he s => by rw [hSeed e he])
 
 /-- WS-SM SM9.D.7 (**the one writer**): apply a syscall's whole taint effect to
 the state the dispatch committed.
@@ -1813,7 +1926,7 @@ the arm, so every table the arm writes is shared and the runtime copies it
 whole.  Passing the three fields instead lets the dispatcher release the
 state before the arm (`applySyscallTaintAfter_pre` says the two agree). -/
 def applySyscallTaintAfter (plan : TaintPlan) (preEpoch : Nat)
-    (preLength : Nat) (preTaint : TaintTable)
+    (preLength : Nat) (preTaint : TaintMap)
     (post : SystemState) : SystemState :=
   applyTaintStep plan
     (if plan.originates then
@@ -1828,9 +1941,64 @@ taint step. -/
         pre.declassificationAudit.length pre.declassificationTaint post =
       applySyscallTaint plan pre post := rfl
 
-/-- WS-SM SM9.D.7 (**the frame**): the taint step writes the taint table and,
-since WS-ZA ZA5.11, the taint words of the objects whose entry it moved — and
-nothing else.
+/-- WS-ZA ZA5.12: **the flow sources' words, captured before the arm** — one
+pair per flow edge, its source and the words stored there.  What the general
+compiled dispatcher reads of the pre-state's taint (`sourceTaint`), so the arm
+owns the state it writes; the IPC dispatchers capture their one or two sources
+as scalars instead. -/
+def planSourceWords (plan : TaintPlan) (st : SystemState) : List (SeLe4n.ObjId × TaintWords) :=
+  plan.edges.map fun e => (e.source, st.taintWordsAt e.source)
+
+/-- WS-ZA ZA5.12: the taint the captured words name at each source, empty off
+them. -/
+def sourceTaint (srcs : List (SeLe4n.ObjId × TaintWords)) : TaintMap := fun k =>
+  match srcs.lookup k with
+  | some w => w.decode
+  | none => DeclassificationTaint.empty
+
+theorem lookup_map_source (f : SeLe4n.ObjId → TaintWords) :
+    ∀ (l : List TaintFlowEdge) (k : SeLe4n.ObjId), k ∈ l.map (·.source) →
+      (l.map fun e => (e.source, f e.source)).lookup k = some (f k)
+  | [], _, h => by cases h
+  | e :: l, k, h => by
+      simp only [List.map_cons, List.lookup_cons]
+      by_cases hk : k = e.source
+      · subst hk; simp
+      · have hb : (k == e.source) = false := by simpa using hk
+        rw [hb]
+        exact lookup_map_source f l k (by
+          simp only [List.map_cons, List.mem_cons] at h
+          exact h.resolve_left hk)
+
+/-- WS-ZA ZA5.12 (**the decode lemma**): the captured words name the pre-state's
+taint at every flow source. -/
+theorem sourceTaint_planSourceWords (plan : TaintPlan) (st : SystemState) :
+    ∀ e ∈ plan.edges, sourceTaint (planSourceWords plan st) e.source =
+      st.declassificationTaint e.source := by
+  intro e he
+  unfold sourceTaint planSourceWords
+  rw [lookup_map_source (st.taintWordsAt ·) plan.edges e.source (List.mem_map_of_mem he)]
+  rfl
+
+/-- WS-ZA ZA5.12: the early-read form reads its source taint only at the plan's
+flow sources (`applyTaintStep_congr`). -/
+theorem applySyscallTaintAfter_congr (plan : TaintPlan) (preEpoch preLength : Nat)
+    {P Q : TaintMap} (h : ∀ e ∈ plan.edges, P e.source = Q e.source) (post : SystemState) :
+    applySyscallTaintAfter plan preEpoch preLength P post =
+      applySyscallTaintAfter plan preEpoch preLength Q post :=
+  applyTaintStep_congr plan _ h post
+
+/-- WS-ZA ZA5.12: the early-read form over the captured source words is the
+taint step. -/
+theorem applySyscallTaintAfter_planSourceWords (plan : TaintPlan) (pre post : SystemState) :
+    applySyscallTaintAfter plan pre.declassificationAuditEpoch pre.declassificationAudit.length
+        (sourceTaint (planSourceWords plan pre)) post =
+      applySyscallTaint plan pre post := by
+  rw [applySyscallTaintAfter_congr plan _ _ (sourceTaint_planSourceWords plan pre)]
+  rfl
+
+/-- WS-SM SM9.D.7 (**the frame**): the taint step writes the taint words of the
+objects whose taint it moved (WS-ZA ZA5.11, ZA5.12) — and nothing else.
 
 The theorem every carriage argument rides: the entry's propagation step changes
 no scheduler slot, no register bank, no trail and no lock, and no object field
@@ -1838,14 +2006,10 @@ but its taint words (`applySyscallTaint_objectsAgreeOffTaint`) — so every
 invariant and non-interference result about the dispatch transfers across it. -/
 theorem applySyscallTaint_frame (plan : TaintPlan) (pre post : SystemState) :
     applySyscallTaint plan pre post =
-      { post with
-          declassificationTaint :=
-            taintStepTable plan (planOriginationTags plan pre post)
-              pre.declassificationTaint post
-          objects := (applySyscallTaint plan pre post).objects } :=
+      { post with objects := (applySyscallTaint plan pre post).objects } :=
   applyTaintStep_frame _ _ _ _
 
-/-- WS-SM SM9.D.7: the taint table the step writes is the pipeline's. -/
+/-- WS-SM SM9.D.7: the taint the step leaves is the pipeline's. -/
 @[simp] theorem applySyscallTaint_declassificationTaint (plan : TaintPlan)
     (pre post : SystemState) :
     (applySyscallTaint plan pre post).declassificationTaint =
@@ -1907,8 +2071,8 @@ theorem syscallTaintPlan_yield (st : SystemState) (tid : SeLe4n.ThreadId)
 -- the three, and `applySyscallTaint_cleared_empty` uses two of them.
 -- ----------------------------------------------------------------------------
 
-private theorem applyTaintFlow_not_mem (pre : TaintTable) (o : SeLe4n.ObjId) :
-    ∀ (edges : List TaintFlowEdge) (tbl : TaintTable),
+private theorem applyTaintFlow_not_mem (pre : TaintMap) (o : SeLe4n.ObjId) :
+    ∀ (edges : List TaintFlowEdge) (tbl : TaintMap),
       o ∉ edges.map (fun e => e.sink) → applyTaintFlow pre edges tbl o = tbl o := by
   intro edges
   induction edges with
@@ -1921,10 +2085,10 @@ private theorem applyTaintFlow_not_mem (pre : TaintTable) (o : SeLe4n.ObjId) :
       intro hMem; exact h (by simp [hMem])
     show applyTaintFlow pre rest (tbl.joinAt e.sink (pre e.source)) o = tbl o
     rw [ih _ hrest]
-    exact TaintTable.joinAt_ne tbl hne _
+    exact TaintMap.joinAt_ne tbl hne _
 
 private theorem applyTaintClears_not_mem (o : SeLe4n.ObjId) :
-    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintTable),
+    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintMap),
       o ∉ cleared → applyTaintClears cleared tbl o = tbl o := by
   intro cleared
   induction cleared with
@@ -1935,10 +2099,10 @@ private theorem applyTaintClears_not_mem (o : SeLe4n.ObjId) :
     have hrest : o ∉ rest := by intro hMem; exact h (by simp [hMem])
     show applyTaintClears rest (tbl.clearAt c) o = tbl o
     rw [ih _ hrest]
-    exact TaintTable.clearAt_ne tbl hne
+    exact TaintMap.clearAt_ne tbl hne
 
 private theorem applyOrigination_not_mem (o : SeLe4n.ObjId) :
-    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable),
+    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintMap),
       o ∉ origins.map (·.fst) → applyOrigination origins tbl o = tbl o := by
   intro origins
   induction origins with
@@ -1950,12 +2114,12 @@ private theorem applyOrigination_not_mem (o : SeLe4n.ObjId) :
     show applyOrigination rest (tbl.joinAt g.fst (DeclassificationTaint.singleton g.snd)) o
         = tbl o
     rw [ih _ hrest]
-    exact TaintTable.joinAt_ne tbl hne _
+    exact TaintMap.joinAt_ne tbl hne _
 
 /-- WS-SM SM9.D.12: **a cleared key ends the fold empty** — carried as a
 disjunction so the induction can hand the `o = c` case to its own tail. -/
 private theorem applyTaintClears_empty_of_mem_or_empty (o : SeLe4n.ObjId) :
-    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintTable),
+    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintMap),
       (o ∈ cleared ∨ tbl o = DeclassificationTaint.empty) →
       applyTaintClears cleared tbl o = DeclassificationTaint.empty := by
   intro cleared
@@ -1970,12 +2134,12 @@ private theorem applyTaintClears_empty_of_mem_or_empty (o : SeLe4n.ObjId) :
     show applyTaintClears rest (tbl.clearAt c) o = DeclassificationTaint.empty
     refine ih (tbl.clearAt c) ?_
     by_cases hoc : o = c
-    · exact Or.inr (by rw [hoc]; exact TaintTable.clearAt_self tbl c)
+    · exact Or.inr (by rw [hoc]; exact TaintMap.clearAt_self tbl c)
     · rcases h with hm | he
       · rcases List.mem_cons.mp hm with hEq | hr
         · exact absurd hEq hoc
         · exact Or.inl hr
-      · exact Or.inr (by rw [TaintTable.clearAt_ne tbl hoc]; exact he)
+      · exact Or.inr (by rw [TaintMap.clearAt_ne tbl hoc]; exact he)
 
 /-- WS-SM SM9.D.12 / SM9.D.10 (**a clear is final within its commit**): an object
 the plan empties ends the commit empty — even when the *same* syscall recorded a
@@ -2032,8 +2196,8 @@ theorem applySyscallTaint_preserves_tableReferencesRecorded {plan : TaintPlan}
 
 /-- WS-SM SM9.D.8: **the flow fold never forgets** — a tag already at an object
 survives every later edge. -/
-theorem contains_applyTaintFlow_mono (pre : TaintTable) :
-    ∀ (edges : List TaintFlowEdge) (tbl : TaintTable) (o : SeLe4n.ObjId) {t : Nat},
+theorem contains_applyTaintFlow_mono (pre : TaintMap) :
+    ∀ (edges : List TaintFlowEdge) (tbl : TaintMap) (o : SeLe4n.ObjId) {t : Nat},
       (tbl o).contains t = true → ((applyTaintFlow pre edges tbl) o).contains t = true := by
   intro edges
   induction edges with
@@ -2041,15 +2205,15 @@ theorem contains_applyTaintFlow_mono (pre : TaintTable) :
   | cons e rest ih =>
     intro tbl o t h
     simp only [applyTaintFlow, List.foldl_cons]
-    exact ih _ o (TaintTable.contains_joinAt_of_contains tbl e.sink o (pre e.source) h)
+    exact ih _ o (TaintMap.contains_joinAt_of_contains tbl e.sink o (pre e.source) h)
 
 /-- WS-SM SM9.D.8 (**the propagation property**): a declared edge really moves
 the source's provenance to the sink.
 
 Every per-site theorem below is this one instantiated; the site-specific content
 is *which* edges the planner declares. -/
-theorem contains_applyTaintFlow_of_mem (pre : TaintTable) :
-    ∀ (edges : List TaintFlowEdge) (tbl : TaintTable) (e : TaintFlowEdge),
+theorem contains_applyTaintFlow_of_mem (pre : TaintMap) :
+    ∀ (edges : List TaintFlowEdge) (tbl : TaintMap) (e : TaintFlowEdge),
       e ∈ edges → ∀ {t : Nat}, (pre e.source).contains t = true →
         ((applyTaintFlow pre edges tbl) e.sink).contains t = true := by
   intro edges
@@ -2060,12 +2224,12 @@ theorem contains_applyTaintFlow_of_mem (pre : TaintTable) :
     simp only [applyTaintFlow, List.foldl_cons]
     rcases List.mem_cons.mp hMem with rfl | hRest
     · exact contains_applyTaintFlow_mono pre rest _ e.sink
-        (TaintTable.contains_joinAt_of_source tbl e.sink (pre e.source) h)
+        (TaintMap.contains_joinAt_of_source tbl e.sink (pre e.source) h)
     · exact ih _ e hRest h
 
 /-- WS-SM SM9.D.12: clearing an object other than `o` leaves `o` alone. -/
 theorem contains_applyTaintClears_of_not_mem :
-    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintTable) (o : SeLe4n.ObjId),
+    ∀ (cleared : List SeLe4n.ObjId) (tbl : TaintMap) (o : SeLe4n.ObjId),
       o ∉ cleared → ∀ {t : Nat}, (tbl o).contains t = true →
         ((applyTaintClears cleared tbl) o).contains t = true := by
   intro cleared
@@ -2076,12 +2240,12 @@ theorem contains_applyTaintClears_of_not_mem :
     simp only [applyTaintClears, List.foldl_cons]
     refine ih _ o (fun hm => hNot (List.mem_cons_of_mem _ hm)) ?_
     have hne : o ≠ c := fun hEq => hNot (by rw [hEq]; exact List.mem_cons_self)
-    simpa [TaintTable.clearAt_ne tbl hne] using h
+    simpa [TaintMap.clearAt_ne tbl hne] using h
 
 /-- WS-SM SM9.D.13a: origination only ever adds — it cannot remove a tag a flow
 just established. -/
 theorem contains_applyOrigination_mono :
-    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable) (o : SeLe4n.ObjId) {t : Nat},
+    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintMap) (o : SeLe4n.ObjId) {t : Nat},
       (tbl o).contains t = true → ((applyOrigination origins tbl) o).contains t = true := by
   intro origins
   induction origins with
@@ -2089,12 +2253,12 @@ theorem contains_applyOrigination_mono :
   | cons p rest ih =>
     intro tbl o t h
     simp only [applyOrigination, List.foldl_cons]
-    exact ih _ o (TaintTable.contains_joinAt_of_contains tbl p.1 o
+    exact ih _ o (TaintMap.contains_joinAt_of_contains tbl p.1 o
       (DeclassificationTaint.singleton p.2) h)
 
 /-- WS-SM SM9.D.13a: **origination records the identity it is given.** -/
 theorem contains_applyOrigination_of_mem :
-    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintTable) (p : SeLe4n.ObjId × Nat),
+    ∀ (origins : List (SeLe4n.ObjId × Nat)) (tbl : TaintMap) (p : SeLe4n.ObjId × Nat),
       p ∈ origins → ((applyOrigination origins tbl) p.1).contains p.2 = true := by
   intro origins
   induction origins with
@@ -2104,7 +2268,7 @@ theorem contains_applyOrigination_of_mem :
     simp only [applyOrigination, List.foldl_cons]
     rcases List.mem_cons.mp hMem with rfl | hRest
     · exact contains_applyOrigination_mono rest _ p.1
-        (TaintTable.contains_joinAt_of_source tbl p.1 (DeclassificationTaint.singleton p.2)
+        (TaintMap.contains_joinAt_of_source tbl p.1 (DeclassificationTaint.singleton p.2)
           (DeclassificationTaint.contains_singleton_self p.2))
     · exact ih _ p hRest
 
@@ -2593,11 +2757,11 @@ With it closed, the residual really is saturation.
 Exhibited rather than argued: a table carrying one specific tag at an object,
 unsaturated, whose only removal is the clear. -/
 theorem staleTaint_is_not_saturation :
-    ∃ (tbl : TaintTable) (oid : SeLe4n.ObjId) (t : Nat),
+    ∃ (tbl : TaintMap) (oid : SeLe4n.ObjId) (t : Nat),
       (tbl oid).saturated = false ∧
       (tbl oid).contains t = true ∧
       ((tbl.clearAt oid) oid).contains t = false := by
-  refine ⟨TaintTable.empty.joinAt (SeLe4n.ObjId.ofNat 7) (DeclassificationTaint.singleton 3),
+  refine ⟨TaintMap.empty.joinAt (SeLe4n.ObjId.ofNat 7) (DeclassificationTaint.singleton 3),
           SeLe4n.ObjId.ofNat 7, 3, by decide, by decide, by decide⟩
 
 -- ============================================================================
@@ -2646,13 +2810,13 @@ into the same object cannot have disjoint footprints.
 **Implementation obligation, registered rather than assumed.**  The model writes
 the field whole, so the key-local reading is sound only if the runtime realises
 the table as per-object storage — a store at slot `o` for
-`TaintTable.set _ o _`.  Until it does, two cores committing disjoint taint keys
+`TaintMap.set _ o _`.  Until it does, two cores committing disjoint taint keys
 from their own pre-states would each write the whole field and the later commit
 would discard the other's provenance.  That is precisely the obligation
 `SystemState.objects` already carries for `storeObject` under the same
 discipline, and it is discharged the same way: by the representation, at SM10.1.
 
-It is carried as `UncoveredLockDomain.taintTablePerKeyStore`
+It is carried as `UncoveredLockDomain.taintWordsPerKeyCommit`
 (`InformationFlow/FineLockFlow.lean`), not as this paragraph.  A docstring is
 something a later cut can enable fine locks without ever reading; the inventory's
 completeness theorem is quantified over the *constructors*, so the entry has to
@@ -2855,6 +3019,6 @@ theorem applySyscallTaint_preserves_projection (ctx : LabelingContext)
       projectState ctx observer post :=
   projectState_of_objectsAgreeOffTaint ctx observer
     (applySyscallTaint_objectsAgreeOffTaint plan pre post)
-    (by rw [applySyscallTaint_declassificationTaint]; exact applySyscallTaint_frame plan pre post)
+    (applySyscallTaint_frame plan pre post)
 
 end SeLe4n.Kernel

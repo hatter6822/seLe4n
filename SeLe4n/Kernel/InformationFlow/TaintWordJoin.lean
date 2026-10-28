@@ -1,10 +1,18 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 /-
-Copyright (c) 2025 seLe4n contributors. All rights reserved.
-Released under GPL-3.0-or-later license.
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+-/
 
-WS-ZA ZA5.12: **the join on the words an object holds.**
+import SeLe4n.Kernel.InformationFlow.Taint
 
-An object holds its taint as plain words (`TaintWords`, ZA5.11), and the taint
+/-!
+# The join on the words an object holds
+
+WS-ZA ZA5.12.  An object holds its taint as plain words (`TaintWords`, ZA5.11), and the taint
 step joins a source's taint into a sink's.  Over the list form a join walks tag
 lists and builds the joined list; here it reads and writes words alone.
 
@@ -15,12 +23,15 @@ lists and builds the joined list; here it reads and writes words alone.
   is equal to the list form's `DeclassificationTaint.insert`
   (`TaintWords.insertWords_toWords`), slot by slot, through `getD_insertTag`.
 * `TaintWords.join` is the words of the join of what two words decode to.  Its
-  compiled form `TaintWords.joinImpl` (`@[csimp]`) checks both operands'
-  shape on scalars, then inserts the source's tag words one at a time.
+  form `TaintWords.joinImpl` checks both operands' shape on scalars, then
+  inserts the source's tag words one at a time.
+* `TaintWords.joinFlat` is the compiled join (`join_eq_flat`, `@[csimp]`):
+  `joinImpl` with each outcome chosen field by field (`selectWords`), so the
+  joined words are scalars computed from scalars and no `TaintWords` cell is
+  built between the object's words read and the write of the result.
 
 The only module this one imports is `Taint.lean`, the value type.
 -/
-import SeLe4n.Kernel.InformationFlow.Taint
 
 namespace SeLe4n.Kernel
 
@@ -393,11 +404,11 @@ theorem foldl_insert_top (l : List Nat) :
     exact ih
 
 /-- WS-ZA ZA5.12: **the join, on words**: the words of the join of what two
-words decode to.  Compiled as `joinImpl` (`join_eq_impl`). -/
+words decode to.  Compiled as `joinFlat` (`join_eq_flat`). -/
 def join (a b : TaintWords) : TaintWords :=
   (DeclassificationTaint.join a.decode b.decode).toWords
 
-/-- WS-ZA ZA5.12: `join` as compiled, on scalars: words that name no taint as
+/-- WS-ZA ZA5.12: `join` on scalars (`join_eq_impl`): words that name no taint as
 written decode to the saturated taint, so either operand failing the check, or
 a saturated source, gives the saturated words; otherwise the source's tag words
 in use are inserted one at a time (`insertWords`), building no tag list. -/
@@ -417,7 +428,7 @@ def joinImpl (a b : TaintWords) : TaintWords :=
       if 7 < cb then r.insertWords b.tag7 else r
   else topWords
 
-@[csimp] theorem join_eq_impl : @join = @joinImpl := by
+theorem join_eq_impl : @join = @joinImpl := by
   funext a b
   unfold join joinImpl
   cases ha : a.canonical
@@ -450,3 +461,124 @@ def joinImpl (a b : TaintWords) : TaintWords :=
           simp [insertWords_toWords, List.take_of_length_le (by simp : [b.tag0, b.tag1, b.tag2,
             b.tag3, b.tag4, b.tag5, b.tag6, b.tag7].length ≤ n + 8)]
       · rfl
+
+/-- WS-ZA ZA5.12: **the words of a singleton taint**, written directly: one
+tag word in use, or the saturated words for an identity no word can name
+(`singletonWords_eq`). -/
+@[inline] def singletonWords (t : Nat) : TaintWords :=
+  if t < UInt64.size then { tag0 := t.toUInt64, count := 1 } else topWords
+
+theorem singletonWords_eq (t : Nat) :
+    singletonWords t = (DeclassificationTaint.singleton t).toWords := by
+  unfold singletonWords DeclassificationTaint.singleton
+  by_cases h : t < UInt64.size
+  · rw [if_pos h]
+    have := insertWords_toWords DeclassificationTaint.empty t.toUInt64
+    rw [toUInt64_toNat_of_lt h] at this
+    rw [← this]
+    rfl
+  · rw [if_neg h]
+    unfold DeclassificationTaint.insert
+    rw [if_neg (by simp [DeclassificationTaint.empty]), dif_neg h]
+    rfl
+
+/-- One of two tag words.  Out of line, so the compiler keeps each field's
+choice a scalar choice: inlined, a chain of field-by-field choices on one
+condition is folded back into a choice of whole records, which builds them. -/
+@[noinline] def selectWord (c : Bool) (x y : UInt64) : UInt64 := if c then x else y
+
+/-- One of two counts (`selectWord`). -/
+@[noinline] def selectCount (c : Bool) (x y : Nat) : Nat := if c then x else y
+
+/-- One of two saturation bits (`selectWord`). -/
+@[noinline] def selectBit (c : Bool) (x y : Bool) : Bool := if c then x else y
+
+/-- WS-ZA ZA5.12: **one of two words, chosen field by field** (`selectWords_eq`).
+Every field is a scalar choice, so a chain of these is a chain of scalar
+choices: compiled, no `TaintWords` is built between the reads and the write. -/
+@[inline] def selectWords (c : Bool) (a b : TaintWords) : TaintWords :=
+  { tag0 := selectWord c a.tag0 b.tag0, tag1 := selectWord c a.tag1 b.tag1,
+    tag2 := selectWord c a.tag2 b.tag2, tag3 := selectWord c a.tag3 b.tag3,
+    tag4 := selectWord c a.tag4 b.tag4, tag5 := selectWord c a.tag5 b.tag5,
+    tag6 := selectWord c a.tag6 b.tag6, tag7 := selectWord c a.tag7 b.tag7,
+    count := selectCount c a.count b.count,
+    saturated := selectBit c a.saturated b.saturated }
+
+theorem selectWords_eq (c : Bool) (a b : TaintWords) :
+    selectWords c a b = if c then a else b := by
+  cases c <;> rfl
+
+/-- WS-ZA ZA5.12: `insertWords` as compiled: its three outcomes chosen field by
+field (`insertWordsFlat_eq`). -/
+@[inline] def insertWordsFlat (w : TaintWords) (t : UInt64) : TaintWords :=
+  let c := w.count
+  let l0 := decide (0 < c) && decide (w.tag0 < t)
+  let l1 := decide (1 < c) && decide (w.tag1 < t)
+  let l2 := decide (2 < c) && decide (w.tag2 < t)
+  let l3 := decide (3 < c) && decide (w.tag3 < t)
+  let l4 := decide (4 < c) && decide (w.tag4 < t)
+  let l5 := decide (5 < c) && decide (w.tag5 < t)
+  let l6 := decide (6 < c) && decide (w.tag6 < t)
+  let l7 := decide (7 < c) && decide (w.tag7 < t)
+  let dup := (decide (0 < c) && w.tag0 == t) || (decide (1 < c) && w.tag1 == t) ||
+    (decide (2 < c) && w.tag2 == t) || (decide (3 < c) && w.tag3 == t) ||
+    (decide (4 < c) && w.tag4 == t) || (decide (5 < c) && w.tag5 == t) ||
+    (decide (6 < c) && w.tag6 == t) || (decide (7 < c) && w.tag7 == t)
+  selectWords w.saturated topWords
+    (selectWords dup w
+      (selectWords (decide (8 ≤ c)) topWords
+        { tag0 := if l0 then w.tag0 else t
+          tag1 := if l1 then w.tag1 else if l0 then t else w.tag0
+          tag2 := if l2 then w.tag2 else if l1 then t else w.tag1
+          tag3 := if l3 then w.tag3 else if l2 then t else w.tag2
+          tag4 := if l4 then w.tag4 else if l3 then t else w.tag3
+          tag5 := if l5 then w.tag5 else if l4 then t else w.tag4
+          tag6 := if l6 then w.tag6 else if l5 then t else w.tag5
+          tag7 := if l7 then w.tag7 else if l6 then t else w.tag6
+          count := c + 1
+          saturated := false }))
+
+theorem insertWordsFlat_eq (w : TaintWords) (t : UInt64) :
+    insertWordsFlat w t = w.insertWords t := by
+  unfold insertWordsFlat insertWords
+  simp only [selectWords_eq]
+  by_cases hs : w.saturated = true
+  · rw [if_pos hs, if_pos hs]
+  · rw [if_neg hs, if_neg hs]
+    split
+    · rfl
+    · by_cases h8 : 8 ≤ w.count
+      · rw [if_pos (decide_eq_true h8), if_pos h8]
+      · rw [if_neg (by simpa using h8), if_neg h8]
+
+/-- WS-ZA ZA5.12: **the join as compiled** (`join_eq_flat`, `@[csimp]`):
+`joinImpl` with every outcome chosen field by field, so the joined words are
+scalars computed from scalars and the write that consumes them rebuilds its
+record over its own cell. -/
+@[inline] def joinFlat (a b : TaintWords) : TaintWords :=
+  let cb := b.count
+  let r := a.written
+  let r := selectWords (decide (0 < cb)) (insertWordsFlat r b.tag0) r
+  let r := selectWords (decide (1 < cb)) (insertWordsFlat r b.tag1) r
+  let r := selectWords (decide (2 < cb)) (insertWordsFlat r b.tag2) r
+  let r := selectWords (decide (3 < cb)) (insertWordsFlat r b.tag3) r
+  let r := selectWords (decide (4 < cb)) (insertWordsFlat r b.tag4) r
+  let r := selectWords (decide (5 < cb)) (insertWordsFlat r b.tag5) r
+  let r := selectWords (decide (6 < cb)) (insertWordsFlat r b.tag6) r
+  let r := selectWords (decide (7 < cb)) (insertWordsFlat r b.tag7) r
+  selectWords (a.canonical && b.canonical && !b.saturated) r topWords
+
+theorem joinImpl_eq_flat (a b : TaintWords) : joinImpl a b = joinFlat a b := by
+  unfold joinImpl joinFlat
+  simp only [selectWords_eq, insertWordsFlat_eq, decide_eq_true_eq]
+  cases hA : (a.canonical && b.canonical) <;> cases hs : b.saturated <;>
+    simp only [Bool.not_true, Bool.not_false, Bool.and_false,
+      Bool.and_true, Bool.false_eq_true, ↓reduceIte]
+
+@[csimp] theorem join_eq_flat : @join = @joinFlat := by
+  funext a b
+  rw [join_eq_impl, joinImpl_eq_flat]
+
+end TaintWords
+
+end SeLe4n.Kernel
