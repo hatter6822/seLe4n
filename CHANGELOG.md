@@ -1,3 +1,52 @@
+## v0.36.157 — WS-ZA ZA5.7: an endpoint records only that a service is registered on it
+
+Since v0.36.156 a registration's id is its endpoint's, so the endpoint's
+`serviceCode` was a second answer to a question the id already answers. It
+was a number that always encoded the endpoint's own id + 1. Now the endpoint
+records only presence. The storage row is split again: the registry stored in
+the endpoint's own fields is the new row ZA5.8. The audit ring becomes ZA5.9,
+and the declassification and audit routing becomes ZA5.10.
+
+- **`Endpoint.serviceCode : Nat` becomes `Endpoint.serviceRegistered : Bool`.**
+  Every reader that decoded the code now names the service by the endpoint's
+  id (`ServiceId.ofNat e.toNat`). The readers are:
+  - the recorded-registration lookup and revoke, renamed
+    `lookupServiceByRecordedRegistration` and
+    `revokeServiceByRecordedRegistration`;
+  - the final-capability release (`releaseFinalRegistration`);
+  - the frozen lookup;
+  - the query wrapper.
+
+  The endpoint can no longer record an identity other than its own. The
+  disagreement is now unrepresentable rather than refused. No syscall's
+  behaviour changes.
+- **The back-link invariant states the identity.** In
+  `SystemState.tableReferencesRecorded`:
+  - `registry`: a registration names an endpoint whose flag is set and whose
+    id is the registration's;
+  - `serviceFlags` (was `serviceCodes`): a set flag names a registration of
+    that endpoint, under the endpoint's own id.
+
+  `objTableBackLinks` and `KernelObject.tableBackLinks` become `Bool × Bool`.
+  The endpoint clear is renamed `clearEndpointRegistration`.
+- **Proofs.** The splice context and the lookup congruence carry the flag, so
+  every queue rewrite still proves it leaves the flag alone. The register,
+  revoke and boot proofs restate the identity through
+  `ServiceRegistration.sid_of_target`. `serviceId_eq_of_val` is deleted
+  because nothing consumes it.
+- **Readings** (fresh archive, untraced): every pin reads as before. The
+  register reads 6 on its first call and 4 in steady state; the query and
+  revoke read 0. ZA5.8 takes the register to 0.
+- **Docs:**
+  - the plan's ZA5.7 row landed with its forks;
+  - the new ZA5.8 row;
+  - ZA5.9 and ZA5.10 renumbered, with every citation swept;
+  - the spec, the claim index, the workstream context and GitBook 12.
+
+  New Tier 3 anchors cover the flag field, the `Bool × Bool` back-links, both
+  identity conjuncts, the boot's flag check and the retirement of
+  `serviceCode`.
+
 ## v0.36.156 — WS-ZA ZA5.6: a service's identity is its endpoint's
 
 The register syscall already named its service by its endpoint
