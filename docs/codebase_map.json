@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/service-audit-declass-routed",
-      "commit_sha": "8ed434cd37a211d1ebb4eca95af9e54d0564b8f0",
-      "tree_sha": "30e95a5068d3d6a80547fa2c123c1029ae41d34b",
-      "committed_at_utc": "2026-10-28T02:21:15+00:00"
+      "commit_sha": "f7e87a4ef8bc36b395d6bbed485e081e6d21a155",
+      "tree_sha": "a791d15ef8c266187e878f909672d1914404ddfc",
+      "committed_at_utc": "2026-10-28T03:30:47+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4aa3bc1e2ed2bead108058a17949ca1d6499d7b20c6b3b8cea134537b23b259a"
+    "source_digest": "25f342ab54ae5d504623dbb5fd9800bbeb595a8ea4323f7a669352b2397f7dc3"
   },
   "summary": {
     "module_count": 547,
@@ -328296,6 +328296,7 @@
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.ServiceRegistration",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
             "SeLe4n.Model.SystemState.modifyObject",
             "SeLe4n.ServiceId"
           ]
@@ -328311,6 +328312,7 @@
             "SeLe4n.Kernel.registerServicePerform",
             "SeLe4n.Kernel.registerServicePerformImpl",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.modifyObject",
             "SeLe4n.Model.SystemState.rewriteObject"
           ]
@@ -328376,6 +328378,7 @@
             "SeLe4n.Kernel.setServiceCodeObject",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?",
             "SeLe4n.Model.SystemState.modifyObject",
             "SeLe4n.ServiceId"
           ]
@@ -328390,6 +328393,7 @@
             "SeLe4n.Kernel.clearEndpointServiceCode",
             "SeLe4n.Kernel.clearEndpointServiceCodeImpl",
             "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getEndpoint?_eq_some_iff",
             "SeLe4n.Model.SystemState.modifyObject",
             "SeLe4n.Model.SystemState.rewriteObject"
           ]
