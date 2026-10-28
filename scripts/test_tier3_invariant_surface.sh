@@ -22408,7 +22408,7 @@ run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_ofWord_eq_words($|[ 
 run_check "INVARIANT" rg -n '^        st\.updateTcb caller \(TCB\.withReturnWords · reg\.sid\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearEndpointRegistration_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem registerServicePerform_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
-run_check "INVARIANT" rg -n '^        clearEndpointRegistration \(eraseServiceRegistration st ⟨n⟩\) reg\.endpointCap ⟨n⟩$' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n -U '^        clearEndpointRegistration \(eraseServiceRegistration st \(ServiceId\.ofNat epId\.toNat\)\)\n          reg\.endpointCap \(ServiceId\.ofNat epId\.toNat\)$' SeLe4n/Kernel/Service/Registry.lean
 run_negative_check "INVARIANT" rg -n '\bdecodeSyscallArgsFromState_of_routedConfigure\b' SeLe4n/
 # WS-ZA ZA5.5 (fix): an endpoint's final delete drops its service registration
 # before the finalisation, so the endpoint retires and its untyped resets.
