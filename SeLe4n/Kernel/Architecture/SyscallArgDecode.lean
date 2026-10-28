@@ -2171,6 +2171,38 @@ theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLa
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
 
+/-- WS-ZA ZA5.5: `decodeServiceRegisterArgs` over a reader, each check in the
+decode's order. -/
+@[inline] def decodeServiceRegisterArgsBy (get : MsgRegReader)
+    : Except KernelError ServiceRegisterArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  let r4 ← get 4
+  if r1.toNat > serviceMaxMethodCount then .error .invalidArgument
+  else if r2.toNat > serviceMaxMessageSize then .error .invalidArgument
+  else if r3.toNat > serviceMaxMessageSize then .error .invalidArgument
+  else if r4.toNat ≥ 2 then .error .invalidMessageInfo
+  else
+    pure { interfaceId    := InterfaceId.ofNat r0.toNat
+           methodCount    := r1.toNat
+           maxMessageSize := r2.toNat
+           maxResponseSize := r3.toNat
+           requiresGrant  := r4.toNat == 1 }
+
+theorem decodeServiceRegisterArgs_eq_by (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    decodeServiceRegisterArgs decoded =
+      decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) := by
+  unfold decodeServiceRegisterArgs decodeServiceRegisterArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg_push]
+  generalize msgRegOfFileThen layout regs w = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+
 @[inline] def decodeTcbBindNotificationArgsBy (get : MsgRegReader)
     : Except KernelError TcbBindNotificationArgs := do
   let r0 ← get 0

@@ -673,6 +673,18 @@ def registerServiceChecked
     else
       .error .flowDenied
 
+/-- **WS-ZA ZA5.5**: an admitted checked registration — the flow check and
+every `registerService` check passing on the state handed in — succeeds as
+`registerServicePerform`, the write alone. -/
+theorem registerServiceChecked_of_admitted (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId) (reg : ServiceRegistration) (st : SystemState)
+    (h : (registrationWriteAdmitted ctx caller reg && registerServiceAdmitted st reg) = true) :
+    registerServiceChecked ctx caller reg st = .ok ((), registerServicePerform st reg) := by
+  simp only [Bool.and_eq_true] at h
+  unfold registerServiceChecked
+  rw [if_pos h.1]
+  exact registerService_of_admitted st reg h.2
+
 /-- Policy-checked service query: the endpoint's label must flow to the caller's
 (`serviceEndpointReadAdmitted`) before the registration it records is read.
 The check reads labels only and precedes the lookup, so a refusal says nothing

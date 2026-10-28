@@ -89,6 +89,72 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
         | some _ => .error .invalidCapability
       | _ => .error .invalidCapability
 
+/-- **WS-ZA ZA5.5**: `registerService`'s checks, read from the state before
+anything is written, in its order (seL4's decode half). -/
+@[inline] def registerServiceAdmitted (st : SystemState) (reg : ServiceRegistration) : Bool :=
+  (st.serviceRegistry[reg.sid]?).isNone && (st.interfaceRegistry[reg.iface.ifaceId]?).isSome &&
+    match reg.endpointCap.target with
+    | .object epId =>
+      match st.getObject? epId with
+      | some (.endpoint ep) => Capability.hasRight reg.endpointCap .write && ep.serviceCode == 0
+      | _ => false
+    | _ => false
+
+/-- **WS-ZA ZA5.5**: `registerService`'s writes, total: the endpoint records the
+registration and the registry holds it (seL4's perform half).  A state whose
+target is no endpoint is returned unchanged; `registerServiceAdmitted` rules
+that state out. -/
+@[inline] def registerServicePerform (st : SystemState) (reg : ServiceRegistration) :
+    SystemState :=
+  match reg.endpointCap.target with
+  | .object epId =>
+    match hObj : st.getObject? epId with
+    | some (.endpoint ep) =>
+      { st.rewriteObject epId (.endpoint { ep with serviceCode := reg.sid.val + 1 })
+          ⟨_, hObj, rfl, rfl⟩ with
+        serviceRegistry := st.serviceRegistry.insert reg.sid reg }
+    | _ => st
+  | _ => st
+
+/-- An admitted registration succeeds as its perform. -/
+theorem registerService_of_admitted (st : SystemState) (reg : ServiceRegistration)
+    (h : registerServiceAdmitted st reg = true) :
+    registerService reg st = .ok ((), registerServicePerform st reg) := by
+  unfold registerServiceAdmitted at h
+  unfold registerService registerServicePerform
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨⟨hFree, hIface⟩, hRest⟩ := h
+  have hFree' : (st.serviceRegistry[reg.sid]? != none) = false := by
+    cases hS : st.serviceRegistry[reg.sid]? with
+    | none => rfl
+    | some _ => rw [hS] at hFree; cases hFree
+  have hIface' : ¬ st.interfaceRegistry[reg.iface.ifaceId]? = none := by
+    intro hN; rw [hN] at hIface; cases hIface
+  rw [hFree']
+  simp only [Bool.false_eq_true, ↓reduceIte, hIface']
+  revert hRest
+  cases reg.endpointCap.target with
+  | object epId =>
+    dsimp only
+    intro hRest
+    split
+    · next hN => rw [hN] at hRest; cases hRest
+    · next ep hObj =>
+      rw [hObj] at hRest
+      simp only [Bool.and_eq_true, beq_iff_eq] at hRest
+      obtain ⟨hW, hC⟩ := hRest
+      simp only [hW, hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte, bne_self_eq_false]
+      split
+      · next ep' hObj' =>
+        rw [hObj] at hObj'
+        cases hObj'
+        rfl
+      · next hNe => exact absurd hObj (hNe ep)
+    · next o hNe hObj =>
+      rw [hObj] at hRest
+      cases o <;> first | cases hRest | exact absurd rfl (hNe _)
+  | _ => intro h; cases h
+
 /-- Read-only lookup of a service registration by matching endpoint capability
 target. Returns the first registration whose endpoint targets the given ObjId,
 or `objectNotFound` if none matches.

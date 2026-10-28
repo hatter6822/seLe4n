@@ -1202,6 +1202,35 @@ private def runInactiveFlagChecks : IO Unit := do
   | .ok st => SeLe4n.Testing.assertLiveThreadStateInvariants "RR7.36 post-dispatch" st
   | .error _ => throw <| IO.userError "RR7.36: the context switch did not succeed"
 
+/-- **WS-ZA ZA5.5**: the boot installs the configured service interfaces, the
+only writer of the interface registry, so a registration can name one; a
+configuration naming two interfaces under one id, or one under the reserved
+sentinel id, is refused with its own diagnostic. -/
+private def runBootInterfaceChecks : IO Unit := do
+  IO.println "--- WS-ZA ZA5.5: the boot installs the configured interfaces ---"
+  let spec (n : Nat) : InterfaceSpec :=
+    { ifaceId := SeLe4n.InterfaceId.ofNat n, methodCount := 1, maxMessageSize := 4,
+      maxResponseSize := 4, requiresGrant := false }
+  let withIfaces (ifs : List InterfaceSpec) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [], initialInterfaces := ifs }
+  let one := withIfaces [spec 1]
+  assertBool "CONTROL: one configured interface is well-formed"
+    (one.wellFormed == true)
+  assertBool "the boot installs it under its id"
+    ((SeLe4n.Platform.Boot.bootFromPlatform one).state.interfaceRegistry[SeLe4n.InterfaceId.ofNat 1]?
+      == some (spec 1))
+  assertBool "a configuration without interfaces installs none"
+    ((SeLe4n.Platform.Boot.bootFromPlatform (withIfaces [])).state.interfaceRegistry[SeLe4n.InterfaceId.ofNat 1]?
+      == none)
+  for (name, ifs) in [("two interfaces under one id", [spec 1, spec 1]),
+      ("an interface under the sentinel id", [spec 0])] do
+    let cfg := withIfaces ifs
+    assertBool s!"NEGATIVE: {name} is refused, naming the interface conjunct"
+      (cfg.wellFormed == false &&
+        SeLe4n.Platform.Boot.wellFormedDiagnostic cfg == SeLe4n.Platform.Boot.bootInterfaceBootError)
+    assertBool s!"...and by the checked boot ({name})"
+      ((SeLe4n.Platform.Boot.bootFromPlatformChecked cfg).isOk == false)
+
 def runSmpIdleChecks : IO Unit := do
   IO.println "WS-SM SM5.E — Per-core idle thread suite"
   IO.println "===================================="
@@ -1219,6 +1248,7 @@ def runSmpIdleChecks : IO Unit := do
   runBootTablePoolChecks
   runBootUntypedCapabilityChecks
   runBootCapabilityLiveChecks
+  runBootInterfaceChecks
   runInactiveFlagChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."

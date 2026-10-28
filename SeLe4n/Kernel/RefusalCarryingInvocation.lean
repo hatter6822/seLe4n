@@ -25,10 +25,10 @@ runs it behind the shared operand check (`dispatchOperandCheckedR`), equal to
 
 Every routed invocation is inert and records no declassification, so its taint
 step leaves the state as the arm left it (`applySyscallTaintAfter_inert`), and
-checks its rights in the classic order.  The invocations outside the set keep
-the general path: the in-place retype (its taint step clears provenance), the
-scheduling-context configure and service register (a fifth argument word), and
-the declassification and audit calls.
+checks its rights in the classic order.  The scheduling-context configure and
+the service register carry a fifth argument word and are routed as the entry's
+`overflowOne` arm (`dispatchOverflowOneCheckedR`, at the end of this file); the
+declassification and audit calls keep the general path.
 -/
 
 namespace SeLe4n.Kernel
@@ -1549,5 +1549,192 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
         rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-! ## The service register
+
+WS-ZA ZA5.5.  A service register carries five argument words, as a configure
+does: the fifth (whether invoking the interface needs the grant right) is
+overflow slot 0 of the caller's IPC buffer, read at the entry and handed here
+as the word `w`.  Its taint step is the identity and its rights are checked in
+the classic order. -/
+
+/-- `dispatchWithCapChecked`'s service-register arm, its arguments read from the
+register file `regs` through `layout` and then the overflow word `w`
+(`dispatchWithCapChecked_eq_serviceRegisterBy`). -/
+@[inline] def dispatchServiceRegisterBy (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
+    (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  match cap.target with
+  | .object epId =>
+    match decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error e
+    | .ok args =>
+      registerServiceChecked ctx tid
+        { sid := ServiceId.ofNat epId.toNat
+          iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+                     maxMessageSize := args.maxMessageSize
+                     maxResponseSize := args.maxResponseSize
+                     requiresGrant := args.requiresGrant }
+          endpointCap := cap } st
+  | _ => .error .invalidCapability
+
+theorem dispatchWithCapChecked_eq_serviceRegisterBy (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability) (st : SystemState)
+    (h : decoded.syscallId = .serviceRegister)
+    (hRegs : decoded.msgRegs = layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      dispatchServiceRegisterBy ctx tid layout regs w cap st := by
+  have hDec := decodeServiceRegisterArgs_eq_by layout regs w decoded hRegs
+  rcases decoded with ⟨capAddr, msgInfo, sid, msgRegs, capRecvSlot, inlineCount, overflowCount⟩
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  simp only at h
+  subst h
+  cases target <;>
+    simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchServiceRegisterBy, hDec]
+  all_goals rfl
+
+/-- `dispatchServiceRegisterBy`, refusal-carrying: the checks read first (the
+flow check and `registerServiceAdmitted`) and the state handed to the write
+alone (`registerServicePerform`); a refusal is in the state handed in
+(`dispatchServiceRegisterByR_eq`). -/
+@[inline] def dispatchServiceRegisterByR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+  match cap.target with
+  | .object epId =>
+    match decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error (e, st)
+    | .ok args =>
+      let reg : ServiceRegistration :=
+        { sid := ServiceId.ofNat epId.toNat
+          iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+                     maxMessageSize := args.maxMessageSize
+                     maxResponseSize := args.maxResponseSize
+                     requiresGrant := args.requiresGrant }
+          endpointCap := cap }
+      RefusalCarrying.ofChecked
+        (registrationWriteAdmitted ctx tid reg && registerServiceAdmitted st reg)
+        (fun st => registerServicePerform st reg)
+        (registerServiceChecked ctx tid reg) st
+  | _ => .error (.invalidCapability, st)
+
+theorem dispatchServiceRegisterByR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability)
+    (st : SystemState) :
+    dispatchServiceRegisterByR ctx tid layout regs w cap st =
+      RefusalCarrying.ofKernel (dispatchServiceRegisterBy ctx tid layout regs w cap) st := by
+  unfold dispatchServiceRegisterByR dispatchServiceRegisterBy
+  cases cap.target with
+  | object epId =>
+    dsimp only
+    cases decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
+    | error e => rfl
+    | ok args =>
+      dsimp only
+      apply RefusalCarrying.ofChecked_eq
+      intro hA
+      exact registerServiceChecked_of_admitted _ _ _ _ hA
+  | _ => rfl
+
+/-- A service register's taint step leaves the state as its arm left it. -/
+theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId = .serviceRegister)
+    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (post : SystemState) :
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+      post := by
+  simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
+    syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
+    applyTaintFlow, applyTaintClears, List.foldl, List.filter]
+
+/-- The service register's arm behind the operand check: the rights gate
+`syscallLookupCap` applies, then `dispatchServiceRegisterByR`. -/
+@[inline] def serviceRegisterOperandArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (regs : RegisterFile) (w : UInt64) :
+    TaintTable → Option Capability → RefusalCarrying Unit :=
+  fun _ operand st =>
+    match operand with
+    | none => .error (.invalidCapability, st)
+    | some cap =>
+        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        else if cap.hasRight (syscallRequiredRight .serviceRegister) then
+          dispatchServiceRegisterByR ctx tid SeLe4n.arm64DefaultLayout regs w cap st
+        else .error (.illegalAuthority, st)
+
+/-- `dispatchSyscallChecked` for a service register whose fifth word is `w`
+(`dispatchServiceRegisterCheckedR_eq`). -/
+@[inline] def dispatchServiceRegisterCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+    (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  dispatchOperandCheckedR capAddr tid executingCore (serviceRegisterOperandArmR ctx tid regs w)
+
+theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hSid : decoded.syscallId = .serviceRegister)
+    (hRegs : decoded.msgRegs =
+      SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    dispatchServiceRegisterCheckedR ctx decoded.capAddr regs w tid executingCore =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
+  have hFirst : syscallChecksTargetFirst decoded.syscallId = false := by
+    rw [hSid]; rfl
+  have hNotYield : decoded.syscallId ≠ .yield := by
+    rw [hSid]; exact fun h => SyscallId.noConfusion h
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hFirst hNotYield
+  intro st tcb rootCn ref _ _ hRef
+  simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
+    Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
+    applySyscallTaintAfter_serviceRegister st tid decoded hSid]
+  generalize SystemState.lookupSlotCap st ref = operand
+  rcases operand with _ | cap
+  · rfl
+  · simp only [serviceRegisterOperandArmR, hSid]
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    · simp only [hIdle, ↓reduceIte]
+    · by_cases hRight : cap.hasRight (syscallRequiredRight .serviceRegister) = true
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+        rw [dispatchServiceRegisterByR_eq]
+        simp only [RefusalCarrying.ofKernel]
+        rw [← dispatchWithCapChecked_eq_serviceRegisterBy ctx decoded SeLe4n.arm64DefaultLayout
+          regs w tid executingCore
+          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight .serviceRegister }
+          cap st hSid hRegs]
+        rcases dispatchWithCapChecked ctx decoded tid executingCore _ cap st with
+          _ | ⟨⟨⟩, stPost⟩ <;> rfl
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+
+/-! ## The one-overflow-word invocations
+
+The register route's `overflowOne` arm names one of `routedOverflowOne`: the
+configure or the service register, each with its fifth word `w`. -/
+
+/-- `dispatchSyscallChecked` for a one-overflow-word invocation `sid` whose
+fifth word is `w` (`dispatchOverflowOneCheckedR_eq`).  The last arm is never
+taken: the route names only `routedOverflowOne` calls. -/
+@[inline] def dispatchOverflowOneCheckedR (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (w : UInt64) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  match sid with
+  | .schedContextConfigure => dispatchConfigureCheckedR capAddr regs w tid executingCore
+  | .serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore
+  | _ => fun st => .error (.illegalState, st)
+
+theorem dispatchOverflowOneCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (regs : RegisterFile) (w : UInt64)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hR : Architecture.RegisterDecode.routedOverflowOne decoded.syscallId = true)
+    (hRegs : decoded.msgRegs =
+      SeLe4n.arm64DefaultLayout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    dispatchOverflowOneCheckedR ctx decoded.syscallId decoded.capAddr regs w tid executingCore =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
+  cases hSid : decoded.syscallId <;> rw [hSid] at hR <;>
+    first
+    | (cases hR; done)
+    | exact dispatchConfigureCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs
+    | exact dispatchServiceRegisterCheckedR_eq ctx decoded regs w tid executingCore hSid hRegs
 
 end SeLe4n.Kernel

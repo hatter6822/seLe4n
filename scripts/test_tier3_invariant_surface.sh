@@ -22379,6 +22379,19 @@ run_check "INVARIANT" rg -n '^  applyMachineConfig withInterfaces config\.machin
 run_check "INVARIANT" rg -n '^  ifaces\.foldl registerInterface ist$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^    initialInterfaces := PlatformBinding\.serviceInterfaces \(platform := platform\) \}$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  serviceInterfaces := \[qemuVirtExerciserInterface\]$' SeLe4n/Platform/QemuVirt/Contract.lean
+# WS-ZA ZA5.5: the service register is routed on the register file with the
+# configure, one overflow word read from the IPC buffer, and runs checks first.
+run_check "INVARIANT" rg -n '^  \| \.schedContextConfigure \| \.serviceRegister => true$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^        \| some sid => \.overflowOne sid capAddr$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_negative_check "INVARIANT" rg -n '\bdecodeSyscallArgsFromState_of_routedConfigure\b' SeLe4n/
+# WS-ZA ZA5.5 (fix): an endpoint's final delete drops its service registration
+# before the finalisation, so the endpoint retires and its untyped resets.
+run_check "INVARIANT" rg -n '^    \(finaliseFinalObject target \(releaseFinalRegistration target st\)\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n 'deleting a registered endpoint.s last capability drops its registration' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitiesNameInstalledObjects($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
