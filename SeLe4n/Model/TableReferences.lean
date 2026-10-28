@@ -52,25 +52,58 @@ namespace SeLe4n.Model
 open SeLe4n.Kernel.RobinHood
 
 /-- The table back-links an object slot holds; an empty slot holds none. -/
-@[inline] def objTableBackLinks : Option KernelObject → EndpointService × Bool
+@[inline] def objTableBackLinks :
+    Option KernelObject → EndpointService × Bool × SeLe4n.Kernel.TaintWords
   | some o => o.tableBackLinks
-  | none => ({}, false)
+  | none => ({}, false, {})
 
-@[simp] theorem objTableBackLinks_none : objTableBackLinks none = ({}, false) := rfl
+@[simp] theorem objTableBackLinks_none : objTableBackLinks none = ({}, false, {}) := rfl
 
 @[simp] theorem objTableBackLinks_some (o : KernelObject) :
     objTableBackLinks (some o) = o.tableBackLinks := rfl
 
 /-- The back-links of a slot, read off the object the slot maps to. -/
 theorem objTableBackLinks_eq_map (o : Option KernelObject) :
-    objTableBackLinks o = (o.map KernelObject.tableBackLinks).getD ({}, false) := by
+    objTableBackLinks o = (o.map KernelObject.tableBackLinks).getD ({}, false, {}) := by
   cases o <;> rfl
 
-/-- The table that names objects by id outside every slot: the interrupt
-table.  (The service registry names its endpoints too, but since WS-ZA ZA5.9 it
-is read off them, `SystemState.serviceRegistry`, and holds no table.) -/
-@[inline] def SystemState.referenceTables (st : SystemState) : RHTable SeLe4n.Irq SeLe4n.ObjId :=
-  st.irqHandlers
+/-- The tables that name objects by id outside every slot: the interrupt
+table and, since WS-ZA ZA5.11, the declassification taint table.  (The service
+registry names its endpoints too, but since WS-ZA ZA5.9 it is read off them,
+`SystemState.serviceRegistry`, and holds no table.) -/
+@[inline] def SystemState.referenceTables (st : SystemState) :
+    RHTable SeLe4n.Irq SeLe4n.ObjId × SeLe4n.Kernel.TaintTable :=
+  (st.irqHandlers, st.declassificationTaint)
+
+/-- The taint words a slot holds, read as the taint they name: the carved words
+(the empty taint) for an empty slot and for every kind but a thread and a
+notification. -/
+@[inline] def objTaint (o : Option KernelObject) : SeLe4n.Kernel.DeclassificationTaint :=
+  (objTableBackLinks o).2.2.decode
+
+@[simp] theorem objTaint_none : objTaint none = SeLe4n.Kernel.DeclassificationTaint.empty := rfl
+
+/-- **The slot holds taint words**: a thread or a notification is stored there.
+Compiled, the lookup's `some` meets this match and is never built
+(`RHTable.get?_eq_getByEntry`). -/
+@[inline] def objHoldsTaint (o : Option KernelObject) : Bool :=
+  match o with
+  | some (.tcb _) => true
+  | some (.notification _) => true
+  | _ => false
+
+theorem objHoldsTaint_some (o : KernelObject) : objHoldsTaint (some o) = o.holdsTaint := by
+  cases o <;> rfl
+
+/-- A slot that holds no words reads the empty taint. -/
+theorem objTaint_of_not_holds {o : Option KernelObject} (h : objHoldsTaint o = false) :
+    objTaint o = SeLe4n.Kernel.DeclassificationTaint.empty := by
+  cases o with
+  | none => rfl
+  | some o =>
+    rw [objHoldsTaint_some] at h
+    show (o.taintWords).decode = _
+    rw [KernelObject.taintWords_of_not_holdsTaint h]; rfl
 
 /-- **Every interrupt table reference is recorded on the notification it
 names, and every interrupt flag answers a table entry.**  An interrupt names a
@@ -86,10 +119,16 @@ every syscall and kernel entry (the run-queue stages carry it,
 structure SystemState.tableReferencesRecorded (st : SystemState) : Prop where
   /-- An interrupt names a notification recording it. -/
   irqHandlers : ∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n →
-    (objTableBackLinks st.objects[n]?).2 = true
+    (objTableBackLinks st.objects[n]?).2.1 = true
   /-- A notification's interrupt flag is named by an interrupt. -/
-  irqBound : ∀ n : SeLe4n.ObjId, (objTableBackLinks st.objects[n]?).2 = true →
+  irqBound : ∀ n : SeLe4n.ObjId, (objTableBackLinks st.objects[n]?).2.1 = true →
     ∃ irq : SeLe4n.Irq, st.irqHandlers[irq]? = some n
+  /-- WS-ZA ZA5.11: **the taint table and the objects' taint words are one
+  value**: the table's entry at every id is the taint the object there holds in
+  its words, and empty where no thread or notification is.  The two are kept as
+  deliberate copies for one row (the words are written beside every table
+  write); ZA5.12 retires the table and reads the words. -/
+  taintStored : ∀ k : SeLe4n.ObjId, st.declassificationTaint k = objTaint st.objects[k]?
 
 /-- **The registry's entry under `sid` is the record of the endpoint with that
 id, read off its back-link.** -/
@@ -169,15 +208,18 @@ theorem SystemState.serviceRegistry_notTargeted (st : SystemState) {e : SeLe4n.O
   rw [hObj] at hc
   simp [KernelObject.tableBackLinks, h0] at hc
 
-/-- **A step keeping every object's interrupt back-link and the interrupt table
-keeps the references recorded**: the recorded references are the interrupt
-table's alone. -/
+/-- **A step keeping every object's interrupt back-link and taint words, the
+interrupt table and the taint table keeps the references recorded**: the
+recorded references are those two tables'. -/
 theorem SystemState.tableReferencesRecorded.of_irqBackLinks {st st' : SystemState}
     (hI : st'.irqHandlers = st.irqHandlers)
-    (h2 : ∀ k : SeLe4n.ObjId, (objTableBackLinks st'.objects[k]?).2 = (objTableBackLinks st.objects[k]?).2)
+    (hD : st'.declassificationTaint = st.declassificationTaint)
+    (h2 : ∀ k : SeLe4n.ObjId,
+      (objTableBackLinks st'.objects[k]?).2 = (objTableBackLinks st.objects[k]?).2)
     (hR : st.tableReferencesRecorded) : st'.tableReferencesRecorded :=
   ⟨fun irq n h => by rw [hI] at h; rw [h2]; exact hR.irqHandlers irq n h,
-   fun n h => by rw [h2] at h; rw [hI]; exact hR.irqBound n h⟩
+   fun n h => by rw [h2] at h; rw [hI]; exact hR.irqBound n h,
+   fun k => by rw [hD, hR.taintStored k, objTaint, objTaint, h2]⟩
 
 /-- **An endpoint written over an endpoint keeps the references recorded**: an
 endpoint holds no interrupt back-link, so a registration's or a revocation's
@@ -186,9 +228,11 @@ theorem SystemState.tableReferencesRecorded.of_endpoint_over_endpoint {st st' : 
     {e : SeLe4n.ObjId} {ep ep' : Endpoint} (hInv : st.objects.invExt)
     (hObj : st.objects[e]? = some (.endpoint ep))
     (hO : st'.objects = st.objects.insert e (.endpoint ep'))
-    (hI : st'.irqHandlers = st.irqHandlers) (hR : st.tableReferencesRecorded) :
+    (hI : st'.irqHandlers = st.irqHandlers)
+    (hD : st'.declassificationTaint = st.declassificationTaint)
+    (hR : st.tableReferencesRecorded) :
     st'.tableReferencesRecorded :=
-  of_irqBackLinks hI (fun k => by
+  of_irqBackLinks hI hD (fun k => by
     rw [hO]
     by_cases hk : e = k
     · subst hk
@@ -217,6 +261,49 @@ def SystemState.TableReferenceFrame (st st' : SystemState) : Prop :=
     (f : TCB → TCB) : (st.updateTcb tid f).referenceTables = st.referenceTables := by
   unfold SystemState.updateTcb; split <;> rfl
 
+/-- WS-ZA ZA5.11: **two stores whose every slot holds the same taint words** —
+the part of `TableReferenceFrame`'s back-link clause a thread write owes, since a
+thread's taint words are its only back-link. -/
+def SameTaintWords (a b : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  ∀ k : SeLe4n.ObjId, (objTableBackLinks b[k]?).2.2 = (objTableBackLinks a[k]?).2.2
+
+namespace SameTaintWords
+
+theorem refl (a : RHTable SeLe4n.ObjId KernelObject) : SameTaintWords a a := fun _ => rfl
+
+theorem trans {a b c : RHTable SeLe4n.ObjId KernelObject} (h1 : SameTaintWords a b)
+    (h2 : SameTaintWords b c) : SameTaintWords a c := fun k => (h2 k).trans (h1 k)
+
+theorem of_eq {a b : RHTable SeLe4n.ObjId KernelObject} (h : b = a) : SameTaintWords a b :=
+  fun _ => by rw [h]
+
+/-- A thread written over a thread with the same taint words. -/
+theorem insert_tcb {a : RHTable SeLe4n.ObjId KernelObject} {k : SeLe4n.ObjId} {t t' : TCB}
+    (hInv : a.invExt) (hAt : a[k]? = some (.tcb t))
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
+    SameTaintWords a (a.insert k (.tcb t')) := fun j => by
+  by_cases hj : k = j
+  · subst hj
+    simp only [RHTable_getElem?_eq_get?] at hAt ⊢
+    rw [RHTable.getElem?_insert_self a _ _ hInv, hAt]
+    simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW]
+  · simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable.getElem?_insert_ne a _ _ _ (fun hb => hj (eq_of_beq hb)) hInv]
+
+/-- An object written over one holding the same taint words. -/
+theorem insert {a : RHTable SeLe4n.ObjId KernelObject} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : a.invExt) (hW : o.tableBackLinks.2.2 = (objTableBackLinks a[k]?).2.2) :
+    SameTaintWords a (a.insert k o) := fun j => by
+  by_cases hj : k = j
+  · subst hj
+    simp only [RHTable_getElem?_eq_get?] at hW ⊢
+    rw [RHTable.getElem?_insert_self a _ _ hInv]
+    exact hW
+  · simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable.getElem?_insert_ne a _ _ _ (fun hb => hj (eq_of_beq hb)) hInv]
+
+end SameTaintWords
+
 namespace SystemState.TableReferenceFrame
 
 /-- A kind-preserving write that writes no reference table is a frame: it keeps
@@ -230,10 +317,12 @@ theorem of_kindPreservingWrite {st st' : SystemState} (hK : kindPreservingWrite 
 theorem preserves {st st' : SystemState} (h : TableReferenceFrame st st')
     (hR : st.tableReferencesRecorded) : st'.tableReferencesRecorded := by
   obtain ⟨hT, hB⟩ := h
-  have hI : st'.irqHandlers = st.irqHandlers := hT
-  refine ⟨fun irq n h => ?_, fun n h => ?_⟩
+  have hI : st'.irqHandlers = st.irqHandlers := congrArg Prod.fst hT
+  have hD : st'.declassificationTaint = st.declassificationTaint := congrArg Prod.snd hT
+  refine ⟨fun irq n h => ?_, fun n h => ?_, fun k => ?_⟩
   · rw [hI] at h; rw [hB]; exact hR.irqHandlers irq n h
   · rw [hB] at h; rw [hI]; exact hR.irqBound n h
+  · rw [hD, hR.taintStored k, objTaint, objTaint, hB]
 
 /-- **A frame keeps the service registry**: the registry is read off the
 endpoints' back-links, which a frame keeps. -/
@@ -320,19 +409,23 @@ theorem rewriteObject {st : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
     TableReferenceFrame st (st.rewriteObject k obj h) :=
   insert hInv rfl rfl hB
 
-/-- A thread holds no table back-link, so a thread written over a thread keeps them. -/
+/-- A thread's only table back-link is its taint words (WS-ZA ZA5.11), so a
+thread written over a thread keeping them keeps its back-links. -/
 theorem tcb_over {st : SystemState} {k : SeLe4n.ObjId} {t t' : TCB}
-    (hO : st.objects[k]? = some (.tcb t)) :
+    (hO : st.objects[k]? = some (.tcb t))
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
     (KernelObject.tcb t').tableBackLinks = objTableBackLinks st.objects[k]? := by
-  rw [hO]; rfl
+  rw [hO]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW]
 
 /-- **The thread write primitive** (`updateTcb`). -/
 theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
-    (hInv : st.objects.invExt) : TableReferenceFrame st (st.updateTcb tid f) := by
+    (hInv : st.objects.invExt)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
+    TableReferenceFrame st (st.updateTcb tid f) := by
   unfold SystemState.updateTcb
   split
   · rename_i t hT _
-    exact rewriteObject _ hInv (tcb_over ((getTcb?_eq_some_iff st tid t).mp hT))
+    exact rewriteObject _ hInv (tcb_over ((getTcb?_eq_some_iff st tid t).mp hT) (hW t))
   · exact refl st
 
 /-- **The scheduling-context write primitive** (`updateSchedContext`): a context
@@ -347,21 +440,27 @@ theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
       rw [(getSchedContext?_eq_some_iff st scId sc).mp hS]; rfl)
   · exact refl st
 
-/-- A step whose every slot holding no thread reads as it did, both ways, and
-which writes no reference table, keeps every object's back-links: a thread
-holds none. -/
+/-- A step whose every slot holding no thread reads as it did, both ways, which
+keeps every slot's taint words and writes no reference table, keeps every
+object's back-links: a thread's only one is its taint words. -/
 theorem of_offTcb {st st' : SystemState}
     (hT : st'.referenceTables = st.referenceTables)
     (h : ∀ (k : SeLe4n.ObjId) (o : KernelObject), (∀ t, o ≠ .tcb t) →
-      (st'.objects[k]? = some o ↔ st.objects[k]? = some o)) :
+      (st'.objects[k]? = some o ↔ st.objects[k]? = some o))
+    (hW : SameTaintWords st.objects st'.objects) :
     TableReferenceFrame st st' := ⟨hT, fun k => by
+  have hk := hW k
   cases h1 : st'.objects[k]? with
   | none =>
     cases h2 : st.objects[k]? with
     | none => rfl
     | some p =>
       cases p with
-      | tcb _ => rfl
+      | tcb _ =>
+        rw [h1, h2] at hk
+        simp only [objTableBackLinks_some, objTableBackLinks_none, KernelObject.tableBackLinks]
+          at hk ⊢
+        rw [hk]
       | _ =>
         have := (h k _ (fun _ h => KernelObject.noConfusion h)).mpr h2
         rw [h1] at this; cases this
@@ -369,10 +468,17 @@ theorem of_offTcb {st st' : SystemState}
     cases o with
     | tcb _ =>
       cases h2 : st.objects[k]? with
-      | none => rfl
+      | none =>
+        rw [h1, h2] at hk
+        simp only [objTableBackLinks_some, objTableBackLinks_none, KernelObject.tableBackLinks]
+          at hk ⊢
+        rw [hk]
       | some p =>
         cases p with
-        | tcb _ => rfl
+        | tcb _ =>
+          rw [h1, h2] at hk
+          simp only [objTableBackLinks_some, KernelObject.tableBackLinks] at hk ⊢
+          rw [hk]
         | _ =>
           have := (h k _ (fun _ h => KernelObject.noConfusion h)).mpr h2
           rw [h1] at this; cases this
@@ -393,7 +499,9 @@ questions have the same answer (`tableBackLinksClear.namedByNone`). -/
   | _ => true
 
 theorem SystemState.tableBackLinksClear_iff (st : SystemState) (x : SeLe4n.ObjId) :
-    st.tableBackLinksClear x = true ↔ objTableBackLinks st.objects[x]? = ({}, false) := by
+    st.tableBackLinksClear x = true ↔
+      ((objTableBackLinks st.objects[x]?).1, (objTableBackLinks st.objects[x]?).2.1) =
+        (({} : EndpointService), false) := by
   unfold tableBackLinksClear getObject?
   cases st.objects[x]? with
   | none => simp
@@ -418,16 +526,17 @@ theorem SystemState.tableBackLinksClear.namedByNone {st : SystemState} {x : SeLe
     (∀ (sid : ServiceId) (reg : ServiceRegistration), st.serviceRegistry[sid]? = some reg →
       ∃ e, reg.endpointCap.target = .object e ∧ e ≠ x) ∧
     (∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n → n ≠ x) := by
-  rw [tableBackLinksClear_iff] at h
+  rw [tableBackLinksClear_iff, Prod.mk.injEq] at h
+  obtain ⟨h1, h2⟩ := h
   refine ⟨fun sid reg hs => ?_, fun irq n hi hn => ?_⟩
   · obtain ⟨e, he, -, hc⟩ := st.serviceRegistry_names hs
     refine ⟨e, he, fun hn => ?_⟩
     subst hn
-    rw [h] at hc
+    rw [h1] at hc
     cases hc
   · have hb := hR.irqHandlers irq n hi
     subst hn
-    rw [h] at hb
+    rw [h2] at hb
     cases hb
 
 /-- The empty state records every reference: its tables are empty. -/
@@ -439,5 +548,8 @@ theorem SystemState.default_tableReferencesRecorded :
   irqBound := fun n h => by
     have : (default : SystemState).objects[n]? = none := RHTable_get?_empty 16 (by omega)
     rw [this] at h; cases h
+  taintStored := fun k => by
+    have : (default : SystemState).objects[k]? = none := RHTable_get?_empty 16 (by omega)
+    rw [this]; rfl
 
 end SeLe4n.Model

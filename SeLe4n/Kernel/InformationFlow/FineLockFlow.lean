@@ -13,6 +13,7 @@
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
+import SeLe4n.Kernel.Architecture.TaintWordFrame
 
 /-!
 # WS-SM SM8.D — information flow under fine locks
@@ -1543,7 +1544,7 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
           -- PR #873 round 6: the taint seam moved into `dispatchSyscallChecked`,
           -- so the entry delegates and `hOk` IS the dispatch's own success.  The
           -- seam is still projection-invisible
-          -- (`applySyscallTaint_preserves_projection`, `rfl`), which is what lets
+          -- (`applySyscallTaint_preserves_projection`), which is what lets
           -- `hDispatchProj` be discharged from a statement about the arm.
           --
           -- The entry binds the TLB-filled state once rather than spelling it out
@@ -1563,16 +1564,18 @@ theorem syscallEntryChecked_preserves_projection (ctx : LabelingContext) (observ
 
 /-- WS-SM SM9.D.18: **the propagation writes no core's observable slots.**
 
-`applySyscallTaint` changes exactly one `SystemState` field, and that field is
-in none of the six per-core components `observableSlotsConfinedToCores` reads —
+`applySyscallTaint` changes two `SystemState` fields — the taint table and,
+since WS-ZA ZA5.11, the taint words in the store — and neither is in the six
+per-core components `observableSlotsConfinedToCores` reads —
 no run queue, no current slot, no domain state, no register bank.  So it is
 confined to the **empty** set of cores, which is the sharpest statement
 available and the one the cross-core inventory composes with: a content-moving
 arm's write set is exactly the transition's, unchanged by the propagation the
 entry runs on top of it. -/
 theorem applySyscallTaint_confinedToCores_nil (plan : TaintPlan) (pre post : SystemState) :
-    observableSlotsConfinedToCores post (applySyscallTaint plan pre post) [] :=
-  ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
+    observableSlotsConfinedToCores post (applySyscallTaint plan pre post) [] := by
+  rw [applySyscallTaint_frame]
+  exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
    fun _ _ => rfl⟩
 
 /-- WS-SM SM9.D.18 / SM9.D.6: **the propagation is invisible on every core.**
@@ -1586,20 +1589,33 @@ every content-moving arm can run on any core. -/
 theorem applySyscallTaint_preserves_onCore (ctx : LabelingContext) (L : SecurityLabel)
     (c : CoreId) (plan : TaintPlan) (pre post : SystemState) :
     ObservableState.onCore ctx c L (applySyscallTaint plan pre post)
-      = ObservableState.onCore ctx c L post :=
-  onCore_declassificationTaint ctx L post c _
+      = ObservableState.onCore ctx c L post := by
+  unfold ObservableState.onCore projectStateOnCore
+  rw [applySyscallTaint_preserves_projection, applySyscallTaint_frame]
+  rfl
 
-/-- WS-SM SM9.D.18: **the whole invariant bundle across the propagation.**
+/-- WS-SM SM9.D.18, WS-ZA ZA5.11: **the whole invariant bundle across the
+propagation.**
 
-Unconditional, because no `proofLayerInvariantBundle` conjunct reads the taint
-table — each entry is bounded by its own type, so a writer owes nothing to the
-sixteen conjuncts that are already there.  This is the carriage the mount
-checklist's step 8 requires of *every* mounted field, and it is what a
-whole-entry bundle-preservation proof for the live path composes with. -/
+Unconditional.  The step writes the taint table, which no
+`proofLayerInvariantBundle` conjunct reads, and the taint words of threads and
+notifications, which no conjunct reads either: the store after the step agrees
+with the one before off the words (`applySyscallTaint_objectsAgreeOffTaint`),
+keeps its table invariant and its size, and every conjunct carries across that
+one frame (`Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint`).
+This is the carriage the mount checklist's step 8 requires of *every* mounted
+field, and it is what a whole-entry bundle-preservation proof for the live path
+composes with. -/
 theorem applySyscallTaint_preserves_proofLayerInvariantBundle (plan : TaintPlan)
     (pre post : SystemState) (h : Architecture.proofLayerInvariantBundle post) :
-    Architecture.proofLayerInvariantBundle (applySyscallTaint plan pre post) :=
-  Architecture.proofLayerInvariantBundle_setDeclassificationTaint post _ h
+    Architecture.proofLayerInvariantBundle (applySyscallTaint plan pre post) := by
+  have hA : post.objectsAgreeOffTaint
+      { post with objects := (applySyscallTaint plan pre post).objects } :=
+    applySyscallTaint_objectsAgreeOffTaint plan pre post
+  have hB := Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint hA
+    (fun hI => applySyscallTaint_invExt hI) (applySyscallTaint_size plan pre post) h
+  rw [applySyscallTaint_frame plan pre post]
+  exact Architecture.proofLayerInvariantBundle_setDeclassificationTaint _ _ hB
 
 /-- SM8.D.5 (**WS-LS LS2.1**: over the pair): **the 2PL-bracketed live syscall
 entry** — the shape SM3.C.9 installs at the `@[export]` bodies: take the

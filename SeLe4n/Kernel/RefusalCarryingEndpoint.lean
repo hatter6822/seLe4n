@@ -337,15 +337,14 @@ held across the arm is a word, not an `Option` cell. -/
   | _ => 0
 
 /-- The send's taint step, without the plan: the sender's pre-state taint joins
-the receiver's (`sendTaintStep_eq`).  It builds no edge list and no plan
-record. -/
+the receiver's, table entry and taint words (`sendTaintStep_eq`).  It builds no
+edge list and no plan record. -/
 @[inline] def sendTaintStep (headCode : Nat) (tid : SeLe4n.ThreadId)
     (preTaint : TaintTable) (post : SystemState) : SystemState :=
   match headCode with
   | r + 1 =>
       let receiver : SeLe4n.ThreadId := ⟨r⟩
-      { post with declassificationTaint :=
-          post.declassificationTaint.joinAt receiver.toObjId (preTaint tid.toObjId) }
+      joinTaintAt post receiver.toObjId (preTaint tid.toObjId)
   | 0 => post
 
 theorem sendTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -363,22 +362,22 @@ theorem sendTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩ <;>
   first
   | simp [applySyscallTaintAfter, syscallRecordsDeclassification,
-      applyOrigination, applyTaintClears, applyTaintFlow]; done
+      applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]; done
   | cases target with
     | object epId =>
       simp only [sendTaintHeadCode, senderTaintEdges]
       cases st.getEndpoint? epId with
       | none =>
         simp [sendTaintStep, applySyscallTaintAfter, syscallRecordsDeclassification,
-          applyOrigination, applyTaintClears, applyTaintFlow]
+          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
       | some ep =>
         simp only [Option.bind_some, ← Endpoint.ofOptCode_recvHeadCode]
         cases ep.recvHeadCode <;>
           simp [sendTaintStep, SeLe4n.ThreadId.ofOptCode, applySyscallTaintAfter,
-            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
     | _ =>
       simp [sendTaintHeadCode, sendTaintStep, applySyscallTaintAfter,
-        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- The send's slot check, gate, arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed
@@ -711,16 +710,16 @@ theorem replyTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     contentFlowBypassed]
   rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
   · simp [applySyscallTaintAfter, syscallRecordsDeclassification,
-      applyOrigination, applyTaintClears, applyTaintFlow]
+      applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
   · cases target with
     | replyCap rid =>
       simp only [replyTaintCaller?, replyTaintEdges]
       cases (st.getReply? rid).bind (·.caller) <;>
         simp [sendTaintStep, ThreadId.optCode, applySyscallTaintAfter, syscallRecordsDeclassification,
-          applyOrigination, applyTaintClears, applyTaintFlow]
+          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
     | _ =>
       simp [replyTaintCaller?, sendTaintStep, applySyscallTaintAfter,
-        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- WS-ZA ZA4.7: the checked reply arm (`dispatchWithCapChecked`'s `.reply`
 case), through the specification's transfer, refusing in the state it was
@@ -1326,14 +1325,13 @@ the arm: the head of the send queue of the endpoint its capability names
   | _ => 0
 
 /-- The receive's taint step, without the plan: the sender's pre-state taint
-joins the receiver's (`receiveTaintStep_eq`). -/
+joins the receiver's, table entry and taint words (`receiveTaintStep_eq`). -/
 @[inline] def receiveTaintStep (sourceCode : Nat) (tid : SeLe4n.ThreadId)
     (preTaint : TaintTable) (post : SystemState) : SystemState :=
   match sourceCode with
   | s + 1 =>
       let sender : SeLe4n.ThreadId := ⟨s⟩
-      { post with declassificationTaint :=
-          post.declassificationTaint.joinAt tid.toObjId (preTaint sender.toObjId) }
+      joinTaintAt post tid.toObjId (preTaint sender.toObjId)
   | 0 => post
 
 theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1348,22 +1346,22 @@ theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     contentFlowBypassed]
   rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
   · simp [applySyscallTaintAfter, syscallRecordsDeclassification,
-      applyOrigination, applyTaintClears, applyTaintFlow]
+      applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
   · cases target with
     | object epId =>
       simp only [receiveTaintSourceCode, receiverTaintEdges]
       cases st.getEndpoint? epId with
       | none =>
         simp [receiveTaintStep, applySyscallTaintAfter, syscallRecordsDeclassification,
-          applyOrigination, applyTaintClears, applyTaintFlow]
+          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
       | some ep =>
         simp only [Option.bind_some, ← Endpoint.ofOptCode_sendHeadCode]
         cases ep.sendHeadCode <;>
           simp [receiveTaintStep, SeLe4n.ThreadId.ofOptCode, applySyscallTaintAfter,
-            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
     | _ =>
       simp [receiveTaintSourceCode, receiveTaintStep, applySyscallTaintAfter,
-        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- The receive's slot check, gate, arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed

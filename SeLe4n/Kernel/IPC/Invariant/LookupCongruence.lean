@@ -899,11 +899,17 @@ theorem notificationBindingCodes_of_absentOrInert {o : Option KernelObject}
     · cases o <;> first | rfl | exact absurd h (by simp [ipcReadInert])
 
 /-- A thread as every IPC bundle conjunct but the reciprocity reads it: the record
-with its run-queue fields, its space-slot links and its bound-notification code
-cleared.  The code is read by `notificationBindingReciprocal` alone, which the
+with its run-queue fields, its space-slot links, its bound-notification code and
+(WS-ZA ZA5.11) its taint words cleared.  The code is read by `notificationBindingReciprocal` alone, which the
 whole-bundle transports take as its own hypothesis. -/
 def _root_.SeLe4n.Model.TCB.ipcReadView (t : TCB) : TCB :=
-  TCB.withoutLinks { TCB.withoutRunLinks t with boundNotificationCode := 0 }
+  TCB.withoutLinks { TCB.withoutRunLinks t with
+    boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0,
+    taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }
+
+/-- A thread's taint words are outside its IPC read view. -/
+@[simp] theorem _root_.SeLe4n.Model.TCB.ipcReadView_withTaintWords (t : TCB)
+    (w : SeLe4n.Kernel.TaintWords) : (t.withTaintWords w).ipcReadView = t.ipcReadView := rfl
 
 /-- Two TCBs with the same IPC read view: the first is the second with its
 run-queue fields, space-slot links and bound-notification code rewritten. -/
@@ -920,7 +926,12 @@ theorem _root_.SeLe4n.Model.TCB.eq_withIpcReadView_of_eq {t t' : TCB}
                   ipcBadge := t'.ipcBadge, ipcBadged := t'.ipcBadged,
                   ipcCanGrant := t'.ipcCanGrant, ipcFaultSend := t'.ipcFaultSend,
                   spaceLinks := t'.spaceLinks,
-                  boundNotificationCode := t'.boundNotificationCode } := by
+                  boundNotificationCode := t'.boundNotificationCode,
+                  taintTag0 := t'.taintTag0, taintTag1 := t'.taintTag1,
+                  taintTag2 := t'.taintTag2, taintTag3 := t'.taintTag3,
+                  taintTag4 := t'.taintTag4, taintTag5 := t'.taintTag5,
+                  taintTag6 := t'.taintTag6, taintTag7 := t'.taintTag7,
+                  taintCount := t'.taintCount, taintSaturated := t'.taintSaturated } := by
   cases t; cases t'
   simp only [TCB.ipcReadView, TCB.withoutRunLinks, TCB.withoutLinks, TCB.mk.injEq] at e ⊢
   simp only [e, and_self]
@@ -975,6 +986,16 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
       sc'.boundThread = sc.boundThread
 
 namespace sameNotificationBindings
+
+/-- WS-ZA ZA5.11: stores that agree off the taint words hold the same binding
+codes — a word write moves no binding. -/
+theorem of_objectsAgreeOffTaint {s1 s2 : SystemState}
+    (h : s1.objectsAgreeOffTaint s2) : sameNotificationBindings s1 s2 := fun x => by
+  have e := congrArg (Option.map KernelObject.bindingCodes) (h x)
+  simp only [Option.map_map, Function.comp_def, KernelObject.eraseTaint,
+    KernelObject.bindingCodes_withTaintWords] at e
+  cases h2 : s2.objects[x]? <;> cases h1 : s1.objects[x]? <;> rw [h1, h2] at e <;>
+    first | rfl | cases e | exact Option.some.inj e
 
 /-- Stores that agree off the run-queue links hold the same binding codes. -/
 theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
@@ -1073,9 +1094,11 @@ read-view agreement — the relation a run-queue write induces. -/
 theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffRunLinks s1) : ipcReadViewAgreement s1 s2 :=
   ⟨fun _ _ hx => (h.get_tcb' hx).elim fun t ht =>
-     ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with boundNotificationCode := 0 }) ht.2⟩,
+     ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with
+       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    fun _ _ hx => (h.get_tcb hx).elim fun t ht =>
-     ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with boundNotificationCode := 0 }) ht.2⟩,
+     ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with
+       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    endpointBack_of_iff fun _ _ => h.get_endpoint_iff,
    endpointFwd_of_iff fun _ _ => h.get_endpoint_iff,
    fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
@@ -1087,15 +1110,37 @@ a CNode is outside the view, and a thread differs only in its space-slot links. 
 theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
     (h : s2.objectsAgreeOffDerivationLinks s1) : ipcReadViewAgreement s1 s2 :=
   ⟨fun _ _ hx => (h.tcb_back hx).elim fun t ht =>
-     ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with boundNotificationCode := 0 }) ht.2⟩,
+     ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with
+       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    fun _ _ hx => (h.tcb_fwd hx).elim fun t ht =>
-     ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with boundNotificationCode := 0 }) ht.2⟩,
+     ⟨t, ht.1, congrArg (fun u : TCB => { TCB.withoutRunLinks u with
+       boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
    endpointBack_of_iff fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    endpointFwd_of_iff fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    fun _ ntfn hObj =>
      ⟨ntfn, h.obj_back hObj (fun _ e => KernelObject.noConfusion e), rfl, rfl, rfl⟩,
    fun _ _ => h.obj_iff (fun _ e => KernelObject.noConfusion e),
    fun _ sc hSc => ⟨sc, h.obj_fwd hSc (fun _ e => KernelObject.noConfusion e), rfl⟩⟩
+
+/-- WS-ZA ZA5.11: **object stores that agree off the taint words are read-view
+agreement** — the relation the taint step induces: a thread's taint words are
+outside its read view (`TCB.ipcReadView_withTaintWords`), a notification's are
+outside the content the clause reads, and every other kind holds none. -/
+theorem of_objectsAgreeOffTaint {s1 s2 : SystemState}
+    (h : s1.objectsAgreeOffTaint s2) : ipcReadViewAgreement s1 s2 :=
+  ⟨fun _ _ hx => (h.tcb_back hx).elim fun t ⟨ht, e⟩ => ⟨t, ht,
+     (TCB.ipcReadView_withTaintWords _ {}).symm.trans
+       ((congrArg TCB.ipcReadView e).trans (TCB.ipcReadView_withTaintWords _ {}))⟩,
+   fun _ _ hx => (h.tcb_fwd hx).elim fun t ⟨ht, e⟩ => ⟨t, ht,
+     (TCB.ipcReadView_withTaintWords _ {}).symm.trans
+       ((congrArg TCB.ipcReadView e).trans (TCB.ipcReadView_withTaintWords _ {}))⟩,
+   endpointBack_of_iff fun oid _ => h.inert_iff oid rfl,
+   endpointFwd_of_iff fun oid _ => h.inert_iff oid rfl,
+   fun _ _ hx => (h.notification_back hx).elim fun n ⟨hn, e⟩ =>
+     ⟨n, hn, (congrArg Notification.state e).symm, (congrArg Notification.waitHead e).symm,
+       (congrArg Notification.pendingBadge e).symm⟩,
+   fun oid _ => h.inert_iff oid rfl,
+   fun oid sc hSc => ⟨sc, (h.inert_iff oid rfl).mpr hSc, rfl⟩⟩
 
 /-- Full pointwise lookup agreement is read-view agreement. -/
 theorem of_getElem_eq {s1 s2 : SystemState}
@@ -1370,31 +1415,39 @@ form `run_links_back` substitutes. -/
 theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
     ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 2)) (bnc : Nat),
+      (sl : Vector Nat (slotLinkWords * 2)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
+      (wc : Nat) (ws : Bool),
       s1.objects[x]? = some (.tcb t) ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
                     ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
-                    spaceLinks := sl, boundNotificationCode := bnc } := by
+                    spaceLinks := sl, boundNotificationCode := bnc,
+                    taintTag0 := w0, taintTag1 := w1, taintTag2 := w2, taintTag3 := w3,
+                    taintTag4 := w4, taintTag5 := w5, taintTag6 := w6, taintTag7 := w7,
+                    taintCount := wc, taintSaturated := ws } := by
   obtain ⟨t, ht, e⟩ := hView.tcb x t' hx
-  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
+  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e⟩
 
 /-- The same, from `s1` to `s2` — the form `run_links_fwd` substitutes. -/
 theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
     {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
     ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool)
-      (sl : Vector Nat (slotLinkWords * 2)) (bnc : Nat),
+      (sl : Vector Nat (slotLinkWords * 2)) (bnc : Nat) (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64)
+      (wc : Nat) (ws : Bool),
       s2.objects[x]? = some (.tcb t') ∧
       t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
                     replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
                     ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs,
-                    spaceLinks := sl, boundNotificationCode := bnc } := by
+                    spaceLinks := sl, boundNotificationCode := bnc,
+                    taintTag0 := w0, taintTag1 := w1, taintTag2 := w2, taintTag3 := w3,
+                    taintTag4 := w4, taintTag5 := w5, taintTag6 := w6, taintTag7 := w7,
+                    taintCount := wc, taintSaturated := ws } := by
   obtain ⟨t', ht, e⟩ := hView.tcbFwd x t hx
-  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
+  exact ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withIpcReadView_of_eq e.symm⟩
 
 /-- The typed-getter form of the reply clause. -/
 theorem getReply?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
@@ -1800,6 +1853,25 @@ theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemSta
   capabilityBadgesWellFormed_of_slotCap_back h fun _ _ hO =>
     let ⟨o, ho, hs, _⟩ := hA.slots_back hO; ⟨o, ho, hs⟩
 
+
+/-- WS-ZA ZA5.11: the capability half of `badgeWellFormed` carries across a
+word write: no word is a capability slot. -/
+theorem capabilityBadgesWellFormed_of_objectsAgreeOffTaint {s1 s2 : SystemState}
+    (hA : s1.objectsAgreeOffTaint s2) (h : capabilityBadgesWellFormed s1) :
+    capabilityBadgesWellFormed s2 :=
+  capabilityBadgesWellFormed_of_slotCap_back h fun oid o' hO =>
+    (hA.some_iff oid o' hO).elim fun o ⟨ho, e⟩ => ⟨o, ho, by
+      have e' := congrArg KernelObject.slotCap e
+      simpa only [KernelObject.eraseTaint, KernelObject.slotCap_withTaintWords] using e'⟩
+
+/-- WS-ZA ZA5.11: **the whole bundle carries across the taint step** — two
+states whose stores agree off the taint words satisfy `ipcInvariantFull`
+interchangeably (`ipcReadViewAgreement.of_objectsAgreeOffTaint`). -/
+theorem ipcInvariantFull_of_objectsAgreeOffTaint {s1 s2 : SystemState}
+    (hA : s1.objectsAgreeOffTaint s2) (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffTaint hA)
+    (.of_objectsAgreeOffTaint hA)
+    (capabilityBadgesWellFormed_of_objectsAgreeOffTaint hA h.badgeWellFormed.2) h
 
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
 two states whose object stores agree off the run-queue links satisfy the

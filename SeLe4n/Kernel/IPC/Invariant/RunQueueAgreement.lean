@@ -24,10 +24,11 @@ open SeLe4n.Model.SystemState (RunQueueStage)
 theorem modifyTcb_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hm : TCB.StateMono f := by tcb_state_mono) : RunQueueStage st st' := by
+    (hm : TCB.StateMono f := by tcb_state_mono)
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) : RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
-    (SystemState.objStateMono_tcb (hm tcb))
+    (SystemState.objStateMono_tcb (hm tcb)) (hW tcb)
 
 theorem storeTcbQueueLinks_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -78,11 +79,12 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
 theorem modifyTcb_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} {c : Concurrency.CoreId} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
-    (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false) :
+    (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
     SystemState.RunQueueWindowStage (.block c) st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact SystemState.RunQueueWindowStage.storeObject_block hS (getTcb?_of_lookupTcb st tid tcb hL)
-    (hf tcb) (hT tcb) hCur hNI
+    (hf tcb) (hT tcb) hCur hNI (hW tcb)
 
 theorem storeTcbIpcState_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {s : ThreadIpcState} {c : Concurrency.CoreId} (h : storeTcbIpcState st tid s = .ok st')
@@ -103,11 +105,12 @@ before neither write, so the step is monotone whatever IPC state it stores. -/
 theorem modifyTcb_blockedRunQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
-    (hB : ∀ x, lookupTcb st tid = some x → x.ipcState ≠ .ready) : RunQueueStage st st' := by
+    (hB : ∀ x, lookupTcb st tid = some x → x.ipcState ≠ .ready)
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) : RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
     (SystemState.objStateMono_tcb ⟨fun hr => absurd hr (hB tcb hL),
-      fun ha => by unfold TCB.Active; rw [hT]; exact ha⟩)
+      fun ha => by unfold TCB.Active; rw [hT]; exact ha⟩) (hW tcb)
 
 theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage}
@@ -134,9 +137,10 @@ theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.T
     {t old : TCB} (hOld : st.getTcb? tid = some old)
     (hS : storeObject tid.toObjId (.tcb t) st = .ok ((), st'))
     (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
-    (hm : TCB.StepMono old t := by exact ⟨id, id⟩) : RunQueueStage st st' :=
+    (hm : TCB.StepMono old t := by exact ⟨id, id⟩)
+    (hW : t.taintWords = old.taintWords := by taint_words_kept) : RunQueueStage st st' :=
   RunQueueStage.storeObject_tcb hS ((SystemState.getTcb?_eq_some_iff st tid old).mp hOld) h
-    (SystemState.objStateMono_tcb hm)
+    (SystemState.objStateMono_tcb hm) hW
 
 /-- A Reply stored over a Reply. -/
 theorem storeObject_replyOver_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -766,7 +770,8 @@ theorem untypedSourceSetFull_referenceTables (st : SystemState) (src : CSpaceAdd
 /-- A derivation-tree edge writes no reference table. -/
 theorem cdtAddChild_referenceTables (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).referenceTables = st.referenceTables := by
-  simp only [SystemState.referenceTables, SystemState.cdtAddChild_irqHandlers]
+  simp only [SystemState.referenceTables, SystemState.cdtAddChild_irqHandlers,
+    SystemState.cdtAddChild_declassificationTaint]
 
 /-- A slot insert writes no reference table. -/
 theorem cspaceInsertSlot_referenceTables {st st' : SystemState} {addr : CSpaceAddr}
@@ -828,7 +833,9 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.tabl
   rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
   · rw [e]
   · rw [ha, hb]; rfl
-  · rw [ha, hb]; rfl
+  · rename_i hw; rw [ha, hb]
+    simp only [objTableBackLinks_some, KernelObject.tableBackLinks,
+      TCB.proj_eq_of_withoutLinks_eq (·.taintWords) hw]
 
 /-- **The capability transfer keeps the table references**: it writes no
 reference table, and every object it writes is a CNode or a thread's links. -/
@@ -1020,7 +1027,8 @@ theorem descheduleThenOffWrite_runQueueEntryStage (st : SystemState)
     (hC : st.currentDequeuedUnique → ∀ c', st.scheduler.currentOnCore c' = some tid → c' = c)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready) :
+    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
     SystemState.RunQueueEntryStage st ((removeRunnableOnCore st tid c).updateTcb tid f) := by
   have hS := SystemState.RunQueueStage.runDescheduleOnCore st c tid
   refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf),
@@ -1059,7 +1067,8 @@ theorem placedThenOffWrite_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
     (c₀ : Concurrency.CoreId) {f : TCB → TCB}
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready) :
+    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
     SystemState.RunQueueEntryStage st
       ((removeRunnableOnCore st tid ((placedCoreOf? st tid).getD c₀)).updateTcb tid f) := by
   refine descheduleThenOffWrite_runQueueEntryStage st tid _ (fun d c' hq => ?_)
@@ -1089,7 +1098,8 @@ theorem descheduleAtPlacedThenOffWrite_runQueueEntryStage (st : SystemState)
     (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready) :
+    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
     SystemState.RunQueueEntryStage st
       ((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f) := by
   cases hP : placedCoreOf? st tid with
@@ -1114,7 +1124,9 @@ theorem descheduleAtPlacedThenOffWrites_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
-    (hReady : ∀ x, x.ipcState = .ready → (g (f x)).ipcState = .ready) :
+    (hReady : ∀ x, x.ipcState = .ready → (g (f x)).ipcState = .ready)
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hWg : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept) :
     SystemState.RunQueueEntryStage st
       (((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f).updateTcb tid g) := by
   have hW : ∀ s : SystemState, SystemState.RunQueueLinkStage s ((s.updateTcb tid f).updateTcb tid g) :=

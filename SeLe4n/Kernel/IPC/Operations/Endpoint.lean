@@ -1378,13 +1378,15 @@ theorem modifyTcb_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.Threa
     {f : TCB → TCB} (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st')
     (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
       (f t).boundNotificationCode = t.boundNotificationCode := by
-      intro _; exact ⟨rfl, rfl, rfl⟩) :
+      intro _; exact ⟨rfl, rfl, rfl⟩)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
     kindPreservingWrite st st' := by
   obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
   exact storeObject_kindPreservingWrite hObjInv hS
     (lookupTcb_some_objects st tid tcb hLk) rfl (by simp [KernelObject.objectType])
     (by simp only [KernelObject.tcbSlots, (hf tcb).1, (hf tcb).2.1]) rfl
     (by simp only [KernelObject.bindingCodes, (hf tcb).2.2])
+    (by simp only [KernelObject.tableBackLinks, hW tcb])
 
 /-- **Audit IPC-5**: ...and it writes neither CDT table. -/
 theorem modifyTcb_cdt_eq {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -1466,11 +1468,12 @@ theorem modifyTcbOpt_kindPreservingWrite {st st' : SystemState}
     (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st')
     (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
       (f t).boundNotificationCode = t.boundNotificationCode := by
-      intro _; exact ⟨rfl, rfl, rfl⟩) :
+      intro _; exact ⟨rfl, rfl, rfl⟩)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
     kindPreservingWrite st st' := by
   rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
   · exact kindPreservingWrite.refl _
-  · exact modifyTcb_kindPreservingWrite hObjInv h hf
+  · exact modifyTcb_kindPreservingWrite hObjInv h hf hW
 
 theorem modifyTcbOpt_cdt_eq {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') :
@@ -9602,7 +9605,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
-              boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound
+              boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
@@ -9635,7 +9638,7 @@ def notificationWaitPark
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -10186,7 +10189,7 @@ theorem notificationWaitPark_badge_path_notification
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
           { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-            boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+            boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -10573,7 +10576,7 @@ theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.
               exact hW1
             let n' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             exact ⟨ntfn, n', tcb, st1, rfl, hBadge, rfl, rfl, hW0, hN1,
               fun x hx => storeObject_objects_ne st st1 nid x _ hx hObjInv hStore, hW2, hO2⟩
 

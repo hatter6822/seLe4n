@@ -747,6 +747,16 @@ theorem keyInputsEq_of_objectsAgreeOffReplyLinks {pre post : SystemState}
     · cases o <;> rfl
   rw [← hv post.objects[oid]?, h oid, hv]
 
+/-- WS-ZA ZA5.11: the taint words are no key input either. -/
+theorem keyInputsEq_of_objectsAgreeOffTaint {pre post : SystemState}
+    (h : pre.objectsAgreeOffTaint post) : keyInputsEq pre post := fun oid => by
+  have hv : ∀ x : Option KernelObject,
+      keyInputsOf (x.map KernelObject.eraseTaint) = keyInputsOf x := by
+    intro x; rcases x with _ | o
+    · rfl
+    · cases o <;> rfl
+  rw [← hv post.objects[oid]?, h oid, hv]
+
 /-- Equal key inputs place every thread on the same run-queue core. -/
 theorem keyInputsEq.runCoresAgree {pre post : SystemState} (h : keyInputsEq pre post) :
     SystemState.RunCoresAgree post pre := fun y => by

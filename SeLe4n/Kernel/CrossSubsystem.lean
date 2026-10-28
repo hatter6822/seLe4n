@@ -132,6 +132,40 @@ theorem collectQueueMembers_congr
         · rename_i tcb hT'; exact absurd ((h _ _).2 hT') (hT tcb)
         · rfl
 
+/-- WS-ZA ZA5.11: **the walk reads only each object's queue link** — which
+objects are TCBs and, of those, the next link — so two stores that agree there
+walk alike, whatever else their TCBs hold. -/
+theorem collectQueueMembers_congr_queueNext
+    (o o' : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (h : ∀ k : SeLe4n.ObjId,
+      (o'[k]?).map (fun x => match x with | .tcb t => some t.queueNext | _ => none) =
+        (o[k]?).map (fun x => match x with | .tcb t => some t.queueNext | _ => none)) :
+    ∀ (fuel : Nat) (start : Option SeLe4n.ThreadId),
+      collectQueueMembers o' start fuel = collectQueueMembers o start fuel := by
+  intro fuel
+  induction fuel with
+  | zero => intro start; cases start <;> rfl
+  | succ n ih =>
+    intro start
+    cases start with
+    | none => rfl
+    | some tid =>
+      have hk := h tid.toObjId
+      simp only [collectQueueMembers]
+      cases h2 : o'[tid.toObjId]? with
+      | none =>
+        rw [h2] at hk
+        cases h1 : o[tid.toObjId]? with
+        | none => rfl
+        | some _ => rw [h1] at hk; cases hk
+      | some x' =>
+        rw [h2] at hk
+        cases h1 : o[tid.toObjId]? with
+        | none => rw [h1] at hk; cases hk
+        | some x =>
+          rw [h1] at hk
+          cases x' <;> cases x <;> simp at hk <;> first | rfl | (simp only [hk, ih])
+
 -- ============================================================================
 -- W2-D (M-6): collectQueueMembers fuel sufficiency
 -- ============================================================================

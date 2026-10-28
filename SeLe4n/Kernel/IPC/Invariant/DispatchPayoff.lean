@@ -1041,8 +1041,8 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
                             decoded tid executingCore _ cap stL stPost
                             (hPack _ cap hLk) hInvk
                           rw [← hStep]
-                          refine ipcInvariantFull_of_objects_eq ?_ hInvPost
-                          · exact applySyscallTaint_objects _ _ _
+                          exact ipcInvariantFull_of_objectsAgreeOffTaint
+                            (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
               | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
@@ -1549,8 +1549,8 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                                 ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz)
                                 hInvk
                               rw [← hStep]
-                              refine ipcInvariantFull_of_objects_eq ?_ hInvPost
-                              · exact applySyscallTaint_objects _ _ _
+                              exact ipcInvariantFull_of_objectsAgreeOffTaint
+                                (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
                   | false =>
                       simp only [hTF, Bool.false_eq_true, if_false] at hStep
                       cases hInvk : syscallInvoke { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId } (dispatchWithCapChecked ctx decoded tid executingCore { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr, capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }) st with
@@ -1573,8 +1573,8 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                                 ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz)
                                 hInvk
                               rw [← hStep]
-                              refine ipcInvariantFull_of_objects_eq ?_ hInvPost
-                              · exact applySyscallTaint_objects _ _ _
+                              exact ipcInvariantFull_of_objectsAgreeOffTaint
+                                (applySyscallTaint_objectsAgreeOffTaint _ _ _) hInvPost
               | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
               | schedContext _ | reply _ | frame _ | pageTable _ => simp only [hRoot] at hStep; cases hStep
       | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _

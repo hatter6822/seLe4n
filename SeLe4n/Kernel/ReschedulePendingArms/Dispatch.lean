@@ -841,8 +841,10 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     rename_i stPost hD
     cases h
     suffices hP : stepCovers e st stPost ∧ stPost.objects.invExt from
-      ⟨stepCovers_trans hP.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl),
-        hP.2⟩
+      ⟨stepCovers_trans hP.1 (stepCovers_of_scheduler_eq
+          (keyInputsEq_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+          (applySyscallTaint_scheduler _ _ _)),
+        applySyscallTaint_invExt hP.2⟩
   · unfold syscallInvoke at hD
     split at hD
     · cases hD

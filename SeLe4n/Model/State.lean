@@ -2869,6 +2869,80 @@ theorem slotCap_fwd {st st' : SystemState} (h : kindPreservingWriteUpToBindings 
 
 end kindPreservingWriteUpToBindings
 
+/-- WS-ZA ZA5.11 (**the one frame for a taint-word write**): `st'` holds
+`st`'s objects **up to their taint words**, at every key — the same objects,
+read through `KernelObject.eraseTaint`.  The taint step writes nothing else into
+the store (`InformationFlow.applySyscallTaint_objectsAgreeOffTaint`), so every
+consumer that reads no taint word carries across it through this one
+relation. -/
+def SystemState.objectsAgreeOffTaint (st st' : SystemState) : Prop :=
+  ∀ k : SeLe4n.ObjId,
+    (st'.objects[k]?).map KernelObject.eraseTaint = (st.objects[k]?).map KernelObject.eraseTaint
+
+namespace SystemState.objectsAgreeOffTaint
+
+theorem refl (st : SystemState) : objectsAgreeOffTaint st st := fun _ => rfl
+
+theorem trans {a b c : SystemState} (h1 : objectsAgreeOffTaint a b)
+    (h2 : objectsAgreeOffTaint b c) : objectsAgreeOffTaint a c := fun k => (h2 k).trans (h1 k)
+
+theorem symm {a b : SystemState} (h : objectsAgreeOffTaint a b) : objectsAgreeOffTaint b a :=
+  fun k => (h k).symm
+
+/-- The objects at a key: present on one side exactly when on the other, of the
+same kind, equal off their taint words. -/
+theorem some_iff {st st' : SystemState} (h : objectsAgreeOffTaint st st') (k : SeLe4n.ObjId)
+    (o' : KernelObject) (h' : st'.objects[k]? = some o') :
+    ∃ o, st.objects[k]? = some o ∧ o'.eraseTaint = o.eraseTaint := by
+  have hk := h k
+  rw [h'] at hk
+  cases ho : st.objects[k]? with
+  | none => rw [ho] at hk; cases hk
+  | some o => rw [ho] at hk; exact ⟨o, rfl, Option.some.inj hk⟩
+
+/-- The same from the first state to the second. -/
+theorem some_fwd {st st' : SystemState} (h : objectsAgreeOffTaint st st') (k : SeLe4n.ObjId)
+    (o : KernelObject) (h1 : st.objects[k]? = some o) :
+    ∃ o', st'.objects[k]? = some o' ∧ o'.eraseTaint = o.eraseTaint :=
+  (some_iff h.symm k o h1).elim fun o' ⟨h2, e⟩ => ⟨o', h2, e.symm⟩
+
+/-- **A kind holding no words is read alike on both sides.** -/
+theorem inert_iff {st st' : SystemState} (h : objectsAgreeOffTaint st st') (k : SeLe4n.ObjId)
+    {o : KernelObject} (hN : o.holdsTaint = false) :
+    st'.objects[k]? = some o ↔ st.objects[k]? = some o :=
+  ⟨fun h2 => (some_iff h k o h2).elim fun o1 ⟨h1, e⟩ =>
+      (KernelObject.eq_of_eraseTaint_eq hN e) ▸ h1,
+   fun h1 => (some_fwd h k o h1).elim fun o2 ⟨h2, e⟩ =>
+      (KernelObject.eq_of_eraseTaint_eq hN e.symm) ▸ h2⟩
+
+/-- A thread of the second state is one of the first, equal off its words. -/
+theorem tcb_back {st st' : SystemState} (h : objectsAgreeOffTaint st st') {k : SeLe4n.ObjId}
+    {t' : TCB} (h2 : st'.objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧ t'.withTaintWords {} = t.withTaintWords {} :=
+  (some_iff h k _ h2).elim fun o ⟨h1, e⟩ =>
+    (KernelObject.eraseTaint_eq_tcb e).elim fun t ⟨ho, et⟩ => ⟨t, ho ▸ h1, et⟩
+
+/-- A thread of the first state is one of the second, equal off its words. -/
+theorem tcb_fwd {st st' : SystemState} (h : objectsAgreeOffTaint st st') {k : SeLe4n.ObjId}
+    {t : TCB} (h1 : st.objects[k]? = some (.tcb t)) :
+    ∃ t', st'.objects[k]? = some (.tcb t') ∧ t'.withTaintWords {} = t.withTaintWords {} :=
+  (tcb_back h.symm h1).elim fun t' ⟨h2, e⟩ => ⟨t', h2, e.symm⟩
+
+/-- A notification of the second state is one of the first, equal off its words. -/
+theorem notification_back {st st' : SystemState} (h : objectsAgreeOffTaint st st')
+    {k : SeLe4n.ObjId} {n' : Notification} (h2 : st'.objects[k]? = some (.notification n')) :
+    ∃ n, st.objects[k]? = some (.notification n) ∧ n'.withTaintWords {} = n.withTaintWords {} :=
+  (some_iff h k _ h2).elim fun o ⟨h1, e⟩ =>
+    (KernelObject.eraseTaint_eq_notification e).elim fun n ⟨ho, en⟩ => ⟨n, ho ▸ h1, en⟩
+
+/-- A notification of the first state is one of the second, equal off its words. -/
+theorem notification_fwd {st st' : SystemState} (h : objectsAgreeOffTaint st st')
+    {k : SeLe4n.ObjId} {n : Notification} (h1 : st.objects[k]? = some (.notification n)) :
+    ∃ n', st'.objects[k]? = some (.notification n') ∧ n'.withTaintWords {} = n.withTaintWords {} :=
+  (notification_back h.symm h1).elim fun n' ⟨h2, e⟩ => ⟨n', h2, e.symm⟩
+
+end SystemState.objectsAgreeOffTaint
+
 /-- WS-RR RR8.16 (`v0.35.199`): **at every key, the store is unchanged or holds
 an object of the same kind, and that kind is not `cnode`.**
 
@@ -3698,6 +3772,36 @@ theorem getObject?_congr_at {st st' : SystemState} {id : SeLe4n.ObjId}
 theorem getTcb?_frame {st st' : SystemState} (h : st'.objects = st.objects)
     (tid : SeLe4n.ThreadId) : st'.getTcb? tid = st.getTcb? tid :=
   getTcb?_congr_at (by rw [h])
+
+/-- WS-ZA ZA5.11 (**the per-accessor frame**): across a word write every thread
+reads alike through any accessor blind to its taint words. -/
+theorem getTcb?_map_of_objectsAgreeOffTaint {st st' : SystemState}
+    (hA : st.objectsAgreeOffTaint st') {α : Type _} (p : TCB → α)
+    (hp : ∀ x, p (x.withTaintWords {}) = p x) (tid : SeLe4n.ThreadId) :
+    (st'.getTcb? tid).map p = (st.getTcb? tid).map p := by
+  unfold getTcb?
+  have hk := hA tid.toObjId
+  cases h2 : st'.objects[tid.toObjId]? with
+  | none =>
+    rw [h2] at hk
+    cases h1 : st.objects[tid.toObjId]? with
+    | none => rfl
+    | some _ => rw [h1] at hk; cases hk
+  | some o' =>
+    obtain ⟨o, h1, e⟩ := hA.some_iff _ o' h2
+    rw [h1]
+    cases hH : o'.holdsTaint with
+    | false => rw [KernelObject.eq_of_eraseTaint_eq hH e]
+    | true =>
+      cases o' with
+      | tcb x =>
+        obtain ⟨y, rfl, ex⟩ := KernelObject.eraseTaint_eq_tcb e
+        show some (p x) = some (p y)
+        rw [← hp x, ex, hp y]
+      | notification n =>
+        obtain ⟨m, rfl, -⟩ := KernelObject.eraseTaint_eq_notification e
+        rfl
+      | _ => simp [KernelObject.holdsTaint] at hH
 
 /-- A step that preserves the object table preserves every SchedContext read. -/
 theorem getSchedContext?_frame {st st' : SystemState} (h : st'.objects = st.objects)
@@ -6104,7 +6208,8 @@ theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
 theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (h : st.getTcb? tid = some t) (t' : TCB) (hInv : st.objects.invExt)
     (hS : t'.spaceCells = t.spaceCells ∧ t'.spaceLinks = t.spaceLinks ∧
-      t'.boundNotificationCode = t.boundNotificationCode) :
+      t'.boundNotificationCode = t.boundNotificationCode)
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
     kindPreservingWrite st (st.rewriteObject tid.toObjId (.tcb t') (rewriteAdmissible_tcb h t')) :=
   rewriteObject_kindPreservingWrite _ _ _ _ hInv (fun old hOld => by
     rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
@@ -6114,7 +6219,8 @@ theorem rewriteObject_tcb_kindPreservingWrite {st : SystemState} {tid : SeLe4n.T
       rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
       simp only [KernelObject.bindingCodes, hS.2.2])
     (fun old hOld => by
-      rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl)
+      rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
+      simp only [KernelObject.tableBackLinks, hW])
     fun old hOld => by
       rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
 
@@ -6803,7 +6909,8 @@ theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : TCB → TCB) (hInv : st.objects.invExt)
     (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
       (f t).boundNotificationCode = t.boundNotificationCode := by
-      intro _; exact ⟨rfl, rfl, rfl⟩) :
+      intro _; exact ⟨rfl, rfl, rfl⟩)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
     kindPreservingWrite st (st.updateTcb tid f) := by
   unfold updateTcb
   split
@@ -6815,7 +6922,8 @@ theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
       simp only [KernelObject.bindingCodes, (hf t).2.2]
-    · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
+    · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld
+      simp only [KernelObject.tableBackLinks, hW t]
     · rw [(getTcb?_eq_some_iff st tid t).mp h] at hOld; cases hOld; rfl
   · exact kindPreservingWrite.refl st
 

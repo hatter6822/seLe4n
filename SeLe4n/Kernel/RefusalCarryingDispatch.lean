@@ -317,22 +317,19 @@ def signalTaintSinkOf (operand : Option Capability) : SeLe4n.ObjId :=
 
 /-- WS-ZA ZA2.4: **the signal's taint step, without the plan.**  A signal
 originates nothing, so `applySyscallTaintAfter` of its plan is its content
-edges and its clear applied to the post-state's table (`signalTaintStep_eq`);
-this applies them directly, building no edge list and no plan record. -/
+edges and its clear applied to the post-state's table and taint words
+(`signalTaintStep_eq`); this applies them directly, building no edge list and no
+plan record. -/
 @[inline] def signalTaintStep (tc : SignalTaintCase) (nid : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (preTaint : TaintTable) (post : SystemState) : SystemState :=
   match tc with
   | .noObject => post
-  | .stored =>
-      { post with declassificationTaint :=
-          post.declassificationTaint.joinAt nid (preTaint tid.toObjId) }
+  | .stored => joinTaintAt post nid (preTaint tid.toObjId)
   | .toWaiter w =>
-      { post with declassificationTaint :=
-          ((post.declassificationTaint.joinAt w.toObjId (preTaint tid.toObjId)).joinAt
-            w.toObjId (preTaint nid)).clearAt nid }
-  | .toBound t =>
-      { post with declassificationTaint :=
-          post.declassificationTaint.joinAt t.toObjId (preTaint tid.toObjId) }
+      clearTaintAt
+        (joinTaintAt (joinTaintAt post w.toObjId (preTaint tid.toObjId)) w.toObjId (preTaint nid))
+        nid
+  | .toBound t => joinTaintAt post t.toObjId (preTaint tid.toObjId)
 
 theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (operand : Option Capability)
@@ -344,7 +341,7 @@ theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
         post := by
   rcases operand with _ | ⟨target, _, _⟩
   · simp [signalTaintPlanOf, signalTaintCaseOf, signalTaintStep, applySyscallTaintAfter, hSig,
-      syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+      syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
   · cases target with
     | object nid =>
       simp only [signalTaintPlanOf, signalTaintCaseOf, signalTaintSinkOf, signalTaintCaseOfCap,
@@ -352,11 +349,11 @@ theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
         signalBypassedNotification]
       cases signalDelivery st nid <;>
         simp [signalTaintStep, applySyscallTaintAfter, hSig, syscallRecordsDeclassification,
-          applyOrigination, applyTaintClears, applyTaintFlow]
+          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
     | _ =>
       simp [signalTaintPlanOf, signalTaintCaseOf, signalTaintCaseOfCap, signalTaintStep,
         applySyscallTaintAfter, hSig, syscallRecordsDeclassification, applyOrigination,
-        applyTaintClears, applyTaintFlow]
+        applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- The signal's gate and arm, from the capability its operand resolved to:
 `syscallResolveCap`'s idle-object check, the rights gate, then
@@ -569,9 +566,7 @@ notification's taint moves to the waiter and the notification's is cleared
 def waitTaintStepOfCap (cap : Capability) (tid : SeLe4n.ThreadId)
     (preTaint : TaintTable) (post : SystemState) : SystemState :=
   match cap.target with
-  | .object nid =>
-      { post with declassificationTaint :=
-          (post.declassificationTaint.joinAt tid.toObjId (preTaint nid)).clearAt nid }
+  | .object nid => clearTaintAt (joinTaintAt post tid.toObjId (preTaint nid)) nid
   | _ => post
 
 theorem waitTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -586,10 +581,10 @@ theorem waitTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     contentFlowBypassed]
   rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
   · simp [applySyscallTaintAfter, syscallRecordsDeclassification,
-      applyOrigination, applyTaintClears, applyTaintFlow]
+      applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
   · cases target <;>
       simp [waitTaintStepOfCap, waitTaintEdges, applySyscallTaintAfter,
-        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- The wait's slot check, gate, arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed

@@ -257,9 +257,10 @@ theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target record
     (st : SystemState) : RunQueueStage st (retireFinalObject ec target recorder st) :=
   have hS := (retireFinalObject_fields ec target recorder st).2.1
   have hL := fun hInv c t => retireFinalObject_runLinkOn ec target recorder (st := st) hInv c t
-  ⟨.of_tableFrame (fun hInv r => ⟨(retireFinalObject_frame ec target recorder st hInv).1,
-      SystemState.runQueueRefined_of_frame (hL hInv) (by rw [hS]) (by rw [hS]) r⟩)
-      (retireFinalObject_tableReferenceFrame ec target recorder st),
+  ⟨⟨fun hInv r => ⟨(retireFinalObject_frame ec target recorder st hInv).1,
+      SystemState.runQueueRefined_of_frame (hL hInv) (by rw [hS]) (by rw [hS]) r⟩,
+      fun hInv _ hR => retireFinalObject_preserves_tableReferencesRecorded ec target recorder st
+        hInv hR⟩,
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) (hL hInv)
       (retireFinalObject_stateMono ec target recorder hInv) d,
     fun hInv _ => retireFinalObject_stateMono ec target recorder hInv⟩
@@ -320,7 +321,8 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
     RunQueueStage st st' :=
   have hF := Architecture.vspaceUnifyInstructionPage_frame h
   RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
-    (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2])
+    (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2,
+      Architecture.vspaceUnifyInstructionPage_declassificationTaint h])
 
 /-- WS-ZA ZA5.4: the untyped reset is one free-index write
 (`untypedResetSlot_ok_frame`). -/
@@ -375,7 +377,8 @@ theorem lookupServiceByRecordedRegistration_runQueueStage {epId : SeLe4n.ObjId} 
 /-- The raw-insert form of a TCB rewrite that keeps the run-queue fields. -/
 theorem insertTcb_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {tcb tcb' : TCB}
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) (hm : TCB.StepMono tcb tcb' := by exact ⟨id, id⟩) :
+    (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) (hm : TCB.StepMono tcb tcb' := by exact ⟨id, id⟩)
+    (hW : tcb'.taintWords = tcb.taintWords := by taint_words_kept) :
     RunQueueStage st { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } :=
   RunQueueStage.insert rfl rfl rfl (fun c => by rw [hPre]; exact h c)
     (by rw [hPre]; exact SystemState.objStateMono_tcb hm)

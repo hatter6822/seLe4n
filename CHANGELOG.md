@@ -1,3 +1,79 @@
+## v0.36.161 — WS-ZA ZA5.11: the taint lives in the object it describes
+
+A thread's and a notification's declassification taint now lives in their own
+scalar words, written in place by the taint step beside the taint table. The
+table stays for this row as a deliberate second copy, held equal to the words
+at every id; ZA5.12 retires it.
+
+- **The words.** `TCB` and `Notification` gain eight `UInt64` tag words, the
+  count in use and a saturated bit (`TCB.taintWords`, `Notification.taintWords`,
+  read as a `TaintWords` view).
+  - They are carved as zeros, the empty taint, so a retyped id names no
+    provenance and the carve builds nothing.
+  - `TaintWords.decode` reads words naming no canonical tag list as `top`, and
+    `DeclassificationTaint.decode_toWords` is the equality between the forms.
+  - An identity at or above `2^64` saturates the value, never dropping one;
+    `taintWordsSaturate_over_approximates` holds over the words.
+- **The step.** `applyTaintStep` is a fold of per-key joins and clears
+  (`joinTaintAt`, `clearTaintAt`). Each writes the table entry and the key's
+  words together, the words in the key's slot (`SystemState.writeTaintWordsAt`,
+  an `RHTable.mapValueAt`).
+  - A join that moves nothing is elided before anything else is read, so a
+    step with nothing to join is the identity and an untainted IPC writes
+    nothing.
+  - The table it writes is the old pipeline's (`applyTaintStep_declassificationTaint`).
+  - The compiled fused steps (send, receive, reply-receive, signal, wait) are
+    the same joins and clears, and the frozen mirror writes the frozen words.
+- **The guard.** A flow or an origination joins only at a key the committed
+  state holds as a thread or a notification (`taintHolderAt`, whose lookup
+  builds no `Option`). Clears and the flows' seed are not guarded.
+  - Content lives only in those two kinds, so a dropped key holds no tracked
+    content (`taintHolderAt_false_no_content`,
+    `liveTaintEdges_mem_or_no_content`).
+  - The covers theorems take their sink's liveness as a premise, closed by
+    that companion.
+- **The agreement.** `SystemState.tableReferencesRecorded.taintStored` holds
+  the table and the words equal at every id (empty where no thread or
+  notification is). The words are the third component of an object's table
+  back-links, and the step keeps the agreement
+  (`applyTaintStep_preserves_tableReferencesRecorded`).
+- **One frame, many consumers.** The step moves the store only in its words
+  (`SystemState.objectsAgreeOffTaint`, `applySyscallTaint_objectsAgreeOffTaint`).
+  Each consumer carries across that one relation:
+  - the projection, which strips the words on every kind
+    (`projectKernelObject_eraseTaint`, `projectState_of_objectsAgreeOffTaint`);
+    `ObservableState` is unchanged;
+  - the per-core views (`applySyscallTaint_preserves_onCore`,
+    `applySyscallTaint_confinedToCores_nil`);
+  - the run-queue stage (`RunQueueStage.of_objectsAgreeOffTaint`) and the
+    mapping stage (`MappingStage.of_objectsAgreeOffTaint`);
+  - the IPC bundle: the read view clears the words
+    (`ipcInvariantFull_of_objectsAgreeOffTaint`);
+  - the footprint, under the table write lock every scheduler footprint names.
+  - the reschedule coverage: the key inputs carry across the relation
+    (`keyInputsEq_of_objectsAgreeOffTaint`).
+- **The whole bundle.** `applySyscallTaint_preserves_proofLayerInvariantBundle`
+  stands, proven over the word write.
+  - `Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint` (new
+    `Architecture/TaintWordFrame.lean`) carries all 18 conjuncts across the
+    relation, given the store's table invariant and size
+    (`applySyscallTaint_invExt`, `applySyscallTaint_size`).
+  - It goes through one frame: the second store is the first with a word write
+    at every key (`SystemState.objectsAgreeOffTaint.getElem?_eq`).
+  - One accessor lemma per reader the conjuncts use (`getTcb?_back`,
+    `getSchedContext?_eq`, `slotCapAt_eq`, `slotLinkAt_eq`,
+    `serviceRegistry_eq`, …), each blind to the words.
+  - One closing step per leaf: each object a post-state conjunct reads is the
+    pre-state's with words written, equal in every other field.
+  - No leaf is restated. The stale-queue scan's walk, which read whole TCBs,
+    gains a congruence over the queue link alone
+    (`collectQueueMembers_congr_queueNext`).
+- **Retired.** `applySyscallTaint_objects`, since the step now writes words.
+  `applySyscallTaint_objectsAgreeOffTaint` replaces it.
+- **The plan.** The table's retirement is ZA5.12 and the routing ZA5.13. Every
+  citation is swept.
+- **Measured** (fresh untraced archive, `--lean-kernel`): MEASURED_PLACEHOLDER.
+
 ## v0.36.160 — WS-ZA ZA5.10: the audit trail is a fixed ring written in place
 
 The declassification audit trail was a list appended with `++ [e]`, so every

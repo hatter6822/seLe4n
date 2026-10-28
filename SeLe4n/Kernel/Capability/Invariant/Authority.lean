@@ -476,7 +476,7 @@ theorem notificationSignal_badge_stored_fresh
   unfold notificationSignal SystemState.getObject? at hSignal
   simp [hObj, hNoWaiters, hNoPending] at hSignal
   exact ⟨{ state := .active, 
-           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound },
+           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated },
     by rw [← storeObject_objects_eq st st' notifId _ hObjInv hSignal], rfl⟩
 
 /-- (H-03) When `notificationWait` returns `some badge`, that badge was the pending
@@ -902,11 +902,11 @@ theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
   intro oid
   rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
-      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL, hB⟩
+      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost, hC, hL, hB, hW⟩
   · exact Or.inl hEq
   · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType],
       by simp [KernelObject.tcbSlots, hC, hL], rfl, by simp [KernelObject.bindingCodes, hB],
-      rfl, rfl⟩
+      by simp only [KernelObject.tableBackLinks, hW], rfl⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
 capability invariant bundle** — the first instance of the frame above, and one of

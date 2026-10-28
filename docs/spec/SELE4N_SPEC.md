@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.160` (`lakefile.toml`) |
+| **Package version** | `0.36.161` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 522,474 across 477 Lean files |
 | **Test LoC** | 87,402 across 70 Lean test suites |
@@ -5690,7 +5690,7 @@ Every kernel object has a decidable well-formedness predicate:
   word (`msgRegOfFile`; each decoder's register-file form is equal to it,
   `decodeXArgs_eq_by`).  `dispatchInvocationCheckedR_eq` makes the routed arm
   `dispatchSyscallChecked`.  The declassifications and the audit calls keep
-  the general decode (ZA5.12); the in-place retype is deleted; the
+  the general decode (ZA5.13); the in-place retype is deleted; the
   scheduling-context configure is routed at `v0.36.98` and the service
   register at `v0.36.155`, both as the one-overflow-word arm below.
 - **The service syscalls** (`v0.36.155`, WS-ZA ZA5.5).  The register route's
@@ -5771,6 +5771,32 @@ Every kernel object has a decidable well-formedness predicate:
   the ring with its own slot array (`SystemState.withFreshAuditRing`, the
   state itself), so the first record after boot writes in place.  The ring is
   outside `ObservableState`, as the list was.
+- **The taint lives in the object it describes** (`v0.36.161`, WS-ZA ZA5.11).
+  A thread and a notification carry their declassification taint as scalar
+  fields: eight `UInt64` tag words, the count in use and a saturated bit
+  (`TCB.taintWords`, `Notification.taintWords`, read as a `TaintWords` view and
+  decoded by `TaintWords.decode`, which reads words naming no canonical tag
+  list as `top`; `DeclassificationTaint.decode_toWords`).  They are carved as zeros, the
+  empty taint, so a retyped id names no provenance; saturation is the object's
+  own.  The taint step is a fold of per-key joins and clears (`joinTaintAt`,
+  `clearTaintAt`) that write the table entry and the key's words together, the
+  words in the key's slot (`SystemState.writeTaintWordsAt`, an
+  `RHTable.mapValueAt`); a join that moves nothing is elided first, so a step
+  with nothing to join writes nothing.  A flow or an origination joins only at
+  a key the committed state holds as a thread or a notification
+  (`taintHolderAt`), the only kinds holding content, so a key the guard drops
+  holds no tracked content (`taintHolderAt_false_no_content`,
+  `liveTaintEdges_mem_or_no_content`).  The table and the words are two copies
+  for this row, held equal at every id by
+  `SystemState.tableReferencesRecorded.taintStored`, which the step keeps
+  (`applyTaintStep_preserves_tableReferencesRecorded`).  The step moves the
+  store only in its words (`SystemState.objectsAgreeOffTaint`), the relation the
+  projection (which strips the words on every kind,
+  `projectKernelObject_eraseTaint`), the run-queue and mapping stages, the IPC
+  bundle and the whole `proofLayerInvariantBundle` carry across
+  (`Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint`, so
+  `applySyscallTaint_preserves_proofLayerInvariantBundle` holds over the word
+  write); `ObservableState` is unchanged.  The table retires in ZA5.12.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any

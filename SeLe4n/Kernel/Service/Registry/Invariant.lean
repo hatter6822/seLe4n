@@ -213,7 +213,7 @@ theorem registerService_preserves_tableReferencesRecorded {reg : ServiceRegistra
     (hObjInv : st.objects.invExt) (hR : st.tableReferencesRecorded) :
     st'.tableReferencesRecorded := by
   obtain ⟨_, _, _, hObj, _, _, rfl⟩ := registerService_ok hStep
-  exact SystemState.tableReferencesRecorded.of_endpoint_over_endpoint hObjInv hObj rfl rfl hR
+  exact SystemState.tableReferencesRecorded.of_endpoint_over_endpoint hObjInv hObj rfl rfl rfl hR
 
 /-- **A revocation keeps the references recorded**: it writes one endpoint
 over an endpoint, and an endpoint holds no interrupt back-link. -/
@@ -222,7 +222,7 @@ theorem revokeService_preserves_tableReferencesRecorded {sid : ServiceId}
     (hObjInv : st.objects.invExt) (hR : st.tableReferencesRecorded) :
     st'.tableReferencesRecorded := by
   obtain ⟨_, hObj, _, rfl⟩ := revokeService_ok hStep
-  exact SystemState.tableReferencesRecorded.of_endpoint_over_endpoint hObjInv hObj rfl rfl hR
+  exact SystemState.tableReferencesRecorded.of_endpoint_over_endpoint hObjInv hObj rfl rfl rfl hR
 
 -- ============================================================================
 -- The O(1) lookup is the specification

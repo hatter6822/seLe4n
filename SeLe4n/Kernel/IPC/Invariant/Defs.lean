@@ -2452,19 +2452,20 @@ theorem notificationSignal_result_wellFormed_wake
   cases next <;> simp
 
 theorem notificationSignal_result_wellFormed_merge
-    (mergedBadge : SeLe4n.Badge) (b : Nat) (i : Bool) :
+    (mergedBadge : SeLe4n.Badge) (b : Nat) (i : Bool) (n : Notification) :
     notificationQueueWellFormed
       { state := .active,
-        hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := b, irqBound := i } := by
+        hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := b, irqBound := i,
+        taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated } := by
   unfold notificationQueueWellFormed; simp
 
 /-- notificationWait result notification is well-formed (badge-consume path):
     idle state, empty queue, no badge. -/
-theorem notificationWait_result_wellFormed_badge (b : Nat) (i : Bool) :
+theorem notificationWait_result_wellFormed_badge (b : Nat) (i : Bool) (n : Notification) :
     notificationQueueWellFormed
       { state := NotificationState.idle,
         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := b,
-        irqBound := i } := by
+        irqBound := i, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated } := by
   unfold notificationQueueWellFormed; simp
 
 /-- WS-G7/F-P11, WS-ZA ZA4.4: notificationWait result notification is

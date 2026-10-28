@@ -10688,13 +10688,24 @@ run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events($|[ ({:\[\]])'
 # decompose by key — so a file-wide negative would be wrong.)
 run_check "INVARIANT" rg -n '^       \(endpointLock endpointObjId, .write\)\]\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem taintWriteKeys_inert($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# SM9.D.18: the propagation is framed to one field and visible to no observer,
-# so every existing invariant argument and every NI result stands unchanged.
+# SM9.D.18: the propagation is framed to the taint table and (ZA5.11) the taint
+# words, and visible to no observer, so every existing invariant argument and
+# every NI result stands unchanged; the whole bundle carries across the one
+# word-write frame.
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_confinedToCores_nil($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_onCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
+run_check "INVARIANT" rg -n '^theorem getElem\?_eq($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_size($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applyTaintStep_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applyTaintStep_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem liveTaintEdges_mem_or_no_content($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem projectState_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
 
 # SM9.D tests: the eight runtime groups, their load-bearing negatives, the
 # surface anchors and the golden-fixture lines.

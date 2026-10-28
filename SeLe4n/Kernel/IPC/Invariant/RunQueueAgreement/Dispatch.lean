@@ -878,7 +878,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
 
 /-- **The checked syscall dispatch keeps the run queues in agreement with the
 threads' links**: the yield, the capability resolution (a read), the routed arm,
-and the taint pass, which writes the taint ledger alone.  The one premise is the
+and the taint pass, which writes the taint table and the taint words alone.  The one premise is the
 retype arm's detached target. -/
 theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -906,9 +906,11 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     rename_i stPost hD
     cases h
-    refine SystemState.RunQueueEntryStage.trans (st' := stPost) ?_ (RunQueueStage.of_frame
-      (applySyscallTaint_objects _ _ _) (by rw [applySyscallTaint_scheduler])
-      (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry
+    refine SystemState.RunQueueEntryStage.trans (st' := stPost) ?_ (RunQueueStage.of_objectsAgreeOffTaint
+      (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
+      (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
+      (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+      (by rw [applySyscallTaint_scheduler])).entry
   · unfold syscallInvoke at hD
     split at hD
     · cases hD
@@ -1053,9 +1055,11 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
   · cases h
   rename_i stPost hD
   cases h
-  refine SystemState.RunQueueEntryStage.trans (st' := stPost) ?_ (RunQueueStage.of_frame
-    (applySyscallTaint_objects _ _ _) (by rw [applySyscallTaint_scheduler])
-    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry
+  refine SystemState.RunQueueEntryStage.trans (st' := stPost) ?_ (RunQueueStage.of_objectsAgreeOffTaint
+    (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
+    (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
+    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+    (by rw [applySyscallTaint_scheduler])).entry
   unfold syscallInvoke at hD
   split at hD
   · cases hD

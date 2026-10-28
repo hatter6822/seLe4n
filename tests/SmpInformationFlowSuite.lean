@@ -2033,11 +2033,17 @@ totality over the wrong domain proves nothing, which is why the
 #check @applySyscallTaint
 
 -- The frame is what keeps the propagation write out of every existing
--- invariant argument: `applySyscallTaint` touches exactly one field, so
--- `authorizeDeclassificationOnCore_frame` and the SM8.C
+-- invariant argument: `applySyscallTaint` touches the taint table and, since
+-- WS-ZA ZA5.11, the taint words in the store alone (one frame, many
+-- consumers), so `authorizeDeclassificationOnCore_frame` and the SM8.C
 -- "writes only the trail" rule both stand unchanged.
 #check @applySyscallTaint_frame
-#check @applySyscallTaint_objects
+#check @applySyscallTaint_objectsAgreeOffTaint
+#check @applySyscallTaint_invExt
+#check @applySyscallTaint_preserves_tableReferencesRecorded
+#check @applyTaintStep_declassificationTaint
+#check @taintHolderAt_false_no_content
+#check @liveTaintEdges_mem_or_no_content
 #check @applySyscallTaint_scheduler
 #check @applySyscallTaint_machine
 #check @applySyscallTaint_declassificationAuditLog
@@ -2134,6 +2140,10 @@ no observer projects, the write is confined to no core at all. -/
 #check @applySyscallTaint_confinedToCores_nil
 #check @applySyscallTaint_preserves_onCore
 #check @applySyscallTaint_preserves_proofLayerInvariantBundle
+-- WS-ZA ZA5.11: the bundle's carriage across the word write, through one frame.
+#check @SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint
+#check @SeLe4n.Model.SystemState.objectsAgreeOffTaint.getElem?_eq
+#check @applySyscallTaint_size
 
 -- WS-RR RR7.8: the cap-transfer destination domain is **covered and deleted**.
 -- What stands in its place is the closure — every object either caps-carrying
