@@ -1472,8 +1472,9 @@ struct RoundTrip {
     /// The capability address in `x0`.
     cptr: u64,
     /// The message length in `x1`'s `MessageInfo`: at most 4, except for the
-    /// scheduling-context configure, whose fifth word the kernel reads from
-    /// the root task's IPC buffer, mapped for the duration of its group.
+    /// scheduling-context configure and the service register, whose fifth
+    /// word the kernel reads from the root task's IPC buffer, mapped for the
+    /// duration of their group.
     msg_len: u64,
     /// The message registers `x2` to `x5`.
     msg: [u64; 4],
@@ -1529,6 +1530,15 @@ const CSPACE_DELETE: u64 = 7;
 const VSPACE_MAP: u64 = 9;
 #[cfg(feature = "hw_target")]
 const VSPACE_UNMAP: u64 = 10;
+/// `ServiceRegister` (`SyscallId` 11).
+#[cfg(feature = "hw_target")]
+const SERVICE_REGISTER: u64 = 11;
+/// `ServiceRevoke` (`SyscallId` 12).
+#[cfg(feature = "hw_target")]
+const SERVICE_REVOKE: u64 = 12;
+/// `ServiceQuery` (`SyscallId` 13).
+#[cfg(feature = "hw_target")]
+const SERVICE_QUERY: u64 = 13;
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_CONFIGURE: u64 = 17;
 #[cfg(feature = "hw_target")]
@@ -1967,6 +1977,28 @@ const fn configure(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
     }
 }
 
+/// The service register: five message words, the fifth (whether invoking the
+/// interface needs the grant right) read from the root task's IPC buffer,
+/// which the kernel's model of memory holds as zero, so no grant.
+#[cfg(feature = "hw_target")]
+const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall: SERVICE_REGISTER,
+        cptr,
+        msg_len: 5,
+        msg,
+        primed: None,
+        blocks: false,
+    }
+}
+
+/// The interface the `virt` binding installs at boot
+/// (`qemuVirtExerciserInterface`, `Platform/QemuVirt/Contract.lean`): id 1,
+/// one method, four-word requests and responses.
+#[cfg(feature = "hw_target")]
+const SERVICE_INTERFACE: [u64; 4] = [1, 1, 4, 4];
+
 /// The object ids the untyped scenarios carve a frame and three page tables
 /// at: boot-domain ids no boot object holds.
 #[cfg(feature = "hw_target")]
@@ -2060,10 +2092,9 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   root task's IPC buffer, and the image's scheduling context is configured
 ///   (its fifth word read from that buffer), bound to the suspended partner
 ///   and unbound, then bound again and held while the partner is resumed and
-///   suspended, which releases it.
-///
-/// No service is in the image, so the service revoke and query are not
-/// issued.
+///   suspended, which releases it.  A service is registered on the image's
+///   endpoint against the interface the boot installs (its fifth word read
+///   from that buffer), queried and revoked.
 #[cfg(feature = "hw_target")]
 const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
     &[
@@ -2415,6 +2446,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
                 SCHED_CONTEXT_PERIOD,
             ],
         ),
+        service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
+        invocation("service-query", SERVICE_QUERY, ENDPOINT_CAP, [0; 4]),
+        invocation("service-revoke", SERVICE_REVOKE, ENDPOINT_CAP, [0; 4]),
         invocation(
             "sched-context-bind",
             SCHED_CONTEXT_BIND,
