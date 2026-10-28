@@ -331,8 +331,8 @@ theorem untypedResetSlot_runQueueStage {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe
 
 /-- The registry's one object write — an endpoint's `serviceRegistered` — moves no
 run-queue link: the endpoint holds none, before or after. -/
-theorem registrationFlagRewrite_runQueueStage {st st' : SystemState}
-    (hW : RegistrationFlagRewrite st.objects st'.objects)
+theorem serviceRecordRewrite_runQueueStage {st st' : SystemState}
+    (hW : ServiceRecordRewrite st.objects st'.objects)
     (hS : st'.scheduler = st.scheduler)
     (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded) :
     RunQueueStage st st' := by
@@ -345,7 +345,7 @@ theorem registrationFlagRewrite_runQueueStage {st st' : SystemState}
 (`revokeService_preserves_tableReferencesRecorded`). -/
 theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : RunQueueStage st st' :=
-  registrationFlagRewrite_runQueueStage (revokeService_registrationFlagRewrite h)
+  serviceRecordRewrite_runQueueStage (revokeService_serviceRecordRewrite h)
     (revokeService_preserves_scheduler st st' sid h)
     fun hInv hR => revokeService_preserves_tableReferencesRecorded h hInv hR
 
@@ -353,7 +353,7 @@ theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
 (`registerService_preserves_tableReferencesRecorded`). -/
 theorem registerService_runQueueStage {reg : ServiceRegistration} {st st' : SystemState}
     (h : registerService reg st = .ok ((), st')) : RunQueueStage st st' :=
-  registrationFlagRewrite_runQueueStage (registerService_registrationFlagRewrite h)
+  serviceRecordRewrite_runQueueStage (registerService_serviceRecordRewrite h)
     (registerService_preserves_scheduler st st' reg h)
     fun hInv hR => registerService_preserves_tableReferencesRecorded h hInv hR
 

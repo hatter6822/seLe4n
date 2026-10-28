@@ -944,16 +944,16 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
     ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧ t.ipcReadView = t₀.ipcReadView
   tcbFwd : ∀ (oid : SeLe4n.ObjId) (t₀ : TCB), s1.objects[oid]? = some (.tcb t₀) →
     ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧ t.ipcReadView = t₀.ipcReadView
-  /-- The endpoint clauses are agreement **off the registration flag**: no conjunct
-  reads `Endpoint.serviceRegistered`, which is the service registry's back-link
+  /-- The endpoint clauses are agreement **off the service record**: no conjunct
+  reads `Endpoint.service` (the registration flag and words), the service registry's back-link
   (`SystemState.tableReferencesRecorded`), so a registration or a revocation,
   which writes it on its endpoint, stays inside the frame. -/
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s2.objects[oid]? = some (.endpoint ep) →
-    ∃ c : Bool, s1.objects[oid]? = some (.endpoint { ep with serviceRegistered := c })
+    ∃ sv : EndpointService, s1.objects[oid]? = some (.endpoint (ep.withService sv))
   endpointFwd : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s1.objects[oid]? = some (.endpoint ep) →
-    ∃ c : Bool, s2.objects[oid]? = some (.endpoint { ep with serviceRegistered := c })
+    ∃ sv : EndpointService, s2.objects[oid]? = some (.endpoint (ep.withService sv))
   /-- The notification clause is *content* agreement, not value agreement:
   every notification-reading conjunct but the reciprocity reads `state`,
   `waitHead` and `pendingBadge` only, so a rewrite that moves `boundTCB` or the
@@ -1056,16 +1056,16 @@ theorem endpointBack_of_iff {s1 s2 : SystemState}
     (h : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
       s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)) :
     ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), s2.objects[oid]? = some (.endpoint ep) →
-      ∃ c : Bool, s1.objects[oid]? = some (.endpoint { ep with serviceRegistered := c }) :=
-  fun oid ep hx => ⟨ep.serviceRegistered, (h oid ep).mp hx⟩
+      ∃ sv : EndpointService, s1.objects[oid]? = some (.endpoint (ep.withService sv)) :=
+  fun oid ep hx => ⟨ep.service, (h oid ep).mp hx⟩
 
 /-- ...and its forward clause. -/
 theorem endpointFwd_of_iff {s1 s2 : SystemState}
     (h : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
       s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)) :
     ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), s1.objects[oid]? = some (.endpoint ep) →
-      ∃ c : Bool, s2.objects[oid]? = some (.endpoint { ep with serviceRegistered := c }) :=
-  fun oid ep hx => ⟨ep.serviceRegistered, (h oid ep).mpr hx⟩
+      ∃ sv : EndpointService, s2.objects[oid]? = some (.endpoint (ep.withService sv)) :=
+  fun oid ep hx => ⟨ep.service, (h oid ep).mpr hx⟩
 
 namespace ipcReadViewAgreement
 
@@ -1492,7 +1492,7 @@ theorem dualQueueSystemInvariant_of_readViewAgreement {s1 s2 : SystemState}
           fun epA epB eA eB hd recvA recvB hA hB =>
             let ⟨cA, hA'⟩ := hView.endpoint _ _ hA
             let ⟨cB, hB'⟩ := hView.endpoint _ _ hB
-            hHD epA epB { eA with serviceRegistered := cA } { eB with serviceRegistered := cB } hd recvA recvB
+            hHD epA epB (eA.withService cA) (eB.withService cB) hd recvA recvB
               hA' hB'⟩
   obtain ⟨_, hObj⟩ := hView.endpoint _ _ hObj
   exact dualQueueEndpointWellFormed_of_readViewAgreement hView (hEp epId _ hObj)
@@ -1606,7 +1606,7 @@ theorem queueHeadBlockedConsistent_of_readViewAgreement {s1 s2 : SystemState}
   intro epId ep hd tcb hEp hTcb
   obtain ⟨c, hEp⟩ := hView.endpoint _ _ hEp
   run_links_back hView at tcb hTcb
-  exact h epId { ep with serviceRegistered := c } hd tcb hEp hTcb
+  exact h epId (ep.withService c) hd tcb hEp hTcb
 
 /-- Read-view transport of `blockedThreadTimeoutConsistent`. -/
 theorem blockedThreadTimeoutConsistent_of_readViewAgreement {s1 s2 : SystemState}
@@ -1727,7 +1727,7 @@ theorem endpointQueueTailBlockedConsistent_of_readViewAgreement {s1 s2 : SystemS
   intro epId ep tl tcb hEp hTcb
   obtain ⟨c, hEp⟩ := hView.endpoint _ _ hEp
   run_links_back hView at tcb hTcb
-  exact h epId { ep with serviceRegistered := c } tl tcb hEp hTcb
+  exact h epId (ep.withService c) tl tcb hEp hTcb
 
 /-- Read-view transport of `queueNextTargetBlocked`. -/
 theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}

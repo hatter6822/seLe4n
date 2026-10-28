@@ -47,8 +47,8 @@ theorem clearWokenReceiverStash_keyFrame (receiver? : Option SeLe4n.ThreadId) {s
 
 /-- The registry's one object write — an endpoint's `serviceRegistered` — feeds no
 key: an endpoint holds no key input. -/
-theorem registrationFlagRewrite_keyFrame {st st' : SystemState} (hInv : st.objects.invExt)
-    (hW : RegistrationFlagRewrite st.objects st'.objects) (hS : st'.scheduler = st.scheduler) :
+theorem serviceRecordRewrite_keyFrame {st st' : SystemState} (hInv : st.objects.invExt)
+    (hW : ServiceRecordRewrite st.objects st'.objects) (hS : st'.scheduler = st.scheduler) :
     capabilityKeyFrame st st' :=
   ⟨fun oid => by
     rcases hW.lookup hInv oid with h | ⟨_, _, h0, h1⟩
@@ -58,13 +58,13 @@ theorem registrationFlagRewrite_keyFrame {st st' : SystemState} (hInv : st.objec
 theorem registerService_keyFrame {reg : ServiceRegistration} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : registerService reg st = .ok ((), st')) :
     capabilityKeyFrame st st' :=
-  registrationFlagRewrite_keyFrame hInv (registerService_registrationFlagRewrite h)
+  serviceRecordRewrite_keyFrame hInv (registerService_serviceRecordRewrite h)
     (registerService_preserves_scheduler _ _ _ h)
 
 theorem revokeService_keyFrame {sid : ServiceId} {st st' : SystemState}
     (hInv : st.objects.invExt) (h : revokeService sid st = .ok ((), st')) :
     capabilityKeyFrame st st' :=
-  registrationFlagRewrite_keyFrame hInv (revokeService_registrationFlagRewrite h)
+  serviceRecordRewrite_keyFrame hInv (revokeService_serviceRecordRewrite h)
     (revokeService_preserves_scheduler _ _ _ h)
 
 /-- WS-ZA ZA5.5: the release of a final endpoint's registration feeds no key: it

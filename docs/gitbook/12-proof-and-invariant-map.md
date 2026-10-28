@@ -188,6 +188,8 @@ since `v0.36.156` a service's identity is its endpoint's
 (`ServiceRegistration.sid`, derived from the capability it keeps);
 since `v0.36.157` the endpoint records only that a service is registered on
 it (`Endpoint.serviceRegistered`), the service named by the endpoint's id;
+since `v0.36.158` the endpoint holds the registration's words too
+(`Endpoint.service`), held equal to the registry table (`serviceStored`);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.157-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.158-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -96,11 +96,11 @@ demostración de Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.36.157` |
+| **Versión** | `0.36.158` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 522.890 en 477 archivos |
-| **LoC de pruebas en Lean** | 87.395 en 70 suites de pruebas |
-| **Declaraciones demostradas** | 19.226 declaraciones theorem/lemma (cero sorry/axiom) |
+| **LoC de producción en Lean** | 523.072 en 477 archivos |
+| **LoC de pruebas en Lean** | 87.398 en 70 suites de pruebas |
+| **Declaraciones demostradas** | 19.241 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Crates de Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) en 80 archivos fuente |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Integración con el hardware** | **H3 COMPLETADO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tablas de páginas ARMv8, puente FFI, arranque en QEMU |

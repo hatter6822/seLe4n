@@ -419,7 +419,8 @@ for driver in drivers:
             # registry entry (4 steady, 6 the first call; not yet traced cell
             # by cell).  The endpoint's record is written in its slot and the
             # state in place (`registerServicePerformImpl`; 9 and 7 before).
-            # ZA5.8 stores the registry in the endpoint's own fields.
+            # ZA5.9 retires the registry table, the registration's words being
+            # on the endpoint since ZA5.8.
             "service-register": (6, 4),
         })
         expected = set(pinned)

@@ -119,15 +119,15 @@ theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
 theorem storeObject_endpoint_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {ep ep' : Endpoint} (hOld : st.objects[k]? = some (.endpoint ep))
     (hS : storeObject k (.endpoint ep') st = .ok ((), st'))
-    (hC : ep'.serviceRegistered = ep.serviceRegistered := by
+    (hC : ep'.service = ep.service := by
       first
         | rfl
         | (split <;> rfl)
-        | (rw [apply_ite Endpoint.serviceRegistered]; split <;> rfl)
+        | (rw [apply_ite Endpoint.service]; split <;> rfl)
         | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; rfl)
     (SystemState.objStateMono_nonTcb (by rw [hOld]; rfl) rfl)
-    (by rw [hOld]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hC])
+    (by rw [hOld]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, ← Endpoint.service_registered, hC])
 
 /-- A TCB stored over the thread's TCB with the same run-queue fields. -/
 theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}

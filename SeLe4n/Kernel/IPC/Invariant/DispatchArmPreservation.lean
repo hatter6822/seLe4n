@@ -101,11 +101,11 @@ theorem clearReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemStat
 -- §2  Service-registry arms (`.serviceRegister`, `.serviceRevoke`)
 -- ============================================================================
 
-/-- The registry's one object write — an endpoint's `serviceRegistered` — is outside
+/-- The registry's one object write — an endpoint's service record — is outside
 the IPC bundle's read view: every endpoint-reading conjunct reads the queues,
 and the rewrite keeps every other object. -/
-theorem ipcInvariantFull_of_registrationFlagRewrite {st st' : SystemState}
-    (hW : RegistrationFlagRewrite st.objects st'.objects) (hObjInv : st.objects.invExt)
+theorem ipcInvariantFull_of_serviceRecordRewrite {st st' : SystemState}
+    (hW : ServiceRecordRewrite st.objects st'.objects) (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st) : ipcInvariantFull st' := by
   have hL := hW.lookup hObjInv
   have hView : ipcReadViewAgreement st st' := by
@@ -116,9 +116,9 @@ theorem ipcInvariantFull_of_registrationFlagRewrite {st st' : SystemState}
     · rw [h1] at ht; cases ht
     · rw [← hE] at ht; exact ⟨t, ht, rfl⟩
     · rw [h0] at ht; cases ht
-    · rw [hE] at he; exact ⟨ep.serviceRegistered, he⟩
-    · rw [h1] at he; cases he; exact ⟨ep0.serviceRegistered, h0⟩
-    · rw [← hE] at he; exact ⟨ep.serviceRegistered, he⟩
+    · rw [hE] at he; exact ⟨ep.service, he⟩
+    · rw [h1] at he; cases he; exact ⟨ep0.service, h0⟩
+    · rw [← hE] at he; exact ⟨ep.service, he⟩
     · rw [h0] at he; cases he; exact ⟨c, h1⟩
     · rw [hE] at hn; exact ⟨n, hn, rfl, rfl, rfl⟩
     · rw [h1] at hn; cases hn
@@ -145,7 +145,7 @@ theorem registerService_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : registerService reg st = .ok ((), st')) :
     ipcInvariantFull st' :=
-  ipcInvariantFull_of_registrationFlagRewrite (registerService_registrationFlagRewrite hStep) hObjInv hInv
+  ipcInvariantFull_of_serviceRecordRewrite (registerService_serviceRecordRewrite hStep) hObjInv hInv
 
 /-- `.serviceRevoke`: revocation removes registry entries and dependency
 edges and clears its endpoint's `serviceRegistered`, which the bundle does not read. -/
@@ -155,7 +155,7 @@ theorem revokeService_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st)
     (hStep : revokeService sid st = .ok ((), st')) :
     ipcInvariantFull st' :=
-  ipcInvariantFull_of_registrationFlagRewrite (revokeService_registrationFlagRewrite hStep) hObjInv hInv
+  ipcInvariantFull_of_serviceRecordRewrite (revokeService_serviceRecordRewrite hStep) hObjInv hInv
 
 -- ============================================================================
 -- §3  Cache-maintenance arm (`.vspaceUnifyInstruction`)

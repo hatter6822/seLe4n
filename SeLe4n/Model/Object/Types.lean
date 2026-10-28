@@ -2974,6 +2974,34 @@ theorem dualQueueRemovalGuard_pair_half {tcb : TCB} {pprev : QueuePPrev}
   rw [hPPrev] at h
   exact h
 
+/-- **The service record an endpoint holds**, read as one value: whether a
+service is registered on the endpoint, and the registration's words — the
+interface it implements and the capability the registration keeps, less that
+capability's target, which is the endpoint itself.  The endpoint stores these as
+scalar fields of its own (`Endpoint.serviceRegistered` and the `service*`
+fields), so a registration is a write in the endpoint's slot and builds no
+record; this structure is the view proofs and specifications read
+(`Endpoint.service`), never a stored field.  The default is the clear record a
+carved endpoint starts with and a revocation leaves. -/
+structure EndpointService where
+  registered      : Bool := false
+  interfaceId     : SeLe4n.InterfaceId := default
+  methodCount     : Nat := 0
+  maxMessageSize  : Nat := 0
+  maxResponseSize : Nat := 0
+  requiresGrant   : Bool := false
+  capRights       : AccessRightSet := AccessRightSet.empty
+  capBadgeWord    : SeLe4n.Badge := SeLe4n.Badge.zero
+  capBadged       : Bool := false
+  capMapAsid      : SeLe4n.ASID := default
+  capMapVaddr     : SeLe4n.VAddr := default
+  capMapEpoch     : Nat := 0
+  capMapped       : Bool := false
+  capFreeIndex    : Nat := 0
+  deriving Repr, DecidableEq
+
+instance : Inhabited EndpointService := ⟨{}⟩
+
 /-- Endpoint object model.
 
 WS-H12a: Endpoint structure uses only intrusive dual-queue fields.
@@ -3005,6 +3033,37 @@ structure Endpoint where
       final delete reads instead of walking the registry
       (`SystemState.tableReferencesRecorded`).  A carved endpoint starts clear. -/
   serviceRegistered : Bool := false
+  /-- **The registration's words** (WS-ZA ZA5.8), meaningful only while
+      `serviceRegistered` is set: the interface the service implements, and the
+      capability the registration keeps, as plain words with flags, as a
+      capability holds its badge and mapping.  The capability's target is not
+      stored: it is this endpoint.  Read through `Endpoint.service`; written by
+      `registerService` and cleared by the revocation. -/
+  serviceInterfaceId : SeLe4n.InterfaceId := default
+  /-- The interface's method count. -/
+  serviceMethodCount : Nat := 0
+  /-- The interface's request bound, in message registers. -/
+  serviceMaxMessageSize : Nat := 0
+  /-- The interface's response bound, in message registers. -/
+  serviceMaxResponseSize : Nat := 0
+  /-- Whether invoking the interface requires the grant right. -/
+  serviceRequiresGrant : Bool := false
+  /-- The kept capability's rights. -/
+  serviceCapRights : AccessRightSet := AccessRightSet.empty
+  /-- The kept capability's badge word, meaningful only when `serviceCapBadged`. -/
+  serviceCapBadgeWord : SeLe4n.Badge := SeLe4n.Badge.zero
+  /-- Whether the kept capability carries a badge. -/
+  serviceCapBadged : Bool := false
+  /-- The kept capability's mapping ASID, meaningful only when `serviceCapMapped`. -/
+  serviceCapMapAsid : SeLe4n.ASID := default
+  /-- The kept capability's mapping address. -/
+  serviceCapMapVaddr : SeLe4n.VAddr := default
+  /-- The kept capability's mapping epoch. -/
+  serviceCapMapEpoch : Nat := 0
+  /-- Whether the kept capability records a mapping. -/
+  serviceCapMapped : Bool := false
+  /-- The kept capability's free index. -/
+  serviceCapFreeIndex : Nat := 0
   deriving Repr, DecidableEq
 
 /-- The send queue's boundaries, read from their codes.  The endpoint keeps
@@ -3037,7 +3096,47 @@ queue record. -/
     recvHeadCode := SeLe4n.ThreadId.optCode r.head,
     recvTailCode := SeLe4n.ThreadId.optCode r.tail }
 
+/-- **The endpoint's service record** (WS-ZA ZA5.8), read from its fields. -/
+@[inline] def Endpoint.service (e : Endpoint) : EndpointService :=
+  { registered := e.serviceRegistered, interfaceId := e.serviceInterfaceId,
+    methodCount := e.serviceMethodCount, maxMessageSize := e.serviceMaxMessageSize,
+    maxResponseSize := e.serviceMaxResponseSize, requiresGrant := e.serviceRequiresGrant,
+    capRights := e.serviceCapRights, capBadgeWord := e.serviceCapBadgeWord,
+    capBadged := e.serviceCapBadged, capMapAsid := e.serviceCapMapAsid,
+    capMapVaddr := e.serviceCapMapVaddr, capMapEpoch := e.serviceCapMapEpoch,
+    capMapped := e.serviceCapMapped, capFreeIndex := e.serviceCapFreeIndex }
+
+/-- The endpoint with its service record written as `sv`'s words, its queues
+untouched: a registration sets it, a revocation clears it. -/
+@[inline] def Endpoint.withService (e : Endpoint) (sv : EndpointService) : Endpoint :=
+  { e with serviceRegistered := sv.registered, serviceInterfaceId := sv.interfaceId,
+           serviceMethodCount := sv.methodCount, serviceMaxMessageSize := sv.maxMessageSize,
+           serviceMaxResponseSize := sv.maxResponseSize,
+           serviceRequiresGrant := sv.requiresGrant, serviceCapRights := sv.capRights,
+           serviceCapBadgeWord := sv.capBadgeWord, serviceCapBadged := sv.capBadged,
+           serviceCapMapAsid := sv.capMapAsid, serviceCapMapVaddr := sv.capMapVaddr,
+           serviceCapMapEpoch := sv.capMapEpoch, serviceCapMapped := sv.capMapped,
+           serviceCapFreeIndex := sv.capFreeIndex }
+
 namespace Endpoint
+
+@[simp] theorem service_registered (e : Endpoint) : e.service.registered = e.serviceRegistered :=
+  rfl
+
+@[simp] theorem service_withService (e : Endpoint) (sv : EndpointService) :
+    (e.withService sv).service = sv := rfl
+
+@[simp] theorem serviceRegistered_withService (e : Endpoint) (sv : EndpointService) :
+    (e.withService sv).serviceRegistered = sv.registered := rfl
+
+@[simp] theorem sendQ_withService (e : Endpoint) (sv : EndpointService) :
+    (e.withService sv).sendQ = e.sendQ := rfl
+
+@[simp] theorem receiveQ_withService (e : Endpoint) (sv : EndpointService) :
+    (e.withService sv).receiveQ = e.receiveQ := rfl
+
+@[simp] theorem withService_withService (e : Endpoint) (a b : EndpointService) :
+    (e.withService a).withService b = e.withService b := rfl
 
 @[simp] theorem sendQ_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
     (e.withSendQ q).sendQ = q := by
@@ -3099,21 +3198,23 @@ theorem withSendQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
 
 @[simp] theorem receiveQ_default : (({} : Endpoint)).receiveQ = {} := rfl
 
-/-- An endpoint is its two queues and the registration it records: equal
-    queues and equal registrations, equal endpoints. -/
+/-- An endpoint is its two queues and the service record it holds: equal
+    queues and equal records, equal endpoints. -/
 theorem ext_queues {a b : Endpoint} (hs : a.sendQ = b.sendQ) (hr : a.receiveQ = b.receiveQ)
-    (hc : a.serviceRegistered = b.serviceRegistered) : a = b := by
-  obtain ⟨a1, a2, a3, a4, a5⟩ := a
-  obtain ⟨b1, b2, b3, b4, b5⟩ := b
-  simp only [sendQ, receiveQ, IntrusiveQueue.mk.injEq] at hs hr hc
-  subst hc
+    (hc : a.service = b.service) : a = b := by
+  obtain ⟨a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18⟩ := a
+  obtain ⟨b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18⟩ := b
+  simp only [sendQ, receiveQ, service, IntrusiveQueue.mk.injEq, EndpointService.mk.injEq]
+    at hs hr hc
+  obtain ⟨c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17, c18⟩ := hc
+  subst c5 c6 c7 c8 c9 c10 c11 c12 c13 c14 c15 c16 c17 c18
   have inj : ∀ {x y : Nat}, SeLe4n.ThreadId.ofOptCode x = SeLe4n.ThreadId.ofOptCode y → x = y :=
     fun {x y} h => by
       rw [← SeLe4n.ThreadId.optCode_ofOptCode x, h, SeLe4n.ThreadId.optCode_ofOptCode]
   rw [inj hs.1, inj hs.2, inj hr.1, inj hr.2]
 
 theorem ext_queues_iff {a b : Endpoint} :
-    a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ ∧ a.serviceRegistered = b.serviceRegistered :=
+    a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ ∧ a.service = b.service :=
   ⟨fun h => h ▸ ⟨rfl, rfl, rfl⟩, fun ⟨hs, hr, hc⟩ => ext_queues hs hr hc⟩
 
 @[simp] theorem withSendQ_sendQ (e : Endpoint) : e.withSendQ e.sendQ = e :=
@@ -3121,6 +3222,14 @@ theorem ext_queues_iff {a b : Endpoint} :
 
 @[simp] theorem withReceiveQ_receiveQ (e : Endpoint) : e.withReceiveQ e.receiveQ = e :=
   ext_queues rfl (by simp) rfl
+
+@[simp] theorem withService_service (e : Endpoint) : e.withService e.service = e := rfl
+
+@[simp] theorem service_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withSendQ q).service = e.service := rfl
+
+@[simp] theorem service_withReceiveQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withReceiveQ q).service = e.service := rfl
 
 @[simp] theorem serviceRegistered_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
     (e.withSendQ q).serviceRegistered = e.serviceRegistered := rfl
