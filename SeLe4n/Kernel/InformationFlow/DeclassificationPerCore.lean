@@ -162,12 +162,12 @@ def declassifyStoreOnCore
     match declassificationDecision ctx declPolicy srcDomain dstDomain with
     | .error err => .error err
     | .ok () =>
-        match recordDeclassificationChecked st.declassificationAuditLog
+        match recordDeclassificationChecked st.declassificationAudit
             (declassifyStoreEvent c actor srcDomain dstDomain targetId st) with
         | none => .error .auditLogCapacityExceeded
         | some log' =>
             match declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st with
-            | .ok ((), st') => .ok ((), { st' with declassificationAuditLog := log' })
+            | .ok ((), st') => .ok ((), { st' with declassificationAudit := log' })
             | .error err => .error err
 
 /-- WS-SM SM8.C.1: the forward direction — with room in the trail, a successful
@@ -181,7 +181,7 @@ theorem declassifyStoreOnCore_of_ok
     (hStep : declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st = .ok ((), st')) :
     declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj st =
       .ok ((), { st' with
-        declassificationAuditLog := declassifyStoreTrail c actor srcDomain dstDomain targetId st }) := by
+        declassificationAudit := declassifyStoreTrail c actor srcDomain dstDomain targetId st }) := by
   have hDec : declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () := by
     obtain ⟨hDenied, hAuth⟩ := enforcementSoundness_declassifyStore ctx declPolicy srcDomain
       dstDomain targetId obj st st' hStep
@@ -251,7 +251,7 @@ theorem declassifyStoreOnCore_ok_inv
     ∃ stGate,
       declassifyStore ctx declPolicy srcDomain dstDomain targetId obj st = .ok ((), stGate) ∧
       st' = { stGate with
-        declassificationAuditLog := declassifyStoreTrail c actor srcDomain dstDomain targetId st } := by
+        declassificationAudit := declassifyStoreTrail c actor srcDomain dstDomain targetId st } := by
   unfold declassifyStoreOnCore at hStep
   -- Generalise each scrutinee *before* casing on it: a bare `cases h : …` would
   -- rewrite the goal's own occurrence too, leaving a conclusion about the case
@@ -263,7 +263,7 @@ theorem declassifyStoreOnCore_ok_inv
   | error e => simp at hStep
   | ok u =>
   cases u
-  obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAuditLog
+  obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAudit
       (declassifyStoreEvent c actor srcDomain dstDomain targetId st) = r := ⟨_, rfl⟩
   rw [hRec] at hStep
   cases rec with
@@ -271,8 +271,7 @@ theorem declassifyStoreOnCore_ok_inv
   | some log' =>
     have hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries :=
       (recordDeclassificationChecked_isSome_iff _ _).mp (by rw [hRec]; rfl)
-    have hLog' : log' = recordDeclassification st.declassificationAuditLog
-        (declassifyStoreEvent c actor srcDomain dstDomain targetId st) := by
+    have hLog' : log' = declassifyStoreTrail c actor srcDomain dstDomain targetId st := by
       rw [recordDeclassificationChecked_eq_record _ _ hRoom] at hRec
       exact (Option.some.inj hRec).symm
     obtain ⟨res, hRes⟩ :
@@ -299,10 +298,14 @@ theorem declassifyStoreOnCore_records_one
     st'.declassificationAuditLog =
       st.declassificationAuditLog ++ [declassifyStoreEvent c actor srcDomain dstDomain targetId st] ∧
       st'.declassificationAuditLog.length = st.declassificationAuditLog.length + 1 := by
-  obtain ⟨_, stGate, _, hSt'⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain
+  obtain ⟨hRoom, stGate, _, hSt'⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain
     dstDomain targetId obj st st' hStep
   subst hSt'
-  exact ⟨rfl, recordDeclassification_length _ _⟩
+  have hTrail := declassifyStoreTrail_toList c actor srcDomain dstDomain targetId st hRoom
+  refine ⟨hTrail, ?_⟩
+  show (declassifyStoreTrail c actor srcDomain dstDomain targetId st).toList.length = _
+  rw [hTrail]
+  exact recordDeclassification_length _ _
 
 /-- WS-SM SM8.C.1 (**the headline**): *an authorized downgrade is either recorded
 or does not happen.*
@@ -326,23 +329,6 @@ theorem declassifyStoreOnCore_never_unaudited
   refine ⟨declassifyStoreEvent c actor srcDomain dstDomain targetId st, ?_, rfl, rfl, rfl, rfl, rfl⟩
   rw [hLog]
   exact List.mem_append_right _ (by simp)
-
-/-- WS-SM SM8.C.8: the audited operation carries the 16th
-`proofLayerInvariantBundle` conjunct.  Unconditional in the pre-state bound —
-success already implies there was room, so the guard alone gives it. -/
-theorem declassifyStoreOnCore_preserves_auditLogBounded
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
-    (hStep : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj st =
-      .ok ((), st')) :
-    auditLogBounded st'.declassificationAuditLog := by
-  obtain ⟨hLog, hLen⟩ := declassifyStoreOnCore_records_one ctx declPolicy c actor srcDomain dstDomain
-    targetId obj st st' hStep
-  obtain ⟨hRoom, _⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain dstDomain
-    targetId obj st st' hStep
-  unfold auditLogBounded
-  omega
 
 /-- WS-SM SM8.C.1: the audit trail is append-only across the operation — every
 event already recorded survives.  (`recordDeclassification` is append-only on
@@ -372,14 +358,10 @@ theorem declassifyStoreOnCore_declassificationAuditEpoch_eq
     (hStep : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj st =
       .ok ((), st')) :
     st'.declassificationAuditEpoch = st.declassificationAuditEpoch := by
-  obtain ⟨_, stGate, hGate, hSt'⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain
+  obtain ⟨_, stGate, _, hSt'⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain
     dstDomain targetId obj st st' hStep
   subst hSt'
-  obtain ⟨hDenied, hAuth⟩ := enforcementSoundness_declassifyStore ctx declPolicy srcDomain
-    dstDomain targetId obj st stGate hGate
-  rw [declassifyStore_eq_storeObject_when_authorized ctx declPolicy srcDomain dstDomain
-    targetId obj st hDenied hAuth] at hGate
-  exact storeObject_declassificationAuditEpoch_eq st targetId obj _ hGate
+  exact AuditRing.epoch_append _ _
 
 /-- WS-SM SM8.C / SM9.A.1a: the audited operation preserves the trail's
 timestamp discipline **at the mounted epoch**, so the total order holds of every
@@ -406,7 +388,8 @@ theorem declassifyStoreOnCore_preserves_wellFormed
     dstDomain targetId obj st st' hStep
   unfold declassificationTrailWellFormed at hWF ⊢
   rw [hLog, hEpoch]
-  exact recordDeclassification_preserves_timestampsFrom _ st.declassificationAuditLog _ hWF rfl
+  exact recordDeclassification_preserves_timestampsFrom _ st.declassificationAuditLog _ hWF
+    (by simp; rfl)
 
 /-- WS-SM SM8.C.5 (**audit soundness**): a recorded event's basis is not a
 claim, it is a check that ran.  Both halves of `isDeclassificationAuthorized`
@@ -1101,7 +1084,9 @@ theorem declassificationChain_recorded_across_cores
           declassifyStoreEvent c₂ actor₂ b d target₂ st₁, ?_, ?_, ?_, ?_, rfl, rfl, rfl, rfl, rfl⟩
   · rw [hLog₂, hLog₁]; simp [List.append_assoc]
   · -- the hops compose (`b` is both), and the second timestamp is the first plus one
-    simp [declassificationChainComposes, declassificationEventOnCore, hLen₁, hEpoch₁]
+    have hLen₁' : st₁.declassificationAudit.length = st.declassificationAudit.length + 1 := by
+      simpa using hLen₁
+    simp [declassificationChainComposes, declassificationEventOnCore, hLen₁', hEpoch₁]
   · refine (chainRecordedIn_iff _ _).mpr ?_
     intro e hMem
     rw [hLog₂, hLog₁]
@@ -1606,8 +1591,8 @@ theorem declassifyStoreOnCore_state_core_independent
       .ok ((), st₁))
     (h₂ : declassifyStoreOnCore ctx declPolicy c₂ actor srcDomain dstDomain targetId obj st =
       .ok ((), st₂)) :
-    { st₁ with declassificationAuditLog := [] } =
-      { st₂ with declassificationAuditLog := [] } ∧
+    { st₁ with declassificationAudit := AuditRing.empty } =
+      { st₂ with declassificationAudit := AuditRing.empty } ∧
       ∃ e₁ e₂ : DeclassificationEvent,
         st₁.declassificationAuditLog = st.declassificationAuditLog ++ [e₁] ∧
         st₂.declassificationAuditLog = st.declassificationAuditLog ++ [e₂] ∧
@@ -1638,7 +1623,7 @@ is read to compute the event's timestamp — so "does the trail influence the
 downgrade itself?" is a question the shape of the definition raises and nothing
 answered.  It does not: `declassifyStore` is the policy decision (a function of
 the two domains and the two policies) followed by `storeObject`, and neither
-reads `declassificationAuditLog`.
+reads `declassificationAudit`.
 
 Stated on two runs from states differing in **exactly** the trail, because that
 is the comparison an observer can actually make: a subject that can influence the
@@ -1655,24 +1640,24 @@ theorem declassifyStoreOnCore_state_log_independent
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (obj : KernelObject)
-    (st st₁ st₂ : SystemState) (log : DeclassificationAuditLog)
+    (st st₁ st₂ : SystemState) (trail : AuditRing)
     (h₁ : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj st =
       .ok ((), st₁))
     (h₂ : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj
-      { st with declassificationAuditLog := log } = .ok ((), st₂)) :
-    { st₁ with declassificationAuditLog := [] } =
-      { st₂ with declassificationAuditLog := [] } := by
+      { st with declassificationAudit := trail } = .ok ((), st₂)) :
+    { st₁ with declassificationAudit := AuditRing.empty } =
+      { st₂ with declassificationAudit := AuditRing.empty } := by
   obtain ⟨_, stGate₁, hGate₁, hSt₁⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor
     srcDomain dstDomain targetId obj st st₁ h₁
   obtain ⟨_, stGate₂, hGate₂, hSt₂⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor
-    srcDomain dstDomain targetId obj { st with declassificationAuditLog := log } st₂ h₂
+    srcDomain dstDomain targetId obj { st with declassificationAudit := trail } st₂ h₂
   -- The gate is the decision (a function of the policies and domains alone)
   -- followed by `storeObject`, whose record update reads every field except the
   -- trail — so re-running it on the same state with another trail gives the same
   -- state with that trail.
   have hFrame : declassifyStore ctx declPolicy srcDomain dstDomain targetId obj
-      { st with declassificationAuditLog := log }
-      = .ok ((), { stGate₁ with declassificationAuditLog := log }) := by
+      { st with declassificationAudit := trail }
+      = .ok ((), { stGate₁ with declassificationAudit := trail }) := by
     unfold declassifyStore at hGate₁ ⊢
     cases hFlow : ctx.policy.canFlow srcDomain dstDomain with
     | true => rw [hFlow] at hGate₁; simp at hGate₁
@@ -1685,7 +1670,7 @@ theorem declassifyStoreOnCore_state_log_independent
           Except.ok.injEq, Prod.mk.injEq, true_and] at hGate₁ ⊢
         rw [← hGate₁]
   rw [hFrame] at hGate₂
-  have hGateEq : stGate₂ = { stGate₁ with declassificationAuditLog := log } :=
+  have hGateEq : stGate₂ = { stGate₁ with declassificationAudit := trail } :=
     congrArg Prod.snd (Except.ok.inj hGate₂.symm)
   subst hSt₁; subst hSt₂; rw [hGateEq]
 
@@ -1857,12 +1842,12 @@ theorem declassifyStore_confinedToCores_nil
 
 /-- WS-SM SM8.C.8: the per-core projection does not read the mounted trail —
 the `projectStateOnCore` companion of
-`declassificationAuditLog_write_preserves_projection`, needed by the NI proofs
+`declassificationAudit_write_preserves_projection`, needed by the NI proofs
 below now that the audited step writes a `SystemState` field. -/
-theorem declassificationAuditLog_write_preserves_projectionOnCore
+theorem declassificationAudit_write_preserves_projectionOnCore
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (log : DeclassificationAuditLog) (c : CoreId) :
-    projectStateOnCore ctx observer { st with declassificationAuditLog := log } c =
+    (trail : AuditRing) (c : CoreId) :
+    projectStateOnCore ctx observer { st with declassificationAudit := trail } c =
       projectStateOnCore ctx observer st c := rfl
 
 /-- WS-SM SM8.C: a declassification to a target the observer cannot see is
@@ -1890,7 +1875,7 @@ theorem declassifyStoreOnCore_preserves_projectionOnCore (ctx : LabelingContext)
     targetId obj st hDenied hAuth] at hGate
   -- the trail write is invisible (SM8.C.8's projection decision), so the whole
   -- step's projection is the store's
-  rw [hSt', declassificationAuditLog_write_preserves_projectionOnCore ctx observer stGate _ c']
+  rw [hSt', declassificationAudit_write_preserves_projectionOnCore ctx observer stGate _ c']
   exact storeObject_preserves_projectionOnCore ctx observer st stGate targetId obj c'
     hTargetHigh hObjInv hGate
 
@@ -1937,7 +1922,7 @@ both post-states and they are equal, which says the *rest* of the state carries
 no residue of the audit history.
 
 The other half is no longer free and is discharged explicitly:
-`declassificationAuditLog_write_preserves_projection` (and its per-core
+`declassificationAudit_write_preserves_projection` (and its per-core
 companion) is the decision that the mounted trail is outside `ObservableState`,
 so an observer still cannot read it — see the field's own docstring for why
 projecting it would open a channel out of exactly the boundary it polices. -/
@@ -1945,13 +1930,13 @@ theorem declassifyStoreOnCore_state_trail_independent
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (obj : KernelObject)
-    (logA logB : DeclassificationAuditLog) (st stA stB : SystemState)
+    (trailA trailB : AuditRing) (st stA stB : SystemState)
     (hStepA : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj
-      { st with declassificationAuditLog := logA } = .ok ((), stA))
+      { st with declassificationAudit := trailA } = .ok ((), stA))
     (hStepB : declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj
-      { st with declassificationAuditLog := logB } = .ok ((), stB)) :
-    { stA with declassificationAuditLog := [] } =
-      { stB with declassificationAuditLog := [] } := by
+      { st with declassificationAudit := trailB } = .ok ((), stB)) :
+    { stA with declassificationAudit := AuditRing.empty } =
+      { stB with declassificationAudit := AuditRing.empty } := by
   obtain ⟨_, stGateA, hGateA, hStA⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain
     dstDomain targetId obj _ stA hStepA
   obtain ⟨_, stGateB, hGateB, hStB⟩ := declassifyStoreOnCore_ok_inv ctx declPolicy c actor srcDomain
@@ -1996,7 +1981,7 @@ theorem authorizeDeclassificationOnCore_preserves_projectionOnCore
   obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   rw [hSt']
-  exact declassificationAuditLog_write_preserves_projectionOnCore ctx observer st _ c'
+  exact declassificationAudit_write_preserves_projectionOnCore ctx observer st _ c'
 
 /-- WS-SM SM8.C.9 (the ∀-core non-interference): two live declassifications from
 low-equivalent states land in low-equivalent states, on every core.
@@ -2035,11 +2020,12 @@ theorem declassifyObjectFromCore_recorded_in_own_view
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId) targetId st ∈
       auditLogOnCore st'.declassificationAuditLog c := by
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
   refine (mem_auditLogOnCore_iff _ c _).mpr ⟨?_, rfl⟩
-  show _ ∈ declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-    targetId st
+  show _ ∈ (AuditRing.toList _)
+  rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom]
   exact recordDeclassification_contains_new _ _
 
 /-- WS-SM SM8.C.9 / SM9.A.1a: the live declassification preserves the trail's
@@ -2074,9 +2060,12 @@ theorem declassifyObjectFromCore_authorizationBasis_perCore
     auditLogBasesVerified ctx.policy declPolicy st'.declassificationAuditLog = true := by
   obtain ⟨hNormal, hDecl⟩ := declassifyObjectFromCore_authorized ctx declPolicy c targetId st st'
     tid ty hCur hPresent hStep
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
-  simp only [auditLogBasesVerified, declassifyStoreTrail, recordDeclassification,
+  show auditLogBasesVerified _ _ (AuditRing.toList _) = true
+  rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom]
+  simp only [auditLogBasesVerified, recordDeclassification,
     List.all_append, Bool.and_eq_true, List.all_cons, List.all_nil]
   refine ⟨hVerified, ?_, trivial⟩
   simp [declassificationBasisKernelVerified, declassificationEventOnCore,
@@ -2354,9 +2343,9 @@ theorem declassificationRefusals_are_counted_and_attributed
     (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
         st).declassificationAuditLog = st.declassificationAuditLog ∧
     (recordDeclassificationChecked
-        (SystemState.declassificationAuditLog
-          (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st)) e).isSome
-      = (recordDeclassificationChecked st.declassificationAuditLog e).isSome := by
+        (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st).declassificationAudit
+        e).isSome
+      = (recordDeclassificationChecked st.declassificationAudit e).isSome := by
   have hLedger := SeLe4n.Platform.FFI.recordSyscallRefusal_records ctx c syscallId tid ke x0 st
     sid hDecode hRecords
   refine ⟨?_, ?_, ?_, ?_⟩
@@ -2462,9 +2451,9 @@ theorem declassifyRun_records_each (ctx : GenericLabelingContext)
         st stMid tid hCur hRes
       have hMid : stMid.declassificationAuditLog.length =
           st.declassificationAuditLog.length + 1 := by
-        rw [declassifyObjectFromCore_frame ctx declPolicy r.core r.targetId st stMid tid hCur
+        rw [declassifyObjectFromCore_log ctx declPolicy r.core r.targetId st stMid tid hCur
           hRes]
-        exact recordDeclassification_length _ _
+        simp
       have := ih stMid st' h
       simp only [List.length_cons]
       omega
@@ -2490,11 +2479,11 @@ theorem declassifyRun_preserves_existing (ctx : GenericLabelingContext)
     | ok pair =>
       obtain ⟨u, stMid⟩ := pair
       cases u
-      obtain ⟨tid, hCur, hSt⟩ := declassifyObjectFromCore_frame_of_ok ctx declPolicy r.core
+      obtain ⟨tid, hCur, -⟩ := declassifyObjectFromCore_frame_of_ok ctx declPolicy r.core
         r.targetId st stMid hRes
       intro e hMem
       refine ih stMid st' h e ?_
-      rw [hSt]
+      rw [declassifyObjectFromCore_log ctx declPolicy r.core r.targetId st stMid tid hCur hRes]
       exact List.mem_append_left _ hMem
 
 /-- WS-SM SM8.C / SM9.A.1a: **a run's trail stays well-formed at its epoch**, so
@@ -2523,36 +2512,6 @@ theorem declassifyRun_preserves_wellFormed (ctx : GenericLabelingContext)
       cases u
       exact ih stMid st' (declassifyObjectFromCore_preserves_wellFormed ctx declPolicy r.core
         r.targetId st stMid hWF hRes) h
-
-/-- WS-SM SM8.C.8: **a run stays within capacity.**  Unconditional: every step
-is fail-closed at the bound, so a run that got this far never crossed it. -/
-theorem declassifyRun_preserves_auditLogBounded (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) :
-    ∀ (reqs : List DeclassificationRequest) (st st' : SystemState),
-      auditLogBounded st.declassificationAuditLog →
-      declassifyRun ctx declPolicy reqs st = .ok ((), st') →
-      auditLogBounded st'.declassificationAuditLog := by
-  intro reqs
-  induction reqs with
-  | nil => intro st st' hB h; cases h; exact hB
-  | cons r rest ih =>
-    intro st st' hB h
-    unfold declassifyRun at h
-    obtain ⟨res, hRes⟩ :
-        ∃ x, declassifyObjectFromCore ctx declPolicy r.core r.targetId st = x := ⟨_, rfl⟩
-    rw [hRes] at h
-    cases res with
-    | error e => simp at h
-    | ok pair =>
-      obtain ⟨u, stMid⟩ := pair
-      cases u
-      obtain ⟨⟨tid, hCur⟩, ⟨ty, hTy⟩⟩ := declassifyObjectFromCore_ok_resolved ctx declPolicy
-        r.core r.targetId st stMid hRes
-      rw [declassifyObjectFromCore_eq_onCore ctx declPolicy r.core r.targetId st tid ty hCur
-        hTy] at hRes
-      exact ih stMid st' (authorizeDeclassificationOnCore_preserves_auditLogBounded ctx
-        declPolicy r.core (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
-        (ctx.objectDomainOf r.targetId) r.targetId st stMid hRes) h
 
 /-- WS-SM SM8.C: **a run writes only the trail** — the object store, the
 scheduler and the machine are exactly as they were, however long the run.
@@ -2609,7 +2568,7 @@ theorem declassifyRun_preserves_projectionOnCore (ctx : LabelingContext)
       obtain ⟨tid, hCur, hSt⟩ := declassifyObjectFromCore_frame_of_ok gctx declPolicy r.core
         r.targetId st stMid hRes
       rw [ih stMid st' c h, hSt]
-      exact declassificationAuditLog_write_preserves_projectionOnCore ctx observer st _ c
+      exact declassificationAudit_write_preserves_projectionOnCore ctx observer st _ c
 
 -- ============================================================================
 -- §13  SM8.C.6 — the rules as data, each carrying its own proof
@@ -2726,13 +2685,13 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
       ∀ (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
         (actor : DeclassificationActor)
         (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (obj : KernelObject)
-        (logA logB : DeclassificationAuditLog) (st stA stB : SystemState),
+        (trailA trailB : AuditRing) (st stA stB : SystemState),
         declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj
-          { st with declassificationAuditLog := logA } = .ok ((), stA) →
+          { st with declassificationAudit := trailA } = .ok ((), stA) →
         declassifyStoreOnCore ctx declPolicy c actor srcDomain dstDomain targetId obj
-          { st with declassificationAuditLog := logB } = .ok ((), stB) →
-        { stA with declassificationAuditLog := [] } =
-          { stB with declassificationAuditLog := [] }
+          { st with declassificationAudit := trailB } = .ok ((), stB) →
+        { stA with declassificationAudit := AuditRing.empty } =
+          { stB with declassificationAudit := AuditRing.empty }
   | .timestampOrderIsCheckable =>
       ∃ (log : DeclassificationAuditLog) (e : DeclassificationEvent),
         declassificationAuditLogWellFormed log = true ∧
@@ -2769,9 +2728,9 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
         (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
             st).declassificationAuditLog = st.declassificationAuditLog ∧
         (recordDeclassificationChecked
-            (SystemState.declassificationAuditLog
-              (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0 st)) e).isSome
-          = (recordDeclassificationChecked st.declassificationAuditLog e).isSome
+            (SeLe4n.Platform.FFI.recordSyscallRefusal ctx c syscallId tid ke x0
+              st).declassificationAudit e).isSome
+          = (recordDeclassificationChecked st.declassificationAudit e).isSome
   | .liveDeclassificationWritesOnlyTheTrail =>
       ∀ (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c : CoreId)
         (actor : DeclassificationActor)
@@ -2780,7 +2739,7 @@ def DeclassificationRuleId.evidenceProp : DeclassificationRuleId → Prop
         authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
           .ok ((), st') →
         st' = { st with
-          declassificationAuditLog :=
+          declassificationAudit :=
             declassifyStoreTrail c actor srcDomain dstDomain targetId st } ∧
         st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
         declassificationDecision ctx declPolicy srcDomain dstDomain = .ok ()
@@ -2909,7 +2868,7 @@ theorem declassificationRuleStatement_nonempty :
 
 SM8.C could keep the audit trail out of `ObservableState` for a reason it stated
 plainly: nothing could read it, so
-`declassificationAuditLog_write_preserves_projection` is `rfl`.  **SM9.A makes it
+`declassificationAudit_write_preserves_projection` is `rfl`.  **SM9.A makes it
 readable, and that changes the observation relation.**
 
 The consequence is concrete and easy to miss.  The naive lemma —
@@ -3095,10 +3054,10 @@ theorem authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence
     (hStep₂ : authorizeDeclassificationOnCore gctx declPolicy c actor srcDomain dstDomain targetId s₂
       = .ok ((), s₂')) :
     auditObservationalEquivalence ctx observer monitorClearance reader s₁' s₂' := by
-  obtain ⟨hSt₁, -, -⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c actor srcDomain
-    dstDomain targetId s₁ s₁' hStep₁
-  obtain ⟨hSt₂, -, -⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c actor srcDomain
-    dstDomain targetId s₂ s₂' hStep₂
+  obtain ⟨hSt₁, hRoom₁, -⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c actor
+    srcDomain dstDomain targetId s₁ s₁' hStep₁
+  obtain ⟨hSt₂, hRoom₂, -⟩ := authorizeDeclassificationOnCore_frame gctx declPolicy c actor
+    srcDomain dstDomain targetId s₂ s₂' hStep₂
   subst hSt₁; subst hSt₂
   refine ⟨hProj, fun str => ?_⟩
   cases str
@@ -3107,13 +3066,18 @@ theorem authorizeDeclassificationOnCore_preserves_auditObservationalEquivalence
     -- so the ledger's clause rides the pre-state's unchanged.
     exact h.2 .declassificationRefusalLedger
   obtain ⟨hView, hEp⟩ := h.2 .declassificationAuditTrail
-  refine ⟨?_, fun hMon => hEp hMon⟩
-  show auditLogVisibleTo (liftLegacyContext ctx) reader
-      (declassifyStoreTrail c actor srcDomain dstDomain targetId s₁) =
-    auditLogVisibleTo (liftLegacyContext ctx) reader
-      (declassifyStoreTrail c actor srcDomain dstDomain targetId s₂)
-  simp only [declassifyStoreTrail, recordDeclassification, auditLogVisibleTo_append, hView,
-    hSameEvent]
+  refine ⟨?_, fun hMon => ?_⟩
+  · show auditLogVisibleTo (liftLegacyContext ctx) reader
+        (declassifyStoreTrail c actor srcDomain dstDomain targetId s₁).toList =
+      auditLogVisibleTo (liftLegacyContext ctx) reader
+        (declassifyStoreTrail c actor srcDomain dstDomain targetId s₂).toList
+    rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom₁,
+      declassifyStoreTrail_toList _ _ _ _ _ _ hRoom₂]
+    simp only [recordDeclassification, auditLogVisibleTo_append, hView, hSameEvent]
+  · show (declassifyStoreTrail c actor srcDomain dstDomain targetId s₁).epoch =
+      (declassifyStoreTrail c actor srcDomain dstDomain targetId s₂).epoch
+    rw [AuditRing.epoch_append, AuditRing.epoch_append]
+    exact hEp hMon
 
 /-- WS-SM SM9.A.4a: **the drain's congruence**, for the caller that can perform
 one.
@@ -3152,15 +3116,16 @@ theorem auditDrain_preserves_auditObservationalEquivalence
     -- WS-SM SM9.B.10: the drain writes the trail and the epoch, never the
     -- ledger, so the ledger's clause rides the pre-state's unchanged.
     exact h.2 .declassificationRefusalLedger
+  have hTrail' : s₁.declassificationAudit.toList = s₂.declassificationAudit.toList := hTrail
+  have hEpoch' : s₁.declassificationAudit.epoch = s₂.declassificationAudit.epoch := hEpoch
   refine ⟨?_, fun _ => ?_⟩
-  · show auditLogVisibleTo (liftLegacyContext ctx) reader
-        (s₁.declassificationAuditLog.drop (min count s₁.declassificationAuditLog.length)) =
-      auditLogVisibleTo (liftLegacyContext ctx) reader
-        (s₂.declassificationAuditLog.drop (min count s₂.declassificationAuditLog.length))
-    rw [hTrail]
-  · show s₁.declassificationAuditEpoch + min count s₁.declassificationAuditLog.length =
-      s₂.declassificationAuditEpoch + min count s₂.declassificationAuditLog.length
-    rw [hTrail, hEpoch]
+  · show auditLogVisibleTo (liftLegacyContext ctx) reader (AuditRing.toList _) =
+      auditLogVisibleTo (liftLegacyContext ctx) reader (AuditRing.toList _)
+    simp only [AuditRing.toList_dropFront, SystemState.declassificationAuditLog]
+    rw [hTrail']
+  · show (AuditRing.dropFront _ _).epoch = (AuditRing.dropFront _ _).epoch
+    simp only [AuditRing.epoch_dropFront, SystemState.declassificationAuditLog]
+    rw [hTrail', hEpoch']
 
 /-- WS-SM SM9.B.10 (**the refusal seam's congruence**): two equivalent states
 whose seams record the *same* refusal stay equivalent.
@@ -3236,9 +3201,11 @@ theorem lowEquivalent_does_not_determine_visible_view :
       endpointDomainOf := fun _ => SecurityDomain.lowest },
     SecurityDomain.lowest, default,
     { (default : SystemState) with
-      declassificationAuditLog := [auditTimestampWitness 0] }, ?_, ?_⟩
-  · exact (declassificationAuditLog_write_preserves_projection _ _ default _).symm
-  · simp [auditLogVisibleTo, auditEntryVisibleTo, DomainFlowPolicy.allowAll]
+      declassificationAudit := (AuditRing.ofList [auditTimestampWitness 0]) }, ?_, ?_⟩
+  · exact (declassificationAudit_write_preserves_projection _ _ default _).symm
+  · show auditLogVisibleTo _ _ (AuditRing.toList _) ≠ auditLogVisibleTo _ _ (AuditRing.toList _)
+    rw [AuditRing.toList_ofList _ _ (by decide)]
+    simp [auditLogVisibleTo, auditEntryVisibleTo, DomainFlowPolicy.allowAll]
 
 -- ============================================================================
 -- §15  SM9.A.4b — the reader opens no channel
@@ -3336,13 +3303,14 @@ the second and fifth conjuncts are stated at the live entry rather than the
 word. -/
 theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
     (reader : SecurityDomain) (c : CoreId) (count : Nat) (op : AuditReadOp)
-    (st : SystemState) (epoch : Nat) :
+    (st : SystemState) (trail : AuditRing)
+    (hTrail : trail.toList = st.declassificationAuditLog) :
     extractAuditAuthority
         { target := .object oid, rights := AccessRightSet.ofList AccessRight.all, } = .error .invalidCapability ∧
     auditReadFromCore (liftLegacyContext ctx) none c op st = .error .illegalAuthority ∧
     auditDrainVisiblePrefix (liftLegacyContext ctx) none c count st = .error .illegalAuthority ∧
     (auditReadWord (liftLegacyContext ctx) none reader
-        { st with declassificationAuditEpoch := epoch } .status =
+        { st with declassificationAudit := trail } .status =
       auditReadWord (liftLegacyContext ctx) none reader st .status) ∧
     (∀ (m : SecurityDomain) (st' : SystemState),
       auditReaderDomain (liftLegacyContext ctx) st' c = some reader →
@@ -3352,7 +3320,8 @@ theorem auditRead_gates_are_five (ctx : LabelingContext) (oid : SeLe4n.ObjId)
   ⟨extractAuditAuthority_rejects_non_audit_capability oid,
    auditRead_unconfigured_denied (liftLegacyContext ctx) c op st,
    auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st,
-   auditReadStatus_partial_hides_generation (liftLegacyContext ctx) none reader st epoch rfl,
+   auditReadStatus_partial_hides_generation (liftLegacyContext ctx) none reader st trail hTrail
+     rfl,
    fun m st' hReader hPartial =>
      auditReadFromCore_partial_reader_denied (liftLegacyContext ctx) m c op st' reader
        hReader hPartial⟩
@@ -3422,9 +3391,9 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (st : SystemState)
     (L : RefusalLedger) (r : DeclassificationRefusal)
-    (log : DeclassificationAuditLog) (e : DeclassificationEvent)
+    (trail : AuditRing) (e : DeclassificationEvent)
     (op : AuditReadOp) (L₁ L₂ : RefusalLedger)
-    (hFullTrail : maxDeclassificationAuditEntries ≤ log.length)
+    (hFullTrail : maxDeclassificationAuditEntries ≤ trail.toList.length)
     (hLedgerOp : op.readsStructure = .declassificationRefusalLedger)
     (hPartial : auditMonitorAuthorized (liftLegacyContext ctx) monitorClearance reader = false)
     (hCur : st.scheduler.currentOnCore executingCore = some tid)
@@ -3447,7 +3416,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
         tid ke = none) :
     -- (1) the ledger has no capacity refusal, where the trail does
     ((recordRefusal L r).recent.get L.nextSlot = some r ∧
-      recordDeclassificationChecked log e = none) ∧
+      recordDeclassificationChecked trail e = none) ∧
     -- (2) the outcome the boundary hands the refused caller is the error frame
     -- computed from `ke` alone — it names no component of the ledger
     ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
@@ -3464,7 +3433,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
           { st with declassificationRefusals := L₁ } op
         = auditReadWord (liftLegacyContext ctx) monitorClearance reader
             { st with declassificationRefusals := L₂ } op) := by
-  refine ⟨recordRefusal_never_refuses L r log e hFullTrail, ?_, ?_, ?_, ?_⟩
+  refine ⟨recordRefusal_never_refuses L r trail e hFullTrail, ?_, ?_, ?_, ?_⟩
   · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
       syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI
       hSyscall hNoCapFault

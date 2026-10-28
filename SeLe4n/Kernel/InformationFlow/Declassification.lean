@@ -65,17 +65,21 @@ already carries `2` (`preEpochTimestamp_reused_after_drain`).  That falsifies
 in its hypothesis — and breaks `declassificationChainLinked`'s
 strictly-increasing conjunct with it.  Offsetting by the epoch, which counts
 exactly the entries drained so far, makes a timestamp name an event for the
-lifetime of the system: it is never reused and never decreases. -/
+lifetime of the system: it is never reused and never decreases.
+
+WS-ZA ZA5.10: the trail's length is passed as `position`, the ring's window
+length, so the producer reads one word rather than building the trail to count
+it. -/
 def declassificationEventOnCore (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat)
-    (log : DeclassificationAuditLog)
+    (position : Nat)
     (predecessorTags : DeclassificationTaint) : DeclassificationEvent :=
   { srcDomain := srcDomain
     dstDomain := dstDomain
     targetObject := targetId
     authorizationBasis := .policyRule
-    timestamp := epoch + log.length
+    timestamp := epoch + position
     originatingCore := c
     actor := actor
     predecessorTags := predecessorTags }
@@ -87,7 +91,7 @@ abbrev declassifyStoreEventWithTags (c : CoreId) (actor : DeclassificationActor)
     (targetId : SeLe4n.ObjId) (predecessorTags : DeclassificationTaint)
     (st : SystemState) : DeclassificationEvent :=
   declassificationEventOnCore c actor srcDomain dstDomain targetId
-    st.declassificationAuditEpoch st.declassificationAuditLog predecessorTags
+    st.declassificationAuditEpoch st.declassificationAudit.length predecessorTags
 
 /-- WS-SM SM9.D.13a: **the acting subject's provenance at production time** —
 the snapshot an event carries.
@@ -110,12 +114,34 @@ abbrev declassifyStoreEvent (c : CoreId) (actor : DeclassificationActor)
     (declassificationActorTaint actor st) st
 
 /-- WS-SM SM8.C.1: the trail a successful audited step leaves — the pre-state's
-trail with this step's event appended. -/
+trail with this step's event recorded in the ring's next slot (WS-ZA ZA5.10).
+Below capacity its list is the pre-state's trail with the event appended
+(`declassifyStoreTrail_toList`). -/
 abbrev declassifyStoreTrail (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (st : SystemState) : DeclassificationAuditLog :=
-  recordDeclassification st.declassificationAuditLog
+    (targetId : SeLe4n.ObjId) (st : SystemState) : AuditRing :=
+  st.declassificationAudit.append
     (declassifyStoreEvent c actor srcDomain dstDomain targetId st)
+
+/-- WS-ZA ZA5.10: below capacity the ring's record is the list trail's append. -/
+theorem declassifyStoreTrail_toList (c : CoreId) (actor : DeclassificationActor)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries) :
+    (declassifyStoreTrail c actor srcDomain dstDomain targetId st).toList =
+      recordDeclassification st.declassificationAuditLog
+        (declassifyStoreEvent c actor srcDomain dstDomain targetId st) :=
+  AuditRing.toList_append _ _ hRoom
+
+/-- WS-ZA ZA5.10: below capacity, an entry of the recorded trail is an entry of
+the pre-state's trail or the recorded event. -/
+theorem mem_declassifyStoreTrail_iff (c : CoreId) (actor : DeclassificationActor)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (st : SystemState)
+    (hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries)
+    (e : DeclassificationEvent) :
+    e ∈ (declassifyStoreTrail c actor srcDomain dstDomain targetId st).toList ↔
+      e ∈ st.declassificationAuditLog ++
+        [declassifyStoreEvent c actor srcDomain dstDomain targetId st] := by
+  rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom]; rfl
 
 /-- WS-SM SM8.C.1 (**the field the phase exists for**): the recorded core is the
 core the operation ran on.
@@ -126,29 +152,29 @@ make this theorem false for every secondary core while still compiling
 everywhere. -/
 theorem declassificationEventOnCore_originatingCore
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
     (predecessorTags : DeclassificationTaint) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
-      log predecessorTags).originatingCore = c := rfl
+      position predecessorTags).originatingCore = c := rfl
 
 /-- WS-SM SM8.C.5: the kernel records its own basis, never an integrator
 override — so `kernelVerifiable` is `true` on everything the kernel writes. -/
 theorem declassificationEventOnCore_basis_is_policyRule
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
     (predecessorTags : DeclassificationTaint) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
-      log predecessorTags).authorizationBasis = .policyRule := rfl
+      position predecessorTags).authorizationBasis = .policyRule := rfl
 
 /-- WS-SM SM8.C / SM9.A.1a: the recorded timestamp is the event's **global**
 position — the number of entries drained so far plus its index in the current
 trail. -/
 theorem declassificationEventOnCore_timestamp
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
     (predecessorTags : DeclassificationTaint) :
-    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log
-      predecessorTags).timestamp = epoch + log.length := rfl
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch position
+      predecessorTags).timestamp = epoch + position := rfl
 
 /-- WS-SM SM9.C.1: the recorded actor is the one the producer resolved — the
 field is carried, never derived from the flow endpoints.
@@ -159,9 +185,9 @@ which would compile everywhere and be silently wrong for exactly the second-hop
 events it exists to attribute. -/
 theorem declassificationEventOnCore_actor
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
     (predecessorTags : DeclassificationTaint) :
-    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch position
       predecessorTags).actor = actor := rfl
 
 /-- WS-SM SM9.D.13a: the recorded snapshot is the one the producer resolved —
@@ -174,9 +200,9 @@ report no laundering at all.  That is the unsafe direction, which is why the
 field carries no default. -/
 theorem declassificationEventOnCore_predecessorTags
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (epoch : Nat) (log : DeclassificationAuditLog)
+    (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
     (predecessorTags : DeclassificationTaint) :
-    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch log
+    (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch position
       predecessorTags).predecessorTags = predecessorTags := rfl
 
 /-- WS-SM SM9.D.13a: the live producers snapshot the **acting subject's** taint,
@@ -290,10 +316,10 @@ def authorizeDeclassificationOnCore
     match declassificationDecision ctx declPolicy srcDomain dstDomain with
     | .error err => .error err
     | .ok () =>
-        match recordDeclassificationChecked st.declassificationAuditLog
+        match recordDeclassificationChecked st.declassificationAudit
             (declassifyStoreEvent c actor srcDomain dstDomain targetId st) with
         | none => .error .auditLogCapacityExceeded
-        | some log' => .ok ((), { st with declassificationAuditLog := log' })
+        | some log' => .ok ((), { st with declassificationAudit := log' })
 
 /-- WS-SM SM8.C.9 (**the frame**): the only field a successful live
 declassification writes is the audit trail.
@@ -308,7 +334,7 @@ theorem authorizeDeclassificationOnCore_frame
     (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     st' = { st with
-      declassificationAuditLog := declassifyStoreTrail c actor srcDomain dstDomain targetId st } ∧
+      declassificationAudit := declassifyStoreTrail c actor srcDomain dstDomain targetId st } ∧
     st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
     declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () := by
   unfold authorizeDeclassificationOnCore at hStep
@@ -319,7 +345,7 @@ theorem authorizeDeclassificationOnCore_frame
   | error err => simp at hStep
   | ok u =>
     cases u
-    obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAuditLog
+    obtain ⟨rec, hRec⟩ : ∃ r, recordDeclassificationChecked st.declassificationAudit
         (declassifyStoreEvent c actor srcDomain dstDomain targetId st) = r := ⟨_, rfl⟩
     rw [hRec] at hStep
     cases rec with
@@ -350,7 +376,7 @@ theorem authorizeDeclassificationOnCore_ok_iff
     exact ⟨hRoom, hDec⟩
   · rintro ⟨hRoom, hDec⟩
     refine ⟨{ st with
-      declassificationAuditLog := declassifyStoreTrail c actor srcDomain dstDomain targetId st }, ?_⟩
+      declassificationAudit := declassifyStoreTrail c actor srcDomain dstDomain targetId st }, ?_⟩
     unfold authorizeDeclassificationOnCore
     rw [hDec, recordDeclassificationChecked_eq_record _ _ hRoom]
 
@@ -424,10 +450,11 @@ theorem authorizeDeclassificationOnCore_records_one
     st'.declassificationAuditLog =
       st.declassificationAuditLog ++ [declassifyStoreEvent c actor srcDomain dstDomain targetId st] ∧
       st'.declassificationAuditLog.length = st.declassificationAuditLog.length + 1 := by
-  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
+  obtain ⟨hSt', hRoom, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   subst hSt'
-  exact ⟨rfl, recordDeclassification_length _ _⟩
+  have hL := declassifyStoreTrail_toList c actor srcDomain dstDomain targetId st hRoom
+  exact ⟨hL, (congrArg List.length hL).trans (recordDeclassification_length _ _)⟩
 
 /-- WS-SM SM8.C.9 (**the headline**): *an authorized downgrade is either recorded
 or does not happen.*
@@ -451,28 +478,12 @@ theorem authorizeDeclassificationOnCore_never_unaudited
   rw [hLog]
   exact List.mem_append_right _ (by simp)
 
-/-- WS-SM SM8.C.8: the live declassification carries the 16th
-`proofLayerInvariantBundle` conjunct. -/
-theorem authorizeDeclassificationOnCore_preserves_auditLogBounded
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (st st' : SystemState)
-    (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
-      .ok ((), st')) :
-    auditLogBounded st'.declassificationAuditLog := by
-  obtain ⟨_, hLen⟩ := authorizeDeclassificationOnCore_records_one ctx declPolicy c actor srcDomain
-    dstDomain targetId st st' hStep
-  obtain ⟨_, hRoom, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
-    dstDomain targetId st st' hStep
-  unfold auditLogBounded
-  omega
-
 /-- WS-SM SM8.C.9: **the whole invariant bundle**, carried across the live
 declassification.
 
-Fifteen conjuncts ride `proofLayerInvariantBundle_setDeclassificationAuditLog`
-(the transition writes one field, and none of the fifteen reads it); the
-sixteenth is the capacity bound above.  This is the obligation a dispatch arm
+Every conjunct rides `proofLayerInvariantBundle_setDeclassificationAuditLog`
+(the transition writes only the audit ring; the sixteenth conjunct, the
+capacity bound, is the ring's own).  This is the obligation a dispatch arm
 owes, discharged once. -/
 theorem authorizeDeclassificationOnCore_preserves_proofLayerInvariantBundle
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
@@ -484,10 +495,8 @@ theorem authorizeDeclassificationOnCore_preserves_proofLayerInvariantBundle
     Architecture.proofLayerInvariantBundle st' := by
   obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
-  have hBounded := authorizeDeclassificationOnCore_preserves_auditLogBounded ctx declPolicy c actor
-    srcDomain dstDomain targetId st st' hStep
-  rw [hSt'] at hBounded ⊢
-  exact Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog st _ hInv hBounded
+  rw [hSt']
+  exact Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog st _ hInv
 
 -- ============================================================================
 -- §4  The attributed live entry point
@@ -568,7 +577,7 @@ theorem declassifyObjectFromCore_frame
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     st' =
       { st with
-        declassificationAuditLog :=
+        declassificationAudit :=
           declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
             (ctx.objectDomainOf targetId) targetId st } := by
   unfold declassifyObjectFromCore at hStep
@@ -580,6 +589,24 @@ theorem declassifyObjectFromCore_frame
   | some _ =>
     exact (authorizeDeclassificationOnCore_frame ctx declPolicy c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
       (ctx.objectDomainOf targetId) targetId st st' hStep).1
+
+/-- WS-ZA ZA5.10: a successful live declassification found room in the trail —
+the check before the ring's write. -/
+theorem declassifyObjectFromCore_room
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
+    st.declassificationAuditLog.length < maxDeclassificationAuditEntries := by
+  unfold declassifyObjectFromCore at hStep
+  rw [hCur] at hStep
+  obtain ⟨ty, hTy⟩ : ∃ t, st.getObjectType? targetId = t := ⟨_, rfl⟩
+  rw [hTy] at hStep
+  cases ty with
+  | none => simp at hStep
+  | some _ =>
+    exact (authorizeDeclassificationOnCore_frame ctx declPolicy c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+      (ctx.objectDomainOf targetId) targetId st st' hStep).2.1
 
 /-- WS-SM SM8.C.9: a successful live declassification implies the executing core
 was running a subject, and the target was present.
@@ -612,13 +639,31 @@ theorem declassifyObjectFromCore_frame_of_ok
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     ∃ tid, st.scheduler.currentOnCore c = some tid ∧
       st' = { st with
-        declassificationAuditLog :=
+        declassificationAudit :=
           declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
             (ctx.objectDomainOf targetId) targetId st } := by
   obtain ⟨⟨tid, hCur⟩, -⟩ := declassifyObjectFromCore_ok_resolved ctx declPolicy c targetId
     st st' hStep
   exact ⟨tid, hCur,
     declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep⟩
+
+/-- WS-ZA ZA5.10: the live entry point's trail, read as the list it implements —
+the pre-state's trail with the one event appended.  The ring's write is the list
+append below capacity (`declassifyStoreTrail_toList`), and a successful step had
+room (`declassifyObjectFromCore_room`). -/
+theorem declassifyObjectFromCore_log
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (c : CoreId) (targetId : SeLe4n.ObjId) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
+    st'.declassificationAuditLog =
+      st.declassificationAuditLog ++
+        [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+          (ctx.objectDomainOf targetId) targetId st] := by
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
+  have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
+  subst hSt'
+  exact declassifyStoreTrail_toList _ _ _ _ _ _ hRoom
 
 /-- WS-SM SM8.C.3 (**the headline**): every event the live entry point records is
 attributable — **in the post-state**, which is the state an auditor inspects.
@@ -656,12 +701,14 @@ theorem declassifyObjectFromCore_destination_is_target_domain
       e.dstDomain = ctx.objectDomainOf e.targetObject ∧
       e.srcDomain = ctx.threadDomainOf tid ∧
       e.originatingCore = c := by
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
   refine ⟨declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
     (ctx.objectDomainOf targetId) targetId st, ?_, rfl, rfl, rfl⟩
-  show _ ∈ declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
-    (ctx.objectDomainOf targetId) targetId st
+  show _ ∈ (declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
+    (ctx.objectDomainOf targetId) targetId st).toList
+  rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom]
   exact recordDeclassification_contains_new _ _
 
 /-- WS-SM SM8.C.9: the live entry point carries the whole invariant bundle —
@@ -698,12 +745,14 @@ theorem declassifyObjectFromCore_never_unaudited
       e.originatingCore = c ∧ e.srcDomain = ctx.threadDomainOf tid ∧
       e.dstDomain = ctx.objectDomainOf targetId ∧ e.targetObject = targetId ∧
       e.authorizationBasis = .policyRule := by
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   have hSt' := declassifyObjectFromCore_frame ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
   refine ⟨declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
     targetId st, ?_, rfl, rfl, rfl, rfl, rfl⟩
-  show _ ∈ declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-    targetId st
+  show _ ∈ (declassifyStoreTrail c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
+    targetId st).toList
+  rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom]
   exact recordDeclassification_contains_new _ _
 
 /-- WS-SM SM8.C.5: the live entry point's authorization soundness — both halves
@@ -779,6 +828,23 @@ theorem declassificationTrailWellFormed_of_epoch_zero (st : SystemState)
       declassificationAuditLogWellFormed st.declassificationAuditLog := by
   simp [declassificationTrailWellFormed, declassificationAuditLogWellFormed, hEpoch]
 
+/-- WS-ZA ZA5.10: a trail record below capacity keeps the timestamp discipline:
+the ring's record is the list append (`declassifyStoreTrail_toList`), the epoch
+is unchanged, and the event is stamped `epoch + length`. -/
+theorem declassifyStoreTrail_preserves_trailWellFormed (c : CoreId)
+    (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
+    (targetId : SeLe4n.ObjId) (st : SystemState)
+    (hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries)
+    (hWF : declassificationTrailWellFormed st = true) :
+    declassificationTrailWellFormed
+      { st with declassificationAudit :=
+          declassifyStoreTrail c actor srcDomain dstDomain targetId st } = true := by
+  unfold declassificationTrailWellFormed at hWF ⊢
+  show auditTimestampsFrom (declassifyStoreTrail c actor srcDomain dstDomain targetId st).epoch
+    (declassifyStoreTrail c actor srcDomain dstDomain targetId st).toList = true
+  rw [declassifyStoreTrail_toList _ _ _ _ _ _ hRoom, AuditRing.epoch_append]
+  exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF (by simp; rfl)
+
 /-- WS-SM SM9.A.1a: **the live declassification preserves the trail's timestamp
 discipline at the epoch.**
 
@@ -793,10 +859,10 @@ theorem authorizeDeclassificationOnCore_preserves_trailWellFormed
     (hStep : authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
       .ok ((), st')) :
     declassificationTrailWellFormed st' = true := by
-  obtain ⟨hSt', _, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
+  obtain ⟨hSt', hRoom, _⟩ := authorizeDeclassificationOnCore_frame ctx declPolicy c actor srcDomain
     dstDomain targetId st st' hStep
   subst hSt'
-  exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF rfl
+  exact declassifyStoreTrail_preserves_trailWellFormed _ _ _ _ _ st hRoom hWF
 
 /-- WS-SM SM9.A.1a: the live entry point's half — the obligation the
 `.declassify` dispatch arm owes about the trail's ordering. -/
@@ -806,10 +872,11 @@ theorem declassifyObjectFromCore_preserves_trailWellFormed
     (hWF : declassificationTrailWellFormed st = true)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     declassificationTrailWellFormed st' = true := by
-  obtain ⟨tid, _, hSt'⟩ :=
+  obtain ⟨tid, hCur, hSt'⟩ :=
     declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
-  exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF rfl
+  exact declassifyStoreTrail_preserves_trailWellFormed _ _ _ _ _ st hRoom hWF
 
 /-- WS-SM SM9.A.1a: **a recorded event's timestamp is unique in the trail it
 lands in**, at the mounted epoch.
@@ -879,7 +946,7 @@ theorem enforcement_sufficiency_declassify
     (declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ∧
        st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
        authorizeDeclassificationOnCore ctx declPolicy c actor srcDomain dstDomain targetId st =
-         .ok ((), { st with declassificationAuditLog :=
+         .ok ((), { st with declassificationAudit :=
            declassifyStoreTrail c actor srcDomain dstDomain targetId st })) ∨
     (declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () ∧
        maxDeclassificationAuditEntries ≤ st.declassificationAuditLog.length ∧

@@ -595,13 +595,13 @@ def recordDeclassifiedHopsFrom (c : CoreId) (actor : DeclassificationActor)
     List DeclassifiedHopRecord → SystemState → Option SystemState
   | [], st => some st
   | r :: rest, st =>
-      match recordDeclassificationChecked st.declassificationAuditLog
+      match recordDeclassificationChecked st.declassificationAudit
           (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st) with
       | none => none
       | some log' =>
           recordDeclassifiedHopsFrom c actor
-            (tags.insert (st.declassificationAuditEpoch + st.declassificationAuditLog.length))
-            rest { st with declassificationAuditLog := log' }
+            (tags.insert (st.declassificationAuditEpoch + st.declassificationAudit.length))
+            rest { st with declassificationAudit := log' }
 
 /-- WS-SM SM9.C.1 / SM9.D.13a: **append the owed records to the trail**, each
 stamped against the state it lands in and each carrying the acting subject's
@@ -646,13 +646,13 @@ theorem recordDeclassifiedHopsFrom_cons (c : CoreId) (actor : DeclassificationAc
     (h : recordDeclassifiedHopsFrom c actor tags (r :: rest) st = some st') :
     st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
     recordDeclassifiedHopsFrom c actor
-      (tags.insert (st.declassificationAuditEpoch + st.declassificationAuditLog.length)) rest
-      { st with declassificationAuditLog :=
-          st.declassificationAuditLog ++
-            [declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st] }
+      (tags.insert (st.declassificationAuditEpoch + st.declassificationAudit.length)) rest
+      { st with declassificationAudit :=
+          (st.declassificationAudit.append
+            (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st)) }
       = some st' := by
   unfold recordDeclassifiedHopsFrom at h
-  obtain ⟨rec, hRec⟩ : ∃ x, recordDeclassificationChecked st.declassificationAuditLog
+  obtain ⟨rec, hRec⟩ : ∃ x, recordDeclassificationChecked st.declassificationAudit
       (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st) = x :=
     ⟨_, rfl⟩
   rw [hRec] at h
@@ -661,8 +661,8 @@ theorem recordDeclassifiedHopsFrom_cons (c : CoreId) (actor : DeclassificationAc
   | some log' =>
     have hRoom : st.declassificationAuditLog.length < maxDeclassificationAuditEntries :=
       (recordDeclassificationChecked_isSome_iff _ _).mp (by rw [hRec]; rfl)
-    have hLog' : log' = st.declassificationAuditLog ++
-        [declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st] := by
+    have hLog' : log' = st.declassificationAudit.append
+        (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st) := by
       rw [recordDeclassificationChecked_eq_record _ _ hRoom] at hRec
       exact (Option.some.inj hRec).symm
     subst hLog'
@@ -670,14 +670,14 @@ theorem recordDeclassifiedHopsFrom_cons (c : CoreId) (actor : DeclassificationAc
 
 /-- WS-SM SM9.C.1: recording writes **only** the trail.
 
-Every field but `declassificationAuditLog` is carried through untouched, which
+Every field but the audit ring `declassificationAudit` is carried through untouched, which
 is what lets the whole invariant surface of the underlying signal transfer
 across the audit write. -/
 theorem recordDeclassifiedHopsFrom_frame (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) :
     ∀ (tags : DeclassificationTaint) (st st' : SystemState),
       recordDeclassifiedHopsFrom c actor tags records st = some st' →
-      st' = { st with declassificationAuditLog := st'.declassificationAuditLog } := by
+      st' = { st with declassificationAudit := st'.declassificationAudit } := by
   induction records with
   | nil => intro tags st st' h; cases h; rfl
   | cons r rest ih =>
@@ -690,7 +690,7 @@ theorem recordDeclassifiedHopsFrom_frame (c : CoreId) (actor : DeclassificationA
 theorem recordDeclassifiedHops_frame (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) (st st' : SystemState)
     (h : recordDeclassifiedHops c actor records st = some st') :
-    st' = { st with declassificationAuditLog := st'.declassificationAuditLog } :=
+    st' = { st with declassificationAudit := st'.declassificationAudit } :=
   recordDeclassifiedHopsFrom_frame c actor records _ st st' h
 
 /-- WS-SM SM9.C.1: recording **grows** the trail by exactly one entry per record,
@@ -706,11 +706,18 @@ theorem recordDeclassifiedHopsFrom_log (c : CoreId) (actor : DeclassificationAct
   | nil => intro tags st st' h; cases h; exact ⟨[], by simp, rfl⟩
   | cons r rest ih =>
     intro tags st st' h
-    obtain ⟨-, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
+    obtain ⟨hRoom, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
     obtain ⟨appended, hApp, hLen⟩ := ih _ _ st' hRest
+    have hMid : ({ st with declassificationAudit := (st.declassificationAudit.append
+        (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st)) } :
+          SystemState).declassificationAuditLog =
+        st.declassificationAuditLog ++
+          [declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st] :=
+      AuditRing.toList_append _ _ hRoom
     refine ⟨declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st
               :: appended, ?_, ?_⟩
-    · simp only [hApp, List.append_assoc, List.cons_append, List.nil_append]
+    · rw [hApp, hMid]
+      simp only [List.append_assoc, List.cons_append, List.nil_append]
     · simp [hLen]
 
 /-- WS-SM SM9.C.1: recording **grows** the trail by exactly one entry per record,
@@ -722,24 +729,6 @@ theorem recordDeclassifiedHops_log (c : CoreId) (actor : DeclassificationActor)
       st'.declassificationAuditLog = st.declassificationAuditLog ++ appended ∧
       appended.length = records.length :=
   recordDeclassifiedHopsFrom_log c actor records _ st st' h
-
-/-- WS-SM SM9.C.1: recording preserves the capacity bound at any accumulator —
-every append is the checked one. -/
-theorem recordDeclassifiedHopsFrom_preserves_auditLogBounded (c : CoreId)
-    (actor : DeclassificationActor) (records : List DeclassifiedHopRecord) :
-    ∀ (tags : DeclassificationTaint) (st st' : SystemState),
-      auditLogBounded st.declassificationAuditLog →
-      recordDeclassifiedHopsFrom c actor tags records st = some st' →
-      auditLogBounded st'.declassificationAuditLog := by
-  induction records with
-  | nil => intro tags st st' hBounded h; cases h; exact hBounded
-  | cons r rest ih =>
-    intro tags st st' hBounded h
-    obtain ⟨hRoom, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
-    refine ih _ _ st' ?_ hRest
-    show auditLogBounded (st.declassificationAuditLog ++ [_])
-    simp only [auditLogBounded, List.length_append, List.length_cons, List.length_nil]
-    omega
 
 /-- WS-SM SM9.C.1 / SM9.A.1a: recording preserves the trail's timestamp
 discipline at any accumulator — each append stamps `epoch + length` against the
@@ -754,23 +743,13 @@ theorem recordDeclassifiedHopsFrom_preserves_trailWellFormed (c : CoreId)
   | nil => intro tags st st' hWF h; cases h; exact hWF
   | cons r rest ih =>
     intro tags st st' hWF h
-    obtain ⟨-, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
+    obtain ⟨hRoom, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
     refine ih _ _ st' ?_ hRest
-    show declassificationTrailWellFormed
-      { st with declassificationAuditLog := st.declassificationAuditLog ++ [_] } = true
-    show auditTimestampsFrom st.declassificationAuditEpoch
-      (recordDeclassification st.declassificationAuditLog _) = true
-    exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF rfl
-
-/-- WS-SM SM9.C.1: recording preserves the capacity bound — every append is the
-checked one. -/
-theorem recordDeclassifiedHops_preserves_auditLogBounded (c : CoreId)
-    (actor : DeclassificationActor) (records : List DeclassifiedHopRecord)
-    (st st' : SystemState)
-    (hBounded : auditLogBounded st.declassificationAuditLog)
-    (h : recordDeclassifiedHops c actor records st = some st') :
-    auditLogBounded st'.declassificationAuditLog :=
-  recordDeclassifiedHopsFrom_preserves_auditLogBounded c actor records _ st st' hBounded h
+    unfold declassificationTrailWellFormed at hWF ⊢
+    show auditTimestampsFrom (st.declassificationAudit.append _).epoch
+      (st.declassificationAudit.append _).toList = true
+    rw [AuditRing.toList_append _ _ hRoom, AuditRing.epoch_append]
+    exact recordDeclassification_preserves_timestampsFrom _ _ _ hWF (by simp; rfl)
 
 /-- WS-SM SM9.C.1 / SM9.A.1a: recording preserves the trail's timestamp
 discipline at its epoch — each append stamps `epoch + length` against the state
@@ -1053,11 +1032,18 @@ theorem recordDeclassifiedHopsFrom_appended (c : CoreId) (actor : Declassificati
   | nil => intro tags st st' h; cases h; exact ⟨[], by simp, rfl, by simp, by simp⟩
   | cons r rest ih =>
     intro tags st st' h
-    obtain ⟨-, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
+    obtain ⟨hRoom, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
     obtain ⟨appended, hApp, hLen, hCorr, hFields⟩ := ih _ _ st' hRest
+    have hMid : ({ st with declassificationAudit := (st.declassificationAudit.append
+        (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st)) } :
+          SystemState).declassificationAuditLog =
+        st.declassificationAuditLog ++
+          [declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st] :=
+      AuditRing.toList_append _ _ hRoom
     refine ⟨declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st
               :: appended, ?_, by simp [hLen], ?_, ?_⟩
-    · simp only [hApp, List.append_assoc, List.cons_append, List.nil_append]
+    · rw [hApp, hMid]
+      simp only [List.append_assoc, List.cons_append, List.nil_append]
     · intro e hMem
       rcases List.mem_cons.mp hMem with rfl | hMem'
       · exact ⟨r, List.mem_cons_self, rfl, rfl, rfl⟩
@@ -1095,40 +1081,30 @@ theorem recordDeclassifiedHops_two (c : CoreId) (actor : DeclassificationActor)
       e₂.authorizationBasis = .policyRule ∧
       e₂.timestamp = e₁.timestamp + 1 ∧
       declassificationEventNames e₂ e₁ = true := by
-  obtain ⟨-, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor
+  obtain ⟨hRoom₁, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor
     (declassificationActorTaint actor st) r₁ [r₂] st st' h
-  obtain ⟨-, hRest'⟩ := recordDeclassifiedHopsFrom_cons c actor
+  obtain ⟨hRoom₂, hRest'⟩ := recordDeclassifiedHopsFrom_cons c actor
     ((declassificationActorTaint actor st).insert
-      (st.declassificationAuditEpoch + st.declassificationAuditLog.length)) r₂ []
-    { st with declassificationAuditLog := st.declassificationAuditLog ++
-        [declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st] } st' hRest
+      (st.declassificationAuditEpoch + st.declassificationAudit.length)) r₂ [] _ st' hRest
+  simp only [recordDeclassifiedHopsFrom_nil, Option.some.injEq] at hRest'
+  subst hRest'
+  simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hRoom₁ hRoom₂
   refine ⟨declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st,
           declassifyStoreEventWithTags c actor r₂.srcDomain r₂.dstDomain r₂.target
             ((declassificationActorTaint actor st).insert
-              (st.declassificationAuditEpoch + st.declassificationAuditLog.length))
-            { st with declassificationAuditLog := st.declassificationAuditLog ++
-                [declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st] },
+              (st.declassificationAuditEpoch + st.declassificationAudit.length))
+            { st with declassificationAudit := (st.declassificationAudit.append
+                (declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st)) },
           ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
-  · have hFinal : st' = { st with declassificationAuditLog :=
-        (st.declassificationAuditLog ++
-          [declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st]) ++
-          [declassifyStoreEventWithTags c actor r₂.srcDomain r₂.dstDomain r₂.target
-            ((declassificationActorTaint actor st).insert
-              (st.declassificationAuditEpoch + st.declassificationAuditLog.length))
-            { st with declassificationAuditLog := st.declassificationAuditLog ++
-                [declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st] }] } := by
-      simpa using hRest'.symm
-    rw [hFinal]; simp
-  · show st.declassificationAuditEpoch +
-        (st.declassificationAuditLog ++
-          [declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st]).length =
-      (st.declassificationAuditEpoch + st.declassificationAuditLog.length) + 1
-    simp only [List.length_append, List.length_cons, List.length_nil]
-    omega
-  · show ((declassificationActorTaint actor st).insert
-        (st.declassificationAuditEpoch + st.declassificationAuditLog.length)).contains
-        (st.declassificationAuditEpoch + st.declassificationAuditLog.length) = true
-    exact DeclassificationTaint.contains_insert_self _ _
+  · show (AuditRing.append (AuditRing.append st.declassificationAudit _) _).toList = _
+    rw [AuditRing.toList_append _ _ (by simpa using hRoom₂),
+      AuditRing.toList_append _ _ (by simpa using hRoom₁)]
+    simp [recordDeclassification]
+  · show (st.declassificationAudit.append _).epoch + (st.declassificationAudit.append _).length =
+      (st.declassificationAuditEpoch + st.declassificationAudit.length) + 1
+    rw [AuditRing.epoch_append, AuditRing.length_append _ _ (by simpa using hRoom₁)]
+    rfl
+  · exact DeclassificationTaint.contains_insert_self _ _
 
 -- ============================================================================
 -- §7  WS-SM SM9.C.1 — what the plan authorizes
@@ -1373,7 +1349,7 @@ theorem notificationSignalDeclassifiedOnCore_frame (ctx : GenericLabelingContext
     (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (st', .ok sgi)) :
     st' = { (notificationSignalBoundOnCore notificationId badge c st).1 with
-      declassificationAuditLog := st'.declassificationAuditLog } := by
+      declassificationAudit := st'.declassificationAudit } := by
   obtain ⟨signaler, records, -, -, -, hRec⟩ :=
     notificationSignalDeclassifiedOnCore_ok_inv ctx declPolicy notificationId badge c st st'
       sgi hStep
@@ -1912,8 +1888,8 @@ inherit that gap silently — it states the transfer, and instantiates it
 unconditionally on the fall-through path where SM6.D's theorem applies. -/
 
 /-- WS-SM SM9.C.4: the whole `proofLayerInvariantBundle` across the audit fold
-at any accumulator — each append is a bounded trail write, and the SM8.C.8
-carriage lemma does the rest. -/
+at any accumulator — each append is a trail write, and the SM8.C.8 carriage
+lemma does the rest. -/
 theorem recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle (c : CoreId)
     (actor : DeclassificationActor) (records : List DeclassifiedHopRecord) :
     ∀ (tags : DeclassificationTaint) (st st' : SystemState),
@@ -1924,12 +1900,8 @@ theorem recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle (c : Core
   | nil => intro tags st st' hInv h; cases h; exact hInv
   | cons r rest ih =>
     intro tags st st' hInv h
-    obtain ⟨hRoom, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
-    refine ih _ _ st' ?_ hRest
-    refine Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog st _ hInv ?_
-    unfold auditLogBounded
-    simp only [List.length_append, List.length_cons, List.length_nil]
-    omega
+    obtain ⟨-, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor tags r rest st st' h
+    exact ih _ _ st' (Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog st _ hInv) hRest
 
 /-- WS-SM SM9.C.4: the audit fold carries the whole invariant bundle.
 
@@ -1965,25 +1937,6 @@ theorem notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle
       sgi hStep
   exact recordDeclassifiedHops_preserves_proofLayerInvariantBundle c
     (declassificationActorOf ctx signaler) records _ st' hSignalInv hRec
-
-/-- WS-SM SM9.C.4: the 16th conjunct on its own, **unconditionally** — the trail
-the transition leaves is bounded whatever the delivery did, because every append
-it makes is the checked one. -/
-theorem notificationSignalDeclassifiedOnCore_preserves_auditLogBounded
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
-    (st st' : SystemState) (sgi : Option (CoreId × SgiKind))
-    (hBounded : auditLogBounded st.declassificationAuditLog)
-    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st', .ok sgi)) :
-    auditLogBounded st'.declassificationAuditLog := by
-  obtain ⟨signaler, records, -, -, -, hRec⟩ :=
-    notificationSignalDeclassifiedOnCore_ok_inv ctx declPolicy notificationId badge c st st'
-      sgi hStep
-  refine recordDeclassifiedHops_preserves_auditLogBounded c (declassificationActorOf ctx signaler)
-    records _ st' ?_ hRec
-  rw [notificationSignalBoundOnCore_declassificationAuditLog_eq]
-  exact hBounded
 
 /-- WS-SM SM9.C.4 / SM9.A.1a: the trail's timestamp discipline survives —
 **both** entries of a two-hop delivery are stamped from the state they land in,

@@ -831,7 +831,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassifyStoreTrail
 #check @declassifyStoreOnCore_audit_log_full
 #check @declassifyStoreOnCore_never_unaudited
-#check @declassifyStoreOnCore_preserves_auditLogBounded
 #check @declassifyStoreOnCore_scheduler_eq
 #check @declassifyStoreOnCore_machine_eq
 #check @declassifyStoreOnCore_preserves_wellFormed
@@ -907,7 +906,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassifyStoreOnCore_preserves_projectionOnCore
 #check @declassifyStoreOnCore_perCore_NI
 #check @declassifyStoreOnCore_state_trail_independent
-#check @declassificationAuditLog_write_preserves_projectionOnCore
+#check @declassificationAudit_write_preserves_projectionOnCore
 
 -- SM8.C.8 — the mounted audit trail
 #check @SeLe4n.Model.SystemState.declassificationAuditLog
@@ -926,7 +925,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @recordDeclassificationChecked_preserves_bounded
 #check @recordDeclassificationChecked_records
 #check @Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog
-#check @declassificationAuditLog_write_preserves_projection
+#check @declassificationAudit_write_preserves_projection
 
 -- SM8.C.5 — the tagged rendering (the untagged one is not injective)
 #check RenderedDeclassificationBasis
@@ -950,7 +949,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @authorizeDeclassificationOnCore_authorized
 #check @authorizeDeclassificationOnCore_records_one
 #check @authorizeDeclassificationOnCore_never_unaudited
-#check @authorizeDeclassificationOnCore_preserves_auditLogBounded
 #check @authorizeDeclassificationOnCore_preserves_proofLayerInvariantBundle
 #check @declassifyObjectFromCore
 #check @declassifyObjectFromCore_no_subject
@@ -1019,7 +1017,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @declassifyRun_records_each
 #check @declassifyRun_preserves_existing
 #check @declassifyRun_preserves_wellFormed
-#check @declassifyRun_preserves_auditLogBounded
 #check @declassifyRun_frame
 #check @declassifyRun_preserves_projectionOnCore
 
@@ -1348,7 +1345,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditMonitorAuthorized_dominates_objects
 #check @auditMonitorAuthorized_dominates_subjects
 #check @auditDrain_requires_full_dominance_of_labeling
-#check @auditDrain_preserves_auditLogBounded
 #check @auditDrain_preserves_wellFormed_at_epoch
 #check @auditDrain_monotone_epoch
 #check @auditDrain_next_timestamp_fresh
@@ -1739,7 +1735,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @recordDeclassifiedHops_nil
 #check @recordDeclassifiedHops_frame
 #check @recordDeclassifiedHops_log
-#check @recordDeclassifiedHops_preserves_auditLogBounded
 #check @recordDeclassifiedHops_preserves_trailWellFormed
 #check @recordDeclassifiedHopsFrom
 #check @recordDeclassifiedHopsFrom_nil
@@ -1747,7 +1742,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @recordDeclassifiedHopsFrom_frame
 #check @recordDeclassifiedHopsFrom_log
 #check @recordDeclassifiedHopsFrom_appended
-#check @recordDeclassifiedHopsFrom_preserves_auditLogBounded
 #check @recordDeclassifiedHopsFrom_preserves_trailWellFormed
 #check @recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle
 #check @recordDeclassifiedHops_appended
@@ -1772,7 +1766,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @notificationSignalDeclassifiedOnCore_frame
 #check @declassifiedSignalPlan_default_empty
 #check @notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle
-#check @notificationSignalDeclassifiedOnCore_preserves_auditLogBounded
 #check @notificationSignalDeclassifiedOnCore_preserves_trailWellFormed
 #check @notificationSignalDeclassifiedOnCore_preserves_objects_invExt
 #check @notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
@@ -1994,7 +1987,6 @@ field is read by the detector, never by the reader's chunk protocol. -/
 #check @recordDeclassifiedHopsFrom_frame
 #check @recordDeclassifiedHopsFrom_log
 #check @recordDeclassifiedHopsFrom_appended
-#check @recordDeclassifiedHopsFrom_preserves_auditLogBounded
 #check @recordDeclassifiedHopsFrom_preserves_trailWellFormed
 #check @recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle
 
@@ -2373,7 +2365,7 @@ example (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy) (c 
     ∃ stGate,
       declassifyStore ctx declPolicy src dst targetId obj st = .ok ((), stGate) ∧
       st' = { stGate with
-        declassificationAuditLog := declassifyStoreTrail c actor src dst targetId st } :=
+        declassificationAudit := declassifyStoreTrail c actor src dst targetId st } :=
   declassifyStoreOnCore_ok_inv ctx declPolicy c actor src dst targetId obj st st' h
 
 -- SM8.C.9 (**the headline**): an authorized downgrade performed by the live
@@ -2447,12 +2439,12 @@ example (ctx : LabelingContext) : endpointGateRestricted ctx :=
 -- carries the basis the kernel itself issues.
 example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
     (targetId : SeLe4n.ObjId)
-    (epoch : Nat) (log : DeclassificationAuditLog) (tags : DeclassificationTaint) :
-    (declassificationEventOnCore c actor src dst targetId epoch log tags).originatingCore = c ∧
-      (declassificationEventOnCore c actor src dst targetId epoch log tags).authorizationBasis =
+    (epoch position : Nat) (tags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor src dst targetId epoch position tags).originatingCore = c ∧
+      (declassificationEventOnCore c actor src dst targetId epoch position tags).authorizationBasis =
         .policyRule :=
-  ⟨declassificationEventOnCore_originatingCore c actor src dst targetId epoch log tags,
-   declassificationEventOnCore_basis_is_policyRule c actor src dst targetId epoch log tags⟩
+  ⟨declassificationEventOnCore_originatingCore c actor src dst targetId epoch position tags,
+   declassificationEventOnCore_basis_is_policyRule c actor src dst targetId epoch position tags⟩
 
 -- WS-SM SM9.A.1a: the recorded timestamp is the event's **global** position —
 -- the epoch (entries drained so far) plus its index in the current trail.  With
@@ -2460,10 +2452,10 @@ example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
 -- surviving entry (`preEpochTimestamp_reused_after_drain`).
 example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
     (targetId : SeLe4n.ObjId)
-    (epoch : Nat) (log : DeclassificationAuditLog) (tags : DeclassificationTaint) :
-    (declassificationEventOnCore c actor src dst targetId epoch log tags).timestamp =
-      epoch + log.length :=
-  declassificationEventOnCore_timestamp c actor src dst targetId epoch log tags
+    (epoch position : Nat) (tags : DeclassificationTaint) :
+    (declassificationEventOnCore c actor src dst targetId epoch position tags).timestamp =
+      epoch + position :=
+  declassificationEventOnCore_timestamp c actor src dst targetId epoch position tags
 
 -- SM8.C.3: every event the attributed entry point records is attributable in the
 -- state an auditor inspects — no hypothesis relating the caller to the state.
@@ -2820,7 +2812,8 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
 -- reader walking the trail is not raced by a concurrent producer.
 example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
     (reader : SecurityDomain) (st : SystemState) (extra : DeclassificationAuditLog)
-    (op : AuditReadOp)
+    (trail : AuditRing) (hTrail : trail.toList = st.declassificationAuditLog ++ extra)
+    (hEpoch : trail.epoch = st.declassificationAuditEpoch) (op : AuditReadOp)
     (hIndex : ∀ i f k, op = .fieldChunkCount i f ∨ op = .field i f k ∨
       op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
       op = .chainNamesPredecessor i ∨ op = .chainNamesArchived i k →
@@ -2830,10 +2823,10 @@ example (gctx : GenericLabelingContext) (monitorClearance : Option SecurityDomai
       e < (auditLogVisibleTo gctx reader st.declassificationAuditLog).length)
     (hNotStatus : op ≠ .status) :
     auditReadWord gctx monitorClearance reader
-        { st with declassificationAuditLog := st.declassificationAuditLog ++ extra } op
+        { st with declassificationAudit := trail } op
       = auditReadWord gctx monitorClearance reader st op :=
-  auditRead_stable_under_append gctx monitorClearance reader st extra op hIndex hEntryIdx
-    hNotStatus
+  auditRead_stable_under_append gctx monitorClearance reader st extra trail hTrail hEpoch op
+    hIndex hEntryIdx hNotStatus
 
 -- SM9.A.4a: **the discipline, applied.**  A read is a function of the visible
 -- view alone, so two audit-observationally-equivalent states return the same
@@ -5515,15 +5508,19 @@ private def runCovertChannelInventoryChecks : IO Unit := do
   -- append and the drained trail admits it — the flip IS the channel.
   assertBool "CC-8 carrier: append refused exactly at capacity, admitted after a drop"
     (let fullLog := List.replicate maxDeclassificationAuditEntries auditOccupancyProbeEvent
-     (recordDeclassificationChecked fullLog auditOccupancyProbeEvent).isNone &&
-       (recordDeclassificationChecked (fullLog.drop 1) auditOccupancyProbeEvent).isSome)
+     (recordDeclassificationChecked (AuditRing.ofList fullLog) auditOccupancyProbeEvent).isNone &&
+       (recordDeclassificationChecked (AuditRing.ofList (fullLog.drop 1))
+         auditOccupancyProbeEvent).isSome)
   -- The load-bearing negative: the alphabet is the occupancy count, and it is
   -- bounded — a 257th resident entry cannot exist under the mounted bound.
   assertBool "NEGATIVE: occupancy above the bound is not constructible via the producer"
     (decide (maxDeclassificationAuditEntries = 256) &&
-     (recordDeclassificationChecked
-       (List.replicate (maxDeclassificationAuditEntries + 3) auditOccupancyProbeEvent)
-       auditOccupancyProbeEvent).isNone)
+     -- the ring holds at most the capacity: three entries past it are not
+     -- recorded, and the full ring refuses the next one
+     (let overfull := AuditRing.ofList
+        (List.replicate (maxDeclassificationAuditEntries + 3) auditOccupancyProbeEvent)
+      decide (overfull.length = maxDeclassificationAuditEntries) &&
+        (recordDeclassificationChecked overfull auditOccupancyProbeEvent).isNone))
 
 /-- §4.8a  CC-1's capacity claim: what is bounded, and what is not
 (SM8.B.9, fourth review round). -/
@@ -6059,7 +6056,7 @@ private def runDeclassificationNonInterferenceChecks : IO Unit := do
       declassifyStoreOnCore declassContext launderingDeclPolicy c1
         (declassificationActorOf declassContext highCurrent) declassSecret declassMiddle
         declassTargetA (declassPayload 0x77)
-        { niState with declassificationAuditLog := [integratorEvent] } with
+        { niState with declassificationAudit := AuditRing.ofList [integratorEvent] } with
      | .ok ((), stA), .ok ((), stB) =>
          decide (stA.objects[declassTargetA]?.isSome = true) &&
          decide (stA.scheduler.currentOnCore c1 = stB.scheduler.currentOnCore c1) &&
@@ -6241,13 +6238,15 @@ private def runDeclassifyCapacityChecks : IO Unit := do
       predecessorTags := DeclassificationTaint.empty }
   let fullTrail : DeclassificationAuditLog :=
     List.replicate maxDeclassificationAuditEntries fullEntry
-  let fullState : SystemState := { niState with declassificationAuditLog := fullTrail }
+  let fullState : SystemState :=
+    { niState with declassificationAudit := AuditRing.ofList fullTrail }
   assertBool "the capacity constant is the one the bound is stated against"
     (decide (fullTrail.length = maxDeclassificationAuditEntries) &&
      decide (auditLogBounded fullTrail))
   assertBool "the checked append refuses at capacity, and succeeds below it"
-    (decide ((recordDeclassificationChecked fullTrail fullEntry).isSome = false) &&
-     decide ((recordDeclassificationChecked [] fullEntry).isSome = true))
+    (decide ((recordDeclassificationChecked (AuditRing.ofList fullTrail) fullEntry).isSome
+        = false) &&
+     decide ((recordDeclassificationChecked AuditRing.empty fullEntry).isSome = true))
   -- The load-bearing property: at capacity the DOWNGRADE is refused, not the
   -- record dropped.  A dropped record would leave an authorized downgrade with
   -- no trace, which is the failure the whole phase exists to exclude.
@@ -6259,7 +6258,7 @@ private def runDeclassifyCapacityChecks : IO Unit := do
   assertBool "…and the same call one entry below capacity succeeds"
     (match declassifyObjectFromCore (liftLegacyContext liveDeclassLabeling)
         liveDeclassLabeling.declassificationPolicy c1 lowNotification
-        { niState with declassificationAuditLog := fullTrail.drop 1 } with
+        { niState with declassificationAudit := AuditRing.ofList (fullTrail.drop 1) } with
      | .error _ => false
      | .ok ((), st) => decide (st.declassificationAuditLog.length =
          maxDeclassificationAuditEntries))
@@ -8393,7 +8392,7 @@ private def auditMixedTrail : DeclassificationAuditLog :=
   [auditVisibleEntryFirst, auditHiddenEntry, auditVisibleEntryLast]
 
 private def auditMixedState : SystemState :=
-  { niState with declassificationAuditLog := auditMixedTrail }
+  { niState with declassificationAudit := AuditRing.ofList auditMixedTrail }
 
 /-- The SM9.A half: what the *reader* returns, and what it refuses.  The trail
 itself is outside `ObservableState` (a content channel out of exactly the
@@ -8868,7 +8867,7 @@ private def runRefusalGateChecks : IO Unit := do
     (let fullLog := List.replicate maxDeclassificationAuditEntries
        (auditEntry auditPartialReader auditPartialReader lowNotification 0 c0)
      -- the trail refuses at capacity (CC-8's carrier)…
-     decide (recordDeclassificationChecked fullLog
+     decide (recordDeclassificationChecked (AuditRing.ofList fullLog)
        (auditEntry auditPartialReader auditPartialReader lowNotification 0 c0) = none) &&
      -- …while the ledger, at a full ring, still records.
      decide ((recordRefusal after lowRefusal).recent.get after.nextSlot = some lowRefusal))
@@ -8895,7 +8894,8 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   let fullEntries :=
     List.replicate maxDeclassificationAuditEntries
       (auditEntry auditPartialReader auditPartialReader lowNotification 0 c0)
-  let fullTrail : SystemState := { niState with declassificationAuditLog := fullEntries }
+  let fullTrail : SystemState :=
+    { niState with declassificationAudit := AuditRing.ofList fullEntries }
   assertBool "a POLICY-refused caller's result is identical on a full trail and an empty one"
     (match declassifyObjectFromCore ctx policy c2 lowNotification fullTrail,
            declassifyObjectFromCore ctx policy c2 lowNotification niState with
@@ -9117,7 +9117,7 @@ private def runAuditChunkProtocolChecks : IO Unit := do
 private def runAuditReaderClassChecks : IO Unit := do
   IO.println "--- §9.3 SM9.A.2 the two reader classes ---"
   let drainedState : SystemState :=
-    { auditMixedState with declassificationAuditEpoch := 17 }
+    { auditMixedState with declassificationAudit := AuditRing.ofList auditMixedTrail 17 }
   let monitorStatus := auditReadWord auditGenericCtx
     auditMonitorLabeling.auditMonitorClearance auditMonitorReader drainedState .status
   let partialStatus := auditReadWord auditGenericCtx
@@ -9178,8 +9178,8 @@ private def runAuditReaderClassChecks : IO Unit := do
   -- fail-closed arm no test drives is an arm whose failure mode is
   -- unwitnessed.)
   let hugeState : SystemState :=
-    { niState with declassificationAuditLog :=
-        [{ auditVisibleEntryFirst with timestamp := 2 ^ 128 }] }
+    { niState with declassificationAudit :=
+        AuditRing.ofList [{ auditVisibleEntryFirst with timestamp := 2 ^ 128 }] }
   assertBool "NEGATIVE: a field at the exported width is REFUSED at the reader, not truncated"
     ((match auditReadWord auditGenericCtx auditMonitorLabeling.auditMonitorClearance
         auditMonitorReader hugeState (.fieldChunkCount 0 .timestamp) with
@@ -9210,7 +9210,9 @@ private def runAuditReaderClassChecks : IO Unit := do
   -- monitor, so without the guard this call would have returned a truncation.
   assertBool "NEGATIVE: the 2^64 boundary guard refuses rather than wraps"
     (match auditReadFromCore auditGenericCtx auditMonitorLabeling.auditMonitorClearance c1
-        .status { auditMixedState with declassificationAuditEpoch := 2 ^ 64 } with
+        .status
+        { auditMixedState with declassificationAudit := AuditRing.ofList auditMixedTrail (2 ^ 64) }
+        with
      | .error e => decide (e = KernelError.auditFieldTooLarge)
      | .ok _ => false)
 
@@ -9231,10 +9233,9 @@ private def runAuditMonitorGateChecks : IO Unit := do
   assertBool "the gate does not move when the records move"
     (allCores.all (fun c =>
       decide (auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
-          { niState with declassificationAuditLog := [], declassificationAuditEpoch := 0 } c
+          { niState with declassificationAudit := AuditRing.empty } c
         = auditMonitorGate auditGenericCtx auditMonitorLabeling.auditMonitorClearance
-          { niState with declassificationAuditLog := auditMixedTrail,
-                         declassificationAuditEpoch := 999 } c)))
+          { niState with declassificationAudit := AuditRing.ofList auditMixedTrail 999 } c)))
   -- PR #870 review (P1): the VALIDATED clearance.  The configured trusted
   -- clearance survives validation; a clearance of embedded LOW — which every
   -- low subject reflexively dominates, the review's exploit shape — validates
@@ -9312,8 +9313,8 @@ private def runAuditDrainChecks : IO Unit := do
   -- deciding input, not the caller's identity.
   assertBool "…while the same caller drains a trail it fully sees"
     (match auditDrainVisiblePrefix auditGenericCtx (some auditPartialReader) c0 99
-        { niState with declassificationAuditLog :=
-            [auditVisibleEntryFirst, auditVisibleEntryLast] } with
+        { niState with declassificationAudit :=
+            AuditRing.ofList [auditVisibleEntryFirst, auditVisibleEntryLast] } with
      | .error _ => false
      | .ok (n, st) => decide (n = 0) && decide (st.declassificationAuditLog = []))
   -- The returned length is the caller's OWN new visible length — on success
@@ -10813,8 +10814,9 @@ private def causalStrippedState : Option SystemState :=
   | none => none
   | some (_, st₂) =>
       some { st₂ with
-        declassificationAuditLog :=
-          st₂.declassificationAuditLog.map dropPredecessorTags }
+        declassificationAudit :=
+          AuditRing.ofList (st₂.declassificationAuditLog.map dropPredecessorTags)
+            st₂.declassificationAuditEpoch }
 
 /-- §12.9  SM9.D.14 — the causality verdict a monitor can actually read.
 

@@ -3908,32 +3908,25 @@ states the reader's flow argument over *that* relation. The naive lemma — "two
 low-equivalent states give identical visible views" — is **false**, and this
 theorem is the reason: the trail is not in the projection, so two states
 low-equivalent at `L` can still differ by an entry `L` is cleared to read
-(`lowEquivalent_does_not_determine_visible_view`). -/
-theorem declassificationAuditLog_write_preserves_projection
+(`lowEquivalent_does_not_determine_visible_view`).
+
+**The epoch (WS-SM SM9.A.1a) is in the same ring and is excluded for a sharper
+reason.** An entry is content a cleared reader may see; the epoch is a *count*
+of entries — including entries a partially-cleared reader may not see — so
+projecting it would hand every observer the number of downgrades performed
+system-wide, which the re-indexed visible view (`auditLogVisibleTo`) exists to
+hide.  The reader exports it only to a caller holding the configured
+audit-monitor clearance (`auditReadStatus_partial_hides_generation`), and this
+theorem is the witness that the drain which advances it opens no channel of its
+own.
+
+WS-ZA ZA5.10: the trail and the epoch are one field, the fixed ring, so one
+statement over any ring covers both writes: a record, a drain, and the boot's
+fresh copy of the slots. -/
+theorem declassificationAudit_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (log : SeLe4n.Kernel.DeclassificationAuditLog) :
-    projectState ctx observer { st with declassificationAuditLog := log } =
-      projectState ctx observer st := rfl
-
-/-- WS-SM SM9.A.1a (non-interference): a write to the mounted declassification
-audit **epoch** is invisible to the information-flow projection.
-
-The epoch's exclusion is sharper than the trail's, and worth separating rather
-than folding into it. An entry is content a cleared reader may see; the epoch
-is a *count* of entries — including entries a partially-cleared reader may not
-see — so it is derived from hidden state by construction. Projecting it would
-hand every observer the number of downgrades performed system-wide, which is
-precisely what the re-indexed visible view (`auditLogVisibleTo`) exists to
-hide, and it would do so without any capability being held at all.
-
-The reader therefore exports the epoch only to a caller holding the configured
-audit-monitor clearance (`auditReadStatus_partial_hides_generation`); this
-theorem is the witness that the *drain* which advances it opens no channel of
-its own. -/
-theorem declassificationAuditEpoch_write_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (epoch : Nat) :
-    projectState ctx observer { st with declassificationAuditEpoch := epoch } =
+    (trail : SeLe4n.Kernel.AuditRing) :
+    projectState ctx observer { st with declassificationAudit := trail } =
       projectState ctx observer st := rfl
 
 /-- WS-SM SM9.B.8 (non-interference): a write to the mounted declassification

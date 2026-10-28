@@ -506,15 +506,15 @@ theorem auditMonitorGate_idle (ctx : GenericLabelingContext)
 the epoch — by any amount, in either direction — does not move the gate's
 verdict.
 
-This is the property a records-derived gate lacks, stated over exactly the two
-fields a drain writes.  It is what lets drain, the global identity export and
+This is the property a records-derived gate lacks, stated over the one field a
+drain writes: the audit ring, holding the trail and the epoch.  It is what lets drain, the global identity export and
 (from SM9.B) the refusal ledger share one gate without any of them inheriting a
 predicate that ages out from under it. -/
 theorem auditMonitorGate_is_configuration_derived (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (st : SystemState) (c : CoreId)
-    (log : DeclassificationAuditLog) (epoch : Nat) :
+    (trail : AuditRing) :
     auditMonitorGate ctx monitorClearance
-        { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } c =
+        { st with declassificationAudit := trail } c =
       auditMonitorGate ctx monitorClearance st c := rfl
 
 /-- WS-SM SM9.A (**the load-bearing negative**): a gate computed from the rows
@@ -1861,18 +1861,24 @@ theorem auditReadStatus_atomic (ctx : GenericLabelingContext)
 word is independent of the epoch — strictly stronger than scoping a drain
 counter per observer, and the reason no per-observer state is needed.
 
+WS-ZA ZA5.10: stated over any ring holding the same trail, at any epoch: the
+ring reads its window from the epoch's slot, so "the same trail at another
+epoch" is a different ring with the same `toList`.
+
 A *global* drain counter returned to every reader would be a one-bit signal per
 drain from the dominating monitor to every subject in the system, out of exactly
 the boundary this phase polices.  `auditReadStatus_global_generation_leaks` is
 the negative that keeps that design refuted. -/
 theorem auditReadStatus_partial_hides_generation (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
-    (st : SystemState) (epoch : Nat)
+    (st : SystemState) (trail : AuditRing)
+    (hTrail : trail.toList = st.declassificationAuditLog)
     (hPartial : auditMonitorAuthorized ctx monitorClearance reader = false) :
     auditReadWord ctx monitorClearance reader
-        { st with declassificationAuditEpoch := epoch } .status =
+        { st with declassificationAudit := trail } .status =
       auditReadWord ctx monitorClearance reader st .status :=
-  auditRead_hides_global_position ctx monitorClearance reader _ _ .status hPartial rfl
+  auditRead_hides_global_position ctx monitorClearance reader _ _ .status hPartial
+    (congrArg (auditLogVisibleTo ctx reader) hTrail)
 
 /-- WS-SM SM9.A.2 (**the refuted design**): a status that returned the global
 drain generation to *every* reader would be observable — two states differing
@@ -1996,11 +2002,9 @@ def auditDrainVisiblePrefix (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat) : Kernel Nat :=
   fun st =>
     if auditMonitorGate ctx monitorClearance st c && auditDrainViewComplete ctx st c then
-      let removed := min count st.declassificationAuditLog.length
-      .ok (st.declassificationAuditLog.length - removed,
-           { st with
-             declassificationAuditLog := st.declassificationAuditLog.drop removed,
-             declassificationAuditEpoch := st.declassificationAuditEpoch + removed })
+      let removed := min count st.declassificationAudit.length
+      .ok (st.declassificationAudit.length - removed,
+           { st with declassificationAudit := st.declassificationAudit.dropFront removed })
     else
       .error .illegalAuthority
 
@@ -2031,10 +2035,8 @@ theorem auditDrain_frame (ctx : GenericLabelingContext)
     (st : SystemState) (n : Nat) (st' : SystemState)
     (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
     st' = { st with
-      declassificationAuditLog :=
-        st.declassificationAuditLog.drop (min count st.declassificationAuditLog.length),
-      declassificationAuditEpoch :=
-        st.declassificationAuditEpoch + min count st.declassificationAuditLog.length } ∧
+      declassificationAudit :=
+        st.declassificationAudit.dropFront (min count st.declassificationAuditLog.length) } ∧
     n = st.declassificationAuditLog.length - min count st.declassificationAuditLog.length ∧
     (auditMonitorGate ctx monitorClearance st c = true ∧
      auditDrainViewComplete ctx st c = true) := by
@@ -2042,6 +2044,7 @@ theorem auditDrain_frame (ctx : GenericLabelingContext)
   split at hStep
   · rename_i hGate
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    simp only [SystemState.declassificationAuditLog, AuditRing.length_toList]
     exact ⟨hStep.2.symm, hStep.1.symm, by simpa using hGate⟩
   · exact absurd hStep (by simp)
 
@@ -2098,9 +2101,9 @@ theorem auditDrain_returned_length_is_visible (ctx : GenericLabelingContext)
     auditLogVisibleTo_eq_self ctx reader _
       (fun e hMem => hAll e (List.mem_of_mem_drop hMem))
   show n = (auditLogVisibleTo ctx reader
-    (st.declassificationAuditLog.drop
-      (min count st.declassificationAuditLog.length))).length
-  rw [hViewPost, List.length_drop, hn]
+    (st.declassificationAudit.dropFront
+      (min count st.declassificationAuditLog.length)).toList).length
+  rw [AuditRing.toList_dropFront, hViewPost, List.length_drop, hn]
 
 /-- WS-SM SM9.A.3: **a qualifying caller sees the whole trail.**
 
@@ -2192,13 +2195,15 @@ theorem declassifyObjectFromCore_preserves_trailSources
     (hSources : auditTrailSourcesFromLabeling ctx st.declassificationAuditLog)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     auditTrailSourcesFromLabeling ctx st'.declassificationAuditLog := by
-  obtain ⟨tid, -, hSt'⟩ :=
+  obtain ⟨tid, hCur, hSt'⟩ :=
     declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
   intro e hMem
   have hMem' : e ∈ st.declassificationAuditLog ++
       [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-        targetId st] := hMem
+        targetId st] := by
+    exact (mem_declassifyStoreTrail_iff _ _ _ _ _ st hRoom e).mp hMem
   rcases List.mem_append.mp hMem' with hOld | hNew
   · exact hSources e hOld
   · rcases List.mem_singleton.mp hNew with rfl
@@ -2277,13 +2282,15 @@ theorem declassifyObjectFromCore_preserves_trailDestinations
     (hDests : auditTrailDestinationsFromLabeling ctx st.declassificationAuditLog)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     auditTrailDestinationsFromLabeling ctx st'.declassificationAuditLog := by
-  obtain ⟨tid, -, hSt'⟩ :=
+  obtain ⟨tid, hCur, hSt'⟩ :=
     declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
   intro e hMem
   have hMem' : e ∈ st.declassificationAuditLog ++
       [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
-        (ctx.objectDomainOf targetId) targetId st] := hMem
+        (ctx.objectDomainOf targetId) targetId st] := by
+    exact (mem_declassifyStoreTrail_iff _ _ _ _ _ st hRoom e).mp hMem
   rcases List.mem_append.mp hMem' with hOld | hNew
   · exact hDests e hOld
   · rcases List.mem_singleton.mp hNew with rfl
@@ -2298,13 +2305,15 @@ theorem declassifyObjectFromCore_preserves_trailActors
     (hActors : auditTrailActorsFromLabeling ctx st.declassificationAuditLog)
     (hStep : declassifyObjectFromCore ctx declPolicy c targetId st = .ok ((), st')) :
     auditTrailActorsFromLabeling ctx st'.declassificationAuditLog := by
-  obtain ⟨tid, -, hSt'⟩ :=
+  obtain ⟨tid, hCur, hSt'⟩ :=
     declassifyObjectFromCore_frame_of_ok ctx declPolicy c targetId st st' hStep
+  have hRoom := declassifyObjectFromCore_room ctx declPolicy c targetId st st' tid hCur hStep
   subst hSt'
   intro e hMem
   have hMem' : e ∈ st.declassificationAuditLog ++
       [declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid)
-        (ctx.objectDomainOf targetId) targetId st] := hMem
+        (ctx.objectDomainOf targetId) targetId st] := by
+    exact (mem_declassifyStoreTrail_iff _ _ _ _ _ st hRoom e).mp hMem
   rcases List.mem_append.mp hMem' with hOld | hNew
   · exact hActors e hOld
   · rcases List.mem_singleton.mp hNew with rfl
@@ -2615,20 +2624,6 @@ theorem misconfiguredDeployment_cannot_drain (ctx : LabelingContext)
   rw [hMis]
   exact auditDrain_unconfigured_denied (liftLegacyContext ctx) c count st
 
-/-- WS-SM SM9.A.3: a drain never grows the trail, so the capacity bound rides
-it unconditionally. -/
-theorem auditDrain_preserves_auditLogBounded (ctx : GenericLabelingContext)
-    (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
-    (st : SystemState) (n : Nat) (st' : SystemState)
-    (hBounded : auditLogBounded st.declassificationAuditLog)
-    (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
-    auditLogBounded st'.declassificationAuditLog := by
-  obtain ⟨hSt', -, -⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep
-  subst hSt'
-  unfold auditLogBounded at hBounded ⊢
-  simp only [List.length_drop]
-  omega
-
 /-- WS-SM SM9.A.3 (**the timestamp discipline survives the drain**): removing
 `d` entries and advancing the epoch by `d` leaves a trail well-formed at its new
 epoch.
@@ -2645,6 +2640,10 @@ theorem auditDrain_preserves_wellFormed_at_epoch (ctx : GenericLabelingContext)
   obtain ⟨hSt', -, -⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep
   subst hSt'
   unfold declassificationTrailWellFormed at hWF ⊢
+  show auditTimestampsFrom
+    (st.declassificationAudit.dropFront (min count st.declassificationAuditLog.length)).epoch
+    (st.declassificationAudit.dropFront (min count st.declassificationAuditLog.length)).toList = true
+  rw [AuditRing.toList_dropFront, AuditRing.epoch_dropFront]
   exact auditTimestampsFrom_drop _ _ _ hWF
 
 /-- WS-SM SM9.A.3: the epoch is **monotone** — a drain advances it, never
@@ -2700,8 +2699,9 @@ theorem auditDrain_fully_clears_for_dominating_reader (ctx : GenericLabelingCont
   have hMin : min count st.declassificationAuditLog.length =
       st.declassificationAuditLog.length := by omega
   refine ⟨?_, ?_, ?_⟩
-  · show List.drop (min count st.declassificationAuditLog.length)
-      st.declassificationAuditLog = []
+  · show (st.declassificationAudit.dropFront
+      (min count st.declassificationAuditLog.length)).toList = []
+    rw [AuditRing.toList_dropFront]
     simp only [hMin]
     exact List.drop_length
   · simp only [hn, hMin]; omega
@@ -2772,22 +2772,18 @@ theorem auditDrain_partial_reader_drains_nothing (ctx : GenericLabelingContext)
 /-- WS-SM SM9.A.3: the drain carries the whole invariant bundle — the obligation
 its dispatch arm owes.
 
-Fifteen conjuncts ride
-`proofLayerInvariantBundle_setDeclassificationAuditTrail` (the transition writes
-two fields and none of the fifteen reads either); the sixteenth is the capacity
-bound, which a drain gets for free because it never grows the trail. -/
+Every conjunct rides `proofLayerInvariantBundle_setDeclassificationAuditLog`
+(the transition writes only the audit ring); the sixteenth, the capacity bound,
+is the ring's own (`AuditRing.bounded`). -/
 theorem auditDrain_preserves_proofLayerInvariantBundle (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (c : CoreId) (count : Nat)
     (st : SystemState) (n : Nat) (st' : SystemState)
     (hInv : Architecture.proofLayerInvariantBundle st)
     (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
     Architecture.proofLayerInvariantBundle st' := by
-  have hBounded : auditLogBounded st.declassificationAuditLog := hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hBounded' := auditDrain_preserves_auditLogBounded ctx monitorClearance c count st n st'
-    hBounded hStep
   obtain ⟨hSt', -, -⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep
   subst hSt'
-  exact Architecture.proofLayerInvariantBundle_setDeclassificationAuditTrail st _ _ hInv hBounded'
+  exact Architecture.proofLayerInvariantBundle_setDeclassificationAuditLog st _ hInv
 
 -- ============================================================================
 -- §5c  PR #870 round 7 — the occupancy channel (CC-8), witnessed
@@ -2846,11 +2842,10 @@ theorem declassify_capacity_refusal_of_full
   rw [declassifyObjectFromCore_eq_onCore ctx declPolicy c targetId st tid ty hCur hType]
   unfold authorizeDeclassificationOnCore
   rw [hDec]
-  have hNone : recordDeclassificationChecked st.declassificationAuditLog
+  have hNone : recordDeclassificationChecked st.declassificationAudit
       (declassifyStoreEvent c (declassificationActorOf ctx tid) (ctx.threadDomainOf tid) (ctx.objectDomainOf targetId)
-        targetId st) = none := by
-    unfold recordDeclassificationChecked
-    rw [if_neg (by omega)]
+        targetId st) = none :=
+    recordDeclassificationChecked_eq_none _ _ hFull
   rw [hNone]
 
 /-- PR #870 round 7 (CC-8, **the flip witness**): a monitor's drain changes a
@@ -2944,10 +2939,15 @@ view.
 
 Stated over the *indices the caller already holds*, which is the honest scope: a
 reader cannot be promised anything about an index it has not yet observed to
-exist. -/
+exist.
+
+WS-ZA ZA5.10: stated over any ring whose trail extends the pre-state's and
+whose epoch is the pre-state's — what a record leaves. -/
 theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
-    (st : SystemState) (extra : DeclassificationAuditLog) (op : AuditReadOp)
+    (st : SystemState) (extra : DeclassificationAuditLog) (trail : AuditRing)
+    (hTrail : trail.toList = st.declassificationAuditLog ++ extra)
+    (hEpoch : trail.epoch = st.declassificationAuditEpoch) (op : AuditReadOp)
     (hIndex : ∀ i f k, op = .fieldChunkCount i f ∨ op = .field i f k ∨
       op = .coreAndTrust i ∨ op = .basisByteCount i ∨ op = .basisChunk i k ∨
       op = .chainNamesPredecessor i ∨ op = .chainNamesArchived i k →
@@ -2957,8 +2957,12 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
       e < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length)
     (hNotStatus : op ≠ .status) :
     auditReadWord ctx monitorClearance reader
-        { st with declassificationAuditLog := st.declassificationAuditLog ++ extra } op =
+        { st with declassificationAudit := trail } op =
       auditReadWord ctx monitorClearance reader st op := by
+  have hLog : ({ st with declassificationAudit := trail } : SystemState).declassificationAuditLog =
+      st.declassificationAuditLog ++ extra := hTrail
+  have hEp : ({ st with declassificationAudit := trail } : SystemState).declassificationAuditEpoch =
+      st.declassificationAuditEpoch := hEpoch
   have hEntry : ∀ i, i < (auditLogVisibleTo ctx reader st.declassificationAuditLog).length →
       (auditLogVisibleTo ctx reader (st.declassificationAuditLog ++ extra))[i]? =
         (auditLogVisibleTo ctx reader st.declassificationAuditLog)[i]? := by
@@ -2966,6 +2970,7 @@ theorem auditRead_stable_under_append (ctx : GenericLabelingContext)
     rw [auditLogVisibleTo_append]
     exact List.getElem?_append_left hi
   unfold auditReadWord
+  simp only [hLog, hEp]
   cases op with
   | status => exact absurd rfl hNotStatus
   | fieldChunkCount i f =>
@@ -3673,29 +3678,26 @@ refuted design rather than a live channel.  Kept as a theorem so a cut that
 re-admits partial readers to the live path must confront it — hiding the drain
 generation (§4c) does **not** discharge it, because the length is a second
 carrier of the same bit.  The drained shape is exactly `auditDrain_frame`'s
-committed post-state: the trail's `drop` and the epoch advanced by the count
-removed. -/
+committed post-state: the ring's `dropFront`, the trail's `drop` with the epoch
+advanced by the count removed. -/
 theorem auditDrain_moves_partial_readers_status :
     ∃ (ctx : GenericLabelingContext) (monitorClearance : Option SecurityDomain)
-      (reader : SecurityDomain) (log : DeclassificationAuditLog)
-      (removed epoch w₁ w₂ : Nat),
+      (reader : SecurityDomain) (trail : AuditRing)
+      (removed w₁ w₂ : Nat),
       auditMonitorAuthorized ctx monitorClearance reader = false ∧
       auditReadWord ctx monitorClearance reader
-          { (default : SystemState) with
-            declassificationAuditLog := log,
-            declassificationAuditEpoch := epoch } .status = .ok w₁ ∧
+          { (default : SystemState) with declassificationAudit := trail } .status = .ok w₁ ∧
       auditReadWord ctx monitorClearance reader
           { (default : SystemState) with
-            declassificationAuditLog := log.drop removed,
-            declassificationAuditEpoch := epoch + removed } .status = .ok w₂ ∧
+            declassificationAudit := trail.dropFront removed } .status = .ok w₂ ∧
       w₁ ≠ w₂ := by
   refine ⟨{ policy := DomainFlowPolicy.linearOrder
             objectDomainOf := fun _ => SecurityDomain.lowest
             threadDomainOf := fun _ => SecurityDomain.lowest
             endpointDomainOf := fun _ => SecurityDomain.lowest },
           some ⟨3⟩, ⟨0⟩,
-          [{ auditTimestampWitness 0 with srcDomain := ⟨0⟩, dstDomain := ⟨0⟩ }],
-          1, 0, _, _, by decide, rfl, rfl, by decide⟩
+          AuditRing.ofList [{ auditTimestampWitness 0 with srcDomain := ⟨0⟩, dstDomain := ⟨0⟩ }],
+          1, _, _, by decide, rfl, rfl, by decide⟩
 
 /-- WS-SM SM9.A.10 (PR #870 round 6, **the flow closure**): under the validated
 clearance the live path consumes, a surviving reader dominates **every subject

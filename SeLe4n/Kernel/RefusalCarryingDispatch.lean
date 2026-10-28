@@ -337,8 +337,8 @@ this applies them directly, building no edge list and no plan record. -/
 theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (operand : Option Capability)
     (hSig : decoded.syscallId = .notificationSignal) (preEpoch : Nat)
-    (preLog : DeclassificationAuditLog) (preTaint : TaintTable) (post : SystemState) :
-    applySyscallTaintAfter (signalTaintPlanOf st tid decoded operand) preEpoch preLog preTaint
+    (preLength : Nat) (preTaint : TaintTable) (post : SystemState) :
+    applySyscallTaintAfter (signalTaintPlanOf st tid decoded operand) preEpoch preLength preTaint
         post =
       signalTaintStep (signalTaintCaseOf st operand) (signalTaintSinkOf operand) tid preTaint
         post := by
@@ -392,7 +392,7 @@ capability found.  Inlined, so the slot read builds no `some`. -/
 theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (preEpoch : Nat) (preLength : Nat)
     (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
     (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
     (hSig : decoded.syscallId = .notificationSignal)
@@ -402,7 +402,7 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
         preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (signalTaintPlanOf st tid decoded (SystemState.lookupSlotCap st ref))
-        preEpoch preLog preTaint) st := by
+        preEpoch preLength preTaint) st := by
   simp only [signalOperandArmThenTaintR, dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hSig, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
     syscallLookupCap, syscallResolveCap, hRef]
@@ -576,9 +576,9 @@ def waitTaintStepOfCap (cap : Capability) (tid : SeLe4n.ThreadId)
 
 theorem waitTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (hWait : decoded.syscallId = .notificationWait)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       (match syscallOperandCap? st tid decoded.capAddr with
         | some cap => waitTaintStepOfCap cap tid preTaint post
         | none => post) := by
@@ -611,7 +611,7 @@ operand resolved to, every refusal carrying the state it was handed
 theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (preEpoch : Nat) (preLength : Nat)
     (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
     (hWait : decoded.syscallId = .notificationWait)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
@@ -619,7 +619,7 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
     waitOperandArmThenTaintR ctx tid executingCore gate.requiredRight
         preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-        (syscallTaintPlan st tid decoded) preEpoch preLog preTaint) st := by
+        (syscallTaintPlan st tid decoded) preEpoch preLength preTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hWait, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
     syscallLookupCap, syscallResolveCap, hRef]
@@ -684,7 +684,7 @@ theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
-          st.declassificationAuditLog st.declassificationTaint) st) :
+          st.declassificationAudit.length st.declassificationTaint) st) :
     dispatchOperandCheckedR decoded.capAddr tid executingCore arm st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
   rw [dispatchSyscallChecked_eq_impl]
@@ -737,7 +737,7 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
             capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
-          st.declassificationAuditLog st.declassificationTaint) st) :
+          st.declassificationAudit.length st.declassificationTaint) st) :
     dispatchOperandCheckedR decoded.capAddr tid executingCore arm =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   funext st
@@ -781,7 +781,7 @@ theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
   have hArm := signalOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
     st ref sigArgs hSig hArgs hRef
   simp only [hSig] at hArm ⊢
   exact hArm
@@ -805,7 +805,7 @@ theorem dispatchWaitCheckedR_eq (ctx : LabelingContext)
   have hArm := waitOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
     st ref hWait hRef (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hWait] at hArm ⊢
   exact hArm

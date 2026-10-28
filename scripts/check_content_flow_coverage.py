@@ -235,7 +235,7 @@ CONTENT_CHANNELS = [
 # WS-SM SM9.D.13a (C3): arms that write the audit trail without being able to
 # APPEND to it, each with the theorem that says so.
 #
-# The reach check below asks "does this arm write `declassificationAuditLog`",
+# The reach check below asks "does this arm write `declassificationAudit`",
 # which is the detectable question; the one that matters for origination is "can
 # this arm make `newlyRecordedEvents` non-empty".  `.auditDrain` separates them:
 # it rewrites the field on every successful call, and it removes a prefix while
@@ -891,10 +891,10 @@ run_cmd do
   -- really cannot append -- and "really cannot" is a reachability fact about the
   -- elaborated call graph, not something a hand-written `match` can be trusted to
   -- remember.  So the same field-write detector runs against
-  -- `declassificationAuditLog`, and the reach below reports which arms hit one.
-  let auditIdx? := stateFields.findIdx? (· == `declassificationAuditLog)
+  -- `declassificationAudit` (the ring), and the reach below reports which arms hit one.
+  let auditIdx? := stateFields.findIdx? (· == `declassificationAudit)
   if auditIdx?.isNone then
-    logInfo m!"CF_FIELD_UNRESOLVED declassificationAuditLog"
+    logInfo m!"CF_FIELD_UNRESOLVED declassificationAudit"
   let auditWriters : NameSet :=
     match auditIdx? with
     | none => {}
@@ -904,7 +904,7 @@ run_cmd do
         else match cfExecutableValue ci with
           | some value =>
               if value.getUsedConstants.contains (stateName ++ `mk)
-                  && cfWritesField stateName `declassificationAuditLog auditIdx value
+                  && cfWritesField stateName `declassificationAudit auditIdx value
               then acc.insert n
               else acc
           | none => acc
@@ -1536,7 +1536,7 @@ def main() -> int:
     # trail — for every arm `syscallRecordsDeclassification` calls non-recording.
     # That skip is what keeps the trail off the IPC hot path, and it is sound only
     # while those arms genuinely cannot append.  An arm that reaches a writer of
-    # `declassificationAuditLog` while classified `false` would record a downgrade
+    # `declassificationAudit` while classified `false` would record a downgrade
     # and originate nothing from it: a MISSED chain, which is the direction this
     # module must never err in, and it would be silent.
     #
@@ -1574,7 +1574,7 @@ def main() -> int:
             failures.append(
                 f"  `.{arm}` (in `{dispatcher_of(key)}`) is declared as "
                 f"recording a declassification but "
-                f"reaches no writer of `declassificationAuditLog`, so it pays the "
+                f"reaches no writer of `declassificationAudit`, so it pays the "
                 f"trail diff on every call for events it cannot produce")
 
     # …and the exemption's bite.  A refusal that reaches a write is not a

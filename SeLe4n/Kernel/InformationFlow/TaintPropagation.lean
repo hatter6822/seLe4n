@@ -1154,11 +1154,35 @@ rather than mis-attribute.
 
 Diff-recovered rather than planned, so a *new* declassifying syscall originates
 tags the day it lands: the record it writes is the whole specification of what
-its downgrade released. -/
-def newlyRecordedEvents (pre post : SystemState) : List DeclassificationEvent :=
-  if pre.declassificationAuditEpoch = post.declassificationAuditEpoch then
-    post.declassificationAuditLog.drop pre.declassificationAuditLog.length
+its downgrade released.
+
+WS-ZA ZA5.10: stated over the pre-state's epoch and trail length, the two words
+the syscall entry reads before the arm runs (`applySyscallTaintAfter`). -/
+def recordedSince (preEpoch preLength : Nat) (post : SystemState) :
+    List DeclassificationEvent :=
+  if preEpoch = post.declassificationAuditEpoch then
+    post.declassificationAuditLog.drop preLength
   else []
+
+/-- WS-ZA ZA5.10: **the events recorded since a pre-state's epoch and length**,
+read off the ring's slots — the post-state's window from `preLength` on,
+without building the trail.  `recordedSince` as compiled
+(`recordedSince_eq_ring`). -/
+def recordedSinceOfRing (preEpoch preLength : Nat) (post : SystemState) :
+    List DeclassificationEvent :=
+  if preEpoch = post.declassificationAudit.epoch then
+    post.declassificationAudit.entriesFrom preLength
+  else []
+
+@[csimp] theorem recordedSince_eq_ring : @recordedSince = @recordedSinceOfRing := by
+  funext preEpoch preLength post
+  simp only [recordedSince, recordedSinceOfRing, AuditRing.entriesFrom_eq_drop,
+    SystemState.declassificationAuditLog, SystemState.declassificationAuditEpoch]
+
+/-- WS-SM SM9.D.13a: the events a commit from `pre` to `post` recorded — the
+diff since `pre`'s epoch and trail length (`recordedSince`). -/
+def newlyRecordedEvents (pre post : SystemState) : List DeclassificationEvent :=
+  recordedSince pre.declassificationAuditEpoch pre.declassificationAudit.length post
 
 
 /-- WS-SM SM9.D.13a: **on a pure append the diff IS the appended suffix.**
@@ -1170,7 +1194,9 @@ theorem newlyRecordedEvents_append (pre post : SystemState)
     (hEpoch : pre.declassificationAuditEpoch = post.declassificationAuditEpoch)
     (hLog : post.declassificationAuditLog = pre.declassificationAuditLog ++ new) :
     newlyRecordedEvents pre post = new := by
-  simp [newlyRecordedEvents, hEpoch, hLog]
+  unfold newlyRecordedEvents recordedSince
+  rw [if_pos hEpoch, hLog, ← AuditRing.length_toList]
+  simp
 
 /-- WS-SM SM9.D.13a: **a commit that advanced the epoch originates nothing.**
 
@@ -1184,7 +1210,7 @@ to `drop`'s behaviour on a shortened list. -/
 theorem newlyRecordedEvents_drained (pre post : SystemState)
     (hEpoch : pre.declassificationAuditEpoch ≠ post.declassificationAuditEpoch) :
     newlyRecordedEvents pre post = [] := by
-  simp [newlyRecordedEvents, hEpoch]
+  simp [newlyRecordedEvents, recordedSince, hEpoch]
 
 /-- WS-SM SM9.D.13a: **a commit that only removes a prefix originates nothing** —
 both branches of it.
@@ -1199,12 +1225,12 @@ theorem newlyRecordedEvents_of_drop (pre post : SystemState) (k : Nat)
     (hLog : post.declassificationAuditLog = pre.declassificationAuditLog.drop k)
     (hEpoch : post.declassificationAuditEpoch = pre.declassificationAuditEpoch + k) :
     newlyRecordedEvents pre post = [] := by
-  unfold newlyRecordedEvents
+  unfold newlyRecordedEvents recordedSince
   cases k with
   | zero =>
     have hEq : pre.declassificationAuditEpoch = post.declassificationAuditEpoch := by
       rw [hEpoch]; omega
-    rw [if_pos hEq, hLog]
+    rw [if_pos hEq, hLog, ← AuditRing.length_toList]
     simp
   | succ k' =>
     have hNe : pre.declassificationAuditEpoch ≠ post.declassificationAuditEpoch := by
@@ -1231,7 +1257,7 @@ theorem newlyRecordedEvents_auditDrain (ctx : GenericLabelingContext)
     injection hPair with _ hState
     rw [← hState]
     exact newlyRecordedEvents_of_drop _ _
-      (min count st.declassificationAuditLog.length) rfl rfl
+      (min count st.declassificationAudit.length) (AuditRing.toList_dropFront _ _) rfl
   · exact absurd h (by simp)
 
 /-- WS-SM SM9.D.13a: **a downgrade originates its own identity** — on the object
@@ -1358,21 +1384,19 @@ def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState 
 /-- WS-ZA ZA1.1: **the taint step over what it reads of the pre-state**, read
 before the arm runs.
 
-`applySyscallTaint` reads three fields of the pre-state — the audit epoch and
-log (through `newlyRecordedEvents`) and the taint table.  A dispatcher that
+`applySyscallTaint` reads three things of the pre-state — the audit epoch and
+the trail's length (through `newlyRecordedEvents`) and the taint table.  A dispatcher that
 passes the whole pre-state to it after the arm keeps that state alive across
 the arm, so every table the arm writes is shared and the runtime copies it
 whole.  Passing the three fields instead lets the dispatcher release the
 state before the arm (`applySyscallTaintAfter_pre` says the two agree). -/
 def applySyscallTaintAfter (plan : TaintPlan) (preEpoch : Nat)
-    (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) : SystemState :=
   let origins :=
     if plan.originates then
       originationTags plan.noRelease
-        (if preEpoch = post.declassificationAuditEpoch then
-          post.declassificationAuditLog.drop preLog.length
-        else [])
+        (recordedSince preEpoch preLength post)
     else []
   { post with
       declassificationTaint :=
@@ -1388,7 +1412,7 @@ def applySyscallTaintAfter (plan : TaintPlan) (preEpoch : Nat)
 taint step. -/
 @[simp] theorem applySyscallTaintAfter_pre (plan : TaintPlan) (pre post : SystemState) :
     applySyscallTaintAfter plan pre.declassificationAuditEpoch
-        pre.declassificationAuditLog pre.declassificationTaint post =
+        pre.declassificationAudit.length pre.declassificationTaint post =
       applySyscallTaint plan pre post := rfl
 
 /-- WS-SM SM9.D.7 (**the frame**): the taint write touches the taint table and

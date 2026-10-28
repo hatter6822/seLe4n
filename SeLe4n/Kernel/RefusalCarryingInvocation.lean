@@ -365,9 +365,9 @@ theorem routedInvocation_classic (sid : SyscallId) (h : routedInvocation sid = t
 /-- A routed invocation's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_routed (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : routedInvocation decoded.syscallId = true)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
   obtain ⟨hC, hR, -, -⟩ := routedInvocation_classic _ h
   simp only [applySyscallTaintAfter, syscallTaintPlan, hC, hR, Bool.false_eq_true,
@@ -1520,9 +1520,9 @@ theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : Registe
 /-- A configure's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .schedContextConfigure)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
   simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
     syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
@@ -1749,9 +1749,9 @@ to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
 /-- A service register's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .serviceRegister)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
   simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
     syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,

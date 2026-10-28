@@ -448,12 +448,12 @@ ledger's occupancy readable to an unprivileged subject.  That is the CC-8
 channel the trail's fail-closed bound already forces, and the ledger must not
 supply a second instance of it. -/
 theorem recordRefusal_never_refuses (L : RefusalLedger) (r : DeclassificationRefusal)
-    (log : DeclassificationAuditLog) (e : DeclassificationEvent)
-    (hFull : maxDeclassificationAuditEntries ≤ log.length) :
+    (trail : AuditRing) (e : DeclassificationEvent)
+    (hFull : maxDeclassificationAuditEntries ≤ trail.toList.length) :
     (recordRefusal L r).recent.get L.nextSlot = some r ∧
-      recordDeclassificationChecked log e = none :=
+      recordDeclassificationChecked trail e = none :=
   ⟨recordRefusal_writes_selected_slot L r,
-   recordDeclassificationChecked_eq_none log e hFull⟩
+   recordDeclassificationChecked_eq_none trail e hFull⟩
 
 /-- WS-SM SM9.B.2 (**the bound is the type's**): every inhabitant of the
 ledger is bounded — not just the ones `recordRefusal` produced.

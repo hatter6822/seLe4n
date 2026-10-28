@@ -249,7 +249,8 @@ forbids.  What the kernel does when it is configured:
 1. Verifies the base lattice **denies** the flow (otherwise it is not a
    declassification, and the syscall returns `.flowDenied`).
 2. Verifies `declassificationPolicy` **permits** the pair.
-3. Appends one attributed entry to `SystemState.declassificationAuditLog`.
+3. Records one attributed entry in the audit ring `SystemState.declassificationAudit`
+   (read in order as `SystemState.declassificationAuditLog`).
 
 Neither security domain is a caller argument: the source is read off the thread
 the executing core is running, the destination off the target object's own

@@ -1039,22 +1039,19 @@ not — `dualQueueSystemInvariant` recurses on a fuel that stays symbolic, and
 budget; each needs its own congruence, which the tree already has. -/
 
 private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat} (h : ipcInvariantFull st) :
-    ipcInvariantFull
-      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
+    {trail : SeLe4n.Kernel.AuditRing} (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with declassificationAudit := trail } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c14, c15, c16, c17, c18, c19, c20⟩ := h
   exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
-           (s2 := { st with declassificationAuditLog := log,
-                            declassificationAuditEpoch := epoch }) (.of_getElem_eq (fun _ => rfl)) c2,
+           (s2 := { st with declassificationAudit := trail }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c14, c15, c16, c17, c18, c19, c20⟩
 
 private theorem crossSubsystemInvariant_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
+    {trail : SeLe4n.Kernel.AuditRing}
     (h : crossSubsystemInvariant st) :
-    crossSubsystemInvariant
-      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
+    crossSubsystemInvariant { st with declassificationAudit := trail } := by
   obtain ⟨d1, d2, d3, d4, d5, d6, d7, d8, d9, d10⟩ := h
   exact ⟨d1, d2, d3, d4, d5, d6, d7,
          PriorityInheritance.blockingAcyclic_frame st _ d8
@@ -1062,42 +1059,31 @@ private theorem crossSubsystemInvariant_setDeclassificationAuditLog {st : System
          d9, d10⟩
 
 private theorem coreIpcInvariantBundle_setDeclassificationAuditLog {st : SystemState}
-    {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
+    {trail : SeLe4n.Kernel.AuditRing}
     (h : coreIpcInvariantBundle st) :
-    coreIpcInvariantBundle
-      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } :=
+    coreIpcInvariantBundle { st with declassificationAudit := trail } :=
   ⟨h.1, h.2.1, ipcInvariantFull_setDeclassificationAuditLog h.2.2⟩
 
 private theorem ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog
-    {st : SystemState} {log : SeLe4n.Kernel.DeclassificationAuditLog} {epoch : Nat}
+    {st : SystemState} {trail : SeLe4n.Kernel.AuditRing}
     (h : ipcSchedulerCouplingInvariantBundle st) :
-    ipcSchedulerCouplingInvariantBundle
-      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } :=
+    ipcSchedulerCouplingInvariantBundle { st with declassificationAudit := trail } :=
   ⟨coreIpcInvariantBundle_setDeclassificationAuditLog h.1, h.2.1, h.2.2.1, h.2.2.2⟩
 
 /-- **WS-SM SM8.C.8**: `proofLayerInvariantBundle` carriage across a write to
-`declassificationAuditLog`.
+the declassification audit trail.
 
-Every conjunct but the sixteenth is carried here; the sixteenth reads the field
-being written and is therefore the writer's obligation.  Deliberately
-**carriage, not an `iff`**: the capacity bound is a genuine property of the new
-trail, so the writer has to supply it — and that obligation is load-bearing,
-since substituting the pre-state's own bound does not typecheck.
+Stated once for *any* trail writer — the live `.declassify` syscall, the model
+primitive and the drain, which moves the epoch in the same ring.
 
-Stated once for *any* trail writer, so the live `.declassify` syscall and the
-model primitive discharge it the same way.
-
-**WS-SM SM9.A.1a generalises it to the epoch.**  The only writer that moves the
-audit *epoch* is the drain, which moves the trail in the same step, so the
-carriage is stated over the simultaneous write rather than duplicating the
-five-lemma block for a field no conjunct reads.  The trail-only form below is
-this theorem at the pre-state's own epoch. -/
-theorem proofLayerInvariantBundle_setDeclassificationAuditTrail (st : SystemState)
-    (log : SeLe4n.Kernel.DeclassificationAuditLog) (epoch : Nat)
-    (h : proofLayerInvariantBundle st)
-    (hBounded : SeLe4n.Kernel.auditLogBounded log) :
-    proofLayerInvariantBundle
-      { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
+WS-ZA ZA5.10: the trail is the fixed ring, so the sixteenth conjunct, the
+capacity bound, is the ring's own theorem (`AuditRing.bounded`) and the writer
+owes nothing: the bound the list trail made each writer prove is now carried by
+the type. -/
+theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
+    (trail : SeLe4n.Kernel.AuditRing)
+    (h : proofLayerInvariantBundle st) :
+    proofLayerInvariantBundle { st with declassificationAudit := trail } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
           bIcache, bAck, _bAuditPre, bRun⟩ := h
@@ -1106,17 +1092,7 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditTrail (st : SystemStat
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, hBounded, bRun⟩
-
-/-- **WS-SM SM8.C.8**: the trail-only instance — an append leaves the epoch
-where it was, so a recording writer owes nothing about it. -/
-theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
-    (log : SeLe4n.Kernel.DeclassificationAuditLog)
-    (h : proofLayerInvariantBundle st)
-    (hBounded : SeLe4n.Kernel.auditLogBounded log) :
-    proofLayerInvariantBundle { st with declassificationAuditLog := log } :=
-  proofLayerInvariantBundle_setDeclassificationAuditTrail st log
-    st.declassificationAuditEpoch h hBounded
+         bIcache, bAck, SeLe4n.Kernel.AuditRing.bounded trail, bRun⟩
 
 /-! ### WS-SM SM9.B.3 — `proofLayerInvariantBundle` carriage across a refusal-ledger write
 

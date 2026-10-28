@@ -901,7 +901,7 @@ inductive StateField where
   | tlb | tlbShootdown
   | perCoreTlb | perCoreICache | pendingIcacheMaintenance | physicalWrites
   | physicalWritesDrained
-  | declassificationAuditLog | declassificationAuditEpoch
+  | declassificationAudit
   | declassificationRefusals | declassificationTaint
   deriving DecidableEq, Repr
 
@@ -1233,8 +1233,7 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .pendingIcacheMaintenance,   st, st' => st'.pendingIcacheMaintenance = st.pendingIcacheMaintenance
   | .physicalWrites,             st, st' => st'.physicalWrites = st.physicalWrites
   | .physicalWritesDrained,      st, st' => st'.physicalWritesDrained = st.physicalWritesDrained
-  | .declassificationAuditLog,   st, st' => st'.declassificationAuditLog = st.declassificationAuditLog
-  | .declassificationAuditEpoch, st, st' => st'.declassificationAuditEpoch = st.declassificationAuditEpoch
+  | .declassificationAudit,      st, st' => st'.declassificationAudit = st.declassificationAudit
   | .declassificationRefusals,   st, st' => st'.declassificationRefusals = st.declassificationRefusals
   | .declassificationTaint,      st, st' => st'.declassificationTaint = st.declassificationTaint
 
@@ -1260,7 +1259,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .tlb, h .tlbShootdown, Subsingleton.elim _ _, Subsingleton.elim _ _,
     h .perCoreTlb, Vector.ext fun _ _ => Subsingleton.elim _ _, h .perCoreICache, h .pendingIcacheMaintenance, h .physicalWrites,
     h .physicalWritesDrained,
-    h .declassificationAuditLog, h .declassificationAuditEpoch,
+    h .declassificationAudit,
     h .declassificationRefusals, h .declassificationTaint⟩
 
 /-- **WS-RR RR7.19**: `st'` differs from `st` in no field outside `fs`.
