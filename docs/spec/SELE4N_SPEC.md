@@ -5688,7 +5688,7 @@ Every kernel object has a decidable well-formedness predicate:
   word (`msgRegOfFile`; each decoder's register-file form is equal to it,
   `decodeXArgs_eq_by`).  `dispatchInvocationCheckedR_eq` makes the routed arm
   `dispatchSyscallChecked`.  The declassifications and the audit calls keep
-  the general decode (ZA5.10); the in-place retype is deleted; the
+  the general decode (ZA5.11); the in-place retype is deleted; the
   scheduling-context configure is routed at `v0.36.98` and the service
   register at `v0.36.155`, both as the one-overflow-word arm below.
 - **The service syscalls** (`v0.36.155`, WS-ZA ZA5.5).  The register route's
@@ -5712,7 +5712,16 @@ Every kernel object has a decidable well-formedness predicate:
   record an identity other than its own; `SystemState.tableReferencesRecorded`
   states the identity (`registry`: a registration's id is its endpoint's, whose
   flag is set; `serviceFlags`: a set flag names a registration under the
-  endpoint's id).  The query and the revoke
+  endpoint's id).  **The endpoint holds the registration's words** (since
+  `v0.36.158`, WS-ZA ZA5.8): the interface and the kept capability, less its
+  target, as scalar fields beside the flag (`Endpoint.service`, written by
+  `Endpoint.withService`), written by the register in the endpoint's slot and
+  cleared by the revoke.  The registry table and the words are two copies of
+  one registration for one row only, held equal by `serviceStored` (a set flag
+  names, under the endpoint's id, the registration its record holds,
+  `EndpointService.registrationAt`), until ZA5.9 deletes the table; the lookup
+  and the frozen lookup read the endpoint's record and no table, and the query
+  stages the endpoint's own id.  The query and the revoke
   through the endpoint read its recorded registration first
   (`recordedRegistrationPresent`, with the flow check) and then write in place:
   the query stages the registration's id as the return word
