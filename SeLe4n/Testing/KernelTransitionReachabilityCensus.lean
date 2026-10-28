@@ -1210,7 +1210,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Model.Builder.insertCap
   , `SeLe4n.Model.Builder.mapPage
   , `SeLe4n.Model.Builder.markRunnable
-  , `SeLe4n.Model.Builder.registerService
   , `SeLe4n.Model.Builder.withTaint
   , `SeLe4n.Model.lookupObject
   , `SeLe4n.Model.lookupVSpaceRoot

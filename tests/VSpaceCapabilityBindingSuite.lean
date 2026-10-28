@@ -2172,7 +2172,7 @@ private def runPassiveRetireChecks : IO Unit := do
           requiresGrant := false }
       let sid : ServiceId := ⟨960⟩
       let stI := { st0 with interfaceRegistry := st0.interfaceRegistry.insert iface.ifaceId iface }
-      match registerService { sid := sid, iface := iface, endpointCap := epCap } stI with
+      match registerService { iface := iface, endpointCap := epCap } stI with
       | .error e => assertBool s!"registering a service on the carved endpoint succeeds (got {repr e})" false
       | .ok ((), st) => do
         assertBool "setup: the registry holds the service and the endpoint records it"

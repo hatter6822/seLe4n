@@ -3546,7 +3546,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     -- Capability without write right
     let noWriteCap : Capability := { target := .object epId, rights := .ofList [.read] }
     let reg : ServiceRegistration := {
-      sid := ⟨701⟩, iface := iface, endpointCap := noWriteCap
+      iface := iface, endpointCap := noWriteCap
     }
     expectErr "register service without Write right"
       (SeLe4n.Kernel.registerService reg stIface)
@@ -3565,7 +3565,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     | .ok (_, stIface2) =>
       let writeCap : Capability := { target := .object tcbId, rights := .singleton .write }
       let regTcb : ServiceRegistration := {
-        sid := ⟨702⟩, iface := iface, endpointCap := writeCap
+        iface := iface, endpointCap := writeCap
       }
       expectErr "register service targeting non-endpoint"
         (SeLe4n.Kernel.registerService regTcb stIface2)
@@ -3582,10 +3582,10 @@ private def runWSR4CoherenceChecks : IO Unit := do
     match SeLe4n.Kernel.registerInterface iface r4State3 with
     | .error _ => throw <| IO.userError "interface registration failed"
     | .ok (_, stIface3) =>
-      let svcSid : ServiceId := ⟨703⟩
+      let svcSid : ServiceId := ServiceId.ofNat epForRetype.toNat
       let svcCap : Capability := { target := .object epForRetype, rights := .singleton .write }
       let svcReg : ServiceRegistration := {
-        sid := svcSid, iface := iface, endpointCap := svcCap
+        iface := iface, endpointCap := svcCap
       }
       match SeLe4n.Kernel.registerService svcReg stIface3 with
       | .error e => throw <| IO.userError s!"service registration failed: {toString e}"
@@ -3624,14 +3624,14 @@ private def runWSR4CoherenceChecks : IO Unit := do
     | .ok (_, stIface5) =>
       let sharedCap : Capability := { target := .object dupEpId, rights := .singleton .write }
       let regFirst : ServiceRegistration := {
-        sid := ⟨720⟩, iface := iface, endpointCap := sharedCap
+        iface := iface, endpointCap := sharedCap
       }
       match SeLe4n.Kernel.registerService regFirst stIface5 with
       | .error e => throw <| IO.userError s!"first registration failed: {toString e}"
       | .ok (_, stFirstReg) =>
         -- Second service with DIFFERENT sid but SAME endpoint must fail
         let regSecond : ServiceRegistration := {
-          sid := ⟨721⟩, iface := iface, endpointCap := sharedCap
+          iface := iface, endpointCap := sharedCap
         }
         expectErr "duplicate endpoint rejected"
           (SeLe4n.Kernel.registerService regSecond stFirstReg)

@@ -110,27 +110,6 @@ def registerIrq (ist : IntermediateState) (irq : SeLe4n.Irq) (handler : SeLe4n.O
   hLifecycleConsistent := ist.hLifecycleConsistent
 
 -- ============================================================================
--- Q3-B.2: registerService — insert into serviceRegistry
--- ============================================================================
-
-/-- Q3-B: Register a service in the builder state. Only modifies
-`serviceRegistry`; all other fields are unchanged. -/
-def registerService (ist : IntermediateState) (sid : ServiceId)
-    (reg : ServiceRegistration) : IntermediateState where
-  state := { ist.state with serviceRegistry := ist.state.serviceRegistry.insert sid reg }
-  hAllTables := by
-    have h := ist.hAllTables
-    unfold SystemState.allTablesInvExtK at h ⊢
-    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
-           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.1,
-           h.2.2.2.2.2.2⟩
-  hPerObjectSlots := by
-    intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
-  hPerObjectMappings := by
-    intro id vs hObj; exact ist.hPerObjectMappings id vs hObj
-  hLifecycleConsistent := ist.hLifecycleConsistent
-
--- ============================================================================
 -- registerInterface — insert into interfaceRegistry
 -- ============================================================================
 

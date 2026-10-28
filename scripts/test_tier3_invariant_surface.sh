@@ -534,7 +534,7 @@ run_check "TRACE" rg -n 'revoke service success' SeLe4n/Testing/MainTraceHarness
 run_check "TRACE" rg -n 'lookup by cap found sid' SeLe4n/Testing/MainTraceHarness.lean
 run_prose_check "TRACE" rg -n '^\[SRG-001\] register service success: true$' tests/fixtures/main_trace_smoke.expected
 run_prose_check "TRACE" rg -n '^\[SRG-005\] revoke service success: true$' tests/fixtures/main_trace_smoke.expected
-run_prose_check "TRACE" rg -n '^\[SRG-007\] lookup by cap found sid: 501$' tests/fixtures/main_trace_smoke.expected
+run_prose_check "TRACE" rg -n '^\[SRG-007\] lookup by cap found sid: 30$' tests/fixtures/main_trace_smoke.expected
 
 # Full-suite contract should continue to include Tier 3.
 
@@ -22389,6 +22389,13 @@ run_check "INVARIANT" rg -n '^        \| \.overflowOne sid capAddr =>$' SeLe4n/K
 run_check "INVARIANT" rg -n '^  \| \.serviceRegister => dispatchServiceRegisterCheckedR ctx capAddr regs w tid executingCore$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem dispatchOverflowOneCheckedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^theorem registerService_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+# A service's identity is its endpoint's: the registration carries no `sid`
+# field, its `sid` is derived from the capability it keeps, and no builder
+# inserts a registration under a caller-given id.
+run_check "INVARIANT" rg -n -U '^structure ServiceRegistration where\n  iface       : InterfaceSpec\n  endpointCap : Capability\n  deriving' SeLe4n/Kernel/Service/Interface.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def sid \(reg : ServiceRegistration\) : ServiceId :=\n  match reg\.endpointCap\.target with\n  \| \.object e => ServiceId\.ofNat e\.toNat' SeLe4n/Kernel/Service/Interface.lean
+run_check "INVARIANT" rg -n '^theorem sid_of_target($|[ ({:\[\]])' SeLe4n/Kernel/Service/Interface.lean
+run_negative_check "INVARIANT" rg -n '^def registerService \(ist : IntermediateState\)' SeLe4n/Model/Builder.lean
 # The query and the revoke through the endpoint read the recorded registration
 # first and then write in place.
 run_check "INVARIANT" rg -n '^theorem revokeServiceByRecordedCode_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean

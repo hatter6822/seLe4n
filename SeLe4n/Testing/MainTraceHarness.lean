@@ -237,10 +237,11 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   match SeLe4n.Kernel.registerInterface srgIface st1 with
   | .error err => IO.println s!"[SRG-001] register interface error: {reprStr err}"
   | .ok (_, stIface) =>
-    let srgSid : ServiceId := ⟨501⟩
+    -- A service's identity is its endpoint's (`ServiceRegistration.sid`).
+    let srgSid : ServiceId := ServiceId.ofNat demoEndpoint.toNat
     let srgCap : Capability := { target := .object demoEndpoint, rights := .singleton .write }
     let srgReg : ServiceRegistration := {
-      sid := srgSid, iface := srgIface, endpointCap := srgCap
+      iface := srgIface, endpointCap := srgCap
     }
     match SeLe4n.Kernel.registerService srgReg stIface with
     | .error err => IO.println s!"[SRG-001] register service error: {reprStr err}"
@@ -276,7 +277,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     maxMessageSize := 1, maxResponseSize := 1, requiresGrant := false
   }
   let srgBadReg : ServiceRegistration := {
-    sid := ⟨502⟩, iface := srgBadIface,
+    iface := srgBadIface,
     endpointCap := { target := .object demoEndpoint, rights := .empty }
   }
   match SeLe4n.Kernel.registerService srgBadReg st1 with
@@ -289,7 +290,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   | .error _ => IO.println "[SRG-004] skipped (interface already tested)"
   | .ok (_, stIface4) =>
     let srgInvalidReg : ServiceRegistration := {
-      sid := ⟨503⟩, iface := srgIface,
+      iface := srgIface,
       endpointCap := srgInvalidCap
     }
     match SeLe4n.Kernel.registerService srgInvalidReg stIface4 with
@@ -310,14 +311,14 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err => IO.println s!"[SRG-009] chain interface error: {reprStr err}"
   | .ok (_, stChainIface) =>
     let srgChainReg : ServiceRegistration := {
-      sid := ⟨601⟩, iface := srgChainIface,
+      iface := srgChainIface,
       endpointCap := { target := .object demoEndpoint, rights := .singleton .write }
     }
     match SeLe4n.Kernel.registerService srgChainReg stChainIface with
     | .error err => IO.println s!"[SRG-009] chain service error: {reprStr err}"
     | .ok (_, stChain) =>
       let chainIfaceId : SeLe4n.InterfaceId := ⟨600⟩
-      let chainSvcId : ServiceId := ⟨601⟩
+      let chainSvcId : ServiceId := ServiceId.ofNat demoEndpoint.toNat
       IO.println s!"[SRG-009] chain success: iface={stChain.interfaceRegistry[chainIfaceId]? != none} svc={stChain.serviceRegistry[chainSvcId]? != none}"
 
   checkInvariants counter "post-SRG-tests" st1
