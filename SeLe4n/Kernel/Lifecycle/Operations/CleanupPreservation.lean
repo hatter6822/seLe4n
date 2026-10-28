@@ -38,14 +38,13 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- ============================================================================
 
 /-- W6-B: spliceOutMidQueueNode only modifies `objects`, preserving all other
-    state fields. Bundles the scheduler, lifecycle, and serviceRegistry
-    preservation proofs into a single conjunction. -/
+    state fields. Bundles the scheduler and lifecycle preservation proofs
+    into a single conjunction. -/
 theorem spliceOutMidQueueNode_preserves
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (spliceOutMidQueueNode st tid).scheduler = st.scheduler ∧
-    (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle ∧
-    (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry := by
-  refine ⟨?_, ?_, ?_⟩ <;> (unfold spliceOutMidQueueNode; split <;> rfl)
+    (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle := by
+  refine ⟨?_, ?_⟩ <;> (unfold spliceOutMidQueueNode; split <;> rfl)
 
 /-- T5-E: spliceOutMidQueueNode preserves the scheduler. -/
 theorem spliceOutMidQueueNode_scheduler_eq
@@ -57,13 +56,7 @@ theorem spliceOutMidQueueNode_scheduler_eq
 theorem spliceOutMidQueueNode_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle :=
-  (spliceOutMidQueueNode_preserves st tid).2.1
-
-/-- T5-E: spliceOutMidQueueNode preserves serviceRegistry. -/
-theorem spliceOutMidQueueNode_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry :=
-  (spliceOutMidQueueNode_preserves st tid).2.2
+  (spliceOutMidQueueNode_preserves st tid).2
 
 /-- WS-SM SM7.B: spliceOutMidQueueNode only modifies `objects` — the
 TLB-shootdown state is framed (`pendingBounded` bundle-carriage leaf). -/
@@ -83,27 +76,25 @@ theorem spliceOutMidQueueNode_machine_eq
   unfold spliceOutMidQueueNode; split <;> rfl
 
 /-- W6-B: removeFromAllEndpointQueues only modifies `objects`, preserving
-    scheduler, lifecycle, and serviceRegistry simultaneously. Reduces
-    redundancy from 3 near-identical proofs to a single bundled theorem. -/
+    scheduler and lifecycle simultaneously. Reduces redundancy from
+    near-identical proofs to a single bundled theorem. -/
 theorem removeFromAllEndpointQueues_preserves
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).scheduler = st.scheduler ∧
-    (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle ∧
-    (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry := by
+    (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle := by
   -- AN4-G.5 (LIF-M05): Apply `fold_preserves` directly against the whole
-  -- triple invariant, seeded from the splice-preservation witness for the
-  -- three fields we care about. Avoids the former `epFold` intermediate,
+  -- pair invariant, seeded from the splice-preservation witness for the
+  -- two fields we care about. Avoids the former `epFold` intermediate,
   -- which relied on syntactic `let ep' : Endpoint := ...` matching that
   -- reshaped to `have` when the def was imported from a sibling child
-  -- module. Proving all three conjuncts at once in a bundled fold keeps
+  -- module. Proving both conjuncts at once in a bundled fold keeps
   -- the proof robust across the AN4-G.5 file-split boundary.
   have hSplice := spliceOutMidQueueNode_preserves st tid
   unfold removeFromAllEndpointQueues
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves
     (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
     (fun acc => acc.scheduler = st.scheduler ∧
-                acc.lifecycle = st.lifecycle ∧
-                acc.serviceRegistry = st.serviceRegistry)
+                acc.lifecycle = st.lifecycle)
     hSplice
     (fun acc _ _ hAcc => by
       split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
@@ -118,13 +109,7 @@ theorem removeFromAllEndpointQueues_scheduler_eq
 theorem removeFromAllEndpointQueues_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle :=
-  (removeFromAllEndpointQueues_preserves st tid).2.1
-
-/-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves serviceRegistry. -/
-theorem removeFromAllEndpointQueues_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry :=
-  (removeFromAllEndpointQueues_preserves st tid).2.2
+  (removeFromAllEndpointQueues_preserves st tid).2
 
 /-- WS-SM SM7.B: removeFromAllEndpointQueues only modifies `objects` — the
 TLB-shootdown state is framed.  Same fold-preservation argument as
@@ -194,14 +179,13 @@ theorem removeFromNotificationWaitQueue_eq_objects (st : SystemState) (tid : SeL
   · exact ⟨st.objects, rfl⟩
 
 /-- W6-B: removeFromNotificationWaitQueue only modifies `objects`, preserving
-    scheduler, lifecycle, and serviceRegistry simultaneously. -/
+    scheduler and lifecycle simultaneously. -/
 theorem removeFromNotificationWaitQueue_preserves
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromNotificationWaitQueue st tid).scheduler = st.scheduler ∧
-    (removeFromNotificationWaitQueue st tid).lifecycle = st.lifecycle ∧
-    (removeFromNotificationWaitQueue st tid).serviceRegistry = st.serviceRegistry := by
+    (removeFromNotificationWaitQueue st tid).lifecycle = st.lifecycle := by
   obtain ⟨_, h⟩ := removeFromNotificationWaitQueue_eq_objects st tid
-  rw [h]; exact ⟨rfl, rfl, rfl⟩
+  rw [h]; exact ⟨rfl, rfl⟩
 
 /-- WS-SM SM8.B: removeFromNotificationWaitQueue only modifies `objects` —
 the machine is framed. -/
@@ -221,13 +205,7 @@ theorem removeFromNotificationWaitQueue_scheduler_eq
 theorem removeFromNotificationWaitQueue_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromNotificationWaitQueue st tid).lifecycle = st.lifecycle :=
-  (removeFromNotificationWaitQueue_preserves st tid).2.1
-
-/-- R4-A.2: removeFromNotificationWaitQueue preserves serviceRegistry. -/
-theorem removeFromNotificationWaitQueue_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromNotificationWaitQueue st tid).serviceRegistry = st.serviceRegistry :=
-  (removeFromNotificationWaitQueue_preserves st tid).2.2
+  (removeFromNotificationWaitQueue_preserves st tid).2
 
 /-- WS-SM SM7.B: removeFromNotificationWaitQueue only modifies `objects`
 — the TLB-shootdown state is framed. -/

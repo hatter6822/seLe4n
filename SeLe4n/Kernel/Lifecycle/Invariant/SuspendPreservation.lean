@@ -18,15 +18,15 @@ import SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation
 /-! # D1-I: Suspension & Resumption Preservation Theorems
 
 Proves that `suspendThread` and `resumeThread` helper functions preserve
-the kernel's scheduler and serviceRegistry fields.
+the kernel's scheduler and lifecycle fields.
 
 ## Proof structure
 
 ### Transport lemmas (D1-I)
 Each helper function preserves non-object state fields:
-- `cancelIpcBlocking` preserves scheduler, serviceRegistry, lifecycle
-- `cancelDonation` preserves scheduler, serviceRegistry
-- `clearPendingState` preserves scheduler, serviceRegistry, lifecycle
+- `cancelIpcBlocking` preserves scheduler, lifecycle
+- `cancelDonation` preserves scheduler
+- `clearPendingState` preserves scheduler, lifecycle
 
 Note: `cancelDonation` does NOT preserve lifecycle in the `.donated` case
 because `returnDonatedSchedContext` calls `storeObject`, which updates
@@ -79,21 +79,6 @@ theorem returnDonationToCancelledCaller_machine_eq (st : SystemState)
     | ok st' =>
       obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       exact returnDonatedSchedContext_machine_eq _ st' holder scId tid n hPop
-  · rfl
-
-/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
-service registry. -/
-theorem returnDonationToCancelledCaller_serviceRegistry_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (returnDonationToCancelledCaller st tid tcb).serviceRegistry = st.serviceRegistry := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    cases h : returnDonatedSchedContextResolved st holder scId tid with
-    | error _ => rfl
-    | ok st' =>
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_serviceRegistry_eq _ st' holder scId tid n hPop
   · rfl
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return is the identity
@@ -321,93 +306,14 @@ theorem clearPendingState_scheduler_eq
   unfold clearPendingState; exact SystemState.updateTcb_scheduler _ _ _
 
 -- ============================================================================
--- D1-I: Transport lemmas — serviceRegistry and lifecycle preservation
+-- D1-I: Transport lemmas — lifecycle preservation
 -- ============================================================================
-
-/-- D1-I: cancelIpcBlocking preserves serviceRegistry. -/
-theorem cancelIpcBlocking_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (cancelIpcBlocking st tid tcb).serviceRegistry = st.serviceRegistry := by
-  unfold cancelIpcBlocking
-  cases tcb.ipcState with
-  | ready => rfl
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
-  | blockedOnReply _ _ =>
-    dsimp only
-    rw [SystemState.unlinkReplyWaiterOpt_serviceRegistry, consumeReplyLink_serviceRegistry_eq,
-      restoreToReadyCancelled_serviceRegistry_eq,
-      spliceThreadReplyFrameOut_serviceRegistry_eq,
-      returnDonationToCancelledCaller_serviceRegistry_eq]
-  | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromNotificationWaitQueue_serviceRegistry_eq]
-
-/-- D1-I: clearPendingState preserves serviceRegistry. -/
-theorem clearPendingState_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearPendingState st tid).serviceRegistry = st.serviceRegistry := by
-  unfold clearPendingState; exact SystemState.updateTcb_serviceRegistry _ _ _
 
 /-- D1-I: clearPendingState preserves lifecycle. -/
 theorem clearPendingState_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (clearPendingState st tid).lifecycle = st.lifecycle := by
   unfold clearPendingState; exact SystemState.updateTcb_lifecycle _ _ _
-
-/-- Helper / AJ1-A (M-14): cleanupDonatedSchedContext preserves serviceRegistry
-(conditional on success). -/
-private theorem cleanupDonatedSchedContext_serviceRegistry_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (h : cleanupDonatedSchedContext st tid = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  simp only [cleanupDonatedSchedContext] at h
-  split at h
-  · injection h with h; subst h; rfl
-  · split at h <;> first
-      | (injection h with h; subst h; rfl)
-      | exact returnDonatedSchedContextResolved_lift h
-          (fun n s hs => returnDonatedSchedContext_serviceRegistry_eq st s tid _ _ n hs)
-
-/-- D1-I/R5.A: `cancelBoundDonation` preserves serviceRegistry. The bound
-arm only rewrites `objects` and `scheduler` (the replenish queue and the
-reschedule flags) — neither of which is `serviceRegistry`. -/
-theorem cancelBoundDonation_serviceRegistry_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (h : cancelBoundDonation st tid tcb = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  simp only [cancelBoundDonation] at h
-  split at h
-  · -- .bound case: two nested matches, all branches preserve serviceRegistry
-    injection h with h; subst h
-    rw [markKeyChangeFrom_serviceRegistry, SystemState.updateTcb_serviceRegistry,
-      SystemState.updateSchedContext_serviceRegistry]
-  · simp at h
-
-/-- D1-I/R5.A: `cancelDonatedDonation` preserves serviceRegistry by
-delegation to `cleanupDonatedSchedContext`. -/
-theorem cancelDonatedDonation_serviceRegistry_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (h : cancelDonatedDonation st tid tcb = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  simp only [cancelDonatedDonation] at h
-  split at h
-  · exact cleanupDonatedSchedContext_serviceRegistry_eq st st' tid h
-  · simp at h
-
-/-- D1-I / AJ1-A (M-14) / R5.A: cancelDonation preserves serviceRegistry —
-dispatcher delegates to the two split arms or no-ops on `.unbound`. -/
-theorem cancelDonation_serviceRegistry_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (h : cancelDonation st tid tcb = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  simp only [cancelDonation] at h
-  split at h
-  · -- .unbound
-    injection h with h; subst h; rfl
-  · -- .bound: delegate
-    exact cancelBoundDonation_serviceRegistry_eq st st' tid tcb h
-  · -- .donated: delegate
-    exact cancelDonatedDonation_serviceRegistry_eq st st' tid tcb h
 
 -- ============================================================================
 -- D1-I: Transport lemmas — lifecycle preservation (retired at WS-RR RR8.5)

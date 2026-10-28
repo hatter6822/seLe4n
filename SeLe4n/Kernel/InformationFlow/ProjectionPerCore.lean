@@ -22,8 +22,7 @@ scheduler-reading IF-M1 projection functions defined in
 `(c : CoreId)`, plus the aggregate `projectStateOnCore`.
 
 The non-scheduler projections (`projectObjects`, `projectIrqHandlers`,
-`projectObjectIndex`, `projectDomainSchedule`, `projectMemory`,
-`projectServiceRegistry`) read no per-core scheduler
+`projectObjectIndex`, `projectDomainSchedule`, `projectMemory`) read no per-core scheduler
 field, so they are unchanged; only the six scheduler-reading projections
 (`projectRunnable`, `projectCurrent`, `projectActiveDomain`,
 `projectDomainTimeRemaining`, `projectDomainScheduleIndex`,
@@ -143,8 +142,7 @@ def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
     domainSchedule := projectDomainSchedule ctx observer st
     domainScheduleIndex := projectDomainScheduleIndexOnCore ctx observer st c
     machineRegs := projectMachineRegsOnCore ctx observer st c
-    memory := projectMemory ctx observer st
-    serviceRegistry := projectServiceRegistry ctx observer st }
+    memory := projectMemory ctx observer st }
 
 theorem projectStateOnCoreByLinks_eq (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {c : CoreId} (h : st.runQueueRefinedOnCore c) :

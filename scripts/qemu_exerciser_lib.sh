@@ -414,14 +414,12 @@ for driver in drivers:
             # invoked capability's free index, so its dispatch runs through
             # `RefusalCarrying.ofChecked` and keeps no pre-state.
             "untyped-reset": (0, 0),
-            # WS-ZA ZA5.5 (`v0.36.155`): a service register reads its
-            # registration's own cells: the record the arguments make and its
-            # registry entry (4 steady, 6 the first call; not yet traced cell
-            # by cell).  The endpoint's record is written in its slot and the
-            # state in place (`registerServicePerformImpl`; 9 and 7 before).
-            # ZA5.9 retires the registry table, the registration's words being
-            # on the endpoint since ZA5.8.
-            "service-register": (6, 4),
+            # WS-ZA ZA5.9 (`v0.36.159`; 6 and 4 before, 9 and 7 before
+            # ZA5.5): the registry table is retired, so a register's one write
+            # is its endpoint's record, set in its slot from the decoded words
+            # (`registerServiceWordsPerform`), and its compiled arm builds no
+            # registration (`dispatchServiceRegisterByR_eq_impl`).
+            "service-register": (0, 0),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

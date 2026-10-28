@@ -992,10 +992,18 @@ private def checkBlockingAcyclic (st : SystemState) : Bool :=
       | _ => true  -- not in a donation chain
     | none => true
 
+/-- The registrations the endpoints record, each read off its endpoint — since
+WS-ZA ZA5.9 the service registry is these records (`SystemState.serviceRegistry`). -/
+private def recordedRegistrations (st : SystemState) : List ServiceRegistration :=
+  st.objects.fold [] fun acc k o =>
+    match o with
+    | .endpoint ep => if ep.serviceRegistered then ep.service.registrationAt k :: acc else acc
+    | _ => acc
+
 /-- AG1-F audit: checkRegistryEndpointValid — every registered service's endpoint
 targets an existing kernel object. -/
 private def checkRegistryEndpointValid (st : SystemState) : Bool :=
-  st.serviceRegistry.toList.all fun (_, reg) =>
+  (recordedRegistrations st).all fun reg =>
     match reg.endpointCap.target with
     -- Kind-agnostic by intent: the AG1-F claim is that the endpoint capability
     -- names a live object, not that the object is an Endpoint.
@@ -1005,7 +1013,7 @@ private def checkRegistryEndpointValid (st : SystemState) : Bool :=
 /-- AG1-F audit: checkRegistryInterfaceValid — every registered service references
 a known interface specification. -/
 private def checkRegistryInterfaceValid (st : SystemState) : Bool :=
-  st.serviceRegistry.toList.all fun (_, reg) =>
+  (recordedRegistrations st).all fun reg =>
     st.interfaceRegistry[reg.iface.ifaceId]? != none
 
 /-- AM4 audit remediation: Runtime check for the AL6-C

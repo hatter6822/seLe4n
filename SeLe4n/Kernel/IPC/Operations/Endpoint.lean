@@ -2112,19 +2112,6 @@ theorem storeDonationFramePush_machine_eq
   · have e2 : st'.machine = s1.machine := by unfold storeObject at hS2; cases hS2; rfl
     rw [e2, e1]
 
-theorem storeDonationFramePush_serviceRegistry_eq
-    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  have e1 : s1.serviceRegistry = st.serviceRegistry := by unfold storeObject at hS1; cases hS1; rfl
-  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
-  · exact e1
-  · have e2 : st'.serviceRegistry = s1.serviceRegistry := by
-      unfold storeObject at hS2; cases hS2; rfl
-    rw [e2, e1]
-
 theorem storeDonationFramePush_tlbShootdown_eq
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
     {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -3949,15 +3936,6 @@ theorem storeDonationHeadClear_scheduler_eq
   · rfl
   · unfold storeObject at hS; cases hS; rfl
 
-/-- WS-OD OD3.1: ...the service-registry half. -/
-theorem storeDonationHeadClear_serviceRegistry_eq
-    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (h : storeDonationHeadClear head? st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, _, hS⟩
-  · rfl
-  · unfold storeObject at hS; cases hS; rfl
-
 /-- ...and every table that names an object by id. -/
 theorem storeDonationHeadClear_referenceTables
     {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -4273,15 +4251,6 @@ theorem storeReplyReHead_scheduler_eq
   · rfl
   · unfold storeObject at hS; cases hS; rfl
 
-/-- WS-OD OD3.1: ...the service-registry half. -/
-theorem storeReplyReHead_serviceRegistry_eq
-    {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (h : storeReplyReHead scId head? st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, _, hS⟩
-  · rfl
-  · unfold storeObject at hS; cases hS; rfl
-
 /-- ...and every table that names an object by id. -/
 theorem storeReplyReHead_referenceTables
     {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -4562,16 +4531,6 @@ theorem storeDonationHeadPop_scheduler_eq
   rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
   · rfl
   · rw [storeReplyReHead_scheduler_eq hReHead, storeDonationHeadClear_scheduler_eq hClear]
-
-theorem storeDonationHeadPop_serviceRegistry_eq
-    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
-    {st st' : SystemState}
-    (h : storeDonationHeadPop scId head? st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
-  · rfl
-  · rw [storeReplyReHead_serviceRegistry_eq hReHead,
-      storeDonationHeadClear_serviceRegistry_eq hClear]
 
 /-- ...and every table that names an object by id. -/
 theorem storeDonationHeadPop_referenceTables
@@ -5247,14 +5206,6 @@ theorem spliceReplyFrameStores_machine_eq {st st' : SystemState}
   · unfold storeObject at hT1 hT2; cases hT1; cases hT2; rfl
   · unfold storeObject at hS1 hS2 hS3; cases hS1; cases hS2; cases hS3; rfl
 
-theorem spliceReplyFrameStores_serviceRegistry_eq {st st' : SystemState}
-    {rid above : SeLe4n.ReplyId} {r a : Reply}
-    (h : spliceReplyFrameStores st rid above r a = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
-  · unfold storeObject at hT1 hT2; cases hT1; cases hT2; rfl
-  · unfold storeObject at hS1 hS2 hS3; cases hS1; cases hS2; cases hS3; rfl
-
 theorem spliceReplyFrameStores_cdt_eq {st st' : SystemState}
     {rid above : SeLe4n.ReplyId} {r a : Reply}
     (h : spliceReplyFrameStores st rid above r a = .ok st') : st'.cdt = st.cdt := by
@@ -5543,13 +5494,6 @@ theorem severReplyFrameBelowStores_machine_eq {st st' : SystemState}
     {rid below : SeLe4n.ReplyId} {r b : Reply}
     (h : severReplyFrameBelowStores st rid below r b = .ok st') :
     st'.machine = st.machine := by
-  obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases h
-  unfold storeObject at hS1 hS2; cases hS1; cases hS2; rfl
-
-theorem severReplyFrameBelowStores_serviceRegistry_eq {st st' : SystemState}
-    {rid below : SeLe4n.ReplyId} {r b : Reply}
-    (h : severReplyFrameBelowStores st rid below r b = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
   obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases h
   unfold storeObject at hS1 hS2; cases hS1; cases hS2; rfl
 
@@ -5913,14 +5857,6 @@ theorem spliceReplyFrameOut_machine_eq {st st' : SystemState} {rid : SeLe4n.Repl
   · rfl
   · exact spliceReplyFrameStores_machine_eq hS
   · exact severReplyFrameBelowStores_machine_eq hS
-
-theorem spliceReplyFrameOut_serviceRegistry_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.serviceRegistry = st.serviceRegistry := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
-      ⟨_, _, _, _, _, _, _, _, hS⟩
-  · rfl
-  · exact spliceReplyFrameStores_serviceRegistry_eq hS
-  · exact severReplyFrameBelowStores_serviceRegistry_eq hS
 
 /-- The splice writes only Reply objects, so a notification in the post-state was
 one in the pre-state. -/
@@ -6725,12 +6661,6 @@ theorem spliceThreadReplyFrameOut_machine_eq (st : SystemState) (tcb : TCB) :
   · rw [h]
   · exact spliceReplyFrameOut_machine_eq h
 
-theorem spliceThreadReplyFrameOut_serviceRegistry_eq (st : SystemState) (tcb : TCB) :
-    (spliceThreadReplyFrameOut st tcb).serviceRegistry = st.serviceRegistry := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
-  · rw [h]
-  · exact spliceReplyFrameOut_serviceRegistry_eq h
-
 theorem spliceThreadReplyFrameOut_preserves_objects_invExt (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) : (spliceThreadReplyFrameOut st tcb).objects.invExt := by
   rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
@@ -6841,13 +6771,6 @@ theorem spliceReplyFrameOutOrSelf_machine_eq (st : SystemState) (rid : SeLe4n.Re
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
   · exact spliceReplyFrameOut_machine_eq h
-
-theorem spliceReplyFrameOutOrSelf_serviceRegistry_eq (st : SystemState)
-    (rid : SeLe4n.ReplyId) :
-    (spliceReplyFrameOutOrSelf st rid).serviceRegistry = st.serviceRegistry := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
-  · rw [h]
-  · exact spliceReplyFrameOut_serviceRegistry_eq h
 
 theorem spliceReplyFrameOutOrSelf_cdt_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
     (spliceReplyFrameOutOrSelf st rid).cdt = st.cdt := by
@@ -8462,10 +8385,10 @@ private theorem storeObject_scheduler_eq_z7 (st : SystemState) (oid : SeLe4n.Obj
 
 The one derivation every field frame for this operation is a corollary of.  Three
 copies of its case analysis had accumulated — the scheduler frame here, the
-machine frame in `Donation/Primitives.lean`, the serviceRegistry frame in
-`Lifecycle/Invariant/SuspendPreservation.lean` — which is one question answered
-in three places; they are now three-line consequences of this, and a fourth field
-frame is three more lines rather than a fourth copy.
+machine frame in `Donation/Primitives.lean`, and a service-registry frame (gone
+since WS-ZA ZA5.9, the registry being read off the endpoints) — which is one
+question answered in three places; they are now short consequences of this, and
+a further field frame is three more lines rather than another copy.
 
 It is stated as a **complete** decomposition — the SchedContext read, the three
 objects actually stored, and `st'` as the last stored state with only its
@@ -9561,13 +9484,6 @@ theorem returnDonatedSchedContext_post_scReply
       newOwner? h
   exact ⟨_, head?, hPost, rfl⟩
 
-/-- Helper: `storeObject` preserves the service registry. -/
-theorem storeObject_serviceRegistry_eq
-    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.serviceRegistry = st.serviceRegistry := by
-  unfold storeObject at hStore; cases hStore; rfl
-
 /-- Z7-C: returnDonatedSchedContext only modifies objects — the scheduler is preserved
 except for the reschedule flags its key hooks raise (KSC-1). -/
 theorem returnDonatedSchedContext_scheduler_eq
@@ -9587,23 +9503,6 @@ theorem returnDonatedSchedContext_scheduler_eq
     SeLe4n.Model.storeObject_scheduler_eq s2 s3 _ _ h3,
     storeDonationHeadPop_scheduler_eq hClear,
     SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]
-
-/-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
-service registry.  Relocated here from `SuspendPreservation`, where it was a
-private third copy of the case analysis above. -/
-theorem returnDonatedSchedContext_serviceRegistry_eq
-    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
-    (newOwner? : Option SeLe4n.ThreadId)
-    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
-    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
-  rw [hEq]
-  show s4.serviceRegistry = st.serviceRegistry
-  rw [storeObject_serviceRegistry_eq s3 s4 _ _ h4, storeObject_serviceRegistry_eq s2 s3 _ _ h3,
-    storeDonationHeadPop_serviceRegistry_eq hClear,
-    storeObject_serviceRegistry_eq st s1 _ _ h1]
 
 /-- **The donation return keeps the table references**: it writes no reference
 table, and its store chain is a `kindPreservingWrite`, which keeps every

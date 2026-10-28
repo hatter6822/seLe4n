@@ -122,7 +122,7 @@ Machine-readable mirror: [`docs/codebase_map.json`](../../docs/codebase_map.json
     N-domain `SecurityDomain`/`DomainFlowPolicy`, BIBA lattice alternatives (`bibaPolicy`,
     `bibaSecurityFlowsTo`), `DeclassificationPolicy` with enforcement operation.
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
-  - observer projection helpers, `ObservableState` (12 fields: objects, runnable, current, services,
+  - observer projection helpers, `ObservableState` (11 fields: objects, runnable, current,
     activeDomain, irqHandlers, objectIndex, domainSchedule, machineRegs,
     domainTimeRemaining, domainScheduleIndex, memory),
     `lowEquivalent` relation scaffold with refl/symm/trans.

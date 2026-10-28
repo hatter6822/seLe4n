@@ -320,7 +320,7 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
     RunQueueStage st st' :=
   have hF := Architecture.vspaceUnifyInstructionPage_frame h
   RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
-    (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2.1, hF.2.2.2.2.2.2.2.2])
+    (by simp only [SystemState.referenceTables, hF.2.2.2.2.2.2.2])
 
 /-- WS-ZA ZA5.4: the untyped reset is one free-index write
 (`untypedResetSlot_ok_frame`). -/

@@ -274,8 +274,7 @@ theorem restoreIncomingContext_machine_timer (st : SystemState) (tid : SeLe4n.Th
 -- WS-OD OD1.4: `endpointQueueRemove_machine` moved to
 -- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` and `abortPendingIpcOnEndpoint_machine`
 -- to `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, each beside the operation it
--- is about and beside that operation's `_scheduler_eq` / `_serviceRegistry_eq`
--- siblings.  The cancellation reclaim needs the abort's machine frame and does
+-- is about and beside that operation's `_scheduler_eq` sibling.  The cancellation reclaim needs the abort's machine frame and does
 -- not import this scheduler module; one home per question is the fix, not a
 -- second proof.
 

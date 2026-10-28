@@ -604,13 +604,6 @@ variable (st : SystemState) (w s : ThreadId)
     (st.unlinkReplyWaiter w s).objectIndexSet = st.objectIndexSet :=
   (congrArg SystemState.objectIndexSet (unlinkReplyWaiter_eq_objects st w s) :)
 
-@[simp] theorem linkReplyWaiter_serviceRegistry :
-    (st.linkReplyWaiter w s).serviceRegistry = st.serviceRegistry :=
-  (congrArg SystemState.serviceRegistry (linkReplyWaiter_eq_objects st w s) :)
-@[simp] theorem unlinkReplyWaiter_serviceRegistry :
-    (st.unlinkReplyWaiter w s).serviceRegistry = st.serviceRegistry :=
-  (congrArg SystemState.serviceRegistry (unlinkReplyWaiter_eq_objects st w s) :)
-
 end Fields
 
 theorem linkReplyWaiter_kindPreservingWrite (st : SystemState) (w s : ThreadId) :
@@ -706,10 +699,6 @@ theorem unlinkReplyWaiterOpt_runQueueRefined (h : st.runQueueRefined) :
   cases s? <;> simp [unlinkReplyWaiterOpt]
 @[simp] theorem unlinkReplyWaiterOpt_objectIndex :
     (st.unlinkReplyWaiterOpt w s?).objectIndex = st.objectIndex := by
-  cases s? <;> simp [unlinkReplyWaiterOpt]
-
-@[simp] theorem unlinkReplyWaiterOpt_serviceRegistry :
-    (st.unlinkReplyWaiterOpt w s?).serviceRegistry = st.serviceRegistry := by
   cases s? <;> simp [unlinkReplyWaiterOpt]
 
 end Opt

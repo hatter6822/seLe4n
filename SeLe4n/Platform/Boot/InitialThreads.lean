@@ -66,11 +66,11 @@ def startInitialThread (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
   state := startInitialThreadOnCore ist.state tid
   hAllTables := startInitialThreadOnCore_preserves_allTablesInvExtK ist.state tid ist.hAllTables
   hPerObjectSlots := startInitialThreadOnCore_preserves_perObjectSlotsInvariant ist.state tid
-    ist.hAllTables.1.1 ist.hPerObjectSlots
+    ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := startInitialThreadOnCore_preserves_perObjectMappingsInvariant ist.state tid
-    ist.hAllTables.1.1 ist.hPerObjectMappings
+    ist.hAllTables.objects.1 ist.hPerObjectMappings
   hLifecycleConsistent := startInitialThreadOnCore_preserves_objectTypeMetadataConsistent
-    ist.state tid ist.hAllTables.1.1 ist.hLifecycleConsistent
+    ist.state tid ist.hAllTables.objects.1 ist.hLifecycleConsistent
 
 /-- **WS-BP BP7.11** (the derivation, pinned): the boot's start *is* the kernel
 model's, on the intermediate state's `state`. -/
@@ -294,7 +294,7 @@ member; and the boot core's queue stays boot-sound
 theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
-  have hInv := ist.hAllTables.1.1
+  have hInv := ist.hAllTables.objects.1
   obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue, hBindings, hTab⟩ :=
     h
   have hFrame := startInitialThreadOnCore_frame ist.state tid
@@ -429,7 +429,7 @@ theorem startInitialThreads_capabilitiesLive (L : List SeLe4n.ThreadId)
   startInitialThreads_induct
     (fun i => ∀ r o, SystemState.namesAt i.state.slotCapAt r o → i.state.objectPresent o)
     (fun i tid _ hP r o hN => by
-      have hInv := i.hAllTables.1.1
+      have hInv := i.hAllTables.objects.1
       rw [startInitialThread_state] at hN ⊢
       rw [SystemState.namesAt_of_eq (startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid
         hInv r (SystemState.namesAt_occupied hN))] at hN
@@ -470,7 +470,7 @@ theorem startInitialThreads_untypedsSole (L : List SeLe4n.ThreadId)
         SystemState.untypedCapAt i.state.slotCapAt i.state.getUntyped? r' u → r = r') ∧
       ∀ u U, i.state.getUntyped? u = some U → U.children = [])
     (fun i tid _ hP => by
-      have hInv := i.hAllTables.1.1
+      have hInv := i.hAllTables.objects.1
       show (∀ u r r', SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
           (startInitialThreadOnCore i.state tid).getUntyped? r u →
           SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
@@ -496,7 +496,7 @@ theorem startInitialThreads_untypedNamed (L : List SeLe4n.ThreadId)
     (fun i => ∀ r u, SystemState.namesAt i.state.slotCapAt r u → i.state.getUntyped? u ≠ none →
       SystemState.untypedCapAt i.state.slotCapAt i.state.getUntyped? r u)
     (fun i tid _ hP => by
-      have hInv := i.hAllTables.1.1
+      have hInv := i.hAllTables.objects.1
       show ∀ r u, SystemState.namesAt (startInitialThreadOnCore i.state tid).slotCapAt r u →
           (startInitialThreadOnCore i.state tid).getUntyped? u ≠ none →
           SystemState.untypedCapAt (startInitialThreadOnCore i.state tid).slotCapAt
@@ -535,7 +535,7 @@ theorem startInitialThreads_bootSlotsListed (rs : List SlotRef) (L : List SeLe4n
     (hL : bootSlotsListed rs ist.state) : bootSlotsListed rs ist'.state :=
   startInitialThreads_induct (fun i => bootSlotsListed rs i.state)
     (fun i tid _ hP r hr => hP r
-      (startInitialThreadOnCore_slotCapAt_ne_none i.state tid i.hAllTables.1.1 r hr))
+      (startInitialThreadOnCore_slotCapAt_ne_none i.state tid i.hAllTables.objects.1 r hr))
     L ist ist' h hL
 
 /-- **WS-BP BP7.11**: the started stage leaves a state of linked boot shape:
@@ -594,7 +594,7 @@ theorem bootFromPlatformCheckedStartedFor_untypedMemoryInvariant
     startInitialThreads_induct (fun i => ∀ r c, i.state.slotCapAt r = some c → c.freeIndex = 0)
       (fun i tid _ hP r c hc => by
         have hc' : (startInitialThreadOnCore i.state tid).slotCapAt r = some c := hc
-        exact hP r c ((startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid i.hAllTables.1.1 r
+        exact hP r c ((startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid i.hAllTables.objects.1 r
           (by rw [hc']; exact Option.some_ne_none _)).symm.trans hc'))
       _ _ _ hStart (bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero cores config base hBase)
   have hA := linkBootCapabilities_agree config started
@@ -657,9 +657,9 @@ theorem startInitialThreads_ok_started :
     · rename_i hStart
       rcases List.mem_cons.mp hMem with rfl | hRest
       · exact startInitialThreads_induct (fun i => threadStarted i.state tid')
-          (fun i t hs hP => startInitialThreadOnCore_preserves_threadStarted hs i.hAllTables.1.1 hP)
-          rest _ _ h (startInitialThreadOnCore_threadStarted hStart ist.hAllTables.1.1 hR)
-      · exact ih _ _ (startInitialThreadOnCore_runQueueRefined _ _ ist.hAllTables.1.1 hR) h tid' hRest
+          (fun i t hs hP => startInitialThreadOnCore_preserves_threadStarted hs i.hAllTables.objects.1 hP)
+          rest _ _ h (startInitialThreadOnCore_threadStarted hStart ist.hAllTables.objects.1 hR)
+      · exact ih _ _ (startInitialThreadOnCore_runQueueRefined _ _ ist.hAllTables.objects.1 hR) h tid' hRest
     · cases h
 
 /-- **WS-BP BP7.11**: ...on the started boot, every thread the configuration
@@ -690,8 +690,8 @@ theorem bootFromPlatformCheckedStartedFor_allCores_threadStateConsistent
   refine threadStateConsistent_of_agree (linkBootCapabilities_agree config started)
     (linkBootCapabilities_scheduler config started) ?_
   exact (startInitialThreads_induct (fun i => i.state.runQueueRefined ∧ threadStateConsistent i.state)
-    (fun i t hs hP => ⟨startInitialThreadOnCore_runQueueRefined _ _ i.hAllTables.1.1 hP.1,
-      startInitialThreadOnCore_preserves_threadStateConsistent hs i.hAllTables.1.1 hP.1 hP.2⟩)
+    (fun i t hs hP => ⟨startInitialThreadOnCore_runQueueRefined _ _ i.hAllTables.objects.1 hP.1,
+      startInitialThreadOnCore_preserves_threadStateConsistent hs i.hAllTables.objects.1 hP.1 hP.2⟩)
     _ _ _ hStart ⟨hRun, bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config base hBase⟩).2
 
 /-- **WS-BP BP7.11**: ...and with it the inactive-flag relation the live
@@ -746,8 +746,8 @@ theorem bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique
     (fun i => i.state.runQueueRefined ∧ i.state.currentDequeuedUnique)
     (fun i t hs hP => by
       have hS := (startInitialThreadOnCore_runQueueStage _ _ hs).entry
-      have hR' := (hS.1 i.hAllTables.1.1 hP.1).2
-      exact ⟨hR', hS.2 i.hAllTables.1.1 hP.1 hR' hP.2⟩)
+      have hR' := (hS.1 i.hAllTables.objects.1 hP.1).2
+      exact ⟨hR', hS.2 i.hAllTables.objects.1 hP.1 hR' hP.2⟩)
     _ _ _ hStart
     ⟨hRun, bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique config base hBase⟩
 
@@ -772,7 +772,7 @@ theorem startInitialThreads_objects_of_nonTcb (L : List SeLe4n.ThreadId)
     (hObj : ist.state.objects[k]? = some obj) :
     ist'.state.objects[k]? = some obj :=
   startInitialThreads_induct (fun i => i.state.objects[k]? = some obj)
-    (fun i _ _ hP => startInitialThreadOnCore_objects_of_nonTcb _ _ i.hAllTables.1.1 _ _ hNot hP)
+    (fun i _ _ hP => startInitialThreadOnCore_objects_of_nonTcb _ _ i.hAllTables.objects.1 _ _ hNot hP)
     L ist ist' h hObj
 
 /-- **WS-BP BP7.11** (frame): every thread that resolved still resolves. -/
@@ -781,7 +781,7 @@ theorem startInitialThreads_getTcb?_isSome (L : List SeLe4n.ThreadId)
     (t : SeLe4n.ThreadId) (hT : (ist.state.getTcb? t).isSome = true) :
     (ist'.state.getTcb? t).isSome = true :=
   startInitialThreads_induct (fun i => (i.state.getTcb? t).isSome = true)
-    (fun i _ _ hP => startInitialThreadOnCore_getTcb?_isSome _ _ _ i.hAllTables.1.1 hP)
+    (fun i _ _ hP => startInitialThreadOnCore_getTcb?_isSome _ _ _ i.hAllTables.objects.1 hP)
     L ist ist' h hT
 
 /-- **WS-BP BP7.11**: the labeling's declared witnesses, installed on the idle
@@ -817,7 +817,7 @@ theorem startInitialThreads_eq_foldl :
     apply ih _ (List.nodup_cons.mp hNodup).2
     intro tid' hMem
     have hNe : tid' ≠ tid := fun hEq => (List.nodup_cons.mp hNodup).1 (hEq ▸ hMem)
-    exact initialThreadStartable_of_start_ne hNe ist.hAllTables.1.1
+    exact initialThreadStartable_of_start_ne hNe ist.hAllTables.objects.1
       (hAll tid' (List.mem_cons_of_mem _ hMem))
 
 /-- **WS-BP BP7.11**: **on the all-cores idle boot, a configured thread is

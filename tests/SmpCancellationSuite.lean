@@ -387,7 +387,6 @@ open SeLe4n.Testing
 #check @cancelIpcBlocking_reply_no_donation_to_victim
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_scheduler_eq
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_machine_eq
-#check @Lifecycle.Suspend.returnDonationToCancelledCaller_serviceRegistry_eq
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_ipcInvariant
 #check @Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_lookup

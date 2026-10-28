@@ -331,18 +331,6 @@ theorem setIPCBufferOp_scheduler_eq
     · cases hOk; rfl
     · contradiction
 
-/-- D3-F: `setIPCBufferOp` preserves the service registry. -/
-theorem setIPCBufferOp_serviceRegistry_eq
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · cases hOk; rfl
-    · contradiction
-
 /-- D3-F: `setIPCBufferOp` preserves IRQ handlers. -/
 theorem setIPCBufferOp_irqHandlers_eq
     (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)

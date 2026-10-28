@@ -10124,7 +10124,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 22 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 21 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -10140,7 +10140,7 @@ run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : to
 # disturb the predicate.  It consumes BOTH families, which is what makes an
 # under-declared write-set a soundness problem rather than stale documentation.
 run_check "INVARIANT" rg -n '^theorem predicateFramedByDisjointWrites($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_preserves_registryInterfaceValid\n(    [^\n]*\n)*    registryInterfaceValid st. :=\n  predicateFramedByDisjointWrites" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem registerInterface_preserves_noStaleEndpointQueueReferences\n(    [^\n]*\n)*    noStaleEndpointQueueReferences st. :=\n  predicateFramedByDisjointWrites" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 # The load-bearing negative: the disjointness premise is not decoration.
 # `storeObject` writes `.objects` and the queue-reference invariant reads it, so
@@ -22406,9 +22406,12 @@ run_check "INVARIANT" rg -n '^        \(serviceEndpointWriteAdmitted ctx tid epI
 # record is cleared in its slot.
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_ofWord_eq_words($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n -U '^      st\.updateTcb caller\n        \(TCB\.withReturnWords · \(ServiceId\.ofNat epId\.toNat\)\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearEndpointRegistration_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearServiceRecord_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem registerServicePerform_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
-run_check "INVARIANT" rg -n -U '^        clearEndpointRegistration \(eraseServiceRegistration st \(ServiceId\.ofNat epId\.toNat\)\)\n          reg\.endpointCap \(ServiceId\.ofNat epId\.toNat\)$' SeLe4n/Kernel/Service/Registry.lean
+# WS-ZA ZA5.9: the compiled register arm reads its checks and builds its record
+# from the decoded words, so an admitted register builds no registration.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem dispatchServiceRegisterByR_eq_impl :$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def revokeServiceByRecordedRegistrationPerform \(st : SystemState\) \(epId : SeLe4n\.ObjId\) :\n    SystemState :=\n  clearServiceRecord st epId$' SeLe4n/Kernel/Service/Registry.lean
 run_negative_check "INVARIANT" rg -n '\bdecodeSyscallArgsFromState_of_routedConfigure\b' SeLe4n/
 # WS-ZA ZA5.5 (fix): an endpoint's final delete drops its service registration
 # before the finalisation, so the endpoint retires and its untyped resets.
@@ -22457,14 +22460,16 @@ run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSol
 run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
 
 # --- The tables that name objects by id, and the objects' back-links to them ---
-# Two tables name kernel objects outside every slot (the service registry and
-# the interrupt-handler table).  Each reference is answered by the object it
-# names; these anchors hold the relation, not the names.
-#
-# The invariant states each direction, so a back-link can be read in place of a
-# table walk.  The registry's two directions and the interrupt table's two, in
-# one structure, which ends there.
-run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),\n    st\.serviceRegistry\[sid\]\? = some reg →\n    ∃ e, reg\.endpointCap\.target = \.object e ∧ sid = ServiceId\.ofNat e\.toNat ∧\n      \(objTableBackLinks st\.objects\[e\]\?\)\.1\.registered = true(\n([ \t][^\n]*)?)*\n  serviceStored : ∀ e : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[e\]\?\)\.1\.registered = true →\n    st\.serviceRegistry\[ServiceId\.ofNat e\.toNat\]\? =\n      some \(\(objTableBackLinks st\.objects\[e\]\?\)\.1\.registrationAt e\)(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
+# Two tables named kernel objects outside every slot (the service registry and
+# the interrupt-handler table).  Since WS-ZA ZA5.9 the service registry is no
+# table: a registration is its endpoint's record, and the registry is read off
+# the endpoint at the service's own id -- one read, never a scan, no second
+# copy.  The interrupt table's two directions stay an invariant, in one
+# structure, which ends there.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def SystemState\.serviceRegistry \(st : SystemState\) : ServiceRegistryView where\n  read sid :=\n    match st\.getEndpoint\? \(SeLe4n\.ObjId\.ofNat sid\.toNat\) with\n    \| some ep =>\n      if ep\.serviceRegistered then' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n '^  serviceRegistry :' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, [^\n]*\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n$' SeLe4n/Model/TableReferences.lean
+run_negative_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded[^\n]*(\n([ \t][^\n]*)?)*\n  registry :' SeLe4n/Model/TableReferences.lean
 # The consumer: clear back-links mean no table names the object.  Without this
 # the fields would be recorded and never read.
 run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
@@ -22472,10 +22477,12 @@ run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByN
 # stopped preserving it would leave the back-link and the table disagreeing.
 run_check "INVARIANT" rg -n '^theorem registerService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem revokeService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
-# The registration's validity and uniqueness are now derived from the
-# back-links, not separately maintained: one question, one answer.
-run_check "INVARIANT" rg -n '^theorem registryEndpointValid_of_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem registryEndpointUnique_of_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
+# The registration's validity and uniqueness hold of every state, the registry
+# being read off the endpoints: one question, one answer.
+run_check "INVARIANT" rg -n '^theorem registryEndpointValid_holds \(st : SystemState\) : registryEndpointValid st :=$' SeLe4n/Kernel/Service/Registry/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem registryEndpointUnique_holds \(st : SystemState\) : registryEndpointUnique st := by$' SeLe4n/Kernel/Service/Registry/Invariant.lean
+# The boot's registry is empty because no boot endpoint carries a flag.
+run_check "INVARIANT" rg -n '^theorem serviceRegistry_none_of_bootShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # The registry's own check reads the endpoint's field; the registry fold it
 # replaced is gone, so the two cannot drift apart.
 run_negative_check "INVARIANT" rg -n '\bhasEndpointRegistered\b' SeLe4n tests
@@ -22494,15 +22501,16 @@ run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\
 run_check "INVARIANT" rg -n -U '^structure Endpoint where(\n([ \t][^\n]*)?)*\n  serviceRegistered : Bool := false$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def objTableBackLinks : Option KernelObject → EndpointService × Bool$' SeLe4n/Model/TableReferences.lean
 run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
-# The endpoint holds the registration's words beside its flag, and the table
-# and the words are held equal (`serviceStored`) until the table retires.  The
+# The endpoint holds the registration's words beside its flag, and since the
+# table retired (WS-ZA ZA5.9) the registry reads them at the endpoint.  The
 # back-link is the record while the flag is set and the clear record otherwise,
 # so a clear flag is a clear back-link whatever words an endpoint carries.
 run_check "INVARIANT" rg -n '^structure EndpointService where$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false\)$' SeLe4n/Model/ObjectSlots.lean
 run_check "INVARIANT" rg -n '^theorem registrationAt_ofRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Interface.lean
-run_check "INVARIANT" rg -n '^theorem SystemState\.tableReferencesRecorded\.registry_eq_stored($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
-run_check "INVARIANT" rg -n '^      \{ st\.rewriteObject epId \(\.endpoint \(ep\.withService \(EndpointService\.ofRegistration reg\)\)\)$' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.serviceRegistry_of_endpoint($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
+# The register's one write: its endpoint's slot, and nothing beside it.
+run_check "INVARIANT" rg -n -U '^            \.ok \(\(\), st\.rewriteObject epId\n                \(\.endpoint \(ep\.withService \(EndpointService\.ofRegistration reg\)\)\)\n                ⟨_, hObj, rfl, rfl⟩\)$' SeLe4n/Kernel/Service/Registry.lean
 # The lookups read the endpoint's record, not the table: the live one and the
 # frozen one.
 run_check "INVARIANT" rg -n -U '^def lookupServiceByRecordedRegistration[^\n]*(\n([ \t][^\n]*)?)*\n      \| true => \.ok \(ep\.service\.registrationAt epId, st\)$' SeLe4n/Kernel/Service/Registry.lean

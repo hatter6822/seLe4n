@@ -102,12 +102,10 @@ structure sharedViewUnchanged (ctx : LabelingContext) (observer : IfObserver)
   objectIndex : projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st
   domainSchedule : projectDomainSchedule ctx observer st' = projectDomainSchedule ctx observer st
   memory : projectMemory ctx observer st' = projectMemory ctx observer st
-  serviceRegistry :
-    projectServiceRegistry ctx observer st' = projectServiceRegistry ctx observer st
 
 theorem sharedViewUnchanged_refl (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) : sharedViewUnchanged ctx observer st st :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 theorem sharedViewUnchanged_trans {ctx : LabelingContext} {observer : IfObserver}
     {st stMid st' : SystemState}
@@ -116,13 +114,12 @@ theorem sharedViewUnchanged_trans {ctx : LabelingContext} {observer : IfObserver
     sharedViewUnchanged ctx observer st st' :=
   ⟨h₂.objects.trans h₁.objects,
    h₂.irqHandlers.trans h₁.irqHandlers, h₂.objectIndex.trans h₁.objectIndex,
-   h₂.domainSchedule.trans h₁.domainSchedule, h₂.memory.trans h₁.memory,
-   h₂.serviceRegistry.trans h₁.serviceRegistry⟩
+   h₂.domainSchedule.trans h₁.domainSchedule, h₂.memory.trans h₁.memory⟩
 
 /-- SM8.B.2 (the constructor the single-core NI surface supplies): preserving
 the whole global projection preserves its shared half.
 
-The six components are read off `projectState` by `congrArg`, which is what
+The five components are read off `projectState` by `congrArg`, which is what
 makes `nonInterference_perCore` a corollary of the existing
 `step_preserves_projection` rather than a re-proof of it. -/
 theorem sharedViewUnchanged_of_globalProjection (ctx : LabelingContext)
@@ -131,13 +128,11 @@ theorem sharedViewUnchanged_of_globalProjection (ctx : LabelingContext)
     sharedViewUnchanged ctx observer st st' :=
   ⟨congrArg ObservableState.objects h,
    congrArg ObservableState.irqHandlers h, congrArg ObservableState.objectIndex h,
-   congrArg ObservableState.domainSchedule h, congrArg ObservableState.memory h,
-   congrArg ObservableState.serviceRegistry h⟩
+   congrArg ObservableState.domainSchedule h, congrArg ObservableState.memory h⟩
 
 /-- SM8.B.2 (the constructor a *state-level* frame supplies): a transition that
 leaves every **observable** object alone, and leaves the object index, the
-IRQ table, physical memory, the domain schedule and the service registry alone,
-does not move the shared half of any observer's view.
+IRQ table, physical memory and the domain schedule alone, does not move the shared half of any observer's view.
 
 The `objects` premise is restricted to observable ids deliberately: it is the
 plan's "does not mutate any object `o` with `labelOf o ⊑ L`", and it subsumes
@@ -150,10 +145,9 @@ theorem sharedViewUnchanged_of_state_frames (ctx : LabelingContext) (observer : 
     (hIndex : st'.objectIndex = st.objectIndex)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hMemory : st'.machine.memory = st.machine.memory)
-    (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule)
-    (hRegistry : st'.serviceRegistry = st.serviceRegistry) :
+    (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     sharedViewUnchanged ctx observer st st' := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · funext oid
     simp only [projectObjects, SystemState.getObject?]
     by_cases hObs : objectObservable ctx observer oid = true
@@ -164,7 +158,6 @@ theorem sharedViewUnchanged_of_state_frames (ctx : LabelingContext) (observer : 
   · simp only [projectObjectIndex]; rw [hIndex]
   · simp only [projectDomainSchedule]; rw [hDomSched]
   · exact projectMemory_eq_of_memory_eq _ _ _ _ hMemory
-  · exact projectServiceRegistry_eq_of_serviceRegistry_eq _ _ _ _ hRegistry
 
 -- ============================================================================
 -- §1b  The per-core view's two fragments, spelled out
@@ -180,8 +173,7 @@ Stated for a general `IfObserver` (SM8.A's `onCore_sharedFragment` is the
         irqHandlers := projectIrqHandlers ctx observer st
         objectIndex := projectObjectIndex ctx observer st
         domainSchedule := projectDomainSchedule ctx observer st
-        memory := projectMemory ctx observer st
-        serviceRegistry := projectServiceRegistry ctx observer st } := rfl
+        memory := projectMemory ctx observer st } := rfl
 
 /-- Definition-pinning: the per-core fragment of the SM4.D per-core projection —
 every component an `…OnCore c` read, core `c` and no other. -/
@@ -229,7 +221,7 @@ theorem crossCoreNonInterference_of_agreeOn (ctx : LabelingContext) (observer : 
   refine ObservableState.ext_fragments ?_ ?_
   · simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq]
     exact ⟨hShared.objects, hShared.irqHandlers, hShared.objectIndex,
-      hShared.domainSchedule, hShared.memory, hShared.serviceRegistry⟩
+      hShared.domainSchedule, hShared.memory⟩
   · simp only [projectStateOnCore_perCoreFragment, PerCoreObservableFragment.mk.injEq]
     exact ⟨projectRunnableOnCore_frame _ _ hAgree.runQueue,
       projectCurrentOnCore_frame _ _ hAgree.current,
@@ -303,12 +295,11 @@ theorem crossCoreNonInterference_of_state_frames (ctx : LabelingContext)
     (hIndex : st'.objectIndex = st.objectIndex)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hMemory : st'.machine.memory = st.machine.memory)
-    (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule)
-    (hRegistry : st'.serviceRegistry = st.serviceRegistry) :
+    (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference ctx observer hne hRuns
     (sharedViewUnchanged_of_state_frames ctx observer hObjects hIndex hIrq
-      hMemory hDomSched hRegistry)
+      hMemory hDomSched)
 
 -- ============================================================================
 -- §3  SM8.B.1 — `nonInterference_perCore` (the single-core surface, generalised)
@@ -347,7 +338,7 @@ theorem sharedViewUnchanged_of_projectionOnCore (ctx : LabelingContext)
   have hFrag : (projectStateOnCore ctx observer st' c).sharedFragment
       = (projectStateOnCore ctx observer st c).sharedFragment := congrArg _ h
   simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq] at hFrag
-  exact ⟨hFrag.1, hFrag.2.1, hFrag.2.2.1, hFrag.2.2.2.1, hFrag.2.2.2.2.1, hFrag.2.2.2.2.2⟩
+  exact ⟨hFrag.1, hFrag.2.1, hFrag.2.2.1, hFrag.2.2.2.1, hFrag.2.2.2.2⟩
 
 /-- SM8.B.1 (**the same bridge at an arbitrary core**): per-core preservation on
 the one core a transition writes, plus confinement to that core, gives
@@ -1554,8 +1545,8 @@ theorem vspaceLookup_confinedToCore (st st' : SystemState) (asid : SeLe4n.ASID)
     observableSlotsConfinedToCore st st' c₀ :=
   observableSlotsConfinedToCore_of_eq c₀ (vspaceLookup_preserves_state st asid vaddr paddr st' hStep)
 
-/-- SM8.B.3: `registerService` writes the service registry and its endpoint's
-`serviceRegistered` — neither the scheduler nor the machine. -/
+/-- SM8.B.3: `registerService` writes its endpoint's service record — neither
+the scheduler nor the machine. -/
 theorem registerService_confinedToCore (st st' : SystemState) (reg : ServiceRegistration)
     (c₀ : CoreId) (hStep : registerService reg st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
@@ -1574,15 +1565,15 @@ theorem registerServiceChecked_confinedToCore (ctx : LabelingContext) (st st' : 
   rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg st hFlow] at hStep
   exact registerService_confinedToCore st st' reg c₀ hStep
 
-/-- SM8.B.3: `revokeService` erases a registration and clears its endpoint's
-`serviceRegistered` — neither the scheduler nor the machine. -/
+/-- SM8.B.3: `revokeService` clears its endpoint's service record — neither the
+scheduler nor the machine. -/
 theorem revokeService_confinedToCore (st st' : SystemState) (sid : ServiceId)
     (c₀ : CoreId) (hStep : revokeService sid st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
     (revokeService_preserves_scheduler st st' sid hStep) ?_
-  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
-  rw [clearEndpointRegistration_eq_withObjects]
+  obtain ⟨_, _, _, rfl⟩ := revokeService_ok hStep
+  rfl
 
 /-- SM8.B.3: the checked revoke is the revoke of the registration its endpoint
 records, or a denial, so it is confined too. -/
@@ -2054,11 +2045,10 @@ theorem nonInterference_perCore_registerServiceChecked (ctx : LabelingContext)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hCallerHigh : threadObservable ctx observer caller = false)
-    (hRegInv : st.serviceRegistry.invExt)
     (hStep : registerServiceChecked ctx caller reg st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.registerServiceChecked caller reg hCallerHigh hRegInv hStep)
+    (.registerServiceChecked caller reg hCallerHigh hStep)
     (registerServiceChecked_confinedToCore ctx st st' caller reg bootCoreId hStep)
 
 theorem nonInterference_perCore_revokeServiceChecked (ctx : LabelingContext)
@@ -2067,11 +2057,10 @@ theorem nonInterference_perCore_revokeServiceChecked (ctx : LabelingContext)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hCallerHigh : threadObservable ctx observer caller = false)
-    (hRec : st.tableReferencesRecorded)
     (hStep : revokeServiceChecked ctx caller epId st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.revokeServiceChecked caller epId hCallerHigh hRec hStep)
+    (.revokeServiceChecked caller epId hCallerHigh hStep)
     (revokeServiceChecked_confinedToCore ctx st st' caller epId bootCoreId hStep)
 
 theorem nonInterference_perCore_serviceQueryChecked (ctx : LabelingContext)
@@ -2356,14 +2345,12 @@ theorem projectState_eq_of_objects_projection_eq (ctx : LabelingContext) (observ
     (hSched : st'.scheduler = st.scheduler)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hMachine : st'.machine = st.machine)
-    (hRegistry : st'.serviceRegistry = st.serviceRegistry) :
+    (hMachine : st'.machine = st.machine) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [projectState]
   congr 1 <;>
     first
       | exact hObjects
-      | exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st hRegistry
       | simp only [projectObjectIndex, hIndex]
       | simp [projectRunnable, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
               projectDomainSchedule, projectDomainScheduleIndex, projectMachineRegs, hSched,
@@ -2437,11 +2424,10 @@ theorem crossCoreNonInterference_of_disjoint_lockSet (ctx : LabelingContext)
     (hIndex : st'.objectIndex = st.objectIndex)
     (hIrq : st'.irqHandlers = st.irqHandlers)
     (hMemory : st'.machine.memory = st.machine.memory)
-    (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule)
-    (hRegistry : st'.serviceRegistry = st.serviceRegistry) :
+    (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
   refine crossCoreNonInterference_of_state_frames ctx observer hne hRuns ?_ hIndex
-    hIrq hMemory hDomSched hRegistry
+    hIrq hMemory hDomSched
   intro oid hObs
   by_cases hMem : oid ∈ writeSet
   · exact absurd hObs (by rw [hDisjoint oid hMem]; simp)

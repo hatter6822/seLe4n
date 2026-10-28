@@ -1141,8 +1141,6 @@ structure SystemState where
   asidTable : RHTable SeLe4n.ASID SeLe4n.ObjId := {}
   /-- WS-Q1-B: Registry of concrete interface specifications keyed by InterfaceId. -/
   interfaceRegistry : RHTable SeLe4n.InterfaceId InterfaceSpec := {}
-  /-- WS-Q1-B: Registry of capability-mediated service registrations keyed by ServiceId. -/
-  serviceRegistry : RHTable ServiceId ServiceRegistration := {}
   /-- WS-E4/C-03: the Capability Derivation Tree.  Its nodes are slots: since
       WS-ZA ZA5.3 part 2 a slot is its own derivation node, as seL4's `cte_t`
       is its own mapping-database node. -/
@@ -1685,7 +1683,6 @@ instance : Inhabited SystemState where
     }
     asidTable := {}
     interfaceRegistry := {}
-    serviceRegistry := {}
     cdt := .empty
     tlb := TlbState.empty
     -- WS-SM SM7.A: TLB-shootdown coordination state starts quiescent
@@ -1771,16 +1768,15 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.asidTable.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
-  -- Service and interface registries
+  -- Interface registry (the service registry is the endpoints' records,
+  -- `SystemState.serviceRegistry`, and holds no table)
   st.interfaceRegistry.invExtK ∧
-  st.serviceRegistry.invExtK ∧
   -- RHSet invExtK (via table field)
   st.objectIndexSet.table.invExtK
 
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -1944,7 +1940,7 @@ theorem default_auditLogBounded :
   SeLe4n.Kernel.auditLogBounded_nil
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 7 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 6 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -1953,8 +1949,24 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.asidTable.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
     st.interfaceRegistry.invExtK ∧
-    st.serviceRegistry.invExtK ∧
     st.objectIndexSet.table.invExtK := h
+
+namespace SystemState.allTablesInvExtK
+
+/-! Named projections of `allTablesInvExtK`, so no consumer counts conjuncts:
+a table added or removed shifts no reader. -/
+
+theorem objects {st : SystemState} (h : st.allTablesInvExtK) : st.objects.invExtK := h.1
+theorem irqHandlers {st : SystemState} (h : st.allTablesInvExtK) : st.irqHandlers.invExtK := h.2.1
+theorem asidTable {st : SystemState} (h : st.allTablesInvExtK) : st.asidTable.invExtK := h.2.2.1
+theorem objectTypes {st : SystemState} (h : st.allTablesInvExtK) :
+    st.lifecycle.objectTypes.invExtK := h.2.2.2.1
+theorem interfaceRegistry {st : SystemState} (h : st.allTablesInvExtK) :
+    st.interfaceRegistry.invExtK := h.2.2.2.2.1
+theorem objectIndexSet {st : SystemState} (h : st.allTablesInvExtK) :
+    st.objectIndexSet.table.invExtK := h.2.2.2.2.2
+
+end SystemState.allTablesInvExtK
 
 /-- The object store's entry for `id`, as stored.  Every typed read below is
 compiled through this one lookup (each by a `@[csimp]` equation beside it):
@@ -4655,32 +4667,6 @@ theorem consumeCallerReply_eq_link (st : SystemState) (caller : SeLe4n.ThreadId)
     rw [hOk] at h
     cases h
 
-/-- WS-RR RR8.5: `consumeCallerReply` leaves the service registry untouched —
-both legs are object-store writes.  The cancellation path's
-`consumeReplyLink_serviceRegistry_eq` reads it through the bridge. -/
-theorem consumeCallerReply_serviceRegistry_eq (st st' : SystemState)
-    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
-    st'.serviceRegistry = st.serviceRegistry := by
-  unfold consumeCallerReply at hStep
-  cases hCons : consumeReply rid st with
-  | error e => simp [hCons] at hStep
-  | ok p1 =>
-    obtain ⟨_, st1⟩ := p1
-    simp only [hCons] at hStep
-    have h1 : st1.serviceRegistry = st.serviceRegistry := by
-      unfold consumeReply at hCons
-      cases hGet : st.getReply? rid with
-      | none => rw [hGet] at hCons; cases hCons; rfl
-      | some r => rw [hGet] at hCons; unfold storeObject at hCons; cases hCons; rfl
-    cases hT : st1.getTcb? caller with
-    | none =>
-      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-      rw [← hStep]; exact h1
-    | some tcb =>
-      simp only [hT] at hStep
-      unfold storeObject at hStep; cases hStep; exact h1
-
 /-- **WS-RR RR8.5: the sharp pointwise reading of the consume at a TCB-holding
 key other than the caller's** — untouched.  The Reply leg writes a `.reply`
 value, whose key can never be one that holds a TCB, and the TCB leg writes the
@@ -5606,6 +5592,90 @@ theorem ownedSlots_eq_nil_of_not_holdsSlots
 
 end SystemState
 
+/-- **The service registry's view** (WS-ZA ZA5.9): a registration for each
+service id, or none.  Not a table: the registry is read off the endpoints. -/
+structure ServiceRegistryView where
+  /-- The registration under a service id, if any. -/
+  read : ServiceId → Option ServiceRegistration
+
+instance : GetElem? ServiceRegistryView ServiceId ServiceRegistration
+    (fun v sid => (v.read sid).isSome) where
+  getElem v sid h := (v.read sid).get h
+  getElem? v sid := v.read sid
+
+@[simp] theorem ServiceRegistryView.getElem?_eq (v : ServiceRegistryView) (sid : ServiceId) :
+    v[sid]? = v.read sid := rfl
+
+/-- Two views reading alike are one view. -/
+theorem ServiceRegistryView.ext {a b : ServiceRegistryView}
+    (h : ∀ sid : ServiceId, a[sid]? = b[sid]?) : a = b := by
+  cases a; cases b; congr; funext sid; exact h sid
+
+/-- **WS-ZA ZA5.9: the service registry, read off the endpoints.**  A service's
+identity is its endpoint's (ZA5.6), and the endpoint holds the registration's
+flag (ZA5.7) and words (ZA5.8), so the registration under `sid` is the one the
+endpoint with that id records: one read of the object store at that one key —
+O(1), never a scan — and no table.  This is the specification's registry; the
+compiled register, query and revoke read the endpoint's flag in place and never
+build the registration this returns. -/
+@[inline] def SystemState.serviceRegistry (st : SystemState) : ServiceRegistryView where
+  read sid :=
+    match st.getEndpoint? (SeLe4n.ObjId.ofNat sid.toNat) with
+    | some ep =>
+      if ep.serviceRegistered then some (ep.service.registrationAt (SeLe4n.ObjId.ofNat sid.toNat))
+      else none
+    | none => none
+
+/-- The registry's entry under `sid`, read at its endpoint. -/
+theorem SystemState.serviceRegistry_getElem? (st : SystemState) (sid : ServiceId) :
+    st.serviceRegistry[sid]? =
+      match st.objects[SeLe4n.ObjId.ofNat sid.toNat]? with
+      | some (.endpoint ep) =>
+        if ep.serviceRegistered then some (ep.service.registrationAt (SeLe4n.ObjId.ofNat sid.toNat))
+        else none
+      | _ => none := by
+  show (match st.getEndpoint? (SeLe4n.ObjId.ofNat sid.toNat) with
+    | some ep =>
+      if ep.serviceRegistered then some (ep.service.registrationAt (SeLe4n.ObjId.ofNat sid.toNat))
+      else none
+    | none => none) = _
+  unfold SystemState.getEndpoint?
+  cases st.objects[SeLe4n.ObjId.ofNat sid.toNat]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- States with one object store have one registry. -/
+theorem SystemState.serviceRegistry_eq_of_objects {st st' : SystemState}
+    (h : st'.objects = st.objects) : st'.serviceRegistry = st.serviceRegistry :=
+  ServiceRegistryView.ext fun sid => by
+    rw [SystemState.serviceRegistry_getElem?, SystemState.serviceRegistry_getElem?, h]
+
+/-- **A store write away from a service's endpoint keeps its registry entry.** -/
+theorem SystemState.serviceRegistry_getElem?_insert_ne {st st' : SystemState}
+    {e : SeLe4n.ObjId} {o : KernelObject} (hInv : st.objects.invExt)
+    (hO : st'.objects = st.objects.insert e o) {sid : ServiceId}
+    (h : e ≠ SeLe4n.ObjId.ofNat sid.toNat) :
+    st'.serviceRegistry[sid]? = st.serviceRegistry[sid]? := by
+  rw [SystemState.serviceRegistry_getElem?, SystemState.serviceRegistry_getElem?, hO]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects _ _ _
+    (fun hb => h (eq_of_beq hb)) hInv]
+
+/-- **An endpoint written into the store answers the registry at its own id**
+with the record it holds. -/
+theorem SystemState.serviceRegistry_getElem?_insert_endpoint {st st' : SystemState}
+    {e : SeLe4n.ObjId} {ep : Endpoint} (hInv : st.objects.invExt)
+    (hO : st'.objects = st.objects.insert e (.endpoint ep)) :
+    st'.serviceRegistry[ServiceId.ofNat e.toNat]? =
+      if ep.serviceRegistered then some (ep.service.registrationAt e) else none := by
+  rw [SystemState.serviceRegistry_getElem?, hO]
+  show (match (st.objects.insert e (.endpoint ep))[e]? with
+    | some (.endpoint ep) => if ep.serviceRegistered then some (ep.service.registrationAt e) else none
+    | _ => none) = _
+  simp only [RHTable_getElem?_eq_get?]
+  rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects _ _ hInv]
+
+
 theorem storeObject_preserves_objectTypeMetadataConsistent
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)
@@ -5652,16 +5722,15 @@ theorem storeObject_preserves_allTablesInvExtK
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.allTablesInvExtK := by
   unfold storeObject at hStore; cases hStore
-  unfold SystemState.allTablesInvExtK at hAll ⊢
-  simp only
   -- Extract components from pre-state invariant
-  have hObj := hAll.1
-  have hIrq := hAll.2.1
-  have hAsid := hAll.2.2.1
-  have hObjTypes := hAll.2.2.2.1
-  have hIfaceReg := hAll.2.2.2.2.1
-  have hSvcReg := hAll.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2
+  have hObj := hAll.objects
+  have hIrq := hAll.irqHandlers
+  have hAsid := hAll.asidTable
+  have hObjTypes := hAll.objectTypes
+  have hIfaceReg := hAll.interfaceRegistry
+  have hObjIdxSet := hAll.objectIndexSet
+  unfold SystemState.allTablesInvExtK
+  simp only
   -- Prove objectIndexSet insert preserves invExtK
   have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
@@ -5688,9 +5757,8 @@ theorem storeObject_preserves_allTablesInvExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
   have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
-  -- Compose all 7 components
-  exact ⟨hObj', hIrq, hAsid', hObjTypes', hIfaceReg, hSvcReg,
-         hObjIdxSet'⟩
+  -- Compose all 6 components
+  exact ⟨hObj', hIrq, hAsid', hObjTypes', hIfaceReg, hObjIdxSet'⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proof
@@ -5962,10 +6030,6 @@ theorem rewriteObject_objectIndexSet (st : SystemState) (id : SeLe4n.ObjId)
 theorem rewriteObject_asidTable (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
     (h : st.rewriteAdmissible id new) :
     (st.rewriteObject id new h).asidTable = st.asidTable := rfl
-
-theorem rewriteObject_serviceRegistry (st : SystemState) (id : SeLe4n.ObjId)
-    (new : KernelObject) (h : st.rewriteAdmissible id new) :
-    (st.rewriteObject id new h).serviceRegistry = st.serviceRegistry := rfl
 
 -- The table after the rewrite.
 
@@ -6707,10 +6771,6 @@ theorem updateTcb_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB 
     (st.updateTcb tid f).asidTable = st.asidTable := by
   unfold updateTcb; split <;> rfl
 
-theorem updateTcb_serviceRegistry (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
-    (st.updateTcb tid f).serviceRegistry = st.serviceRegistry := by
-  unfold updateTcb; split <;> rfl
-
 /-- **WS-RR RR8.16** (`v0.35.200`): the typed read-modify-write never touches
 either derivation table — it is `rewriteObject` at one key, and a rewrite writes
 the object store and nothing else. -/
@@ -6883,11 +6943,6 @@ theorem updateSchedContext_objectIndexSet (st : SystemState) (scId : SeLe4n.Sche
 theorem updateSchedContext_asidTable (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
     (st.updateSchedContext scId f).asidTable = st.asidTable := by
-  unfold updateSchedContext; split <;> rfl
-
-theorem updateSchedContext_serviceRegistry (st : SystemState) (scId : SeLe4n.SchedContextId)
-    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
-    (st.updateSchedContext scId f).serviceRegistry = st.serviceRegistry := by
   unfold updateSchedContext; split <;> rfl
 
 theorem updateSchedContext_preserves_objects_invExt (st : SystemState)

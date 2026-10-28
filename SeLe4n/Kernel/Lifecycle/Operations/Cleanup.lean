@@ -1097,14 +1097,6 @@ each use site, for the reason the purges' own frames give. -/
   · rfl
   · split <;> simp [SystemState.updateTcb_lifecycle]
 
-@[simp] theorem releaseSchedContextBinding_serviceRegistry (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext) :
-    (releaseSchedContextBinding st scId sc).serviceRegistry = st.serviceRegistry := by
-  unfold releaseSchedContextBinding
-  split
-  · rfl
-  · split <;> simp [SystemState.updateTcb_serviceRegistry]
-
 /-- **`v0.35.185` (register row 63): what the release writes to the object table.**
 
 Its **one** object write, on the arm that has one: the released thread's binding,

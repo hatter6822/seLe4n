@@ -441,31 +441,6 @@ theorem abortPendingIpcOnEndpoint_schedContext_forward
     (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
     epId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPre
 
-/-- WS-OD OD1.4: the abort leaves the service registry alone.
-
-The third of the three fields the cancellation reclaim's frame theorems pin
-(`_scheduler_eq`, `_machine`, `_serviceRegistry_eq`); stated beside its two
-siblings so `returnDonationToCancelledCaller` composes rather than re-runs the
-case analysis. -/
-theorem abortPendingIpcOnEndpoint_serviceRegistry_eq
-    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (st st' : SystemState)
-    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  unfold abortPendingIpcOnEndpoint at h
-  split at h
-  · simp at h
-  · rename_i st1 hER
-    have hReg1 := endpointQueueRemove_serviceRegistry_eq epId isReceiveQ tid st st1 hER
-    split at h
-    · simp at h
-    · rename_i tcb hLk
-      simp only [storeObject] at h
-      split at h <;>
-        · simp only [Except.ok.injEq] at h
-          subst h
-          exact hReg1
-
 /-- Z6-C1/C2/C3: Unblock a thread whose IPC operation has timed out due to
 SchedContext budget expiry.
 

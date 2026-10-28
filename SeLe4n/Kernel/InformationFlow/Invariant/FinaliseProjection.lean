@@ -1915,7 +1915,6 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
       objectObservable ctx observer w = false)
     (hK : target ≠ 0 → ∀ y, untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y = true →
       objectObservable ctx observer y = false)
-    (hRec : st.tableReferencesRecorded)
     (hR : recorder ≠ 0 →
       objectObservable ctx observer (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
     projectState ctx observer (retireFinalisedObject ec target recorder st) =
@@ -1934,7 +1933,7 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   have hX := hx h0
   rw [SystemState.getObject?_eq_getElem] at hEp
   have hP0 : projectState ctx observer s0 = projectState ctx observer st :=
-    revokeServiceByRecordedRegistration_preserves_projection ctx observer _ st s0 hX hObjInv hRec
+    revokeServiceByRecordedRegistration_preserves_projection ctx observer _ st s0 hX hObjInv
       (by unfold revokeServiceByRecordedRegistration; rw [SystemState.getObject?_eq_getElem, hEp]
           simp only [hC]; exact hRev)
   have hBk := fun {k} {o} (ho : s0.objects[k]? = some o) (hN : ∀ e, o ≠ .endpoint e) =>
@@ -1943,8 +1942,8 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
   have hFr := revokeService_finaliseFrameAny hRev hObjInv
   have hUt := hFr.getUntyped?
   have hSetEq : s0.objectIndexSet = st.objectIndexSet := by
-    obtain ⟨reg, _, rfl⟩ := revokeService_ok hRev
-    rw [clearEndpointRegistration_eq_withObjects]
+    obtain ⟨_, _, _, rfl⟩ := revokeService_ok hRev
+    rfl
   refine (finaliseThenRetire_preserves_projection ctx observer ec target recorder
     (revokeService_preserves_ipcReachable h hRev)
     (hLc.of_loanWrite (revokeService_loanWrite hRev hObjInv)) hx

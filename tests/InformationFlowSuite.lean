@@ -545,10 +545,13 @@ private def runServiceRegistryFlowChecks : IO Unit := do
   match SeLe4n.Kernel.registerServiceChecked ctx ⟨2⟩ highReg stI with
   | .error e => throw <| IO.userError s!"service flow checks: high registration failed: {toString e}"
   | .ok (_, st) =>
-  -- The low observer's view omits the high registration; the high one's keeps it.
-  expect "the projected registry hides a registration on an endpoint the observer cannot see"
-    ((SeLe4n.Kernel.projectServiceRegistry ctx reviewer st ⟨41⟩).isNone &&
-     (SeLe4n.Kernel.projectServiceRegistry ctx admin st ⟨41⟩).isSome)
+  -- The low observer's view omits the high registration; the high one's keeps
+  -- it.  The registration lives on its endpoint, so the projected objects carry it.
+  expect "the projection hides a registration on an endpoint the observer cannot see"
+    ((SeLe4n.Kernel.projectObjects ctx reviewer st highEp).isNone &&
+     (match SeLe4n.Kernel.projectObjects ctx admin st highEp with
+      | some (.endpoint ep) => ep.serviceRegistered
+      | _ => false))
   -- A query on an unobservable endpoint is refused before the lookup.
   expect "NEGATIVE: a low caller's query on the high endpoint is flowDenied"
     (match SeLe4n.Kernel.serviceQueryStaged ctx ⟨1⟩ highEp st with
@@ -1349,17 +1352,18 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.3 part 2: 22, the slot is the derivation node (three CDT index fields gone).
   -- WS-ZA ZA5.4: 23, the physical-write ledger's drained flag.
   -- WS-ZA ZA5.4 part 32: 22, the service graph removed.
-  expect "StateField enum has 22 variants, one per SystemState field"
+  -- WS-ZA ZA5.9: 21, the service registry read off the endpoints.
+  expect "StateField enum has 21 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .scheduler, .irqHandlers, .lifecycle,
-       .asidTable, .interfaceRegistry, .serviceRegistry,
+       .asidTable, .interfaceRegistry,
        .cdt,
        .tlb,
        .tlbShootdown,
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .physicalWrites,
        .physicalWritesDrained,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 22)
+       .declassificationRefusals, .declassificationTaint ].length = 21)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation added `lifecycleObjectTypeLockstep_fields`; the
@@ -1367,13 +1371,13 @@ def runInformationFlowChecks : IO Unit := do
   expect "crossSubsystemFieldSets has 9 entries"
     (SeLe4n.Kernel.crossSubsystemFieldSets.length = 9)
   -- Verify disjointness witnesses compile and have expected values
-  expect "registryInterfaceValid disjoint from staleEndpoint"
+  expect "registryInterfaceValid shares staleEndpoint (objects overlap: the registry is read off the endpoints)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryInterfaceValid_fields
-                    SeLe4n.Kernel.noStaleEndpointQueueReferences_fields = true)
+                    SeLe4n.Kernel.noStaleEndpointQueueReferences_fields = false)
   expect "staleEndpoint shares staleNotification (objects overlap)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.noStaleEndpointQueueReferences_fields
                     SeLe4n.Kernel.noStaleNotificationWaitReferences_fields = false)
-  expect "registryEndpointValid shares registryInterfaceValid (serviceRegistry overlap)"
+  expect "registryEndpointValid shares registryInterfaceValid (objects overlap)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryEndpointValid_fields
                     SeLe4n.Kernel.registryInterfaceValid_fields = false)
 

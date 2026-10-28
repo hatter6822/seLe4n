@@ -1209,8 +1209,6 @@ private theorem cspaceInsertSlot_preserves_projection
   · -- R5-C.1: memory
     exact projectMemory_eq_of_memory_eq ctx observer st' st
       (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hStep])
-  · exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st
-      (cspaceInsertSlot_preserves_serviceRegistry st st' dst cap hStep)
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
@@ -3210,9 +3208,6 @@ private theorem updatePipBoost_preserves_projection
   · -- projectMemory
     funext paddr; simp only [projectMemory,
       PriorityInheritance.updatePipBoost_preserves_machine]
-  · -- projectServiceRegistry
-    exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer _ st
-      (PriorityInheritance.updatePipBoost_preserves_serviceRegistry st tid)
 
 theorem propagatePIP_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -3413,7 +3408,7 @@ theorem objects_insert_preserves_projection_high
   -- Use the full projectState expansion with ObservableState.mk constructor.
   show (ObservableState.mk (projectObjects ctx observer
                               { st with objects := st.objects.insert oid obj })
-          _ _ _ _ _ _ _ _ _ _ _) = _
+          _ _ _ _ _ _ _ _ _ _) = _
   rw [hProjObj]
   rfl
 
@@ -4406,7 +4401,7 @@ theorem objects_insert_preserves_projection_of_proj_eq
     | false => rfl
   show (ObservableState.mk (projectObjects ctx observer
                               { st with objects := st.objects.insert oid obj })
-          _ _ _ _ _ _ _ _ _ _ _) = _
+          _ _ _ _ _ _ _ _ _ _) = _
   rw [hProjObj]
   rfl
 
@@ -4924,58 +4919,6 @@ theorem lookupServiceByRecordedRegistration_preserves_state
     | (simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm)
     | cases hStep
 
-/-- Replacing the registry is invisible when its projection is kept: no other
-projected component reads it. -/
-theorem projectState_withServiceRegistry (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (R : SeLe4n.Kernel.RobinHood.RHTable ServiceId ServiceRegistration)
-    (h : projectServiceRegistry ctx observer { s with serviceRegistry := R } =
-      projectServiceRegistry ctx observer s) :
-    projectState ctx observer { s with serviceRegistry := R } = projectState ctx observer s := by
-  simp only [projectState]
-  congr 1
-
-/-- Adding a registration the observer cannot see, at a key that held none,
-leaves the registry projection. -/
-theorem projectServiceRegistry_insert_unobservable (ctx : LabelingContext)
-    (observer : IfObserver) (s : SystemState) (sid : ServiceId) (reg : ServiceRegistration)
-    (hInv : s.serviceRegistry.invExt) (hAbsent : s.serviceRegistry[sid]? = none)
-    (hHigh : serviceObservable ctx observer reg = false) :
-    projectServiceRegistry ctx observer
-        { s with serviceRegistry := s.serviceRegistry.insert sid reg } =
-      projectServiceRegistry ctx observer s := by
-  funext k
-  simp only [projectServiceRegistry, RHTable_getElem?_eq_get?]
-  simp only [RHTable_getElem?_eq_get?] at hAbsent
-  by_cases hk : sid = k
-  · subst hk
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, hAbsent]
-    simp [hHigh]
-  · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
-      (fun hb => hk (eq_of_beq hb)) hInv]
-
-/-- Erasing a registration the observer cannot see leaves the registry
-projection. -/
-theorem projectServiceRegistry_erase_unobservable (ctx : LabelingContext)
-    (observer : IfObserver) (s : SystemState) (sid : ServiceId)
-    (hK : s.serviceRegistry.invExtK)
-    (hHigh : ∀ reg, s.serviceRegistry[sid]? = some reg →
-      serviceObservable ctx observer reg = false) :
-    projectServiceRegistry ctx observer
-        { s with serviceRegistry := s.serviceRegistry.erase sid } =
-      projectServiceRegistry ctx observer s := by
-  funext k
-  simp only [projectServiceRegistry, RHTable_getElem?_eq_get?]
-  by_cases hk : sid = k
-  · subst hk
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1]
-    cases hOld : s.serviceRegistry.get? sid with
-    | none => rfl
-    | some reg =>
-      have hR := hHigh reg (by simpa only [RHTable_getElem?_eq_get?] using hOld)
-      simp [hR]
-  · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ _ _
-      (fun hb => hk (eq_of_beq hb)) hK]
-
 /-- A registration the observer cannot see names an endpoint it cannot see. -/
 theorem serviceObservable_false_endpoint {ctx : LabelingContext} {observer : IfObserver}
     {reg : ServiceRegistration} {e : SeLe4n.ObjId} (hT : reg.endpointCap.target = .object e)
@@ -4985,60 +4928,44 @@ theorem serviceObservable_false_endpoint {ctx : LabelingContext} {observer : IfO
   exact h
 
 /-- R5-B.2/M-02: `registerService` of a registration the observer cannot see
-preserves the projection: its endpoint's service-record write is at an
-unobservable object, and the registration lands at a key that held none. -/
+preserves the projection: its one write is its endpoint's service record, at an
+unobservable object — and since WS-ZA ZA5.9 that record is the registry. -/
 theorem registerService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (reg : ServiceRegistration) (st st' : SystemState)
     (hHigh : serviceObservable ctx observer reg = false)
-    (hObjInv : st.objects.invExt) (hRegInv : st.serviceRegistry.invExt)
+    (hObjInv : st.objects.invExt)
     (hStep : registerService reg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨epId, ep, hT, -, hAbsent, -, rfl⟩ := registerService_ok hStep
-  exact (projectState_withServiceRegistry ctx observer
-      { st with
-        objects := st.objects.insert epId
-          (.endpoint (ep.withService (EndpointService.ofRegistration reg))) }
-      (st.serviceRegistry.insert reg.sid reg)
-      (projectServiceRegistry_insert_unobservable ctx observer _ reg.sid reg hRegInv hAbsent hHigh)).trans
-    (objects_insert_preserves_projection_high ctx observer st epId _
-      (serviceObservable_false_endpoint hT hHigh) hObjInv)
+  obtain ⟨epId, ep, hT, -, -, -, rfl⟩ := registerService_ok hStep
+  exact objects_insert_preserves_projection_high ctx observer st epId _
+    (serviceObservable_false_endpoint hT hHigh) hObjInv
 
 /-- AK6-F.12: `revokeService` of a registration the observer cannot see
-preserves the projection: the erase removes an unobservable registration, and
-the service-record clear is at its unobservable endpoint. -/
+preserves the projection: its one write is the service-record clear at the
+registration's endpoint, which the observer cannot see. -/
 theorem revokeService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (sid : SeLe4n.ServiceId) (st st' : SystemState)
     (hHigh : ∀ reg, st.serviceRegistry[sid]? = some reg →
       serviceObservable ctx observer reg = false)
-    (hObjInv : st.objects.invExt) (hRegK : st.serviceRegistry.invExtK)
+    (hObjInv : st.objects.invExt)
     (hStep : SeLe4n.Kernel.revokeService sid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨reg, hReg, rfl⟩ := SeLe4n.Kernel.revokeService_ok hStep
-  have hErase := projectState_withServiceRegistry ctx observer st (st.serviceRegistry.erase sid)
-    (projectServiceRegistry_erase_unobservable ctx observer st sid hRegK hHigh)
-  rcases SeLe4n.Kernel.clearEndpointRegistration_cases
-      { st with serviceRegistry := st.serviceRegistry.erase sid } reg.endpointCap sid with
-    h | ⟨e, ep, hT, -, -, h⟩
-  · rw [h]; exact hErase
-  · rw [h]
-    exact (objects_insert_preserves_projection_high ctx observer
-      { st with serviceRegistry := st.serviceRegistry.erase sid } e _
-      (serviceObservable_false_endpoint hT (hHigh reg hReg)) hObjInv).trans hErase
+  obtain ⟨ep, hEp, hC, rfl⟩ := SeLe4n.Kernel.revokeService_ok hStep
+  exact objects_insert_preserves_projection_high ctx observer st _ _
+    (serviceObservable_false_endpoint rfl (hHigh _ (st.serviceRegistry_of_endpoint hEp hC)))
+    hObjInv
 
-/-- The registration an endpoint records names that endpoint, wherever the
-table references are recorded. -/
+/-- The registration an endpoint records names that endpoint. -/
 theorem recordedRegistration_names_endpoint {st : SystemState} {epId : SeLe4n.ObjId}
     {ep : Endpoint} {reg : ServiceRegistration}
-    (hRec : st.tableReferencesRecorded) (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hEp : st.objects[epId]? = some (.endpoint ep))
     (hCode : ep.serviceRegistered = true)
     (hReg : st.serviceRegistry[ServiceId.ofNat epId.toNat]? = some reg) :
     reg.endpointCap.target = .object epId := by
-  obtain ⟨reg', hReg', hT⟩ := hRec.serviceFlags epId (by rw [hEp]; simp [KernelObject.tableBackLinks, hCode])
-  rw [hReg] at hReg'
-  cases hReg'
-  exact hT
+  rw [st.serviceRegistry_of_endpoint hEp hCode] at hReg
+  cases hReg; rfl
 
 /-- The revoke the kernel runs, at an endpoint the observer cannot see,
 preserves the projection: the registration it removes is the one that endpoint
@@ -5047,15 +4974,14 @@ theorem revokeServiceByRecordedRegistration_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (epId : SeLe4n.ObjId) (st st' : SystemState)
     (hEpHigh : objectObservable ctx observer epId = false)
-    (hObjInv : st.objects.invExt) (hRec : st.tableReferencesRecorded)
+    (hObjInv : st.objects.invExt)
     (hStep : SeLe4n.Kernel.revokeServiceByRecordedRegistration epId st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨ep, hEp, hCode, hRev⟩ := SeLe4n.Kernel.revokeServiceByRecordedRegistration_ok hStep
-  refine revokeService_preserves_projection ctx observer _ st st' ?_ hObjInv
-    hRec.registryInvExtK hRev
+  refine revokeService_preserves_projection ctx observer _ st st' ?_ hObjInv hRev
   intro reg hReg
   unfold serviceObservable
-  rw [recordedRegistration_names_endpoint hRec hEp hCode hReg]
+  rw [recordedRegistration_names_endpoint hEp hCode hReg]
   exact hEpHigh
 
 /-- A write the checked wrappers admit lands at an endpoint the observer cannot
@@ -5081,12 +5007,12 @@ theorem registerServiceChecked_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (caller : SeLe4n.ThreadId) (reg : ServiceRegistration) (st st' : SystemState)
     (hCallerHigh : threadObservable ctx observer caller = false)
-    (hObjInv : st.objects.invExt) (hRegInv : st.serviceRegistry.invExt)
+    (hObjInv : st.objects.invExt)
     (hStep : registerServiceChecked ctx caller reg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   have hAdm := enforcementSoundness_registerServiceChecked ctx caller reg st st' hStep
   rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg st hAdm] at hStep
-  refine registerService_preserves_projection ctx observer reg st st' ?_ hObjInv hRegInv hStep
+  refine registerService_preserves_projection ctx observer reg st st' ?_ hObjInv hStep
   unfold registrationWriteAdmitted at hAdm
   unfold serviceObservable
   split at hAdm
@@ -5104,15 +5030,14 @@ theorem registerServiceChecked_NI
     (hCallerHigh : threadObservable ctx observer caller = false)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hObjInv₁ : s₁.objects.invExt) (hObjInv₂ : s₂.objects.invExt)
-    (hRegInv₁ : s₁.serviceRegistry.invExt) (hRegInv₂ : s₂.serviceRegistry.invExt)
     (hStep₁ : registerServiceChecked ctx caller reg s₁ = .ok ((), s₁'))
     (hStep₂ : registerServiceChecked ctx caller reg s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent
   rw [registerServiceChecked_preserves_projection ctx observer caller reg s₁ s₁' hCallerHigh
-      hObjInv₁ hRegInv₁ hStep₁,
+      hObjInv₁ hStep₁,
     registerServiceChecked_preserves_projection ctx observer caller reg s₂ s₂' hCallerHigh
-      hObjInv₂ hRegInv₂ hStep₂]
+      hObjInv₂ hStep₂]
   exact hLow
 
 /-- **A checked revoke by a caller the observer cannot see is invisible.** -/
@@ -5120,13 +5045,13 @@ theorem revokeServiceChecked_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (st st' : SystemState)
     (hCallerHigh : threadObservable ctx observer caller = false)
-    (hObjInv : st.objects.invExt) (hRec : st.tableReferencesRecorded)
+    (hObjInv : st.objects.invExt)
     (hStep : revokeServiceChecked ctx caller epId st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   have hAdm := enforcementSoundness_revokeServiceChecked ctx caller epId st st' hStep
   rw [revokeServiceChecked_eq_revoke_when_allowed ctx caller epId st hAdm] at hStep
   exact revokeServiceByRecordedRegistration_preserves_projection ctx observer epId st st'
-    (serviceEndpoint_unobservable_of_writeAdmitted hCallerHigh hAdm) hObjInv hRec hStep
+    (serviceEndpoint_unobservable_of_writeAdmitted hCallerHigh hAdm) hObjInv hStep
 
 /-- Two runs of a checked revoke by an unobservable caller keep their states
 low-equivalent. -/
@@ -5137,15 +5062,14 @@ theorem revokeServiceChecked_NI
     (hCallerHigh : threadObservable ctx observer caller = false)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hObjInv₁ : s₁.objects.invExt) (hObjInv₂ : s₂.objects.invExt)
-    (hRec₁ : s₁.tableReferencesRecorded) (hRec₂ : s₂.tableReferencesRecorded)
     (hStep₁ : revokeServiceChecked ctx caller epId s₁ = .ok ((), s₁'))
     (hStep₂ : revokeServiceChecked ctx caller epId s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent
   rw [revokeServiceChecked_preserves_projection ctx observer caller epId s₁ s₁' hCallerHigh
-      hObjInv₁ hRec₁ hStep₁,
+      hObjInv₁ hStep₁,
     revokeServiceChecked_preserves_projection ctx observer caller epId s₂ s₂' hCallerHigh
-      hObjInv₂ hRec₂ hStep₂]
+      hObjInv₂ hStep₂]
   exact hLow
 
 /-- **The checked query is invisible to every observer**: the lookup leaves
@@ -5679,9 +5603,7 @@ theorem retireFinalObject_preserves_projection (ctx : LabelingContext) (observer
   obtain ⟨-, hS, hM⟩ := retireFinalObject_fields ec target recorder st
   obtain ⟨hIrq, hIdx⟩ := retireFinalObject_tables ec target recorder st hObjInv _ hx hR hK
   have hO := retireFinalObject_objects_of_excluded ec target recorder st hObjInv _ hx hU hK
-  have hSR : (retireFinalObject ec target recorder st).serviceRegistry = st.serviceRegistry :=
-    congrArg Prod.fst (retireFinalObject_referenceTables ec target recorder st)
-  generalize retireFinalObject ec target recorder st = s at hS hM hIrq hIdx hO hSR
+  generalize retireFinalObject ec target recorder st = s at hS hM hIrq hIdx hO
   have hPO : projectObjects ctx observer s = projectObjects ctx observer st := by
     funext o
     unfold projectObjects
@@ -5692,10 +5614,8 @@ theorem retireFinalObject_preserves_projection (ctx : LabelingContext) (observer
     unfold projectIrqHandlers; rw [hIrq]
   have hPM : projectMemory ctx observer s = projectMemory ctx observer st := by
     unfold projectMemory; rw [hM]
-  have hPSR : projectServiceRegistry ctx observer s = projectServiceRegistry ctx observer st :=
-    projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer s st hSR
   unfold projectState
-  rw [hPO, hPI, hPM, hPSR]
+  rw [hPO, hPI, hPM]
   simp only [projectRunnable, projectCurrent, projectActiveDomain, projectObjectIndex,
     projectDomainTimeRemaining, projectDomainSchedule, projectDomainScheduleIndex,
     projectMachineRegs, hS, hM, hIdx]

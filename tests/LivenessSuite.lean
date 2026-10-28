@@ -184,8 +184,6 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
 #check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation_scheduler_runQueue_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation_scheduler_runQueue_eq
-#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation_serviceRegistry_eq
-#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation_serviceRegistry_eq
 -- R5.B (DEEP-SUSP-01): PIP recomputation on resume — structural witnesses.
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objectIndex_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objects_eq_at_tid
@@ -231,7 +229,6 @@ open SeLe4n.Model
 -- R5.D (DEEP-SCH-03): restoreToReady shared helper + back-compat lemmas.
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_scheduler_eq
-#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_serviceRegistry_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_lifecycle_eq
 -- R5.G (DEEP-SCH-06): schedContextConfigure domain propagation witnesses.
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_bound_tcb_domain_eq

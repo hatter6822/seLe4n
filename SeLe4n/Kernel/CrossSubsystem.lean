@@ -834,13 +834,15 @@ theorem default_crossSubsystemInvariant :
     preserve the other predicate. This covers:
     - `noStaleEndpointQueueReferences_frame` (objects-only ops)
     - `noStaleNotificationWaitReferences_frame` (objects-only ops)
-    - `registryEndpointValid_frame` (serviceRegistry+objects-only ops)
-    - `registryInterfaceValid_frame` (serviceRegistry+interfaceRegistry-only ops)
+    - `registryEndpointValid_holds` (every state, since WS-ZA ZA5.9: the
+      registry is read off the endpoints)
+    - `registryInterfaceValid_frame` (ops keeping the endpoints' service records
+      and the interface registry)
     - `schedContextStoreConsistent_frame` (objects-only ops) [Z9-F]
     - `schedContextNotDualBound_frame` (objects-only ops) [Z9-F]
     - `schedContextRunQueueConsistent_frame` (scheduler.runnable+objects-only ops) [Z9-F]
 
-    **Remaining gap:** Sharing pairs (both reading `objects` or `serviceRegistry`)
+    **Remaining gap:** Sharing pairs (both reading `objects`)
     require operation-specific preservation proofs. The current proof
     infrastructure handles this via per-operation preservation theorems
     in each subsystem's `Invariant/Preservation.lean` module. -/
@@ -894,7 +896,7 @@ theorem crossSubsystemInvariant_composition_gap_documented
 inductive StateField where
   | machine | objects | objectIndex | objectIndexSet
   | scheduler | irqHandlers | lifecycle
-  | asidTable | interfaceRegistry | serviceRegistry
+  | asidTable | interfaceRegistry
   | cdt
   | tlb | tlbShootdown
   | perCoreTlb | perCoreICache | pendingIcacheMaintenance | physicalWrites
@@ -907,18 +909,21 @@ inductive StateField where
     Each entry maps a predicate to the fields it inspects.
 
     Analysis:
-    - `registryEndpointValid` reads `serviceRegistry` and `objects`
+    - `registryEndpointValid` reads `objects`: since WS-ZA ZA5.9 the service
+      registry is read off the endpoints (`SystemState.serviceRegistry`), so
+      it is no field of its own
     - `noStaleEndpointQueueReferences` reads `objects` only
     - `noStaleNotificationWaitReferences` reads `objects` only
     - `schedContextStoreConsistent` reads `objects` only (Z9-E)
     - `schedContextNotDualBound` reads `objects` only (Z9-E)
     - `schedContextRunQueueConsistent` reads `scheduler` and `objects` (Z9-E) -/
 def registryEndpointValid_fields : List StateField :=
-  [.serviceRegistry, .objects]
+  [.objects]
 
-/-- AE5-C: `registryInterfaceValid` reads `serviceRegistry` and `interfaceRegistry`. -/
+/-- AE5-C: `registryInterfaceValid` reads the service registry — the endpoints'
+records, so `objects`, since WS-ZA ZA5.9 — and `interfaceRegistry`. -/
 def registryInterfaceValid_fields : List StateField :=
-  [.serviceRegistry, .interfaceRegistry]
+  [.objects, .interfaceRegistry]
 
 def noStaleEndpointQueueReferences_fields : List StateField :=
   [.objects]
@@ -964,13 +969,13 @@ theorem staleEndpoint_shares_staleNotification :
     fieldsDisjoint noStaleEndpointQueueReferences_fields
                    noStaleNotificationWaitReferences_fields = false := by decide
 
-/-- V6-A3: `registryEndpointValid` (serviceRegistry + objects) shares `objects`
+/-- V6-A3: `registryEndpointValid` (objects) shares `objects`
     with `noStaleEndpointQueueReferences` (objects). -/
 theorem regEndpointValid_shares_staleEndpoint :
     fieldsDisjoint registryEndpointValid_fields
                    noStaleEndpointQueueReferences_fields = false := by decide
 
-/-- V6-A3: `registryEndpointValid` (serviceRegistry + objects) shares `objects`
+/-- V6-A3: `registryEndpointValid` (objects) shares `objects`
     with `noStaleNotificationWaitReferences` (objects). -/
 theorem regEndpointValid_shares_staleNotification :
     fieldsDisjoint registryEndpointValid_fields
@@ -980,11 +985,11 @@ theorem regEndpointValid_shares_staleNotification :
 -- The 3 SchedContext predicates (schedContextStoreConsistent,
 -- schedContextNotDualBound, schedContextRunQueueConsistent) all touch `objects`,
 -- so they share fields with every other predicate that reads `objects`.
--- They are disjoint only from `registryInterfaceValid` (serviceRegistry +
--- interfaceRegistry).
+-- Since WS-ZA ZA5.9 `registryInterfaceValid` reads `objects` too (the
+-- registry is read off the endpoints), so no pair is disjoint.
 
 /-- AC5-A: `schedContextStoreConsistent` (objects) shares `objects` with
-    `registryEndpointValid` (serviceRegistry + objects). -/
+    `registryEndpointValid` (objects). -/
 theorem schedCtxStore_shares_regEndpointValid :
     fieldsDisjoint schedContextStoreConsistent_fields
                    registryEndpointValid_fields = false := by decide
@@ -1014,7 +1019,7 @@ theorem schedCtxStore_shares_schedCtxRunQueue :
                    schedContextRunQueueConsistent_fields = false := by decide
 
 /-- AC5-A: `schedContextNotDualBound` (objects) shares `objects` with
-    `registryEndpointValid` (serviceRegistry + objects). -/
+    `registryEndpointValid` (objects). -/
 theorem schedCtxNotDualBound_shares_regEndpointValid :
     fieldsDisjoint schedContextNotDualBound_fields
                    registryEndpointValid_fields = false := by decide
@@ -1038,7 +1043,7 @@ theorem schedCtxNotDualBound_shares_schedCtxRunQueue :
                    schedContextRunQueueConsistent_fields = false := by decide
 
 /-- AC5-A: `schedContextRunQueueConsistent` (scheduler + objects) shares
-    `objects` with `registryEndpointValid` (serviceRegistry + objects). -/
+    `objects` with `registryEndpointValid` (objects). -/
 theorem schedCtxRunQueue_shares_regEndpointValid :
     fieldsDisjoint schedContextRunQueueConsistent_fields
                    registryEndpointValid_fields = false := by decide
@@ -1057,12 +1062,12 @@ theorem schedCtxRunQueue_shares_staleNotification :
 
 /-- AC5-A + AF1-B2 + AM4 audit remediation: Summary — complete pairwise
     analysis of the 9 cross-subsystem predicates with a field set.
-    C(9,2) = 36 pairs total: 7 disjoint + 29 shared.
+    C(9,2) = 36 pairs total, and since WS-ZA ZA5.9 every one shares `objects`.
 
     Predicate                          Fields
     ─────────────────────────────────  ────────────────────────
-    registryEndpointValid              serviceRegistry, objects
-    registryInterfaceValid             serviceRegistry, interfaceRegistry
+    registryEndpointValid              objects
+    registryInterfaceValid             objects, interfaceRegistry
     noStaleEndpointQueueReferences     objects
     noStaleNotificationWaitReferences  objects
     schedContextStoreConsistent        objects
@@ -1071,24 +1076,22 @@ theorem schedCtxRunQueue_shares_staleNotification :
     blockingAcyclic                    objects
     lifecycleObjectTypeLockstep        objects, lifecycle
 
-    `registryInterfaceValid` is the one predicate that reads no `objects`;
-    it shares `serviceRegistry` with `registryEndpointValid` and is disjoint
-    from the 7 others, which are the 7 disjoint pairs.  Every other pair
-    shares `objects`.  (WS-ZA ZA5.4 part 32 removed the two service-graph
+    Until WS-ZA ZA5.9 `registryInterfaceValid` read the service registry's own
+    table and no `objects`, which made its 7 pairs with the others disjoint;
+    the registry is now read off the endpoints, so it reads `objects` and no
+    pair is disjoint.  (WS-ZA ZA5.4 part 32 removed the two service-graph
     predicates, which read the graph alone and made up 11 of the 18 disjoint
-    pairs the 11-predicate analysis counted.) -/
+    pairs the 11-predicate analysis counted.)  Stated as every field set
+    containing `objects`, which is what makes every pair share. -/
 theorem crossSubsystem_pairwise_coverage_complete :
-    -- 7 disjoint pairs (all evaluate to true)
-    [ fieldsDisjoint registryInterfaceValid_fields noStaleEndpointQueueReferences_fields
-    , fieldsDisjoint registryInterfaceValid_fields noStaleNotificationWaitReferences_fields
-    , fieldsDisjoint registryInterfaceValid_fields schedContextStoreConsistent_fields
-    , fieldsDisjoint registryInterfaceValid_fields schedContextNotDualBound_fields
-    , fieldsDisjoint registryInterfaceValid_fields schedContextRunQueueConsistent_fields
-    , fieldsDisjoint blockingAcyclic_fields registryInterfaceValid_fields  -- AF1-B2
-    , fieldsDisjoint lifecycleObjectTypeLockstep_fields registryInterfaceValid_fields  -- AM4
+    [ registryEndpointValid_fields, registryInterfaceValid_fields
+    , noStaleEndpointQueueReferences_fields, noStaleNotificationWaitReferences_fields
+    , schedContextStoreConsistent_fields, schedContextNotDualBound_fields
+    , schedContextRunQueueConsistent_fields, blockingAcyclic_fields
+    , lifecycleObjectTypeLockstep_fields
     -- AF4-B + AM4: Kernel-checked `decide` (native_decide forbidden in
     -- production TCB).
-    ].countP id = 7 := by decide
+    ].all (fun fs => fs.contains .objects) = true := by decide
 
 -- ============================================================================
 -- W2-A (H-2): Operation modified-field sets
@@ -1167,11 +1170,15 @@ def ipcEndpointOp_modifiedFields : List StateField :=
 def capabilityOp_modifiedFields : List StateField :=
   storeObject_modifiedFields ++ [.cdt]
 
-/-- W2-A1: Fields modified by `revokeService`: it erases from
-    `serviceRegistry` and clears the service's record on its endpoint
-    (`objects`, the endpoint's `serviceRegistered`). -/
+/-- W2-A1: Fields modified by `revokeService`: it clears the service's record
+    on its endpoint (`objects`, the endpoint's service record), since WS-ZA
+    ZA5.9 the one place the registration lived. -/
 def revokeService_modifiedFields : List StateField :=
-  [.serviceRegistry, .objects]
+  [.objects]
+
+/-- Fields modified by `registerInterface`: the interface registry alone. -/
+def registerInterface_modifiedFields : List StateField :=
+  [.interfaceRegistry]
 
 -- ============================================================================
 -- WS-RR RR7.19 — the write-sets become load-bearing
@@ -1218,7 +1225,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .lifecycle,                  st, st' => st'.lifecycle = st.lifecycle
   | .asidTable,                  st, st' => st'.asidTable = st.asidTable
   | .interfaceRegistry,          st, st' => st'.interfaceRegistry = st.interfaceRegistry
-  | .serviceRegistry,            st, st' => st'.serviceRegistry = st.serviceRegistry
   | .cdt,                        st, st' => st'.cdt = st.cdt
   | .tlb,                        st, st' => st'.tlb = st.tlb
   | .tlbShootdown,               st, st' => st'.tlbShootdown = st.tlbShootdown
@@ -1249,7 +1255,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
   simp only [SystemState.mk.injEq]
   exact ⟨h .machine, h .objects, h .objectIndex, h .objectIndexSet,
     h .scheduler, h .irqHandlers, h .lifecycle,
-    h .asidTable, h .interfaceRegistry, h .serviceRegistry,
+    h .asidTable, h .interfaceRegistry,
     h .cdt,
     h .tlb, h .tlbShootdown, Subsingleton.elim _ _, Subsingleton.elim _ _,
     h .perCoreTlb, Vector.ext fun _ _ => Subsingleton.elim _ _, h .perCoreICache, h .pendingIcacheMaintenance, h .physicalWrites,
@@ -1397,17 +1403,31 @@ theorem updateSchedContext_preservesFieldsOutside
     | exact (hg (by decide)).elim
 
 /-- **WS-RR RR7.19**: `revokeService` writes nothing outside its declared set —
-the registry erase and the endpoint's record of the service, and no more. -/
+the endpoint's record of the service, and no more. -/
 theorem revokeService_preservesFieldsOutside
     (sid : ServiceId) (st st' : SystemState)
     (hStep : revokeService sid st = .ok ((), st')) :
     preservesFieldsOutside revokeService_modifiedFields st st' := by
-  obtain ⟨reg, _, rfl⟩ := revokeService_ok hStep
+  obtain ⟨_, _, _, rfl⟩ := revokeService_ok hStep
   intro f hf
-  rw [clearEndpointRegistration_eq_withObjects]
   cases f <;> first
     | rfl
     | exact (hf (by decide)).elim
+
+/-- `registerInterface` writes nothing outside its declared set — the interface
+registry, and no more. -/
+theorem registerInterface_preservesFieldsOutside
+    (spec : InterfaceSpec) (st st' : SystemState)
+    (hStep : registerInterface spec st = .ok ((), st')) :
+    preservesFieldsOutside registerInterface_modifiedFields st st' := by
+  unfold registerInterface at hStep
+  split at hStep
+  · cases hStep
+  · cases hStep
+    intro f hf
+    cases f <;> first
+      | rfl
+      | exact (hf (by decide)).elim
 
 -- ============================================================================
 -- WS-RR RR7 audit round (v0.34.109) — the other four write-sets, proved honest
@@ -2048,19 +2068,6 @@ theorem noStaleQueueReferences_of_serviceRecordRewrite {st st' : SystemState}
       · rw [h] at hN'; cases hN'
     exact hNone _ (hP oid n hN tid hMem)
 
-/-- W2-A3: Frame lemma — if `serviceRegistry` and `objects` are preserved,
-    `registryEndpointValid` is preserved. -/
-theorem registryEndpointValid_frame
-    (st st' : SystemState)
-    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
-    (hObjects : st'.objects = st.objects)
-    (hInv : registryEndpointValid st) :
-    registryEndpointValid st' := by
-  intro sid reg hLookup
-  rw [hSvcReg] at hLookup
-  obtain ⟨epId, hTarget, hPresent⟩ := hInv sid reg hLookup
-  exact ⟨epId, hTarget, by rw [hObjects]; exact hPresent⟩
-
 /-- AE5-C: Frame lemma — if `serviceRegistry` and `interfaceRegistry` are preserved,
     `registryInterfaceValid` is preserved. -/
 theorem registryInterfaceValid_frame
@@ -2129,31 +2136,49 @@ theorem registryInterfaceValid_readsOnly (st st' : SystemState)
     (hInv : registryInterfaceValid st) :
     registryInterfaceValid st' :=
   registryInterfaceValid_frame st st'
-    (hFields .serviceRegistry (by decide)) (hFields .interfaceRegistry (by decide)) hInv
+    (SystemState.serviceRegistry_eq_of_objects (hFields .objects (by decide)))
+    (hFields .interfaceRegistry (by decide)) hInv
+
+/-- `noStaleEndpointQueueReferences` reads exactly its declared read-set, the
+object store: its frame lemma restated at the list. -/
+theorem noStaleEndpointQueueReferences_readsOnly (st st' : SystemState)
+    (hFields : ∀ f ∈ noStaleEndpointQueueReferences_fields, SystemState.fieldEq f st st')
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
+  noStaleEndpointQueueReferences_frame st st' (hFields .objects (by decide)) hInv
 
 /-- **WS-RR RR7.19 — the consumer of both families.**
 
-`storeObject` writes only `storeObject_modifiedFields`;
-`registryInterfaceValid` reads only `registryInterfaceValid_fields`; the two
-are disjoint, decided.  Therefore `storeObject` preserves the invariant — with
-no hand-written argument about *which* fields, and no opportunity to forget
-one.
+`registerInterface` writes only `registerInterface_modifiedFields`;
+`noStaleEndpointQueueReferences` reads only
+`noStaleEndpointQueueReferences_fields`; the two are disjoint, decided.
+Therefore `registerInterface` preserves the invariant — with no hand-written
+argument about *which* fields, and no opportunity to forget one.
 
 The under-declaration WS-RR RR7.19 fixed is what the theorem guards against:
-had `storeObject_modifiedFields` omitted a field this predicate reads, this
-shape would have licensed a conclusion the operation does not earn.  (Until
-WS-ZA ZA5.4 part 32 the consumer was the service graph's dependency
-consistency, which the graph's removal deleted.) -/
-theorem storeObject_preserves_registryInterfaceValid
-    (id : SeLe4n.ObjId) (obj : KernelObject) (st st' : SystemState)
-    (hStep : storeObject id obj st = .ok ((), st'))
-    (hInv : registryInterfaceValid st) :
-    registryInterfaceValid st' :=
+had `registerInterface_modifiedFields` omitted a field this predicate reads,
+this shape would have licensed a conclusion the operation does not earn.
+(Until WS-ZA ZA5.4 part 32 the consumer was the service graph's dependency
+consistency, which the graph's removal deleted; until WS-ZA ZA5.9 it was
+`storeObject` against `registryInterfaceValid`, which since the registry is read
+off the endpoints reads `objects`, so that pair is no longer disjoint — a
+`storeObject` of an endpoint can write a registration.) -/
+theorem registerInterface_preserves_noStaleEndpointQueueReferences
+    (spec : InterfaceSpec) (st st' : SystemState)
+    (hStep : registerInterface spec st = .ok ((), st'))
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' :=
   predicateFramedByDisjointWrites
-    (readFields := registryInterfaceValid_fields)
-    (writeFields := storeObject_modifiedFields)
-    registryInterfaceValid_readsOnly (by decide)
-    (storeObject_preservesFieldsOutside id obj st st' hStep) hInv
+    (readFields := noStaleEndpointQueueReferences_fields)
+    (writeFields := registerInterface_modifiedFields)
+    noStaleEndpointQueueReferences_readsOnly (by decide)
+    (registerInterface_preservesFieldsOutside spec st st' hStep) hInv
+
+/-- The pair the consumer above was before WS-ZA ZA5.9 is no longer disjoint:
+`registryInterfaceValid` reads the endpoints' records, which `storeObject`
+writes.  Kept as a decided witness, as for the queue invariant below. -/
+theorem storeObject_not_framed_from_registryInterfaceValid :
+    fieldsDisjoint registryInterfaceValid_fields storeObject_modifiedFields = false := by decide
 
 /-- `revokeService` writes the object store — the endpoint's record of the
 service — so its write-set is *not* disjoint from the queue invariant's reads;
@@ -2277,19 +2302,18 @@ theorem sharingPair1_objects_frame
 
 /-- X3-C (H-4): **Sharing pair 2+3 frame — objects-only operations preserve
     `registryEndpointValid` and both stale-reference predicates simultaneously.**
-    When an operation preserves `objects` and `serviceRegistry`, all three
-    predicates that read `objects` are jointly preserved. -/
+    When an operation preserves `objects`, all three predicates that read
+    `objects` are jointly preserved (`registryEndpointValid` holds of every
+    state since WS-ZA ZA5.9). -/
 theorem sharingPair23_objects_frame
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)
-    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
-    (hPre1 : registryEndpointValid st)
     (hPre2 : noStaleEndpointQueueReferences st)
     (hPre3 : noStaleNotificationWaitReferences st) :
     registryEndpointValid st' ∧
     noStaleEndpointQueueReferences st' ∧
     noStaleNotificationWaitReferences st' :=
-  ⟨registryEndpointValid_frame st st' hSvcReg hObjects hPre1,
+  ⟨registryEndpointValid_holds st',
    noStaleEndpointQueueReferences_frame st st' hObjects hPre2,
    noStaleNotificationWaitReferences_frame st st' hObjects hPre3⟩
 
@@ -2323,7 +2347,7 @@ theorem crossSubsystemInvariant_objects_frame
     (hInv : crossSubsystemInvariant st) :
     crossSubsystemInvariant st' := by
   obtain ⟨h1, h1i, h3, h4, h6, h7, h8, h9, h10, h11⟩ := hInv
-  refine ⟨registryEndpointValid_frame st st' hSvcReg hObjects h1,
+  refine ⟨registryEndpointValid_holds st',
          registryInterfaceValid_frame st st' hSvcReg hIfaceReg h1i,
          noStaleEndpointQueueReferences_frame st st' hObjects h3,
          noStaleNotificationWaitReferences_frame st st' hObjects h4,
@@ -2350,8 +2374,9 @@ theorem crossSubsystemInvariant_objects_frame
     The predicates of `crossSubsystemInvariant` that carry a field set (9 of
     its 10; see `crossSubsystemFieldSets_count`) have C(9,2) = 36 interaction
     pairs. The 3 SchedContext predicates (Z9-A/B/C) all read `objects`, so
-    they share with each other and with the other objects-reading predicates,
-    and are disjoint only from `registryInterfaceValid`.
+    they share with each other and with every other predicate: since WS-ZA
+    ZA5.9 the service registry is read off the endpoints, so
+    `registryInterfaceValid` reads `objects` too and no pair is disjoint.
 
     All sharing pairs between objects-reading predicates are covered by
     the `*_frame` lemmas (Z9-F) when `objects` is unchanged. -/
@@ -2363,13 +2388,13 @@ theorem crossSubsystemInvariant_composition_complete :
                     noStaleEndpointQueueReferences_fields = false) ∧
     (fieldsDisjoint registryEndpointValid_fields
                     noStaleNotificationWaitReferences_fields = false) ∧
-    -- Z9-E: the SchedContext predicates' disjoint pairs:
+    -- Z9-E: the SchedContext predicates share `objects` with the interface check:
     (fieldsDisjoint registryInterfaceValid_fields
-                    schedContextStoreConsistent_fields = true) ∧
+                    schedContextStoreConsistent_fields = false) ∧
     (fieldsDisjoint registryInterfaceValid_fields
-                    schedContextNotDualBound_fields = true) ∧
+                    schedContextNotDualBound_fields = false) ∧
     (fieldsDisjoint registryInterfaceValid_fields
-                    schedContextRunQueueConsistent_fields = true) := by
+                    schedContextRunQueueConsistent_fields = false) := by
   exact ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 -- ============================================================================
@@ -2494,13 +2519,15 @@ lemmas that connect per-subsystem preservation proofs to the full
 
 ### Coverage Matrix (AD4-A)
 
-All kernel operations that modify `objects` preserve `serviceRegistry` and
-`interfaceRegistry`, so `registryInterfaceValid` is always frame-preserved.
+All kernel operations that modify `objects` other than the register and the
+revoke keep every endpoint's service record — the registry, read off the
+endpoints since WS-ZA ZA5.9 (`SystemState.serviceRegistry`) — and the
+`interfaceRegistry`, so `registryInterfaceValid` is frame-preserved.
 The other predicates require per-subsystem post-state proofs:
 
 | Predicate | Reads |
 |-----------|-------|
-| `registryEndpointValid` | serviceRegistry + objects |
+| `registryEndpointValid` | objects (holds of every state, `registryEndpointValid_holds`) |
 | `noStaleEndpointQueueReferences` | objects |
 | `noStaleNotificationWaitReferences` | objects |
 | `schedContextStoreConsistent` | objects |
@@ -2578,7 +2605,6 @@ theorem crossSubsystemInvariant_objects_change_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2589,7 +2615,7 @@ theorem crossSubsystemInvariant_objects_change_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' := by
   obtain ⟨_, h1i, _, _, _, _, _, _, _, _⟩ := hPre
-  exact ⟨hRegEpValid,
+  exact ⟨registryEndpointValid_holds st',
          registryInterfaceValid_frame st st' hSvcReg hIfaceReg h1i,
          hEndpointQ, hNotifWait,
          hScStore, hScDual, hScRunQ, hBlockAcyclic, hLockstep, hUntypedDisj⟩
@@ -2607,7 +2633,6 @@ theorem ipcSend_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2618,7 +2643,7 @@ theorem ipcSend_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-B (F-08): `endpointReceiveDual` preserves `crossSubsystemInvariant`.
     IPC receive modifies TCB `ipcState`/`pendingMessage` and endpoint `receiveQ`
@@ -2629,7 +2654,6 @@ theorem ipcReceive_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2640,7 +2664,7 @@ theorem ipcReceive_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-B (F-08): `endpointReply` preserves `crossSubsystemInvariant`.
     IPC reply modifies the target TCB's `ipcState` (unblocking from
@@ -2652,7 +2676,6 @@ theorem ipcReply_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2663,7 +2686,7 @@ theorem ipcReply_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-B (F-08): `endpointCall` preserves `crossSubsystemInvariant`.
     IPC call combines send + block-on-reply: modifies caller TCB `ipcState`
@@ -2676,7 +2699,6 @@ theorem ipcCall_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2687,7 +2709,7 @@ theorem ipcCall_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-B (F-08): `endpointReplyRecv` preserves `crossSubsystemInvariant`.
     IPC replyRecv combines reply + receive: unblocks the reply target, then
@@ -2700,7 +2722,6 @@ theorem ipcReplyRecv_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2711,7 +2732,7 @@ theorem ipcReplyRecv_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-B (F-08): `notificationSignal` preserves `crossSubsystemInvariant`.
     Notification signal modifies the notification object (badge accumulation
@@ -2724,7 +2745,6 @@ theorem notificationSignal_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2735,7 +2755,7 @@ theorem notificationSignal_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-B (F-08): `notificationWait` preserves `crossSubsystemInvariant`.
     Notification wait either consumes a pending badge (modifying the notification
@@ -2748,7 +2768,6 @@ theorem notificationWait_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2759,7 +2778,7 @@ theorem notificationWait_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4-C: Scheduler/Lifecycle operation cross-subsystem bridge lemmas
@@ -2777,7 +2796,6 @@ theorem schedule_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2788,7 +2806,7 @@ theorem schedule_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-C (F-08): `handleYield` preserves `crossSubsystemInvariant`.
     HandleYield re-enqueues the current thread at the back of its priority
@@ -2800,7 +2818,6 @@ theorem handleYield_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2811,7 +2828,7 @@ theorem handleYield_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-C (F-08): `timerTick` preserves `crossSubsystemInvariant`.
     TimerTick decrements the current thread's time-slice within the TCB
@@ -2823,7 +2840,6 @@ theorem timerTick_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2834,7 +2850,7 @@ theorem timerTick_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-C (F-08): `switchDomain` preserves `crossSubsystemInvariant`.
     Domain switch (M-05) saves the outgoing thread's register context via
@@ -2846,7 +2862,6 @@ theorem switchDomain_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2857,7 +2872,7 @@ theorem switchDomain_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-C (F-08): `scheduleDomain` preserves `crossSubsystemInvariant`.
     Domain scheduling (M-05) decrements the domain time remaining; on expiry,
@@ -2869,7 +2884,6 @@ theorem scheduleDomain_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2880,7 +2894,7 @@ theorem scheduleDomain_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-C (F-08): `suspendThread` preserves `crossSubsystemInvariant`.
     Thread suspension performs a multi-step cleanup sequence (D1-G): revert
@@ -2894,7 +2908,6 @@ theorem suspendThread_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2905,7 +2918,7 @@ theorem suspendThread_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-C (F-08): `resumeThread` preserves `crossSubsystemInvariant`.
     Thread resumption (D1-H) sets `threadState := .Ready`, `ipcState := .ready`,
@@ -2918,7 +2931,6 @@ theorem resumeThread_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2929,7 +2941,7 @@ theorem resumeThread_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4: Retype bridge variant (objectIndex may grow)
@@ -2949,7 +2961,6 @@ theorem cspaceMint_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2960,7 +2971,7 @@ theorem cspaceMint_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-D (F-08): `cspaceCopy` preserves `crossSubsystemInvariant`.
     Capability copy duplicates a capability into a target CNode slot.
@@ -2970,7 +2981,6 @@ theorem cspaceCopy_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -2981,7 +2991,7 @@ theorem cspaceCopy_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-D (F-08): `cspaceMove` preserves `crossSubsystemInvariant`.
     Capability move transfers a capability between CNode slots (insert + delete).
@@ -2991,7 +3001,6 @@ theorem cspaceMove_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3002,7 +3011,7 @@ theorem cspaceMove_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-D (F-08): `cspaceMutate` preserves `crossSubsystemInvariant`.
     Capability mutate modifies a capability's badge within its CNode slot. -/
@@ -3011,7 +3020,6 @@ theorem cspaceMutate_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3022,7 +3030,7 @@ theorem cspaceMutate_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-D (F-08): `cspaceInsertSlot` preserves `crossSubsystemInvariant`.
     Inserts a capability into a specific CNode slot via `storeObject`. -/
@@ -3031,7 +3039,6 @@ theorem cspaceInsertSlot_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3042,7 +3049,7 @@ theorem cspaceInsertSlot_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-D (F-08): `cspaceDeleteSlot` preserves `crossSubsystemInvariant`.
     Clears a CNode slot via `storeObject`. -/
@@ -3051,7 +3058,6 @@ theorem cspaceDeleteSlot_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3062,7 +3068,7 @@ theorem cspaceDeleteSlot_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-D (F-08): `cspaceRevoke` preserves `crossSubsystemInvariant`.
     Iterates over CDT children and deletes derived capabilities. May modify
@@ -3072,7 +3078,6 @@ theorem cspaceRevoke_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3083,7 +3088,7 @@ theorem cspaceRevoke_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4-E: SchedContext operation cross-subsystem bridge lemmas
@@ -3097,7 +3102,6 @@ theorem schedContextConfigure_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3108,7 +3112,7 @@ theorem schedContextConfigure_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-E (F-08): `schedContextBind` preserves `crossSubsystemInvariant`.
     Updates SchedContext `boundThread` and TCB `schedContextBinding` fields
@@ -3119,7 +3123,6 @@ theorem schedContextBind_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3130,7 +3133,7 @@ theorem schedContextBind_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-E (F-08): `schedContextUnbind` preserves `crossSubsystemInvariant`.
     Clears SchedContext `boundThread` and TCB `schedContextBinding` fields.
@@ -3140,7 +3143,6 @@ theorem schedContextUnbind_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3151,7 +3153,7 @@ theorem schedContextUnbind_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-E (F-08): `schedContextYieldTo` preserves `crossSubsystemInvariant`.
     Transfers budget between SchedContexts. Rewrites both SchedContext objects
@@ -3163,7 +3165,6 @@ theorem schedContextYieldTo_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3174,7 +3175,7 @@ theorem schedContextYieldTo_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4-F: Priority management cross-subsystem bridge lemmas
@@ -3189,7 +3190,6 @@ theorem setPriority_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3200,7 +3200,7 @@ theorem setPriority_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-F (F-08): `setMCPriorityOp` preserves `crossSubsystemInvariant`.
     Updates TCB maximum controlled priority (MCP) and potentially effective
@@ -3211,7 +3211,6 @@ theorem setMCPriority_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3222,7 +3221,7 @@ theorem setMCPriority_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4-G: VSpace operation cross-subsystem bridge lemmas
@@ -3237,7 +3236,6 @@ theorem vspaceMapPage_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3248,7 +3246,7 @@ theorem vspaceMapPage_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-G (F-08): `vspaceUnmapPage` preserves `crossSubsystemInvariant`.
     Removes a page mapping from a VSpaceRoot object via `storeObject`.
@@ -3258,7 +3256,6 @@ theorem vspaceUnmapPage_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3269,7 +3266,7 @@ theorem vspaceUnmapPage_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4-H: IPC buffer and remaining operation bridges
@@ -3286,7 +3283,6 @@ theorem setIPCBuffer_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3297,7 +3293,7 @@ theorem setIPCBuffer_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AD4-I: Lifecycle retype operation cross-subsystem bridge lemmas
@@ -3312,7 +3308,6 @@ theorem retypeFromUntyped_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3323,7 +3318,7 @@ theorem retypeFromUntyped_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 -- ============================================================================
 -- AG5-F: Interrupt dispatch cross-subsystem bridge
@@ -3344,7 +3339,6 @@ theorem handleInterrupt_crossSubsystemInvariant_bridge
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hRegEpValid : registryEndpointValid st')
     (hEndpointQ : noStaleEndpointQueueReferences st')
     (hNotifWait : noStaleNotificationWaitReferences st')
     (hScStore : schedContextStoreConsistent st')
@@ -3355,7 +3349,7 @@ theorem handleInterrupt_crossSubsystemInvariant_bridge
     (hUntypedDisj : untypedRegionsDisjoint st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
+    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 

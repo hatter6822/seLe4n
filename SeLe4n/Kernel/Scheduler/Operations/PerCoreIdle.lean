@@ -213,7 +213,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_scheduleEffectiveOnCore_current_i
     (h : SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads config = .ok ist)
     (c : CoreId) {st' : SystemState} (hS : scheduleEffectiveOnCore ist.state c = .ok st') :
     (st'.scheduler.currentOnCore c).isSome :=
-  scheduleEffectiveOnCore_current_isSome ist.hAllTables.1.1
+  scheduleEffectiveOnCore_current_isSome ist.hAllTables.objects.1
     (bootFromPlatformCheckedWithIdleThreads_idleDispatchableOnCore config ist h c) hS
 
 -- ============================================================================
