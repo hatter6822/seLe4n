@@ -1460,10 +1460,10 @@ def CovertChannelId.evidenceProp : CovertChannelId → Prop
           ObservableState.onCore ctx c L { s with perCoreICache := vIcache }
             = ObservableState.onCore ctx c L s
   | .auditOccupancy =>
-      ∀ (log : DeclassificationAuditLog) (e : DeclassificationEvent),
+      ∀ (trail : AuditRing) (e : DeclassificationEvent),
         (covertChannelEntry .auditOccupancy).modelVisible = true ∧
-          ((recordDeclassificationChecked log e).isSome = true ↔
-            log.length < maxDeclassificationAuditEntries)
+          ((recordDeclassificationChecked trail e).isSome = true ↔
+            trail.toList.length < maxDeclassificationAuditEntries)
 
 /-- WS-SM SM9.A / PR #870 round 7 (the CC-8 witness): the entry's
 `modelVisible := true` conjoined with the **capacity gate** that carries the
@@ -1475,11 +1475,11 @@ occupancy alphabet (`auditOccupancy_alphabet_bounded`) — live in
 theorem `acceptedCovertChannel_auditOccupancy_bounded` in
 `DeclassificationPerCore.lean` ties this entry's literals to them. -/
 theorem acceptedCovertChannel_auditOccupancy_capacity_gates :
-    ∀ (log : DeclassificationAuditLog) (e : DeclassificationEvent),
+    ∀ (trail : AuditRing) (e : DeclassificationEvent),
       (covertChannelEntry .auditOccupancy).modelVisible = true ∧
-        ((recordDeclassificationChecked log e).isSome = true ↔
-          log.length < maxDeclassificationAuditEntries) :=
-  fun log e => ⟨rfl, recordDeclassificationChecked_isSome_iff log e⟩
+        ((recordDeclassificationChecked trail e).isSome = true ↔
+          trail.toList.length < maxDeclassificationAuditEntries) :=
+  fun trail e => ⟨rfl, recordDeclassificationChecked_isSome_iff trail e⟩
 
 /-- SM8.B.8 (review round 17): **the evidence itself**, as a dependently-typed
 total function — the load-bearing obligation the string table below only names.

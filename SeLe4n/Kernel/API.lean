@@ -4817,7 +4817,7 @@ separate, non-inlined function so its arguments are read before the arm runs. -/
 @[noinline] def dispatchCheckedArmThenTaint (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (plan : TaintPlan) (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (plan : TaintPlan) (preEpoch : Nat) (preLength : Nat)
     (preTaint : TaintTable) : Kernel Unit :=
   fun st =>
     match (if syscallChecksTargetFirst decoded.syscallId then
@@ -4825,7 +4825,7 @@ separate, non-inlined function so its arguments are read before the arm runs. -/
            else
              syscallInvoke gate (dispatchWithCapChecked ctx decoded tid executingCore gate)) st with
     | .error e => .error e
-    | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLog preTaint stPost)
+    | .ok ((), stPost) => .ok ((), applySyscallTaintAfter plan preEpoch preLength preTaint stPost)
 
 /-- WS-ZA ZA1.1: the compiled `dispatchSyscallChecked`.  It reads what the taint
 step needs of the pre-state before the arm, so the arm owns the state it writes
@@ -4853,7 +4853,7 @@ def dispatchSyscallCheckedImpl (ctx : LabelingContext)
         }
         dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
-          st.declassificationAuditLog st.declassificationTaint st
+          st.declassificationAudit.length st.declassificationTaint st
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState

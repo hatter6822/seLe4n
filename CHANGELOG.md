@@ -1,3 +1,66 @@
+## v0.36.160 — WS-ZA ZA5.10: the audit trail is a fixed ring written in place
+
+The declassification audit trail was a list appended with `++ [e]`, so every
+record was a new cell. It is now a fixed ring made at boot, and a record
+writes one slot in place.
+
+- **The ring.** `AuditRing` (in `AuditRecord.lean`) holds:
+  - `slots`, a `Vector` of 256 events;
+  - the window length;
+  - the epoch, the count drained since boot.
+
+  `SystemState.declassificationAudit` replaces the `declassificationAuditLog`
+  and `declassificationAuditEpoch` fields. The head is not stored. The entry
+  stamped `t` lives in slot `t % 256` (`AuditRing.slotOf`), so the window
+  starts at the epoch's slot.
+- **The record.** `AuditRing.append` writes the slot after the window.
+  - The check comes first and stays fail-closed: `recordDeclassificationChecked`
+    takes the ring and refuses at 256.
+  - `none` keeps its meaning, a refused downgrade.
+  - Below capacity, the record is the list trail's append
+    (`AuditRing.toList_append`).
+- **The drain.** `AuditRing.dropFront` advances the epoch and shortens the
+  window. It writes no slot, and the freed slots are reused by later records.
+  It is the list trail's `drop` (`AuditRing.toList_dropFront`).
+- **The readers stay.**
+  - `SystemState.declassificationAuditLog` (the window in order,
+    `AuditRing.toList`) and `SystemState.declassificationAuditEpoch` are
+    readers now. Every theorem stated over them keeps its statement.
+  - The taint step's new events are `recordedSince`. It is `@[csimp]` to
+    `recordedSinceOfRing`, which reads the new entries off the slots
+    (`AuditRing.entriesFrom`) without building the trail.
+  - `applySyscallTaintAfter` takes the pre-state's window length instead of
+    its trail.
+- **The event names its position.** `declassificationEventOnCore` takes the
+  window length rather than the trail, and stamps `epoch + position` as
+  before.
+- **The bound is the type's.** `auditLogBounded` stays in the bundle. It is
+  discharged by `AuditRing.bounded` for every ring. The per-transition
+  `_preserves_auditLogBounded` theorems it made trivial are deleted. So are
+  the bound hypothesis and the `...AuditTrail` variant of
+  `proofLayerInvariantBundle_setDeclassificationAuditLog`.
+- **The boot.** `initialiseKernelState` installs the ring with its own slot
+  array (`SystemState.withFreshAuditRing`, the state itself). The first record
+  after boot then writes in place rather than copying the shared initial ring.
+- **Information flow.** The ring is outside `ObservableState`, as the trail
+  was. The projection lemmas merge into
+  `declassificationAudit_write_preserves_projection` and its per-core and
+  `onCore` companions, all `rfl` over any ring. The audit-equivalence
+  congruences and the reader theorems are restated over a ring together with
+  its `toList` equality.
+- **The live declassification's trail as a list.**
+  `declassifyObjectFromCore_log` and `declassifyStoreTrail_toList` state it,
+  from the room the step found (`declassifyObjectFromCore_room`).
+- **The content-flow gate** tracks writers of `declassificationAudit`.
+- **The plan.** The row is split:
+  - ZA5.10 is the audit ring;
+  - ZA5.11 is the new row for the taint table;
+  - the declassification and audit routing is renumbered ZA5.12.
+
+  Every citation is swept.
+- **Measured** (fresh untraced archive, `--lean-kernel`): every pin is
+  unchanged. No routed call writes the ring yet; ZA5.12 routes them.
+
 ## v0.36.159 — WS-ZA ZA5.9: the service registry table retires; the registry is the endpoints' records
 
 The registry table is deleted. A registration lives on its endpoint and nowhere

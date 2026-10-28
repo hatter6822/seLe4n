@@ -1354,10 +1354,9 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      true)
 
   assertBool "SM9.C.3/.C.4: the delivery preserves the invariant surface it inherits"
-    (-- The 16th `proofLayerInvariantBundle` conjunct rides the writer layer, and
-     -- the trail's own bound and well-formedness ride the recorder.
+    (-- The 16th `proofLayerInvariantBundle` conjunct is the ring's own bound,
+     -- and the trail's well-formedness rides the recorder.
      have _pb := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle
-     have _ab := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_auditLogBounded
      have _wf := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailWellFormed
      -- The IPC surface it inherits from SM6.B, transferred through the frame.
      have _ie := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_objects_invExt

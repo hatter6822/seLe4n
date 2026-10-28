@@ -472,12 +472,13 @@ at capacity and the caller must fail the whole operation, which is what
 `declassifyStoreOnCore_never_unaudited` — an authorized downgrade is either
 recorded or does not happen.
 
-The availability cost is real and is *not* mitigated in this cut, because the
-only sound mitigation is a consumer that drains the trail, and no read
-interface exists yet (registered as SM8.E debt in
-WS-SM SM8).  A future ring buffer would have
-to record its own overflow — a dropped entry that leaves no trace of the drop
-is the same unaudited downgrade in a different disguise. -/
+The availability cost is real, and its only sound mitigation is a consumer
+that drains the trail: the audit monitor's drain (`auditDrainVisiblePrefix`,
+WS-SM SM9.A.3).  The trail is a ring (WS-ZA ZA5.10, `AuditRing`) and stays
+fail-closed: a ring that dropped its oldest entry at capacity would leave a
+downgrade with no trace of the drop, the same unaudited downgrade in a
+different disguise, so a full ring refuses the record and only a drain frees
+its slots. -/
 
 /-- WS-SM SM8.C.8: capacity of the mounted declassification audit trail.
 
@@ -503,79 +504,285 @@ instance (log : DeclassificationAuditLog) : Decidable (auditLogBounded log) :=
 theorem auditLogBounded_nil : auditLogBounded ([] : DeclassificationAuditLog) := by
   simp [auditLogBounded]
 
-/-- WS-SM SM8.C.8: **fail-closed** append.  Returns `none` at capacity so the
+/-- WS-ZA ZA5.10: the trail's capacity is positive, so a timestamp always names
+a slot. -/
+theorem maxDeclassificationAuditEntries_pos : 0 < maxDeclassificationAuditEntries := by decide
+
+/-- WS-ZA ZA5.10: the record a slot holds before its first write, and after its
+entry is drained until the next write reuses it.  No reader sees it: the
+trail's readers read only the live window (`AuditRing.toList`). -/
+def DeclassificationEvent.vacant : DeclassificationEvent :=
+  { srcDomain := SecurityDomain.lowest
+    dstDomain := SecurityDomain.lowest
+    targetObject := SeLe4n.ObjId.ofNat 0
+    authorizationBasis := .policyRule
+    timestamp := 0
+    originatingCore := Concurrency.bootCoreId
+    actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest }
+    predecessorTags := DeclassificationTaint.empty }
+
+/-- WS-ZA ZA5.10: **the declassification audit trail as a fixed ring.**
+
+`maxDeclassificationAuditEntries` slots made at boot and written in place, with
+the live window's length and the epoch: the number of entries drained so far.
+The entry stamped `t` lives in slot `t % maxDeclassificationAuditEntries`, so
+the window starts at slot `epoch % maxDeclassificationAuditEntries`: the head
+is the epoch's slot rather than a third counter that would have to be kept
+equal to it.
+
+- A record writes the slot after the window and grows the window by one
+  (`AuditRing.append`).  It is checked before it writes: at capacity the
+  record refuses (`recordDeclassificationChecked`), as the list trail did.
+- A drain advances the epoch and shortens the window (`AuditRing.dropFront`).
+  The drained slots are free: the next records write over them.
+
+`AuditRing.toList` is the trail in order, and the readers state the trail
+through it, so every theorem about the list trail reads the ring
+(`AuditRing.toList_append`, `AuditRing.toList_dropFront`).  The capacity is in
+the type (`length_le`), so `auditLogBounded` holds of every ring
+(`AuditRing.bounded`). -/
+structure AuditRing where
+  /-- The slots, made at boot. -/
+  slots : Vector DeclassificationEvent maxDeclassificationAuditEntries
+  /-- How many entries the live window holds. -/
+  length : Nat
+  /-- How many entries have been drained since boot: the timestamp of the
+      window's first entry. -/
+  epoch : Nat
+  /-- The window fits in the slots. -/
+  length_le : length ≤ maxDeclassificationAuditEntries
+
+namespace AuditRing
+
+/-- WS-ZA ZA5.10: the slot of the entry stamped `t`. -/
+@[inline] def slotOf (t : Nat) : Nat := t % maxDeclassificationAuditEntries
+
+theorem slotOf_lt (t : Nat) : slotOf t < maxDeclassificationAuditEntries :=
+  Nat.mod_lt _ maxDeclassificationAuditEntries_pos
+
+/-- WS-ZA ZA5.10: two timestamps less than the capacity apart name different
+slots, so a record never writes over a live entry. -/
+theorem slotOf_ne {a b : Nat} (hab : a < b) (hlt : b - a < maxDeclassificationAuditEntries) :
+    slotOf a ≠ slotOf b := by
+  intro h
+  have h0 := Nat.sub_mod_eq_zero_of_mod_eq h.symm
+  rw [Nat.mod_eq_of_lt hlt] at h0
+  omega
+
+/-- WS-ZA ZA5.10: the `i`th entry of the live window. -/
+@[inline] def entry (r : AuditRing) (i : Nat) : DeclassificationEvent :=
+  r.slots[slotOf (r.epoch + i)]'(slotOf_lt _)
+
+/-- WS-ZA ZA5.10: **the trail in order** — the live window, oldest first. -/
+def toList (r : AuditRing) : DeclassificationAuditLog :=
+  (List.range r.length).map r.entry
+
+@[simp] theorem length_toList (r : AuditRing) : r.toList.length = r.length := by
+  simp [toList]
+
+theorem getElem_toList (r : AuditRing) (i : Nat) (h : i < r.toList.length) :
+    r.toList[i] = r.entry i := by
+  simp [toList]
+
+/-- WS-ZA ZA5.10: every ring is within the capacity bound. -/
+theorem bounded (r : AuditRing) : auditLogBounded r.toList := by
+  simpa [auditLogBounded] using r.length_le
+
+/-- WS-ZA ZA5.10: the ring at boot: every slot vacant, nothing drained.  The
+boot gives the installed state its own copy of the slots
+(`SystemState.withFreshAuditRing`), so the first record writes in place. -/
+def empty : AuditRing :=
+  ⟨Vector.replicate _ DeclassificationEvent.vacant, 0, 0, Nat.zero_le _⟩
+
+@[simp] theorem toList_empty : empty.toList = [] := by simp [toList, empty]
+
+@[simp] theorem epoch_empty : empty.epoch = 0 := rfl
+
+/-- WS-ZA ZA5.10: **record one entry**: the slot after the window takes it and
+the window grows by one.  At capacity the ring is returned as it is; the
+writers reach this only below capacity, through the check
+(`recordDeclassificationChecked`). -/
+def append (r : AuditRing) (e : DeclassificationEvent) : AuditRing :=
+  if h : r.length < maxDeclassificationAuditEntries then
+    ⟨r.slots.set (slotOf (r.epoch + r.length)) e (slotOf_lt _), r.length + 1, r.epoch, h⟩
+  else r
+
+@[simp] theorem epoch_append (r : AuditRing) (e : DeclassificationEvent) :
+    (r.append e).epoch = r.epoch := by
+  unfold append; split <;> rfl
+
+/-- WS-ZA ZA5.10: below capacity, a record grows the window by one. -/
+theorem length_append (r : AuditRing) (e : DeclassificationEvent)
+    (h : r.toList.length < maxDeclassificationAuditEntries) :
+    (r.append e).length = r.length + 1 := by
+  rw [length_toList] at h
+  simp [append, h]
+
+/-- WS-ZA ZA5.10: below capacity, the ring's record is the list trail's append. -/
+theorem toList_append (r : AuditRing) (e : DeclassificationEvent)
+    (h : r.toList.length < maxDeclassificationAuditEntries) :
+    (r.append e).toList = recordDeclassification r.toList e := by
+  rw [length_toList] at h
+  unfold recordDeclassification
+  apply List.ext_getElem
+  · simp [append, h]
+  · intro i h1 h2
+    simp only [append, h, dite_true, length_toList] at h1
+    rw [getElem_toList]
+    by_cases hi : i < r.length
+    · rw [List.getElem_append_left (by simpa using hi), getElem_toList]
+      simp only [entry, append, h, dite_true]
+      rw [Vector.getElem_set_ne]
+      exact (slotOf_ne (by omega) (by omega)).symm
+    · have hi' : i = r.length := by omega
+      subst hi'
+      rw [List.getElem_append_right (by simp)]
+      simp [entry, append, h]
+
+/-- WS-ZA ZA5.10: **drain `k` entries**: the epoch advances by `k` and the
+window loses its first `k` entries; the slots are not written. -/
+def dropFront (r : AuditRing) (k : Nat) : AuditRing :=
+  ⟨r.slots, r.length - k, r.epoch + k, Nat.le_trans (Nat.sub_le _ _) r.length_le⟩
+
+@[simp] theorem epoch_dropFront (r : AuditRing) (k : Nat) :
+    (r.dropFront k).epoch = r.epoch + k := rfl
+
+/-- WS-ZA ZA5.10: the ring's drain is the list trail's `drop`. -/
+@[simp] theorem toList_dropFront (r : AuditRing) (k : Nat) :
+    (r.dropFront k).toList = r.toList.drop k := by
+  apply List.ext_getElem
+  · simp [dropFront]
+  · intro i h1 h2
+    rw [getElem_toList, List.getElem_drop, getElem_toList]
+    simp [entry, dropFront, Nat.add_assoc]
+
+/-- WS-ZA ZA5.10: the window's entries from position `k` on, read off the slots
+— the trail's suffix without building the trail (`entriesFrom_eq_drop`). -/
+def entriesFrom (r : AuditRing) (k : Nat) : DeclassificationAuditLog :=
+  (List.range (r.length - k)).map (fun i => r.entry (k + i))
+
+theorem entriesFrom_eq_drop (r : AuditRing) (k : Nat) :
+    r.entriesFrom k = r.toList.drop k := by
+  apply List.ext_getElem
+  · simp [entriesFrom]
+  · intro i h1 h2
+    rw [List.getElem_drop, getElem_toList]
+    simp [entriesFrom]
+
+/-- WS-ZA ZA5.10: the ring holding `l` with `epoch` entries drained before it —
+the trail a test or a witness names as a list.  Entries past the capacity are
+not recorded (`toList_ofList` states the bounded case). -/
+def ofList (l : DeclassificationAuditLog) (epoch : Nat := 0) : AuditRing :=
+  l.foldl append { empty with epoch := epoch }
+
+theorem toList_foldl_append (l : DeclassificationAuditLog) (r : AuditRing)
+    (h : r.length + l.length ≤ maxDeclassificationAuditEntries) :
+    (l.foldl append r).toList = r.toList ++ l := by
+  induction l generalizing r with
+  | nil => simp
+  | cons e l ih =>
+    simp only [List.foldl_cons, List.length_cons] at h ⊢
+    have hr : r.toList.length < maxDeclassificationAuditEntries := by simp; omega
+    rw [ih, toList_append r e hr]
+    · simp [recordDeclassification]
+    · have : (r.append e).length = r.length + 1 := by
+        simp only [length_toList] at hr; simp [append, hr]
+      omega
+
+theorem epoch_foldl_append (l : DeclassificationAuditLog) (r : AuditRing) :
+    (l.foldl append r).epoch = r.epoch := by
+  induction l generalizing r with
+  | nil => rfl
+  | cons e l ih => simp [List.foldl_cons, ih]
+
+theorem toList_ofList (l : DeclassificationAuditLog) (epoch : Nat)
+    (h : l.length ≤ maxDeclassificationAuditEntries) :
+    (ofList l epoch).toList = l := by
+  unfold ofList
+  rw [toList_foldl_append]
+  · simp [toList, empty]
+  · simpa [empty] using h
+
+@[simp] theorem epoch_ofList (l : DeclassificationAuditLog) (epoch : Nat) :
+    (ofList l epoch).epoch = epoch := by
+  unfold ofList; rw [epoch_foldl_append]
+
+end AuditRing
+
+/-- WS-SM SM8.C.8: **fail-closed** record.  Returns `none` at capacity so the
     caller must fail the operation rather than perform an unrecorded downgrade.
 
-    `recordDeclassification` (the V6-H primitive) stays as it was: it is the
-    pure append, used wherever the bound is established separately.  This is
-    the form the mounted trail is written through. -/
+    WS-ZA ZA5.10: the trail is the fixed ring, so the check is the window's
+    length against the capacity and the record is the ring's in-place write
+    (`AuditRing.append`).  `recordDeclassification` (the V6-H primitive) stays
+    as the list specification the ring is proven to implement
+    (`AuditRing.toList_append`). -/
 def recordDeclassificationChecked
-    (log : DeclassificationAuditLog)
-    (event : DeclassificationEvent) : Option DeclassificationAuditLog :=
-  if log.length < maxDeclassificationAuditEntries then
-    some (recordDeclassification log event)
+    (r : AuditRing) (event : DeclassificationEvent) : Option AuditRing :=
+  if r.length < maxDeclassificationAuditEntries then
+    some (r.append event)
   else
     none
 
-/-- WS-SM SM8.C.8: the checked append succeeds exactly below capacity. -/
+/-- WS-SM SM8.C.8: the checked record succeeds exactly below capacity. -/
 theorem recordDeclassificationChecked_isSome_iff
-    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
-    (recordDeclassificationChecked log event).isSome = true ↔
-      log.length < maxDeclassificationAuditEntries := by
+    (r : AuditRing) (event : DeclassificationEvent) :
+    (recordDeclassificationChecked r event).isSome = true ↔
+      r.toList.length < maxDeclassificationAuditEntries := by
   unfold recordDeclassificationChecked
   split <;> simp_all
 
-/-- WS-SM SM8.C.8: below capacity the checked append **is** the plain append —
+/-- WS-SM SM8.C.8: below capacity the checked record **is** the ring's record —
     nothing about the recorded event changes, only whether it is recorded. -/
 theorem recordDeclassificationChecked_eq_record
-    (log : DeclassificationAuditLog) (event : DeclassificationEvent)
-    (hRoom : log.length < maxDeclassificationAuditEntries) :
-    recordDeclassificationChecked log event = some (recordDeclassification log event) := by
+    (r : AuditRing) (event : DeclassificationEvent)
+    (hRoom : r.toList.length < maxDeclassificationAuditEntries) :
+    recordDeclassificationChecked r event = some (r.append event) := by
+  simp only [AuditRing.length_toList] at hRoom
   simp [recordDeclassificationChecked, hRoom]
 
-/-- WS-SM SM8.C.8: at capacity the checked append refuses.  The dual of
+/-- WS-SM SM8.C.8: at capacity the checked record refuses.  The dual of
     `recordDeclassificationChecked_eq_record`, and the reason a declassification
     can fail for a reason that is neither policy nor authority. -/
 theorem recordDeclassificationChecked_eq_none
-    (log : DeclassificationAuditLog) (event : DeclassificationEvent)
-    (hFull : maxDeclassificationAuditEntries ≤ log.length) :
-    recordDeclassificationChecked log event = none := by
+    (r : AuditRing) (event : DeclassificationEvent)
+    (hFull : maxDeclassificationAuditEntries ≤ r.toList.length) :
+    recordDeclassificationChecked r event = none := by
+  simp only [AuditRing.length_toList] at hFull
   simp [recordDeclassificationChecked, Nat.not_lt.mpr hFull]
 
-/-- WS-SM SM8.C.8: the checked append preserves the capacity invariant.
-
-    Note this is *unconditional* in the pre-state bound: success already implies
-    there was room, so the post-state bound follows from the guard alone.  That
-    is what makes the conjunct carriable through the live path without threading
-    a precondition. -/
-theorem recordDeclassificationChecked_preserves_bounded
-    (log log' : DeclassificationAuditLog) (event : DeclassificationEvent)
-    (hStep : recordDeclassificationChecked log event = some log') :
-    auditLogBounded log' := by
+/-- WS-SM SM8.C.8: a successful checked record writes the list trail's append. -/
+theorem recordDeclassificationChecked_toList
+    (r r' : AuditRing) (event : DeclassificationEvent)
+    (hStep : recordDeclassificationChecked r event = some r') :
+    r'.toList = recordDeclassification r.toList event ∧ r'.epoch = r.epoch := by
   unfold recordDeclassificationChecked at hStep
   split at hStep
   · rename_i hRoom
-    have : log' = recordDeclassification log event := by
-      exact (Option.some.inj hStep).symm
-    subst this
-    simp [auditLogBounded, recordDeclassification]
-    omega
+    have hEq : r' = r.append event := (Option.some.inj hStep).symm
+    subst hEq
+    exact ⟨AuditRing.toList_append r event (by simpa using hRoom), AuditRing.epoch_append r event⟩
   · exact absurd hStep (by simp)
 
-/-- WS-SM SM8.C.8: a successful checked append records exactly the event asked
+/-- WS-SM SM8.C.8: a successful checked record leaves the trail within
+    capacity — by the ring's type (`AuditRing.bounded`). -/
+theorem recordDeclassificationChecked_preserves_bounded
+    (r r' : AuditRing) (event : DeclassificationEvent)
+    (_hStep : recordDeclassificationChecked r event = some r') :
+    auditLogBounded r'.toList :=
+  AuditRing.bounded r'
+
+/-- WS-SM SM8.C.8: a successful checked record records exactly the event asked
     for and preserves every earlier one — the no-loss property. -/
 theorem recordDeclassificationChecked_records
-    (log log' : DeclassificationAuditLog) (event : DeclassificationEvent)
-    (hStep : recordDeclassificationChecked log event = some log') :
-    event ∈ log' ∧ (∀ e ∈ log, e ∈ log') ∧ log'.length = log.length + 1 := by
-  unfold recordDeclassificationChecked at hStep
-  split at hStep
-  · have hEq : log' = recordDeclassification log event := (Option.some.inj hStep).symm
-    subst hEq
-    exact ⟨recordDeclassification_contains_new log event,
-           recordDeclassification_preserves_existing log event,
-           recordDeclassification_length log event⟩
-  · exact absurd hStep (by simp)
+    (r r' : AuditRing) (event : DeclassificationEvent)
+    (hStep : recordDeclassificationChecked r event = some r') :
+    event ∈ r'.toList ∧ (∀ e ∈ r.toList, e ∈ r'.toList) ∧
+      r'.toList.length = r.toList.length + 1 := by
+  rw [(recordDeclassificationChecked_toList r r' event hStep).1]
+  exact ⟨recordDeclassification_contains_new _ event,
+         recordDeclassification_preserves_existing _ event,
+         recordDeclassification_length _ event⟩
 
 -- ============================================================================
 -- WS-SM SM8.C / SM9.A.1a: the trail as a totally ordered record
@@ -776,14 +983,7 @@ theorem declassificationAuditLog_timestamp_identifies_event
 trails in the timestamp negatives below.  Every field but the timestamp is the
 neutral choice, because the timestamp is the only one the statements read. -/
 def auditTimestampWitness (t : Nat) : DeclassificationEvent :=
-  { srcDomain := SecurityDomain.lowest
-    dstDomain := SecurityDomain.lowest
-    targetObject := SeLe4n.ObjId.ofNat 0
-    authorizationBasis := .policyRule
-    timestamp := t
-    originatingCore := Concurrency.bootCoreId
-    actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest }
-    predecessorTags := DeclassificationTaint.empty }
+  { DeclassificationEvent.vacant with timestamp := t }
 
 /-- WS-SM SM9.A.1a (**the load-bearing negative**): the pre-epoch producer
 **reuses a timestamp after a drain**.

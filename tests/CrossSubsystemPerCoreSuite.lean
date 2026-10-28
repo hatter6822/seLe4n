@@ -554,8 +554,7 @@ private def runModifiedFieldsChecks : IO Unit := do
              StateField.pendingIcacheMaintenance ∉ storeObject_modifiedFields ∧
              StateField.physicalWrites ∉ storeObject_modifiedFields ∧
              StateField.physicalWritesDrained ∉ storeObject_modifiedFields ∧
-             StateField.declassificationAuditLog ∉ storeObject_modifiedFields ∧
-             StateField.declassificationAuditEpoch ∉ storeObject_modifiedFields ∧
+             StateField.declassificationAudit ∉ storeObject_modifiedFields ∧
              StateField.declassificationRefusals ∉ storeObject_modifiedFields ∧
              StateField.declassificationTaint ∉ storeObject_modifiedFields))
   -- And the CDT fields are NOT in the IPC list, nor the scheduler in the

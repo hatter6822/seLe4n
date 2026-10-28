@@ -973,7 +973,7 @@ theorem declassifyObjectFromCore_confinedToCores
 invisible on every core.
 
 The audit trail is deliberately outside `ObservableState`
-(`declassificationAuditLog_write_preserves_projection`), so this is not merely
+(`declassificationAudit_write_preserves_projection`), so this is not merely
 "writes no scheduler slot" — it is that the one field it does write is one no
 observer reads. See the field's docstring for why projecting it would open a
 channel out of exactly the boundary the audit exists to police. -/
@@ -1041,9 +1041,9 @@ theorem auditDrainVisiblePrefix_confinedToCores
 on every core.
 
 Like the declassification it is built beside, this is not merely "writes no
-scheduler slot": the two fields it does write are ones no observer reads
-(`declassificationAuditLog_write_preserves_projection`,
-`declassificationAuditEpoch_write_preserves_projection`). The epoch's exclusion
+scheduler slot": the field it does write, the audit ring holding the trail and
+the epoch, is one no observer reads
+(`declassificationAudit_write_preserves_projection`). The epoch's exclusion
 is the sharper of the two — it *counts* entries, including entries a partial
 reader may not see. -/
 theorem auditDrainVisiblePrefix_crossCoreNonInterference

@@ -563,9 +563,9 @@ theorem replyRecvTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTcb : st.getObject? tid.toObjId = some (.tcb tcb))
     (hRoot : st.getObject? tcb.cspaceRoot = some (.cnode rootCn))
     (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLog preTaint post =
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       (match syscallOperandCap? st tid decoded.capAddr with
         | some cap => replyRecvTaintStep (receiveTaintSourceCode st cap)
             (replyRecvTaintCallerCodeOf st tid cap layout rf decoded.msgInfo.length) tid preTaint
@@ -624,7 +624,7 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
 theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
-    (preEpoch : Nat) (preLog : DeclassificationAuditLog)
+    (preEpoch : Nat) (preLength : Nat)
     (preTaint : TaintTable) (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (hRR : decoded.syscallId = .replyRecv)
@@ -639,7 +639,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
         { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
           capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-        (syscallTaintPlan st tid decoded) preEpoch preLog preTaint) st := by
+        (syscallTaintPlan st tid decoded) preEpoch preLength preTaint) st := by
   have hOperand := syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hRR, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
@@ -690,7 +690,7 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
     (by rw [hRR]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArm := replyRecvOperandArmThenTaintR_eq ctx decoded tid executingCore
-    st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
     st tcb rootCn ref layout rf hRR hRegs hSlot hTcb hRoot hRef
   simp only [hRR] at hArm ⊢
   exact hArm

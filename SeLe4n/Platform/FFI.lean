@@ -1071,9 +1071,12 @@ returns `.ok`.  Tests call this directly to seed a known initial
 state for negative checks (e.g., empty scheduler, unmapped IPC
 buffer).  The state installed carries seeded shootdown spares
 (`Architecture.withShootdownSparesSeeded`, the state itself), so the first page
-unmap after boot allocates nothing. -/
+unmap after boot allocates nothing, and an audit ring with its own slot array
+(`SystemState.withFreshAuditRing`, the state itself), so the first
+declassification record after boot writes its slot in place instead of copying
+the shared initial ring. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
-  kernelStateRef.set (Architecture.withShootdownSparesSeeded st)
+  kernelStateRef.set (Architecture.withShootdownSparesSeeded st).withFreshAuditRing
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 
@@ -2761,10 +2764,13 @@ theorem refusalWrite_cannot_exhaust_trail
     (syscallId : UInt32) (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
     (st : SystemState) (e : DeclassificationEvent) :
     (recordDeclassificationChecked
-        (SystemState.declassificationAuditLog
-          (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st)) e).isSome
-      = (recordDeclassificationChecked st.declassificationAuditLog e).isSome := by
-  rw [(refusalWrite_declassificationAuditLog_eq ctx executingCore syscallId tid ke x0 st).1]
+        (recordSyscallRefusal ctx executingCore syscallId tid ke x0 st).declassificationAudit
+        e).isSome
+      = (recordDeclassificationChecked st.declassificationAudit e).isSome := by
+  unfold recordSyscallRefusal
+  split
+  · rfl
+  · split <;> rfl
 
 /-- PR #887 review round 3: the trap frame's fault window as the SVC seam
 carries it.  `x0`-`x5` are the syscall arguments the seam already spills,

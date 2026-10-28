@@ -7214,16 +7214,30 @@ run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassifica
 # would leave an authorized downgrade with no record, which is the exact failure
 # the phase exists to exclude, so `recordDeclassificationChecked` must have no
 # arm that returns a truncated log.
-run_check "INVARIANT" rg -n '^  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^  declassificationAudit : SeLe4n.Kernel.AuditRing := SeLe4n.Kernel.AuditRing.empty$' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog$' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '^def maxDeclassificationAuditEntries($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def auditLogBounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def recordDeclassificationChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n 'auditLogBounded st.declassificationAuditLog' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationAuditLog($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAudit_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationAuditLog($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationAuditLog_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+# The trail is a fixed ring written in place: a Vector of slots made at boot,
+# a window length and the epoch.  Its record and its drain are the list
+# trail's append and drop; the record writes no slot at capacity (the
+# checked record refuses first, so nothing is dropped); the taint step reads
+# the new entries off the slots by the compiled form; and the installed
+# state's ring gets its own slot array at boot.
+run_check "INVARIANT" rg -n '^structure AuditRing($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^  slots : Vector DeclassificationEvent maxDeclassificationAuditEntries$' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem toList_append($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem toList_dropFront($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem bounded \(r : AuditRing\) : auditLogBounded r\.toList' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^  kernelStateRef\.set \(Architecture\.withShootdownSparesSeeded st\)\.withFreshAuditRing$' SeLe4n/Platform/FFI.lean
 # Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
 # recorder that truncates instead of failing closed, and it can only live in
 # the record/producer modules.  The authorized remover (`AuditRead.lean`'s
@@ -7829,10 +7843,11 @@ run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_determined_by_clearance(
 # SM9.A.1a: the persistent timestamp epoch.  Sequenced BEFORE drain, because a
 # drain without it reuses timestamps: `timestamp := log.length` after removing a
 # prefix collides with a surviving entry, falsifying the identification theorem.
-run_check "INVARIANT" rg -n 'declassificationAuditEpoch : Nat := 0' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem epoch_empty : empty\.epoch = 0 := rfl$' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def auditTimestampsFrom($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def declassificationTrailWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n 'timestamp := epoch \+ log\.length' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^    timestamp := epoch \+ position$' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^    st\.declassificationAuditEpoch st\.declassificationAudit\.length predecessorTags$' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem declassificationTrail_timestamp_identifies_event($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_declassificationAuditEpoch_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # The witness that the PRE-EPOCH producer is genuinely unsound once drain
@@ -9017,7 +9032,6 @@ run_negative_check "INVARIANT" rg -n 'auditTrailDestinationsAreTargetDomains' Se
 # through the frame (post-state = SM6.B's with one field replaced).
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_auditLogBounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
@@ -10124,7 +10138,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 21 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 20 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on

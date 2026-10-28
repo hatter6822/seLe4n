@@ -10,6 +10,7 @@
 import SeLe4n.Machine
 import SeLe4n.Model.Erased
 import SeLe4n.Model.Object
+import SeLe4n.Model.Object.Unshare
 import SeLe4n.Kernel.Scheduler.RunQueue
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
 import SeLe4n.Kernel.Service.Interface
@@ -1397,8 +1398,18 @@ structure SystemState where
       recorded a write. -/
   physicalWritesDrained : Bool := false
 
-  /-- WS-SM SM8.C.8: the **declassification audit trail** — the append-only
-      record of every authorized cross-domain downgrade the kernel performed.
+  /-- WS-SM SM8.C.8 / SM9.A.1a / WS-ZA ZA5.10: the **declassification audit
+      trail** — the record of every authorized cross-domain downgrade the
+      kernel performed, and the **epoch**: how many entries have been drained
+      from it so far.
+
+      **Representation** (WS-ZA ZA5.10): a fixed ring (`AuditRing`) of
+      `maxDeclassificationAuditEntries` slots made at boot and written in
+      place, with the live window's length and the epoch.  A record writes the
+      slot after the window; a drain advances the epoch and frees the drained
+      slots for the records after it.  The trail in order and the epoch are
+      read through `SystemState.declassificationAuditLog` and
+      `SystemState.declassificationAuditEpoch`, which every theorem cites.
 
       Mounted because the trail has to outlive the syscall that writes it.  Up
       to SM8.C the log was a value threaded through `declassifyStoreOnCore`, so
@@ -1406,74 +1417,44 @@ structure SystemState where
       live `.declassify` syscall (SM8.C.9) makes each hop a separate kernel
       entry, and a trail that resets between them records nothing.
 
-      **Ordering**: entries are appended in occurrence order and the
-      `timestamp` of an entry is its index, so the trail is totally ordered
-      across cores and a cross-core chain can be reconstructed
+      **Ordering**: entries are recorded in occurrence order and the
+      `timestamp` of an entry is the epoch plus its index, so the trail is
+      totally ordered across cores and a cross-core chain can be reconstructed
       (`declassificationAuditLog_timestamp_identifies_event`).  A per-core
       buffer cannot do this — see `crossCoreChain_not_within_one_view`, which
       is why the trail is global and the per-core views
       (`auditLogOnCore`) are *derived* from it rather than the other way round.
 
-      **Capacity**: bounded by `maxDeclassificationAuditEntries`, and the bound
-      is **fail-closed** — at capacity the declassification itself is refused
-      (`recordDeclassificationChecked` returns `none`) rather than an entry
-      dropped, because a downgrade the kernel authorized and did not record is
-      the exact failure SM8.C exists to prevent.  Carried as the 16th
-      `proofLayerInvariantBundle` conjunct (`auditLogBounded`).
+      **The epoch** is the offset that turns a *position in the current trail*
+      into a *global identity* (`declassificationEventOnCore_timestamp`).  It
+      is zero at boot, unchanged by every record and advanced by exactly the
+      number of entries a drain removes (`auditDrainVisiblePrefix`, SM9.A.3).
+      Without it the producer's `timestamp := log.length` **reuses** a
+      timestamp after any prefix removal
+      (`preEpochTimestamp_reused_after_drain`, the load-bearing negative).  It
+      is unbounded; the reader exports it through the bounded chunk protocol,
+      failing closed above `maxAuditFieldChunks`.
+
+      **Capacity**: the ring's type bounds the window (`AuditRing.bounded`),
+      and the bound is **fail-closed** — at capacity the declassification
+      itself is refused (`recordDeclassificationChecked` returns `none`)
+      rather than an entry dropped, because a downgrade the kernel authorized
+      and did not record is the exact failure SM8.C exists to prevent.  The
+      16th `proofLayerInvariantBundle` conjunct (`auditLogBounded`) is kept,
+      discharged by that theorem.
 
       **Information flow**: like `perCoreTlb`, `perCoreICache` and
       `tlbShootdown`, deliberately **not** part of the IF projection surface.
       The trail records `(srcDomain, dstDomain, targetObject)` triples, so
       projecting it would tell a low observer that a high→low downgrade
-      happened and which object it targeted — a channel out of exactly the
-      boundary the audit exists to police
-      (`declassificationAuditLog_write_preserves_projection`).  Nothing in the
-      kernel reads it today; a privileged read interface is SM8.E scope and
-      owes its own flow argument. -/
-  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog := []
-
-  /-- WS-SM SM9.A.1a: the **declassification audit epoch** — how many entries
-      have been drained from the trail so far.
-
-      **Algebra**: a monotone counter.  It is the offset that turns a *position
-      in the current trail* into a *global identity*: entry `i` of the trail
-      carries `timestamp = epoch + i`
-      (`declassificationEventOnCore_timestamp`), so a timestamp names an event
-      for the whole lifetime of the system rather than only between drains.
-
-      **Lifecycle**: zero at boot; unchanged by every append (recording moves
-      the trail's length, not its offset); advanced by exactly the number of
-      entries a drain removes (`auditDrainVisiblePrefix`, SM9.A.3).  No other
-      writer exists, and `storeObject` frames it
-      (`storeObject_declassificationAuditEpoch_eq`).
-
-      **Why it is a mount and not a derived quantity.**  Without it the
-      producer's `timestamp := log.length` **reuses** a timestamp after any
-      prefix removal — drain one entry from a three-entry trail, append, and
-      the new entry carries timestamp `2` alongside the surviving entry that
-      already has it (`preEpochTimestamp_reused_after_drain`, the load-bearing
-      negative).  That falsifies
-      `declassificationAuditLog_timestamp_identifies_event` in substance and
-      breaks `declassificationChainLinked`'s strictly-increasing conjunct with
-      it, so drain is unsound *before* the epoch exists, which is why SM9.A.1a
-      is sequenced before SM9.A.3.
-
-      **Capacity**: none, and none is owed — an unbounded monotone counter has
-      nothing to bound, so unlike the trail this field carries no
-      `proofLayerInvariantBundle` conjunct.  The reader exports it through the
-      bounded chunk protocol instead, failing closed above
-      `maxAuditFieldChunks` (`auditFieldBound_unreachable_in_kernel` states the
-      inequality that makes the cap unreachable in practice).
-
-      **Information flow**: not part of the IF projection surface, for the same
-      reason as the trail itself and one step sharper — the epoch **counts**
-      entries, including entries a partially-cleared reader may not see, so
-      exporting it to such a reader would leak exactly what the re-indexed
-      visible view exists to hide.  It reaches only a caller holding the
-      configured audit-monitor clearance
-      (`declassificationAuditEpoch_write_preserves_projection`,
-      `auditReadStatus_partial_hides_generation`). -/
-  declassificationAuditEpoch : Nat := 0
+      happened and which object it targeted
+      (`declassificationAudit_write_preserves_projection`).  The epoch
+      **counts** entries, including entries a partially-cleared reader may not
+      see, so it reaches only a caller holding the configured audit-monitor
+      clearance (`auditReadStatus_partial_hides_generation`).  `storeObject`
+      frames the field (`storeObject_declassificationAuditLog_eq`,
+      `storeObject_declassificationAuditEpoch_eq`). -/
+  declassificationAudit : SeLe4n.Kernel.AuditRing := SeLe4n.Kernel.AuditRing.empty
 
   /-- WS-SM SM9.B.3: the **declassification refusal ledger** — a saturating
       count of refused declassification attempts and a bounded ring of the most
@@ -1582,6 +1563,40 @@ structure SystemState where
       per-event snapshot `DeclassificationEvent.predecessorTags`, which is
       dominating-reader-only for the same reason the epoch is. -/
   declassificationTaint : SeLe4n.Kernel.TaintTable := SeLe4n.Kernel.TaintTable.empty
+
+/-- WS-ZA ZA5.10: **the declassification audit trail in order** — the live
+window of the ring (`AuditRing.toList`).  The specification every theorem about
+the trail cites; the writers write the ring. -/
+abbrev SystemState.declassificationAuditLog (st : SystemState) :
+    SeLe4n.Kernel.DeclassificationAuditLog :=
+  st.declassificationAudit.toList
+
+/-- WS-ZA ZA5.10: **the declassification audit epoch** — how many entries have
+been drained from the trail since boot (`AuditRing.epoch`). -/
+abbrev SystemState.declassificationAuditEpoch (st : SystemState) : Nat :=
+  st.declassificationAudit.epoch
+
+/-- WS-ZA ZA5.10: the audit ring rebuilt with its own slot array.  The boot's
+ring is the shared initial constant, so the first record would copy all of its
+slots; each slot passes through `opaqueId`, so the compiler builds a fresh array
+rather than handing back the constant's. -/
+@[noinline] def _root_.SeLe4n.Kernel.AuditRing.fresh (r : SeLe4n.Kernel.AuditRing) :
+    SeLe4n.Kernel.AuditRing :=
+  { r with slots := r.slots.map opaqueId }
+
+theorem _root_.SeLe4n.Kernel.AuditRing.fresh_eq (r : SeLe4n.Kernel.AuditRing) : r.fresh = r := by
+  have h : (opaqueId : SeLe4n.Kernel.DeclassificationEvent → SeLe4n.Kernel.DeclassificationEvent)
+      = id := rfl
+  simp only [SeLe4n.Kernel.AuditRing.fresh, h, Vector.map_id]
+
+/-- WS-ZA ZA5.10: **the audit ring prepared at boot** — the installed state's
+ring gets its own slots (`AuditRing.fresh`), so the first record after boot
+writes its slot in place.  The state itself (`withFreshAuditRing_eq`). -/
+def SystemState.withFreshAuditRing (st : SystemState) : SystemState :=
+  { st with declassificationAudit := st.declassificationAudit.fresh }
+
+theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAuditRing = st := by
+  simp only [SystemState.withFreshAuditRing, SeLe4n.Kernel.AuditRing.fresh_eq]
 
 /-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
 order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
@@ -1713,17 +1728,13 @@ instance : Inhabited SystemState where
     -- WS-BP BP7.2: no physical write is owed at boot.
     physicalWrites := .empty
     physicalWritesDrained := false
-    -- WS-SM SM8.C.8: no declassification has occurred at boot, so the audit
-    -- trail is empty.  Explicit listing pins `default_declassificationAuditLog`
-    -- and, through it, the boot witness for the 16th bundle conjunct
-    -- (`default_auditLogBounded`).
-    declassificationAuditLog := []
-    -- WS-SM SM9.A.1a: nothing has been drained at boot, so the audit epoch is
-    -- zero and a fresh trail's timestamps are its indices.  Explicit listing
-    -- pins `default_declassificationAuditEpoch`, which is what makes
+    -- WS-SM SM8.C.8 / SM9.A.1a: no declassification has occurred and nothing
+    -- has been drained at boot, so the audit trail is the empty ring at epoch
+    -- zero.  Explicit listing pins `default_declassificationAuditLog` and
+    -- `default_declassificationAuditEpoch`, which make
     -- `declassificationAuditLogWellFormed` the boot instance of the
     -- epoch-parameterised predicate.
-    declassificationAuditEpoch := 0
+    declassificationAudit := SeLe4n.Kernel.AuditRing.empty
     -- WS-SM SM9.B.3: no declassification has been refused at boot, so the
     -- refusal ledger is the empty ring with zero counters.  Explicit listing
     -- pins `default_declassificationRefusals`.

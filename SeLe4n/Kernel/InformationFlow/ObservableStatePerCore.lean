@@ -1038,33 +1038,23 @@ theorem onCore_tlbShootdown (ctx : LabelingContext) (L : SecurityLabel)
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- SM8.C.8 / SM9.A: the mounted declassification audit trail is invisible on
-every core.
+/-- SM8.C.8 / SM9.A / WS-ZA ZA5.10: the mounted declassification audit trail —
+its ring, and with it the trail and the epoch — is invisible on every core.
 
-The read-set half of `declassificationAuditLog_write_preserves_projection`,
-lifted to the per-core observer.  Once SM9.A ships a reader this stops being
-the whole story and becomes exactly half of it: the trail is outside
-`ObservableState` — so an audited downgrade moves no per-core view — *and* it
-is readable through a capability-gated, clearance-filtered syscall, which is
-why SM9.A.4a states the reader's flow argument over
-`auditObservationalEquivalence` rather than over `lowEquivalent`. -/
-theorem onCore_declassificationAuditLog (ctx : LabelingContext) (L : SecurityLabel)
-    (s : SystemState) (c : CoreId) (v : SeLe4n.Kernel.DeclassificationAuditLog) :
-    ObservableState.onCore ctx c L { s with declassificationAuditLog := v }
-      = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+The read-set half of `declassificationAudit_write_preserves_projection`,
+lifted to the per-core observer.  The trail is outside `ObservableState`, so
+an audited downgrade moves no per-core view, *and* it is readable through a
+capability-gated, clearance-filtered syscall, which is why SM9.A.4a states the
+reader's flow argument over `auditObservationalEquivalence` rather than over
+`lowEquivalent`.  The epoch is a count of entries the reader may *not* see, so
+being outside the read set is also what makes a drain — the only writer that
+moves it — invisible to every per-core observer.
 
-/-- SM9.A.1a: the declassification audit **epoch** is invisible on every core.
-
-Separate from the trail's own corollary because the argument is different: an
-entry is content, and a cleared reader may see it; the epoch is a count of
-entries the reader may *not* see.  Being outside the read set is what makes a
-drain — the only writer that moves it — invisible to every per-core observer,
-and it is why the epoch reaches only a caller holding the configured
-audit-monitor clearance rather than every reader with an audit capability. -/
-theorem onCore_declassificationAuditEpoch (ctx : LabelingContext) (L : SecurityLabel)
-    (s : SystemState) (c : CoreId) (v : Nat) :
-    ObservableState.onCore ctx c L { s with declassificationAuditEpoch := v }
+WS-ZA ZA5.10: the ring is one field, so one write covers what the list trail
+and the epoch field each stated: any ring, any epoch, any slots. -/
+theorem onCore_declassificationAudit (ctx : LabelingContext) (L : SecurityLabel)
+    (s : SystemState) (c : CoreId) (v : SeLe4n.Kernel.AuditRing) :
+    ObservableState.onCore ctx c L { s with declassificationAudit := v }
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

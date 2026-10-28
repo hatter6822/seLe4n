@@ -676,7 +676,7 @@ private def auditWitnessState : SystemState :=
             threadState := .Running })
       |>.withRunnable [callerTid]
       |>.withCurrent (some callerTid)
-      |>.build) with declassificationAuditLog := auditTrailFixture }
+      |>.build) with declassificationAudit := SeLe4n.Kernel.AuditRing.ofList auditTrailFixture }
 
 /-- Drive the FFI seam with three inline message registers and a chosen
 capability pointer — the audit reads' operand shape. -/
