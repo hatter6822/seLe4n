@@ -1,3 +1,55 @@
+## v0.36.158 — WS-ZA ZA5.8: the endpoint holds the registration, and the lookups read it
+
+The endpoint now holds the words of the service registered on it, beside its
+flag, and the lookups read them. Storing the registration on the endpoint is
+split into two rows:
+- this row, which adds the words, with the registry table kept as a second
+  copy held equal to them;
+- the new row ZA5.9, which deletes the table and takes the register to 0.
+
+The audit ring is renumbered ZA5.10, and the declassification and audit
+routing ZA5.11.
+
+- **The endpoint holds the registration's words.** These are scalar fields
+  beside `serviceRegistered`:
+  - the interface's five words;
+  - the kept capability's rights, badge word and flag, mapping words and flag,
+    and free index.
+
+  The capability's target is not stored, because it is the endpoint itself.
+  `EndpointService` is the view that proofs read (`Endpoint.service`, written by
+  `Endpoint.withService`). It is never a stored field, so a write builds no
+  record. `EndpointService.ofRegistration` and `registrationAt` convert between
+  a registration and the words, and `registrationAt_ofRegistration` proves that
+  the round trip returns the registration.
+- **Register and revoke.** The register writes the words in the endpoint's
+  slot beside the table insert. The revoke clears them along with the flag.
+- **Two copies, held equal.** For this row the registry table and the words
+  are deliberately two copies of one registration. The new
+  `tableReferencesRecorded` conjunct `serviceStored` holds them equal: a set
+  flag names, under the endpoint's id, the registration its record holds.
+  `serviceStored` replaces `serviceFlags`, which is now a theorem, as is
+  `registry_eq_stored`.
+- **The back-link carries the record.** An endpoint's table back-link is its
+  record while the flag is set, and the clear record otherwise. So every frame
+  that keeps the back-links also keeps the words, and the final delete's clear
+  test is still the flag alone. `RegistrationFlagRewrite` is renamed
+  `ServiceRecordRewrite`.
+- **The lookups read the endpoint.** The live lookup and the frozen lookup read
+  the endpoint's record and no table. The query stages the endpoint's own id.
+  The query's three low-equivalence theorems no longer take the table
+  references, because the lookup reads the projected endpoint alone.
+- **Readings** (fresh archive, untraced): every pin reads as before. The
+  register reads 6 on its first call and 4 in steady state; the query and
+  revoke read 0. ZA5.9 takes the register to 0.
+- **Docs.**
+  - The plan's ZA5.8 row is landed with its forks.
+  - The new ZA5.9 row is added, ZA5.10 and ZA5.11 are renumbered, and every
+    citation is swept.
+  - The spec, claim index, workstream context and GitBook 12 are updated.
+  - New Tier 3 anchors cover the record, the back-link, the conversion
+    theorems, the register's write and both lookups.
+
 ## v0.36.157 — WS-ZA ZA5.7: an endpoint records only that a service is registered on it
 
 Since v0.36.156 a registration's id is its endpoint's, so the endpoint's
