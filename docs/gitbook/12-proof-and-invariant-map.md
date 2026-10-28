@@ -184,6 +184,8 @@ decode does, carving from index 0 and refusing as the reset does while the
 untyped records a carved object (`retypeFreeIndex`, `retypeResetAdmitted`);
 since `v0.36.155` a registered endpoint's final delete drops its service
 registration before it retires the endpoint (`releaseFinalRegistration`);
+since `v0.36.156` a service's identity is its endpoint's
+(`ServiceRegistration.sid`, derived from the capability it keeps);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,
