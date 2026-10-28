@@ -765,11 +765,8 @@ theorem serviceQueryStaged_of_admitted (ctx : LabelingContext) (caller : SeLe4n.
   rw [if_pos hF]
   split at hP
   · next ep hObj =>
-    split at hP
-    · cases hP
-    · next hC =>
-      simp only [hObj, hC, EndpointService.registrationAt_sid,
-        Architecture.writeReturnFrameToTcb_ofWord_eq_words]
+    simp only [hObj, hP, EndpointService.registrationAt_sid,
+      Architecture.writeReturnFrameToTcb_ofWord_eq_words]
   · cases hP
 
 /-- An admitted checked revoke — the write flow and the recorded registration —

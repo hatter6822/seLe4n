@@ -4180,7 +4180,15 @@ registry sweep was the writer the prose kept listing and no footprint declared
 (the sweep is deleted since WS-ZA ZA5.4 part 31).  `serviceRegistry_footprints_share_serialization`
 is the pin, and a new registry writer must extend it before it can claim a
 footprint.  Under the SM5.I kernel-entry lock there was no live race, which is
-why the register graded it a medium rather than a blocker. -/
+why the register graded it a medium rather than a blocker.
+
+Since WS-ZA ZA5.9 the registry is no map: a registration is its endpoint's
+service record (`SystemState.serviceRegistry` reads it off the endpoint), so
+the endpoint lock each footprint already declares — write mode at the register
+and the revoke, read mode at the query — is what serialises them.  The
+state-level member stays declared: the register reads the interface registry,
+a state-level table, and the revoke's and query's members over-declare, which
+costs concurrency and never soundness. -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRegister`.
 
@@ -4206,10 +4214,10 @@ def lockSet_serviceRegister (callerTid : ThreadId)
 /-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
 
 `revokeServiceByRecordedRegistration epId` reads the registration the invoked endpoint
-records, erases it from `serviceRegistry` and clears its code on that endpoint
-(`clearEndpointRegistration`, a read-modify-write of it), so the footprint is
-the caller TCB, its CNode, the invoked endpoint in **write** mode and the
-state-level lock that serialises the registry. -/
+records and clears that endpoint's service record (`clearServiceRecord`, a
+read-modify-write of it — since WS-ZA ZA5.9 the registration's only home), so
+the footprint is the caller TCB, its CNode, the invoked endpoint in **write**
+mode and the state-level lock. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
@@ -4221,8 +4229,8 @@ def lockSet_serviceRevoke (callerTid : ThreadId)
 /-- WS-SM SM3.B.3: `lockSet` for `serviceQuery`.
 
 `lookupServiceByRecordedRegistration epId` reads the endpoint `st.objects[epId]?`
-for the code it records and then that one key of `serviceRegistry`, so the
-endpoint is in **read** mode and the state-level lock (the registry) too.
+and the registration it records, so the endpoint is in **read** mode, and the
+state-level lock too.
 
 Caller TCB **write** (PR #870 round 6): `.serviceQuery` is `.word`-shaped, so
 on success its arm stages the resolved `ServiceId` into the caller's TCB via
@@ -4254,8 +4262,8 @@ theorem lockSet_serviceQuery_staging_write_mem (callerTid : ThreadId)
 /-- **WS-RR RR7.23 (register finding 5): every writer of the service registry
 declares the state-level lock.**
 
-`SystemState.serviceRegistry` is a state-level map, exactly like the audit
-trail, and no per-object lock kind can name it.  Until this cut the three
+`SystemState.serviceRegistry` was a state-level map, exactly like the audit
+trail, and no per-object lock kind could name it.  Until this cut the three
 service footprints and the retype's carried a *convention* — the header above
 this file's service section said the registry was covered by the table-level
 object-store lock "implicitly" — which under SM3.C.9's fine locks is nothing at
@@ -4269,9 +4277,11 @@ path's cleanup swept it too until WS-ZA ZA5.4 part 31 deleted the sweep (the
 retire admits only an endpoint no registration names).  A new registry writer
 must extend this theorem.
 
-The query is the reader — `lookupServiceByRecordedRegistration` reads one key of the map — so it
-takes the member in **read** mode, exactly as `lockSet_auditRead` does for the
-trail.  Read/read does not conflict, so two queries still run concurrently;
+The query is the reader — `lookupServiceByRecordedRegistration` reads one
+registration — so it takes the member in **read** mode, exactly as
+`lockSet_auditRead` does for the trail.  (Since WS-ZA ZA5.9 the registration is
+its endpoint's record, and the endpoint lock serialises the three as well; see
+this section's header.)  Read/read does not conflict, so two queries still run concurrently;
 what the member buys is that a query cannot observe a half-applied register or
 revoke.
 
@@ -5027,10 +5037,11 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- Service syscalls.  Each reads or writes the endpoint its registration
   -- names: `.serviceRegister` and `.serviceRevoke` write its registration flag
   -- (`Endpoint.serviceRegistered`) and `.serviceQuery` reads it.
-  -- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
-  -- `SystemState`-level map, exactly like the audit trail, and the member that
-  -- serialises it is `stateLevelLock` (kind `.objStore`, hierarchy level 0, so
-  -- it is acquired first and the by-kind ladder stays acyclic).
+  -- WS-RR RR7.23: `.objStore` on all three — the register reads the
+  -- `SystemState`-level interface registry, and the member that serialises it
+  -- is `stateLevelLock` (kind `.objStore`, hierarchy level 0, so it is acquired
+  -- first and the by-kind ladder stays acyclic).  Since WS-ZA ZA5.9 the service
+  -- registry itself is the endpoints' records, under the `.endpoint` member.
   | .serviceRegister | .serviceRevoke | .serviceQuery =>
       [.tcb, .cnode, .endpoint, .objStore]
   -- **WS-RR RR7.38 — `.endpoint` and `.notification` on every arm that can

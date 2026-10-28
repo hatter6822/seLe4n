@@ -478,9 +478,10 @@ example : permittedKinds .untypedRetype =
 -- review: and declares the derivation tree's subject, since it rewrites a CNode.
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
 example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
--- WS-RR RR7.23: `.objStore` on all three — `serviceRegistry` is a
--- `SystemState`-level map and `stateLevelLock` is the only member that can name
--- it; before this the trio carried the coverage as a convention.
+-- WS-RR RR7.23: `.objStore` on all three — the register reads the
+-- `SystemState`-level interface registry and `stateLevelLock` is the only member
+-- that can name it (since WS-ZA ZA5.9 the service registry is the endpoints'
+-- records, under the `.endpoint` member).
 example : permittedKinds .serviceRegister = [.tcb, .cnode, .endpoint, .objStore] := by decide
 -- WS-ZA ZA5.4 part 31: `.endpoint` on the revoke and the query too — the revoke
 -- clears the code the endpoint records and the query reads it.

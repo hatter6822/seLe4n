@@ -101,12 +101,6 @@ theorem updatePipBoost_preserves_asidTable (st : SystemState) (tid : ThreadId) :
   updatePipBoost_frame (fun s => s.asidTable) st tid
     (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
-/-- D4-P: `updatePipBoost` preserves `serviceRegistry`. -/
-theorem updatePipBoost_preserves_serviceRegistry (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).serviceRegistry = st.serviceRegistry :=
-  updatePipBoost_frame (fun s => s.serviceRegistry) st tid
-    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
-
 /-- D4-P: `updatePipBoost` preserves `objectIndex`. -/
 theorem updatePipBoost_preserves_objectIndex (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).objectIndex = st.objectIndex :=
@@ -279,19 +273,6 @@ theorem propagate_preserves_asidTable (st : SystemState) (tid : ThreadId)
     · rw [ih]; exact updatePipBoost_preserves_asidTable st tid
     · exact updatePipBoost_preserves_asidTable st tid
 
-/-- D4-P: `propagatePriorityInheritance` preserves `serviceRegistry`. -/
-theorem propagate_preserves_serviceRegistry (st : SystemState) (tid : ThreadId)
-    (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).serviceRegistry =
-    st.serviceRegistry := by
-  induction fuel generalizing st tid with
-  | zero => simp [propagatePriorityInheritance]
-  | succ n ih =>
-    simp only [propagatePriorityInheritance]
-    split
-    · rw [ih]; exact updatePipBoost_preserves_serviceRegistry st tid
-    · exact updatePipBoost_preserves_serviceRegistry st tid
-
 /-- D4-P: `propagatePriorityInheritance` preserves `objectIndex`. -/
 theorem propagate_preserves_objectIndex (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
@@ -436,12 +417,6 @@ theorem revert_preserves_irqHandlers (st : SystemState) (tid : ThreadId) (fuel :
 theorem revert_preserves_asidTable (st : SystemState) (tid : ThreadId) (fuel : Nat) :
     (revertPriorityInheritance st tid fuel).asidTable = st.asidTable := by
   rw [revert_eq_propagate]; exact propagate_preserves_asidTable st tid fuel
-
-/-- D4-P: `revertPriorityInheritance` preserves `serviceRegistry`. -/
-theorem revert_preserves_serviceRegistry (st : SystemState) (tid : ThreadId) (fuel : Nat) :
-    (revertPriorityInheritance st tid fuel).serviceRegistry =
-    st.serviceRegistry := by
-  rw [revert_eq_propagate]; exact propagate_preserves_serviceRegistry st tid fuel
 
 /-- D4-P: `revertPriorityInheritance` preserves `objectIndex`. -/
 theorem revert_preserves_objectIndex (st : SystemState) (tid : ThreadId) (fuel : Nat) :

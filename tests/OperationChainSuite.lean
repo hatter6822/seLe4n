@@ -2615,8 +2615,8 @@ private def chain30SyscallServiceOps : IO Unit := do
   | .ok (_, stAfter) =>
     -- Verify service was registered
     -- Verify dispatch reached the serviceRegister handler
-    -- The service registry should have been modified
-    let svcFound := stAfter.serviceRegistry.toList.length > 0
+    -- The endpoint should record the registration (the service registry)
+    let svcFound := (stAfter.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
     if svcFound then
       IO.println "operation-chain check passed [chain30: serviceRegister dispatch modified state]"
     else

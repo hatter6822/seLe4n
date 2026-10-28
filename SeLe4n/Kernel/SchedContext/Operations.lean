@@ -282,10 +282,6 @@ alone — the locality the sweep's subset lemma folds over. -/
     (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
     (purgeReplenishmentOnCore st c scId).lifecycle = st.lifecycle := rfl
 
-@[simp] theorem purgeReplenishmentOnCore_serviceRegistry (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
-    (purgeReplenishmentOnCore st c scId).serviceRegistry = st.serviceRegistry := rfl
-
 @[simp] theorem purgeReplenishmentFromAllCores_tlbShootdown (st : SystemState)
     (scId : SchedContextId) :
     (purgeReplenishmentFromAllCores st scId).tlbShootdown = st.tlbShootdown :=
@@ -295,11 +291,6 @@ alone — the locality the sweep's subset lemma folds over. -/
     (scId : SchedContextId) :
     (purgeReplenishmentFromAllCores st scId).lifecycle = st.lifecycle :=
   purgeReplenishmentFromAllCores_frame (·.lifecycle) scId (fun _ _ => rfl) st
-
-@[simp] theorem purgeReplenishmentFromAllCores_serviceRegistry (st : SystemState)
-    (scId : SchedContextId) :
-    (purgeReplenishmentFromAllCores st scId).serviceRegistry = st.serviceRegistry :=
-  purgeReplenishmentFromAllCores_frame (·.serviceRegistry) scId (fun _ _ => rfl) st
 
 /-- **`v0.35.165`: the sweep only ever REMOVES entries.**  What a consumer needs
 to carry an invariant quantified over the entries a queue *holds*: every entry

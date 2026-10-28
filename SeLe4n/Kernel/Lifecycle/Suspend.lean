@@ -200,25 +200,6 @@ theorem restoreToReadyCancelled_machine_eq (st : SystemState) (tid : SeLe4n.Thre
 on `restoreToReadyStaging` so the plain and cancellation spellings cannot
 answer "what else does this write" differently.  A staged frame moves the
 target TCB's `registerContext` and nothing outside `objects`. -/
-theorem restoreToReadyStaging_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) :
-    (restoreToReadyStaging st tid frame).serviceRegistry = st.serviceRegistry := by
-  unfold restoreToReadyStaging; exact SystemState.updateTcb_serviceRegistry _ _ _
-
-/-- Helper: restoreToReady preserves the serviceRegistry. -/
-theorem restoreToReady_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (restoreToReady st tid).serviceRegistry = st.serviceRegistry :=
-  restoreToReadyStaging_serviceRegistry_eq st tid none
-
-/-- **WS-RR RR7.14**: and the cancellation spelling. -/
-theorem restoreToReadyCancelled_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (restoreToReadyCancelled st tid).serviceRegistry = st.serviceRegistry :=
-  restoreToReadyStaging_serviceRegistry_eq st tid _
-
-/-- **WS-RR RR7.14**: the framing holds for **every** staged frame — stated once
-on `restoreToReadyStaging` so the plain and cancellation spellings cannot
-answer "what else does this write" differently.  A staged frame moves the
-target TCB's `registerContext` and nothing outside `objects`. -/
 theorem restoreToReadyStaging_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     (restoreToReadyStaging st tid frame).lifecycle = st.lifecycle := by
@@ -527,15 +508,6 @@ theorem consumeReplyLink_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
   · rfl
   · rename_i rid _
     exact SystemState.consumeCallerReply_machine_eq st _ tid rid
-      (SystemState.consumeCallerReply_eq_link st tid rid)
-
-/-- `consumeReplyLink` preserves the serviceRegistry. -/
-theorem consumeReplyLink_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (consumeReplyLink st tid tcb).serviceRegistry = st.serviceRegistry := by
-  unfold consumeReplyLink; split
-  · rfl
-  · rename_i rid _
-    exact SystemState.consumeCallerReply_serviceRegistry_eq st _ tid rid
       (SystemState.consumeCallerReply_eq_link st tid rid)
 
 -- WS-RR RR8.5: `consumeReplyLink_lifecycle_eq` — and the `clear*_lifecycle_eq`

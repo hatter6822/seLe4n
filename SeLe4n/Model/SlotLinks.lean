@@ -1476,9 +1476,10 @@ theorem linkReach.invExtK {st₀ st : SystemState} (h : linkReach st₀ st)
 /-- Link writes keep every table's `invExtK`: they write the object store alone. -/
 theorem linkReach.allTablesInvExtK {st₀ st : SystemState} (h : linkReach st₀ st)
     (hAll : st₀.allTablesInvExtK) : st.allTablesInvExtK := by
-  have hK := h.invExtK hAll.1.1 hAll.1
+  have hK := h.invExtK hAll.objects.1 hAll.objects
   rw [h.fields]
-  exact ⟨hK, hAll.2⟩
+  exact ⟨hK, hAll.irqHandlers, hAll.asidTable, hAll.objectTypes, hAll.interfaceRegistry,
+    hAll.objectIndexSet⟩
 
 /-- Link writes keep every object's kind at every key. -/
 theorem objectsAgreeOffDerivationLinks.objectType {st st' : SystemState}
@@ -1743,9 +1744,6 @@ theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp
 @[simp] theorem cdtAddChild_interfaceRegistry (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).interfaceRegistry = st.interfaceRegistry := by rw [cdtAddChild_fields]
 
-@[simp] theorem cdtAddChild_serviceRegistry (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).serviceRegistry = st.serviceRegistry := by rw [cdtAddChild_fields]
-
 @[simp] theorem cdtAddChild_tlb (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).tlb = st.tlb := by rw [cdtAddChild_fields]
 
@@ -1811,9 +1809,6 @@ theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
 @[simp] theorem cdtSplice_interfaceRegistry (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).interfaceRegistry = st.interfaceRegistry := by rw [cdtSplice_fields]
 
-@[simp] theorem cdtSplice_serviceRegistry (st : SystemState) (n : SlotRef) :
-    (st.cdtSplice n).serviceRegistry = st.serviceRegistry := by rw [cdtSplice_fields]
-
 @[simp] theorem cdtSplice_tlb (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).tlb = st.tlb := by rw [cdtSplice_fields]
 
@@ -1878,9 +1873,6 @@ theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
 
 @[simp] theorem cdtMove_interfaceRegistry (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).interfaceRegistry = st.interfaceRegistry := by rw [cdtMove_fields]
-
-@[simp] theorem cdtMove_serviceRegistry (st : SystemState) (old new : SlotRef) :
-    (st.cdtMove old new).serviceRegistry = st.serviceRegistry := by rw [cdtMove_fields]
 
 @[simp] theorem cdtMove_tlb (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).tlb = st.tlb := by rw [cdtMove_fields]

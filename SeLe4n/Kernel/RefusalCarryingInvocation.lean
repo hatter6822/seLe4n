@@ -1671,6 +1671,81 @@ theorem dispatchServiceRegisterByR_eq (ctx : LabelingContext) (tid : SeLe4n.Thre
       exact registerServiceChecked_of_admitted _ _ _ _ hA
   | _ => rfl
 
+/-- **WS-ZA ZA5.9**: the service record a register writes, built from the
+decoded words and the invoked capability — `EndpointService.ofRegistration` of
+the registration the arm names (`serviceRecordOfWords_eq`), read field by field
+so no registration record is built. -/
+@[inline] def serviceRecordOfWords (ifaceId : SeLe4n.InterfaceId)
+    (methodCount maxMessageSize maxResponseSize : Nat) (requiresGrant : Bool)
+    (cap : Capability) : EndpointService :=
+  { registered := true, interfaceId := ifaceId, methodCount := methodCount,
+    maxMessageSize := maxMessageSize, maxResponseSize := maxResponseSize,
+    requiresGrant := requiresGrant, capRights := cap.rights,
+    capBadgeWord := cap.badgeWord, capBadged := cap.badged, capMapAsid := cap.mapAsid,
+    capMapVaddr := cap.mapVaddr, capMapEpoch := cap.mapEpoch, capMapped := cap.mapped,
+    capFreeIndex := cap.freeIndex }
+
+/-- **WS-ZA ZA5.9**: the compiled register write — the endpoint's record set in
+its slot from the decoded words (`registerServicePerformImpl` of the arm's
+registration, `registerServiceWordsPerform_eq`). -/
+def registerServiceWordsPerform (st : SystemState) (epId : SeLe4n.ObjId)
+    (ifaceId : SeLe4n.InterfaceId) (methodCount maxMessageSize maxResponseSize : Nat)
+    (requiresGrant : Bool) (cap : Capability) : SystemState :=
+  match st.getEndpoint? epId with
+  | some _ => st.modifyObject epId (setServiceObject
+      (serviceRecordOfWords ifaceId methodCount maxMessageSize maxResponseSize requiresGrant cap))
+  | none => st
+
+/-- **WS-ZA ZA5.9: the register arm as compiled** — its checks read off the
+decoded words and the invoked capability, and its write
+`registerServiceWordsPerform`, so the arm builds no registration on an admitted
+call; only a refusal builds one, to run the specification for its error.  Equal
+to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
+@[inline] def dispatchServiceRegisterByRImpl (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (w : UInt64) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+  match cap.target with
+  | .object epId =>
+    match decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
+    | .error e => .error (e, st)
+    | .ok args =>
+      if serviceEndpointWriteAdmitted ctx tid epId &&
+          (!recordedRegistrationPresent st
+              (SeLe4n.ObjId.ofNat (ServiceId.ofNat epId.toNat).toNat) &&
+            (st.interfaceRegistry[args.interfaceId]?).isSome &&
+            match st.getObject? epId with
+            | some (.endpoint ep) => Capability.hasRight cap .write && !ep.serviceRegistered
+            | _ => false) then
+        .ok ((), registerServiceWordsPerform st epId args.interfaceId args.methodCount
+          args.maxMessageSize args.maxResponseSize args.requiresGrant cap)
+      else
+        match registerServiceChecked ctx tid
+            { iface := { ifaceId := args.interfaceId, methodCount := args.methodCount
+                         maxMessageSize := args.maxMessageSize
+                         maxResponseSize := args.maxResponseSize
+                         requiresGrant := args.requiresGrant }
+              endpointCap := cap } st with
+        | .error e => .error (e, st)
+        | .ok r => .ok r
+  | _ => .error (.invalidCapability, st)
+
+@[csimp] theorem dispatchServiceRegisterByR_eq_impl :
+    @dispatchServiceRegisterByR = @dispatchServiceRegisterByRImpl := by
+  funext ctx tid layout regs w cap st
+  unfold dispatchServiceRegisterByR dispatchServiceRegisterByRImpl RefusalCarrying.ofChecked
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  cases target with
+  | object epId =>
+    dsimp only
+    cases decodeServiceRegisterArgsBy (msgRegOfFileThen layout regs w) with
+    | error e => rfl
+    | ok args =>
+      dsimp only
+      simp only [registerServicePerform_eq_impl]
+      rfl
+  | _ => rfl
+
 /-- A service register's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .serviceRegister)

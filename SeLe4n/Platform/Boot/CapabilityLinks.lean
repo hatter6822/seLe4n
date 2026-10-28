@@ -357,10 +357,10 @@ def linkBootCapabilities (config : PlatformConfig) (ist : IntermediateState) :
   state := linkBootSlots ist.state (bootCapabilitySlots config.initialObjects)
   hAllTables := (linkBootSlots_reach _ _).allTablesInvExtK ist.hAllTables
   hPerObjectSlots := perObjectSlotsInvariant_holds _
-  hPerObjectMappings := linkReach_perObjectMappingsInvariant (linkBootSlots_reach _ _) ist.hAllTables.1.1
+  hPerObjectMappings := linkReach_perObjectMappingsInvariant (linkBootSlots_reach _ _) ist.hAllTables.objects.1
     ist.hPerObjectMappings
   hLifecycleConsistent := (linkBootSlots_reach _ _).objectTypeMetadataConsistent
-    ist.hAllTables.1.1 ist.hLifecycleConsistent
+    ist.hAllTables.objects.1 ist.hLifecycleConsistent
 
 theorem linkBootCapabilities_state (config : PlatformConfig) (ist : IntermediateState) :
     (linkBootCapabilities config ist).state =
@@ -397,7 +397,7 @@ theorem linkBootCapabilities_fields (config : PlatformConfig) (ist : Intermediat
 /-- The linked state's objects agree with the linked state's off their links. -/
 theorem linkBootCapabilities_agree (config : PlatformConfig) (ist : IntermediateState) :
     SystemState.objectsAgreeOffDerivationLinks (linkBootCapabilities config ist).state ist.state :=
-  (linkBootSlots_reach _ _).agree ist.hAllTables.1.1
+  (linkBootSlots_reach _ _).agree ist.hAllTables.objects.1
 
 /-- The linking keeps every object's table back-links and writes no reference
 table: it writes derivation links and the tree. -/
@@ -436,7 +436,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩,
     hBindings, hTab⟩ := h
-  have hInv₀ := ist.hAllTables.1.1
+  have hInv₀ := ist.hAllTables.objects.1
   have hE : ist.state.cdt = CapDerivationTree.empty := hCdt
   have hL₀ := cdtLinksAgree_of_bootEmpty hCdt fun oid obj hO => (hShape oid obj hO).2
   have hStart := BootLinks.Sound.start hE hL₀

@@ -354,10 +354,6 @@ theorem foldInterfaces_cdt (ifaces : List InterfaceSpec) (ist : IntermediateStat
     (foldInterfaces ifaces ist).state.cdt = ist.state.cdt :=
   by rw [foldInterfaces_state]
 
-theorem foldInterfaces_serviceRegistry (ifaces : List InterfaceSpec) (ist : IntermediateState) :
-    (foldInterfaces ifaces ist).state.serviceRegistry = ist.state.serviceRegistry :=
-  by rw [foldInterfaces_state]
-
 theorem foldInterfaces_tlb (ifaces : List InterfaceSpec) (ist : IntermediateState) :
     (foldInterfaces ifaces ist).state.tlb = ist.state.tlb :=
   by rw [foldInterfaces_state]
@@ -543,10 +539,6 @@ theorem applyMachineConfig_registerCount (ist : IntermediateState) (config : Mac
 theorem applyMachineConfig_cdt_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.cdt = ist.state.cdt := rfl
 
-/-- AH2-F: `applyMachineConfig` preserves serviceRegistry. -/
-theorem applyMachineConfig_serviceRegistry_eq (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.serviceRegistry = ist.state.serviceRegistry := rfl
-
 /-- AH2-F: `applyMachineConfig` preserves interfaceRegistry. -/
 theorem applyMachineConfig_interfaceRegistry_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
@@ -682,10 +674,6 @@ theorem bootEnableInterruptsOp_lifecycle_eq (ist : IntermediateState) :
 theorem bootEnableInterruptsOp_irqHandlers_eq (ist : IntermediateState) :
     (bootEnableInterruptsOp ist).state.irqHandlers = ist.state.irqHandlers := rfl
 
-/-- AK9-G: `bootEnableInterruptsOp` preserves the service registry. -/
-theorem bootEnableInterruptsOp_serviceRegistry_eq (ist : IntermediateState) :
-    (bootEnableInterruptsOp ist).state.serviceRegistry = ist.state.serviceRegistry := rfl
-
 /-- AK9-G: `bootEnableInterruptsOp` preserves the ASID table. -/
 theorem bootEnableInterruptsOp_asidTable_eq (ist : IntermediateState) :
     (bootEnableInterruptsOp ist).state.asidTable = ist.state.asidTable := rfl
@@ -764,7 +752,7 @@ theorem installBootVSpaceRoot_objects_lookup
   -- objects table is `ist.state.objects.insert id (KernelObject.vspaceRoot vsr)`.
   show (ist.state.objects.insert id (KernelObject.vspaceRoot vsr))[id]? =
     some (KernelObject.vspaceRoot vsr)
-  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.objects
   exact RHTable.getElem?_insert_self ist.state.objects id _ hObjK.1
 
 /-- **WS-RR RR5.13** (PR #889 review): `installBootVSpaceRoot` frames every
@@ -776,7 +764,7 @@ theorem installBootVSpaceRoot_objects_ne
     (installBootVSpaceRoot ist id vsr hMappings).state.objects[oid]? =
       ist.state.objects[oid]? := by
   show (ist.state.objects.insert id (KernelObject.vspaceRoot vsr))[oid]? = _
-  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.objects
   have hNe : ¬((id == oid) = true) := fun heq => h (eq_of_beq heq)
   exact RHTable.getElem?_insert_ne ist.state.objects id oid _ hNe hObjK.1
 
@@ -791,7 +779,7 @@ theorem installBootVSpaceRoot_asidTable_lookup
   -- The asidTable was previously unchanged by `createObject`, so the
   -- post-state asidTable is `ist.state.asidTable.insert vsr.asid id`.
   show (ist.state.asidTable.insert vsr.asid id)[vsr.asid]? = some id
-  have hAsidK : ist.state.asidTable.invExtK := ist.hAllTables.2.2.1
+  have hAsidK : ist.state.asidTable.invExtK := ist.hAllTables.asidTable
   exact RHTable.getElem?_insert_self _ vsr.asid id hAsidK.1
 
 /-- Q3-C: Construct an `IntermediateState` from platform configuration.
@@ -1963,12 +1951,13 @@ object to `bootSafeVSpaceRootCheck`, so there is no enumeration here to drift �
 a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 
 /-- A boot **endpoint** is inert: both intrusive queues empty, and no service
-    registered on it.  The registration flag is the registry's back-link
-    (`SystemState.tableReferencesRecorded`), and the boot installs no service
-    registration, so an endpoint that came up carrying one would record a
-    registration no table holds.  The registration's words beside the flag are
-    read only while it is set (`Endpoint.service`, a clear flag is a clear
-    back-link), so they are left unconstrained. -/
+    registered on it.  Since WS-ZA ZA5.9 the flag *is* the registration (the
+    registry is read off the endpoints, `SystemState.serviceRegistry`), and the
+    boot installs none, so an endpoint that came up carrying one would register
+    a service no configuration named — against an interface nothing checked
+    (`serviceRegistry_none_of_bootShape` reads the empty registry off this
+    clause).  The registration's words beside the flag are read only while it is
+    set (`Endpoint.service`), so they are left unconstrained. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
   | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered, _serviceInterfaceId,
@@ -2338,7 +2327,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     -- Endpoints: empty queues
     (∀ ep, obj = .endpoint ep →
       ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
-      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none ∧
+      ep.serviceRegistered = false) ∧
     -- Notifications: idle + empty
     (∀ notif, obj = .notification notif →
       notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
@@ -2390,8 +2380,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   cases obj with
   | endpoint ep =>
     simp only [bootSafeObjectCheck, bootSafeEndpointCheck_def, Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, _⟩ := h
-    exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4⟩,
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+    exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, by simpa using h5⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
@@ -2498,7 +2488,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     (h : bootSafeObjectCheck obj = true) :
     (∀ ep, obj = .endpoint ep →
       ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
-      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none ∧
+      ep.serviceRegistered = false) ∧
     (∀ notif, obj = .notification notif →
       notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
       notif.pendingBadge = none) ∧
@@ -3205,8 +3196,8 @@ modified. The proof shows that the new entry is consistent.
 `registerIrq` only modifies `st.irqHandlers`. All 12 components of
 `proofLayerInvariantBundle` are independent of `irqHandlers`:
 
-- Components 1–8 read scheduler, objects, CDT, serviceRegistry,
-  interfaceRegistry, asidTable, lifecycle, and TLB — none of which include
+- Components 1–8 read scheduler, objects (and the service registry read off
+  them), CDT, interfaceRegistry, asidTable, lifecycle, and TLB — none of which include
   `irqHandlers`.
 - Component 9 (`tlbConsistent`) reads TLB entries and objects/asidTable.
 - Components 10–11 read scheduler/objects; component 12 (`pendingBounded`,
@@ -3223,7 +3214,6 @@ private theorem registerIrq_state_fields_eq (ist : IntermediateState)
     st'.scheduler = st.scheduler ∧
     st'.objects = st.objects ∧
     st'.cdt = st.cdt ∧
-    st'.serviceRegistry = st.serviceRegistry ∧
     st'.interfaceRegistry = st.interfaceRegistry ∧
     st'.asidTable = st.asidTable ∧
     st'.lifecycle = st.lifecycle ∧
@@ -3253,8 +3243,10 @@ values. Since:
    scheduler invariants hold vacuously
 2. **CDT** is default (no edges) → CDT/capability derivation invariants
    hold vacuously
-3. **Services/serviceRegistry/interfaceRegistry** are default →
-   service invariants hold vacuously
+3. **Services**: the interface registry holds the configured interfaces, and
+   no boot endpoint carries a service record (`bootSafeEndpointCheck`), so the
+   registry read off the endpoints is empty → service invariants hold
+   vacuously (`serviceRegistry_none_of_bootShape`)
 4. **AsidTable** is default → ASID invariants hold vacuously
 5. **TLB** is default → TLB consistency holds trivially
 6. **IPC state** (endpoint queues, notifications) — fresh objects from
@@ -3271,8 +3263,6 @@ or satisfy the boot preconditions.
     (registerIrq ist irq handler).state.scheduler = ist.state.scheduler := rfl
 @[simp] private theorem registerIrq_cdt (ist : IntermediateState) irq handler :
     (registerIrq ist irq handler).state.cdt = ist.state.cdt := rfl
-@[simp] private theorem registerIrq_serviceRegistry (ist : IntermediateState) irq handler :
-    (registerIrq ist irq handler).state.serviceRegistry = ist.state.serviceRegistry := rfl
 @[simp] private theorem registerIrq_interfaceRegistry (ist : IntermediateState) irq handler :
     (registerIrq ist irq handler).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
 @[simp] private theorem registerIrq_asidTable (ist : IntermediateState) irq handler :
@@ -3294,8 +3284,6 @@ or satisfy the boot preconditions.
     (createObject ist id obj hS hM).state.scheduler = ist.state.scheduler := rfl
 @[simp] private theorem createObject_cdt (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.cdt = ist.state.cdt := rfl
-@[simp] private theorem createObject_serviceRegistry (ist : IntermediateState) id obj hS hM :
-    (createObject ist id obj hS hM).state.serviceRegistry = ist.state.serviceRegistry := rfl
 @[simp] private theorem createObject_interfaceRegistry (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
 @[simp] private theorem createObject_asidTable (ist : IntermediateState) id obj hS hM :
@@ -3315,8 +3303,6 @@ or satisfy the boot preconditions.
     (createBootObject ist e).state.scheduler = ist.state.scheduler := rfl
 @[simp] private theorem createBootObject_cdt (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.cdt = ist.state.cdt := rfl
-@[simp] private theorem createBootObject_serviceRegistry (ist : IntermediateState) (e : ObjectEntry) :
-    (createBootObject ist e).state.serviceRegistry = ist.state.serviceRegistry := rfl
 @[simp] private theorem createBootObject_interfaceRegistry (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
 @[simp] private theorem createBootObject_tlb (ist : IntermediateState) (e : ObjectEntry) :
@@ -3361,12 +3347,6 @@ private theorem foldIrqs_cdt (irqs : List IrqEntry) (ist : IntermediateState) :
 
 private theorem foldIrqs_objects (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.objects = ist.state.objects := by
-  induction irqs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldIrqs_serviceRegistry (irqs : List IrqEntry) (ist : IntermediateState) :
-    (foldIrqs irqs ist).state.serviceRegistry = ist.state.serviceRegistry := by
   induction irqs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
@@ -3480,12 +3460,6 @@ private theorem foldObjects_scheduler (objs : List ObjectEntry) (ist : Intermedi
 
 private theorem foldObjects_cdt (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.cdt = ist.state.cdt := by
-  induction objs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldObjects_serviceRegistry (objs : List ObjectEntry) (ist : IntermediateState) :
-    (foldObjects objs ist).state.serviceRegistry = ist.state.serviceRegistry := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -3740,7 +3714,7 @@ theorem installIdleThread_objects_self (ist : IntermediateState)
     (installIdleThread ist c).state.objects[(idleThreadId c).toObjId]? =
       some (KernelObject.tcb (createIdleThread c)) := by
   rw [installIdleThread_objects]
-  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.objects
   exact RHTable.getElem?_insert_self ist.state.objects (idleThreadId c).toObjId _ hObjK.1
 
 /-- **WS-SM SM4.G**: installing core `c`'s idle thread frames the object-store
@@ -3750,7 +3724,7 @@ theorem installIdleThread_objects_ne (ist : IntermediateState)
     (h : (idleThreadId c).toObjId ≠ oid) :
     (installIdleThread ist c).state.objects[oid]? = ist.state.objects[oid]? := by
   rw [installIdleThread_objects]
-  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.objects
   have hNe : ¬(((idleThreadId c).toObjId == oid) = true) := fun heq => h (eq_of_beq heq)
   exact RHTable.getElem?_insert_ne ist.state.objects (idleThreadId c).toObjId oid _ hNe hObjK.1
 
@@ -4105,9 +4079,9 @@ def storeIdleThread (ist : IntermediateState)
   state := storeIdleThreadOnCore ist.state c
   hAllTables := storeIdleThreadOnCore_preserves_allTablesInvExtK ist.state c ist.hAllTables
   hPerObjectSlots := storeIdleThreadOnCore_preserves_perObjectSlotsInvariant ist.state c
-    ist.hAllTables.1.1 ist.hPerObjectSlots
+    ist.hAllTables.objects.1 ist.hPerObjectSlots
   hPerObjectMappings := storeIdleThreadOnCore_preserves_perObjectMappingsInvariant ist.state c
-    ist.hAllTables.1.1 ist.hPerObjectMappings
+    ist.hAllTables.objects.1 ist.hPerObjectMappings
   hLifecycleConsistent := storeIdleThreadOnCore_preserves_objectTypeMetadataConsistent
     ist.state c ist.hAllTables ist.hLifecycleConsistent
 
@@ -4152,7 +4126,7 @@ theorem storeIdleThread_objects_self (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (storeIdleThread ist c).state.objects[(idleThreadId c).toObjId]? =
       some (KernelObject.tcb (readyIdleThread c)) :=
-  storeIdleThreadOnCore_objects_self ist.state c ist.hAllTables.1.1
+  storeIdleThreadOnCore_objects_self ist.state c ist.hAllTables.objects.1
 
 /-- **WS-RR RR5.11**: the store frames the object-store slot of any *distinct*
     ObjId — the analogue of `installIdleThread_objects_ne`. -/
@@ -4160,7 +4134,7 @@ theorem storeIdleThread_objects_ne (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) (oid : SeLe4n.ObjId)
     (h : (idleThreadId c).toObjId ≠ oid) :
     (storeIdleThread ist c).state.objects[oid]? = ist.state.objects[oid]? :=
-  storeIdleThreadOnCore_objects_ne ist.state c oid ist.hAllTables.1.1 h
+  storeIdleThreadOnCore_objects_ne ist.state c oid ist.hAllTables.objects.1 h
 
 /-- **WS-RR RR5.11** (fold frame): folding `storeIdleThread` writes no scheduler
     field, at any length — every run queue, current slot and domain of the
@@ -5144,13 +5118,6 @@ theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_cdt_eq, foldInterfaces_cdt, foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
 
-/-- V4-A3: The post-boot state preserves serviceRegistry from default. -/
-theorem bootFromPlatform_serviceRegistry_eq (config : PlatformConfig) :
-    (bootFromPlatform config).state.serviceRegistry =
-    (default : SystemState).serviceRegistry := by
-  show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_serviceRegistry_eq, foldInterfaces_serviceRegistry, foldObjects_serviceRegistry, foldIrqs_serviceRegistry, mkEmpty_state_eq_default]
-
 /-- V4-A3, WS-ZA ZA5.5: the post-boot interface registry is the configured
     interfaces inserted, in order, into the default's. -/
 theorem bootFromPlatform_interfaceRegistry_eq (config : PlatformConfig) :
@@ -5434,7 +5401,8 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- Endpoints must have empty queues (no thread references)
   (∀ ep, obj = .endpoint ep →
     ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
-    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none ∧
+    ep.serviceRegistered = false) ∧
   -- Notifications must be idle with empty wait lists and no pending badge
   -- WS-RC R4.C: `.val = []` references the underlying List projection.
   (∀ notif, obj = .notification notif →
@@ -5570,7 +5538,8 @@ def bootTcbShape (tcb : TCB) : Prop :=
 def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
   (∀ ep, obj = .endpoint ep →
     ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
-    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none ∧
+    ep.serviceRegistered = false) ∧
   (∀ notif, obj = .notification notif →
     notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
       notif.pendingBadge = none) ∧
@@ -5694,7 +5663,7 @@ private theorem foldObjects_objects_bootSafe
       fun e' hMem => hObjs e' (List.mem_cons_of_mem _ hMem)
     have hNewBase : ∀ (oid : SeLe4n.ObjId) (obj' : KernelObject), (createBootObject ist e).state.objects[oid]? = some obj' → bootSafeObject obj' := by
       intro oid₂ obj₂ hLookup₂
-      have hObjInvExt : ist.state.objects.invExt := ist.hAllTables.1.1
+      have hObjInvExt : ist.state.objects.invExt := ist.hAllTables.objects.1
       simp only [createBootObject_objects, RHTable_getElem?_eq_get?] at hLookup₂
       by_cases hEq : e.id = oid₂
       · subst hEq
@@ -5738,7 +5707,7 @@ private theorem foldObjects_objects_reachable
   | nil => intro ist oid obj h; exact Or.inr h
   | cons e rest ih =>
     intro ist oid obj hLookup
-    have hInvExt : ist.state.objects.invExt := ist.hAllTables.1.1
+    have hInvExt : ist.state.objects.invExt := ist.hAllTables.objects.1
     rcases ih (createBootObject ist e) oid obj hLookup with
       ⟨e', hMem, hId, hObj⟩ | hBase
     · -- Entry e' is in rest; lift membership to (e :: rest)
@@ -5883,13 +5852,25 @@ scheduler supplies its own run-queue facts.  The unchecked boot and the
 production boot are its two instances.
 -/
 
-/-- **WS-BP BP3.5**: the fields a booted state leaves at their defaults — the
-    service registry, every TLB and instruction-cache view, the shootdown
-    state and the audit trail.  Boot writes none of them: it installs objects,
+/-- **WS-ZA ZA5.9**: a state whose endpoints all have the boot shape records
+    no service registration — the registry is read off the endpoints' flags
+    (`SystemState.serviceRegistry`), and a boot endpoint's is clear. -/
+theorem serviceRegistry_none_of_bootShape (st : SystemState)
+    (hShape : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      st.objects[oid]? = some obj → bootObjectShapeOffLinks obj)
+    (sid : ServiceId) : st.serviceRegistry[sid]? = none := by
+  rw [SystemState.serviceRegistry_getElem?]
+  split
+  · next ep hE =>
+    rw [((hShape _ _ hE).1 ep rfl).2.2.2.2]; rfl
+  · rfl
+
+/-- **WS-BP BP3.5**: the fields a booted state leaves at their defaults —
+    every TLB and instruction-cache view, the shootdown state and the audit
+    trail.  Boot writes none of them: it installs objects,
     registers ASIDs, stores the idle threads, starts the initial threads and
     links the capabilities, and each of those is framed here. -/
 def bootQuiescentFieldsOffCdt (st : SystemState) : Prop :=
-  st.serviceRegistry = (default : SystemState).serviceRegistry ∧
   st.tlb = (default : SystemState).tlb ∧
   st.tlbShootdown = (default : SystemState).tlbShootdown ∧
   st.perCoreTlb = (default : SystemState).perCoreTlb ∧
@@ -5959,7 +5940,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hRun : ist.state.runQueueRefined)
     (hBindings : notificationBindingReciprocal ist.state) :
     Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
+  obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape⟩ := hTree
   have hAllTables := ist.hAllTables
   have hBS := hShape
@@ -5969,7 +5950,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     -- The per-CNode `slotsUnique` and slot-count invariants are carried
     -- structurally (`UniqueSlotMap`, the fixed slot array), so neither is a
     -- conjunct of this bundle.
-    refine ⟨?_, ?_, ?_, ?_, hAllTables.1.1, ?_, hLinks, hTreeShape⟩
+    refine ⟨?_, ?_, ?_, ?_, hAllTables.objects.1, ?_, hLinks, hTreeShape⟩
     · exact cspaceLookupSound_holds _
     · exact hComp
     · exact hAcyc
@@ -6016,10 +5997,10 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         · -- receiveQ well-formed
           unfold intrusiveQueueWellFormed
           refine ⟨⟨fun _ => ?_, fun _ => ?_⟩, ?_, ?_⟩
-          · exact hEp.2.2.2
+          · exact hEp.2.2.2.1
           · exact hEp.2.2.1
           · intro hd hH; rw [hEp.2.2.1] at hH; exact absurd hH (by simp)
-          · intro tl hT; rw [hEp.2.2.2] at hT; exact absurd hT (by simp)
+          · intro tl hT; rw [hEp.2.2.2.1] at hT; exact absurd hT (by simp)
       · -- tcbQueueLinkIntegrity
         constructor
         · intro a tcbA hObj b hNext
@@ -6156,7 +6137,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         intro epId ep tl tcb hObjEp _
         have hEp := (hBS epId _ hObjEp).1 ep rfl
         constructor
-        · intro hRecv; rw [hEp.2.2.2] at hRecv; exact absurd hRecv (by simp)
+        · intro hRecv; rw [hEp.2.2.2.1] at hRecv; exact absurd hRecv (by simp)
         · intro hSend; rw [hEp.2.1] at hSend; exact absurd hSend (by simp)
       · -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked (20th, vacuous — boot TCBs
         -- have queueNext = none, so no link antecedent can hold).
@@ -6199,13 +6180,11 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · unfold currentThreadIpcReady; rw [hCur]; trivial
       · unfold currentNotEndpointQueueHead; rw [hCur]; trivial
       · unfold currentNotOnNotificationWaitList; rw [hCur]; trivial
-  -- 6. registryInvariant (serviceRegistry empty → vacuous)
+  -- 6. registryInvariant (no boot endpoint carries a registration → vacuous)
+  have hSvcNone := serviceRegistry_none_of_bootShape ist.state hShape
   have hServiceBundle : registryInvariant ist.state := by
     constructor <;> {
-      intro sid reg hLookup; rw [hSvcR] at hLookup
-      have : (default : SystemState).serviceRegistry[sid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [this] at hLookup; exact absurd hLookup (by simp)
+      intro sid reg hLookup; rw [hSvcNone sid] at hLookup; cases hLookup
     }
   -- 7. vspaceInvariantBundle (WS-BP BP3.5): the ASID half is the table's
   -- consistency — two roots on one ASID would be registered at one key, so the
@@ -6238,15 +6217,9 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
   have hCrossBundle : crossSubsystemInvariant ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
-      intro sid reg hLookup; rw [hSvcR] at hLookup
-      have : (default : SystemState).serviceRegistry[sid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [this] at hLookup; exact absurd hLookup (by simp)
+      exact registryEndpointValid_holds _
     · -- AE5-C: registryInterfaceValid
-      intro sid reg hLookup; rw [hSvcR] at hLookup
-      have : (default : SystemState).serviceRegistry[sid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [this] at hLookup; exact absurd hLookup (by simp)
+      intro sid reg hLookup; rw [hSvcNone sid] at hLookup; cases hLookup
     · -- noStaleEndpointQueueReferences
       intro oid ep hObj
       have hEp := (hBS oid _ hObj).1 ep rfl
@@ -6254,7 +6227,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · intro tid hH; rw [hEp.1] at hH; exact absurd hH (by simp)
       · intro tid hH; rw [hEp.2.1] at hH; exact absurd hH (by simp)
       · intro tid hH; rw [hEp.2.2.1] at hH; exact absurd hH (by simp)
-      · intro tid hH; rw [hEp.2.2.2] at hH; exact absurd hH (by simp)
+      · intro tid hH; rw [hEp.2.2.2.1] at hH; exact absurd hH (by simp)
       · -- sendQ interior: head = none ⇒ collectQueueMembers returns some []
         intro members hMem tid hIn
         rw [hEp.1, collectQueueMembers_none] at hMem; cases hMem; simp at hIn
@@ -6638,7 +6611,7 @@ theorem foldObjects_objects_ne (objs : List ObjectEntry) (ist : IntermediateStat
       show (foldObjects rest (createBootObject ist e)).state.objects[oid]? = _
       rw [ih _ (fun e' hMem => h e' (List.mem_cons_of_mem _ hMem)), createBootObject_objects]
       have hNe : ¬((e.id == oid) = true) := fun hEq => h e List.mem_cons_self (eq_of_beq hEq)
-      exact RHTable.getElem?_insert_ne _ _ _ _ hNe ist.hAllTables.1.1
+      exact RHTable.getElem?_insert_ne _ _ _ _ hNe ist.hAllTables.objects.1
 
 /-- **WS-BP BP3.3**: over entries with pairwise-distinct ids, the object fold
     leaves every entry at its own id. -/
@@ -6653,7 +6626,7 @@ theorem foldObjects_objects_of_mem (objs : List ObjectEntry) (ist : Intermediate
       rcases List.mem_cons.mp hMem with rfl | hRest
       · rw [foldObjects_objects_ne _ _ _ (fun e' hE' => (hUniq.1 e' hE').symm),
           createBootObject_objects]
-        exact RHTable.getElem?_insert_self _ _ _ ist.hAllTables.1.1
+        exact RHTable.getElem?_insert_self _ _ _ ist.hAllTables.objects.1
       · exact ih _ hUniq.2 hRest
 
 /-- **WS-BP BP3.3**: a successful checked boot rejected no colliding boot root
@@ -6842,7 +6815,7 @@ theorem foldl_storeIdleThread_runQueueRefined (L : List SeLe4n.Kernel.Concurrenc
   | nil => exact hR
   | cons x xs ih =>
     refine ih _ (storeIdleThreadOnCore_runQueueRefined ist.state x
-      ist.hAllTables.1.1 hR (hOff x List.mem_cons_self)) (fun c hc c' => ?_)
+      ist.hAllTables.objects.1 hR (hOff x List.mem_cons_self)) (fun c hc c' => ?_)
     rw [show (storeIdleThread ist x).state.scheduler = ist.state.scheduler from
       storeIdleThread_scheduler ist x]
     exact hOff c (List.mem_cons_of_mem _ hc) c'
@@ -7385,7 +7358,6 @@ theorem foldl_storeIdleThread_bootQuiescentFields
 theorem bootFromPlatform_bootQuiescentFields (config : PlatformConfig) :
     bootQuiescentFields (bootFromPlatform config).state :=
   ⟨bootFromPlatform_cdt_eq config,
-   bootFromPlatform_serviceRegistry_eq config,
    bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
    bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
    bootFromPlatform_declassificationAuditLog_eq config⟩
@@ -7474,8 +7446,8 @@ private theorem createBootObject_preserves_asidTableConsistent (ist : Intermedia
     (hFresh : ist.state.objects[e.id]? = none)
     (hAsidFresh : ∀ a, bootEntryAsid? e = some a → ist.state.asidTable[a]? = none) :
     Architecture.asidTableConsistent (createBootObject ist e).state := by
-  have hObjK : ist.state.objects.invExt := ist.hAllTables.1.1
-  have hAsidK : ist.state.asidTable.invExt := ist.hAllTables.2.2.1.1
+  have hObjK : ist.state.objects.invExt := ist.hAllTables.objects.1
+  have hAsidK : ist.state.asidTable.invExt := ist.hAllTables.asidTable.1
   obtain ⟨hSound, hComplete⟩ := hCons
   have hObjNe : ∀ oid, e.id ≠ oid →
       (createBootObject ist e).state.objects[oid]? = ist.state.objects[oid]? := by
@@ -7575,8 +7547,8 @@ private theorem foldObjects_preserves_asidTableConsistent (objs : List ObjectEnt
     rw [List.pairwise_cons] at hIds
     have hStep := createBootObject_preserves_asidTableConsistent ist e hCons
       (hFresh e (List.mem_cons_self ..)) (hAsidFresh e (List.mem_cons_self ..))
-    have hObjK : ist.state.objects.invExt := ist.hAllTables.1.1
-    have hAsidK : ist.state.asidTable.invExt := ist.hAllTables.2.2.1.1
+    have hObjK : ist.state.objects.invExt := ist.hAllTables.objects.1
+    have hAsidK : ist.state.asidTable.invExt := ist.hAllTables.asidTable.1
     have hRestNodup : (rest.filterMap bootEntryAsid?).Nodup := by
       rw [List.filterMap_cons] at hNodup
       split at hNodup
@@ -7939,12 +7911,12 @@ theorem foldIrqs_irqHandlers_source (irqs : List IrqEntry) (ist : IntermediateSt
     · by_cases hk : x.irq = irq
       · subst hk
         have hSelf : (registerIrq ist x.irq x.handler).state.irqHandlers[x.irq]? =
-            some x.handler := RHTable.getElem?_insert_self _ _ _ ist.hAllTables.2.1.1
+            some x.handler := RHTable.getElem?_insert_self _ _ _ ist.hAllTables.irqHandlers.1
         rw [hSelf] at h1; cases h1
         exact Or.inr ⟨x, List.mem_cons_self, rfl⟩
       · have hNe : (registerIrq ist x.irq x.handler).state.irqHandlers[irq]? =
             ist.state.irqHandlers[irq]? :=
-          RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hk (eq_of_beq hb)) ist.hAllTables.2.1.1
+          RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hk (eq_of_beq hb)) ist.hAllTables.irqHandlers.1
         rw [hNe] at h1; exact Or.inl h1
     · exact Or.inr ⟨e, List.mem_cons_of_mem _ he, hn⟩
 
@@ -7958,7 +7930,7 @@ theorem foldIrqs_irqHandlers_ne (irqs : List IrqEntry) (ist : IntermediateState)
     show (foldIrqs rest (registerIrq ist x.irq x.handler)).state.irqHandlers[irq]? = _
     rw [ih _ (fun e he => h e (List.mem_cons_of_mem _ he))]
     exact RHTable.getElem?_insert_ne _ _ _ _
-      (fun hb => h x List.mem_cons_self (eq_of_beq hb)) ist.hAllTables.2.1.1
+      (fun hb => h x List.mem_cons_self (eq_of_beq hb)) ist.hAllTables.irqHandlers.1
 
 /-- Over entries naming distinct interrupts, the interrupt fold names every
     entry's handler under its interrupt. -/
@@ -7972,7 +7944,7 @@ theorem foldIrqs_irqHandlers_of_mem (irqs : List IrqEntry) (ist : IntermediateSt
     show (foldIrqs rest (registerIrq ist x.irq x.handler)).state.irqHandlers[e.irq]? = _
     rcases List.mem_cons.mp hMem with rfl | hRest
     · rw [foldIrqs_irqHandlers_ne _ _ _ (fun e' hE' => (hUniq.1 e' hE').symm)]
-      exact RHTable.getElem?_insert_self _ _ _ ist.hAllTables.2.1.1
+      exact RHTable.getElem?_insert_self _ _ _ ist.hAllTables.irqHandlers.1
     · exact ih _ hUniq.2 hRest
 
 /-- A well-formed config's interrupts are pairwise distinct. -/
@@ -8019,17 +7991,15 @@ theorem bootFromPlatformChecked_ok_backLinkedObject_of_config (config : Platform
       cases hObj; exact absurd rfl hb
     · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj; exact hBase hObj
 
-/-- **The checked boot records its table references.**  The registry and the
-    service graph are empty (`bootQuiescentFields`), and no configured endpoint
-    carries a registration flag (`bootSafeEndpointCheck`); an interrupt names
+/-- **The checked boot records its table references**: an interrupt names
     the notification of its table entry, which records it, and a notification
     recording an interrupt is named by one (`irqHandlersAndNotificationsReciprocal`,
-    with the interrupts distinct, `irqsUnique`). -/
+    with the interrupts distinct, `irqsUnique`).  (The service registry is read
+    off the endpoints since WS-ZA ZA5.9, so it records nothing to agree with.) -/
 theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
     ist.state.tableReferencesRecorded := by
-  obtain ⟨hWf, hSafe, _⟩ := bootFromPlatformChecked_ok_shape config ist h
-  have hQ := (bootFromPlatformChecked_ok_bootQuiescentFields config ist h).2
+  obtain ⟨hWf, -, _⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hD := SystemState.default_tableReferencesRecorded
   have hIrq := bootFromPlatformChecked_ok_implies_irqHandlersValid config ist h
   unfold irqHandlersAndNotificationsReciprocal at hIrq
@@ -8037,25 +8007,7 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
   obtain ⟨hI1, hI2⟩ := hIrq
   have hEmptyObj : ∀ k : SeLe4n.ObjId, (default : SystemState).objects[k]? = none := fun k => by
     simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · rw [hQ.1]; exact hD.registryInvExtK
-  · intro sid reg hs
-    rw [hQ.1] at hs
-    obtain ⟨_, _, _, h1⟩ := hD.registry sid reg hs
-    rw [hEmptyObj] at h1; cases h1
-  · intro e hn
-    cases hO : ist.state.objects[e]? with
-    | none => rw [hO] at hn; cases hn
-    | some o =>
-      rw [hO] at hn
-      obtain ⟨ep, hep, hc⟩ := objTableBackLinks_registered hn
-      cases hep
-      obtain ⟨en, hMem, _, hEo⟩ := bootFromPlatformChecked_ok_backLinkedObject_of_config config
-        ist h e _ hO (fun h0 => by
-          rw [objTableBackLinks_some, h0] at hn; cases hn)
-      have hS := List.all_eq_true.mp hSafe en hMem
-      rw [hEo] at hS
-      simp [bootSafeObjectCheck, hc] at hS
+  refine ⟨?_, ?_⟩
   · intro irq n hn
     rw [bootFromPlatformChecked_ok_irqHandlers config ist h] at hn
     rcases foldIrqs_irqHandlers_source _ _ _ _ hn with h0 | ⟨ie, hMem, hH⟩

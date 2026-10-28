@@ -251,7 +251,6 @@ def emptyFrozenSystemState : FrozenSystemState :=
   { objects := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     irqHandlers := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     asidTable := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    serviceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     cdt := .empty
     scheduler :=

@@ -1012,30 +1012,6 @@ theorem endpointQueueRemove_machine
         simp only [Except.ok.injEq] at hStep
         rw [← hStep]
 
-/-- WS-OD OD1.4: `endpointQueueRemove` does not modify the service registry.
-
-Stated beside its scheduler sibling; the registry is one of the three fields
-the removal's frames pin. -/
-theorem endpointQueueRemove_serviceRegistry_eq
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : SystemState)
-    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
-  unfold endpointQueueRemove SystemState.getObject? at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-      simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep
-      cases hTcb : lookupTcb st tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        simp only [Except.ok.injEq] at hStep
-        rw [← hStep]
-
 /-- Z6-D: `endpointQueueRemove` preserves `objects.invExt`.
 
 The operation performs up to 4 `RHTable.insert` calls (predecessor patch,

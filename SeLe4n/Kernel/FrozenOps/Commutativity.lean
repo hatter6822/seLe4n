@@ -109,16 +109,6 @@ theorem frozenStoreObject_preserves_asidTable
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   rw [hSt]
 
-/-- Q7-D: `frozenStoreObject` preserves the service registry. -/
-theorem frozenStoreObject_preserves_serviceRegistry
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st : FrozenSystemState) (st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.serviceRegistry = st.serviceRegistry := by
-  -- The frame is the write's, stated once at `frozenWithObjectStored`.
-  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
-  rw [hSt]
-
 -- ============================================================================
 -- Q7-D: FrozenMap.set Structural Lemmas
 -- ============================================================================
@@ -205,15 +195,6 @@ theorem frozenQueuePushTail_preserves_asidTable
     (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
     (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
     st'.asidTable = st.asidTable := by
-  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
-  subst hSt; rfl
-
-/-- T1-E: `frozenQueuePushTail` preserves the service registry. -/
-theorem frozenQueuePushTail_preserves_serviceRegistry
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
-    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
-    st'.serviceRegistry = st.serviceRegistry := by
   obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
   subst hSt; rfl
 

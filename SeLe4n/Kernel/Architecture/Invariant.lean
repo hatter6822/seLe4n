@@ -1639,7 +1639,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
            hCoh, hCtxPost, ⟨hIpcReadyPost, hNotEpHead, hNotNtfnWait⟩⟩
   -- 6. registryInvariant
   · exact hSvc
-  -- 8. crossSubsystemInvariant: objects/serviceRegistry unchanged (AM4-A + AK8-A: 10 conjuncts)
+  -- 8. crossSubsystemInvariant: objects unchanged (AM4-A + AK8-A: 10 conjuncts)
   · obtain ⟨h1, h1i, h3, h4, h6, h7, h8, h9, h10, h11⟩ := hCross
     refine ⟨by exact h1, by exact h1i, by exact h3, by exact h4,
            by exact h6, by exact h7, by exact h8, ?_, ?_, ?_⟩

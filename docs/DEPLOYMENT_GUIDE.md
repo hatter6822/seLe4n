@@ -32,8 +32,6 @@ kernel-primitive transitions with per-step and trace-level NI proofs.
 
 **What NI does NOT cover** (see Section 3):
 
-- The service registry: registrations and the service query's answer (not yet
-  projected; the kernel keeps no service orchestration state)
 - Cache and timing side channels (hardware-level; see F-17 in audit)
 
 ### 1.2 Integrity Model — Non-BIBA Authority Flow (F-04)

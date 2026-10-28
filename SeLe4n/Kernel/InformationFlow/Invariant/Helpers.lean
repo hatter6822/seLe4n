@@ -33,25 +33,6 @@ theorem storeObject_preserves_projectMemory
     projectMemory ctx observer st' = projectMemory ctx observer st :=
   projectMemory_eq_of_memory_eq ctx observer st' st (by rw [storeObject_machine_eq st st' oid obj hStore])
 
-/-- storeObject preserves the service-registry projection: it writes the object
-store only. -/
-theorem storeObject_preserves_projectServiceRegistry
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hStore : storeObject oid obj st = .ok ((), st')) :
-    projectServiceRegistry ctx observer st' = projectServiceRegistry ctx observer st :=
-  projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st
-    (storeObject_serviceRegistry_eq st st' oid obj hStore)
-
-/-- `cspaceInsertSlot` leaves the service registry, which its one store does
-not touch. -/
-theorem cspaceInsertSlot_preserves_serviceRegistry
-    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
-    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.serviceRegistry = st.serviceRegistry := by
-  obtain ⟨_, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
-  exact storeObject_serviceRegistry_eq _ _ _ _ hStore
-
 -- ============================================================================
 -- WS-F3: storeObject objectIndex filter preservation
 -- ============================================================================
@@ -179,12 +160,8 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     rw [projectMemory_eq_of_memory_eq ctx observer s₁' s₁ (by rw [hM₁]),
         projectMemory_eq_of_memory_eq ctx observer s₂' s₂ (by rw [hM₂])]
     exact hMemLow
-  have hSR : projectServiceRegistry ctx observer s₁' = projectServiceRegistry ctx observer s₂' := by
-    rw [storeObject_preserves_projectServiceRegistry ctx observer s₁ s₁' targetId obj₁ hStore₁,
-        storeObject_preserves_projectServiceRegistry ctx observer s₂ s₂' targetId obj₂ hStore₂]
-    exact congrArg ObservableState.serviceRegistry hLow
   unfold lowEquivalent
-  simp [projectState, hObj', hRun', hCur', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem, hSR]
+  simp [projectState, hObj', hRun', hCur', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem]
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -360,10 +337,7 @@ theorem removeRunnable_preserves_projection
   have hMem : projectMemory ctx observer (removeRunnable st tid) =
       projectMemory ctx observer st :=
     projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st (by rw [hD])
-  have hSR : projectServiceRegistry ctx observer (removeRunnable st tid) =
-      projectServiceRegistry ctx observer st := by
-    rw [hD]; rfl
-  simp only [projectState, hObj, hRun, hCur, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem, hSR]
+  simp only [projectState, hObj, hRun, hCur, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 theorem ensureRunnable_preserves_projection
@@ -457,7 +431,6 @@ theorem storeTcbIpcState_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
-      · exact storeObject_preserves_projectServiceRegistry ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- WS-H9: storeTcbPendingMessage at a non-observable object preserves projection. -/
 theorem storeTcbPendingMessage_preserves_projection
@@ -496,7 +469,6 @@ theorem storeTcbPendingMessage_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
-      · exact storeObject_preserves_projectServiceRegistry ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- WS-H9: storeTcbIpcStateAndMessage at a non-observable object preserves projection. -/
 theorem storeTcbIpcStateAndMessage_preserves_projection
@@ -537,7 +509,6 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
-      · exact storeObject_preserves_projectServiceRegistry ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 theorem storeObject_preserves_projection
@@ -568,7 +539,6 @@ theorem storeObject_preserves_projection
           storeObject_machine_eq st st' oid obj hStore]
   · -- R5-C.1: memory
     exact storeObject_preserves_projectMemory ctx observer st st' oid obj hStore
-  · exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid obj hStore
 
 /-- Finding F-1: `storeTcbReceiveComplete` at a non-observable object preserves
 projection.  The store touches only the (non-observable) target TCB; the extra
@@ -642,7 +612,6 @@ theorem storeObject_projectionStable_preserves_projection
   · simp [projectMachineRegs, storeObject_scheduler_eq st st' oid _ hStore,
           storeObject_machine_eq st st' oid _ hStore]
   · exact storeObject_preserves_projectMemory ctx observer st st' oid _ hStore
-  · exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid _ hStore
 
 /-- WS-OD OD3.2: **the donation return's reply-stack head clear is invisible to
 every observer.**
@@ -1223,12 +1192,6 @@ theorem cspaceMint_preserves_lowEquivalent
             projectMemory_eq_of_memory_eq ctx observer s₂' s₂
               (by rw [cspaceInsertSlot_preserves_machine s₂ s₂' dst c₂ hInsert₂])]
         exact congrArg ObservableState.memory hLow
-      · -- serviceRegistry
-        rw [projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer s₁' s₁
-              (cspaceInsertSlot_preserves_serviceRegistry s₁ s₁' dst c₁ hInsert₁),
-            projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer s₂' s₂
-              (cspaceInsertSlot_preserves_serviceRegistry s₂ s₂' dst c₂ hInsert₂)]
-        exact congrArg ObservableState.serviceRegistry hLow
 
 -- ============================================================================
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
@@ -1384,9 +1347,6 @@ theorem cspaceRevoke_preserves_lowEquivalent
   · -- R5-C.1: memory
     funext paddr; simp only [projectMemory]
     exact congrFun (congrArg ObservableState.memory hLow) paddr
-  · -- serviceRegistry
-    funext sid; simp only [projectServiceRegistry]
-    exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
 
 -- ============================================================================
 -- WS-F3/F-21: notificationSignal non-interference
@@ -1675,11 +1635,5 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
         projectMemory_eq_of_memory_eq ctx observer s₂' s₂
           (by rw [cspaceInsertSlot_preserves_machine s₂ s₂' dst cap hStep₂])]
     exact congrArg ObservableState.memory hLow
-  · -- serviceRegistry
-    rw [projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer s₁' s₁
-          (cspaceInsertSlot_preserves_serviceRegistry s₁ s₁' dst cap hStep₁),
-        projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer s₂' s₂
-          (cspaceInsertSlot_preserves_serviceRegistry s₂ s₂' dst cap hStep₂)]
-    exact congrArg ObservableState.serviceRegistry hLow
 
 

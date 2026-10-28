@@ -599,18 +599,6 @@
  "h16DeviceUntypedId": {
   "tests/NegativeStateSuite.lean": 5
  },
- "h16ExhaustedAuthSlot": {
-  "tests/NegativeStateSuite.lean": 2
- },
- "h16ExhaustedCnodeId": {
-  "tests/NegativeStateSuite.lean": 4
- },
- "h16ExhaustedState": {
-  "tests/NegativeStateSuite.lean": 2
- },
- "h16ExhaustedUntypedId": {
-  "tests/NegativeStateSuite.lean": 5
- },
  "h16State": {
   "tests/NegativeStateSuite.lean": 2
  },

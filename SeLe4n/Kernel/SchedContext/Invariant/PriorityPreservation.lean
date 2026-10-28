@@ -39,13 +39,6 @@ theorem updatePrioritySource_scheduler_eq
   obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
   rw [h]
 
-theorem updatePrioritySource_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (newPrio : SeLe4n.Priority) :
-    (updatePrioritySource st tid tcb newPrio).serviceRegistry = st.serviceRegistry := by
-  obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
-  rw [h]
-
 theorem updatePrioritySource_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
@@ -56,11 +49,6 @@ theorem updatePrioritySource_lifecycle_eq
 -- ============================================================================
 -- Transport lemmas — migrateRunQueueBucket
 -- ============================================================================
-
-theorem migrateRunQueueBucket_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).serviceRegistry = st.serviceRegistry := 
-  congrArg (·.serviceRegistry) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
 
 theorem migrateRunQueueBucket_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :

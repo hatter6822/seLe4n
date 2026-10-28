@@ -306,23 +306,21 @@ inductive NonInterferenceStep
   /-- R5-B/M-02: Service registration by a caller the observer cannot see.
       A registration carries its endpoint's label (`serviceObservable`), and
       the write gate puts the endpoint's label above the caller's, so the
-      registration and its endpoint's `serviceRegistered` are both unobservable
+      registration — its endpoint's service record — is unobservable
       (`registerServiceChecked_preserves_projection`). -/
   | registerServiceChecked
       (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
       (hCallerHigh : threadObservable ctx observer caller = false)
-      (hRegInv : st.serviceRegistry.invExt)
       (hStep : registerServiceChecked ctx caller reg st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   /-- Service revocation by a caller the observer cannot see.  The revoke
-      removes the registration the invoked endpoint records, which names that
-      endpoint wherever the table references are recorded, and the write gate
+      clears the registration the invoked endpoint records, which names that
+      endpoint, and the write gate
       puts the endpoint above the caller
       (`revokeServiceChecked_preserves_projection`). -/
   | revokeServiceChecked
       (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
       (hCallerHigh : threadObservable ctx observer caller = false)
-      (hRec : st.tableReferencesRecorded)
       (hStep : revokeServiceChecked ctx caller epId st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   /-- The checked service query, by any caller: it writes only its caller's
@@ -422,8 +420,6 @@ theorem step_preserves_projection
       · -- R5-C.1: memory
         exact projectMemory_eq_of_memory_eq ctx observer st' st
           (by rw [cspaceInsertSlot_preserves_machine st st' dst c hInsert])
-      · exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st
-          (cspaceInsertSlot_preserves_serviceRegistry st st' dst c hInsert)
   | cspaceRevoke addr hAddrH hOp =>
     exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hObjInv hOp
   | retypeFromUntyped authority untypedId childId newObj allocSize hUH hCH hAH hOp =>
@@ -464,8 +460,6 @@ theorem step_preserves_projection
     · -- R5-C.1: memory
       exact projectMemory_eq_of_memory_eq ctx observer st' st
         (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hOp])
-    · exact projectServiceRegistry_eq_of_serviceRegistry_eq ctx observer st' st
-        (cspaceInsertSlot_preserves_serviceRegistry st st' dst cap hOp)
   | schedule hCurH hAllR hOp =>
     exact schedule_preserves_projection ctx observer st st' hCurH hAllR hObjInv hOp
   | vspaceMapPage asid vaddr paddr hRH hOp =>
@@ -535,12 +529,12 @@ theorem step_preserves_projection
     exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hObjInv hOp
   | syscallDecodeError hEq => subst hEq; rfl
   | syscallDispatchHigh _ hProj => exact hProj
-  | registerServiceChecked caller reg hCH hRI hOp =>
+  | registerServiceChecked caller reg hCH hOp =>
     exact registerServiceChecked_preserves_projection ctx observer caller reg st st' hCH hObjInv
-      hRI hOp
-  | revokeServiceChecked caller epId hCH hRec hOp =>
+      hOp
+  | revokeServiceChecked caller epId hCH hOp =>
     exact revokeServiceChecked_preserves_projection ctx observer caller epId st st' hCH hObjInv
-      hRec hOp
+      hOp
   | serviceQueryChecked caller epId hOp =>
     exact serviceQueryStaged_preserves_projection ctx observer caller epId st st' hObjInv hOp
   | endpointCallWithDonationHigh _ hProj => exact hProj

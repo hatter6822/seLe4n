@@ -11,11 +11,14 @@ import SeLe4n.Model.State
 
 /-! # The tables that name objects by id, and the objects' back-links to them
 
-Two tables of the state name kernel objects by id outside every slot: the
+Two lookups of the state name kernel objects by id outside every slot: the
 service registry (a registration keeps its endpoint's capability) and the
 interrupt-handler table (an interrupt names the notification it signals).  A
 capability held there is one the derivation tree does not see, so a final
-delete must not retire an object a table still names.
+delete must not retire an object either still names.  Since WS-ZA ZA5.9 the
+service registry is no table: it is read off the endpoints
+(`SystemState.serviceRegistry`), each registration living on the endpoint it
+names, so only the interrupt table holds references of its own.
 
 seL4 has no service registry, and keeps an interrupt's
 notification capability in the interrupt's own slot, where finality sees it.
@@ -30,7 +33,9 @@ the references to them:
   set by the boot for every notification the interrupt table names; nothing
   after the boot writes the table).
 
-`tableReferencesRecorded` states both, each with its converse, and
+`tableReferencesRecorded` states the interrupt half, each direction with its
+converse (the registry half holds by construction,
+`SystemState.serviceRegistry_names` / `serviceRegistry_stored`), and
 `tableBackLinksClear` reads an object's own back-links in place of a walk of
 the two tables; `tableBackLinksClear.namedByNone` is the theorem that, under
 `tableReferencesRecorded`, an object it admits is named by no table entry — the
@@ -61,36 +66,24 @@ theorem objTableBackLinks_eq_map (o : Option KernelObject) :
     objTableBackLinks o = (o.map KernelObject.tableBackLinks).getD ({}, false) := by
   cases o <;> rfl
 
-/-- The two tables that name objects by id outside every slot. -/
-@[inline] def SystemState.referenceTables (st : SystemState) :
-    RHTable ServiceId ServiceRegistration × RHTable SeLe4n.Irq SeLe4n.ObjId :=
-  (st.serviceRegistry, st.irqHandlers)
+/-- The table that names objects by id outside every slot: the interrupt
+table.  (The service registry names its endpoints too, but since WS-ZA ZA5.9 it
+is read off them, `SystemState.serviceRegistry`, and holds no table.) -/
+@[inline] def SystemState.referenceTables (st : SystemState) : RHTable SeLe4n.Irq SeLe4n.ObjId :=
+  st.irqHandlers
 
-/-- **Every table reference by id is recorded on the object it names, and
-every back-link an object holds answers a table entry.**  A registration names
-an endpoint whose flag is set, under the endpoint's own id (`registry`), and a
-set flag names the registration the endpoint's record holds, under its id
-(`serviceStored`: the table and the endpoint's words agree); an interrupt names a notification
-whose flag is set (`irqHandlers`), and a set flag is named by an interrupt
-(`irqBound`).  Established
-by the boot and kept by every syscall and kernel entry (the run-queue stages
-carry it, `SystemState.RunQueueLinkStage`), so a final delete reads the object
-it retires (`tableBackLinksClear`) instead of walking the tables. -/
+/-- **Every interrupt table reference is recorded on the notification it
+names, and every interrupt flag answers a table entry.**  An interrupt names a
+notification whose flag is set (`irqHandlers`), and a set flag is named by an
+interrupt (`irqBound`).  The service registry's two directions need no
+conjunct since WS-ZA ZA5.9: the registry is read off the endpoints' records
+(`SystemState.serviceRegistry`), so a registration names an endpoint recording
+it under its own id by construction (`SystemState.serviceRegistry_names`,
+`SystemState.serviceRegistry_stored`).  Established by the boot and kept by
+every syscall and kernel entry (the run-queue stages carry it,
+`SystemState.RunQueueLinkStage`), so a final delete reads the object it retires
+(`tableBackLinksClear`) instead of walking the tables. -/
 structure SystemState.tableReferencesRecorded (st : SystemState) : Prop where
-  /-- The registry's table invariant, which its erase reads. -/
-  registryInvExtK : st.serviceRegistry.invExtK
-  /-- A registration names an endpoint recording it, under that endpoint's id. -/
-  registry : ∀ (sid : ServiceId) (reg : ServiceRegistration),
-    st.serviceRegistry[sid]? = some reg →
-    ∃ e, reg.endpointCap.target = .object e ∧ sid = ServiceId.ofNat e.toNat ∧
-      (objTableBackLinks st.objects[e]?).1.registered = true
-  /-- An endpoint's registration flag names the registration its service record
-  holds, under the endpoint's id: the registry and the endpoint's words are two
-  copies of one registration (WS-ZA ZA5.8), held equal here until the table
-  retires. -/
-  serviceStored : ∀ e : SeLe4n.ObjId, (objTableBackLinks st.objects[e]?).1.registered = true →
-    st.serviceRegistry[ServiceId.ofNat e.toNat]? =
-      some ((objTableBackLinks st.objects[e]?).1.registrationAt e)
   /-- An interrupt names a notification recording it. -/
   irqHandlers : ∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n →
     (objTableBackLinks st.objects[n]?).2 = true
@@ -98,55 +91,118 @@ structure SystemState.tableReferencesRecorded (st : SystemState) : Prop where
   irqBound : ∀ n : SeLe4n.ObjId, (objTableBackLinks st.objects[n]?).2 = true →
     ∃ irq : SeLe4n.Irq, st.irqHandlers[irq]? = some n
 
-/-- A set registration flag is an endpoint's. -/
-theorem objTableBackLinks_registered {o : Option KernelObject}
-    (h : (objTableBackLinks o).1.registered = true) :
-    ∃ ep, o = some (.endpoint ep) ∧ ep.serviceRegistered = true := by
-  cases o with
-  | none => cases h
+/-- **The registry's entry under `sid` is the record of the endpoint with that
+id, read off its back-link.** -/
+theorem SystemState.serviceRegistry_getElem?_backLinks (st : SystemState) (sid : ServiceId) :
+    st.serviceRegistry[sid]? =
+      if (objTableBackLinks st.objects[SeLe4n.ObjId.ofNat sid.toNat]?).1.registered then
+        some ((objTableBackLinks st.objects[SeLe4n.ObjId.ofNat sid.toNat]?).1.registrationAt
+          (SeLe4n.ObjId.ofNat sid.toNat))
+      else none := by
+  rw [SystemState.serviceRegistry_getElem?]
+  cases st.objects[SeLe4n.ObjId.ofNat sid.toNat]? with
+  | none => rfl
   | some o =>
     cases o with
-    | endpoint ep =>
-      refine ⟨ep, rfl, ?_⟩
-      cases hc : ep.serviceRegistered
-      · simp [KernelObject.tableBackLinks, hc] at h
-      · rfl
-    | _ => cases h
+    | endpoint ep => cases h : ep.serviceRegistered <;> simp [KernelObject.tableBackLinks, h]
+    | _ => rfl
+
+/-- **States whose objects hold one set of back-links have one registry**: the
+registry is read off the endpoints' back-links. -/
+theorem SystemState.serviceRegistry_eq_of_backLinks {st st' : SystemState}
+    (h : ∀ k : SeLe4n.ObjId, objTableBackLinks st'.objects[k]? = objTableBackLinks st.objects[k]?) :
+    st'.serviceRegistry = st.serviceRegistry :=
+  ServiceRegistryView.ext fun sid => by
+    rw [SystemState.serviceRegistry_getElem?_backLinks, SystemState.serviceRegistry_getElem?_backLinks,
+      h]
+
+/-- **A registration names an endpoint recording it, under that endpoint's
+id** — by construction, the registry being read off the endpoints. -/
+theorem SystemState.serviceRegistry_names (st : SystemState) {sid : ServiceId}
+    {reg : ServiceRegistration} (hs : st.serviceRegistry[sid]? = some reg) :
+    ∃ e, reg.endpointCap.target = .object e ∧ sid = ServiceId.ofNat e.toNat ∧
+      (objTableBackLinks st.objects[e]?).1.registered = true := by
+  rw [SystemState.serviceRegistry_getElem?_backLinks] at hs
+  split at hs
+  · rename_i hc
+    cases hs
+    exact ⟨_, rfl, rfl, hc⟩
+  · cases hs
+
+/-- **An endpoint's registration flag names the registration its record
+holds**, under the endpoint's id. -/
+theorem SystemState.serviceRegistry_stored (st : SystemState) (e : SeLe4n.ObjId)
+    (h : (objTableBackLinks st.objects[e]?).1.registered = true) :
+    st.serviceRegistry[ServiceId.ofNat e.toNat]? =
+      some ((objTableBackLinks st.objects[e]?).1.registrationAt e) := by
+  rw [SystemState.serviceRegistry_getElem?_backLinks]
+  exact if_pos h
 
 /-- **An endpoint's registration flag names a registration of it**, under its
-own id: the registration its record holds. -/
-theorem SystemState.tableReferencesRecorded.serviceFlags {st : SystemState}
-    (hR : st.tableReferencesRecorded) (e : SeLe4n.ObjId)
+own id. -/
+theorem SystemState.serviceRegistry_flag (st : SystemState) (e : SeLe4n.ObjId)
     (h : (objTableBackLinks st.objects[e]?).1.registered = true) :
     ∃ reg, st.serviceRegistry[ServiceId.ofNat e.toNat]? = some reg ∧
       reg.endpointCap.target = .object e :=
-  ⟨_, hR.serviceStored e h, rfl⟩
+  ⟨_, st.serviceRegistry_stored e h, rfl⟩
 
-/-- **The registration the table holds for a registered endpoint is the one its
-record holds.** -/
-theorem SystemState.tableReferencesRecorded.registry_eq_stored {st : SystemState}
-    (hR : st.tableReferencesRecorded) {e : SeLe4n.ObjId} {ep : Endpoint}
-    (hObj : st.objects[e]? = some (.endpoint ep)) (h : ep.serviceRegistered = true) :
+/-- **The registration under a registered endpoint's id is the one its record
+holds.** -/
+theorem SystemState.serviceRegistry_of_endpoint (st : SystemState) {e : SeLe4n.ObjId}
+    {ep : Endpoint} (hObj : st.objects[e]? = some (.endpoint ep))
+    (h : ep.serviceRegistered = true) :
     st.serviceRegistry[ServiceId.ofNat e.toNat]? = some (ep.service.registrationAt e) := by
-  have := hR.serviceStored e (by rw [hObj]; simp [KernelObject.tableBackLinks, h])
-  rw [hObj] at this; simpa [KernelObject.tableBackLinks, h] using this
+  rw [SystemState.serviceRegistry_getElem?]
+  show (match st.objects[e]? with
+    | some (.endpoint ep) => if ep.serviceRegistered then some (ep.service.registrationAt e) else none
+    | _ => none) = _
+  rw [hObj]; simp [h]
 
 /-- **An endpoint whose registration flag is clear is the target of no
 registration.** -/
-theorem SystemState.tableReferencesRecorded.notTargeted {st : SystemState}
-    (hR : st.tableReferencesRecorded) {e : SeLe4n.ObjId} {ep : Endpoint}
-    (hObj : st.objects[e]? = some (.endpoint ep)) (h0 : ep.serviceRegistered = false)
+theorem SystemState.serviceRegistry_notTargeted (st : SystemState) {e : SeLe4n.ObjId}
+    {ep : Endpoint} (hObj : st.objects[e]? = some (.endpoint ep)) (h0 : ep.serviceRegistered = false)
     (sid : ServiceId) (reg : ServiceRegistration) (hs : st.serviceRegistry[sid]? = some reg) :
     reg.endpointCap.target ≠ .object e := fun ht => by
-  obtain ⟨e', he', -, hc⟩ := hR.registry sid reg hs
+  obtain ⟨e', he', -, hc⟩ := st.serviceRegistry_names hs
   rw [ht] at he'; cases he'
   rw [hObj] at hc
   simp [KernelObject.tableBackLinks, h0] at hc
 
+/-- **A step keeping every object's interrupt back-link and the interrupt table
+keeps the references recorded**: the recorded references are the interrupt
+table's alone. -/
+theorem SystemState.tableReferencesRecorded.of_irqBackLinks {st st' : SystemState}
+    (hI : st'.irqHandlers = st.irqHandlers)
+    (h2 : ∀ k : SeLe4n.ObjId, (objTableBackLinks st'.objects[k]?).2 = (objTableBackLinks st.objects[k]?).2)
+    (hR : st.tableReferencesRecorded) : st'.tableReferencesRecorded :=
+  ⟨fun irq n h => by rw [hI] at h; rw [h2]; exact hR.irqHandlers irq n h,
+   fun n h => by rw [h2] at h; rw [hI]; exact hR.irqBound n h⟩
+
+/-- **An endpoint written over an endpoint keeps the references recorded**: an
+endpoint holds no interrupt back-link, so a registration's or a revocation's
+write of its record leaves every one as it was. -/
+theorem SystemState.tableReferencesRecorded.of_endpoint_over_endpoint {st st' : SystemState}
+    {e : SeLe4n.ObjId} {ep ep' : Endpoint} (hInv : st.objects.invExt)
+    (hObj : st.objects[e]? = some (.endpoint ep))
+    (hO : st'.objects = st.objects.insert e (.endpoint ep'))
+    (hI : st'.irqHandlers = st.irqHandlers) (hR : st.tableReferencesRecorded) :
+    st'.tableReferencesRecorded :=
+  of_irqBackLinks hI (fun k => by
+    rw [hO]
+    by_cases hk : e = k
+    · subst hk
+      simp only [RHTable_getElem?_eq_get?] at hObj ⊢
+      rw [RHTable.getElem?_insert_self st.objects _ _ hInv, hObj]
+      rfl
+    · simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_ne st.objects _ _ _ (fun hb => hk (eq_of_beq hb)) hInv]) hR
+
 /-- **A step that keeps the reference tables and every object's back-links.**
-Every kernel step but a registration and a revocation is one: it writes none of
-the three tables, and every object it stores holds the back-links of the one it
-replaces. -/
+Every kernel step but a registration, a revocation and an interrupt binding is
+one: it writes no interrupt table entry, and every object it stores holds the
+back-links of the one it replaces (so it keeps the service registry too,
+`SystemState.serviceRegistry_eq_of_backLinks`). -/
 def SystemState.TableReferenceFrame (st st' : SystemState) : Prop :=
   st'.referenceTables = st.referenceTables ∧
   ∀ k : SeLe4n.ObjId, objTableBackLinks st'.objects[k]? = objTableBackLinks st.objects[k]?
@@ -174,16 +230,16 @@ theorem of_kindPreservingWrite {st st' : SystemState} (hK : kindPreservingWrite 
 theorem preserves {st st' : SystemState} (h : TableReferenceFrame st st')
     (hR : st.tableReferencesRecorded) : st'.tableReferencesRecorded := by
   obtain ⟨hT, hB⟩ := h
-  simp only [referenceTables, Prod.mk.injEq] at hT
-  obtain ⟨hReg, hIrq⟩ := hT
-  exact ⟨hReg ▸ hR.registryInvExtK,
-    fun sid reg h => by
-      rw [hReg] at h
-      obtain ⟨e, he, hs, hc⟩ := hR.registry sid reg h
-      exact ⟨e, he, hs, by rw [hB]; exact hc⟩,
-    fun e h => by rw [hB] at h ⊢; rw [hReg]; exact hR.serviceStored e h,
-    fun irq n h => by rw [hIrq] at h; rw [hB]; exact hR.irqHandlers irq n h,
-    fun n h => by rw [hB] at h; rw [hIrq]; exact hR.irqBound n h⟩
+  have hI : st'.irqHandlers = st.irqHandlers := hT
+  refine ⟨fun irq n h => ?_, fun n h => ?_⟩
+  · rw [hI] at h; rw [hB]; exact hR.irqHandlers irq n h
+  · rw [hB] at h; rw [hI]; exact hR.irqBound n h
+
+/-- **A frame keeps the service registry**: the registry is read off the
+endpoints' back-links, which a frame keeps. -/
+theorem serviceRegistry {st st' : SystemState} (h : TableReferenceFrame st st') :
+    st'.serviceRegistry = st.serviceRegistry :=
+  SystemState.serviceRegistry_eq_of_backLinks h.2
 
 theorem refl (st : SystemState) : TableReferenceFrame st st := ⟨rfl, fun _ => rfl⟩
 
@@ -364,7 +420,7 @@ theorem SystemState.tableBackLinksClear.namedByNone {st : SystemState} {x : SeLe
     (∀ (irq : SeLe4n.Irq) (n : SeLe4n.ObjId), st.irqHandlers[irq]? = some n → n ≠ x) := by
   rw [tableBackLinksClear_iff] at h
   refine ⟨fun sid reg hs => ?_, fun irq n hi hn => ?_⟩
-  · obtain ⟨e, he, -, hc⟩ := hR.registry sid reg hs
+  · obtain ⟨e, he, -, hc⟩ := st.serviceRegistry_names hs
     refine ⟨e, he, fun hn => ?_⟩
     subst hn
     rw [h] at hc
@@ -377,13 +433,6 @@ theorem SystemState.tableBackLinksClear.namedByNone {st : SystemState} {x : SeLe
 /-- The empty state records every reference: its tables are empty. -/
 theorem SystemState.default_tableReferencesRecorded :
     (default : SystemState).tableReferencesRecorded where
-  registryInvExtK := RHTable.empty_invExtK 16 (by omega)
-  registry := fun sid reg h => by
-    have : (default : SystemState).serviceRegistry[sid]? = none := RHTable_get?_empty 16 (by omega)
-    rw [this] at h; cases h
-  serviceStored := fun e h => by
-    have : (default : SystemState).objects[e]? = none := RHTable_get?_empty 16 (by omega)
-    rw [this] at h; cases h
   irqHandlers := fun irq n h => by
     have : (default : SystemState).irqHandlers[irq]? = none := RHTable_get?_empty 16 (by omega)
     rw [this] at h; cases h

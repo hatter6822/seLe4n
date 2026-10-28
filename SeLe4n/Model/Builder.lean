@@ -30,62 +30,12 @@ open SeLe4n.Model
 -- Helper: allTablesInvExtK decomposition/recomposition
 -- ============================================================================
 
-/-- Extract the objects invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_objects {st : SystemState}
-    (h : st.allTablesInvExtK) : st.objects.invExtK := h.1
-
-/-- Extract irqHandlers invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_irqHandlers {st : SystemState}
-    (h : st.allTablesInvExtK) : st.irqHandlers.invExtK := h.2.1
-
-/-- Extract serviceRegistry invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_serviceRegistry {st : SystemState}
-    (h : st.allTablesInvExtK) : st.serviceRegistry.invExtK := h.2.2.2.2.2.1
-
-/-- Extract interfaceRegistry invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_interfaceRegistry {st : SystemState}
-    (h : st.allTablesInvExtK) : st.interfaceRegistry.invExtK := h.2.2.2.2.1
-
-/-- Extract objectTypes invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_objectTypes {st : SystemState}
-    (h : st.allTablesInvExtK) : st.lifecycle.objectTypes.invExtK := h.2.2.2.1
-
-/-- Extract objectIndexSet invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_objectIndexSet {st : SystemState}
-    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2
-
-/-- Extract asidTable invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_asidTable {st : SystemState}
-    (h : st.allTablesInvExtK) : st.asidTable.invExtK := h.2.2.1
-
--- Y1-G: Completeness note — all 7 conjuncts of `allTablesInvExtK` have named
--- accessors. The full list (matching the definition order in State.lean;
--- `v0.35.78` retired the capability-reference table's conjunct, which sat
--- seventh, WS-ZA ZA5.2 the per-context thread index's, which sat last, and
--- WS-ZA ZA5.3 the two slot/node tables', which sat fourth and fifth, and
--- the derivation tree's child and parent maps, which sat fifth and sixth, and
--- WS-ZA ZA5.4 part 32 the service graph's, which sat fifth):
---  1. allTablesInvExtK_objects         (objects)
---  2. allTablesInvExtK_irqHandlers     (irqHandlers)
---  3. allTablesInvExtK_asidTable       (asidTable)
---  4. allTablesInvExtK_objectTypes     (lifecycle.objectTypes)
---  5. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
---  6. allTablesInvExtK_serviceRegistry (serviceRegistry)
---  7. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
--- (The run queue's tables are not in the bundle: `RunQueue` carries their
--- invariants as its own fields, WS-ZA ZA4.5.)
--- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
--- Use the named accessors above instead. Raw projections are fragile and break
--- silently when fields are added or reordered.
--- AF5-F (AF-26): Deep tuple projections (.2.2.2...) are a known maintenance
--- burden across the codebase (here and in Capability/Invariant/Defs.lean for
--- `capabilityInvariantBundle`, and in CrossSubsystem.lean for
--- `schedulerInvariantBundleExtended`). Refactoring to named structures is
--- deferred to post-release because: (1) it would require updating 100+ proof
--- sites that destructure tuples, (2) named structures in Lean 4 have different
--- `cases`/`rcases` behavior, (3) current approach is functionally correct.
--- Recorded as a post-1.0 hardening candidate; registered in `docs/REGISTERED_DEBT.md`
--- (Registered debt index, C.1) as DEF-F-L9, closed under WS-AN.
+-- The named projections of `allTablesInvExtK` live beside it
+-- (`SystemState.allTablesInvExtK.objects`, `.irqHandlers`, `.asidTable`,
+-- `.objectTypes`, `.interfaceRegistry`, `.objectIndexSet`), so no proof here
+-- counts conjuncts: a table added to or removed from the bundle shifts no
+-- reader (WS-ZA ZA5.9 removed the service registry's, the registry being the
+-- endpoints' records since).
 
 -- ============================================================================
 -- Q3-B.1: registerIrq — insert into irqHandlers
@@ -98,9 +48,8 @@ def registerIrq (ist : IntermediateState) (irq : SeLe4n.Irq) (handler : SeLe4n.O
   state := { ist.state with irqHandlers := ist.state.irqHandlers.insert irq handler }
   hAllTables := by
     have h := ist.hAllTables
-    unfold SystemState.allTablesInvExtK at h ⊢
-    refine ⟨h.1, ?_, h.2.2⟩
-    exact RHTable.insert_preserves_invExtK _ _ _ h.2.1
+    exact ⟨h.objects, RHTable.insert_preserves_invExtK _ _ _ h.irqHandlers, h.asidTable,
+      h.objectTypes, h.interfaceRegistry, h.objectIndexSet⟩
   hPerObjectSlots := by
     intro id cn hObj
     exact ist.hPerObjectSlots id cn hObj
@@ -121,10 +70,8 @@ def registerInterface (ist : IntermediateState) (spec : InterfaceSpec) : Interme
     interfaceRegistry := ist.state.interfaceRegistry.insert spec.ifaceId spec }
   hAllTables := by
     have h := ist.hAllTables
-    unfold SystemState.allTablesInvExtK at h ⊢
-    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1,
-           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.1,
-           h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
+    exact ⟨h.objects, h.irqHandlers, h.asidTable, h.objectTypes,
+           RHTable.insert_preserves_invExtK _ _ _ h.interfaceRegistry, h.objectIndexSet⟩
   hPerObjectSlots := by
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
   hPerObjectMappings := by
@@ -165,18 +112,16 @@ def createObject (ist : IntermediateState)
   }
   hAllTables := by
     have h := ist.hAllTables
-    unfold SystemState.allTablesInvExtK at h ⊢
-    refine ⟨RHTable.insert_preserves_invExtK _ _ _ h.1,
-           h.2.1, h.2.2.1,
-           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.1,
-           h.2.2.2.2.1, h.2.2.2.2.2.1,
-           ?_⟩
-    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2
+    exact ⟨RHTable.insert_preserves_invExtK _ _ _ h.objects,
+           h.irqHandlers, h.asidTable,
+           RHTable.insert_preserves_invExtK _ _ _ h.objectTypes,
+           h.interfaceRegistry,
+           RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.objectIndexSet⟩
   hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := by
     unfold perObjectMappingsInvariant
     intro oid vs hObj
-    have hObjK := allTablesInvExtK_objects ist.hAllTables
+    have hObjK := ist.hAllTables.objects
     simp only [RHTable_getElem?_eq_get?] at hObj
     by_cases hEq : id = oid
     · subst hEq
@@ -188,8 +133,8 @@ def createObject (ist : IntermediateState)
   hLifecycleConsistent := by
     intro oid
     simp only [SystemState.lookupObjectTypeMeta]
-    have hObjK := allTablesInvExtK_objects ist.hAllTables
-    have hTypesK := allTablesInvExtK_objectTypes ist.hAllTables
+    have hObjK := ist.hAllTables.objects
+    have hTypesK := ist.hAllTables.objectTypes
     by_cases hEq : id = oid
     · subst hEq
       simp only [RHTable_getElem?_eq_get?]
@@ -250,7 +195,7 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
   state := ist.state.runEnqueueOnCore bootCoreId tid prio
   hAllTables :=
     (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).allTablesInvExtK
-      (SystemState.runEnqueueOnCore_objects_invExtK _ _ _ _ ist.hAllTables.1) ist.hAllTables
+      (SystemState.runEnqueueOnCore_objects_invExtK _ _ _ _ ist.hAllTables.objects) ist.hAllTables
   hPerObjectSlots := perObjectSlotsInvariant_holds _
   hPerObjectMappings := fun id vs h => ist.hPerObjectMappings id vs
     ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_vspaceRoot_iff.mp h)

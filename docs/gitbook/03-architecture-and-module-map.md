@@ -431,8 +431,9 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 
 The service registry is a **seLe4n-specific extension** with no analogue in
 real seL4, which delegates services entirely to user-level components.  The
-kernel keeps one table: a registration names the endpoint that serves it and is
-recorded on that endpoint.  There is no dependency graph (removed at
+kernel keeps no service table: a registration is recorded on the endpoint that
+serves it, and the registry is read off the endpoints (`SystemState.serviceRegistry`,
+since `v0.36.159`).  There is no dependency graph (removed at
 `v0.36.145`): isolation between services comes from capabilities, and
 dependency policy belongs to a user-level service manager.  See
 `Service/Operations.lean` for the design rationale; the registry's specification
@@ -566,7 +567,7 @@ and its non-interference status are in
     N-domain `SecurityDomain`/`DomainFlowPolicy`, BIBA lattice alternatives,
     `DeclassificationPolicy` with enforcement operation (WS-H10).
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
-  - observer projection helpers, `ObservableState` with 12 fields including
+  - observer projection helpers, `ObservableState` with 11 fields including
     domain-gated `machineRegs` (WS-H10), domain timing metadata
     (`domainTimeRemaining`, `domainScheduleIndex`, WS-H8), `memory`, and
     the `lowEquivalent` relation scaffold with refl/symm/trans.

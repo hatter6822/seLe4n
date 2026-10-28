@@ -671,7 +671,7 @@ theorem lookup_freeze_objects (ist : IntermediateState) (k : SeLe4n.ObjId) :
   -- (freeze ist).objects is definitionally freezeMapWith ist.state.objects freezeObject
   have hDef : (freeze ist).objects = freezeMapWith ist.state.objects freezeObject := rfl
   rw [hDef]
-  exact freezeMapWith_get?_eq ist.state.objects freezeObject k ist.hAllTables.1.1
+  exact freezeMapWith_get?_eq ist.state.objects freezeObject k ist.hAllTables.objects.1
 
 -- ============================================================================
 -- Q6-A: Per-field lookup equivalence theorems
@@ -686,41 +686,36 @@ witness provides the `invExt` precondition for each field's RHTable. -/
 /-- Q6-A: irqHandlers lookup preserved by freeze. -/
 theorem lookup_freeze_irqHandlers (ist : IntermediateState) (k : SeLe4n.Irq) :
     ist.state.irqHandlers.get? k = (freeze ist).irqHandlers.get? k := by
-  exact freezeMap_get?_eq ist.state.irqHandlers k ist.hAllTables.2.1.1
+  exact freezeMap_get?_eq ist.state.irqHandlers k ist.hAllTables.irqHandlers.1
 
 /-- Q6-A: asidTable lookup preserved by freeze. -/
 theorem lookup_freeze_asidTable (ist : IntermediateState) (k : SeLe4n.ASID) :
     ist.state.asidTable.get? k = (freeze ist).asidTable.get? k := by
-  exact freezeMap_get?_eq ist.state.asidTable k ist.hAllTables.2.2.1.1
-
-/-- Q6-A: serviceRegistry lookup preserved by freeze. -/
-theorem lookup_freeze_serviceRegistry (ist : IntermediateState) (k : SeLe4n.ServiceId) :
-    ist.state.serviceRegistry.get? k = (freeze ist).serviceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.asidTable k ist.hAllTables.asidTable.1
 
 /-- Q6-A: interfaceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_interfaceRegistry (ist : IntermediateState) (k : SeLe4n.InterfaceId) :
     ist.state.interfaceRegistry.get? k = (freeze ist).interfaceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.interfaceRegistry.1
 
 /-- Q6-A: objectTypes lookup preserved by freeze. -/
 theorem lookup_freeze_objectTypes (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.lifecycle.objectTypes.get? k = (freeze ist).objectTypes.get? k := by
-  exact freezeMap_get?_eq ist.state.lifecycle.objectTypes k ist.hAllTables.2.2.2.1.1
+  exact freezeMap_get?_eq ist.state.lifecycle.objectTypes k ist.hAllTables.objectTypes.1
 
 /-- Q6-A: objectIndexSet membership preserved by freeze. -/
 theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.1
+    ist.hAllTables.objectIndexSet.1
 
 -- ============================================================================
 -- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
 -- ============================================================================
 
 /-- AK7-B: Lookup equivalence for `runQueue.byPriority` across freeze.
-Mirrors `lookup_freeze_serviceRegistry` for the scheduler priority-indexed
+Mirrors `lookup_freeze_interfaceRegistry` for the scheduler priority-indexed
 thread queues. -/
 theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority)
     (hR : ist.state.runQueueRefinedOnCore bootCoreId) :
@@ -1310,7 +1305,7 @@ non-`objects` mutations vacuously preserved `apiInvariantBundle_frozenDirect`.
 The conjuncts cover every field of `FrozenSystemState`:
 
 - **Map fields (lookup-equivalent via `freezeMap`):** `objects` (with
-  `freezeObject`), `irqHandlers`, `asidTable`, `serviceRegistry`,
+  `freezeObject`), `irqHandlers`, `asidTable`,
   `interfaceRegistry`, `objectTypes`,
   `objectIndexSet`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
@@ -1330,13 +1325,11 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     -- --------------------------------------------------------------------
     -- Core object store (with per-object freeze)
     (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = fst.objects.get? oid) ∧
-    -- IRQ / ASID / service tables
+    -- IRQ / ASID tables
     (∀ (irq : SeLe4n.Irq),
         sst.irqHandlers.get? irq = fst.irqHandlers.get? irq) ∧
     (∀ (asid : SeLe4n.ASID),
         sst.asidTable.get? asid = fst.asidTable.get? asid) ∧
-    (∀ (sid : ServiceId),
-        sst.serviceRegistry.get? sid = fst.serviceRegistry.get? sid) ∧
     (∀ (iid : SeLe4n.InterfaceId),
         sst.interfaceRegistry.get? iid = fst.interfaceRegistry.get? iid) ∧
     -- Lifecycle metadata
@@ -1408,13 +1401,12 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- Map fields (10)
+  -- Map fields (9)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
   · exact fun asid => lookup_freeze_asidTable ist asid
-  · exact fun sid => lookup_freeze_serviceRegistry ist sid
   · exact fun iid => lookup_freeze_interfaceRegistry ist iid
   · exact fun oid => lookup_freeze_objectTypes ist oid
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
@@ -1607,8 +1599,8 @@ theorem thread_store_commutes_at_key (ist : IntermediateState)
   rw [← freezeMapWith_get?_eq
     (ist.state.objects.insert tid.toObjId (KernelObject.tcb tcb))
     freezeObject tid.toObjId
-    (ist.state.objects.insert_preserves_invExt tid.toObjId _ ist.hAllTables.1.1)]
-  rw [RHTable.getElem?_insert_self ist.state.objects tid.toObjId _ ist.hAllTables.1.1]
+    (ist.state.objects.insert_preserves_invExt tid.toObjId _ ist.hAllTables.objects.1)]
+  rw [RHTable.getElem?_insert_self ist.state.objects tid.toObjId _ ist.hAllTables.objects.1]
   simp [freezeObject]
 
 /-- Thread store preserves non-object fields: modifying the objects table

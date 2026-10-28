@@ -4639,7 +4639,7 @@ private theorem cleanupTcbReferences_id_of_detached
 /-- Under the detachment pack a successful pre-retype cleanup changes neither
 the object store nor the scheduler, up to derivation-link words: the sweeps are
 identities, the reservation arm is the identity (the pack refuses a bound or
-donated target, `v0.35.164`), the CDT/serviceRegistry writes are outside the
+donated target, `v0.35.164`), the CDT writes are outside the
 bundle's read set, and a CNode target's slots leave the tree through a run of
 link writes (`linkReach`) from a state with the pre-state's objects. -/
 theorem lifecyclePreRetypeCleanup_detached_frame

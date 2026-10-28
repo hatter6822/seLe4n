@@ -2242,7 +2242,6 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hIrq : s₁.irqHandlers = s₂.irqHandlers) (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
-    (hRegistry : s₁.serviceRegistry = s₂.serviceRegistry)
     (hRQ : s₁.scheduler.runQueueOnCore c = s₂.scheduler.runQueueOnCore c)
     (hCur : s₁.scheduler.currentOnCore c = s₂.scheduler.currentOnCore c)
     (hAD : s₁.scheduler.activeDomainOnCore c = s₂.scheduler.activeDomainOnCore c)
@@ -2250,7 +2249,7 @@ example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c
     (hDSI : s₁.scheduler.domainScheduleIndexOnCore c = s₂.scheduler.domainScheduleIndexOnCore c)
     (hRegs : s₁.machine.regsOnCore c = s₂.machine.regsOnCore c) :
     ObservableState.onCore ctx c L s₁ = ObservableState.onCore ctx c L s₂ :=
-  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem hRegistry
+  onCore_perCore_independence ctx L hObjects hIrq hIndex hDomSched hMem
     hRQ hCur hAD hDTR hDSI hRegs
 
 -- SM8.A.4: a write to a different core's current slot is invisible.
@@ -4086,7 +4085,7 @@ private theorem remoteCoreWrite_confined :
 private theorem remoteCoreWrite_sharedUnchanged :
     sharedViewUnchanged niLabeling niLowObserver niState remoteCoreWriteState :=
   sharedViewUnchanged_of_state_frames niLabeling niLowObserver
-    (fun _ _ => rfl) rfl rfl rfl rfl rfl
+    (fun _ _ => rfl) rfl rfl rfl rfl
 
 /-- Plan Theorem 3.3.1 instantiated at each of the three bystander cores. -/
 private theorem remoteCoreWrite_invisible_on_c0 :

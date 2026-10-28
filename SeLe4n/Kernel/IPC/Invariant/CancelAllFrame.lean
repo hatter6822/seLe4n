@@ -2259,14 +2259,12 @@ theorem finaliseFinalObject_preserves_teardownWellFormed (target : Nat) (st : Sy
   (finaliseFinalObject_frame target st hW.1).preserves_teardownWellFormed hW
 
 /-- **WS-ZA ZA5.5: a revocation is a finalisation write**: it writes one
-endpoint's `serviceRegistered` and the registry, and keeps the derivation tree and the
-ASID table. -/
+endpoint's service record, and keeps the derivation tree and the ASID table. -/
 theorem revokeService_finaliseFrameAny {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt) :
     FinaliseFrameAny st st' := by
   have hRw := revokeService_serviceRecordRewrite h
-  obtain ⟨reg, _, rfl⟩ := revokeService_ok h
-  rw [clearEndpointRegistration_eq_withObjects] at hRw ⊢
+  obtain ⟨_, _, _, rfl⟩ := revokeService_ok h
   refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_⟩
   rcases hRw.lookup hInv oid with e | ⟨ep, c, hE, hE'⟩
   · exact Or.inl e
@@ -2320,8 +2318,8 @@ theorem releaseFinalRegistration_cdt (target : Nat) (st : SystemState) :
     (releaseFinalRegistration target st).cdt = st.cdt := by
   rcases releaseFinalRegistration_cases target st with hE | ⟨_, _, _, _, hR⟩
   · rw [hE]
-  · obtain ⟨reg, _, hEq⟩ := revokeService_ok hR
-    rw [hEq, clearEndpointRegistration_eq_withObjects]
+  · obtain ⟨_, _, _, hEq⟩ := revokeService_ok hR
+    rw [hEq]
 
 /-- **The release and the finalisation after it are one finalisation write.** -/
 theorem finaliseReleased_frame (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
