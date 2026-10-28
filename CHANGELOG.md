@@ -1,3 +1,56 @@
+## v0.36.154 — WS-ZA ZA5.4 part 41: the retype resets when its capability has no children
+
+As seL4's `decodeUntypedInvocation`, a carve through an untyped capability
+whose slot has no derivation child (`ensureNoChildren` succeeds) treats the
+untyped as reset and carves from free index 0; a carve through a capability
+with a child carves from the capability's own free index.  This is the last
+row of `docs/planning/UNTYPED_RESET_PLAN.md`.
+
+- **The index the carve starts from** (`retypeFreeIndex`,
+  `Lifecycle/Operations/ScrubAndUntyped.lean`): the capability's free index
+  while its slot has a derivation child (`hasCdtChildren`, one read of the
+  slot's first-child word), and 0 otherwise.  The carve rounds it up as before
+  (`alignedCarveIndex`); `untypedRetypeObject`, its admitted form and its
+  compiled form read the same index, so the object, the scrub and the
+  recorded child are all placed at it.
+- **The reset's refusal, made by the carve that resets**
+  (`retypeResetAdmitted`): a carve through a childless slot over an untyped
+  whose child list still records a carved object is refused with
+  `.revocationRequired`, as `.untypedReset` refuses it.  An object can outlive
+  its last capability (a final delete that could not retire it), and a carve
+  from 0 would hand its memory out again.  The check follows the authority
+  check and precedes every write (`retypeFromUntypedAdmitted`), so the carve
+  still runs in place.
+- **The carve's theorems are restated over that index**:
+  `retypeFromUntyped_ok_decompose`, `retypeFromUntyped_ok_stores`, the
+  alignment and placement theorems, `retypeFromUntyped_error_regionExhausted`
+  (now given the reset's admission), and the new
+  `retypeFromUntyped_ok_resetAdmitted` and `retypeFreeIndex_cases`.
+  `retypeFromUntyped_preserves_untypedMemoryInvariant` takes the derivation
+  tree's shape and link agreement: through a childless slot every other
+  capability to the untyped is full (`untypedOthersFull_of_childless`, now
+  shared with the reset's own proof).  The capability bundle's preservation
+  reads `retypeFromUntyped_authority_noUntypedBelow` (no capability to the
+  untyped lies below the authority, by `notFullLeaf` or because the slot has
+  no child) where it read the authority's not being full.
+- **Tests** (`vspace_capability_binding_suite` §5e,
+  `runRetypeResetChecks`): a carve through a capability with a child carves
+  at its free index; after a revocation a carve through the childless
+  capability carves at index 0, exactly as a reset followed by the carve; a
+  childless duplicate over recorded objects, and an untyped recording a
+  carved object, are refused with `.revocationRequired`.
+- **Fixtures** (`negative_state_suite` H16-NEG-06, H16-NEG-07, S2-H-04): three
+  fixtures set a free index by hand on a capability with no child, a state no
+  executable path reaches, and the retype now resets such a capability. They
+  reach their index by carving an endpoint first, so the capability has a
+  child, and every assertion they made stands.
+- **Exerciser**: every retype pin and every other pin unchanged, measured on
+  the Lean-linked QEMU image against a fresh archive; `untyped-reset` still
+  reads (0, 0).
+- **Docs**: plan row 41 landed with its forks (the last row of the plan), the
+  ZA5.4 row, spec §8.10.2a, the claim index, the workstream context and
+  GitBook 12; Tier 3 anchors for the index, the refusal and its admitted form.
+
 ## v0.36.153 — WS-ZA ZA5.4 part 40: every entry keeps the mappings recorded
 
 Parts 37 to 39 proved `SystemState.liveMappingsRecorded` kept by every arm at

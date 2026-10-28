@@ -178,7 +178,10 @@ scheduling, timer, fault, audit and retype arms too (`MappingStage`), and
 since `v0.36.152` the thread-space set, no thread's space slot holding a record
 (`SystemState.threadSlotsRecordNoMapping`), and since `v0.36.153` the
 dispatchers and every committing kernel entry
-(`syscallDispatchEntryState_preserves_liveMappingsRecorded`);
+(`syscallDispatchEntryState_preserves_liveMappingsRecorded`); since
+`v0.36.154` the carve resets a capability with no derivation child, as seL4's
+decode does, carving from index 0 and refusing as the reset does while the
+untyped records a carved object (`retypeFreeIndex`, `retypeResetAdmitted`);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

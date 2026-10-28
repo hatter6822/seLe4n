@@ -3911,7 +3911,19 @@ run_check "INVARIANT" rg -n -U 'def CarveRequest\.object[^\n]*(\n([ \t][^\n]*)?)
 # The carve rounds the free index up to its boundary (seL4's
 # `alignUp(freeRef, objectSize)`), never refusing a misaligned one: the index
 # is bound to the rounded one and the next check is the authority.
-run_check "INVARIANT" rg -n -U 'def retypeFromUntyped[^\n]*(\n([ \t][^\n]*)?)*            let idx := alignedCarveIndex newObj\.objectType allocSize ut authCap\.freeIndex\n            if lifecycleRetypeAuthority authCap untypedId then' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def retypeFromUntyped[^\n]*(\n([ \t][^\n]*)?)*            let idx := alignedCarveIndex newObj\.objectType allocSize ut\n              \(retypeFreeIndex st authority authCap\)\n            if lifecycleRetypeAuthority authCap untypedId then' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+# WS-ZA ZA5.4 part 41: the carve resets a capability with no derivation child,
+# as seL4's `decodeUntypedInvocation` (`ensureNoChildren` → free index 0), and a
+# carve that resets refuses an untyped still recording a carved object, as the
+# reset does — after the authority check, before the allocation.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def retypeFreeIndex \(st : SystemState\) \(authority : CSpaceAddr\) \(cap : Capability\) :\n    Nat :=\n  if hasCdtChildren st authority then cap\.freeIndex else 0$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def retypeResetAdmitted[^\n]*\n[^\n]*\n  hasCdtChildren st authority \|\| ut\.children\.isEmpty$' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def retypeFromUntyped[^\n]*(\n([ \t][^\n]*)?)*            if lifecycleRetypeAuthority authCap untypedId then\n              if !retypeResetAdmitted st authority ut then \.error \.revocationRequired else(\n([ \t][^\n]*)?)*                match ut\.allocate idx childId allocSize with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def retypeFromUntypedAdmitted[^\n]*(\n([ \t][^\n]*)?)*  retypeResetAdmitted st \{ cnode := authCnode, slot := authSlot \} ut &&\n  ut\.canAllocate \(alignedCarveIndex ty size ut\n    \(retypeFreeIndex st \{ cnode := authCnode, slot := authSlot \} authCap\)\) size' SeLe4n/Kernel/Lifecycle/Operations/RetypePerform.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_resetAdmitted($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem untypedOthersFull_of_childless($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_authority_noUntypedBelow($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Carve.lean
+run_check "INVARIANT" rg -n '^  runRetypeResetChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^def alignedCarveIndex($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem carveBaseAligned_alignedCarveIndex($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.carveIndex[^\n]*(\n([ \t][^\n]*)?)*  alignedCarveIndex req\.objectType req\.size ut idx' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -3923,9 +3935,9 @@ run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut utCap\.freeIndex\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut utCap\.freeIndex\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def CarveRequest\.scrub[^\n]*\n    CarveRequest → SystemState\n  \| \.frame => carveZeroFrame st \(untypedNextFrame ut idx\)\n  \| \.untyped _ => st' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedNextChild[^\n]*(\n([ \t][^\n]*)?)*    parent := some parentId \}' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 # A child untyped is aligned to its own size (seL4's alignUp(freeRef, 2^b)),

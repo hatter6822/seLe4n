@@ -185,6 +185,43 @@ theorem retypeFromUntyped_stores_shape
     (fun r hr => hShape.live r childId hr hChild) (fun h => h hChild)
     (by show stCh.objects[childId]? ≠ none; rw [hChUt]; exact Option.some_ne_none _) hPres
 
+/-- WS-ZA ZA5.4 part 41: **before a carve no capability to the authority's untyped
+lies below the authority.**  Through a slot with a derivation child the carve
+starts at the authority's own index, so the authority was not full (the carve
+fit after it) and has no capability to its untyped below it
+(`TreeShapeOver.notFullLeaf`); through a slot with none, the carve resets and
+the slot has no descendant at all. -/
+theorem retypeFromUntyped_authority_noUntypedBelow
+    (st st' : SystemState) (authority : CSpaceAddr) (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject) (allocSize : Nat) (hInv : capabilityInvariantBundle st)
+    (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    ∀ r, CapDerivationTree.CdtChildReachable st.cdt authority r →
+      ¬ SystemState.untypedCapAt st.slotCapAt st.getUntyped? r untypedId := by
+  have hObjInv := hInv.2.2.2.2.1
+  obtain ⟨ut, _, cap, _, _, _, _, hUt, _, _, _, hAuth, hAlloc, hPreA, hLkA, _, _, _, _, _, _⟩ :=
+    retypeFromUntyped_ok_stores st st' authority untypedId childId _ _ hObjInv hStep
+  obtain ⟨utR, hUtR, hReset⟩ := retypeFromUntyped_ok_resetAdmitted st st' authority untypedId
+    childId newObj allocSize hStep
+  rw [hUt] at hUtR; cases hUtR
+  intro r hr hru
+  rcases retypeFreeIndex_cases (cap := cap) hReset with ⟨_, hB⟩ | ⟨hC, _, _⟩
+  · have hT : cap.target = .object untypedId := by
+      unfold lifecycleRetypeAuthority at hAuth; simp at hAuth; exact hAuth.1
+    have hCan := ((UntypedObject.allocate_some_iff _ _ _ _ _).mp hAlloc).1
+    have hLe := le_alignedCarveIndex newObj.objectType allocSize ut
+      (retypeFreeIndex st authority cap)
+    rw [hB] at hCan hLe
+    have hNotFull : cap.freeIndex < ut.regionSize := by
+      simp [UntypedObject.canAllocate] at hCan; omega
+    have hSrc : st.slotCapAt authority = some cap :=
+      (SystemState.slotCapAt_of_object hPreA).trans hLkA
+    have hUtSt : st.getUntyped? untypedId = some ut := by
+      rw [SystemState.getUntyped?_eq_bind, hUt]; rfl
+    exact hInv.treeShape.notFullLeaf authority cap _ ut id hSrc hT hUtSt hNotFull r hr hru
+  · have hNil : st.cdt.childrenOf authority = [] := by
+      rw [hasCdtChildren_eq_tree hInv.2.2.2.2.2.2.1] at hC; simpa using hC
+    exact CapDerivationTree.CdtChildReachable.not_of_childless hNil hr
+
 /-- **`retypeFromUntyped` preserves the capability bundle** when the object it
 carves holds no capability and no link, records no child if it is an untyped
 and, if a CNode, is within the depth bound: the untyped's record gains the
@@ -231,16 +268,13 @@ theorem retypeFromUntyped_preserves_capabilityInvariantBundle
     split
     · next h => rw [SystemState.slotCapAt_eq_bind, h, hUt]; rfl
     · rfl
-  -- the authority names the untyped and was not full: the carve fit after its index
+  -- the authority names the untyped and had no capability to it below
   have hT : cap.target = .object untypedId := by
     unfold lifecycleRetypeAuthority at hAuth; simp at hAuth; exact hAuth.1
-  have hCan := ((UntypedObject.allocate_some_iff _ _ _ _ _).mp hAlloc).1
-  have hLe := le_alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex
-  have hNotFull : cap.freeIndex < ut.regionSize := by
-    simp [UntypedObject.canAllocate] at hCan; omega
-  have hSrc : st.slotCapAt authority = some cap := (SystemState.slotCapAt_of_object hPreA).trans hLkA
   have hUtSt : st.getUntyped? untypedId = some ut := by
     rw [SystemState.getUntyped?_eq_bind, hUt]; rfl
+  have hBelow := retypeFromUntyped_authority_noUntypedBelow st st' authority untypedId childId
+    newObj allocSize hInv hStep
   refine storeObject_capRewrite_restores_capabilityInvariantBundle stCh st' authority cn cap _
     hBCh hLCh hShapeCh (fun _ _ h => h) hOCh hLkA (Capability.withFreeIndex_target _ _)
     (fun u _ ht _ _ r hr hru => ?_) hStIdx
@@ -249,8 +283,7 @@ theorem retypeFromUntyped_preserves_capabilityInvariantBundle
   rw [hCdtCh] at hr
   rw [hCapCh] at hru
   obtain ⟨c, hc, hct, -⟩ := hru
-  exact hInv.treeShape.notFullLeaf authority cap _ ut id hSrc hT hUtSt hNotFull r hr
-    ⟨c, hc, hct, by rw [hUtSt]; exact Option.some_ne_none _⟩
+  exact hBelow r hr ⟨c, hc, hct, by rw [hUtSt]; exact Option.some_ne_none _⟩
 
 /-- **After a carve the authority has no strict descendant holding a
 capability to its untyped**: the carve keeps the tree and every slot's target,
@@ -289,13 +322,11 @@ theorem retypeFromUntyped_authority_leaf
     · rfl
   have hT : cap.target = .object untypedId := by
     unfold lifecycleRetypeAuthority at hAuth; simp at hAuth; exact hAuth.1
-  have hCan := ((UntypedObject.allocate_some_iff _ _ _ _ _).mp hAlloc).1
-  have hLe := le_alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex
-  have hNotFull : cap.freeIndex < ut.regionSize := by
-    simp [UntypedObject.canAllocate] at hCan; omega
   have hSrc : st.slotCapAt authority = some cap := (SystemState.slotCapAt_of_object hPreA).trans hLkA
   have hUtSt : st.getUntyped? untypedId = some ut := by
     rw [SystemState.getUntyped?_eq_bind, hUt]; rfl
+  have hBelow := retypeFromUntyped_authority_noUntypedBelow st st' authority untypedId childId
+    newObj allocSize hInv hStep
   -- every slot of the post-state holds a capability with a pre-state slot's target
   have hBack : ∀ r c', st'.slotCapAt r = some c' → ∃ c, st.slotCapAt r = some c ∧ c'.target = c.target := by
     intro r c' hc'
@@ -303,7 +334,7 @@ theorem retypeFromUntyped_authority_leaf
     · rw [e] at hc' ⊢
       rw [SystemState.slotCapAt_of_object (storeObject_objects_eq _ _ _ _ hInvCh hStIdx)] at hc'
       have hL := CNode.lookup_insert_eq cn authority.slot
-        (cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex +
+        (cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut (retypeFreeIndex st authority cap) +
           allocSize)) (CNode.slotsUnique_holds _) (CNode.slotAddressable_of_lookup _ _ _ hLkA)
       cases Option.some.inj (hc'.symm.trans hL)
       exact ⟨cap, hSrc, Capability.withFreeIndex_target _ _⟩
@@ -319,8 +350,7 @@ theorem retypeFromUntyped_authority_leaf
   obtain ⟨c, hc, hct, -⟩ := hru
   obtain ⟨d, hd, hdt⟩ := hBack _ _ hc
   rw [hCdt] at hr
-  exact hInv.treeShape.notFullLeaf authority cap _ ut id hSrc hT hUtSt hNotFull r hr
-    ⟨d, hd, hdt ▸ hct, by rw [hUtSt]; exact Option.some_ne_none _⟩
+  exact hBelow r hr ⟨d, hd, hdt ▸ hct, by rw [hUtSt]; exact Option.some_ne_none _⟩
 
 /-- **The carve's authority still holds an untyped capability to its untyped**:
 the authority's capability keeps its target, and the untyped's record is
@@ -341,7 +371,7 @@ theorem retypeFromUntyped_authority_untyped
   have hInvCh := storeObject_preserves_objects_invExt _ _ _ _ hInvUt hStCh
   have hT : cap.target = .object untypedId := by
     unfold lifecycleRetypeAuthority at hAuth; simp at hAuth; exact hAuth.1
-  refine ⟨cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex +
+  refine ⟨cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut (retypeFreeIndex st authority cap) +
     allocSize), ?_, (Capability.withFreeIndex_target _ _).trans hT, ?_⟩
   · rw [SystemState.slotCapAt_of_object (storeObject_objects_eq _ _ _ _ hInvCh hStIdx)]
     exact CNode.lookup_insert_eq cn authority.slot _ (CNode.slotsUnique_holds _)
@@ -394,7 +424,7 @@ theorem retypeFromUntyped_fresh_child
   have hT : cap.target = .object untypedId := by
     unfold lifecycleRetypeAuthority at hAuth; simp at hAuth; exact hAuth.1
   have hSrcU : SystemState.untypedCapAt st'.slotCapAt st'.getUntyped? authority untypedId := by
-    refine ⟨cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut cap.freeIndex +
+    refine ⟨cap.withFreeIndex (alignedCarveIndex newObj.objectType allocSize ut (retypeFreeIndex st authority cap) +
       allocSize), ?_, by rw [Capability.withFreeIndex_target, hT], by rw [hUt']; simp⟩
     rw [SystemState.slotCapAt_of_object (storeObject_objects_eq _ _ _ _ hInvCh hStIdx)]
     exact CNode.lookup_insert_eq cn authority.slot _ (CNode.slotsUnique_holds _)
@@ -542,7 +572,7 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
   obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hInv.2.2.2.2.1 hStep
   have hKids := CarveRequest.object_untyped_children untypedId childId ut
-    (req.carveIndex ut utCap.freeIndex) req
+    (req.carveIndex ut (retypeFreeIndex st src utCap)) req
   have hInv1 := retypeFromUntyped_preserves_capabilityInvariantBundle st st1 src untypedId
     childId _ _ hInv (CarveRequest.object_slotCap _ _ _ _ req)
     (CarveRequest.object_linkAt _ _ _ _ req) (CarveRequest.object_depthConsistent _ _ _ _ req)
@@ -554,10 +584,10 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
     (CarveRequest.object_depthConsistent _ _ _ _ req) hKids hRt
   have hSrc1 := retypeFromUntyped_lookupSlotCap_authority st st1 src untypedId childId _ _
     hInv.2.2.2.2.1 hRt
-  have hObjZ := CarveRequest.scrub_objects st1 ut (req.carveIndex ut utCap.freeIndex) req
-  have hCdtZ := CarveRequest.scrub_cdt st1 ut (req.carveIndex ut utCap.freeIndex) req
+  have hObjZ := CarveRequest.scrub_objects st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap)) req
+  have hCdtZ := CarveRequest.scrub_cdt st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap)) req
   have hInvZ := capabilityInvariantBundle_of_objects_and_cdt_eq hInv1 hObjZ hCdtZ
-  have hSrc : (SystemState.lookupSlotCap (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex))
+  have hSrc : (SystemState.lookupSlotCap (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap)))
       src).isSome := by
     unfold SystemState.lookupSlotCap SystemState.lookupCNode at hSrc1 ⊢
     simpa only [SystemState.getObject?, hObjZ] using hSrc1
@@ -572,10 +602,10 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
   have hFresh := retypeFromUntyped_childId_fresh src untypedId childId _ _ st st1 hRt
   obtain ⟨hNm1, hPres1⟩ := retypeFromUntyped_namesAt st st1 src untypedId childId _ _
     hInv.2.2.2.2.1 (CarveRequest.object_slotCap _ _ _ _ req) hRt
-  have hCapZ : (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).slotCapAt =
+  have hCapZ : (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).slotCapAt =
       st1.slotCapAt := funext fun r => by
     rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind, hObjZ]
-  have hUtZ : (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).getUntyped? =
+  have hUtZ : (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).getUntyped? =
       st1.getUntyped? := funext fun o => by
     rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind, hObjZ]
   have hShape := treeShape_addEdge_after_fresh _ st2 src dst _ .retype hInvZ.treeShape
@@ -598,7 +628,7 @@ theorem untypedRetypeObject_preserves_capabilityInvariantBundle
         cases h : st.objects[childId]? with
         | none => exact h0 h
         | some _ => rw [h] at hFresh; simp at hFresh
-      · show (req.scrub st1 ut (req.carveIndex ut utCap.freeIndex)).objects[childId]? ≠ none
+      · show (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).objects[childId]? ≠ none
         rw [hObjZ]; exact hPres1
   rcases hBundle2 with ⟨⟨_, _, _, hDepth2, hObjInv2, hRCPV2⟩, -, -⟩
   have hObjFinal : ({ st2 with cdt := st2.cdt.addEdge src dst .retype }).objects = st2.objects := rfl
