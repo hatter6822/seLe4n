@@ -1,3 +1,46 @@
+## v0.36.153 — WS-ZA ZA5.4 part 40: every entry keeps the mappings recorded
+
+Parts 37 to 39 proved `SystemState.liveMappingsRecorded` kept by every arm at
+the operation.  This part composes them through the dispatchers and the kernel
+entries, so a state with every live mapping recorded keeps them recorded across
+every entry the kernel commits.
+
+- **The capability and VSpace arms as stages**
+  (`Kernel/MappingRecordStage/Capability.lean`): the copy, mint, move,
+  reply-cap mint, reset, map, unmap, unify, page-table install and removal,
+  the revocation, the zombie delete and the thread-space set are each a
+  `MappingStage`.
+- **The arms' premises** (`MappingArmPremises`): the capability invariants
+  and the teardown's well-formedness, which the map, the unmap, the deletes
+  and the space set read.  Frames: `MappingArmPremises.updateTcb` (a
+  register write) and `of_tables_eq`; and
+  `MappingArmPremises.of_proofLayerInvariantBundle`: both follow from the
+  bundle and the ASID table's table invariant.
+- **The dispatchers** (`Kernel/MappingRecordStage/Dispatch.lean`):
+  `dispatchCapabilityOnly_mappingStage`, `dispatchWithCapChecked_mappingStage`
+  (its IPC, audit and declassification arms), `dispatchSyscallChecked_mappingStage`,
+  and the unchecked `dispatchWithCap_mappingStage` and
+  `dispatchSyscall_mappingStage`.  Each takes the premises on its own state,
+  which is the arm's: the dispatch's lookups and decodes write nothing.
+- **The entries** (`Kernel/MappingRecordStage/Entry.lean`):
+  - the syscall entry (`syscallEntryChecked_…`, `syscallDispatchFromAbi_…`,
+    `syscallDispatchCrossCoreStep_…`, `syscallDispatchEntryState_mappingStage`),
+    which reads the premises off the state it starts from and carries them
+    across its TLB fill, register spill, trap-frame save and IPC-buffer words;
+  - the suspend, timer, reschedule, fault, unknown-syscall and FP/SIMD
+    entries, which reach none of those arms;
+  - the headline `syscallDispatchEntryState_preserves_liveMappingsRecorded`:
+    from `proofLayerInvariantBundle` and the ASID table's table invariant.
+- **Tests**: 22 Tier 3 anchors pin the premises, the delete-chain and VSpace
+  stages, the dispatchers and the entries.
+- **Exerciser**: every pin unchanged; no runtime code changed.
+- **Docs**: `docs/planning/UNTYPED_RESET_PLAN.md` row 40 is landed with its
+  forks.  The `docs/REGISTERED_DEBT.md` row "A live mapping is not proven to be
+  recorded on a capability" is closed; the row on the teardown's
+  well-formedness now records that the ASID table's table invariant is the
+  one part of it `proofLayerInvariantBundle` does not hold.
+- **Found on the way**: no executable path leaves a live mapping unrecorded.
+
 ## v0.36.152 — WS-ZA ZA5.4 part 39: a thread's space slot records no mapping
 
 The thread-space set writes over a thread slot's old capability without

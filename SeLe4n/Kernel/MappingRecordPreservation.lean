@@ -30,9 +30,8 @@ scheduling-context, notification, service, audit and fault arms, the scheduling
 point, the timer tick and the retype) are each a `MappingStage`
 (`Kernel/MappingRecordStage/*.lean`), and the thread-space set is proven in
 `Capability/Invariant/Preservation/SetSpaceMappingRecords.lean`.  The
-dispatchers and the kernel entries are the `docs/REGISTERED_DEBT.md` row "A
-live mapping is not proven to be recorded on a capability", which plan row 40
-closes.
+dispatchers and the kernel entries compose them
+(`Kernel/MappingRecordStage/Dispatch.lean`, `Kernel/MappingRecordStage/Entry.lean`).
 -/
 
 namespace SeLe4n.Kernel

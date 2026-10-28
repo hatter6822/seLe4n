@@ -176,8 +176,9 @@ which the boot establishes and the address-space, capability-write, reset and
 delete arms keep, and since `v0.36.151` the steps of the IPC, thread,
 scheduling, timer, fault, audit and retype arms too (`MappingStage`), and
 since `v0.36.152` the thread-space set, no thread's space slot holding a record
-(`SystemState.threadSlotsRecordNoMapping`; the entries are a registered debt,
-plan row 40);
+(`SystemState.threadSlotsRecordNoMapping`), and since `v0.36.153` the
+dispatchers and every committing kernel entry
+(`syscallDispatchEntryState_preserves_liveMappingsRecorded`);
 any other busy kernel
 object still outlives its last capability until its kind's finalise lands
 ([`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.6).  Every slot write keeps the bundle,

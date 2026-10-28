@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "za/thread-space-slots-unrecorded",
-      "commit_sha": "594cbcd4264605c32bf8bb0a3eae6a6a4e1560b1",
-      "tree_sha": "9273714d8301d4a26095cb02aaa24030534fd98d",
-      "committed_at_utc": "2026-10-27T18:06:07+00:00"
+      "branch": "za/mapping-records-entries",
+      "commit_sha": "e30d2e96beba449e32c2141873458008d7c61176",
+      "tree_sha": "3f90cb88da816532bde30fb5560249777dd05e00",
+      "committed_at_utc": "2026-10-27T18:51:49+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2678b29975982814f5f73ae44df9c074bf6bfc2c61b1ce6845bb276172d49f4f"
+    "source_digest": "5a10e4fb90862fb917fbf5a0c27e15ba8d2540c45a155b430c80b7b844aa37e6"
   },
   "summary": {
-    "module_count": 544,
-    "declaration_count": 29938
+    "module_count": 547,
+    "declaration_count": 30003
   },
   "readme_sync": {
-    "version": "0.36.152",
+    "version": "0.36.153",
     "lean_toolchain": "v4.28.0",
-    "production_files": 474,
-    "production_loc": 520045,
+    "production_files": 477,
+    "production_loc": 521641,
     "test_files": 70,
     "test_loc": 87228,
-    "proved_theorem_lemma_decls": 19105,
+    "proved_theorem_lemma_decls": 19169,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -245535,7 +245535,7 @@
           "kind": "theorem",
           "name": "vspaceMapPage_ok_objects",
           "full_name": "SeLe4n.Kernel.vspaceMapPage_ok_objects",
-          "line": 48,
+          "line": 47,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
@@ -245558,7 +245558,7 @@
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_objects",
           "full_name": "SeLe4n.Kernel.vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_objects",
-          "line": 83,
+          "line": 82,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.drainInitiatorPerCoreView",
@@ -245582,7 +245582,7 @@
           "kind": "theorem",
           "name": "VSpaceRoot.mapPage_some_eq",
           "full_name": "SeLe4n.Kernel.VSpaceRoot.mapPage_some_eq",
-          "line": 139,
+          "line": 138,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.PagePermissions",
@@ -245596,7 +245596,7 @@
           "kind": "theorem",
           "name": "slotWitnessesNoMapping_of_notLive",
           "full_name": "SeLe4n.Kernel.slotWitnessesNoMapping_of_notLive",
-          "line": 157,
+          "line": 156,
           "called": [
             "SeLe4n.Kernel.capabilityMappedPage",
             "SeLe4n.Kernel.capabilityMappingLive",
@@ -245617,7 +245617,7 @@
           "kind": "theorem",
           "name": "vspaceMapFromFrameCap_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.vspaceMapFromFrameCap_preserves_liveMappingsRecorded",
-          "line": 181,
+          "line": 180,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
             "SeLe4n.Kernel.Architecture.resolveAsidRoot_some_implies_obj",
@@ -245665,7 +245665,7 @@
           "kind": "theorem",
           "name": "liveMappingsRecorded_of_rootShrinkStore",
           "full_name": "SeLe4n.Kernel.liveMappingsRecorded_of_rootShrinkStore",
-          "line": 351,
+          "line": 350,
           "called": [
             "SeLe4n.Model.PagePermissions",
             "SeLe4n.Model.SystemState",
@@ -245684,7 +245684,7 @@
           "kind": "theorem",
           "name": "vspaceUnmapPage_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.vspaceUnmapPage_preserves_liveMappingsRecorded",
-          "line": 377,
+          "line": 376,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.VSpaceRoot.unmapPage_mappingEpochs_sub",
@@ -245708,7 +245708,7 @@
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_objects",
           "full_name": "SeLe4n.Kernel.vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_objects",
-          "line": 407,
+          "line": 406,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.vspaceUnmapPage",
@@ -245728,7 +245728,7 @@
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded",
-          "line": 451,
+          "line": 450,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast",
@@ -245746,7 +245746,7 @@
           "kind": "theorem",
           "name": "vspaceUnifyInstructionPage_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.vspaceUnifyInstructionPage_preserves_liveMappingsRecorded",
-          "line": 463,
+          "line": 462,
           "called": [
             "SeLe4n.ASID",
             "SeLe4n.Kernel.Architecture.vspaceUnifyInstructionPage",
@@ -245761,7 +245761,7 @@
           "kind": "theorem",
           "name": "pageTableMap_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.pageTableMap_kindPreservingWrite",
-          "line": 472,
+          "line": 471,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableMap",
             "SeLe4n.Kernel.Architecture.pageTableMap_ok",
@@ -245784,7 +245784,7 @@
           "kind": "theorem",
           "name": "pageTableUnmap_kindPreservingWrite",
           "full_name": "SeLe4n.Kernel.pageTableUnmap_kindPreservingWrite",
-          "line": 492,
+          "line": 491,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableUnmap",
             "SeLe4n.Kernel.Architecture.recordPhysicalWrites",
@@ -245807,7 +245807,7 @@
           "kind": "theorem",
           "name": "pageTableMap_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.pageTableMap_preserves_liveMappingsRecorded",
-          "line": 532,
+          "line": 531,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableMap",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -245822,7 +245822,7 @@
           "kind": "theorem",
           "name": "pageTableUnmap_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.pageTableUnmap_preserves_liveMappingsRecorded",
-          "line": 540,
+          "line": 539,
           "called": [
             "SeLe4n.Kernel.Architecture.pageTableUnmap",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -245836,7 +245836,7 @@
           "kind": "theorem",
           "name": "untypedResetSlot_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.untypedResetSlot_preserves_liveMappingsRecorded",
-          "line": 551,
+          "line": 550,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Kernel.setCapFreeIndex_preserves_liveMappingsRecorded",
@@ -245852,7 +245852,7 @@
           "kind": "theorem",
           "name": "untypedResetFromCap_preserves_liveMappingsRecorded",
           "full_name": "SeLe4n.Kernel.untypedResetFromCap_preserves_liveMappingsRecorded",
-          "line": 559,
+          "line": 558,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -246195,6 +246195,1271 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.MappingStage",
             "SeLe4n.Model.SystemState.liveMappingsRecorded"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.MappingRecordStage.Capability",
+      "path": "SeLe4n/Kernel/MappingRecordStage/Capability.lean",
+      "declaration_count": 21,
+      "declarations": [
+        {
+          "kind": "structure",
+          "name": "MappingArmPremises",
+          "full_name": "SeLe4n.Kernel.MappingArmPremises",
+          "line": 36,
+          "called": [
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.teardownWellFormed",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objInv",
+          "full_name": "SeLe4n.Kernel.MappingArmPremises.objInv",
+          "line": 44,
+          "called": [
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_tables_eq",
+          "full_name": "SeLe4n.Kernel.MappingArmPremises.of_tables_eq",
+          "line": 48,
+          "called": [
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.capabilityInvariantBundle_of_objects_and_cdt_eq",
+            "SeLe4n.Kernel.teardownWellFormed_of_tables_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateTcb",
+          "full_name": "SeLe4n.Kernel.MappingArmPremises.updateTcb",
+          "line": 54,
+          "called": [
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.MappingArmPremises.objInv",
+            "SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self",
+            "SeLe4n.Kernel.capabilityInvariantBundle_of_kindPreserving",
+            "SeLe4n.Kernel.teardownWellFormed_of_roots_eq",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.updateTcb_asidTable",
+            "SeLe4n.Model.SystemState.updateTcb_cdt",
+            "SeLe4n.Model.SystemState.updateTcb_eq_of_some",
+            "SeLe4n.Model.SystemState.updateTcb_eq_self_of_none",
+            "SeLe4n.Model.SystemState.updateTcb_kindPreservingWrite",
+            "SeLe4n.Model.SystemState.updateTcb_objects_ne",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.RHTable_getElem?_eq_get?",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_proofLayerInvariantBundle",
+          "full_name": "SeLe4n.Kernel.MappingArmPremises.of_proofLayerInvariantBundle",
+          "line": 80,
+          "called": [
+            "SeLe4n.Kernel.Architecture.proofLayerInvariantBundle",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceCopy_mappingStage",
+          "full_name": "SeLe4n.Kernel.cspaceCopy_mappingStage",
+          "line": 88,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceCopy",
+            "SeLe4n.Kernel.cspaceCopy_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceCopy_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMintWithCdt_mappingStage",
+          "full_name": "SeLe4n.Kernel.cspaceMintWithCdt_mappingStage",
+          "line": 95,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceMintWithCdt",
+            "SeLe4n.Kernel.cspaceMintWithCdt_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceMintWithCdt_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.AccessRightSet",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMove_mappingStage",
+          "full_name": "SeLe4n.Kernel.cspaceMove_mappingStage",
+          "line": 102,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceMove",
+            "SeLe4n.Kernel.cspaceMove_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceMove_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mintReplyCapWithCdt_mappingStage",
+          "full_name": "SeLe4n.Kernel.mintReplyCapWithCdt_mappingStage",
+          "line": 109,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.capabilityInvariantBundle",
+            "SeLe4n.Kernel.mintReplyCapWithCdt",
+            "SeLe4n.Kernel.mintReplyCapWithCdt_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.mintReplyCapWithCdt_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "untypedResetFromCap_mappingStage",
+          "full_name": "SeLe4n.Kernel.untypedResetFromCap_mappingStage",
+          "line": 117,
+          "called": [
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.setCapFreeIndex_preserves_objects_invExt",
+            "SeLe4n.Kernel.untypedResetFromCap",
+            "SeLe4n.Kernel.untypedResetFromCap_ok",
+            "SeLe4n.Kernel.untypedResetFromCap_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.untypedResetSlot_ok_frame",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapFromFrameCap_objects_invExt",
+          "full_name": "SeLe4n.Kernel.vspaceMapFromFrameCap_objects_invExt",
+          "line": 129,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.cspaceRecordFrameMapping_ok_decompose",
+            "SeLe4n.Kernel.tagFrameMapping_ok",
+            "SeLe4n.Kernel.vspaceMapFromFrameCap",
+            "SeLe4n.Kernel.vspaceMapFromFrameCap_ok",
+            "SeLe4n.Kernel.vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject_preserves_objects_invExt",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapFromFrameCap_mappingStage",
+          "full_name": "SeLe4n.Kernel.vspaceMapFromFrameCap_mappingStage",
+          "line": 143,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.teardownWellFormed",
+            "SeLe4n.Kernel.vspaceMapFromFrameCap",
+            "SeLe4n.Kernel.vspaceMapFromFrameCap_objects_invExt",
+            "SeLe4n.Kernel.vspaceMapFromFrameCap_preserves_liveMappingsRecorded",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage",
+          "full_name": "SeLe4n.Kernel.vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage",
+          "line": 150,
+          "called": [
+            "SeLe4n.ASID",
+            "SeLe4n.Kernel.Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.teardownWellFormed",
+            "SeLe4n.Kernel.vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame",
+            "SeLe4n.Kernel.vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_liveMappingsRecorded",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnifyInstructionPage_mappingStage",
+          "full_name": "SeLe4n.Kernel.vspaceUnifyInstructionPage_mappingStage",
+          "line": 160,
+          "called": [
+            "SeLe4n.ASID",
+            "SeLe4n.Kernel.Architecture.vspaceUnifyInstructionPage",
+            "SeLe4n.Kernel.Architecture.vspaceUnifyInstructionPage_frame",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableMap_objects_invExt",
+          "full_name": "SeLe4n.Kernel.pageTableMap_objects_invExt",
+          "line": 166,
+          "called": [
+            "SeLe4n.Kernel.Architecture.pageTableMap",
+            "SeLe4n.Kernel.Architecture.pageTableMap_ok",
+            "SeLe4n.Kernel.Architecture.recordPhysicalWrites_objects",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.storeObject_preserves_objects_invExt",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableUnmap_objects_invExt",
+          "full_name": "SeLe4n.Kernel.pageTableUnmap_objects_invExt",
+          "line": 178,
+          "called": [
+            "SeLe4n.Kernel.Architecture.pageTableUnmap",
+            "SeLe4n.Kernel.Architecture.recordPhysicalWrites_objects",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getPageTable?",
+            "SeLe4n.Model.storeObject",
+            "SeLe4n.Model.storeObject_preserves_objects_invExt",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableMap_mappingStage",
+          "full_name": "SeLe4n.Kernel.pageTableMap_mappingStage",
+          "line": 204,
+          "called": [
+            "SeLe4n.Kernel.Architecture.pageTableMap",
+            "SeLe4n.Kernel.pageTableMap_kindPreservingWrite",
+            "SeLe4n.Kernel.pageTableMap_objects_invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_kindPreservingWrite",
+            "SeLe4n.ObjId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableUnmap_mappingStage",
+          "full_name": "SeLe4n.Kernel.pageTableUnmap_mappingStage",
+          "line": 210,
+          "called": [
+            "SeLe4n.Kernel.Architecture.pageTableUnmap",
+            "SeLe4n.Kernel.pageTableUnmap_kindPreservingWrite",
+            "SeLe4n.Kernel.pageTableUnmap_objects_invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_kindPreservingWrite",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevokeCdtFinalising_mappingStage",
+          "full_name": "SeLe4n.Kernel.cspaceRevokeCdtFinalising_mappingStage",
+          "line": 217,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.cspaceRevokeCdtFinalising",
+            "SeLe4n.Kernel.cspaceRevokeCdtFinalising_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlotZombie_mappingStage",
+          "full_name": "SeLe4n.Kernel.cspaceDeleteSlotZombie_mappingStage",
+          "line": 225,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.cspaceDeleteSlotZombie",
+            "SeLe4n.Kernel.cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.cspaceDeleteSlotZombie_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "copyThreadSpacesZombie_mappingStage",
+          "full_name": "SeLe4n.Kernel.copyThreadSpacesZombie_mappingStage",
+          "line": 233,
+          "called": [
+            "SeLe4n.Kernel.CSpaceAddr",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.copyThreadSpacesZombie",
+            "SeLe4n.Kernel.copyThreadSpacesZombie_preserves_capabilityInvariantBundle",
+            "SeLe4n.Kernel.copyThreadSpacesZombie_preserves_liveMappingsRecorded",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_preserves",
+            "SeLe4n.ValidThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.MappingRecordStage.Dispatch",
+      "path": "SeLe4n/Kernel/MappingRecordStage/Dispatch.lean",
+      "declaration_count": 8,
+      "declarations": [
+        {
+          "kind": "theorem",
+          "name": "dispatchCapabilityOnly_mappingStage",
+          "full_name": "SeLe4n.Kernel.dispatchCapabilityOnly_mappingStage",
+          "line": 39,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferValidation.setIPCBufferOp",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageTableMapArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeResumeArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetAffinityArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetMCPriorityArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetPriorityArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetSpaceArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSuspendArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeTcbBindNotificationArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCore",
+            "SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOnCore",
+            "SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOnCore",
+            "SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore",
+            "SeLe4n.Kernel.bindNotification_mappingStage",
+            "SeLe4n.Kernel.copyThreadSpacesZombie",
+            "SeLe4n.Kernel.copyThreadSpacesZombie_mappingStage",
+            "SeLe4n.Kernel.cspaceDeleteSlotZombie_mappingStage",
+            "SeLe4n.Kernel.cspaceRevokeCdtFinalising_mappingStage",
+            "SeLe4n.Kernel.decodeAffinity",
+            "SeLe4n.Kernel.dispatchCapabilityOnly",
+            "SeLe4n.Kernel.lookupServiceByRecordedCode",
+            "SeLe4n.Kernel.lookupServiceByRecordedCode_preserves_state",
+            "SeLe4n.Kernel.mintReplyCapWithCdt_mappingStage",
+            "SeLe4n.Kernel.pageTableMap_mappingStage",
+            "SeLe4n.Kernel.pageTableUnmap_mappingStage",
+            "SeLe4n.Kernel.resolveCallerCapObject",
+            "SeLe4n.Kernel.resolveSchedContextBindThread",
+            "SeLe4n.Kernel.resolveSetSpace",
+            "SeLe4n.Kernel.resumeThreadOnCore_mappingStage",
+            "SeLe4n.Kernel.retirePendingFaultForResume",
+            "SeLe4n.Kernel.retirePendingFaultForResume_mappingStage",
+            "SeLe4n.Kernel.revokeServiceByRecordedCode_revokeService",
+            "SeLe4n.Kernel.revokeService_mappingStage",
+            "SeLe4n.Kernel.schedContextBind_mappingStage",
+            "SeLe4n.Kernel.schedContextConfigure_mappingStage",
+            "SeLe4n.Kernel.schedContextUnbindOnCore_mappingStage",
+            "SeLe4n.Kernel.setIPCBufferOp_mappingStage",
+            "SeLe4n.Kernel.setMCPriorityOnCore_mappingStage",
+            "SeLe4n.Kernel.setPriorityOnCore_mappingStage",
+            "SeLe4n.Kernel.setThreadCpuAffinityOnCore",
+            "SeLe4n.Kernel.setThreadCpuAffinityOnCore_mappingStage",
+            "SeLe4n.Kernel.setThreadFaultHandlerOp",
+            "SeLe4n.Kernel.setThreadFaultHandlerOp_mappingStage",
+            "SeLe4n.Kernel.suspendThreadOnCore_mappingStage",
+            "SeLe4n.Kernel.syscallLookupCap",
+            "SeLe4n.Kernel.unbindNotification",
+            "SeLe4n.Kernel.unbindNotification_mappingStage",
+            "SeLe4n.Kernel.untypedResetFromCap_mappingStage",
+            "SeLe4n.Kernel.untypedRetypeFromCap_mappingStage",
+            "SeLe4n.Kernel.validateObjIdArg",
+            "SeLe4n.Kernel.validateThreadIdArg",
+            "SeLe4n.Kernel.vspaceMapFromFrameCap_mappingStage",
+            "SeLe4n.Kernel.vspaceUnifyInstructionPage_mappingStage",
+            "SeLe4n.Kernel.vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage",
+            "SeLe4n.Kernel.writeReturnFrameToTcb_mappingStage",
+            "SeLe4n.MachineState",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.Kernel",
+            "SeLe4n.Model.SyscallDecodeResult",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.getCNode?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Priority.ofNat",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "clearStashStage_mappingStage",
+          "full_name": "SeLe4n.Kernel.clearStashStage_mappingStage",
+          "line": 450,
+          "called": [
+            "SeLe4n.Kernel.clearWokenReceiverStash",
+            "SeLe4n.Kernel.clearWokenReceiverStash_mappingStage",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stageWokenDeliveryTwice_mappingStage",
+          "full_name": "SeLe4n.Kernel.stageWokenDeliveryTwice_mappingStage",
+          "line": 465,
+          "called": [
+            "SeLe4n.Kernel.Architecture.stageWokenDelivery",
+            "SeLe4n.Kernel.stageWokenDelivery_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchWithCapChecked_mappingStage",
+          "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_mappingStage",
+          "line": 473,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.SyscallGate",
+            "SeLe4n.Kernel.applyReceiveRendezvousHandoff_mappingStage",
+            "SeLe4n.Kernel.auditDrainVisiblePrefix_mappingStage",
+            "SeLe4n.Kernel.auditReadFromCore_mappingStage",
+            "SeLe4n.Kernel.clearStashStage_mappingStage",
+            "SeLe4n.Kernel.cspaceCopyChecked",
+            "SeLe4n.Kernel.cspaceCopy_mappingStage",
+            "SeLe4n.Kernel.cspaceMintChecked",
+            "SeLe4n.Kernel.cspaceMintWithCdt_mappingStage",
+            "SeLe4n.Kernel.cspaceMoveChecked",
+            "SeLe4n.Kernel.cspaceMove_mappingStage",
+            "SeLe4n.Kernel.declassifyObjectFromCore_mappingStage",
+            "SeLe4n.Kernel.dispatchCapabilityOnly",
+            "SeLe4n.Kernel.dispatchCapabilityOnlyChecked_ok",
+            "SeLe4n.Kernel.dispatchCapabilityOnly_mappingStage",
+            "SeLe4n.Kernel.dispatchWithCapChecked",
+            "SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked_mappingStage",
+            "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_mappingStage",
+            "SeLe4n.Kernel.endpointReplyRecvOnCore_mappingStage",
+            "SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_mappingStage",
+            "SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked_mappingStage",
+            "SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_mappingStage",
+            "SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked_mappingStage",
+            "SeLe4n.Kernel.registerServiceChecked",
+            "SeLe4n.Kernel.registerService_mappingStage",
+            "SeLe4n.Kernel.replyTransferOnCoreChecked_mappingStage",
+            "SeLe4n.Kernel.stageDeliveredMessage_mappingStage",
+            "SeLe4n.Kernel.stageWokenDeliveryTwice_mappingStage",
+            "SeLe4n.Kernel.stageWokenDelivery_mappingStage",
+            "SeLe4n.Kernel.stageWokenSendCompletion_mappingStage",
+            "SeLe4n.Kernel.writeReturnFrameToTcb_mappingStage",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SyscallDecodeResult",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_fst_eq",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchSyscallChecked_mappingStage",
+          "full_name": "SeLe4n.Kernel.dispatchSyscallChecked_mappingStage",
+          "line": 607,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.applySyscallTaint_objects",
+            "SeLe4n.Kernel.dispatchSyscallChecked",
+            "SeLe4n.Kernel.dispatchWithCapChecked_mappingStage",
+            "SeLe4n.Kernel.dispatchYield",
+            "SeLe4n.Kernel.syscallChecksTargetFirst",
+            "SeLe4n.Kernel.syscallInvoke",
+            "SeLe4n.Kernel.syscallInvokeResolved",
+            "SeLe4n.Kernel.syscallResolveCap_implies_capability_at_slot",
+            "SeLe4n.Kernel.syscallResolveCap_of_lookup",
+            "SeLe4n.Kernel.yieldOnCore_mappingStage",
+            "SeLe4n.Model.SyscallDecodeResult",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.trans",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyTransferOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.replyTransferOnCore_mappingStage",
+          "line": 656,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.endpointReplyCrossCoreDispatch",
+            "SeLe4n.Kernel.endpointReplyCrossCoreDispatch_mappingStage",
+            "SeLe4n.Kernel.faultReplyOnCore",
+            "SeLe4n.Kernel.faultReplyOnCore_mappingStage",
+            "SeLe4n.Kernel.replyTransferOnCore",
+            "SeLe4n.Kernel.stageDeliveredMessage_mappingStage",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.RegValue",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchWithCap_mappingStage",
+          "full_name": "SeLe4n.Kernel.dispatchWithCap_mappingStage",
+          "line": 685,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.SyscallGate",
+            "SeLe4n.Kernel.applyReceiveRendezvousHandoff_mappingStage",
+            "SeLe4n.Kernel.clearStashStage_mappingStage",
+            "SeLe4n.Kernel.cspaceCopy_mappingStage",
+            "SeLe4n.Kernel.cspaceMintWithCdt_mappingStage",
+            "SeLe4n.Kernel.cspaceMove_mappingStage",
+            "SeLe4n.Kernel.dispatchCapabilityOnly",
+            "SeLe4n.Kernel.dispatchCapabilityOnly_mappingStage",
+            "SeLe4n.Kernel.dispatchWithCap",
+            "SeLe4n.Kernel.endpointCallCrossCoreDispatch_mappingStage",
+            "SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore_mappingStage",
+            "SeLe4n.Kernel.endpointReplyRecvOnCore_mappingStage",
+            "SeLe4n.Kernel.endpointSendDualWithCapsOnCore_mappingStage",
+            "SeLe4n.Kernel.notificationSignalBoundOnCore_mappingStage",
+            "SeLe4n.Kernel.notificationWaitOnCore_mappingStage",
+            "SeLe4n.Kernel.registerService_mappingStage",
+            "SeLe4n.Kernel.replyTransferOnCore_mappingStage",
+            "SeLe4n.Kernel.stageDeliveredMessage_mappingStage",
+            "SeLe4n.Kernel.stageWokenDeliveryTwice_mappingStage",
+            "SeLe4n.Kernel.stageWokenDelivery_mappingStage",
+            "SeLe4n.Kernel.stageWokenSendCompletion_mappingStage",
+            "SeLe4n.Kernel.writeReturnFrameToTcb_mappingStage",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SyscallDecodeResult",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_fst_eq",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchSyscall_mappingStage",
+          "full_name": "SeLe4n.Kernel.dispatchSyscall_mappingStage",
+          "line": 774,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.applySyscallTaint_objects",
+            "SeLe4n.Kernel.dispatchSyscall",
+            "SeLe4n.Kernel.dispatchWithCap_mappingStage",
+            "SeLe4n.Kernel.dispatchYield",
+            "SeLe4n.Kernel.syscallInvoke",
+            "SeLe4n.Kernel.syscallResolveCap_implies_capability_at_slot",
+            "SeLe4n.Kernel.syscallResolveCap_of_lookup",
+            "SeLe4n.Kernel.yieldOnCore_mappingStage",
+            "SeLe4n.Model.SyscallDecodeResult",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.trans",
+            "SeLe4n.ThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.MappingRecordStage.Entry",
+      "path": "SeLe4n/Kernel/MappingRecordStage/Entry.lean",
+      "declaration_count": 36,
+      "declarations": [
+        {
+          "kind": "theorem",
+          "name": "requeueOutgoingOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.requeueOutgoingOnCore_mappingStage",
+          "line": 43,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.requeueOutgoingOnCore",
+            "SeLe4n.Kernel.runEnqueueAdmitted_mappingStage",
+            "SeLe4n.Kernel.saveOutgoingContextOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomainOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.switchDomainOnCore_mappingStage",
+          "line": 56,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.requeueOutgoingOnCore_mappingStage",
+            "SeLe4n.Kernel.switchDomainOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomainOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.scheduleDomainOnCore_mappingStage",
+          "line": 67,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.scheduleDomainOnCore",
+            "SeLe4n.Kernel.scheduleEffectiveOnCore_mappingStage",
+            "SeLe4n.Kernel.switchDomainOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreTimerTickStep_mappingStage",
+          "full_name": "SeLe4n.Kernel.perCoreTimerTickStep_mappingStage",
+          "line": 82,
+          "called": [
+            "SeLe4n.Kernel.perCoreTimerTickStep",
+            "SeLe4n.Kernel.scheduleDomainOnCore_mappingStage",
+            "SeLe4n.Kernel.tickClockedState",
+            "SeLe4n.Kernel.tickClockedState_objects",
+            "SeLe4n.Kernel.timerTickOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreRescheduleStep_mappingStage",
+          "full_name": "SeLe4n.Kernel.perCoreRescheduleStep_mappingStage",
+          "line": 100,
+          "called": [
+            "SeLe4n.Kernel.handleRescheduleSgiOnCore_mappingStage",
+            "SeLe4n.Kernel.perCoreRescheduleStep",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dispatchVacatedCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.dispatchVacatedCore_mappingStage",
+          "line": 109,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.dispatchVacatedCore",
+            "SeLe4n.Kernel.handleRescheduleSgiOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleLocalSuccessorFrom_mappingStage",
+          "full_name": "SeLe4n.Kernel.scheduleLocalSuccessorFrom_mappingStage",
+          "line": 119,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorFrom",
+            "SeLe4n.Kernel.handleRescheduleSgiOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deferResidentElsewhere_mappingStage",
+          "full_name": "SeLe4n.Kernel.deferResidentElsewhere_mappingStage",
+          "line": 131,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.deferResidentElsewhere",
+            "SeLe4n.Kernel.preemptCurrentOnCore_mappingStage",
+            "SeLe4n.Kernel.switchToThreadOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "settleResidencyOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.settleResidencyOnCore_mappingStage",
+          "line": 145,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore",
+            "SeLe4n.Kernel.deferResidentElsewhere_mappingStage",
+            "SeLe4n.Kernel.dispatchVacatedCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "settleResidencyAt_mappingStage",
+          "full_name": "SeLe4n.Kernel.settleResidencyAt_mappingStage",
+          "line": 151,
+          "called": [
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.settleResidencyOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveTrapFrameOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.saveTrapFrameOnCore_mappingStage",
+          "line": 160,
+          "called": [
+            "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.updateTcb_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.RegisterFile"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveVacatedFrameOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.saveVacatedFrameOnCore_mappingStage",
+          "line": 172,
+          "called": [
+            "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.updateTcb_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.RegisterFile"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedTrapFrame_mappingStage",
+          "full_name": "SeLe4n.Kernel.saveCapturedTrapFrame_mappingStage",
+          "line": 184,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.saveTrapFrameOnCore_mappingStage",
+            "SeLe4n.Kernel.saveVacatedFrameOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrame_mappingStage",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrame_mappingStage",
+          "line": 193,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.saveTrapFrameOnCore_mappingStage",
+            "SeLe4n.Kernel.saveVacatedFrameOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedTrapFrameAt_mappingStage",
+          "full_name": "SeLe4n.Kernel.saveCapturedTrapFrameAt_mappingStage",
+          "line": 202,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.saveCapturedTrapFrame_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrameAt_mappingStage",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrameAt_mappingStage",
+          "line": 210,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Concurrency.saveCapturedSyscallFrameAt",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrame_mappingArmPremises",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrame_mappingArmPremises",
+          "line": 220,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore",
+            "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.MappingArmPremises.of_tables_eq",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "clearLedgers_mappingStage",
+          "full_name": "SeLe4n.Kernel.clearLedgers_mappingStage",
+          "line": 249,
+          "called": [
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "clearLedgers_mappingStage'",
+          "full_name": "SeLe4n.Kernel.clearLedgers_mappingStage'",
+          "line": 253,
+          "called": [
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallEntryChecked_mappingStage",
+          "full_name": "SeLe4n.Kernel.syscallEntryChecked_mappingStage",
+          "line": 262,
+          "called": [
+            "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.MappingArmPremises.of_tables_eq",
+            "SeLe4n.Kernel.dispatchSyscallChecked_mappingStage",
+            "SeLe4n.Kernel.syscallEntryChecked",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.SyscallRegisterLayout"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchFromAbi_mappingStage",
+          "full_name": "SeLe4n.Kernel.syscallDispatchFromAbi_mappingStage",
+          "line": 289,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallOutcome",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.faultDeliverOnCoreChecked_mappingStage",
+            "SeLe4n.Kernel.syscallEntryChecked_mappingStage",
+            "SeLe4n.Kernel.updateTcb_mappingStage",
+            "SeLe4n.Kernel.writeFaultRegistersToTcb_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.Platform.FFI.deliverSyscallCapFault",
+            "SeLe4n.Platform.FFI.recordSyscallRefusal_objects_eq",
+            "SeLe4n.Platform.FFI.syscallDispatchFromAbi",
+            "SeLe4n.Platform.FFI.writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stageCallerReturnFor_mappingStage",
+          "full_name": "SeLe4n.Kernel.stageCallerReturnFor_mappingStage",
+          "line": 325,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallOutcome",
+            "SeLe4n.Kernel.Architecture.stageCallerReturnFor",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.writeReturnFrameToTcb_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchCrossCoreStep_mappingStage",
+          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreStep_mappingStage",
+          "line": 344,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.clearLedgers_mappingStage'",
+            "SeLe4n.Kernel.scheduleLocalSuccessorFrom_mappingStage",
+            "SeLe4n.Kernel.settleResidencyOnCore_mappingStage",
+            "SeLe4n.Kernel.stageCallerReturnFor_mappingStage",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep_of_ok",
+            "SeLe4n.Kernel.syscallDispatchFromAbi_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Platform.FFI.syscallDispatchFromAbi_total"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchEntryState_mappingStage",
+          "full_name": "SeLe4n.Kernel.syscallDispatchEntryState_mappingStage",
+          "line": 361,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.clearUserWords",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_objects",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises",
+            "SeLe4n.Kernel.MappingArmPremises.of_tables_eq",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_mappingArmPremises",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_mappingStage",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStepWords",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchEntryState_preserves_liveMappingsRecorded",
+          "full_name": "SeLe4n.Kernel.syscallDispatchEntryState_preserves_liveMappingsRecorded",
+          "line": 383,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.clearUserWords",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
+            "SeLe4n.Kernel.Architecture.proofLayerInvariantBundle",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.MappingArmPremises.of_proofLayerInvariantBundle",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
+            "SeLe4n.Kernel.objects_invExt_of_capabilityInvariantBundle",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStepWords",
+            "SeLe4n.Kernel.syscallDispatchEntryState_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.liveMappingsRecorded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadCrossCoreDrainedStep_mappingStage",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep_mappingStage",
+          "line": 399,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.BracketSpec.run",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.clearLedgers_mappingStage",
+            "SeLe4n.Kernel.scheduleLocalSuccessorFrom_mappingStage",
+            "SeLe4n.Kernel.suspendThreadBracket",
+            "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
+            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
+            "SeLe4n.Kernel.suspendThreadOnCore_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.Model.SystemState.MappingStage.trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreTimerTickEntryState_mappingStage",
+          "full_name": "SeLe4n.Kernel.perCoreTimerTickEntryState_mappingStage",
+          "line": 419,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.clearLedgers_mappingStage",
+            "SeLe4n.Kernel.perCoreTimerTickStep_mappingStage",
+            "SeLe4n.Kernel.saveCapturedTrapFrameAt_mappingStage",
+            "SeLe4n.Kernel.settleResidencyAt_mappingStage",
+            "SeLe4n.Kernel.timerTickBracket",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreRescheduleEntryState_mappingStage",
+          "full_name": "SeLe4n.Kernel.perCoreRescheduleEntryState_mappingStage",
+          "line": 431,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.clearLedgers_mappingStage",
+            "SeLe4n.Kernel.perCoreRescheduleStep_mappingStage",
+            "SeLe4n.Kernel.rescheduleBracket",
+            "SeLe4n.Kernel.saveCapturedTrapFrameAt_mappingStage",
+            "SeLe4n.Kernel.settleResidencyAt_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultDeliveredState_mappingStage",
+          "full_name": "SeLe4n.Kernel.faultDeliveredState_mappingStage",
+          "line": 442,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.faultDeliverOnCoreChecked_mappingStage",
+            "SeLe4n.Kernel.faultDeliveredState",
+            "SeLe4n.Kernel.writeFaultRegistersToTcb_mappingStage",
+            "SeLe4n.Model.Fault",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryDeliver_mappingStage",
+          "full_name": "SeLe4n.Kernel.faultEntryDeliver_mappingStage",
+          "line": 451,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.dispatchVacatedCore_mappingStage",
+            "SeLe4n.Kernel.faultDeliveredState_mappingStage",
+            "SeLe4n.Kernel.faultEntryDeliver",
+            "SeLe4n.Kernel.scheduleLocalSuccessorFrom_mappingStage",
+            "SeLe4n.Model.Fault",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryStep_mappingStage",
+          "full_name": "SeLe4n.Kernel.faultEntryStep_mappingStage",
+          "line": 463,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.faultEntryDeliver_mappingStage",
+            "SeLe4n.Kernel.faultEntryStep",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unknownSyscallEntryStep_mappingStage",
+          "full_name": "SeLe4n.Kernel.unknownSyscallEntryStep_mappingStage",
+          "line": 475,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.faultEntryDeliver_mappingStage",
+            "SeLe4n.Kernel.unknownSyscallEntryStep",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryState_mappingStage",
+          "full_name": "SeLe4n.Kernel.faultEntryState_mappingStage",
+          "line": 486,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.clearLedgers_mappingStage",
+            "SeLe4n.Kernel.faultEntryStep",
+            "SeLe4n.Kernel.faultEntryStep_mappingStage",
+            "SeLe4n.Kernel.saveCapturedTrapFrameAt_mappingStage",
+            "SeLe4n.Kernel.settleResidencyAt_mappingStage",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unknownSyscallEntryState_mappingStage",
+          "full_name": "SeLe4n.Kernel.unknownSyscallEntryState_mappingStage",
+          "line": 498,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.saveCapturedSyscallFrameAt",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.clearLedgers_mappingStage",
+            "SeLe4n.Kernel.saveCapturedSyscallFrameAt_mappingStage",
+            "SeLe4n.Kernel.settleResidencyAt_mappingStage",
+            "SeLe4n.Kernel.unknownSyscallEntryStep",
+            "SeLe4n.Kernel.unknownSyscallEntryStep_mappingStage",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fpAccessOnCore_mappingStage",
+          "full_name": "SeLe4n.Kernel.fpAccessOnCore_mappingStage",
+          "line": 512,
+          "called": [
+            "SeLe4n.FpContext",
+            "SeLe4n.Kernel.Architecture.fpAccessOnCore",
+            "SeLe4n.Kernel.Architecture.setFpOwner",
+            "SeLe4n.Kernel.Architecture.writeFpContextToTcb",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.updateTcb_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.of_objects_eq",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fpAccessEntryState_mappingStage",
+          "full_name": "SeLe4n.Kernel.fpAccessEntryState_mappingStage",
+          "line": 538,
+          "called": [
+            "SeLe4n.FpContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.dispatchVacatedCore_mappingStage",
+            "SeLe4n.Kernel.fpAccessEntryStep",
+            "SeLe4n.Kernel.fpAccessOnCore_mappingStage",
+            "SeLe4n.Kernel.saveCapturedTrapFrameAt_mappingStage",
+            "SeLe4n.Kernel.settleResidencyAt_mappingStage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.MappingStage",
+            "SeLe4n.Model.SystemState.MappingStage.refl",
+            "SeLe4n.Model.SystemState.MappingStage.trans"
           ]
         }
       ]
