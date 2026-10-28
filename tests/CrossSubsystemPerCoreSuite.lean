@@ -566,9 +566,14 @@ private def runModifiedFieldsChecks : IO Unit := do
   -- The payoff: a disjoint read-set means the operation cannot disturb the
   -- predicate.  Decided here at the list level; the theorem above carries it to
   -- states.
-  assertBool "storeObject's writes are disjoint from registryInterfaceValid's reads"
+  assertBool "registerInterface's writes are disjoint from the queue-reference invariant's reads"
+    (decide (fieldsDisjoint noStaleEndpointQueueReferences_fields
+               registerInterface_modifiedFields = true))
+  -- NEGATIVE: the registry is read off the endpoints, so `registryInterfaceValid`
+  -- reads `.objects` and a store is not framed away from it.
+  assertBool "NEGATIVE: storeObject is NOT framed away from registryInterfaceValid"
     (decide (fieldsDisjoint registryInterfaceValid_fields
-               storeObject_modifiedFields = true))
+               storeObject_modifiedFields = false))
   -- NEGATIVE: the revoke clears its endpoint's record of the service, so it
   -- writes `.objects` and is preserved by a proof, not by the frame.
   assertBool "NEGATIVE: revokeService is NOT framed away from the queue-reference invariant"
