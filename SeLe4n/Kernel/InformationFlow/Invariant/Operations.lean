@@ -4985,7 +4985,7 @@ theorem serviceObservable_false_endpoint {ctx : LabelingContext} {observer : IfO
   exact h
 
 /-- R5-B.2/M-02: `registerService` of a registration the observer cannot see
-preserves the projection: its endpoint's `serviceRegistered` write is at an
+preserves the projection: its endpoint's service-record write is at an
 unobservable object, and the registration lands at a key that held none. -/
 theorem registerService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -4996,7 +4996,9 @@ theorem registerService_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   obtain ⟨epId, ep, hT, -, hAbsent, -, rfl⟩ := registerService_ok hStep
   exact (projectState_withServiceRegistry ctx observer
-      { st with objects := st.objects.insert epId (.endpoint { ep with serviceRegistered := true }) }
+      { st with
+        objects := st.objects.insert epId
+          (.endpoint (ep.withService (EndpointService.ofRegistration reg))) }
       (st.serviceRegistry.insert reg.sid reg)
       (projectServiceRegistry_insert_unobservable ctx observer _ reg.sid reg hRegInv hAbsent hHigh)).trans
     (objects_insert_preserves_projection_high ctx observer st epId _
@@ -5004,7 +5006,7 @@ theorem registerService_preserves_projection
 
 /-- AK6-F.12: `revokeService` of a registration the observer cannot see
 preserves the projection: the erase removes an unobservable registration, and
-the `serviceRegistered` clear is at its unobservable endpoint. -/
+the service-record clear is at its unobservable endpoint. -/
 theorem revokeService_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (sid : SeLe4n.ServiceId) (st st' : SystemState)
@@ -5033,7 +5035,7 @@ theorem recordedRegistration_names_endpoint {st : SystemState} {epId : SeLe4n.Ob
     (hCode : ep.serviceRegistered = true)
     (hReg : st.serviceRegistry[ServiceId.ofNat epId.toNat]? = some reg) :
     reg.endpointCap.target = .object epId := by
-  obtain ⟨reg', hReg', hT⟩ := hRec.serviceFlags epId (by rw [hEp]; exact hCode)
+  obtain ⟨reg', hReg', hT⟩ := hRec.serviceFlags epId (by rw [hEp]; simp [KernelObject.tableBackLinks, hCode])
   rw [hReg] at hReg'
   cases hReg'
   exact hT
@@ -5213,48 +5215,34 @@ theorem lookupServiceByRecordedRegistration_not_endpoint {s : SystemState} {epId
     exact absurd hE (h ep)
   · rfl
 
-/-- The lookup at an endpoint reads its flag and the registry key of its own id. -/
+/-- The lookup at an endpoint reads its flag and the registration its record
+holds, and no table. -/
 theorem lookupServiceByRecordedRegistration_of_endpoint {s : SystemState} {epId : SeLe4n.ObjId}
     {ep : Endpoint} (h : s.objects[epId]? = some (.endpoint ep)) :
     lookupServiceByRecordedRegistration epId s =
       match ep.serviceRegistered with
       | false => .error .objectNotFound
-      | true =>
-        match s.serviceRegistry[ServiceId.ofNat epId.toNat]? with
-        | some reg => .ok (reg, s)
-        | none => .error .objectNotFound := by
+      | true => .ok (ep.service.registrationAt epId, s) := by
   unfold lookupServiceByRecordedRegistration
   simp only [SystemState.getObject?, h]
   rfl
 
 /-- **The lookup at a visible endpoint answers alike in low-equivalent
-states.**  The endpoint, its recorded flag with it, is projected whole; the
-registration its flag names names it (the table references are recorded), so
-it is projected too, and the two states hold the same one. -/
+states.**  The endpoint, its service record with it (the flag and the
+registration's words, WS-ZA ZA5.8), is projected whole, and the lookup reads
+that record alone, so the two states give the same answer. -/
 theorem lookupServiceByRecordedRegistration_answer_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver) (epId : SeLe4n.ObjId)
     (s₁ s₂ : SystemState)
     (hObs : objectObservable ctx observer epId = true)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hRec₁ : s₁.tableReferencesRecorded) (hRec₂ : s₂.tableReferencesRecorded) :
+    (hLow : lowEquivalent ctx observer s₁ s₂) :
     (lookupServiceByRecordedRegistration epId s₁).map Prod.fst =
       (lookupServiceByRecordedRegistration epId s₂).map Prod.fst := by
   by_cases hE : ∃ ep, s₁.objects[epId]? = some (.endpoint ep)
   · obtain ⟨ep, h₁⟩ := hE
     have h₂ := endpoint_of_lowEquivalent hLow hObs h₁
     rw [lookupServiceByRecordedRegistration_of_endpoint h₁, lookupServiceByRecordedRegistration_of_endpoint h₂]
-    cases hc : ep.serviceRegistered with
-    | false => rfl
-    | true =>
-      obtain ⟨r₁, hr₁, -⟩ := hRec₁.serviceFlags epId (by rw [h₁]; exact hc)
-      obtain ⟨r₂, hr₂, -⟩ := hRec₂.serviceFlags epId (by rw [h₂]; exact hc)
-      have ht₁ := recordedRegistration_names_endpoint hRec₁ h₁ hc hr₁
-      have ht₂ := recordedRegistration_names_endpoint hRec₂ h₂ hc hr₂
-      have hp := congrFun (congrArg ObservableState.serviceRegistry hLow) (ServiceId.ofNat epId.toNat)
-      simp only [projectState, projectServiceRegistry, hr₁, hr₂, serviceObservable, ht₁, ht₂,
-        hObs, if_true, Option.some.injEq] at hp
-      simp only [hr₁, hr₂, hp]
-      rfl
+    cases ep.serviceRegistered <;> rfl
   · rw [lookupServiceByRecordedRegistration_not_endpoint (fun ep h => hE ⟨ep, h⟩),
       lookupServiceByRecordedRegistration_not_endpoint (fun ep h =>
         hE ⟨ep, endpoint_of_lowEquivalent (lowEquivalent_symm ctx observer s₁ s₂ hLow) hObs h⟩)]
@@ -5268,15 +5256,13 @@ theorem lookupServiceChecked_answer_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (s₁ s₂ : SystemState)
     (hCallerLow : threadObservable ctx observer caller = true)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hRec₁ : s₁.tableReferencesRecorded) (hRec₂ : s₂.tableReferencesRecorded) :
+    (hLow : lowEquivalent ctx observer s₁ s₂) :
     (lookupServiceChecked ctx caller epId s₁).map Prod.fst =
       (lookupServiceChecked ctx caller epId s₂).map Prod.fst := by
   unfold lookupServiceChecked
   by_cases hA : serviceEndpointReadAdmitted ctx caller epId = true
   · simp only [if_pos hA]
     refine lookupServiceByRecordedRegistration_answer_lowEquivalent ctx observer epId s₁ s₂ ?_ hLow
-      hRec₁ hRec₂
     unfold serviceEndpointReadAdmitted at hA
     unfold threadObservable at hCallerLow
     unfold objectObservable
@@ -5284,7 +5270,7 @@ theorem lookupServiceChecked_answer_lowEquivalent
   · simp only [if_neg hA]
 
 /-- **The checked query stages the same word in both runs.**  For an observable
-caller and low-equivalent states whose table references are recorded, the
+caller and low-equivalent states, the
 query either fails with one error in both, or succeeds in both writing one
 return word — the registration's `ServiceId` — to the caller's frame, and
 nothing else.  This is the dispatcher's `.serviceQuery` arm
@@ -5294,8 +5280,7 @@ theorem serviceQueryStaged_answer_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (caller : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (s₁ s₂ : SystemState)
     (hCallerLow : threadObservable ctx observer caller = true)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hRec₁ : s₁.tableReferencesRecorded) (hRec₂ : s₂.tableReferencesRecorded) :
+    (hLow : lowEquivalent ctx observer s₁ s₂) :
     (∃ e, serviceQueryStaged ctx caller epId s₁ = .error e ∧
         serviceQueryStaged ctx caller epId s₂ = .error e) ∨
     (∃ w : UInt64,
@@ -5304,7 +5289,7 @@ theorem serviceQueryStaged_answer_lowEquivalent
       serviceQueryStaged ctx caller epId s₂ = .ok ((), Architecture.writeReturnFrameToTcb s₂ caller
         (Architecture.returnFrameOfWord w))) := by
   have hA := lookupServiceChecked_answer_lowEquivalent ctx observer caller epId s₁ s₂ hCallerLow
-    hLow hRec₁ hRec₂
+    hLow
   have hState : ∀ s reg s', lookupServiceChecked ctx caller epId s = .ok (reg, s') → s' = s := by
     intro s reg s' h
     unfold lookupServiceChecked at h

@@ -95,4 +95,50 @@ instance : Inhabited ServiceRegistration where
 
 end ServiceRegistration
 
+namespace EndpointService
+
+/-- **WS-ZA ZA5.8: the service record a registration writes on its endpoint**:
+the flag set, and the registration's words — its interface, and the capability
+it keeps less the target, which is the endpoint. -/
+@[inline] def ofRegistration (reg : ServiceRegistration) : EndpointService :=
+  { registered := true, interfaceId := reg.iface.ifaceId,
+    methodCount := reg.iface.methodCount, maxMessageSize := reg.iface.maxMessageSize,
+    maxResponseSize := reg.iface.maxResponseSize, requiresGrant := reg.iface.requiresGrant,
+    capRights := reg.endpointCap.rights, capBadgeWord := reg.endpointCap.badgeWord,
+    capBadged := reg.endpointCap.badged, capMapAsid := reg.endpointCap.mapAsid,
+    capMapVaddr := reg.endpointCap.mapVaddr, capMapEpoch := reg.endpointCap.mapEpoch,
+    capMapped := reg.endpointCap.mapped, capFreeIndex := reg.endpointCap.freeIndex }
+
+/-- **The registration a service record holds on the endpoint `e`**: its words,
+the kept capability naming `e`. -/
+@[inline] def registrationAt (sv : EndpointService) (e : SeLe4n.ObjId) : ServiceRegistration :=
+  { iface := { ifaceId := sv.interfaceId, methodCount := sv.methodCount,
+               maxMessageSize := sv.maxMessageSize, maxResponseSize := sv.maxResponseSize,
+               requiresGrant := sv.requiresGrant },
+    endpointCap := { target := .object e, rights := sv.capRights,
+                     badgeWord := sv.capBadgeWord, badged := sv.capBadged,
+                     mapAsid := sv.capMapAsid, mapVaddr := sv.capMapVaddr,
+                     mapEpoch := sv.capMapEpoch, mapped := sv.capMapped,
+                     freeIndex := sv.capFreeIndex } }
+
+@[simp] theorem ofRegistration_registered (reg : ServiceRegistration) :
+    (ofRegistration reg).registered = true := rfl
+
+/-- The registration a record holds names its endpoint. -/
+@[simp] theorem registrationAt_target (sv : EndpointService) (e : SeLe4n.ObjId) :
+    (sv.registrationAt e).endpointCap.target = .object e := rfl
+
+/-- The registration a record holds is under its endpoint's id. -/
+@[simp] theorem registrationAt_sid (sv : EndpointService) (e : SeLe4n.ObjId) :
+    (sv.registrationAt e).sid = ServiceId.ofNat e.toNat := rfl
+
+/-- **A registration is the one its endpoint's record holds**: the record keeps
+every word but the target, and the target is the endpoint. -/
+theorem registrationAt_ofRegistration {reg : ServiceRegistration} {e : SeLe4n.ObjId}
+    (h : reg.endpointCap.target = .object e) : (ofRegistration reg).registrationAt e = reg := by
+  obtain ⟨⟨_, _, _, _, _⟩, ⟨t, _, _, _, _, _, _, _, _⟩⟩ := reg
+  simp only at h; subst h; rfl
+
+end EndpointService
+
 end SeLe4n.Model

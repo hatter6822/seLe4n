@@ -1976,7 +1976,7 @@ every thread, notification, reply and scheduling context, and the scheduler. -/
 theorem revokeService_preserves_ipcReachable {sid : ServiceId} {st st' : SystemState}
     (h : ipcReachable st) (hR : revokeService sid st = .ok ((), st')) : ipcReachable st' := by
   have hObjInv := h.objects_invExt
-  have hRw := revokeService_registrationFlagRewrite hR
+  have hRw := revokeService_serviceRecordRewrite hR
   have hL := hRw.lookup hObjInv
   have hBack : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st'.objects[k]? = some o →
       (∀ ep, o ≠ .endpoint ep) → st.objects[k]? = some o := fun k o ho hN => by

@@ -2264,7 +2264,7 @@ ASID table. -/
 theorem revokeService_finaliseFrameAny {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt) :
     FinaliseFrameAny st st' := by
-  have hRw := revokeService_registrationFlagRewrite h
+  have hRw := revokeService_serviceRecordRewrite h
   obtain ⟨reg, _, rfl⟩ := revokeService_ok h
   rw [clearEndpointRegistration_eq_withObjects] at hRw ⊢
   refine ⟨rfl, rfl, hRw.invExt hInv, fun oid => ?_⟩
@@ -2277,7 +2277,7 @@ theorem revokeService_back {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
     {k : SeLe4n.ObjId} {o : KernelObject} (ho : st'.objects[k]? = some o)
     (hN : ∀ ep, o ≠ .endpoint ep) : st.objects[k]? = some o := by
-  rcases (revokeService_registrationFlagRewrite h).lookup hInv k with e | ⟨ep, c, h0, h1⟩
+  rcases (revokeService_serviceRecordRewrite h).lookup hInv k with e | ⟨ep, c, h0, h1⟩
   · rw [← e]; exact ho
   · rw [h1] at ho; cases ho; exact absurd rfl (hN _)
 
@@ -2285,7 +2285,7 @@ theorem revokeService_fwd {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
     {k : SeLe4n.ObjId} {o : KernelObject} (ho : st.objects[k]? = some o)
     (hN : ∀ ep, o ≠ .endpoint ep) : st'.objects[k]? = some o := by
-  rcases (revokeService_registrationFlagRewrite h).lookup hInv k with e | ⟨ep, c, h0, h1⟩
+  rcases (revokeService_serviceRecordRewrite h).lookup hInv k with e | ⟨ep, c, h0, h1⟩
   · rw [e]; exact ho
   · rw [h0] at ho; cases ho; exact absurd rfl (hN _)
 
@@ -2294,7 +2294,7 @@ theorem revokeService_getTcb? {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt)
     (t : SeLe4n.ThreadId) : st'.getTcb? t = st.getTcb? t := by
   unfold SystemState.getTcb?
-  rcases (revokeService_registrationFlagRewrite h).lookup hInv t.toObjId with e | ⟨ep, c, h0, h1⟩
+  rcases (revokeService_serviceRecordRewrite h).lookup hInv t.toObjId with e | ⟨ep, c, h0, h1⟩
   · rw [e]
   · rw [h0, h1]
 
@@ -2303,7 +2303,7 @@ endpoint, before and after. -/
 theorem revokeService_loanWrite {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) (hInv : st.objects.invExt) :
     loanWrite st st' := fun oid => by
-  rcases (revokeService_registrationFlagRewrite h).lookup hInv oid with e | ⟨ep, c, h0, h1⟩
+  rcases (revokeService_serviceRecordRewrite h).lookup hInv oid with e | ⟨ep, c, h0, h1⟩
   · exact Or.inl e
   · exact Or.inr ⟨_, _, h0, h1, fun _ hx => KernelObject.noConfusion hx,
       fun _ _ hx => KernelObject.noConfusion hx⟩

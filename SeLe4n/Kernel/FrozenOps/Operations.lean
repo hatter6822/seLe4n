@@ -1359,9 +1359,9 @@ def frozenVspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
 
 /-- Q7-C5: Frozen service lookup by capability target.
 Mirrors `lookupServiceByRecordedRegistration`, the O(1) lookup the live kernel runs:
-the endpoint records whether a registration names it, and a service's identity
-is its endpoint's, so the lookup reads that endpoint and that one registry key
-(WS-ZA ZA5.4 part 31). -/
+the endpoint records whether a registration names it and the registration's
+words (`Endpoint.service`, WS-ZA ZA5.8), and a service's identity is its
+endpoint's, so the lookup reads that endpoint and no table. -/
 def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
     : FrozenKernel ServiceRegistration :=
   fun st =>
@@ -1369,10 +1369,7 @@ def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
     | some ep =>
       match ep.serviceRegistered with
       | false => .error .objectNotFound
-      | true =>
-        match st.serviceRegistry.get? (ServiceId.ofNat epId.toNat) with
-        | some reg => .ok (reg, st)
-        | none => .error .objectNotFound
+      | true => .ok (ep.service.registrationAt epId, st)
     | none => .error .objectNotFound
 
 -- ============================================================================

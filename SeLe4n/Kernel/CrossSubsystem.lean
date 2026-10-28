@@ -2013,8 +2013,8 @@ theorem noStaleNotificationWaitReferences_frame
 /-- An endpoint's `serviceRegistered` rewrite — the registry's one object write —
 keeps both queue-reference invariants: it keeps every key's presence, every
 TCB, and the queues of the endpoint it rewrites. -/
-theorem noStaleQueueReferences_of_registrationFlagRewrite {st st' : SystemState}
-    (hW : RegistrationFlagRewrite st.objects st'.objects) (hInv : st.objects.invExt) :
+theorem noStaleQueueReferences_of_serviceRecordRewrite {st st' : SystemState}
+    (hW : ServiceRecordRewrite st.objects st'.objects) (hInv : st.objects.invExt) :
     (noStaleEndpointQueueReferences st → noStaleEndpointQueueReferences st') ∧
     (noStaleNotificationWaitReferences st → noStaleNotificationWaitReferences st') := by
   have hNone : ∀ k : SeLe4n.ObjId, st.objects[k]? ≠ none → st'.objects[k]? ≠ none := by
@@ -2164,8 +2164,8 @@ theorem revokeService_preserves_noStaleEndpointQueueReferences
     (hObjInv : st.objects.invExt)
     (hInv : noStaleEndpointQueueReferences st) :
     noStaleEndpointQueueReferences st' :=
-  (noStaleQueueReferences_of_registrationFlagRewrite
-    (revokeService_registrationFlagRewrite hStep) hObjInv).1 hInv
+  (noStaleQueueReferences_of_serviceRecordRewrite
+    (revokeService_serviceRecordRewrite hStep) hObjInv).1 hInv
 
 /-- **WS-RR RR7.19 (the load-bearing negative)**: the disjointness premise is
 not decoration.  `storeObject` writes `.objects`, and
@@ -2235,8 +2235,8 @@ theorem revokeService_preserves_noStaleNotificationWaitReferences
     (hPre : noStaleNotificationWaitReferences st)
     (hStep : revokeService svcId st = .ok ((), st')) :
     noStaleNotificationWaitReferences st' :=
-  (noStaleQueueReferences_of_registrationFlagRewrite
-    (revokeService_registrationFlagRewrite hStep) hObjInv).2 hPre
+  (noStaleQueueReferences_of_serviceRecordRewrite
+    (revokeService_serviceRecordRewrite hStep) hObjInv).2 hPre
 
 -- ============================================================================
 -- X3-C (H-4, part 1): Sharing predicate pair preservation
@@ -2303,8 +2303,8 @@ theorem revokeService_preserves_sharingPairs_objects
     (hPre3 : noStaleNotificationWaitReferences st)
     (hStep : revokeService svcId st = .ok ((), st')) :
     noStaleEndpointQueueReferences st' ∧ noStaleNotificationWaitReferences st' :=
-  let h := noStaleQueueReferences_of_registrationFlagRewrite
-    (revokeService_registrationFlagRewrite hStep) hObjInv
+  let h := noStaleQueueReferences_of_serviceRecordRewrite
+    (revokeService_serviceRecordRewrite hStep) hObjInv
   ⟨h.1 hPre2, h.2 hPre3⟩
 
 /-- X3-C (H-4): **Cross-subsystem invariant preservation under objects-only changes.**

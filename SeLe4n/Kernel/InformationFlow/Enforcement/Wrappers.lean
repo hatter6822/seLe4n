@@ -734,9 +734,10 @@ def revokeServiceChecked
 
 /-- **WS-ZA ZA5.5**: the checked query's write, total: the registration the
 endpoint records staged as the caller's return word, written as the frame's
-six words.  A state with no recorded
-registration is returned unchanged; `recordedRegistrationPresent` rules it
-out. -/
+six words.  The word is the endpoint's own id (a service's identity is its
+endpoint's), read off the endpoint's record with no table read (WS-ZA ZA5.8).
+A state with no recorded registration is returned unchanged;
+`recordedRegistrationPresent` rules it out. -/
 @[inline] def serviceQueryPerform (st : SystemState) (caller : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) : SystemState :=
   match st.getObject? epId with
@@ -744,12 +745,10 @@ out. -/
     match ep.serviceRegistered with
     | false => st
     | true =>
-      match st.serviceRegistry[ServiceId.ofNat epId.toNat]? with
-      | none => st
-      | some reg =>
-        -- The frame's words written in place, no frame record built
-        -- (`writeReturnFrameToTcb_ofWord_eq_words`).
-        st.updateTcb caller (TCB.withReturnWords · reg.sid.val.toUInt64 0 0 0 0 0)
+      -- The frame's words written in place, no frame record built
+      -- (`writeReturnFrameToTcb_ofWord_eq_words`).
+      st.updateTcb caller
+        (TCB.withReturnWords · (ServiceId.ofNat epId.toNat).val.toUInt64 0 0 0 0 0)
   | _ => st
 
 /-- An admitted checked query — the read flow and the recorded registration —
@@ -769,10 +768,8 @@ theorem serviceQueryStaged_of_admitted (ctx : LabelingContext) (caller : SeLe4n.
     split at hP
     · cases hP
     · next hC =>
-      cases hR : st.serviceRegistry[ServiceId.ofNat epId.toNat]? with
-      | none => rw [hR] at hP; cases hP
-      | some reg =>
-        simp only [hObj, hC, hR, Architecture.writeReturnFrameToTcb_ofWord_eq_words]
+      simp only [hObj, hC, EndpointService.registrationAt_sid,
+        Architecture.writeReturnFrameToTcb_ofWord_eq_words]
   · cases hP
 
 /-- An admitted checked revoke — the write flow and the recorded registration —

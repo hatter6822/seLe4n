@@ -799,7 +799,7 @@ writes no thread, context or reply and no scheduler field. -/
 theorem revokeService_preserves_finalisingDeleteBundle {sid : ServiceId} {st st' : SystemState}
     (h : finalisingDeleteBundle st) (hR : revokeService sid st = .ok ((), st')) :
     finalisingDeleteBundle st' := by
-  have hRw := revokeService_registrationFlagRewrite hR
+  have hRw := revokeService_serviceRecordRewrite hR
   have hL := hRw.lookup h.1.2.1
   have hS := revokeService_preserves_scheduler st st' sid hR
   have hLoan := revokeService_loanWrite hR h.1.2.1

@@ -463,13 +463,16 @@ private def fo011_serviceLookup : IO Unit := do
   }
   -- A service's identity is its endpoint's: `⟨42⟩`.
   let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨42⟩ reg
-  -- The endpoint records that a registration names it, which the lookup reads.
+  -- The endpoint records the registration — its flag and words — which the
+  -- lookup reads back.
   let objsMap := (RHTable.empty 16 : RHTable ObjId FrozenKernelObject).insert ⟨42⟩
-    (FrozenKernelObject.endpoint { serviceRegistered := true })
+    (FrozenKernelObject.endpoint (({} : Endpoint).withService (EndpointService.ofRegistration reg)))
   let fst := { emptyFrozenState with
     objects := freezeMap objsMap, serviceRegistry := freezeMap regRt }
   match frozenLookupServiceByCap ⟨42⟩ fst with
-  | .ok (found, _) => expect "found service" (found.sid == ⟨42⟩)
+  | .ok (found, _) =>
+    expect "found service" (found.sid == ⟨42⟩)
+    expect "found the registration the endpoint holds" (found == reg)
   | .error _ => throw <| IO.userError "service lookup should succeed"
 
 /-- FO-012: frozenLookupServiceByCap — missing service returns error -/

@@ -22405,7 +22405,7 @@ run_check "INVARIANT" rg -n '^        \(serviceEndpointWriteAdmitted ctx tid epI
 # The query's word is written as the frame's six words, and the endpoint's
 # record is cleared in its slot.
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_ofWord_eq_words($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^        st\.updateTcb caller \(TCB\.withReturnWords · reg\.sid\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n -U '^      st\.updateTcb caller\n        \(TCB\.withReturnWords · \(ServiceId\.ofNat epId\.toNat\)\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearEndpointRegistration_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem registerServicePerform_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n -U '^        clearEndpointRegistration \(eraseServiceRegistration st \(ServiceId\.ofNat epId\.toNat\)\)\n          reg\.endpointCap \(ServiceId\.ofNat epId\.toNat\)$' SeLe4n/Kernel/Service/Registry.lean
@@ -22464,7 +22464,7 @@ run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityI
 # The invariant states each direction, so a back-link can be read in place of a
 # table walk.  The registry's two directions and the interrupt table's two, in
 # one structure, which ends there.
-run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),\n    st\.serviceRegistry\[sid\]\? = some reg →\n    ∃ e, reg\.endpointCap\.target = \.object e ∧ sid = ServiceId\.ofNat e\.toNat ∧\n      \(objTableBackLinks st\.objects\[e\]\?\)\.1 = true(\n([ \t][^\n]*)?)*\n  serviceFlags : ∀ e : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[e\]\?\)\.1 = true →\n    ∃ reg, st\.serviceRegistry\[ServiceId\.ofNat e\.toNat\]\? = some reg ∧\n      reg\.endpointCap\.target = \.object e(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  registry : ∀ \(sid : ServiceId\) \(reg : ServiceRegistration\),\n    st\.serviceRegistry\[sid\]\? = some reg →\n    ∃ e, reg\.endpointCap\.target = \.object e ∧ sid = ServiceId\.ofNat e\.toNat ∧\n      \(objTableBackLinks st\.objects\[e\]\?\)\.1\.registered = true(\n([ \t][^\n]*)?)*\n  serviceStored : ∀ e : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[e\]\?\)\.1\.registered = true →\n    st\.serviceRegistry\[ServiceId\.ofNat e\.toNat\]\? =\n      some \(\(objTableBackLinks st\.objects\[e\]\?\)\.1\.registrationAt e\)(\n([ \t][^\n]*)?)*\n  irqHandlers : ∀ \(irq : SeLe4n\.Irq\) \(n : SeLe4n\.ObjId\), st\.irqHandlers\[irq\]\? = some n →(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, \(objTableBackLinks st\.objects\[n\]\?\)\.2 = true →\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n\n\n' SeLe4n/Model/TableReferences.lean
 # The consumer: clear back-links mean no table names the object.  Without this
 # the fields would be recorded and never read.
 run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
@@ -22492,8 +22492,21 @@ run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\
 # flag, since the registration's id is the endpoint's own.  A number stored here
 # would be a second answer to "which service is this" that the id already gives.
 run_check "INVARIANT" rg -n -U '^structure Endpoint where(\n([ \t][^\n]*)?)*\n  serviceRegistered : Bool := false$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def objTableBackLinks : Option KernelObject → Bool × Bool$' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def objTableBackLinks : Option KernelObject → EndpointService × Bool$' SeLe4n/Model/TableReferences.lean
 run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
+# The endpoint holds the registration's words beside its flag, and the table
+# and the words are held equal (`serviceStored`) until the table retires.  The
+# back-link is the record while the flag is set and the clear record otherwise,
+# so a clear flag is a clear back-link whatever words an endpoint carries.
+run_check "INVARIANT" rg -n '^structure EndpointService where$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false\)$' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n '^theorem registrationAt_ofRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Interface.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.tableReferencesRecorded\.registry_eq_stored($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n '^      \{ st\.rewriteObject epId \(\.endpoint \(ep\.withService \(EndpointService\.ofRegistration reg\)\)\)$' SeLe4n/Kernel/Service/Registry.lean
+# The lookups read the endpoint's record, not the table: the live one and the
+# frozen one.
+run_check "INVARIANT" rg -n -U '^def lookupServiceByRecordedRegistration[^\n]*(\n([ \t][^\n]*)?)*\n      \| true => \.ok \(ep\.service\.registrationAt epId, st\)$' SeLe4n/Kernel/Service/Registry.lean
+run_check "INVARIANT" rg -n -U '^def frozenLookupServiceByCap[^\n]*(\n([ \t][^\n]*)?)*\n      \| true => \.ok \(ep\.service\.registrationAt epId, st\)$' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n -U '^def bootSafeEndpointCheck[^\n]*(\n([ \t][^\n]*)?)*&& !ep\.serviceRegistered$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^def irqHandlersAndNotificationsReciprocal \(config : PlatformConfig\) : Bool :=\n  config\.irqTable\.all \(fun irq =>(\n([ \t][^\n]*)?)*\n      \| \.notification n => n\.irqBound(\n([ \t][^\n]*)?)*\n  config\.initialObjects\.all fun e =>(\n([ \t][^\n]*)?)*\n      !n\.irqBound \|\| config\.irqTable\.any fun irq => irq\.handler == e\.id' SeLe4n/Platform/Boot.lean
 finalize_report

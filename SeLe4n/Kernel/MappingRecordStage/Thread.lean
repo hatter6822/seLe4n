@@ -128,8 +128,8 @@ theorem retirePendingFaultForResume_mappingStage (st : SystemState) (tid : SeLe4
 
 /-- The registry's one object write — an endpoint's `serviceRegistered` — keeps the
 endpoint's kind and mapping facts. -/
-theorem registrationFlagRewrite_mappingStage {st st' : SystemState}
-    (hW : RegistrationFlagRewrite st.objects st'.objects) : MappingStage st st' :=
+theorem serviceRecordRewrite_mappingStage {st st' : SystemState}
+    (hW : ServiceRecordRewrite st.objects st'.objects) : MappingStage st st' :=
   MappingStage.of_mappingFactsKept (fun h => hW.invExt h) fun h oid => by
     rcases hW.lookup h oid with e | ⟨ep, c, h0, h1⟩
     · exact .inl e
@@ -137,11 +137,11 @@ theorem registrationFlagRewrite_mappingStage {st st' : SystemState}
 
 theorem registerService_mappingStage {reg : ServiceRegistration} {st st' : SystemState}
     (h : registerService reg st = .ok ((), st')) : MappingStage st st' :=
-  registrationFlagRewrite_mappingStage (registerService_registrationFlagRewrite h)
+  serviceRecordRewrite_mappingStage (registerService_serviceRecordRewrite h)
 
 theorem revokeService_mappingStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : MappingStage st st' :=
-  registrationFlagRewrite_mappingStage (revokeService_registrationFlagRewrite h)
+  serviceRecordRewrite_mappingStage (revokeService_serviceRecordRewrite h)
 
 theorem revokeServiceByRecordedRegistration_mappingStage {epId : SeLe4n.ObjId} {st st' : SystemState}
     (h : revokeServiceByRecordedRegistration epId st = .ok ((), st')) : MappingStage st st' := by

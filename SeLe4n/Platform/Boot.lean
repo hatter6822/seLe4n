@@ -908,10 +908,14 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
 /-- PR #889 review round 8: the fields of a boot **endpoint** that can hold a
     thread id — the two intrusive queues' heads and tails.  Destructured by the
     constructor so that a new `Endpoint` field fails this definition and has to
-    be classified. -/
+    be classified.  The service record (the registration flag and its words)
+    names no thread. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered, _serviceInterfaceId,
+      _serviceMethodCount, _serviceMaxMessageSize, _serviceMaxResponseSize, _serviceRequiresGrant,
+      _serviceCapRights, _serviceCapBadgeWord, _serviceCapBadged, _serviceCapMapAsid,
+      _serviceCapMapVaddr, _serviceCapMapEpoch, _serviceCapMapped, _serviceCapFreeIndex⟩ =>
     ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
     ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
@@ -1962,10 +1966,15 @@ a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
     registered on it.  The registration flag is the registry's back-link
     (`SystemState.tableReferencesRecorded`), and the boot installs no service
     registration, so an endpoint that came up carrying one would record a
-    registration no table holds. -/
+    registration no table holds.  The registration's words beside the flag are
+    read only while it is set (`Endpoint.service`, a clear flag is a clear
+    back-link), so they are left unconstrained. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail, _serviceRegistered, _serviceInterfaceId,
+      _serviceMethodCount, _serviceMaxMessageSize, _serviceMaxResponseSize, _serviceRequiresGrant,
+      _serviceCapRights, _serviceCapBadgeWord, _serviceCapBadged, _serviceCapMapAsid,
+      _serviceCapMapVaddr, _serviceCapMapEpoch, _serviceCapMapped, _serviceCapFreeIndex⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
     ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && !ep.serviceRegistered
 
@@ -7997,7 +8006,7 @@ theorem bootFromPlatformChecked_ok_irqHandlers (config : PlatformConfig)
 theorem bootFromPlatformChecked_ok_backLinkedObject_of_config (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
     (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ (false, false)) :
+    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ ({}, false)) :
     ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
   have hBase := bootFromPlatform_objects_of_config config oid obj
   obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
