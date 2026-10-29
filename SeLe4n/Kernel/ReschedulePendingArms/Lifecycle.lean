@@ -25,12 +25,6 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 /-! ### Resume -/
 
-/-- The pre-state form of the hook is the key hook on the thread's pre-state key. -/
-theorem markKeyChangeFrom_eq_of_getTcb {pre st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} (h : pre.getTcb? tid = some tcb) :
-    markKeyChangeFrom pre st tid = markKeyChangeFor st tid (effectiveSchedParams pre tcb) := by
-  unfold markKeyChangeFrom; rw [h]
-
 /-- Resume's mid state writes only the resumed thread's TCB. -/
 theorem resumeReadyMidState_keyInputsEqExcept (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (hT : (st.getTcb? tid).isSome) :
@@ -71,13 +65,13 @@ theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Vali
     have hMidInv := PriorityInheritance.resumeReadyMidState_objects_invExt st vtid.val hInv
     have h1 : stepCovers e st (markKeyChangeFrom st
         (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val) := by
-      rw [markKeyChangeFrom_eq_of_getTcb hT]
       have hS := PriorityInheritance.resumeReadyMidState_scheduler_eq st vtid.val
-      exact stepCovers_markKeyChangeFor hT
-        (resumeReadyMidState_keyInputsEqExcept st vtid.val hInv (by rw [hT]; rfl))
+      have hK := resumeReadyMidState_keyInputsEqExcept st vtid.val hInv (by rw [hT]; rfl)
+      exact ⟨markKeyChangeFrom_covers (fun t ht => ⟨schedKeyView_eq_of_keyInputsEqExcept hK ht,
+          budgetEligibleView_eq_of_keyInputsEqExcept hK ht⟩)
         (fun c _ => Or.inr ⟨fun t ht => by
-          rwa [(resumeReadyMidState_runCoresAgree st vtid.val hInv).queuedOn] at ht, by rw [hS]⟩)
-        (fun c _ hF => by rw [hS]; exact hF)
+          rwa [(resumeReadyMidState_runCoresAgree st vtid.val hInv).queuedOn] at ht, by rw [hS]⟩),
+        fun c _ hF => markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ (by rw [hS]; exact hF)⟩
     have h1Inv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
         vtid.val).objects.invExt := by rw [markKeyChangeFrom_objects]; exact hMidInv
     have h2 := stepCovers_trans h1

@@ -4356,9 +4356,12 @@ def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
       let dom0 := tcb.domain
       let st1 : SystemState := st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      let e0 := hasSufficientBudget st tcb
       let st2 := suspendDropReplenishment st1 home scId
       markKeyChangeParts
-        (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+        (markCandidacyGainFor
+          (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+          tid e0)
         tid p0 d0 dom0
     | _ => st
   | none => st

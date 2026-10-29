@@ -3879,6 +3879,15 @@ theorem markKeyChangeFor_preserves_projection
   markKeyChangeFor_extract_frame (projectState ctx observer) st tid k
     (fun s c => markReschedulePendingOnCore_preserves_projection ctx observer s c)
 
+/-- The candidacy hook, through the mark's frame. -/
+theorem markCandidacyGainFor_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (b : Bool) :
+    projectState ctx observer (markCandidacyGainFor st tid b) =
+      projectState ctx observer st :=
+  markCandidacyGainFor_extract_frame (projectState ctx observer) st tid b
+    (fun s c => markReschedulePendingOnCore_preserves_projection ctx observer s c)
+
 /-- WS-SM SM8.C.8 (non-interference): a write to the mounted declassification
 audit trail is invisible to the information-flow projection.
 

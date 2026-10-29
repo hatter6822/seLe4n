@@ -64,6 +64,11 @@ theorem markKeyChangeFor_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
     MappingStage st (markKeyChangeFor st tid k) :=
   MappingStage.of_objects_eq (markKeyChangeFor_objects st tid k)
 
+/-- The candidacy hook writes reschedule flags only. -/
+theorem markCandidacyGainFor_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    MappingStage st (markCandidacyGainFor st tid b) :=
+  MappingStage.of_objects_eq (markCandidacyGainFor_objects st tid b)
+
 theorem markKeyChangeFrom_mappingStage (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     MappingStage st (markKeyChangeFrom pre st tid) :=
   MappingStage.of_objects_eq (markKeyChangeFrom_objects pre st tid)

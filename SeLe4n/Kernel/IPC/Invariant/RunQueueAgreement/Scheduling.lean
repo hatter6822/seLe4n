@@ -255,7 +255,8 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
               exact hS1.trans
-                (((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
+                ((((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
+                  (markCandidacyGainFor_runQueueStage _ _ _)).trans
                   (markKeyChangeFor_runQueueStage _ _ _)).trans
                   (PriorityInheritance.repropagateFromWaiter_runQueueStage _ _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h

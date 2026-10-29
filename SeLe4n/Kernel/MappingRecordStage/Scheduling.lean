@@ -445,7 +445,8 @@ theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
               exact hS1.trans
-                (((schedContextConfigureBoundPropagate_mappingStage _ _ _ _ hBound _ _).trans
+                ((((schedContextConfigureBoundPropagate_mappingStage _ _ _ _ hBound _ _).trans
+                  (markCandidacyGainFor_mappingStage _ _ _)).trans
                   (markKeyChangeFor_mappingStage _ _ _)).trans
                   (repropagateFromWaiter_mappingStage _ _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
@@ -467,6 +468,7 @@ theorem schedContextUnbind_mappingStage {vScId : SeLe4n.ValidObjId} {st st' : Sy
         · contradiction
         · cases hStep
           refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
+          refine MappingStage.trans ?_ (markCandidacyGainFor_mappingStage _ _ _)
           refine MappingStage.trans ?_
             (MappingStage.of_objects_eq (SchedContextOps.purgeReplenishmentOnCore_objects _ _ _))
           refine MappingStage.trans ?_ (MappingStage.of_objectsAgreeOffRunLinks

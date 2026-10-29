@@ -507,23 +507,27 @@ edge, and the key-change flag is a scheduler write. -/
 theorem waiterChainWriteSet_configurePropagate (st stStored : SystemState)
     (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (ec : CoreId) (fuel : Nat)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (b : Bool) (ec : CoreId) (fuel : Nat)
     (hInvSt : st.objects.invExt) (hInvStored : stStored.objects.invExt)
     (hGet : ∀ t, stStored.getTcb? t = st.getTcb? t) :
-    waiterChainWriteSet (markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
-        stStored scId boundTid boundTcb hBound priority domain) boundTid k) boundTid ec fuel =
+    waiterChainWriteSet (markKeyChangeFor (markCandidacyGainFor
+        (SchedContextOps.schedContextConfigureBoundPropagate
+          stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k)
+        boundTid ec fuel =
       waiterChainWriteSet st boundTid ec fuel := by
-  have hXInv : (markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
-      stStored scId boundTid boundTcb hBound priority domain) boundTid k).objects.invExt := by
-    rw [markKeyChangeFor_objects]
+  have hXInv : (markKeyChangeFor (markCandidacyGainFor
+      (SchedContextOps.schedContextConfigureBoundPropagate
+        stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k).objects.invExt := by
+    rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
     exact SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
       _ _ _ _ _ _ _ hInvStored
   obtain ⟨hH, hE⟩ := PriorityInheritance.chainShape_of_tcbFields _ st (fun t => by
     rw [SystemState.getTcb?_congr_at (st := SchedContextOps.schedContextConfigureBoundPropagate
         stStored scId boundTid boundTcb hBound priority domain)
-        (st' := markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
-          stStored scId boundTid boundTcb hBound priority domain) boundTid k)
-        (tid := t) (by rw [markKeyChangeFor_objects]), ← hGet t]
+        (st' := markKeyChangeFor (markCandidacyGainFor
+          (SchedContextOps.schedContextConfigureBoundPropagate
+            stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k)
+        (tid := t) (by rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]), ← hGet t]
     exact schedContextConfigureBoundPropagate_tcbChainFields stStored scId boundTid boundTcb
       hBound priority domain hInvStored t)
   exact PriorityInheritance.waiterChainWriteSet_congr _ st boundTid ec fuel hXInv hInvSt hH hE
@@ -645,7 +649,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                   (by exact hObjInv) (by exact hStore) t
               refine observableSlotsConfinedToCores_repropagate ?_
                 (waiterChainWriteSet_configurePropagate st stStored _ boundTid boundTcb _ priority
-                  domain _ _ _ hObjInv hInvStored hGetSt)
+                  domain _ _ _ _ hObjInv hInvStored hGetSt)
               unfold SchedContextOps.schedContextConfigureBoundPropagate
               -- The prefix common to every arm: replenish purge then the SC
               -- store, neither of which is confined-relevant.
@@ -670,32 +674,32 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                   -- re-bucket alternative goes first in each group: a plain
                   -- `exact` against a link-write state unfolds it and runs out
                   -- of heartbeats instead of failing.
-                  | (rw [markKeyChangeFor_runQueueOnCore]
+                  | (rw [markKeyChangeFor_runQueueOnCore, markCandidacyGainFor_runQueueOnCore]
                      first
                        | (rw [SystemState.runRequeueOnCore_runQueueOnCore_ne _ _ c _ _ hne]
                           exact hStoredConf.runQueue c hNil)
                        | exact hStoredConf.runQueue c hNil)
-                  | (rw [markKeyChangeFor_currentOnCore]
+                  | (rw [markKeyChangeFor_currentOnCore, markCandidacyGainFor_currentOnCore]
                      first
                        | (rw [SystemState.runRequeueOnCore_currentOnCore]
                           exact hStoredConf.current c hNil)
                        | exact hStoredConf.current c hNil)
-                  | (rw [markKeyChangeFor_activeDomainOnCore]
+                  | (rw [markKeyChangeFor_activeDomainOnCore, markCandidacyGainFor_activeDomainOnCore]
                      first
                        | (rw [SystemState.runRequeueOnCore_activeDomainOnCore]
                           exact hStoredConf.activeDomain c hNil)
                        | exact hStoredConf.activeDomain c hNil)
-                  | (rw [markKeyChangeFor_domainTimeRemainingOnCore]
+                  | (rw [markKeyChangeFor_domainTimeRemainingOnCore, markCandidacyGainFor_domainTimeRemainingOnCore]
                      first
                        | (rw [SystemState.runRequeueOnCore_domainTimeRemainingOnCore]
                           exact hStoredConf.domainTimeRemaining c hNil)
                        | exact hStoredConf.domainTimeRemaining c hNil)
-                  | (rw [markKeyChangeFor_domainScheduleIndexOnCore]
+                  | (rw [markKeyChangeFor_domainScheduleIndexOnCore, markCandidacyGainFor_domainScheduleIndexOnCore]
                      first
                        | (rw [SystemState.runRequeueOnCore_domainScheduleIndexOnCore]
                           exact hStoredConf.domainScheduleIndex c hNil)
                        | exact hStoredConf.domainScheduleIndex c hNil)
-                  | (rw [markKeyChangeFor_machine]
+                  | (rw [markKeyChangeFor_machine, markCandidacyGainFor_machine]
                      first
                        | (rw [SystemState.runRequeueOnCore_machine]; exact hStoredConf.regs c hNil)
                        | exact hStoredConf.regs c hNil)

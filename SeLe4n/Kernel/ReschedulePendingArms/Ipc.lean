@@ -603,10 +603,14 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                           hS4 rfl).trans
                         (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1)
                           hS3 rfl)).trans k2.runCoresAgree)
-                    · show schedKeyView s4 t = schedKeyView st t
-                      rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
-                        schedKeyView_eq_of_keyInputsEqExcept k3 hc,
-                        schedKeyView_eq_of_keyInputsEq k2]
+                    · show schedKeyView s4 t = schedKeyView st t ∧
+                        budgetEligibleView s4 t = budgetEligibleView st t
+                      exact ⟨by rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
+                          schedKeyView_eq_of_keyInputsEqExcept k3 hc,
+                          schedKeyView_eq_of_keyInputsEq k2],
+                        by rw [budgetEligibleView_eq_of_keyInputsEqExcept k4 hs,
+                          budgetEligibleView_eq_of_keyInputsEqExcept k3 hc,
+                          budgetEligibleView_eq_of_keyInputsEq k2]⟩
                     · show s4.scheduler = st.scheduler
                       rw [storeObject_scheduler_eq _ _ _ _ hS4, storeObject_scheduler_eq _ _ _ _ hS3,
                         storeDonationFramePush_scheduler_eq hS2,

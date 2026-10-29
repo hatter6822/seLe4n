@@ -1395,6 +1395,16 @@ theorem markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp
     (fun _ => markKeyChangeFor_runQueueOnCore st tid k _)
     (fun _ => markKeyChangeFor_currentOnCore st tid k _) (h c')
 
+/-- The candidacy hook only ever raises reschedule-pending flags. -/
+theorem markCandidacyGainFor_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool)
+    (h : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (markCandidacyGainFor st tid b) := fun c' =>
+  schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+    (.of_objects_eq (markCandidacyGainFor_objects st tid b)) (markCandidacyGainFor_machine st tid b)
+    (fun _ => markCandidacyGainFor_runQueueOnCore st tid b _)
+    (fun _ => markCandidacyGainFor_currentOnCore st tid b _) (h c')
+
 theorem schedulerInvariantStructuralRegNodup_perCore_to_reg
     {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore st c) :
     schedulerInvariantStructuralReg_perCore st c := h.1

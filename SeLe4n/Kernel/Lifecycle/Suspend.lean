@@ -412,7 +412,9 @@ def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : Co
     let p0 := tcb.boostedPriority
     let d0 := effectiveDeadline st tcb
     let dom0 := tcb.domain
-    let st2 := markKeyChangeParts (resumeReadyMidState st tid) tid p0 d0 dom0
+    let st2 := markKeyChangeParts
+      (markCandidacyGainFor (resumeReadyMidState st tid) tid (hasSufficientBudget st tcb))
+      tid p0 d0 dom0
     let st3 := enqueueRunnableOnCore st2 target tid
     if target == executingCore then handleRescheduleOnCoreState st3 executingCore
     else st3
@@ -430,7 +432,9 @@ theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidTh
     unfold resumeThreadOnCore resumePerform
     simp only [hT, hS, Bool.false_eq_true, ↓reduceIte]
     have hM : markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val
-        = markKeyChangeParts (resumeReadyMidState st vtid.val) vtid.val tcb.boostedPriority
+        = markKeyChangeParts
+            (markCandidacyGainFor (resumeReadyMidState st vtid.val) vtid.val
+              (hasSufficientBudget st tcb)) vtid.val tcb.boostedPriority
             (effectiveDeadline st tcb) tcb.domain := by
       unfold markKeyChangeFrom
       simp only [hT]
