@@ -652,6 +652,63 @@ theorem toList_append (r : AuditRing) (e : DeclassificationEvent)
       rw [List.getElem_append_right (by simp)]
       simp [entry, append, h]
 
+/-- WS-ZA ZA5.13: **an event written over a slot's own cells**: every field of
+the slot's event `e` replaced — the actor's two inside the slot's actor cell and
+the snapshot's ten inside its words cell — so a slot the ring alone holds
+(`AuditRing.fresh`) is rewritten without building a record, an actor or a
+`TaintWords`.  It reads nothing of `e` (`overwrite_eq`). -/
+@[inline] def _root_.SeLe4n.Kernel.DeclassificationEvent.overwrite (e : DeclassificationEvent)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) : DeclassificationEvent :=
+  { e with
+    srcDomain := srcDomain
+    dstDomain := dstDomain
+    targetObject := targetId
+    authorizationBasis := .policyRule
+    timestamp := timestamp
+    originatingCore := c
+    actor := { e.actor with subject := subject, domain := actorDomain }
+    predecessorWords := { e.predecessorWords with
+      tag0 := w0, tag1 := w1, tag2 := w2, tag3 := w3, tag4 := w4, tag5 := w5, tag6 := w6,
+      tag7 := w7, count := wc, saturated := ws } }
+
+theorem _root_.SeLe4n.Kernel.DeclassificationEvent.overwrite_eq (e : DeclassificationEvent)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) :
+    e.overwrite srcDomain dstDomain targetId timestamp c subject actorDomain
+        w0 w1 w2 w3 w4 w5 w6 w7 wc ws =
+      { srcDomain := srcDomain, dstDomain := dstDomain, targetObject := targetId,
+        authorizationBasis := .policyRule, timestamp := timestamp, originatingCore := c,
+        actor := { subject := subject, domain := actorDomain },
+        predecessorWords := ⟨w0, w1, w2, w3, w4, w5, w6, w7, wc, ws⟩ } := rfl
+
+/-- WS-ZA ZA5.13: **record one entry by rewriting its slot**: the slot after
+the window is handed to `f` where it stands (`Array.modify`), so a slot whose
+event the ring alone holds is rewritten in its own cells; the window grows by
+one.  At capacity the ring is returned as it is.  A rewrite that ignores the
+slot's old event is the ring's record (`recordWith_const`). -/
+@[inline] def recordWith (r : AuditRing) (f : DeclassificationEvent → DeclassificationEvent) :
+    AuditRing :=
+  if h : r.length < maxDeclassificationAuditEntries then
+    ⟨⟨r.slots.toArray.modify (slotOf (r.epoch + r.length)) f, by simp⟩, r.length + 1, r.epoch, h⟩
+  else r
+
+/-- WS-ZA ZA5.13: a rewrite that writes `e` whatever the slot held is the
+ring's record of `e`. -/
+theorem recordWith_const (r : AuditRing) (f : DeclassificationEvent → DeclassificationEvent)
+    (e : DeclassificationEvent) (hf : ∀ x, f x = e) : r.recordWith f = r.append e := by
+  unfold recordWith append
+  split
+  · next h =>
+    congr 1
+    apply Vector.ext
+    intro i hi
+    simp only [Vector.getElem_set, Vector.getElem_mk, Array.getElem_modify, hf]
+    split <;> simp_all
+  · rfl
+
 /-- WS-ZA ZA5.10: **drain `k` entries**: the epoch advances by `k` and the
 window loses its first `k` entries; the slots are not written. -/
 def dropFront (r : AuditRing) (k : Nat) : AuditRing :=

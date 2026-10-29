@@ -1405,7 +1405,7 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
     dispatchInvocationCheckedR ctx decoded.syscallId decoded.capAddr regs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   obtain ⟨-, -, hFirst, hNotYield⟩ := routedInvocation_classic _ hRouted
-  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hFirst hNotYield
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
     Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
@@ -1560,7 +1560,7 @@ theorem dispatchConfigureCheckedR_eq (ctx : LabelingContext)
     rw [hSid]; rfl
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
-  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hFirst hNotYield
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
     Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,
@@ -1790,7 +1790,7 @@ theorem dispatchServiceRegisterCheckedR_eq (ctx : LabelingContext)
     rw [hSid]; rfl
   have hNotYield : decoded.syscallId ≠ .yield := by
     rw [hSid]; exact fun h => SyscallId.noConfusion h
-  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hFirst hNotYield
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ hNotYield
   intro st tcb rootCn ref _ _ hRef
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel, hFirst,
     Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap, syscallResolveCap, hRef,

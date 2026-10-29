@@ -459,8 +459,7 @@ theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
     dispatchSendCheckedR ctx decoded.capAddr SeLe4n.arm64DefaultLayout rf mi.length tid
         executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
-  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hSend]; rfl)
-    (by rw [hSend]; decide) st
+  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hSend]; decide) st
   intro tcb rootCn ref hTcb hRoot hRef
   have hArm := sendOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -684,8 +683,7 @@ theorem dispatchCallCheckedR_eq (ctx : LabelingContext)
     dispatchCallCheckedR ctx decoded.capAddr SeLe4n.arm64DefaultLayout rf mi.length tid
         executingCore st =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
-  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hCall]; rfl)
-    (by rw [hCall]; decide) st
+  apply dispatchOperandCheckedR_eq_at ctx decoded tid executingCore _ (by rw [hCall]; decide) st
   intro tcb rootCn ref hTcb hRoot hRef
   have hArm := callOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -972,8 +970,7 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
         decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hReply]; rfl)
-    (by rw [hReply]; decide)
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hReply]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArm := replyOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -1464,8 +1461,7 @@ theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
     (hReplyAddr : len ≠ 0 → decoded.msgRegs[0]? = some ⟨replyAddr.toNat⟩) :
     dispatchReceiveCheckedR ctx decoded.capAddr len replyAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRecv]; rfl)
-    (by rw [hRecv]; decide)
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRecv]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArgs : len ≠ 0 → decodeRecvArgs decoded = .ok { replyCPtr := replyAddr } := by
     intro hN

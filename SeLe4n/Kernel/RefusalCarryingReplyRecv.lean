@@ -705,8 +705,7 @@ theorem dispatchReplyRecvCheckedR_eq (ctx : LabelingContext)
     dispatchReplyRecvCheckedR ctx decoded.capAddr layout rf decoded.msgInfo.length
         decoded.msgInfo.extraCaps decoded.msgInfo.label tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
-  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRR]; rfl)
-    (by rw [hRR]; decide)
+  apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hRR]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArm := replyRecvOperandArmThenTaintR_eq ctx decoded tid executingCore
     st.declassificationAuditEpoch st.declassificationAudit.length
