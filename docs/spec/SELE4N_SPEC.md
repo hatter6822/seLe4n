@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.162` (`lakefile.toml`) |
+| **Package version** | `0.36.163` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 526,127 across 481 Lean files |
 | **Test LoC** | 87,402 across 70 Lean test suites |
@@ -5690,8 +5690,8 @@ Every kernel object has a decidable well-formedness predicate:
   `RegisterRoutedSyscall.invoke`, reading each argument as the register's
   word (`msgRegOfFile`; each decoder's register-file form is equal to it,
   `decodeXArgs_eq_by`).  `dispatchInvocationCheckedR_eq` makes the routed arm
-  `dispatchSyscallChecked`.  The declassifications and the audit calls keep
-  the general decode (ZA5.13); the in-place retype is deleted; the
+  `dispatchSyscallChecked`.  The declassifications and the audit calls are
+  routed as their own arm at `v0.36.163` (below); the in-place retype is deleted; the
   scheduling-context configure is routed at `v0.36.98` and the service
   register at `v0.36.155`, both as the one-overflow-word arm below.
 - **The service syscalls** (`v0.36.155`, WS-ZA ZA5.5).  The register route's
@@ -5820,9 +5820,33 @@ Every kernel object has a decidable well-formedness predicate:
   call there keeps the per-edge path over the words captured at its plan's
   sources (`planSourceWords`), reached only through the decode.  A recorded
   event's actor snapshot decodes the actor's words
-  (`declassificationActorTaint`).  `SeLe4n.Testing.TaintReaderCompiledReachCensus`
+  (`declassificationActorTaint`); since `v0.36.163` the event holds the words
+  themselves (below).  `SeLe4n.Testing.TaintReaderCompiledReachCensus`
   fails the build if a committing `@[export]` reaches the reader along what the
   compiler runs.
+- **The declassification and audit calls run on the register file**
+  (`v0.36.163`, WS-ZA ZA5.13).  The entry routes `.declassify`,
+  `.declassifySignal`, `.auditRead` and `.auditDrain` as
+  `RegisterRoutedSyscall.audited` (`routedAudited`), reading each argument as
+  the register's word, behind the shared operand check;
+  `dispatchAuditedCheckedR_eq` makes the routed arm `dispatchSyscallChecked`.
+  Each call has an admitted form, every check the specification makes read
+  from the pre-state, and the specification's arm otherwise (`auditedArmSpec`),
+  each with its fused taint step.  A downgrade writes its event over the audit
+  ring's next slot in place (`AuditRing.recordEvent`, equal to
+  `AuditRing.append` by `recordEvent_eq`); the event holds the actor's taint
+  words as its snapshot (`DeclassificationEvent.predecessorWords`, whose decode
+  is `predecessorTags`).  An audit read and drain walk the ring's live window
+  (`auditWindowVisibleCount`, `auditWindowFindVisible`,
+  `auditWindowAllVisible`, each equal to the list view) and build neither the
+  trail nor its visible view.  The declassified signal's admitted form is the
+  stored badge (no bound receiver, no waiter); the read's covers the status,
+  field and actor opcodes (0 to 9, 21 to 24).  Other cases take the
+  specification's arm.  The shipped QEMU labeling is unchanged and refuses all
+  four calls (`qemuVirt_shippedLabeling_denies`); the allocation exerciser
+  measures them on its own test-image entry (`exerciserKernelMain`), whose
+  labeling permits one downgrade and configures the audit monitor.  Each reads
+  0 allocations, and so does an IPC carrying the resulting taint.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any

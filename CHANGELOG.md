@@ -1,3 +1,93 @@
+## v0.36.163 — WS-ZA ZA5.13: the declassification and audit calls are routed and read 0
+
+`.declassify`, `.declassifySignal`, `.auditRead` and `.auditDrain` run on the
+register file, check first and write in place. The allocation exerciser
+measures each under a labeling only its test image boots, and each reads 0 on
+its first call and in steady state, as does an IPC carrying the taint the
+downgrade leaves.
+
+- **The route.** The register-file routing gains the audited arm
+  (`RegisterRoutedSyscall.audited`, `routedAudited`,
+  `decodeSyscallArgsFromState_of_routedAudited`). It reads the operand address
+  and the arguments as the registers' words (`auditedArgWord`), so no decode
+  record or message array is built.
+  - The arm runs behind the shared operand check (`dispatchAuditedCheckedR`),
+    proven equal to the specification (`dispatchAuditedCheckedR_eq`,
+    `syscallEntryCheckedR_eq`).
+  - The operand check's theorem no longer assumes the classic lookup order
+    (`dispatchOperandCheckedR_eq`), so the audit calls' target-first order is
+    covered by it.
+- **The admitted forms.** Each call reads every check the specification makes
+  from the pre-state and then writes in place. Otherwise it runs the
+  specification's arm (`auditedArmSpec`, `dispatchWithCapChecked_eq_auditedArmSpec`)
+  and its fused taint step. All of it is in
+  `SeLe4n/Kernel/RefusalCarryingDeclassification.lean`.
+  - **The downgrade** (`declassifyAdmitted`) writes its event over the ring's
+    next slot (`AuditRing.recordEvent`, equal to `AuditRing.append` by
+    `recordEvent_eq`). The event's actor and snapshot words are written over
+    the slot's own cells (`DeclassificationEvent.overwrite`,
+    `DeclassificationActor.overwrite`, `TaintWords.overwrite`), and the boot
+    gives each slot cells of its own (`AuditRing.freshEvent`).
+  - **The event holds the actor's words**: `DeclassificationEvent.predecessorTags`
+    is now the `predecessorWords : TaintWords` field, with `predecessorTags` its
+    decode, so a record copies ten scalars instead of building a tag list.
+  - **The audit read and drain** walk the ring's live window
+    (`auditWindowVisibleCount`, `auditWindowFindVisible`,
+    `auditWindowAllVisible`, each proven equal to the list view) and build
+    neither the trail nor its visible view. The word is staged as the frame's
+    six words.
+  - **The declassified signal** admits the stored badge
+    (`declassifySignalStoredAdmitted`), where the signal refuses nothing
+    (`notificationSignalBoundOnCore_stored_ok`). Its writes return the state
+    alone (`declassifySignalStoredPerform`), since returning the result from an
+    out-of-line function built the result's two cells.
+- **The exerciser's image.** The shipped `virt` labeling denies every downgrade
+  and has no audit monitor (`qemuVirt_shippedLabeling_denies`), so the four
+  calls refuse there and measure nothing. The test image boots its own entry
+  (`exerciserKernelMain`, `lean_kernel_main_qemu_virt_exerciser`,
+  `SeLe4n/Platform/QemuVirt/Exerciser.lean`), which differs from the shipped
+  deployment in three ways:
+  - the lower partition is labeled `kernelTrusted`;
+  - one downgrade is allowed, from it to the upper partition
+    (`qemuVirtExerciserDeclassificationPolicy`);
+  - the audit monitor's clearance is the top, and the root task holds the boot
+    audit capability in slot 15.
+  - The shipped entry and `Platform/QemuVirt/Contract.lean` are unchanged
+    (`qemuVirt_deploymentLabeling` holds by `rfl`). The boot-entry contract
+    holds each image to its own call and refuses the other's
+    (`SeLe4n/Testing/BootEntryContract.lean`). The HAL calls the exerciser's
+    entry only on an image built with both `board_qemu_virt` and
+    `smp_exercisers`.
+- **The scenario** (`DECLASSIFICATION_SCENARIO`, `smp_exercisers.rs`)
+  declassifies an upper-domain notification and signals it through the
+  declassifying signal. It then sends the resulting taint through a blocked
+  send and the receive that takes it, reads the trail's status and an entry,
+  drains it and deletes the notification.
+- **Measured** (fresh untraced archive, `--lean-kernel`), first call and steady
+  state:
+
+  | Call | Before | Now |
+  |---|---|---|
+  | declassify | 50 / 52 | 0 / 0 |
+  | declassified signal | 69 / 72 | 0 / 0 |
+  | audit status read | 37 / 37 | 0 / 0 |
+  | audit entry read | 40 / 40 | 0 / 0 |
+  | audit drain | 41 / 41 | 0 / 0 |
+  | tainted send, tainted receive | 0 / 0 | 0 / 0 |
+
+  - On the way the downgrade read 5: the event, actor and words cells were
+    rebuilt, and so were the state and the ring, behind a join point. The
+    signal read 7.
+  - The second page table's first carve now reads 14 (pinned 13 before). It
+    carves into the slot that held the audit capability, whose target is
+    fieldless (`CapTarget.auditTrail`), so there is no cell to write the
+    object's id over.
+- **Forks**, registered in `docs/REGISTERED_DEBT.md` and closed by ZA6.2:
+  - a declassified signal that wakes a receiver takes the general form;
+  - an audit read of the basis, refusal-ledger or causality opcodes takes the
+    general form (the admitted read covers opcodes 0 to 9 and 21 to 24), and a
+    field chunk past the first may build a number.
+
 ## v0.36.162 — WS-ZA ZA5.12: the taint table retires and the taint is read off the objects
 
 The declassification taint table is gone from both states. The taint is a
