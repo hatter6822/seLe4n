@@ -23,7 +23,7 @@ invocation into its decode and its perform (`RefusalCarrying.ofChecked`).  The
 admission is every check the specification makes, read from the state before
 anything is written; when it holds, the call writes in place — a downgrade's
 event over the audit ring's next slot (`DeclassificationEvent.overwrite`,
-`AuditRing.recordWith`), the snapshot words read off the actor as scalars
+`AuditRing.recordEvent`), the snapshot words read off the actor as scalars
 (`withTaintWordsAt`); an audit read's word computed by walking the ring's live
 window, never building the trail (`AuditRing.toList`) or its visible view —
 and is proven to be what the specification does.  Otherwise the call takes the
@@ -98,16 +98,16 @@ permits it, and the trail has room. -/
     decide (st.declassificationAudit.length < maxDeclassificationAuditEntries)
 
 /-- **A downgrade's event written over the audit ring's next slot**
-(`AuditRing.recordWith`, `DeclassificationEvent.overwrite`), stamped `ts` and
+(`AuditRing.recordEvent`, `DeclassificationEvent.overwrite`), stamped `ts` and
 carrying the actor's taint words handed in as scalars.  Out of line, so the
 stamp and the words are read before the state is handed over
 (`recordEventInPlace_eq`). -/
 @[noinline] def recordEventInPlace (c : Concurrency.CoreId) (actorTid : SeLe4n.ThreadId)
     (actorDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (ts : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
     (st : SystemState) : SystemState :=
-  { st with declassificationAudit :=
-      st.declassificationAudit.recordWith (·.overwrite actorDomain dstDomain targetId ts c actorTid
-        actorDomain a0 a1 a2 a3 a4 a5 a6 a7 ac as) }
+  { st with
+    declassificationAudit := st.declassificationAudit.recordEvent actorDomain dstDomain targetId
+      ts c actorTid actorDomain a0 a1 a2 a3 a4 a5 a6 a7 ac as }
 
 /-- The in-place record is the ring's record of the event the state stamps. -/
 theorem recordEventInPlace_eq (c : Concurrency.CoreId) (actorTid : SeLe4n.ThreadId)
@@ -121,7 +121,7 @@ theorem recordEventInPlace_eq (c : Concurrency.CoreId) (actorTid : SeLe4n.Thread
           (declassifyStoreEventWithTags c { subject := actorTid, domain := actorDomain }
             actorDomain dstDomain targetId w st) } := by
   unfold recordEventInPlace
-  rw [AuditRing.recordWith_const _ _ _ (fun e => DeclassificationEvent.overwrite_eq e ..)]
+  rw [AuditRing.recordEvent_eq]
   rfl
 
 /-- **An admitted downgrade's writes**: its event over the ring's next slot
