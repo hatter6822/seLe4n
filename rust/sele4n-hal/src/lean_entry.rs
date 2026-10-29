@@ -4,7 +4,9 @@
 //! definition from that module is used: it evaluates the module's top-level
 //! constants, runs its `initialize` blocks and calls the initializers of
 //! everything the module imports.  The library root's initializer,
-//! `initialize_seLe4n_SeLe4n`, therefore initializes the whole kernel.
+//! `initialize_seLe4n_SeLe4n`, therefore initializes the whole kernel.  The
+//! QEMU `virt` exerciser image calls its own library root's initializer
+//! instead, which imports `SeLe4n` and so runs the kernel's first.
 //! Upstream's `lean_initialize_runtime_module` and
 //! `lean_io_mark_end_initialization` are not called: they set up per-thread
 //! heaps, the task manager and an "initialization finished" flag that the
@@ -189,13 +191,32 @@ pub fn initialise_lean_library() -> LeanLibraryInitialised {
         /// `builtin = 1` because this is the image the kernel boots, not a
         /// plugin loaded into a running environment.  It returns an `IO` result
         /// whose one reference the caller owns.
+        #[cfg(not(all(feature = "board_qemu_virt", feature = "smp_exercisers")))]
         fn initialize_seLe4n_SeLe4n(builtin: u8) -> lean_runtime::LeanIoResult;
+        /// # Safety
+        ///
+        /// WS-ZA ZA5.13: the initializer of the exerciser's own library root,
+        /// `SeLe4n.Platform.QemuVirt.Exerciser`, on the QEMU `virt` exerciser
+        /// image, under the same contract.  That module imports `SeLe4n`, so
+        /// its initializer runs the kernel's first and then the exerciser's.
+        /// It is a symbol of `libsele4n_exerciser.a`, which only this image
+        /// links; the shipped images do not carry it.
+        #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
+        fn initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(
+            builtin: u8,
+        ) -> lean_runtime::LeanIoResult;
     }
     let initializer = || {
         // SAFETY: called once, on the primary, before any Lean code runs;
         // `initialise_with`'s guard refuses a second call before it gets here,
         // and nothing else in the image calls this symbol.
-        unsafe { initialize_seLe4n_SeLe4n(1) }.into_obj()
+        #[cfg(not(all(feature = "board_qemu_virt", feature = "smp_exercisers")))]
+        let result = unsafe { initialize_seLe4n_SeLe4n(1) };
+        // SAFETY: as above — the exerciser image's library root, under the
+        // same contract.
+        #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
+        let result = unsafe { initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(1) };
+        result.into_obj()
     };
     // SAFETY: the initializer returns an `IO` result whose one reference is
     // handed over, which is `initialise_or_halt`'s contract.
@@ -437,7 +458,8 @@ pub fn enter_lean_kernel(
     // it is consumed here, so this call happens at most once per
     // initialization.  `dtb` is the fresh `ByteArray` just built, whose one
     // reference is handed over.  WS-BP BP8.1: the entry is the board's — both
-    // are in every archive, and the image calls the one its board names.
+    // board entries are in the kernel's archive, and the image calls the one
+    // its board names; the exerciser's is only in the exerciser image's.
     #[cfg(not(feature = "board_qemu_virt"))]
     let res = unsafe { lean_kernel_main(dtb) };
     // SAFETY: as above — the `virt` board's entry under the same contract.

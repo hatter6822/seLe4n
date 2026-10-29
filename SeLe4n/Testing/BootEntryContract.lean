@@ -19,6 +19,11 @@ import Lean.Compiler.ImplementedByAttr
 -- — the two halves disagreeing in the one direction neither can catch.
 import SeLe4n
 import SeLe4n.Platform.Staged
+-- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`),
+-- outside `SeLe4n.lean`'s closure so the shipped images do not carry it; its
+-- boot entry is a symbol of the exerciser image's archive, so it is in this
+-- environment beside the production ones.
+import SeLe4n.Platform.QemuVirt.Exerciser
 
 /-!
 # The hardware boot entry's contract, decided by the elaborator

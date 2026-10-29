@@ -15,6 +15,11 @@ import Lean.Elab.Command
 -- would read as absent and this census would pass vacuously about it.
 import SeLe4n
 import SeLe4n.Platform.Staged
+-- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`),
+-- outside `SeLe4n.lean`'s closure so the shipped images do not carry it; its
+-- boot entry is a symbol of the exerciser image's archive, so it is in this
+-- environment beside the production ones.
+import SeLe4n.Platform.QemuVirt.Exerciser
 
 /-!
 # WS-RR RR7.13 — every state-committing `@[export]` is classified

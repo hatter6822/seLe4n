@@ -20,6 +20,15 @@
 const LEAN_ARCHIVE_DIR: &str = ".lake/build/aarch64-unknown-none-softfloat";
 const LEAN_ARCHIVE: &str = "libsele4n.a";
 const LEAN_ARCHIVE_ROOTS: &str = "libsele4n.roots.ld";
+/// WS-ZA ZA5.13: the allocation exerciser's Lean half, which the same builder
+/// writes into the same directory — its own library
+/// (`SeLe4n.Platform.QemuVirt.Exerciser`, outside the kernel's import closure)
+/// and the linker script rooting the link at that library's initializer and
+/// boot entry.  Only the QEMU `virt` exerciser image links them; the builder's
+/// self-test holds its `EXERCISER_ARCHIVE` and `EXERCISER_ROOTS_SCRIPT` equal
+/// to these two.
+const LEAN_EXERCISER_ARCHIVE: &str = "libsele4n_exerciser.a";
+const LEAN_EXERCISER_ARCHIVE_ROOTS: &str = "libsele4n_exerciser.roots.ld";
 
 /// WS-SM SM1.B regression guard: every build re-reads `src/boot.S` and
 /// verifies the `secondary_entry` block continues to reach the per-CPU
@@ -264,9 +273,25 @@ fn main() {
         // the link with the path it could not open rather than linking a
         // kernel without its Lean half; a check-only build (the cross clippy
         // lane) never links and never needs them.
+        //
+        // WS-ZA ZA5.13: the QEMU `virt` exerciser image (`board_qemu_virt` with
+        // `smp_exercisers`) also links the exerciser's archive and roots, ahead
+        // of the kernel's because it references the kernel's symbols.  No
+        // other image names them, so the shipped RPi5 and `virt` images carry
+        // neither the exerciser's boot entry nor its labeling.
         if std::env::var_os("CARGO_FEATURE_HW_TARGET").is_some() {
             let archive_dir = format!("{manifest_dir}/../../{LEAN_ARCHIVE_DIR}");
-            for input in [LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS] {
+            let exerciser_image = std::env::var_os("CARGO_FEATURE_BOARD_QEMU_VIRT").is_some()
+                && std::env::var_os("CARGO_FEATURE_SMP_EXERCISERS").is_some();
+            let exerciser_inputs: &[&str] = if exerciser_image {
+                &[LEAN_EXERCISER_ARCHIVE, LEAN_EXERCISER_ARCHIVE_ROOTS]
+            } else {
+                &[]
+            };
+            for &input in exerciser_inputs
+                .iter()
+                .chain([LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS].iter())
+            {
                 println!("cargo:rustc-link-arg-bin=sele4n-kernel={archive_dir}/{input}");
                 println!("cargo:rerun-if-changed={archive_dir}/{input}");
             }
@@ -2429,6 +2454,17 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
         "the Lean library initializer: it must run before any Lean definition \
          is used, which is before the boot core can be marked ready",
     ),
+    // WS-ZA ZA5.13: the exerciser image's library initializer, in place of
+    // the root's — the image calls exactly one of the two, by `cfg`.
+    (
+        "src/lean_entry.rs",
+        "initialise_lean_library",
+        "initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser",
+        1,
+        "the QEMU `virt` exerciser image's library initializer, `initialize_seLe4n_SeLe4n` \
+         on that image: it initializes the kernel and then the exerciser, under \
+         the same guard, before any Lean definition is used",
+    ),
     // WS-RR RR5.6/RR5.7 shrank this table from three entries to one: the SVC
     // dispatch seam and the cross-core suspend seam now consult the gate and
     // have moved to `LEAN_READY_GATED_SEAMS`.  What remained was the boot
@@ -2479,6 +2515,13 @@ const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = 
         1,
         "the library initializer: it runs before the install, on the boot core \
          alone, with IRQs masked",
+    ),
+    (
+        "src/lean_entry.rs",
+        "initialise_lean_library",
+        "initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser",
+        1,
+        "the QEMU `virt` exerciser image's library initializer, under the same ordering",
     ),
     (
         "src/trap.rs",

@@ -94,6 +94,12 @@ import check_fp_simd_free_objects as fp_gate  # noqa: E402
 import check_kernel_entry_exports as entry_gate  # noqa: E402
 
 ROOT_MODULE = "SeLe4n"
+# WS-ZA ZA5.13: the allocation exerciser's library root, outside `ROOT_MODULE`'s
+# closure, and the Lake library that names it.  Its modules beyond the kernel's
+# closure are a second archive with their own roots, which only the exerciser
+# image links, so the shipped images carry none of it.
+EXERCISER_ROOT_MODULE = "SeLe4n.Platform.QemuVirt.Exerciser"
+EXERCISER_LIBRARY = "SeLe4nQemuVirtExerciser"
 PACKAGE_PREFIX = "SeLe4n"
 STDLIB_PREFIXES = ("Init", "Std")
 TESTING_PREFIX = "SeLe4n.Testing"
@@ -102,6 +108,8 @@ ARCHIVE = OUT_DIR / "libsele4n.a"
 UNRESOLVED_REPORT = OUT_DIR / "libsele4n.unresolved"
 # WS-BP BP5.2: the link's roots, as the linker script both links read.
 ROOTS_SCRIPT = OUT_DIR / "libsele4n.roots.ld"
+EXERCISER_ARCHIVE = OUT_DIR / "libsele4n_exerciser.a"
+EXERCISER_ROOTS_SCRIPT = OUT_DIR / "libsele4n_exerciser.roots.ld"
 PROVENANCE = OUT_DIR / "libsele4n.provenance"
 HAL_BUILD_SCRIPT = REPO / "rust/sele4n-hal/build.rs"
 SHIM_INCLUDE = REPO / "rust/sele4n-hal/lean_include"
@@ -238,8 +246,8 @@ def compile_flags(tc: dict[str, str]) -> list[str]:
 # The closure
 # ---------------------------------------------------------------------------
 
-def elaborator_closure() -> list[str]:
-    closure_probe = CLOSURE_PROBE_TEMPLATE.replace("@ROOT@", ROOT_MODULE)
+def elaborator_closure(root: str = ROOT_MODULE) -> list[str]:
+    closure_probe = CLOSURE_PROBE_TEMPLATE.replace("@ROOT@", root)
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "closure_probe.lean"
         probe.write_text(closure_probe)
@@ -247,8 +255,8 @@ def elaborator_closure() -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
-def lake_modules() -> list[str]:
-    out = run(["lake", "query", f"{ROOT_MODULE}:modules"], cwd=REPO).stdout
+def lake_modules(library: str = ROOT_MODULE) -> list[str]:
+    out = run(["lake", "query", f"{library}:modules"], cwd=REPO).stdout
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
@@ -482,12 +490,12 @@ def diagnostic_census(modules: list[str]) -> dict[str, int]:
     return total
 
 
-def build_archive(modules: list[str], tc: dict[str, str]) -> None:
-    ARCHIVE.unlink(missing_ok=True)
-    partial = ARCHIVE.with_suffix(".a.partial")
+def build_archive(modules: list[str], tc: dict[str, str], archive: Path = ARCHIVE) -> None:
+    archive.unlink(missing_ok=True)
+    partial = archive.with_suffix(".a.partial")
     partial.unlink(missing_ok=True)
     run([tc["llvm-ar"], "crsD", str(partial), *[str(object_path(m)) for m in sorted(modules)]])
-    partial.replace(ARCHIVE)
+    partial.replace(archive)
 
 
 # ---------------------------------------------------------------------------
@@ -681,7 +689,8 @@ def parse_roots_script(text: str) -> list[str]:
     return roots
 
 
-BUILD_RS_CONST = re.compile(r'^const (LEAN_ARCHIVE(?:_DIR|_ROOTS)?): &str = "([^"]*)";$', re.MULTILINE)
+BUILD_RS_CONST = re.compile(r'^const (LEAN_(?:EXERCISER_)?ARCHIVE(?:_DIR|_ROOTS)?): &str = "([^"]*)";$',
+                            re.MULTILINE)
 
 
 def check_image_link_paths(build_rs: str) -> None:
@@ -690,12 +699,14 @@ def check_image_link_paths(build_rs: str) -> None:
     image links a file nothing here writes."""
     found = dict(BUILD_RS_CONST.findall(build_rs))
     want = {"LEAN_ARCHIVE_DIR": str(OUT_DIR.relative_to(REPO)), "LEAN_ARCHIVE": ARCHIVE.name,
-            "LEAN_ARCHIVE_ROOTS": ROOTS_SCRIPT.name}
+            "LEAN_ARCHIVE_ROOTS": ROOTS_SCRIPT.name,
+            "LEAN_EXERCISER_ARCHIVE": EXERCISER_ARCHIVE.name,
+            "LEAN_EXERCISER_ARCHIVE_ROOTS": EXERCISER_ROOTS_SCRIPT.name}
     if found != want:
         raise Refused(f"build.rs links {found}, the builder writes {want}")
 
 
-def reachable_unresolved(roots: list[str]) -> set[str]:
+def reachable_unresolved(roots: list[str], extra: list[tuple[Path, list[str], Path]] = ()) -> set[str]:
     """The symbols the image link must resolve: a `--gc-sections` link of the
     archive rooted at the library initializer and every kernel `@[export]`,
     with every undefined reference reported rather than fatal.
@@ -704,12 +715,19 @@ def reachable_unresolved(roots: list[str]) -> set[str]:
     archive references far more -- a standard-library function the kernel
     never reaches still names its runtime primitive -- and the image link
     (BP5.2) drops those sections by the same rule, from the same roots: both
-    read `ROOTS_SCRIPT`, which this function writes and then links."""
+    read `ROOTS_SCRIPT`, which this function writes and then links.
+
+    `extra` adds further (roots script, roots, archive) triples to the same
+    link, each script written here: the exerciser image's link is the kernel's
+    plus the exerciser archive under its own roots (WS-ZA ZA5.13)."""
     ROOTS_SCRIPT.write_text(render_roots_script(roots))
+    inputs = [str(ROOTS_SCRIPT), str(ARCHIVE)]
+    for script, more_roots, archive in extra:
+        script.write_text(render_roots_script(more_roots))
+        inputs += [str(script), str(archive)]
     lld = fp_gate.rust_llvm_tool("rust-lld")
     argv = [lld, "-flavor", "gnu", "--gc-sections", "-e", roots[0],
-            "--unresolved-symbols=report-all", "--error-limit=0", "-o", os.devnull,
-            str(ROOTS_SCRIPT), str(ARCHIVE)]
+            "--unresolved-symbols=report-all", "--error-limit=0", "-o", os.devnull, *inputs]
     proc = subprocess.run(argv, capture_output=True, text=True)
     found = set(LINK_UNDEFINED.findall(proc.stderr))
     other = [l for l in proc.stderr.splitlines()
@@ -732,6 +750,71 @@ def reachable_unresolved(roots: list[str]) -> set[str]:
 
 RUNTIME_ENVIRONMENT = REPO / "rust/sele4n-hal/src/lean_runtime/io.rs"
 GITHASH_CONSTANT = re.compile(r'^pub const LEAN_GITHASH: &str = "([0-9a-f]+)";$', re.MULTILINE)
+
+
+def exerciser_modules(closure: list[str], staged: set[str]) -> list[str]:
+    """WS-ZA ZA5.13: the exerciser library's modules beyond the kernel's
+    closure, or `Refused` naming every violation.  The exerciser's root must be
+    outside the kernel's closure (else the shipped images carry it), what it
+    adds must be package modules Lake's exerciser library names (a stdlib or
+    foreign module would be a closure the kernel's checks never saw), and none
+    may be staged or testing."""
+    problems: list[str] = []
+    if EXERCISER_ROOT_MODULE in closure:
+        problems.append(f"{EXERCISER_ROOT_MODULE} is in {ROOT_MODULE}'s closure, so the "
+                        "shipped images carry the exerciser")
+    kernel = set(closure)
+    extra = [m for m in elaborator_closure(EXERCISER_ROOT_MODULE) if m not in kernel]
+    package = sorted(m for m in extra if module_family(m, (PACKAGE_PREFIX,)))
+    other = sorted(set(extra) - set(package))
+    if other:
+        problems.append(f"the exerciser reaches modules outside the package that the kernel's "
+                        f"closure lacks: {other[:8]}")
+    if EXERCISER_ROOT_MODULE not in package:
+        problems.append(f"the exerciser's closure beyond the kernel's lacks its root "
+                        f"{EXERCISER_ROOT_MODULE}")
+    lake = set(lake_modules(EXERCISER_LIBRARY))
+    if set(package) != lake:
+        problems.append(f"the elaborator and Lake disagree about the exerciser library: "
+                        f"elaborator-only {sorted(set(package) - lake)[:8]}, "
+                        f"Lake-only {sorted(lake - set(package))[:8]}")
+    leaked = sorted(set(package) & staged)
+    if leaked:
+        problems.append(f"staged modules reach the exerciser image: {leaked[:8]}")
+    testing = sorted(m for m in package if module_family(m, (TESTING_PREFIX,)))
+    if testing:
+        problems.append(f"testing modules reach the exerciser image: {testing[:8]}")
+    if problems:
+        raise Refused("; ".join(problems))
+    return package
+
+
+def check_exerciser_symbols(units: Symbols, ex_units: Symbols, module_count: int) -> None:
+    """WS-ZA ZA5.13: the exerciser archive defines one initializer per module it
+    holds, no symbol the kernel's archive (or another of its own members)
+    defines, and every initializer it references is defined by one of the two."""
+    problems: list[str] = []
+    owner = unit_initializers(ex_units)
+    if len(owner) != module_count or len(ex_units) != module_count:
+        problems.append(f"{len(ex_units)} exerciser objects define {len(owner)} initializers "
+                        f"for {module_count} modules")
+    kernel_defined = set().union(*(d for d, _ in units.values()))
+    seen: dict[str, str] = {}
+    for unit, (defined, _) in ex_units.items():
+        for sym in defined:
+            if sym in kernel_defined:
+                problems.append(f"{sym} is defined by both the kernel's archive and {unit}")
+            if sym in seen:
+                problems.append(f"{sym} is defined by both {seen[sym]} and {unit}")
+            seen[sym] = unit
+    referenced = set().union(*(u for _, u in ex_units.values())) if ex_units else set()
+    missing = sorted(s for s in referenced
+                     if INITIALIZER.match(s) and s not in kernel_defined and s not in seen)
+    if missing:
+        problems.append(f"module initializers the exerciser references and neither archive "
+                        f"defines: {missing[:8]}")
+    if problems:
+        raise Refused("; ".join(problems[:12]))
 
 
 def check_runtime_githash(source: str, githash: str) -> None:
@@ -888,7 +971,7 @@ def provenance_record(tree: str | None) -> dict:
     passed in: `build` reads it before it compiles anything, so a file edited
     while the build runs is recorded as it was, not as it is when the build
     ends."""
-    outputs = [ARCHIVE, ROOTS_SCRIPT]
+    outputs = [ARCHIVE, ROOTS_SCRIPT, EXERCISER_ARCHIVE, EXERCISER_ROOTS_SCRIPT]
     return {"tree": tree,
             "outputs": {str(out.relative_to(REPO)): file_digest(out) for out in outputs}}
 
@@ -1001,6 +1084,25 @@ def build(jobs: int) -> int:
                       for m in package)))
     reachable = reachable_unresolved(roots)
     check_reachable_provided(reachable, classes)
+    # WS-ZA ZA5.13: the exerciser's archive and roots, linked by its image alone.
+    ex_package = exerciser_modules(closure, staged_modules())
+    build_package_c(ex_package)
+    parallel(lambda item: compile_one(item, tc, flags), [(m, package_c(m)) for m in ex_package], jobs)
+    build_archive(ex_package, tc, EXERCISER_ARCHIVE)
+    diagnostic_census(ex_package)
+    ex_units = nm(EXERCISER_ARCHIVE)
+    check_exerciser_symbols(units, ex_units, len(ex_package))
+    ex_initializer = unit_initializers({u: d for u, d in ex_units.items()
+                                        if member_module(u) == EXERCISER_ROOT_MODULE})
+    ex_roots = sorted(ex_initializer) + sorted(
+        set().union(*(entry_gate.lean_exports_in((REPO / (m.replace(".", "/") + ".lean")).read_text())
+                      for m in ex_package)))
+    ex_reachable = reachable_unresolved(roots, [(EXERCISER_ROOTS_SCRIPT, ex_roots, EXERCISER_ARCHIVE)])
+    check_reachable_provided(ex_reachable, classes)
+    print(f"      exerciser: {len(ex_package)} module(s) beyond the kernel's closure "
+          f"-> {EXERCISER_ARCHIVE.relative_to(REPO)}, no symbol shared with the kernel's archive; "
+          f"its image's link adds {len(ex_roots) - 1} export(s) and needs {len(ex_reachable)} "
+          f"symbol(s), every one provided; roots -> {EXERCISER_ROOTS_SCRIPT.relative_to(REPO)}")
     check_runtime_githash(RUNTIME_ENVIRONMENT.read_text(), tc["githash"])
     print(f"[7/8] providers: the HAL's {RUST_TARGET} object code defines every allocator, hal and "
           f"runtime symbol ({len(classes['allocator'])} + {len(classes['hal'])} + "
@@ -1008,7 +1110,7 @@ def build(jobs: int) -> int:
           f"kernel export(s) needs {len(reachable)} symbol(s), every one provided; "
           f"the runtime's githash is the toolchain's; roots -> {ROOTS_SCRIPT.relative_to(REPO)}, "
           f"the file the kernel image links")
-    status = fp_gate.check([ARCHIVE], fp_gate.default_objdump())
+    status = fp_gate.check([ARCHIVE, EXERCISER_ARCHIVE], fp_gate.default_objdump())
     print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
     if status != 0:
         return status
@@ -1067,6 +1169,25 @@ def self_test() -> int:
         ("a prefix that only resembles the package", good + ["SeLe4nX.A"], lake),
     ]:
         expect(f"closure refused: {label}", _refused(classify_closure, closure, lake_mods, {"SeLe4n.S"}))
+
+    # WS-ZA ZA5.13: the exerciser archive beside the kernel's -- each case keeps
+    # every symbol and breaks one relation.
+    kernel_units: Symbols = {"K.c.o": ({"initialize_seLe4n_K", "l_k"}, set())}
+    ex_good: Symbols = {"E.c.o": ({"initialize_seLe4n_E", "l_e"}, {"initialize_seLe4n_K", "l_k"})}
+    expect("an exerciser archive beside the kernel's",
+           not _refused(check_exerciser_symbols, kernel_units, ex_good, 1))
+    for label, ex_units, count in [
+        ("an exerciser symbol the kernel also defines",
+         {"E.c.o": ({"initialize_seLe4n_E", "l_k"}, set())}, 1),
+        ("an exerciser initializer referenced and defined nowhere",
+         {"E.c.o": ({"initialize_seLe4n_E", "l_e"}, {"initialize_seLe4n_X"})}, 1),
+        ("an exerciser module without its object", ex_good, 2),
+        ("two exerciser objects defining one symbol",
+         {"E.c.o": ({"initialize_seLe4n_E", "l_e"}, set()),
+          "F.c.o": ({"initialize_seLe4n_F", "l_e"}, set())}, 2),
+    ]:
+        expect(f"exerciser archive refused: {label}",
+               _refused(check_exerciser_symbols, kernel_units, ex_units, count))
 
     expect("the shim relation holds", not _refused(check_config, _TC_CONFIG, _SHIM_CONFIG))
     for label, tc_text, shim_text in [

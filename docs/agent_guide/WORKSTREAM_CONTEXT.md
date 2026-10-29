@@ -2266,7 +2266,12 @@ release image**: it builds into `rust/target/qemu-virt*-exercisers`, the
 archive lane's image build is refused if it names it
 (`check_aarch64_cross_target.py`, which also refuses it on any image build
 without the board selector), and the cross lane builds the test image last,
-after both images it checks.  (2) **A round is the kernel's round**:
+after both images it checks.  Since `v0.36.163` the exerciser's Lean boot
+(`SeLe4n/Platform/QemuVirt/Exerciser.lean`) is a Lake library of its own,
+outside `SeLe4n.lean`'s closure: new exerciser-only Lean code goes there (or
+in a module only it imports), never into the kernel's root, and the shipped
+RPi5 and `virt` images are checked to define no symbol of its archive
+(`check_kernel_image.py --excludes`).  (2) **A round is the kernel's round**:
 `run_round_in` acquires the round lock (self-servicing a round in flight while
 it waits, under the seam's own fuel `ROUND_LOCK_ACQUIRE_FUEL`, which is
 `shootdownRoundLockAcquireFuel`), allocates the generation, publishes the

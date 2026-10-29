@@ -5846,7 +5846,11 @@ Every kernel object has a decidable well-formedness predicate:
   four calls (`qemuVirt_shippedLabeling_denies`); the allocation exerciser
   measures them on its own test-image entry (`exerciserKernelMain`), whose
   labeling permits one downgrade and configures the audit monitor.  Each reads
-  0 allocations, and so does an IPC carrying the resulting taint.
+  0 allocations, and so does an IPC carrying the resulting taint.  That entry
+  is a library of its own (`SeLe4nQemuVirtExerciser`, outside `SeLe4n.lean`'s
+  closure) compiled into a second archive, `libsele4n_exerciser.a`, which only
+  the `virt` exerciser image links; the shipped RPi5 and `virt` images define
+  none of its symbols (`scripts/check_kernel_image.py --excludes`).
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any

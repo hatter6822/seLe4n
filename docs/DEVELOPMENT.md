@@ -217,7 +217,11 @@ module imports `Lean.*` or a staged module, when a generated file carries a
 warning outside the generator's two known shapes, or when the archive references
 a symbol no provider accounts for, or when the HAL's object code for the target
 does not define a symbol the archive attributes to it; `libsele4n.unresolved`
-lists what the archive needs, by provider.
+lists what the archive needs, by provider.  The same run builds
+`libsele4n_exerciser.a` beside it from the allocation exerciser's own library
+(`SeLe4nQemuVirtExerciser`, outside `SeLe4n.lean`'s closure), which only the
+QEMU `virt` exerciser image links; Lean code only that image needs belongs in
+that library, never in the kernel's root.
 
 **The Lean heap** (WS-BP BP2.1) is `rust/sele4n-hal/src/lean_heap.rs` over
 `link.ld`'s `.lean_heap` section: one arena, sized by `LEAN_HEAP_SIZE`, serving
@@ -286,8 +290,8 @@ the HAL half alone.
 links `.lake/build/aarch64-unknown-none-softfloat/libsele4n.a` and the
 `libsele4n.roots.ld` the archive builder writes beside it, with
 `--gc-sections`, so build the archive first (`scripts/test_lean_aarch64_archive.sh`
-does both, then runs `check_kernel_image.py --lean-kernel` and the FP/SIMD gate
-over the linked image).  A missing archive fails the link naming the path.
+does both, then runs `check_kernel_image.py --lean-kernel --excludes
+libsele4n_exerciser.a` and the FP/SIMD gate over the linked image).  A missing archive fails the link naming the path.
 **The firmware's boot files** (BP5.3): `./scripts/build_rpi5_image.sh [ELF
 [OUT]]` writes `kernel8.img` and `config.txt` to `.lake/build/rpi5-image/`
 from that image (the archive lane's step [5/6] does this).  Copy both to the

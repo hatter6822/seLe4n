@@ -60,6 +60,30 @@ downgrade leaves.
     (`SeLe4n/Testing/BootEntryContract.lean`). The HAL calls the exerciser's
     entry only on an image built with both `board_qemu_virt` and
     `smp_exercisers`.
+- **The shipped images do not carry the exerciser.** The module is its own
+  Lake library (`SeLe4nQemuVirtExerciser`), outside `SeLe4n.lean`'s import
+  closure, so `libsele4n.a` holds none of it:
+  - The archive builder compiles it into a second archive,
+    `libsele4n_exerciser.a`, with its own roots script (its initializer and
+    boot entry). It refuses a kernel closure that reaches the module, a module
+    set Lake's library disagrees with, and an exerciser object that redefines
+    a kernel symbol. The exerciser image's reachable link (both archives,
+    both roots) is proved to need nothing the runtime does not define.
+  - `build.rs` links that archive and roots only when `hw_target`,
+    `board_qemu_virt` and `smp_exercisers` are all on. That image calls the
+    exerciser module's initializer, which imports `SeLe4n` and so initializes
+    the kernel first, in place of the root's.
+  - `check_kernel_image.py --excludes` refuses an image that defines any
+    global symbol of an archive. The Lean archive lane runs it on the RPi5
+    image and `qemu_boot_lib.sh` (`--exclusion-only`) on every Lean-linked
+    `virt` image without the exercisers. `check_aarch64_cross_target.py`
+    requires the lane's image check to carry the exclusion.
+  - `check_kernel_entry_exports.py` reads each side's two archives, host and
+    cross, since the exerciser's entry and initializer are HAL declarations.
+  - `nm` on the RPi5 and shipped `virt` images finds none of
+    `lean_kernel_main_qemu_virt_exerciser`, the exerciser's labeling, its
+    declassification policy or its bound configuration; before, both images
+    carried all four, unreferenced.
 - **The scenario** (`DECLASSIFICATION_SCENARIO`, `smp_exercisers.rs`)
   declassifies an upper-domain notification and signals it through the
   declassifying signal. It then sends the resulting taint through a blocked

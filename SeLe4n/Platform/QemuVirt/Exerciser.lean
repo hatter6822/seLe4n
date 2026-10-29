@@ -7,7 +7,11 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Platform.QemuVirt.KernelMain
+-- The whole kernel, not only the `virt` boot: the exerciser image calls this
+-- module's initializer in place of the library root's
+-- (`rust/sele4n-hal/src/lean_entry.rs`), so it must initialize everything the
+-- root does.
+import SeLe4n
 
 /-!
 # QEMU `virt` — the allocation exerciser's boot (WS-ZA ZA5.13)
@@ -46,6 +50,14 @@ production context (`qemuVirt_deploymentLabeling`), and
 image's call under it.  The HAL calls this entry only on an image built with
 both `board_qemu_virt` and `smp_exercisers` (`rust/sele4n-hal/src/lean_entry.rs`),
 and the Raspberry Pi 5 image never carries `smp_exercisers`.
+
+**Not in the shipped images.**  This module is its own library
+(`SeLe4nQemuVirtExerciser` in `lakefile.toml`), outside `SeLe4n.lean`'s import
+closure, so the kernel's archive (`libsele4n.a`) holds none of it.  The archive
+builder compiles it into a second archive (`libsele4n_exerciser.a`) with its own
+link roots, and only the exerciser image links them (`rust/sele4n-hal/build.rs`)
+and runs its initializer.  `scripts/check_kernel_image.py --excludes` refuses
+a shipped image that defines any symbol of that archive.
 -/
 
 namespace SeLe4n.Platform.QemuVirt

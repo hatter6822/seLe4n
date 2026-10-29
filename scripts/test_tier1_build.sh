@@ -28,7 +28,7 @@ run_check "BUILD" lake build
 #
 # The self-test runs first (token-preserving cases on both derivations), since a
 # scan that stopped matching would otherwise report PASS on an empty requirement.
-run_check "BUILD" lake build SeLe4n:static
+run_check "BUILD" lake build SeLe4n:static SeLe4nQemuVirtExerciser:static
 run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py" --self-test
 run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py"
 

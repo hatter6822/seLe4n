@@ -6089,10 +6089,16 @@ run_check "INVARIANT" rg -n '^    let board_script = board_link_script\(&manifes
 # script, with `--gc-sections`, inside the bare-metal branch; the archive
 # builder's reachable link reads that same roots script; and the Lean archive
 # lane checks the linked image against it.
-run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            for input in \[LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS\] \{\n                println!\("cargo:rustc-link-arg-bin=sele4n-kernel=\{archive_dir\}/\{input\}"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            for &input in exerciser_inputs\n                \.iter\(\)\n                \.chain\(\[LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS\]\.iter\(\)\)\n            \{\n                println!\("cargo:rustc-link-arg-bin=sele4n-kernel=\{archive_dir\}/\{input\}"\);$' rust/sele4n-hal/build.rs
+# WS-ZA ZA5.13: the exerciser's archive and roots join that link only on the
+# `virt` exerciser image (`board_qemu_virt` with `smp_exercisers`).
+run_check "INVARIANT" rg -U -n '^            let exerciser_image = std::env::var_os\("CARGO_FEATURE_BOARD_QEMU_VIRT"\)\.is_some\(\)\n                && std::env::var_os\("CARGO_FEATURE_SMP_EXERCISERS"\)\.is_some\(\);\n            let exerciser_inputs: &\[&str\] = if exerciser_image \{\n                &\[LEAN_EXERCISER_ARCHIVE, LEAN_EXERCISER_ARCHIVE_ROOTS\]\n            \} else \{\n                &\[\]\n            \};$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            println!\("cargo:rustc-link-arg-bin=sele4n-kernel=--gc-sections"\);$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)[^\n]*(\n([ \t][^\n]*)?)*?            str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
-run_check "INVARIANT" rg -U -n 'check_kernel_image\.py" \\\n    --lean-kernel "\$\{ARCHIVE_DIR\}/libsele4n\.roots\.ld" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)\n    inputs = \[str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
+run_check "INVARIANT" rg -U -n '^    argv = \[lld, "-flavor", "gnu", "--gc-sections", "-e", roots\[0\],\n            "--unresolved-symbols=report-all", "--error-limit=0", "-o", os\.devnull, \*inputs\]$' scripts/build_lean_aarch64_archive.py
+# WS-ZA ZA5.13: and refuses an image that defines any symbol of the
+# allocation exerciser's archive.
+run_check "INVARIANT" rg -U -n 'check_kernel_image\.py" \\\n    --lean-kernel "\$\{ARCHIVE_DIR\}/libsele4n\.roots\.ld" \\\n    --excludes "\$\{ARCHIVE_DIR\}/libsele4n_exerciser\.a" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}"$' scripts/test_lean_aarch64_archive.sh
 # WS-BP BP5.3: `link.ld` places the device tree's window after the Lean heap
 # and inside the reserved extent; the boot files pin the firmware to exactly
 # that window and to the image's entry, refuse a firmware option they do not
@@ -8405,7 +8411,16 @@ run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt
 run_check "INVARIANT" rg -n -F -- '#[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt_exerciser(dtb) };' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt_exerciser\]$' SeLe4n/Platform/QemuVirt/Exerciser.lean
-run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.Exerciser$' SeLe4n.lean
+# WS-ZA ZA5.13: the exerciser is a library of its own, outside the kernel's
+# root: `SeLe4n.lean` does not import it, the builder refuses a kernel closure
+# that reaches it, the exerciser image calls its initializer in place of the
+# root's, and the shipped `virt` image is checked to carry none of its archive.
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.Exerciser$' SeLe4n.lean
+run_check "INVARIANT" rg -U -n '^\[\[lean_lib\]\]\nname = "SeLe4nQemuVirtExerciser"\nroots = \["SeLe4n\.Platform\.QemuVirt\.Exerciser"\]$' lakefile.toml
+run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -U -n '^    if EXERCISER_ROOT_MODULE in closure:\n        problems\.append' scripts/build_lean_aarch64_archive.py
+run_check "INVARIANT" rg -n -F -- 'let result = unsafe { initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(1) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^        if \[\[ "\$\{lean\}" -eq 1 && "\$\{exercisers\}" -ne 1 \]\] \\\n            && ! python3 "\$\{REPO_ROOT\}/scripts/check_kernel_image\.py" --exclusion-only \\\n                --excludes "\$\{LEAN_EXERCISER_ARCHIVE\}" "\$\{KERNEL_BIN\}"; then$' scripts/qemu_boot_lib.sh
 run_check "INVARIANT" rg -n '^theorem qemuVirt_shippedLabeling_denies\b' SeLe4n/Platform/QemuVirt/Exerciser.lean
 # WS-ZA ZA5.13: the declassification and audit calls are the register route's
 # audited arm, dispatched to the routed form the specification is proven equal
