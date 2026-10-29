@@ -97,9 +97,9 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.36.163` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 526.127 über 481 Dateien |
+| **Produktions-LoC (Lean)** | 527.784 über 483 Dateien |
 | **Test-LoC (Lean)** | 87.402 über 70 Testsuiten |
-| **Bewiesene Deklarationen** | 19.426 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Bewiesene Deklarationen** | 19.478 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 80 Quelldateien |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Hardware-Anbindung** | **H3 ABGESCHLOSSEN** (WS-AG AG1–AG10): HAL, GIC-400, Timer, ARMv8-Seitentabellen, FFI-Brücke, QEMU-Boot |
