@@ -853,19 +853,37 @@ signalled state as the specification reads them (`recordDeclassifiedHops`). -/
         (st1.declassificationAudit.epoch + st1.declassificationAudit.length) c0 c1 c2 c3 c4 c5 c6 c7 cc cs st1
   else st1
 
-/-- **An admitted stored `.declassifySignal`**: the signal stores the badge
-(`notificationSignalBoundOnCore`, refusing in the state it was handed), then the
-record and the fused taint step over the caller's and the notification's words
-captured before the signal.  Out of line, so the words reach it as scalars. -/
-@[noinline] def declassifySignalStoredR (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+/-- **A stored signal succeeds**: with no bound receiver and no waiter on a
+present notification, the signal stores the badge and refuses nothing, so the
+admitted form needs no refusal arm. -/
+theorem notificationSignalBoundOnCore_stored_ok (nid : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st : SystemState) (ntfn : Notification)
+    (hN : st.getNotification? nid = some ntfn) (hBound : boundDeliveryTarget? st nid = none)
+    (hWait : notificationSignalWaiter? st nid = none) :
+    (notificationSignalBoundOnCore nid badge c st).2 = .ok none := by
+  have hHead : ntfn.waitHead = none := by
+    simpa only [notificationSignalWaiter?, hN] using hWait
+  unfold notificationSignalBoundOnCore
+  rw [hBound, notificationSignalOnCore_eq_impl]
+  unfold notificationSignalOnCoreImpl
+  simp only [hN, hHead]
+  split <;> rfl
+
+/-- **An admitted stored `.declassifySignal`'s writes**: the signal stores the
+badge (`notificationSignalBoundOnCore`, which refuses nothing here,
+`notificationSignalBoundOnCore_stored_ok`), then the record and the fused taint
+step over the caller's and the notification's words captured before the signal.
+Out of line, so the words reach it as scalars, and returning the state alone, so
+no result record is built across the call. -/
+@[noinline] def declassifySignalStoredPerform (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (hop : Bool) (epoch len : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool) (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool) : RefusalCarrying Unit :=
-  fun st =>
-    match notificationSignalBoundOnCore nid badge c st with
-    | (st1, .ok _) =>
-        .ok ((), declassifySignalTaintStep .stored nid tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ epoch len
-          (declassifySignalRecord c tid actorDomain notifDomain nid hop st1))
-    | (st1, .error e) => .error (e, st1)
+    (hop : Bool) (epoch len : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
+    (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool) (st : SystemState) :
+    SystemState :=
+  declassifySignalTaintStep .stored nid tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩
+    ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ epoch len
+    (declassifySignalRecord c tid actorDomain notifDomain nid hop
+      (notificationSignalBoundOnCore nid badge c st).1)
 
 /-- `.declassifySignal`'s general form: the specification's arm, then its fused
 taint step over the pre-state's words (`declassifySignalTaintStep_eq`), every
@@ -898,10 +916,12 @@ general one (`declassifySignalOperandArmR_eq`). -/
           if declassifySignalStoredAdmitted ctx st tid signaler nid then
             withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
             withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
-            declassifySignalStoredR executingCore tid (embedLegacyLabel (ctx.threadLabelOf tid))
-              (embedLegacyLabel (ctx.objectLabelOf nid)) nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
+            .ok ((), declassifySignalStoredPerform executingCore tid
+              (embedLegacyLabel (ctx.threadLabelOf tid)) (embedLegacyLabel (ctx.objectLabelOf nid))
+              nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
               (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
-              st.declassificationAudit.epoch st.declassificationAudit.length a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st
+              st.declassificationAudit.epoch st.declassificationAudit.length
+              a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st)
           else declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
         | _, _ => declassifySignalGeneralR ctx regs capAddr tid executingCore cap st
       else .error (.illegalAuthority, st)
@@ -1004,20 +1024,19 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
           have hA' := hA
           simp only [declassifySignalStoredAdmitted, Bool.and_eq_true, decide_eq_true_eq,
             Option.isNone_iff_eq_none] at hA'
-          obtain ⟨⟨⟨⟨-, -⟩, hBound⟩, hWait⟩, -⟩ := hA'
+          obtain ⟨⟨⟨⟨-, hPresent⟩, hBound⟩, hWait⟩, -⟩ := hA'
+          obtain ⟨ntfn, hN⟩ := Option.isSome_iff_exists.mp hPresent
           have hCase : signalTaintCaseOf st (some cap) = .stored := by
             simp only [signalTaintCaseOf, signalTaintCaseOfCap, hT, signalDelivery, hBound, hWait]
           rw [auditedArmSpec_declassifySignal_stored ctx decoded.capAddr regs tid executingCore cap
             st nid signaler hT hCur hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase]
-          simp only [declassifySignalStoredR, TaintWords.mk_fields, operandObjectId, capObjectId, hT]
+          simp only [declassifySignalStoredPerform, TaintWords.mk_fields, operandObjectId,
+            capObjectId, hT]
+          have hOk := notificationSignalBoundOnCore_stored_ok nid
+            (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st ntfn hN hBound hWait
           rcases hS : notificationSignalBoundOnCore nid (SeLe4n.Badge.ofWord (auditedArgWord regs 0))
               executingCore st with ⟨st1, e | sgi⟩
-          · have h1 := notificationSignalBoundOnCore_error_state nid
-              (SeLe4n.Badge.ofWord (auditedArgWord regs 0)) executingCore st e (by rw [hS])
-            rw [hS] at h1
-            simp only at h1
-            subst h1
-            rfl
+          · rw [hS] at hOk; cases hOk
           · rfl
         · unfold declassifySignalGeneralR
           rcases auditedArmSpec ctx .declassifySignal decoded.capAddr regs tid executingCore cap st
