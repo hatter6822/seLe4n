@@ -353,9 +353,22 @@ structure DeclassificationEvent where
       `originatingCore` are not — and here the silent failure is the unsafe
       one: a default of `DeclassificationTaint.empty` would make every event
       causally unlinked, so the detector would report *no* laundering while
-      compiling everywhere. -/
-  predecessorTags : DeclassificationTaint
+      compiling everywhere.
+
+      WS-ZA ZA5.13: **held as the subject's taint words**, the snapshot the
+      thread's own record carries (`SystemState.taintWordsAt`), rather than as
+      their decode: a record writes its ring slot in place, so the snapshot is
+      ten scalars written over the slot's own words cell, where a decoded taint
+      would be a tag list built on every record.  The taint it stands for is
+      `predecessorTags`, its decode. -/
+  predecessorWords : TaintWords
   deriving Repr, DecidableEq
+
+/-- WS-SM SM9.D.13a: **the causality an event carries**, as a taint — the
+decode of the snapshot it holds (`predecessorWords`, WS-ZA ZA5.13). -/
+abbrev DeclassificationEvent.predecessorTags (e : DeclassificationEvent) :
+    DeclassificationTaint :=
+  e.predecessorWords.decode
 
 /-- WS-SM SM9.D.13a: **the declassifying subject's object identity**, for
 attribution.
@@ -519,7 +532,7 @@ def DeclassificationEvent.vacant : DeclassificationEvent :=
     timestamp := 0
     originatingCore := Concurrency.bootCoreId
     actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest }
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 /-- WS-ZA ZA5.10: **the declassification audit trail as a fixed ring.**
 

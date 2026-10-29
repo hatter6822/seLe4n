@@ -601,6 +601,13 @@ theorem singletonWordsFlat_eq (t : Nat) : singletonWordsFlat t = singletonWords 
   unfold join
   rw [DeclassificationTaint.decode_toWords]
 
+/-- WS-ZA ZA5.13: words joined with a singleton's decode to the insertion of its
+identity — the declassified signal's second-hop snapshot. -/
+theorem decode_join_singletonWords (w : TaintWords) (t : Nat) :
+    (join w (singletonWords t)).decode = w.decode.insert t := by
+  rw [decode_join, singletonWords_eq, DeclassificationTaint.decode_toWords,
+    DeclassificationTaint.join_singleton]
+
 end TaintWords
 
 end SeLe4n.Kernel

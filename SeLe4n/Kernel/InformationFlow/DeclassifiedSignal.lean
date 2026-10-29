@@ -591,7 +591,7 @@ of an authorized two-hop delivery would leave a downgrade the kernel performed
 and did not record, which is the failure the fail-closed bound exists to
 exclude. -/
 def recordDeclassifiedHopsFrom (c : CoreId) (actor : DeclassificationActor)
-    (tags : DeclassificationTaint) :
+    (tags : TaintWords) :
     List DeclassifiedHopRecord → SystemState → Option SystemState
   | [], st => some st
   | r :: rest, st =>
@@ -600,7 +600,9 @@ def recordDeclassifiedHopsFrom (c : CoreId) (actor : DeclassificationActor)
       | none => none
       | some log' =>
           recordDeclassifiedHopsFrom c actor
-            (tags.insert (st.declassificationAuditEpoch + st.declassificationAudit.length))
+            (TaintWords.join tags
+              (TaintWords.singletonWords
+                (st.declassificationAuditEpoch + st.declassificationAudit.length)))
             rest { st with declassificationAudit := log' }
 
 /-- WS-SM SM9.C.1 / SM9.D.13a: **append the owed records to the trail**, each
@@ -622,11 +624,11 @@ authorized two-hop delivery would leave a downgrade the kernel performed and did
 not record, which is the failure the fail-closed bound exists to exclude. -/
 def recordDeclassifiedHops (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) (st : SystemState) : Option SystemState :=
-  recordDeclassifiedHopsFrom c actor (declassificationActorTaint actor st) records st
+  recordDeclassifiedHopsFrom c actor (declassificationActorWords actor st) records st
 
 /-- WS-SM SM9.C.1: no records, no change. -/
 @[simp] theorem recordDeclassifiedHopsFrom_nil (c : CoreId) (actor : DeclassificationActor)
-    (tags : DeclassificationTaint) (st : SystemState) :
+    (tags : TaintWords) (st : SystemState) :
     recordDeclassifiedHopsFrom c actor tags [] st = some st := rfl
 
 /-- WS-SM SM9.C.1: no records, no change. -/
@@ -641,12 +643,14 @@ Stated over `recordDeclassifiedHopsFrom` because the continuation's snapshot is
 taint side table is untouched by the audit write, so re-reading it would lose
 exactly the freshly allocated timestamp the extension exists to carry. -/
 theorem recordDeclassifiedHopsFrom_cons (c : CoreId) (actor : DeclassificationActor)
-    (tags : DeclassificationTaint)
+    (tags : TaintWords)
     (r : DeclassifiedHopRecord) (rest : List DeclassifiedHopRecord) (st st' : SystemState)
     (h : recordDeclassifiedHopsFrom c actor tags (r :: rest) st = some st') :
     st.declassificationAuditLog.length < maxDeclassificationAuditEntries ∧
     recordDeclassifiedHopsFrom c actor
-      (tags.insert (st.declassificationAuditEpoch + st.declassificationAudit.length)) rest
+      (TaintWords.join tags
+        (TaintWords.singletonWords
+          (st.declassificationAuditEpoch + st.declassificationAudit.length))) rest
       { st with declassificationAudit :=
           (st.declassificationAudit.append
             (declassifyStoreEventWithTags c actor r.srcDomain r.dstDomain r.target tags st)) }
@@ -675,7 +679,7 @@ is what lets the whole invariant surface of the underlying signal transfer
 across the audit write. -/
 theorem recordDeclassifiedHopsFrom_frame (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) :
-    ∀ (tags : DeclassificationTaint) (st st' : SystemState),
+    ∀ (tags : TaintWords) (st st' : SystemState),
       recordDeclassifiedHopsFrom c actor tags records st = some st' →
       st' = { st with declassificationAudit := st'.declassificationAudit } := by
   induction records with
@@ -697,7 +701,7 @@ theorem recordDeclassifiedHops_frame (c : CoreId) (actor : DeclassificationActor
 appending in hop order. -/
 theorem recordDeclassifiedHopsFrom_log (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) :
-    ∀ (tags : DeclassificationTaint) (st st' : SystemState),
+    ∀ (tags : TaintWords) (st st' : SystemState),
       recordDeclassifiedHopsFrom c actor tags records st = some st' →
       ∃ appended : DeclassificationAuditLog,
         st'.declassificationAuditLog = st.declassificationAuditLog ++ appended ∧
@@ -735,7 +739,7 @@ discipline at any accumulator — each append stamps `epoch + length` against th
 state it lands in, which is what `declassifyStoreEventWithTags` computes. -/
 theorem recordDeclassifiedHopsFrom_preserves_trailWellFormed (c : CoreId)
     (actor : DeclassificationActor) (records : List DeclassifiedHopRecord) :
-    ∀ (tags : DeclassificationTaint) (st st' : SystemState),
+    ∀ (tags : TaintWords) (st st' : SystemState),
       declassificationTrailWellFormed st = true →
       recordDeclassifiedHopsFrom c actor tags records st = some st' →
       declassificationTrailWellFormed st' = true := by
@@ -1019,7 +1023,7 @@ flow endpoints and target are some planned record's, and nothing else was
 appended. -/
 theorem recordDeclassifiedHopsFrom_appended (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) :
-    ∀ (tags : DeclassificationTaint) (st st' : SystemState),
+    ∀ (tags : TaintWords) (st st' : SystemState),
       recordDeclassifiedHopsFrom c actor tags records st = some st' →
       ∃ appended : DeclassificationAuditLog,
         st'.declassificationAuditLog = st.declassificationAuditLog ++ appended ∧
@@ -1082,17 +1086,19 @@ theorem recordDeclassifiedHops_two (c : CoreId) (actor : DeclassificationActor)
       e₂.timestamp = e₁.timestamp + 1 ∧
       declassificationEventNames e₂ e₁ = true := by
   obtain ⟨hRoom₁, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor
-    (declassificationActorTaint actor st) r₁ [r₂] st st' h
+    (declassificationActorWords actor st) r₁ [r₂] st st' h
   obtain ⟨hRoom₂, hRest'⟩ := recordDeclassifiedHopsFrom_cons c actor
-    ((declassificationActorTaint actor st).insert
-      (st.declassificationAuditEpoch + st.declassificationAudit.length)) r₂ [] _ st' hRest
+    (TaintWords.join (declassificationActorWords actor st)
+      (TaintWords.singletonWords
+        (st.declassificationAuditEpoch + st.declassificationAudit.length))) r₂ [] _ st' hRest
   simp only [recordDeclassifiedHopsFrom_nil, Option.some.injEq] at hRest'
   subst hRest'
   simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hRoom₁ hRoom₂
   refine ⟨declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st,
           declassifyStoreEventWithTags c actor r₂.srcDomain r₂.dstDomain r₂.target
-            ((declassificationActorTaint actor st).insert
-              (st.declassificationAuditEpoch + st.declassificationAudit.length))
+            (TaintWords.join (declassificationActorWords actor st)
+              (TaintWords.singletonWords
+                (st.declassificationAuditEpoch + st.declassificationAudit.length)))
             { st with declassificationAudit := (st.declassificationAudit.append
                 (declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st)) },
           ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
@@ -1104,7 +1110,9 @@ theorem recordDeclassifiedHops_two (c : CoreId) (actor : DeclassificationActor)
       (st.declassificationAuditEpoch + st.declassificationAudit.length) + 1
     rw [AuditRing.epoch_append, AuditRing.length_append _ _ (by simpa using hRoom₁)]
     rfl
-  · exact DeclassificationTaint.contains_insert_self _ _
+  · show (TaintWords.join _ (TaintWords.singletonWords _)).decode.contains _ = true
+    rw [TaintWords.decode_join_singletonWords]
+    exact DeclassificationTaint.contains_insert_self _ _
 
 -- ============================================================================
 -- §7  WS-SM SM9.C.1 — what the plan authorizes
@@ -1892,7 +1900,7 @@ at any accumulator — each append is a trail write, and the SM8.C.8 carriage
 lemma does the rest. -/
 theorem recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle (c : CoreId)
     (actor : DeclassificationActor) (records : List DeclassifiedHopRecord) :
-    ∀ (tags : DeclassificationTaint) (st st' : SystemState),
+    ∀ (tags : TaintWords) (st st' : SystemState),
       Architecture.proofLayerInvariantBundle st →
       recordDeclassifiedHopsFrom c actor tags records st = some st' →
       Architecture.proofLayerInvariantBundle st' := by

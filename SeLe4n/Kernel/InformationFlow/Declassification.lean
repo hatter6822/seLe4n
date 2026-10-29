@@ -74,7 +74,7 @@ def declassificationEventOnCore (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat)
     (position : Nat)
-    (predecessorTags : DeclassificationTaint) : DeclassificationEvent :=
+    (predecessorWords : TaintWords) : DeclassificationEvent :=
   { srcDomain := srcDomain
     dstDomain := dstDomain
     targetObject := targetId
@@ -82,16 +82,16 @@ def declassificationEventOnCore (c : CoreId) (actor : DeclassificationActor)
     timestamp := epoch + position
     originatingCore := c
     actor := actor
-    predecessorTags := predecessorTags }
+    predecessorWords := predecessorWords }
 
 /-- WS-SM SM8.C.1: the event a given pre-state records, named once so the
 theorems below do not each recompute it. -/
 abbrev declassifyStoreEventWithTags (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
-    (targetId : SeLe4n.ObjId) (predecessorTags : DeclassificationTaint)
+    (targetId : SeLe4n.ObjId) (predecessorWords : TaintWords)
     (st : SystemState) : DeclassificationEvent :=
   declassificationEventOnCore c actor srcDomain dstDomain targetId
-    st.declassificationAuditEpoch st.declassificationAudit.length predecessorTags
+    st.declassificationAuditEpoch st.declassificationAudit.length predecessorWords
 
 /-- WS-SM SM9.D.13a: **the acting subject's provenance at production time** —
 the snapshot an event carries.
@@ -103,10 +103,19 @@ Re-reading the taint later would be wrong in both directions
 record rather than a lookup the detector performs.  WS-ZA ZA5.12: it decodes the
 one key's words (`SystemState.taintWordsAt`) — the only decode a compiled path
 performs, since the record holds the decoded taint — and equals the
-specification's reader there by `rfl` (`decode_taintWordsAt`). -/
+specification's reader there by `rfl` (`decode_taintWordsAt`).  WS-ZA ZA5.13:
+the record holds the words themselves (`declassificationActorWords`), and this
+is their decode. -/
 abbrev declassificationActorTaint (actor : DeclassificationActor) (st : SystemState) :
     DeclassificationTaint :=
   (st.taintWordsAt actor.subject.toObjId).decode
+
+/-- WS-ZA ZA5.13: **the acting subject's taint words at production time** — the
+snapshot an event holds (`DeclassificationEvent.predecessorWords`), whose
+decode is `declassificationActorTaint`. -/
+abbrev declassificationActorWords (actor : DeclassificationActor) (st : SystemState) :
+    TaintWords :=
+  st.taintWordsAt actor.subject.toObjId
 
 /-- WS-SM SM8.C.1: the event a given pre-state records, with the acting
 subject's provenance snapshotted from that same pre-state (WS-SM SM9.D.13a). -/
@@ -114,7 +123,7 @@ abbrev declassifyStoreEvent (c : CoreId) (actor : DeclassificationActor)
     (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (st : SystemState) : DeclassificationEvent :=
   declassifyStoreEventWithTags c actor srcDomain dstDomain targetId
-    (declassificationActorTaint actor st) st
+    (declassificationActorWords actor st) st
 
 /-- WS-SM SM8.C.1: the trail a successful audited step leaves — the pre-state's
 trail with this step's event recorded in the ring's next slot (WS-ZA ZA5.10).
@@ -156,18 +165,18 @@ everywhere. -/
 theorem declassificationEventOnCore_originatingCore
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
-    (predecessorTags : DeclassificationTaint) :
+    (predecessorWords : TaintWords) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
-      position predecessorTags).originatingCore = c := rfl
+      position predecessorWords).originatingCore = c := rfl
 
 /-- WS-SM SM8.C.5: the kernel records its own basis, never an integrator
 override — so `kernelVerifiable` is `true` on everything the kernel writes. -/
 theorem declassificationEventOnCore_basis_is_policyRule
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
-    (predecessorTags : DeclassificationTaint) :
+    (predecessorWords : TaintWords) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch
-      position predecessorTags).authorizationBasis = .policyRule := rfl
+      position predecessorWords).authorizationBasis = .policyRule := rfl
 
 /-- WS-SM SM8.C / SM9.A.1a: the recorded timestamp is the event's **global**
 position — the number of entries drained so far plus its index in the current
@@ -175,9 +184,9 @@ trail. -/
 theorem declassificationEventOnCore_timestamp
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
-    (predecessorTags : DeclassificationTaint) :
+    (predecessorWords : TaintWords) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch position
-      predecessorTags).timestamp = epoch + position := rfl
+      predecessorWords).timestamp = epoch + position := rfl
 
 /-- WS-SM SM9.C.1: the recorded actor is the one the producer resolved — the
 field is carried, never derived from the flow endpoints.
@@ -189,9 +198,9 @@ events it exists to attribute. -/
 theorem declassificationEventOnCore_actor
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
-    (predecessorTags : DeclassificationTaint) :
+    (predecessorWords : TaintWords) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch position
-      predecessorTags).actor = actor := rfl
+      predecessorWords).actor = actor := rfl
 
 /-- WS-SM SM9.D.13a: the recorded snapshot is the one the producer resolved —
 carried, never derived from the trail or from the live table.
@@ -204,9 +213,9 @@ field carries no default. -/
 theorem declassificationEventOnCore_predecessorTags
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
-    (predecessorTags : DeclassificationTaint) :
+    (predecessorWords : TaintWords) :
     (declassificationEventOnCore c actor srcDomain dstDomain targetId epoch position
-      predecessorTags).predecessorTags = predecessorTags := rfl
+      predecessorWords).predecessorTags = predecessorWords.decode := rfl
 
 /-- WS-SM SM9.D.13a: the live producers snapshot the **acting subject's** taint,
 so a recorded event's causality is the causality of the thread that performed

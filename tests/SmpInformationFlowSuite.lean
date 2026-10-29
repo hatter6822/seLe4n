@@ -2444,7 +2444,7 @@ example (ctx : LabelingContext) : endpointGateRestricted ctx :=
 -- carries the basis the kernel itself issues.
 example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
     (targetId : SeLe4n.ObjId)
-    (epoch position : Nat) (tags : DeclassificationTaint) :
+    (epoch position : Nat) (tags : TaintWords) :
     (declassificationEventOnCore c actor src dst targetId epoch position tags).originatingCore = c ∧
       (declassificationEventOnCore c actor src dst targetId epoch position tags).authorizationBasis =
         .policyRule :=
@@ -2457,7 +2457,7 @@ example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
 -- surviving entry (`preEpochTimestamp_reused_after_drain`).
 example (c : CoreId) (actor : DeclassificationActor) (src dst : SecurityDomain)
     (targetId : SeLe4n.ObjId)
-    (epoch position : Nat) (tags : DeclassificationTaint) :
+    (epoch position : Nat) (tags : TaintWords) :
     (declassificationEventOnCore c actor src dst targetId epoch position tags).timestamp =
       epoch + position :=
   declassificationEventOnCore_timestamp c actor src dst targetId epoch position tags
@@ -5410,7 +5410,7 @@ private def auditOccupancyProbeEvent : DeclassificationEvent :=
     authorizationBasis := .integratorOverride "cc8-occupancy-probe",
     timestamp := 0, originatingCore := c0,
     actor := { subject := lowCurrent, domain := ⟨0⟩ },
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 /-- §4.8  The accepted covert-channel inventory (SM8.B.8 / SM8.B.9 / SM8.B.10;
 CC-8 added by SM9.A, PR #870 round 7). -/
@@ -5802,7 +5802,7 @@ private def integratorEvent : DeclassificationEvent :=
     authorizationBasis := .integratorOverride "site-security-officer",
     timestamp := 2, originatingCore := c2,
     actor := { subject := highCurrent, domain := declassSecret },
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 /-- A declassification **into a high object**, from core 1 — the SM8.C.6 /
 non-interference scenario.  `highNotification` is the one object `niLabeling`
@@ -6240,7 +6240,7 @@ private def runDeclassifyCapacityChecks : IO Unit := do
     { srcDomain := declassSecret, dstDomain := declassPublic, targetObject := declassTargetA,
       authorizationBasis := .policyRule, timestamp := 0, originatingCore := c0,
       actor := { subject := highCurrent, domain := declassSecret },
-      predecessorTags := DeclassificationTaint.empty }
+      predecessorWords := {} }
   let fullTrail : DeclassificationAuditLog :=
     List.replicate maxDeclassificationAuditEntries fullEntry
   let fullState : SystemState :=
@@ -6372,9 +6372,9 @@ private def runDeclassifyChainTopologyChecks : IO Unit := do
     { srcDomain := src, dstDomain := dst, targetObject := declassTargetA,
       authorizationBasis := .policyRule, timestamp := ts, originatingCore := core,
       actor := { subject := highCurrent, domain := src },
-      predecessorTags :=
-        if ts = 0 then DeclassificationTaint.empty
-        else DeclassificationTaint.singleton (ts - 1) }
+      predecessorWords :=
+        (if ts = 0 then DeclassificationTaint.empty
+        else DeclassificationTaint.singleton (ts - 1)).toWords }
   -- Three hops across three cores: 2 → 1 → 0 → 0 is not linked (0 ≠ 0 is fine,
   -- but the middle domains must match pairwise), so use 3 → 2 → 1 → 0.
   let threeHop := [mk ⟨3⟩ ⟨2⟩ c0 0, mk ⟨2⟩ ⟨1⟩ c1 1, mk ⟨1⟩ ⟨0⟩ c2 2]
@@ -6417,11 +6417,11 @@ private def runDeclassifyChainTopologyChecks : IO Unit := do
       [{ srcDomain := ⟨2⟩, dstDomain := ⟨1⟩, targetObject := ⟨100⟩,
          authorizationBasis := .policyRule, timestamp := 0, originatingCore := c0,
          actor := { subject := highCurrent, domain := ⟨2⟩ },
-         predecessorTags := DeclassificationTaint.empty },
+         predecessorWords := {} },
        { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨200⟩,
          authorizationBasis := .policyRule, timestamp := 1, originatingCore := c0,
          actor := { subject := lowCurrent, domain := ⟨1⟩ },
-         predecessorTags := DeclassificationTaint.empty }])
+         predecessorWords := {} }])
 
 /-! ### §6.14  The golden declassification-audit trace (SM8.C.7)
 
@@ -8375,7 +8375,7 @@ private def auditEntry (src dst : SecurityDomain) (target : SeLe4n.ObjId)
   { srcDomain := src, dstDomain := dst, targetObject := target,
     authorizationBasis := .policyRule, timestamp := ts, originatingCore := c,
     actor := { subject := lowCurrent, domain := src },
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 /-- The two public-sourced entries and the high-sourced one between them, named
 individually so the re-indexing checks can talk about the hidden entry without
@@ -10710,13 +10710,13 @@ private def causalHopOne : DeclassificationEvent :=
   { srcDomain := declassSecret, dstDomain := declassMiddle, targetObject := declassTargetA,
     authorizationBasis := .policyRule, timestamp := 0, originatingCore := c1,
     actor := { subject := highCurrent, domain := declassSecret },
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 private def causalHopTwo (tags : DeclassificationTaint) : DeclassificationEvent :=
   { srcDomain := declassMiddle, dstDomain := declassPublic, targetObject := declassTargetB,
     authorizationBasis := .policyRule, timestamp := 1, originatingCore := c0,
     actor := { subject := lowCurrent, domain := declassMiddle },
-    predecessorTags := tags }
+    predecessorWords := tags.toWords }
 
 /-- §12.6  SM9.D.14-.D.16 — the detector is causal. -/
 private def runCausalDetectorChecks : IO Unit := do
@@ -10799,7 +10799,7 @@ private def runCausalAcceptanceChecks : IO Unit := do
 
 /-- §12.9 helper — forget a recorded snapshot, keeping everything else. -/
 private def dropPredecessorTags (e : DeclassificationEvent) : DeclassificationEvent :=
-  { e with predecessorTags := DeclassificationTaint.empty }
+  { e with predecessorWords := {} }
 
 /-- §12.9 fixture — a monitor's clearance in the declassification fixture's own
 lattice.  `declassContext.policy` is `.linearOrder` over domains 0/1/2, so a
