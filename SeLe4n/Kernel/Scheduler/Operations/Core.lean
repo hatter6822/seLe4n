@@ -1305,6 +1305,88 @@ def scheduleEffectiveOnCoreImpl (st : SystemState) (c : CoreId) :
   rw [chooseThreadEffectiveOnCore_eq_code]
   cases chooseThreadEffectiveOnCoreCode st c <;> rfl
 
+-- ============================================================================
+-- §1  The dispatch never refuses
+-- ============================================================================
+
+/-- The selection scan names only a thread the store holds and the eligibility
+test admits: a found candidate is one, and every improvement is one. -/
+theorem chooseBestRunnableEffectiveCode_succ (st : SystemState) (eligible : TCB → Bool) :
+    ∀ (l : List SeLe4n.ThreadId) (found : Bool) (bt : SeLe4n.ThreadId) (bp : SeLe4n.Priority)
+      (bd : SeLe4n.Deadline) (k : Nat),
+      (found = true → ∃ tcb, st.getTcb? bt = some tcb ∧ eligible tcb = true) →
+      chooseBestRunnableEffectiveCode st eligible l found bt bp bd = k + 1 →
+      ∃ tcb, st.getTcb? ⟨k⟩ = some tcb ∧ eligible tcb = true := by
+  intro l
+  induction l with
+  | nil =>
+    intro found bt bp bd k hF h
+    unfold chooseBestRunnableEffectiveCode at h
+    cases found
+    · simp at h
+    · simp only [if_true, Nat.add_right_cancel_iff] at h
+      obtain ⟨tcb, hT, hE⟩ := hF rfl
+      subst h
+      exact ⟨tcb, hT, hE⟩
+  | cons tid rest ih =>
+    intro found bt bp bd k hF h
+    unfold chooseBestRunnableEffectiveCode at h
+    cases hT : st.getTcb? tid with
+    | none => rw [hT] at h; exact ih found bt bp bd k hF h
+    | some tcb =>
+      rw [hT] at h
+      simp only at h
+      by_cases hE : (eligible tcb && hasSufficientBudget st tcb) = true
+      · rw [if_pos hE] at h
+        have hEl : eligible tcb = true := (Bool.and_eq_true _ _ ▸ hE).1
+        split at h
+        · exact ih true tid _ _ k (fun _ => ⟨tcb, hT, hEl⟩) h
+        · exact ih found bt bp bd k hF h
+      · rw [if_neg hE] at h
+        exact ih found bt bp bd k hF h
+
+/-- Core `c`'s selection names a thread the store holds, in `c`'s active domain. -/
+theorem chooseThreadEffectiveOnCoreCode_succ {st : SystemState} {c : CoreId} {k : Nat}
+    (h : chooseThreadEffectiveOnCoreCode st c = k + 1) :
+    ∃ tcb, st.getTcb? ⟨k⟩ = some tcb ∧ tcb.domain = st.scheduler.activeDomainOnCore c := by
+  unfold chooseThreadEffectiveOnCoreCode at h
+  have hNone : (false = true → ∃ tcb, st.getTcb? default = some tcb ∧
+      (fun tcb : TCB => tcb.domain == st.scheduler.activeDomainOnCore c) tcb = true) :=
+    fun h => absurd h Bool.false_ne_true
+  dsimp only at h
+  split at h
+  · obtain ⟨tcb, hT, hE⟩ := chooseBestRunnableEffectiveCode_succ st _ _ false _ _ _ k hNone h
+    exact ⟨tcb, hT, beq_iff_eq.mp hE⟩
+  · obtain ⟨tcb, hT, hE⟩ := chooseBestRunnableEffectiveCode_succ st _ _ false _ _ _ k hNone h
+    exact ⟨tcb, hT, beq_iff_eq.mp hE⟩
+
+/-- `scheduleEffectiveOnCore`'s state, which it always reaches
+(`scheduleEffectiveOnCore_eq_state`): the selection names a thread the store
+holds in the core's active domain (`chooseThreadEffectiveOnCoreCode_succ`), so
+the dispatch's lookup and domain test always pass and the dispatch writes
+without a refusal to keep the state for, as seL4's `schedule` never fails. -/
+@[inline] def scheduleEffectiveOnCoreState (st : SystemState) (c : CoreId) : SystemState :=
+  match chooseThreadEffectiveOnCoreCode st c with
+  | 0 => (idleFallbackOnCore (saveOutgoingContextOnCore st c) c).clearReschedulePendingOnCore c
+  | k + 1 =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
+      let stSaved := saveOutgoingContextOnCore st c
+      let stDequeued := stSaved.runRemoveOnCore c tid
+      let stRestored := restoreIncomingContextOnCore stDequeued c tid
+      { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
+        |>.clearReschedulePendingOnCore c }
+
+theorem scheduleEffectiveOnCore_eq_state (st : SystemState) (c : CoreId) :
+    scheduleEffectiveOnCore st c = .ok (scheduleEffectiveOnCoreState st c) := by
+  rw [scheduleEffectiveOnCore_eq_impl]
+  unfold scheduleEffectiveOnCoreImpl scheduleEffectiveOnCoreState
+  cases hk : chooseThreadEffectiveOnCoreCode st c with
+  | zero => rfl
+  | succ k =>
+    obtain ⟨tcb, hT, hD⟩ := chooseThreadEffectiveOnCoreCode_succ hk
+    simp only [hT, hD, ↓reduceIte]
+
+
 /-- WS-SM SM5.E (deprecated alias).  The idle dispatch is now folded directly into
 `scheduleEffectiveOnCore` (its `none` branch runs core `c`'s idle thread when
 dispatchable — see above), so the per-core *timer* / *domain* paths
@@ -1349,81 +1431,61 @@ SchedContext replenishment on the executing core `execCore`.
 
 Refills `scId`'s budget (`refillSchedContext`), and — if its budget went from
 exhausted (`0`) to positive — makes its bound thread runnable on its **target**
-core via SM5.C's `wakeThread` (returning the optional cross-core `.reschedule`
-SGI).  The target core is `determineTargetCore` (the thread's `cpuAffinity`, or
-the boot core when unbound); under the `schedContextRunQueueConsistent_perCore`
-invariant the target is `execCore` (a local enqueue, no SGI), but a thread whose
-affinity changed (SM5.H.4 migration deferred) targets a *remote* core and the
-wake fires a `.reschedule` SGI to it — the defensive cross-core path SM5.D.4
-realises.
+core via SM5.C's `wakeThread`.  The target core is `determineTargetCore` (the
+thread's `cpuAffinity`, or the boot core when unbound); under the
+`schedContextRunQueueConsistent_perCore` invariant the target is `execCore`, but
+a thread whose affinity changed (SM5.H.4 migration deferred) targets a *remote*
+core — the defensive cross-core path SM5.D.4 realises.
 
 Guards (faithful to the single-core `processReplenishmentsDue`): the wake fires
 only when the SC was genuinely exhausted-and-now-positive (a no-op refill does
-not wake), and never re-enqueues a thread that is *currently running* on its
-target core (`currentOnCore target == some tid` ⇒ skip — re-enqueuing the running
-thread would violate dequeue-on-dispatch).  `wakeThread`'s own single-placement
-guard (`runnableOnSomeCore`) additionally suppresses a second placement of an
-already-runnable thread.  Routes every object lookup through the typed
-`getSchedContext?` accessor (AK7-clean).
+not wake), and never re-enqueues a thread that is *currently running* on some
+core (re-enqueuing the running thread would violate dequeue-on-dispatch).
+`wakeThread`'s own single-placement guard (`runnableOnSomeCore`) additionally
+suppresses a second placement of an already-runnable thread.
 
-**Local-wake visibility (PR #880 round 7).**  The third result component is the
-local-target counterpart of the SGI decision: `true` iff the wake resolved to a
-TCB and targeted the executing core itself (the exact complement of the SGI
-guard, which fires iff the wake resolved and targeted a *remote* core).  No SGI
-can poke the core that is already executing this drain, so the caller
-(`timerTickOnCore`) must run the receiver-side reschedule decision
-(`handleRescheduleSgiOnCore`) locally once the budget charge is done.  Without
-this bit a due replenishment that makes an already-queued higher-priority
-thread eligible again was triply invisible — placement suppressed (the thread
-sat in the queue since its exhaustion re-enqueue), no SGI (local target), no
-preemption flag (the *current* thread's budget survived the charge) — and the
-refilled thread waited out the current thread's entire remaining budget. -/
+**The stale decision is flagged (WS-ZA ZA6.2).**  A wake that resolves to a
+thread marks the reschedule flag of the thread's target core
+(`markReschedulePendingOnCoreIf`, on a thread the store holds), whether the wake placed the thread or found it
+already queued: the refill made a queued thread eligible, which stales that
+core's scheduling decision, as seL4's `awaken` calls `possibleSwitchTo` for
+every released thread.  The flag is the step's whole report: a remote core's
+flag going up is the `.reschedule` SGI the step's seam fires
+(`rescheduleSgisFromFlags`), and the executing core's own flag is the local
+decision `timerTickOnCore` runs after the charge.  Before ZA6.2 the step
+returned the SGI and a local-wake bit beside the state; reading them off the
+state lets the drain return the state alone.  The already-queued case is the
+one PR #880 round 7 found: a thread queued but exhausted on the executing core,
+refilled with no placement and no SGI, waited out the current thread's entire
+remaining budget. -/
 def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
-    (scId : SeLe4n.SchedContextId) (now : Nat) :
-    SystemState × Option (CoreId × SgiKind) × Bool :=
+    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
   let refilled := refillSchedContext st scId now
   match replenishWakeTarget st refilled scId with
   | some tid =>
-      if runningOnSomeCore refilled tid then
-        -- the refilled thread is already running on *some* core (audit-pass-2 /
-        -- Codex-P2): skip.  Re-enqueuing a running thread would violate
-        -- dequeue-on-dispatch; checking only the *target* core (the pre-fix guard)
-        -- missed a thread current on a *different* core than its
-        -- `determineTargetCore` (deferred-affinity-migration case), which would
-        -- leave the same TCB current on one core and runnable on another.
-        (refilled, none, false)
+      if runningOnSomeCore refilled tid then refilled
       else
-        -- wake it on its target core (local enqueue, or remote + SGI), flagging
-        -- a resolved local-target wake for the caller's reschedule decision.
-        let woken := wakeThread refilled tid execCore
-        (woken.1, woken.2,
-          (refilled.getTcb? tid).isSome && determineTargetCore refilled tid == execCore)
-  | none => (refilled, none, false)
+        let woken := (wakeThread refilled tid execCore).1
+        { woken with scheduler := (woken.scheduler.markReschedulePendingOnCoreIf
+            (determineTargetCore refilled tid) (refilled.getTcb? tid).isSome) }
+  | none => refilled
 
 /-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
-`now`, accumulating the cross-core `.reschedule` SGIs the remote-targeted wakes
-emit.
+`now`.
 
 Pops the due entries from core `c`'s replenish queue
 (`replenishQueueOnCore c |>.popDue now`) — writing back the remaining queue —
-then folds `processOneReplenishmentOnCore` over them, threading the state and
-collecting each step's optional SGI.  The per-core analogue of
+then folds `processOneReplenishmentOnCore` over them.  The per-core analogue of
 `processReplenishmentsDue`, reading / writing core `c`'s replenish-queue slot
-(plus, via the wakes, the target cores' run queues and the object store).  Pure;
-deterministic; the returned SGI list is the set of cross-core pokes
-`timerTickOnCore` must emit after the state write is visible, and the returned
-Bool (PR #880 round 7) is `true` iff **some** step's wake resolved and targeted
-the executing core itself — the accumulated local-wake bit `timerTickOnCore`
-resolves with one `handleRescheduleSgiOnCore` decision after the budget charge
-(the local counterpart of the SGIs, which remote receivers resolve the same
-way). -/
+(plus, via the wakes, the target cores' run queues, their reschedule flags and
+the object store).  Pure; deterministic.  What the wakes owe — a `.reschedule`
+SGI to each remote core whose flag went up, and the local decision when the
+executing core's did — is read off the reschedule flags (WS-ZA ZA6.2). -/
 def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
-    SystemState × List (CoreId × SgiKind) × Bool :=
+    SystemState :=
   let (remainingQueue, dueIds) := (st.scheduler.replenishQueueOnCore c).popDue now
   let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore c remainingQueue }
-  dueIds.foldl (fun (acc : SystemState × List (CoreId × SgiKind) × Bool) scId =>
-    let r := processOneReplenishmentOnCore acc.1 c scId now
-    (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) (st', [], false)
+  dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) st'
 
 /-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
 `scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
@@ -1538,18 +1600,100 @@ theorem spendBudgetOnCore_objects_invExt (st : SystemState) (c : CoreId)
     (SystemState.rewriteObject_preserves_objects_invExt st _ _
       (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv)
 
+/-- Mark the reschedule flag of every core an SGI list names: the cores a
+step's wakes owe a scheduling point, recorded where the step's seam reads them
+(`rescheduleSgisFromFlags`, WS-ZA ZA6.2). -/
+def markRescheduleTargets (s : SchedulerState) : List (CoreId × SgiKind) → SchedulerState
+  | [] => s
+  | p :: ps => markRescheduleTargets (s.markReschedulePendingOnCore p.1) ps
+
+/-- The marks write the reschedule flags alone. -/
+theorem markRescheduleTargets_eq (s : SchedulerState) (l : List (CoreId × SgiKind)) :
+    markRescheduleTargets s l = { s with reschedulePending := (markRescheduleTargets s l).reschedulePending } := by
+  induction l generalizing s with
+  | nil => rfl
+  | cons p ps ih =>
+    simp only [markRescheduleTargets]
+    rw [ih]
+    rfl
+
+@[simp] theorem markRescheduleTargets_currentOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).currentOnCore c' = s.currentOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_runQueueOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).runQueueOnCore c' = s.runQueueOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_runQueueEndsOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_replenishQueueOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_activeDomainOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_domainTimeRemainingOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_domainScheduleIndexOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_lastTimeoutErrorsOnCore (s : SchedulerState) (l : List (CoreId × SgiKind)) (c' : CoreId) :
+    (markRescheduleTargets s l).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  rw [markRescheduleTargets_eq]; rfl
+
+@[simp] theorem markRescheduleTargets_domainSchedule (s : SchedulerState) (l : List (CoreId × SgiKind)) :
+    (markRescheduleTargets s l).domainSchedule = s.domainSchedule := by
+  rw [markRescheduleTargets_eq]
+
+@[simp] theorem markRescheduleTargets_configDefaultTimeSlice (s : SchedulerState) (l : List (CoreId × SgiKind)) :
+    (markRescheduleTargets s l).configDefaultTimeSlice = s.configDefaultTimeSlice := by
+  rw [markRescheduleTargets_eq]
+
+/-- The marks lower no flag. -/
+theorem markRescheduleTargets_reschedulePendingOnCore_mono (s : SchedulerState)
+    (l : List (CoreId × SgiKind)) (d : CoreId) (h : s.reschedulePendingOnCore d = true) :
+    (markRescheduleTargets s l).reschedulePendingOnCore d = true := by
+  induction l generalizing s with
+  | nil => exact h
+  | cons p ps ih =>
+    apply ih
+    by_cases hd : p.1 = d
+    · subst hd; simp
+    · rw [SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ hd]; exact h
+
+/-- Every core the list names is flagged. -/
+theorem markRescheduleTargets_marks (s : SchedulerState) (l : List (CoreId × SgiKind))
+    (p : CoreId × SgiKind) (hp : p ∈ l) :
+    (markRescheduleTargets s l).reschedulePendingOnCore p.1 = true := by
+  induction l generalizing s with
+  | nil => cases hp
+  | cons q qs ih =>
+    simp only [markRescheduleTargets]
+    rcases List.mem_cons.mp hp with h | h
+    · subst h
+      exact markRescheduleTargets_reschedulePendingOnCore_mono _ _ _ (by simp)
+    · exact ih _ h
+
 /-- A bound thread's budget runs out on the timer tick: the budget is spent
 (`spendBudgetOnCore`) and the IPC-blocked threads the SchedContext bounded time
-out, their remote-wake SGIs returned. -/
+out, their errors recorded in core `c`'s `lastTimeoutErrorsOnCore` diagnostic
+and each woken thread's home core flagged (`markRescheduleTargets`), so its
+`.reschedule` SGI is read off the flags (WS-ZA ZA6.2). -/
 @[inline] def budgetExhaustOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SchedContextId) (sc : SchedContext)
-    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) :
-    SystemState × List (CoreId × SgiKind) :=
-  -- PR #880 round 8: timeout wakes land on each thread's HOME core and
-  -- their remote-poke SGIs ride the result's second component.
+    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
+  -- PR #880 round 8: timeout wakes land on each thread's HOME core.
   let timedOut := timeoutBlockedThreads (spendBudgetOnCore st c tid scId sc hSc ticks) scId c
-  ({ timedOut.1 with scheduler :=
-      timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1 }, timedOut.2.2)
+  { timedOut.1 with scheduler := (markRescheduleTargets
+      (timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1) timedOut.2.2) }
 
 /-- WS-SM SM5.D.5 (per-core budget/time-slice tick): the per-core analogue of
 `timerTickBudget`.  Charges the current thread `tid` (with TCB `tcb`) one tick of
@@ -1564,218 +1708,138 @@ Dispatches on `tcb.schedContextBinding` exactly as `timerTickBudget`:
 - **Bound, budget ≤ 1**: budget exhausted — schedule a replenishment, insert it
   into core `c`'s replenish queue, re-enqueue `tid` into core `c`'s run queue,
   time out any IPC-blocked threads the SC bounded (recording errors in core `c`'s
-  `lastTimeoutErrorsOnCore` diagnostic), signal preemption.
-- **Bound, SC missing**: `.error .missingSchedContext` (R5.E fail-closed; the
-  branch is unreachable under `schedContextStoreConsistent`).
-
-Returns `(updatedState, wasPreempted, timeoutSgis)` (PR #880 round 8): the
-third component is the cross-core `.reschedule` SGIs the bound-exhausted arm's
-timeout wakes produced — `timeoutThread` wakes each timed-out thread on its
-**home** core, and a remote home must be poked after the caller's state commit
-exactly like the replenish-drain wakes.  Every non-exhausted arm returns `[]`.
+  `lastTimeoutErrorsOnCore` diagnostic, flagging each woken thread's home core),
+  signal preemption.
+- **Bound, SC missing**: charged nothing, as an idle core is (WS-ZA ZA6.2: the
+  tick is total, as seL4's `timerTick` is; the arm is unreachable under
+  `schedContextStoreConsistent`, which the theorems that need the charge consume).
 
 Reads / writes core `c`'s scheduler slots (`runQueueOnCore c`,
 `replenishQueueOnCore c`, `lastTimeoutErrorsOnCore c`), the object store, and —
 via the round-8 target-aware timeout wakes — the woken threads' home-core run
-queues.
+queues and reschedule flags.
 
 **No `machine.timer` advance** (unlike `timerTickBudget`): the per-core tick is
 read-only w.r.t. the shared global tick counter (see the SM5.D section header —
 global-timer ownership). -/
 def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    : Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) : SystemState × Bool :=
   match tcb.schedContextBinding with
   | .unbound =>
     if tcb.timeSlice ≤ 1 then
-      .ok (sliceExpireOnCore st c tid tcb hTcb, true, [])
+      (sliceExpireOnCore st c tid tcb hTcb, true)
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-      .ok (st.rewriteObject tid.toObjId (.tcb tcb')
-             (SystemState.rewriteAdmissible_tcb hTcb tcb'), false, [])
+      (st.rewriteObject tid.toObjId (.tcb tcb')
+         (SystemState.rewriteAdmissible_tcb hTcb tcb'), false)
   | .bound scId | .donated scId _ =>
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
-        let r := budgetExhaustOnCore st c tid scId sc hSc 1
-        .ok (r.1, true, r.2)
+        (budgetExhaustOnCore st c tid scId sc hSc 1, true)
       else
         let sc' := consumeBudget sc 1
-        let st' := st.rewriteObject scId.toObjId (.schedContext sc')
-          (SystemState.rewriteAdmissible_schedContext hSc sc')
-        .ok (st', false, [])
-    | none =>
-      -- R5.E fail-closed: SchedContext lookup failed for a bound-budget thread.
-      -- Unreachable under `schedContextStoreConsistent`; surfaced explicitly
-      -- rather than advancing on stale budget state.
-      .error .missingSchedContext
+        (st.rewriteObject scId.toObjId (.schedContext sc')
+          (SystemState.rewriteAdmissible_schedContext hSc sc'), false)
+    | none => (st, false)
 
 /-- WS-SM SM5.D.5 (raw-write migration Cut B2): charge core `c`'s current thread
 `tid` one tick, **resolved from the store** — the witnessed lookup
 `getTcbWitnessed?` supplies `timerTickBudgetOnCore` the proof its in-place rewrite
-consumes, and a current thread that resolves to no TCB is a scheduler-invariant
-violation (fail-closed, `.schedulerInvariantViolation`), exactly the arm the tick
-carried inline before.
+consumes.  A current thread the store does not hold is charged nothing, as an
+idle core is (WS-ZA ZA6.2: the tick is total, as seL4's `timerTick` is; the arm
+is unreachable under `currentThreadValidOnCore`, which the theorems that need
+the charge consume).
 
 **Why this is a definition rather than the tick's own `match`.**  The lookup is a
 *dependent* match — the `some ⟨tcb, hTcb⟩` alternative's type names the state
-scrutinised — and Lean elaborates a `let` whose body's type does not depend on it
-as a `have`, so inside `timerTickOnCore` the tick's state `st1` is a `have`-bound
-name.  A dependent match under a `have` binder, and equally a dependent match over
-a stuck projection such as `(timerTickOnCorePrepared st c).1`, is opaque to
-definitional unification: two spellings of the same match tree do not unify, and
-`timerTickOnCore_eq_prepared` — the `rfl` equation every SM5.D.2 headline is a
-corollary of — stopped elaborating with the lookup inline, on every restatement
-except a verbatim copy of the body (measured, not reasoned).  Over a **parameter**
-the match is ordinary, and the tick's own match tree stays non-dependent, which is
-what keeps that equation `rfl`.  The frame every consumer reads is
-`timerTickChargeCurrentOnCore_ok`: a successful charge *is* a successful
-`timerTickBudgetOnCore` at the witnessed TCB. -/
-def timerTickChargeCurrentOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
+scrutinised — and over a `have`-bound state or a stuck projection such as
+`(timerTickOnCorePrepared st c)` a dependent match is opaque to definitional
+unification, so `timerTickOnCore_eq_prepared` (`rfl`) would stop elaborating
+with the lookup inline.  Over a **parameter** the match is ordinary.  The frame
+every consumer reads is `timerTickChargeCurrentOnCore_eq`: the charge at a
+resolving thread is `timerTickBudgetOnCore` at the witnessed TCB. -/
+@[inline] def timerTickChargeCurrentOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    SystemState × Bool :=
   match st.getTcbWitnessed? tid with
   | some ⟨tcb, hTcb⟩ => timerTickBudgetOnCore st c tid tcb hTcb
-  | none => .error .schedulerInvariantViolation
+  | none => (st, false)
 
-/-- A successful charge is a successful `timerTickBudgetOnCore` at the TCB the
-store holds for `tid`, under the store's own witness — the shape every composite
-over the tick destructures. -/
-theorem timerTickChargeCurrentOnCore_ok {st : SystemState} {c : CoreId}
-    {tid : SeLe4n.ThreadId} {r : SystemState × Bool × List (CoreId × SgiKind)}
-    (h : timerTickChargeCurrentOnCore st c tid = .ok r) :
-    ∃ (tcb : TCB) (hTcb : st.getTcb? tid = some tcb),
-      timerTickBudgetOnCore st c tid tcb hTcb = .ok r := by
-  unfold timerTickChargeCurrentOnCore at h
-  split at h
-  · rename_i tcb hTcb _
-    exact ⟨tcb, hTcb, h⟩
-  · cases h
-
-/-- The converse: the charge at a resolving thread is the budget tick at its TCB. -/
+/-- The charge at a resolving thread is the budget tick at its TCB. -/
 theorem timerTickChargeCurrentOnCore_eq {st : SystemState} {c : CoreId}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hTcb : st.getTcb? tid = some tcb) :
     timerTickChargeCurrentOnCore st c tid = timerTickBudgetOnCore st c tid tcb hTcb := by
   unfold timerTickChargeCurrentOnCore
   rw [SystemState.getTcbWitnessed?_eq_some hTcb]
 
-/-- A thread the store does not hold cannot be charged. -/
+/-- A thread the store does not hold is charged nothing. -/
 theorem timerTickChargeCurrentOnCore_none {st : SystemState} {c : CoreId}
     {tid : SeLe4n.ThreadId} (hNone : st.getTcb? tid = none) :
-    timerTickChargeCurrentOnCore st c tid = .error .schedulerInvariantViolation := by
+    timerTickChargeCurrentOnCore st c tid = (st, false) := by
   unfold timerTickChargeCurrentOnCore
   rw [SystemState.getTcbWitnessed?_eq_none hNone]
 
+/-- Core `c`'s scheduling point after its tick's charge: the local reschedule
+decision (`handleRescheduleOnCoreState`) when core `c`'s reschedule flag is up,
+the state as it is otherwise.  The flag is what the drain's wakes and the
+charge's timeout wakes raise on the core whose decision they staled
+(WS-ZA ZA6.2), and a decision clears it. -/
+@[inline] def rescheduleIfPendingOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  if st.scheduler.reschedulePendingOnCore c then handleRescheduleOnCoreState st c else st
+
 /-- WS-SM SM5.D.2 (plan §3.4): the per-core timer tick — the full per-core
-analogue of `timerTickWithBudget`.
+analogue of `timerTickWithBudget`.  Total, as seL4's `timerTick` is (WS-ZA ZA6.2).
 
 Processing order (on core `c`, at the current global time `now := machine.timer`,
 which the tick reads but does not advance — see the SM5.D section header):
 1. **SM5.D.9**: clear core `c`'s `lastTimeoutErrorsOnCore` diagnostic, so a stale
    timeout-error record never survives across rounds.
 2. **SM5.D.4**: process core `c`'s due CBS replenishments
-   (`processReplenishmentsDueOnCore`), collecting the cross-core `.reschedule`
-   SGIs the remote-targeted wakes emit.
+   (`processReplenishmentsDueOnCore`); each wake flags the core whose decision
+   it staled.
 3. **SM5.D.5**: charge the running thread one tick (`timerTickBudgetOnCore`); if
    that exhausts its budget / time-slice (preemption), re-select and dispatch the
    highest-priority budget-eligible runnable thread on core `c`
-   (`scheduleEffectiveOnCore`).  An idle core (`currentOnCore c = none`) skips the
-   budget charge.
-4. **PR #880 round 7 — local replenish-wake reschedule**: when step 2's drain
-   woke a thread **on core `c` itself** (the accumulated local-wake bit) and
-   step 3 did not already re-dispatch, run the receiver-side reschedule decision
-   locally (`handleRescheduleSgiOnCore` — choose the best budget-eligible
-   candidate, switch only if it outranks the current thread in the selector's
-   own order, re-enqueueing the preempted thread).  A local wake fires no SGI
-   (nothing can poke the core that is executing the tick), and its placement is
-   suppressed when the thread already sat in the queue from its exhaustion
-   re-enqueue, so without this decision a refilled higher-priority thread was
-   invisible to every scheduling trigger and waited out the current thread's
-   entire remaining budget — the exact latency the `.reschedule` SGI closes for
-   remote wakes, `resumeThread` closes for local resume wakes (PR #811 P2-5),
-   and this step closes for local replenish wakes.  The same decision applies
-   on the idle arm (`currentOnCore c = none`): a vacated core whose queued
-   thread was ineligible at vacate time (so `scheduleLocalSuccessor` kept the
-   vacancy) is dispatched here the moment its refill lands.
+   (`scheduleEffectiveOnCoreState`).  An idle core (`currentOnCore c = none`), a
+   current thread the store does not hold and a bound context the store does
+   not hold are charged nothing.
+4. **Local reschedule** (PR #880 round 7, read off the flag since ZA6.2): when
+   step 3 did not re-dispatch and core `c`'s reschedule flag is up — a drain
+   wake landed on core `c` itself, or an earlier entry staled its decision —
+   run the receiver-side reschedule decision locally
+   (`handleRescheduleOnCoreState`: switch only if the best candidate outranks
+   the current thread in the selector's own order).  No SGI can poke the core
+   executing the tick, so without this decision a refilled higher-priority
+   thread already queued on core `c` waited out the current thread's entire
+   remaining budget.  The idle arm runs the same decision: a vacated core whose
+   queued thread was ineligible at vacate time is dispatched the moment its
+   refill lands.
 
 The tick does **budget accounting only** and never writes
 `domainTimeRemainingOnCore` (audit-pass-2 domain-rotation faithfulness, mirroring
 single-core `timerTickWithBudget`); per-core *domain* rotation is the separate
-atomic `scheduleDomainOnCore`.  Its `domainTimeRemainingPositiveOnCore`
-preservation is therefore a pure frame on that untouched slot (formalised in the
-SM5.I per-core tick invariant capstone).
+atomic `scheduleDomainOnCore`.
 
-Returns the post-tick state paired with the list of cross-core SGIs to emit
-(from the replenish wakes).  The pure single-state-plus-SGIs form mirrors
-`wakeThread` / `chooseThreadOnCore`: the runtime ISR (SM5.D.1) reads core `c`
-from `TPIDR_EL1`, commits the state under the `timerTickOnCoreLockSet`
-`withLockSet` bracket, then emits the returned SGIs after the write is visible.
-Fail-closed `Except`: a non-TCB current thread surfaces
-`.schedulerInvariantViolation`; a bound-budget thread with a missing SchedContext
-surfaces `.missingSchedContext` (R5.E). -/
-def timerTickOnCore (st : SystemState) (c : CoreId) :
-    Except KernelError (SystemState × List (CoreId × SgiKind)) :=
+Returns the post-tick state.  The cross-core `.reschedule` SGIs the tick owes
+are the remote cores whose reschedule flag it raised; the run-loop step reads
+them off the flags (`perCoreTimerTickStep`), as the syscall seam does, and the
+runtime ISR (SM5.D.1) fires them after the state write is visible. -/
+def timerTickOnCore (st : SystemState) (c : CoreId) : SystemState :=
   -- SM5.D.9: clear core c's timeout-error diagnostic at tick entry.
   let st0 := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }
-  let now := st0.machine.timer
-  -- SM5.D.4: process core c's due CBS replenishments (+ cross-core wakes);
-  -- PR #880 round 7: the drain also reports whether a wake landed on core c
-  -- itself, resolved by the local reschedule decision after the budget charge.
-  let prepared := processReplenishmentsDueOnCore st0 c now
-  let st1 := prepared.1
-  let replenishSgis := prepared.2.1
-  let localReplenishWake := prepared.2.2
-  -- SM5.D.5: per-core budget/time-slice tick + local preemption.
-  --
-  -- Audit-pass-2 (domain-rotation faithfulness): the tick does **budget
-  -- accounting only**, exactly mirroring the single-core `timerTickWithBudget`
-  -- (which never touches `domainTimeRemaining`).  Per-core *domain* accounting is
-  -- the **separate** `scheduleDomainOnCore` transition (below), which — like the
-  -- single-core `scheduleDomain` — *atomically* couples rotation with
-  -- re-dispatch (`switchDomainOnCore` re-enqueues + clears the outgoing thread,
-  -- then `scheduleEffectiveOnCore` dispatches in the new domain).  Folding a
-  -- rotation *without* re-dispatch into the tick (the pre-audit-pass-2 form)
-  -- left a running thread whose `tcb.domain` no longer matched the rotated
-  -- `activeDomainOnCore c`, breaking the maintained `currentThreadInActiveDomain`
-  -- invariant; the single-core model never produces that state because rotation
-  -- lives only in `scheduleDomain`, never in the tick.  The SM5.I run loop
-  -- invokes `timerTickOnCore` then `scheduleDomainOnCore`, exactly as the
-  -- single-core run loop invokes `timerTickWithBudget` then `scheduleDomain`.
+  -- SM5.D.4: process core c's due CBS replenishments (+ cross-core wakes).
+  let st1 := processReplenishmentsDueOnCore st0 c st0.machine.timer
+  -- SM5.D.5: per-core budget/time-slice tick + local preemption.  The tick does
+  -- **budget accounting only** (audit-pass-2): rotation folded into the tick
+  -- left a running thread outside the rotated domain; the run loop invokes
+  -- `timerTickOnCore` then `scheduleDomainOnCore`, as the single-core loop
+  -- invokes `timerTickWithBudget` then `scheduleDomain`.
   match st1.scheduler.currentOnCore c with
-  | none =>
-      -- idle-slot core: nothing to charge — but a local replenish wake must
-      -- still dispatch (PR #880 round 7).  A thread queued-but-exhausted on a
-      -- vacated core was ineligible when `scheduleLocalSuccessor` ran at the
-      -- vacate seam, and its refill fires no SGI (local target); this decision
-      -- is the only trigger that sees it.
-      if localReplenishWake then
-        match handleRescheduleSgiOnCore st1 c with
-        | .error e => .error e
-        | .ok st2 => .ok (st2, replenishSgis)
-      else
-        .ok (st1, replenishSgis)
+  | none => rescheduleIfPendingOnCore st1 c
   | some tid =>
       match timerTickChargeCurrentOnCore st1 c tid with
-      | .error e => .error e
-      | .ok (st2, preempted, timeoutSgis) =>
-          -- PR #880 round 8: the bound-exhausted arm's timeout wakes are
-          -- target-aware; their remote-poke SGIs join the replenish
-          -- drain's in the tick's emission list.
-          if preempted then
-            match scheduleEffectiveOnCore st2 c with
-            | .error e => .error e
-            | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
-          else if localReplenishWake then
-            -- PR #880 round 7: the drain woke a thread on this very core and
-            -- the charge did not preempt — run the receiver-side reschedule
-            -- decision locally (switch only if the refilled candidate
-            -- outranks the running thread; identity otherwise).  The
-            -- preempted arm needs no such step: `scheduleEffectiveOnCore`
-            -- already re-selects over the refilled queue.
-            match handleRescheduleSgiOnCore st2 c with
-            | .error e => .error e
-            | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
-          else
-            .ok (st2, replenishSgis ++ timeoutSgis)
+      | (st2, true) => scheduleEffectiveOnCoreState st2 c
+      | (st2, false) => rescheduleIfPendingOnCore st2 c
 
 /-- WS-ZA ZA4.3: charge a yield to `tid`, current on core `c`.  Yield forfeits
 what is left of the caller's allotment (decided 2026-10-11; `seL4_Yield` under
@@ -1981,6 +2045,58 @@ theorem scheduleDomainOnCore_singleDomain_inert (st : SystemState) (c : CoreId)
     scheduleDomainOnCore st c = .ok st := by
   unfold scheduleDomainOnCore
   rw [hSched]
+
+-- The domain accounting never refuses (WS-ZA ZA6.1).
+
+/-- `switchDomainOnCore`'s state, which it always reaches
+(`switchDomainOnCore_eq_state`): the next index is taken modulo the schedule's
+length, so the entry it names exists. -/
+@[inline] def switchDomainOnCoreState (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.domainSchedule with
+  | [] => st
+  | _ =>
+      let nextIdx := ((st.scheduler.domainScheduleIndexOnCore c) + 1) % st.scheduler.domainSchedule.length
+      match st.scheduler.domainSchedule[nextIdx]? with
+      | none => st
+      | some entry =>
+          let stQueued := requeueOutgoingOnCore st c
+          let sched' := (((stQueued.scheduler.setCurrentOnCore
+              c none).setActiveDomainOnCore c (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
+              c (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore c nextIdx
+          { stQueued with scheduler := sched' }
+
+theorem switchDomainOnCore_eq_state (st : SystemState) (c : CoreId) :
+    switchDomainOnCore st c = .ok (switchDomainOnCoreState st c) := by
+  unfold switchDomainOnCore switchDomainOnCoreState
+  cases hS : st.scheduler.domainSchedule with
+  | nil => rfl
+  | cons e rest =>
+    simp only
+    have hLt : ((st.scheduler.domainScheduleIndexOnCore c) + 1) % (e :: rest).length
+        < (e :: rest).length := Nat.mod_lt _ (by simp)
+    rw [List.getElem?_eq_getElem hLt]
+
+/-- `scheduleDomainOnCore`'s state, which it always reaches
+(`scheduleDomainOnCore_eq_state`). -/
+@[inline] def scheduleDomainOnCoreState (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.domainSchedule with
+  | [] => st
+  | _ :: _ =>
+      if (st.scheduler.domainTimeRemainingOnCore c) ≤ 1 then
+        scheduleEffectiveOnCoreState (switchDomainOnCoreState st c) c
+      else decrementDomainTimeOnCore st c
+
+theorem scheduleDomainOnCore_eq_state (st : SystemState) (c : CoreId) :
+    scheduleDomainOnCore st c = .ok (scheduleDomainOnCoreState st c) := by
+  unfold scheduleDomainOnCore scheduleDomainOnCoreState
+  cases st.scheduler.domainSchedule with
+  | nil => rfl
+  | cons e rest =>
+    simp only
+    split
+    · rw [switchDomainOnCore_eq_state]; exact scheduleEffectiveOnCore_eq_state _ _
+    · rfl
+
 
 -- ============================================================================
 -- V8-G3: ThreadState synchronization
