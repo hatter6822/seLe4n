@@ -108,6 +108,15 @@ ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
 # entry either one defines is stale.  Reading the pair that way is fail-closed
 # for a stale cross archive -- an out-of-date one can only add failures.
 CROSS_ARCHIVE = REPO / ".lake" / "build" / "aarch64-unknown-none-softfloat" / "libsele4n.a"
+# WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`,
+# outside `SeLe4n.lean`'s import closure), host and cross.  Its boot entry and
+# initializer are HAL declarations only the exerciser image names, so each
+# side's provider is the kernel's archive together with the exerciser's: a
+# symbol either defines is defined on that side.
+EXERCISER_ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4nQemuVirtExerciser.a"
+CROSS_EXERCISER_ARCHIVE = (
+    REPO / ".lake" / "build" / "aarch64-unknown-none-softfloat" / "libsele4n_exerciser.a"
+)
 REQUIRE_CROSS_FLAG = "--require-cross"
 
 #: HAL `extern "C"` declarations that no provider defines **yet**, with the
@@ -150,12 +159,15 @@ EXTERN_FN = re.compile(
 #: The symbols the boot entries export, one per board: `lean_kernel_main`
 #: (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP BP4.1) and
 #: `lean_kernel_main_qemu_virt` (`SeLe4n.Platform.QemuVirt.kernelMain`, WS-BP
-#: BP8.1).  Only the link-level reconciliation reads them here — that both
-#: archives define each, like every other HAL declaration.  What each entry must
-#: *do* is `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
+#: BP8.1); and the `virt` exerciser image's,
+#: `lean_kernel_main_qemu_virt_exerciser`
+#: (`SeLe4n.Platform.QemuVirt.exerciserKernelMain`, WS-ZA ZA5.13).  Only the
+#: link-level reconciliation reads them here — that both archives define each,
+#: like every other HAL declaration.  What each entry must *do* is
+#: `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
 #: environment (PR #889 review round 17), one row of its `bootEntries` table per
 #: symbol.
-BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")
+BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")
 #: `#[link_name = "…"]` — in both spellings — on an `extern` declaration: the
 #: symbol the linker is actually asked for, whatever the Rust item is called.
 #: Matched over the string-free view, where the literal's delimiters survive
@@ -399,7 +411,8 @@ def rust_fn_signature(
 
 #: The Lean compiler's C for the host library: one `.c` per module, each
 #: exported function given a `LEAN_EXPORT` prototype.  Built by the same
-#: `lake build SeLe4n:static` that produces `ARCHIVE`.
+#: `lake build SeLe4n:static SeLe4nQemuVirtExerciser:static` that produces
+#: `ARCHIVE` and `EXERCISER_ARCHIVE`.
 IR_ROOT = REPO / ".lake" / "build" / "ir"
 
 #: A `LEAN_EXPORT` prototype or definition: the return type, the name and the
@@ -2227,16 +2240,20 @@ def self_test() -> int:
     return 0
 
 
-def archive_defined_symbols(archive: Path) -> set[str]:
-    out = subprocess.run(
-        ["nm", "--defined-only", "-g", str(archive)],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    # `<addr> <type> <name>`; archive member headers have fewer fields, and
-    # only global text (`T`) resolves a function requirement (round 8).
-    return executable_definitions(out)
+def archive_defined_symbols(archives: tuple[Path, ...]) -> set[str]:
+    """The global text one side's archives define between them."""
+    defined: set[str] = set()
+    for archive in archives:
+        out = subprocess.run(
+            ["nm", "--defined-only", "-g", str(archive)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        # `<addr> <type> <name>`; archive member headers have fewer fields, and
+        # only global text (`T`) resolves a function requirement (round 8).
+        defined |= executable_definitions(out)
+    return defined
 
 
 def combine_archive_definitions(
@@ -2250,18 +2267,42 @@ def combine_archive_definitions(
     return set.intersection(*tables), set.union(*tables)
 
 
-def checked_archives(require_cross: bool) -> list[tuple[str, Path]]:
-    """The archives the reconciliation is decided on: the host archive always,
-    the cross archive when present -- and when `--require-cross` is passed,
-    its absence is a failure rather than a narrower check."""
-    archives = [("host", ARCHIVE)]
-    if CROSS_ARCHIVE.exists():
-        archives.append(("aarch64", CROSS_ARCHIVE))
+def checked_archives(require_cross: bool) -> list[tuple[str, tuple[Path, ...]]]:
+    """The archives the reconciliation is decided on, per side: the host pair
+    always, the cross pair when present -- and when `--require-cross` is
+    passed, its absence is a failure rather than a narrower check.  Each side
+    is the kernel's archive and the exerciser's; the host side without both is
+    a failure, since a side missing a provider would report its symbols as
+    unresolved for the wrong reason.  The archive builder always writes the
+    cross pair together, so a cross side holding only one of them was left by
+    an earlier tree (a restored build cache): it is not what this tree links,
+    and it is read as an absent cross pair -- a narrower check, and a failure
+    under `--require-cross`."""
+    archives = [("host", (ARCHIVE, EXERCISER_ARCHIVE))]
+    cross = (CROSS_ARCHIVE, CROSS_EXERCISER_ARCHIVE)
+    present = [path for path in cross if path.exists()]
+    if len(present) == len(cross):
+        archives.append(("aarch64", cross))
     elif require_cross:
+        missing = next(path for path in cross if not path.exists())
         sys.exit(
-            f"[FAIL] {CROSS_ARCHIVE} does not exist and {REQUIRE_CROSS_FLAG} was passed. "
+            f"[FAIL] {missing} does not exist and {REQUIRE_CROSS_FLAG} was passed. "
             "Build it first: `python3 scripts/build_lean_aarch64_archive.py`"
         )
+    elif present:
+        print(
+            f"[SKIP] aarch64 side: {present[0]} has no partner archive, so it predates "
+            "this tree's archive builder; build both with "
+            "`python3 scripts/build_lean_aarch64_archive.py` to check that side"
+        )
+    for _, paths in archives:
+        for path in paths:
+            if not path.exists():
+                sys.exit(
+                    f"[FAIL] {path} does not exist. Build it first: "
+                    "`lake build SeLe4n:static SeLe4nQemuVirtExerciser:static` (host) or "
+                    "`python3 scripts/build_lean_aarch64_archive.py` (cross)"
+                )
     return archives
 
 
@@ -2271,10 +2312,6 @@ def main() -> int:
     if shutil.which("nm") is None:
         print("[SKIP] `nm` not available — cannot read the archive's symbol table")
         return SKIP_EXIT
-    if not ARCHIVE.exists():
-        sys.exit(
-            f"[FAIL] {ARCHIVE} does not exist. Build it first: `lake build SeLe4n:static`"
-        )
     archives = checked_archives(REQUIRE_CROSS_FLAG in sys.argv[1:])
 
     sources = lean_sources()
@@ -2430,7 +2467,10 @@ def main() -> int:
         )
         for symbol in BOOT_ENTRY_SYMBOLS
     )
-    checked = " and ".join(f"{label} ({path.relative_to(REPO)})" for label, path in archives)
+    checked = " and ".join(
+        f"{label} ({' + '.join(str(path.relative_to(REPO)) for path in paths)})"
+        for label, paths in archives
+    )
     print(
         f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in "
         f"{'both archives' if len(archives) > 1 else 'the archive'} — {checked} "

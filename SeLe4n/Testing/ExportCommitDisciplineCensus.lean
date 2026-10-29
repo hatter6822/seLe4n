@@ -15,6 +15,11 @@ import Lean.Elab.Command
 -- would read as absent and this census would pass vacuously about it.
 import SeLe4n
 import SeLe4n.Platform.Staged
+-- WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`),
+-- outside `SeLe4n.lean`'s closure so the shipped images do not carry it; its
+-- boot entry is a symbol of the exerciser image's archive, so it is in this
+-- environment beside the production ones.
+import SeLe4n.Platform.QemuVirt.Exerciser
 
 /-!
 # WS-RR RR7.13 — every state-committing `@[export]` is classified
@@ -270,7 +275,14 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
   , (`SeLe4n.Platform.QemuVirt.kernelMain,
       .unbracketed "boot install: `lean_kernel_main_qemu_virt` is `lean_kernel_main` \
         on the QEMU `virt` board — it installs the kernel state once, on the boot core, \
-        before any secondary is released, so no other committer exists") ]
+        before any secondary is released, so no other committer exists")
+    -- WS-ZA ZA5.13: the allocation exerciser's `virt` image boots its own
+    -- labeling through a third entry; the HAL calls it in place of the shipped
+    -- `virt` entry only when `smp_exercisers` is built in.
+  , (`SeLe4n.Platform.QemuVirt.exerciserKernelMain,
+      .unbracketed "boot install: `lean_kernel_main_qemu_virt_exerciser` is the QEMU \
+        `virt` install under the exerciser's labeling — it installs the kernel state once, \
+        on the boot core, before any secondary is released, so no other committer exists") ]
 
 /-- The seams that commit and are recorded as bracketed. -/
 def bracketedSeams : List Name :=

@@ -218,6 +218,14 @@ DECLARED_TAINT_CONSUMERS = {
     # (`dispatchCheckedArmThenTaintFused_eq`).
     "SeLe4n.Kernel.dispatchCheckedArmThenDeclassifyTaint",
     "SeLe4n.Kernel.dispatchCheckedArmThenDeclassifySignalTaint",
+    # WS-ZA ZA5.13: the same steps on the register path -- each routed
+    # declassification's admitted writes and its general form, each proven the
+    # specification's arm and fused step (`declassifyOperandArmR_eq`,
+    # `declassifySignalOperandArmR_eq`).
+    "SeLe4n.Kernel.declassifyPerform",
+    "SeLe4n.Kernel.declassifyGeneralR",
+    "SeLe4n.Kernel.declassifySignalStoredPerform",
+    "SeLe4n.Kernel.declassifySignalGeneralR",
     "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.waitOperandArmThenTaintR",
     # WS-ZA ZA4.7: the IPC arms' arm-then-apply steps on the register path

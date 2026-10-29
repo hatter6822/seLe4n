@@ -38,13 +38,24 @@ same questions, and the ones only a real link can answer, of the image itself
      boot entry `lean_kernel_main` among the production `@[export]`s, and
      every root it names is defined in the image's text.  A root the image
      does not define is a kernel the link did not carry, whatever the HAL
-     half looks like.
+     half looks like;
+  8. with `--excludes ARCHIVE` (WS-ZA ZA5.13), the image defines no global
+     symbol `ARCHIVE` defines.  The shipped RPi5 and QEMU `virt` images are
+     checked against the allocation exerciser's archive
+     (`libsele4n_exerciser.a`), so neither carries its boot entry, its
+     labeling or its declassification policy.  An archive that defines no
+     global symbol is refused: an exclusion over nothing decides nothing.
+     `--exclusion-only` asks that one question and no other, for an image
+     linked under another board's script (the shipped `virt` image, which
+     `scripts/qemu_boot_lib.sh` checks), where the RPi5 layout relations do
+     not apply.
 
 It reads the ELF header and section headers itself (a few `struct` fields,
 so there is no second tool to disagree with) and the symbol table with the
 toolchain-pinned `llvm-nm`.  An input it cannot read is refused.
 
-    check_kernel_image.py [--lean-kernel <libsele4n.roots.ld>] <sele4n-kernel ELF>
+    check_kernel_image.py [--lean-kernel <libsele4n.roots.ld>] [--excludes <archive>] <sele4n-kernel ELF>
+    check_kernel_image.py --exclusion-only --excludes <archive> <sele4n-kernel ELF>
     check_kernel_image.py --self-test
 """
 
@@ -171,9 +182,32 @@ def undefined_symbols(path: Path) -> list[str]:
     return [line.split()[-1] for line in out.splitlines() if line.split()]
 
 
+def archive_globals(archive: Path) -> set[str]:
+    """Every global symbol `archive` defines, whatever its section."""
+    out = subprocess.run([rust_llvm_tool("llvm-nm"), "--defined-only", "--extern-only",
+                          str(archive)], capture_output=True, text=True, check=True).stdout
+    names = {parts[2] for parts in (line.split() for line in out.splitlines())
+             if len(parts) == 3 and re.fullmatch(r"[0-9a-fA-F]+", parts[0])}
+    if not names:
+        raise GateFailure(f"{archive} defines no global symbol: an exclusion over nothing "
+                          f"decides nothing")
+    return names
+
+
+def carried_symbols(table: dict[str, int], excluded: set[str]) -> list[str]:
+    """The symbols of `table` an excluded archive defines: the one owner of the
+    `--excludes` relation, read by `check_image` and `exclusion_only`."""
+    return sorted(set(table) & excluded)
+
+
 def check_image(image: Image, script: Script, table: dict[str, int], undefined: list[str],
-                reserved: tuple[int, int], lean_roots: list[str] | None = None) -> list[str]:
+                reserved: tuple[int, int], lean_roots: list[str] | None = None,
+                excluded: set[str] | None = None) -> list[str]:
     problems: list[str] = []
+    carried = carried_symbols(table, excluded) if excluded is not None else []
+    if carried:
+        problems.append(f"the image defines {len(carried)} symbol(s) of an archive it must "
+                        f"not link: {', '.join(carried[:8])}")
     if image.elf_type != ET_EXEC or image.machine != EM_AARCH64:
         problems.append(f"the image is ELF type {image.elf_type}, machine {image.machine}; "
                         f"an AArch64 executable is type {ET_EXEC}, machine {EM_AARCH64}")
@@ -333,7 +367,25 @@ def self_test() -> int:
         ("roots whose first is not the initializer", kernel, roots[1:] + roots[:1],
          "library initializer"),
     ]
+    # The exclusion: a table that holds one symbol of the excluded archive —
+    # beside every symbol the image needs — fails; the same table against an
+    # archive whose symbols it does not hold passes.
+    excluded = {"lean_kernel_main_qemu_virt_exerciser", "l_exerciserLabeling"}
+    exclusion_cases = [
+        ("an image that carries none of the excluded archive", kernel, excluded, None),
+        ("an image that carries the excluded boot entry",
+         {**kernel, "lean_kernel_main_qemu_virt_exerciser": 0x80e00}, excluded,
+         "lean_kernel_main_qemu_virt_exerciser"),
+        ("an image that carries the excluded labeling's data",
+         {**kernel, "l_exerciserLabeling": 0x82100}, excluded, "l_exerciserLabeling"),
+    ]
     failures = 0
+    for name, table, exclude, expect in exclusion_cases:
+        problems = check_image(_IMAGE, _SCRIPT, table, [], reserved, roots, exclude)
+        ok = (not problems) if expect is None else (len(problems) == 1 and expect in problems[0])
+        if not ok:
+            failures += 1
+            print(f"  FAIL {name}: {problems}", file=sys.stderr)
     for name, table, lean_roots, expect in lean_cases:
         problems = check_image(_IMAGE, _SCRIPT, table, [], reserved, lean_roots)
         ok = (not problems) if expect is None else (len(problems) == 1 and expect in problems[0])
@@ -376,18 +428,45 @@ def self_test() -> int:
         if got != expect:
             failures += 1
             print(f"  FAIL {name}: {got}", file=sys.stderr)
-    total = len(cases) + len(lean_cases) + len(script_cases) + 1
+    total = len(cases) + len(lean_cases) + len(exclusion_cases) + len(script_cases) + 1
     print(f"check_kernel_image self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
+
+
+def exclusion_only(archive: Path, path: Path) -> int:
+    """The `--excludes` relation alone: `path` defines no global symbol of
+    `archive`."""
+    try:
+        excluded = archive_globals(archive)
+        carried = carried_symbols(symbols(path), excluded)
+    except (GateFailure, Unreadable, subprocess.CalledProcessError, OSError) as e:
+        print(f"check_kernel_image: FAIL — {e}", file=sys.stderr)
+        return 1
+    if carried:
+        print(f"check_kernel_image: FAIL — {path} defines {len(carried)} symbol(s) of "
+              f"{archive.name}, an archive it must not link: {', '.join(carried[:8])}",
+              file=sys.stderr)
+        return 1
+    print(f"  {path.name}: none of {archive.name}'s {len(excluded)} global symbols")
+    return 0
 
 
 def main(argv: list[str]) -> int:
     if argv[1:] == ["--self-test"]:
         return self_test()
     args = argv[1:]
+    if len(args) == 4 and args[:2] == ["--exclusion-only", "--excludes"]:
+        return exclusion_only(Path(args[2]), Path(args[3]))
     roots_path = None
-    if len(args) == 3 and args[0] == "--lean-kernel":
-        roots_path, args = Path(args[1]), args[2:]
+    excludes_path = None
+    while len(args) >= 3 and args[0] in ("--lean-kernel", "--excludes"):
+        if args[0] == "--lean-kernel" and roots_path is None:
+            roots_path = Path(args[1])
+        elif args[0] == "--excludes" and excludes_path is None:
+            excludes_path = Path(args[1])
+        else:
+            break
+        args = args[2:]
     if len(args) != 1 or args[0].startswith("-"):
         print(__doc__.rsplit("\n\n", 1)[-1].strip(), file=sys.stderr)
         return 2
@@ -396,9 +475,11 @@ def main(argv: list[str]) -> int:
         roots = parse_roots_script(roots_path.read_text()) if roots_path else None
         image = read_image(path)
         table = symbols(path)
+        excluded = archive_globals(excludes_path) if excludes_path else None
         problems = check_image(image, parse_script(LINK_SCRIPT.read_text()), table,
                                undefined_symbols(path),
-                               lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()), roots)
+                               lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()), roots,
+                               excluded)
         if problems:
             raise GateFailure("; ".join(problems))
     except (GateFailure, Refused, Unreadable, subprocess.CalledProcessError, OSError,
@@ -408,8 +489,10 @@ def main(argv: list[str]) -> int:
     loaded = sum(s.size for s in image.sections if not s.nobits)
     kernel = (f"; the Lean kernel's {len(roots)} roots are text" if roots
               else "; no Lean kernel checked")
+    exclusion = (f"; none of {excludes_path.name}'s {len(excluded)} global symbols"
+                 if excluded is not None else "")
     print(f"  {path.name}: entered at _start {image.entry:#x}, {len(image.sections)} sections "
-          f"in link.ld's order, {loaded:#x} loaded bytes, nothing undefined{kernel}")
+          f"in link.ld's order, {loaded:#x} loaded bytes, nothing undefined{kernel}{exclusion}")
     return 0
 
 

@@ -1511,17 +1511,34 @@ been drained from the trail since boot (`AuditRing.epoch`). -/
 abbrev SystemState.declassificationAuditEpoch (st : SystemState) : Nat :=
   st.declassificationAudit.epoch
 
+/-- WS-ZA ZA5.13: an audit slot's event rebuilt into cells of its own — the
+event record, its actor and its snapshot words, each through `opaqueId` — so a
+record that writes the slot over in place (`DeclassificationEvent.overwrite`)
+finds all three exclusive.  The identity (`freshEvent_eq`). -/
+@[inline] def _root_.SeLe4n.Kernel.AuditRing.freshEvent (e : SeLe4n.Kernel.DeclassificationEvent) :
+    SeLe4n.Kernel.DeclassificationEvent :=
+  { e with
+    targetObject := opaqueId e.targetObject
+    actor := { e.actor with subject := opaqueId e.actor.subject }
+    predecessorWords := { e.predecessorWords with count := opaqueId e.predecessorWords.count } }
+
+theorem _root_.SeLe4n.Kernel.AuditRing.freshEvent_eq (e : SeLe4n.Kernel.DeclassificationEvent) :
+    SeLe4n.Kernel.AuditRing.freshEvent e = e := rfl
+
 /-- WS-ZA ZA5.10: the audit ring rebuilt with its own slot array.  The boot's
 ring is the shared initial constant, so the first record would copy all of its
 slots; each slot passes through `opaqueId`, so the compiler builds a fresh array
-rather than handing back the constant's. -/
+rather than handing back the constant's.  WS-ZA ZA5.13: every slot's event is
+rebuilt too (`AuditRing.freshEvent`): the initial ring's slots all hold the one
+vacant event, so a record writing its slot over in place would otherwise find
+that event shared and copy it. -/
 @[noinline] def _root_.SeLe4n.Kernel.AuditRing.fresh (r : SeLe4n.Kernel.AuditRing) :
     SeLe4n.Kernel.AuditRing :=
-  { r with slots := r.slots.map opaqueId }
+  { r with slots := r.slots.map SeLe4n.Kernel.AuditRing.freshEvent }
 
 theorem _root_.SeLe4n.Kernel.AuditRing.fresh_eq (r : SeLe4n.Kernel.AuditRing) : r.fresh = r := by
-  have h : (opaqueId : SeLe4n.Kernel.DeclassificationEvent → SeLe4n.Kernel.DeclassificationEvent)
-      = id := rfl
+  have h : SeLe4n.Kernel.AuditRing.freshEvent = id :=
+    funext SeLe4n.Kernel.AuditRing.freshEvent_eq
   simp only [SeLe4n.Kernel.AuditRing.fresh, h, Vector.map_id]
 
 /-- WS-ZA ZA5.10: **the audit ring prepared at boot** — the installed state's

@@ -726,6 +726,27 @@ identity at or above `2^64` saturates instead, WS-ZA ZA5.11, `insert`.) -/
   rw [singleton, contains_insert_iff_of_not_saturated hOut]
   simp
 
+/-- WS-ZA ZA5.13: **joining a singleton is inserting its identity** — the form
+in which the declassified signal's second hop extends its snapshot with the
+first hop's timestamp, through the joined words (`TaintWords.join`). -/
+theorem join_singleton (T : DeclassificationTaint) (t : Nat) :
+    T.join (singleton t) = T.insert t := by
+  by_cases ht : t < UInt64.size
+  · have hOut : (singleton t).saturated = false := by
+      simp [singleton, insert, empty, insertTag, maxTaintTags, ht]
+    have hTags : (singleton t).tags = [t] := by
+      simp [singleton, insert, empty, insertTag, maxTaintTags, ht]
+    simp only [join, hOut, Bool.false_eq_true, ↓reduceIte, hTags, List.foldl_cons,
+      List.foldl_nil]
+  · have hTop : singleton t = top := by
+      simp [singleton, insert, empty, ht]
+    have hIns : T.insert t = top := by
+      unfold insert
+      split
+      · rfl
+      · simp only [dif_neg ht]
+    rw [hTop, join_top_right, hIns]
+
 /-- WS-SM SM9.D.1: the taint accumulated from a list of identities — used by the
 propagation planners and by the fixtures, so the two build a taint the same
 way. -/

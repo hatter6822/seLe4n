@@ -751,6 +751,10 @@ inductive RegisterRoutedSyscall where
       address; its first four arguments are the layout's message registers and
       the fifth is overflow slot 0 of the caller's IPC buffer. -/
   | overflowOne (sid : SyscallId) (capAddr : CPtr)
+  /-- WS-ZA ZA5.13: a declassification or an audit call (`routedAudited`) with
+      no overflow words: the syscall and its operand address; its arguments
+      are the layout's message registers. -/
+  | audited (sid : SyscallId) (capAddr : CPtr)
   | viaDecode
 
 /-- WS-ZA ZA5.1: the capability invocations the register file routes as
@@ -758,7 +762,8 @@ inductive RegisterRoutedSyscall where
 whose taint step is the identity and whose rights are checked in the classic
 order.  The scheduling-context configure and the service register carry one
 argument word more and are routed as `overflowOne` (`routedOverflowOne`); the
-declassification and audit calls keep the decode. -/
+declassification and audit calls, whose taint steps are not the identity or
+whose targets are checked first, are routed as `audited` (`routedAudited`). -/
 def routedInvocation : SyscallId → Bool
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap | .untypedRetype | .untypedReset
@@ -806,6 +811,32 @@ theorem routedOverflowOneSid?_some {n : Nat} {sid : SyscallId}
     (h : routedOverflowOneSid? n = some sid) :
     routedOverflowOne sid = true ∧ n = sid.toNat := by
   unfold routedOverflowOneSid? at h
+  split at h
+  · next sid' hOf =>
+    split at h
+    · next hR =>
+      cases h
+      exact ⟨hR, (SyscallId.toNat_ofNat hOf).symm⟩
+    · cases h
+  · cases h
+
+/-- WS-ZA ZA5.13: the calls the register file routes as `audited`: the two
+declassifications, which record into the audit trail and carry a taint step,
+and the audit read and drain, which check their target before their right. -/
+def routedAudited : SyscallId → Bool
+  | .declassify | .declassifySignal | .auditRead | .auditDrain => true
+  | _ => false
+
+/-- The audited syscall number `n` names, if any. -/
+@[inline] def routedAuditedSid? (n : Nat) : Option SyscallId :=
+  match SyscallId.ofNat? n with
+  | some sid => if routedAudited sid then some sid else none
+  | none => none
+
+theorem routedAuditedSid?_some {n : Nat} {sid : SyscallId}
+    (h : routedAuditedSid? n = some sid) :
+    routedAudited sid = true ∧ n = sid.toNat := by
+  unfold routedAuditedSid? at h
   split at h
   · next sid' hOf =>
     split at h
@@ -866,7 +897,10 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
         else
           match routedInvocationSid? (readReg regs layout.syscallNumReg).val with
           | some sid => .invoke sid capAddr
-          | none => .viaDecode
+          | none =>
+            match routedAuditedSid? (readReg regs layout.syscallNumReg).val with
+            | some sid => .audited sid capAddr
+            | none => .viaDecode
       else if msgInfo.length = layout.msgRegs.size + 1 then
         match routedOverflowOneSid? (readReg regs layout.syscallNumReg).val with
         | some sid => .overflowOne sid capAddr
@@ -1157,6 +1191,37 @@ theorem decodeSyscallArgsFromState_of_routedInvoke
       next sid' hSid =>
         cases h
         obtain ⟨hR, hN⟩ := routedInvocationSid?_some hSid
+        exact ⟨_, hD sid hN, rfl, hR, rfl, rfl, rfl⟩
+    · repeat' (first | (cases h; done) | split at h)
+  · cases h
+
+/-- WS-ZA ZA5.13: what a routed declassification or audit call pins about the
+decode: it succeeds, as `sid`, one of `routedAudited`, at `capAddr`, with no
+overflow words, its words the layout's message registers. -/
+theorem decodeSyscallArgsFromState_of_routedAudited
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (sid : SyscallId) (capAddr : CPtr)
+    (h : registerRoutedSyscall layout regs regCount = .audited sid capAddr) :
+    ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
+      decoded.syscallId = sid ∧ routedAudited sid = true ∧ decoded.capAddr = capAddr ∧
+      decoded.overflowCount = 0 ∧
+      decoded.msgRegs = layout.msgRegs.map (readReg regs) := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
+    split at h
+    · next hLen =>
+      have hD := fun sid hS =>
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
+      repeat' (first | (cases h; done) | split at h)
+      next sid' hSid =>
+        cases h
+        obtain ⟨hR, hN⟩ := routedAuditedSid?_some hSid
         exact ⟨_, hD sid hN, rfl, hR, rfl, rfl, rfl⟩
     · repeat' (first | (cases h; done) | split at h)
   · cases h

@@ -1576,6 +1576,15 @@ const PAGE_TABLE_UNMAP: u64 = 40;
 /// `Yield` (`SyscallId` 41).
 #[cfg(feature = "hw_target")]
 const YIELD: u64 = 41;
+/// The declassification and audit calls (WS-ZA ZA5.13), by `SyscallId`.
+#[cfg(feature = "hw_target")]
+const DECLASSIFY: u64 = 30;
+#[cfg(feature = "hw_target")]
+const AUDIT_READ: u64 = 31;
+#[cfg(feature = "hw_target")]
+const AUDIT_DRAIN: u64 = 32;
+#[cfg(feature = "hw_target")]
+const DECLASSIFY_SIGNAL: u64 = 33;
 
 /// The root CNode's guard bit (`qemuVirtRootTaskCNodeGuard`, the top bit of its
 /// 60-bit guard): a slot's capability address is the slot with bit 63 set, so
@@ -1628,6 +1637,13 @@ const PAGE_TABLE_SLOTS: [u64; 3] = [14, 15, COPY_SLOT];
 /// sixteen no other object or scenario uses.
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_SLOT: u64 = 0;
+/// The slot of the exerciser image's boot audit capability
+/// (`qemuVirtExerciserAuditSlot`, WS-ZA ZA5.13): the copy slot, deleted once
+/// the declassification scenario ends.  Its next use is the invocation
+/// scenarios' copy, which writes the copied capability's target over the
+/// slot's record, so no carve meets the audit capability's fieldless target.
+#[cfg(feature = "hw_target")]
+const AUDIT_SLOT: u64 = COPY_SLOT;
 
 /// The capability addresses of those slots.
 #[cfg(feature = "hw_target")]
@@ -1668,6 +1684,9 @@ const MINT_CAP: u64 = cap_address(MINT_SLOT);
 /// maps it.
 #[cfg(feature = "hw_target")]
 const MOVE_CAP: u64 = cap_address(MOVE_SLOT);
+/// The boot audit capability (WS-ZA ZA5.13).
+#[cfg(feature = "hw_target")]
+const AUDIT_CAP: u64 = cap_address(AUDIT_SLOT);
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_CAPS: [u64; 3] = [
     cap_address(PAGE_TABLE_SLOTS[0]),
@@ -2761,6 +2780,108 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// thread resumed onto core 0's run queue, the reply capability minted from
 /// the reply object into its free slot, and the badged endpoint capability
 /// minted from the endpoint's.
+/// **WS-ZA ZA5.13: the declassification scenario**, run on the exerciser
+/// image's labeling (`SeLe4n.Platform.QemuVirt.Exerciser`): its boot domain is
+/// the top of the lattice and its one authorized downgrade is from there to
+/// the upper domain.  A notification is carved at an upper id
+/// ([`UPPER_NOTIFICATION_ID`], unmeasured, into the frame slot), then, as
+/// whichever thread is current:
+/// - the notification declassified (one audit record, and the caller tagged
+///   with its timestamp);
+/// - a declassified signal on it (one more record: no thread waits, so the
+///   one hop is the caller's into the notification);
+/// - a send that blocks carrying the caller's tags, and the other thread's
+///   receive that takes the message — and the tags — from it: the tainted
+///   path, IPC whose content carries a declassification's provenance;
+/// - the audit monitor's reads of the trail's status and of the first entry's
+///   target, and its drain of the whole trail, through the boot audit
+///   capability ([`AUDIT_CAP`]);
+/// - the carved notification's only capability deleted.
+///
+/// Run twice like every scenario: the second run's caller and receiver are
+/// already tagged, so it is the steady state of the tainted path too.
+#[cfg(feature = "hw_target")]
+const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
+    RoundTrip {
+        name: "declassify",
+        syscall: DECLASSIFY,
+        cptr: FRAME_CAP,
+        msg_len: 0,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+    },
+    RoundTrip {
+        name: "declassified-signal",
+        syscall: DECLASSIFY_SIGNAL,
+        cptr: FRAME_CAP,
+        msg_len: 1,
+        msg: [1, 0, 0, 0],
+        primed: None,
+        blocks: false,
+    },
+    partner_step(
+        "send-tainted-blocks",
+        SEND,
+        ENDPOINT_CAP,
+        1,
+        [0x77, 0],
+        true,
+    ),
+    partner_step("receive-tainted", RECEIVE, ENDPOINT_CAP, 0, [0, 0], false),
+    RoundTrip {
+        name: "audit-read-status",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [0, 0, 0, 0],
+        primed: None,
+        blocks: false,
+    },
+    // Opcode 7: the target object of entry 0, chunk 0.
+    RoundTrip {
+        name: "audit-read-entry",
+        syscall: AUDIT_READ,
+        cptr: AUDIT_CAP,
+        msg_len: 3,
+        msg: [7, 0, 0, 0],
+        primed: None,
+        blocks: false,
+    },
+    RoundTrip {
+        name: "audit-drain",
+        syscall: AUDIT_DRAIN,
+        cptr: AUDIT_CAP,
+        msg_len: 1,
+        msg: [256, 0, 0, 0],
+        primed: None,
+        blocks: false,
+    },
+    invocation(
+        "upper-notification-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+];
+/// The id the declassification scenario carves its notification at: past the
+/// exerciser labeling's boundary (`qemuVirtUpperDomainBase`, `0x10_0000`), so
+/// the notification is in the upper domain.
+#[cfg(feature = "hw_target")]
+const UPPER_NOTIFICATION_ID: u64 = 0x10_0010;
+/// The declassification scenario's carve, unmeasured.
+#[cfg(feature = "hw_target")]
+const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
+    "untyped-retype-upper-notification",
+    UNTYPED_RETYPE,
+    UNTYPED_CAP,
+    [
+        NOTIFICATION_TYPE,
+        UPPER_NOTIFICATION_ID,
+        CNODE_CAP,
+        FRAME_SLOT,
+    ],
+);
 #[cfg(feature = "hw_target")]
 const PARTNER_SETUP: [RoundTrip; 3] = [
     partner_step(
@@ -2880,6 +3001,31 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                 }
             }
         }
+    }
+    // WS-ZA ZA5.13: the declassification scenario, the partner runnable, then
+    // the boot audit capability deleted so its slot is the copy's again.
+    for first in [true, false] {
+        if !unmeasured(
+            &UPPER_NOTIFICATION_CARVE,
+            "the upper-domain notification was not carved",
+        ) {
+            return Some(false);
+        }
+        let which = if first { " (first call)" } else { "" };
+        for step in DECLASSIFICATION_SCENARIO.iter() {
+            if heap_allocations_round_trip(step, which) != Some(true) {
+                return Some(false);
+            }
+        }
+    }
+    let delete_audit = invocation(
+        "delete-audit-capability",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [AUDIT_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(&delete_audit, "the boot audit capability was not deleted") {
+        return Some(false);
     }
     // The partner goes back to `.Inactive`: suspended from its own core's queue
     // when the root task is current, or suspending itself when it is.

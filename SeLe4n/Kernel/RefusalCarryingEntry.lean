@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.RefusalCarryingEndpoint
 import SeLe4n.Kernel.RefusalCarryingReplyRecv
 import SeLe4n.Kernel.RefusalCarryingInvocation
+import SeLe4n.Kernel.RefusalCarryingDeclassification
 
 /-!
 # The checked syscall entry, refusing in the state it was refused in
@@ -18,7 +19,8 @@ WS-ZA ZA1.3.  `syscallEntryCheckedR` is `syscallEntryChecked` in the
 `RefusalCarrying` form (`syscallEntryCheckedR_eq`): the syscalls whose
 arguments all sit in registers and whose checks all precede their first write
 are routed on the register file to the dispatches of `RefusalCarryingDispatch`,
-`RefusalCarryingEndpoint` and `RefusalCarryingReplyRecv`; every other call takes
+`RefusalCarryingEndpoint`, `RefusalCarryingReplyRecv`, `RefusalCarryingInvocation`
+and `RefusalCarryingDeclassification`; every other call takes
 `RefusalCarrying.ofKernel` of the specification.
 -/
 
@@ -29,8 +31,9 @@ open SeLe4n.Model
 /-- `syscallEntryChecked`, refusing in the state it was handed
 (`syscallEntryCheckedR_eq`), on the hardware's register layout
 (`arm64DefaultLayout`, 32 registers).  A signal, wait, yield, capability-free send or call,
-reply, receive, or capability invocation (`routedInvocation`) whose arguments all
-sit in registers is routed on the register file
+reply, receive, capability invocation (`routedInvocation`), or declassification or
+audit call (`routedAudited`) whose arguments all sit in registers is routed on the
+register file
 itself (`registerRoutedSyscall`),
 before any decode record exists: the decode writes nothing and such a call
 fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
@@ -112,6 +115,11 @@ specification's form. -/
                 | .error (e, stF) =>
                   .error (e, SeLe4n.Kernel.Architecture.tlbUndoFillOnCore stF executingCore n0)
                 | .ok r => .ok r)
+        -- WS-ZA ZA5.13: a declassification or an audit call, its arguments
+        -- read from the caller's registers; an admitted one writes the audit
+        -- ring, the taint words and the return registers in place.
+        | .audited sid capAddr =>
+          dispatchAuditedCheckedR ctx sid capAddr tcb.registerContext tid executingCore st
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
       | some _ => .error (.illegalState, st)
@@ -274,6 +282,16 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
               rcases K with e | r
               · simp only [SeLe4n.Kernel.Architecture.tlbUndoFillOnCore_tlbFillIpcBufferOnCore]
               · rfl
+        · next sid capAddr hAudRegs =>
+          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs'⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedAudited
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hAudRegs
+          subst hCap hSid
+          rw [dispatchAuditedCheckedR_eq ctx decoded tcb.registerContext tid executingCore
+            hRouted hRegs']
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
         · rfl
       · next o hNot hObj =>
         have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by

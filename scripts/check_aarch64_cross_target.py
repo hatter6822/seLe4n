@@ -132,6 +132,11 @@ ENTRY_GATE_CROSS_FLAG = "--require-cross"
 # the check does not depend on how the lane spells the repository root.
 LEAN_KERNEL_FLAG = "--lean-kernel"
 LEAN_ROOTS_TAIL = f".lake/build/{CROSS_TARGET}/libsele4n.roots.ld"
+# WS-ZA ZA5.13: and the same check refuses an image that defines any symbol of
+# the allocation exerciser's archive -- the release image carries neither its
+# boot entry nor its labeling.  Named by its tail, like the roots script.
+IMAGE_EXCLUDES_FLAG = "--excludes"
+EXERCISER_ARCHIVE_TAIL = f".lake/build/{CROSS_TARGET}/libsele4n_exerciser.a"
 # WS-BP BP5.3: and cuts the Raspberry Pi 5 boot files from that image.
 BOOT_FILES_SCRIPT = "scripts/build_rpi5_image.sh"
 # WS-BP BP8.1: the lane's last step boots the Lean-linked `virt` image under
@@ -1458,8 +1463,10 @@ def check_lean_archive_lane(root: str) -> list[str]:
         if gate and ENTRY_GATE_CROSS_FLAG in argv[1:]:
             reconciles.append(position)
         roots = option_values(argv, LEAN_KERNEL_FLAG.lstrip("-"))
+        excluded = option_values(argv, IMAGE_EXCLUDES_FLAG.lstrip("-"))
         if (image_gate and argv[-1:] == [IMAGE_PATH] and len(roots) == 1
-                and roots[0].endswith(LEAN_ROOTS_TAIL)):
+                and roots[0].endswith(LEAN_ROOTS_TAIL) and len(excluded) == 1
+                and excluded[0].endswith(EXERCISER_ARCHIVE_TAIL)):
             image_checks.append(position)
         if fp_gate and argv[1:] == [IMAGE_PATH]:
             image_fp.append(position)
@@ -1498,8 +1505,9 @@ def check_lean_archive_lane(root: str) -> list[str]:
     if not image_checks:
         problems.append(
             f"{LEAN_ARCHIVE_LANE}: no executed `{IMAGE_CHECK_SCRIPT} {LEAN_KERNEL_FLAG} "
-            f"<...{LEAN_ROOTS_TAIL}> {IMAGE_PATH}`. It is what proves every root of "
-            f"the link is the image's text."
+            f"<...{LEAN_ROOTS_TAIL}> {IMAGE_EXCLUDES_FLAG} <...{EXERCISER_ARCHIVE_TAIL}> "
+            f"{IMAGE_PATH}`. It is what proves every root of the link is the image's "
+            f"text, and that the image carries nothing of the exerciser's archive."
         )
     if not image_fp:
         problems.append(
@@ -1581,7 +1589,8 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
     build = (f"cargo build --release --target {CROSS_TARGET} -p sele4n-hal "
              f"--features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}\n")
     check = (f'python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} '
-             f'"${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}\n')
+             f'"${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_EXCLUDES_FLAG} '
+             f'"${{ARCHIVE_DIR}}/libsele4n_exerciser.a" {IMAGE_PATH}\n')
     fp = f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}\n'
     pack = (f'"${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} '
             f'"${{PROJECT_ROOT}}/.lake/build/rpi5-image"\n')
@@ -1603,6 +1612,10 @@ def _lean_image_lane_mutations(lane: str, builder_line: str) -> list[tuple[str, 
          lane.replace(builder_line, "").replace(build, build + builder_line)),
         ("lane checks the image without the Lean kernel's roots",
          lane.replace(check, check.replace(f"{LEAN_KERNEL_FLAG} ", "--roots "))),
+        ("lane checks the image without the exerciser's exclusion",
+         lane.replace(check, check.replace(f"{IMAGE_EXCLUDES_FLAG} ", "--includes "))),
+        ("lane excludes another archive than the exerciser's",
+         lane.replace(check, check.replace("libsele4n_exerciser.a", "libsele4n.a"))),
         ("lane checks the image against another roots file",
          lane.replace(check, check.replace("libsele4n.roots.ld", "libsele4n.unresolved"))),
         ("lane checks the image before it links it", lane.replace(build + check, check + build)),
@@ -2115,11 +2128,11 @@ GOOD_LEAN_LANE = f"""#!/usr/bin/env bash
 set -euo pipefail
 CROSS_TARGET="{CROSS_TARGET}"
 ARCHIVE_DIR="${{PROJECT_ROOT}}/.lake/build/${{CROSS_TARGET}}"
-lake build SeLe4n:static
+lake build SeLe4n:static SeLe4nQemuVirtExerciser:static
 python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split('/')[-1]}"
 python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split('/')[-1]}" {ENTRY_GATE_CROSS_FLAG}
 cargo build --release --target {CROSS_TARGET} -p sele4n-hal --features hw_target,{IMAGE_FEATURE} --bin {IMAGE_BIN}
-python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} "${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_PATH}
+python3 "${{PROJECT_ROOT}}/{IMAGE_CHECK_SCRIPT}" {LEAN_KERNEL_FLAG} "${{ARCHIVE_DIR}}/libsele4n.roots.ld" {IMAGE_EXCLUDES_FLAG} "${{ARCHIVE_DIR}}/libsele4n_exerciser.a" {IMAGE_PATH}
 python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" {IMAGE_PATH}
 "${{PROJECT_ROOT}}/{BOOT_FILES_SCRIPT}" {IMAGE_PATH} "${{PROJECT_ROOT}}/.lake/build/rpi5-image"
 {QEMU_REQUIRED} "${{PROJECT_ROOT}}/{QEMU_LANE_SCRIPT}" {QEMU_LEAN_FLAG}

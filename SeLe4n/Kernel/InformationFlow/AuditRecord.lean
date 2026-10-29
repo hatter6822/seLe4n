@@ -353,9 +353,22 @@ structure DeclassificationEvent where
       `originatingCore` are not — and here the silent failure is the unsafe
       one: a default of `DeclassificationTaint.empty` would make every event
       causally unlinked, so the detector would report *no* laundering while
-      compiling everywhere. -/
-  predecessorTags : DeclassificationTaint
+      compiling everywhere.
+
+      WS-ZA ZA5.13: **held as the subject's taint words**, the snapshot the
+      thread's own record carries (`SystemState.taintWordsAt`), rather than as
+      their decode: a record writes its ring slot in place, so the snapshot is
+      ten scalars written over the slot's own words cell, where a decoded taint
+      would be a tag list built on every record.  The taint it stands for is
+      `predecessorTags`, its decode. -/
+  predecessorWords : TaintWords
   deriving Repr, DecidableEq
+
+/-- WS-SM SM9.D.13a: **the causality an event carries**, as a taint — the
+decode of the snapshot it holds (`predecessorWords`, WS-ZA ZA5.13). -/
+abbrev DeclassificationEvent.predecessorTags (e : DeclassificationEvent) :
+    DeclassificationTaint :=
+  e.predecessorWords.decode
 
 /-- WS-SM SM9.D.13a: **the declassifying subject's object identity**, for
 attribution.
@@ -519,7 +532,7 @@ def DeclassificationEvent.vacant : DeclassificationEvent :=
     timestamp := 0
     originatingCore := Concurrency.bootCoreId
     actor := { subject := SeLe4n.ThreadId.ofNat 0, domain := SecurityDomain.lowest }
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 /-- WS-ZA ZA5.10: **the declassification audit trail as a fixed ring.**
 
@@ -638,6 +651,115 @@ theorem toList_append (r : AuditRing) (e : DeclassificationEvent)
       subst hi'
       rw [List.getElem_append_right (by simp)]
       simp [entry, append, h]
+
+/-- WS-ZA ZA5.13: **an actor written over an actor's cell**: out of line, and
+its domain read back through `a` (kept when equal), so `a` stays live and is the
+cell the compiler writes into; an update of every field would drop `a` and build
+a fresh one, as `Capability.overwrite` records.  Equal to the actor of those
+fields (`overwrite_eq`). -/
+@[noinline] def _root_.SeLe4n.Kernel.DeclassificationActor.overwrite (a : DeclassificationActor)
+    (subject : SeLe4n.ThreadId) (domain : SecurityDomain) : DeclassificationActor :=
+  { subject, domain := if a.domain = domain then a.domain else domain }
+
+theorem _root_.SeLe4n.Kernel.DeclassificationActor.overwrite_eq (a : DeclassificationActor)
+    (subject : SeLe4n.ThreadId) (domain : SecurityDomain) :
+    a.overwrite subject domain = { subject, domain } := by
+  by_cases h : a.domain = domain <;> simp [DeclassificationActor.overwrite, h]
+
+/-- WS-ZA ZA5.13: **taint words written over a words cell**, the same way: out
+of line, the count read back through `w`. -/
+@[noinline] def _root_.SeLe4n.Kernel.TaintWords.overwrite (w : TaintWords)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) : TaintWords :=
+  ⟨w0, w1, w2, w3, w4, w5, w6, w7, if w.count = wc then w.count else wc, ws⟩
+
+theorem _root_.SeLe4n.Kernel.TaintWords.overwrite_eq (w : TaintWords)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) :
+    w.overwrite w0 w1 w2 w3 w4 w5 w6 w7 wc ws = ⟨w0, w1, w2, w3, w4, w5, w6, w7, wc, ws⟩ := by
+  by_cases h : w.count = wc <;> simp [TaintWords.overwrite, h]
+
+/-- WS-ZA ZA5.13: **an event written over a slot's own cells**: every field of
+the slot's event `e` replaced — the actor's two inside the slot's actor cell
+(`DeclassificationActor.overwrite`) and the snapshot's ten inside its words cell
+(`TaintWords.overwrite`) — so a slot the ring alone holds (`AuditRing.fresh`) is
+rewritten without building a record, an actor or a `TaintWords`.  The stamp is
+read back through `e`, so `e` stays live and its cell is the one written.  The
+result is the event of those fields whatever `e` held (`overwrite_eq`). -/
+@[inline] def _root_.SeLe4n.Kernel.DeclassificationEvent.overwrite (e : DeclassificationEvent)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) : DeclassificationEvent :=
+  { srcDomain := srcDomain
+    dstDomain := dstDomain
+    targetObject := targetId
+    authorizationBasis := .policyRule
+    timestamp := if e.timestamp = timestamp then e.timestamp else timestamp
+    originatingCore := c
+    actor := e.actor.overwrite subject actorDomain
+    predecessorWords := e.predecessorWords.overwrite w0 w1 w2 w3 w4 w5 w6 w7 wc ws }
+
+theorem _root_.SeLe4n.Kernel.DeclassificationEvent.overwrite_eq (e : DeclassificationEvent)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) :
+    e.overwrite srcDomain dstDomain targetId timestamp c subject actorDomain
+        w0 w1 w2 w3 w4 w5 w6 w7 wc ws =
+      { srcDomain := srcDomain, dstDomain := dstDomain, targetObject := targetId,
+        authorizationBasis := .policyRule, timestamp := timestamp, originatingCore := c,
+        actor := { subject := subject, domain := actorDomain },
+        predecessorWords := ⟨w0, w1, w2, w3, w4, w5, w6, w7, wc, ws⟩ } := by
+  by_cases h : e.timestamp = timestamp <;>
+    simp [DeclassificationEvent.overwrite, h, DeclassificationActor.overwrite_eq,
+      TaintWords.overwrite_eq]
+
+/-- WS-ZA ZA5.13: the slot array with the event of the given fields written over
+slot `i` where it stands (`Array.modify`, `DeclassificationEvent.overwrite`).
+Out of line, so the ring that holds the array is rebuilt after it with no join
+point between, and is written in place too. -/
+@[noinline] def recordEventSlots (slots : Array DeclassificationEvent) (i : Nat)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) : Array DeclassificationEvent :=
+  slots.modify i (·.overwrite srcDomain dstDomain targetId timestamp c subject actorDomain
+    w0 w1 w2 w3 w4 w5 w6 w7 wc ws)
+
+/-- WS-ZA ZA5.13: **record one entry by rewriting its slot**: the slot after
+the window is written over where it stands (`recordEventSlots`), so a slot whose
+event the ring alone holds is rewritten in its own cells; the window grows by
+one.  At capacity the ring is returned as it is.  It is the ring's record of the
+event of those fields (`recordEvent_eq`). -/
+@[noinline] def recordEvent (r : AuditRing)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) : AuditRing :=
+  if h : r.length < maxDeclassificationAuditEntries then
+    ⟨⟨recordEventSlots r.slots.toArray (slotOf (r.epoch + r.length)) srcDomain dstDomain
+        targetId timestamp c subject actorDomain w0 w1 w2 w3 w4 w5 w6 w7 wc ws,
+      by simp [recordEventSlots]⟩, r.length + 1, r.epoch, h⟩
+  else r
+
+/-- WS-ZA ZA5.13: the in-place record is the ring's record (`append`) of the
+event of those fields. -/
+theorem recordEvent_eq (r : AuditRing)
+    (srcDomain dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (timestamp : Nat)
+    (c : Concurrency.CoreId) (subject : SeLe4n.ThreadId) (actorDomain : SecurityDomain)
+    (w0 w1 w2 w3 w4 w5 w6 w7 : UInt64) (wc : Nat) (ws : Bool) :
+    r.recordEvent srcDomain dstDomain targetId timestamp c subject actorDomain
+        w0 w1 w2 w3 w4 w5 w6 w7 wc ws =
+      r.append
+        { srcDomain := srcDomain, dstDomain := dstDomain, targetObject := targetId,
+          authorizationBasis := .policyRule, timestamp := timestamp, originatingCore := c,
+          actor := { subject := subject, domain := actorDomain },
+          predecessorWords := ⟨w0, w1, w2, w3, w4, w5, w6, w7, wc, ws⟩ } := by
+  unfold recordEvent append
+  split
+  · next h =>
+    congr 1
+    apply Vector.ext
+    intro i hi
+    simp only [recordEventSlots, Vector.getElem_set, Vector.getElem_mk, Array.getElem_modify,
+      DeclassificationEvent.overwrite_eq]
+    split <;> simp_all
+  · rfl
 
 /-- WS-ZA ZA5.10: **drain `k` entries**: the epoch advances by `k` and the
 window loses its first `k` entries; the slots are not written. -/

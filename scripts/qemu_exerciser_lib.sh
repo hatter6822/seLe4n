@@ -320,7 +320,16 @@ for driver in drivers:
             # the carved thread's first space set, over the space-slot records
             # its carve made (`TCB.spaceCellFilled`).
             "populated-cnode-delete", "space-cnode-cap-delete", "spaced-tcb-delete",
-            "set-carved-tcb-space")}
+            "set-carved-tcb-space",
+            # WS-ZA ZA5.13: on the exerciser image's labeling, an upper-domain
+            # notification declassified and signalled through the declassifying
+            # signal (each writes its audit record in its ring slot and tags the
+            # caller), the tainted path — a blocked send carrying the caller's
+            # tags and the receive that takes them — the audit monitor's two
+            # reads and its drain, and the notification's delete.
+            "declassify", "declassified-signal", "send-tainted-blocks",
+            "receive-tainted", "audit-read-status", "audit-read-entry",
+            "audit-drain", "upper-notification-delete")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.

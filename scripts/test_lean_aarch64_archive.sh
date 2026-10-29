@@ -25,7 +25,9 @@
 # library initializer and every production `@[export]` -- the link the
 # builder's step [7/8] proved needs nothing the runtime does not define.
 # `check_kernel_image.py --lean-kernel` checks the image and that every root
-# is its text, and the FP/SIMD gate disassembles it: the target's
+# is its text, `--excludes` that it defines no symbol of the allocation
+# exerciser's archive (WS-ZA ZA5.13: the board's image carries neither the
+# exerciser's boot entry nor its labeling), and the FP/SIMD gate disassembles it: the target's
 # `compiler_builtins` is not FP-free, so only the linked image decides which
 # of its members the kernel carries.  The stale image is removed first, so
 # the checks read this run's link.
@@ -83,7 +85,7 @@ IMAGE_BIN="sele4n-kernel"
 ARCHIVE_DIR="${PROJECT_ROOT}/.lake/build/${CROSS_TARGET}"
 
 echo "[1/6] Host static archive (the reconciliation's other half)"
-lake build SeLe4n:static
+lake build SeLe4n:static SeLe4nQemuVirtExerciser:static
 
 echo "[2/6] Cross archive"
 python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py"
@@ -98,6 +100,7 @@ cargo build --release --target "${CROSS_TARGET}" -p sele4n-hal \
     --features hw_target,kernel_image --bin "${IMAGE_BIN}"
 python3 "${PROJECT_ROOT}/scripts/check_kernel_image.py" \
     --lean-kernel "${ARCHIVE_DIR}/libsele4n.roots.ld" \
+    --excludes "${ARCHIVE_DIR}/libsele4n_exerciser.a" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"
 python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
     target/"${CROSS_TARGET}"/release/"${IMAGE_BIN}"

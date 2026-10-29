@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.36.162"
+version = "0.36.163"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -20,6 +20,16 @@ name = "SeLe4n"
 [[lean_lib]]
 name = "SeLe4nBoundaryProbes"
 roots = ["SeLe4n.Testing.BoundaryProbes"]
+
+# The allocation exerciser's QEMU `virt` boot (`SeLe4n/Platform/QemuVirt/Exerciser.lean`):
+# its entry `lean_kernel_main_qemu_virt_exerciser` and the labeling that permits
+# the declassification and audit calls it measures.  A library of its own so it
+# stays outside `SeLe4n.lean`'s import closure: the kernel's archive and the
+# shipped RPi5 and `virt` images carry none of it, and only the exerciser image
+# links its own archive (`libsele4n_exerciser.a`).
+[[lean_lib]]
+name = "SeLe4nQemuVirtExerciser"
+roots = ["SeLe4n.Platform.QemuVirt.Exerciser"]
 
 [[lean_exe]]
 name = "sele4n"

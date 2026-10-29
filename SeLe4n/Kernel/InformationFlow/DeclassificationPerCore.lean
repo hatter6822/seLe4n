@@ -606,7 +606,7 @@ theorem declassificationEventAttributable_not_state_stable :
             authorizationBasis := .policyRule, timestamp := 0,
             originatingCore := bootCoreId,
             actor := { subject := ⟨1⟩, domain := ⟨1⟩ },
-            predecessorTags := DeclassificationTaint.empty }, ?_, ?_⟩
+            predecessorWords := {} }, ?_, ?_⟩
   · simp [declassificationEventAttributable, declassificationSubjectOnCore,
       SchedulerState.setCurrentOnCore_currentOnCore_self]
   · have hIdle : (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
@@ -1269,7 +1269,7 @@ theorem crossCoreChain_launders_witness :
               authorizationBasis := .policyRule, timestamp := 0,
               originatingCore := bootCoreId,
               actor := { subject := ⟨1⟩, domain := ⟨2⟩ },
-              predecessorTags := DeclassificationTaint.empty }
+              predecessorWords := {} }
           -- WS-SM SM9.D.14: the second hop **names the first** through its
           -- recorded snapshot, which is what the causal conjunct now requires
           -- of a linked chain.  A witness with an empty snapshot would fail
@@ -1280,7 +1280,7 @@ theorem crossCoreChain_launders_witness :
               authorizationBasis := .policyRule, timestamp := 1,
               originatingCore := ⟨2, by decide⟩,
               actor := { subject := ⟨2⟩, domain := ⟨1⟩ },
-              predecessorTags := DeclassificationTaint.singleton 0 } ],
+              predecessorWords := (DeclassificationTaint.singleton 0).toWords } ],
           by decide, by decide, by decide, by decide, by decide⟩
 
 -- ============================================================================
@@ -1330,13 +1330,13 @@ private def causalWitnessFirst : DeclassificationEvent :=
   { srcDomain := ⟨2⟩, dstDomain := ⟨1⟩, targetObject := ⟨100⟩,
     authorizationBasis := .policyRule, timestamp := 0, originatingCore := bootCoreId,
     actor := { subject := ⟨9⟩, domain := ⟨2⟩ },
-    predecessorTags := DeclassificationTaint.empty }
+    predecessorWords := {} }
 
 private def causalWitnessSecond (tags : DeclassificationTaint) : DeclassificationEvent :=
   { srcDomain := ⟨1⟩, dstDomain := ⟨0⟩, targetObject := ⟨200⟩,
     authorizationBasis := .policyRule, timestamp := 1, originatingCore := bootCoreId,
     actor := { subject := causalWitnessSubject, domain := ⟨1⟩ },
-    predecessorTags := tags }
+    predecessorWords := tags.toWords }
 
 /-- The acting subject's thread in the witness states, its taint words `w`. -/
 private def causalWitnessTcb (w : TaintWords) : TCB :=
@@ -2103,7 +2103,7 @@ theorem recordDeclassification_admits_ill_formed :
                 authorizationBasis := .policyRule, timestamp := 7,
                 originatingCore := bootCoreId,
                 actor := { subject := ⟨1⟩, domain := ⟨1⟩ },
-                predecessorTags := DeclassificationTaint.empty }, rfl, rfl⟩
+                predecessorWords := {} }, rfl, rfl⟩
 
 /-- WS-SM SM9.D.15 (**the laundering detector's scope, after the retirement**):
 `chainLaunders` reports a chain only when the recorded snapshots support it —

@@ -4969,8 +4969,8 @@ run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitness
 # WS-BP BP8.1: the `virt` entry's shape is refused under the RPi5 entry, and the
 # RPi5 entry's shape under the `virt` one — the table decides which board.
 run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant, ..bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def bootEntries : List BootEntrySpec := \[rpi5BootEntry, qemuVirtBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall, ..bootEntryWitnessQemuVirtExerciserCompliant\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^def bootEntries : List BootEntrySpec :=\n  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  `SeLe4n\.Platform\.QemuVirt\.bootAndInitialiseQemuVirtFromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  \.forallE .dtb \(mkConst ..ByteArray\) \(mkApp \(mkConst ..BaseIO\) \(mkConst ..Unit\)\) \.default$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP4.3: the HAL copies the firmware's blob into the `ByteArray` the entry
@@ -6089,10 +6089,16 @@ run_check "INVARIANT" rg -n '^    let board_script = board_link_script\(&manifes
 # script, with `--gc-sections`, inside the bare-metal branch; the archive
 # builder's reachable link reads that same roots script; and the Lean archive
 # lane checks the linked image against it.
-run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            for input in \[LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS\] \{\n                println!\("cargo:rustc-link-arg-bin=sele4n-kernel=\{archive_dir\}/\{input\}"\);$' rust/sele4n-hal/build.rs
+run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            for &input in exerciser_inputs\n                \.iter\(\)\n                \.chain\(\[LEAN_ARCHIVE, LEAN_ARCHIVE_ROOTS\]\.iter\(\)\)\n            \{\n                println!\("cargo:rustc-link-arg-bin=sele4n-kernel=\{archive_dir\}/\{input\}"\);$' rust/sele4n-hal/build.rs
+# WS-ZA ZA5.13: the exerciser's archive and roots join that link only on the
+# `virt` exerciser image (`board_qemu_virt` with `smp_exercisers`).
+run_check "INVARIANT" rg -U -n '^            let exerciser_image = std::env::var_os\("CARGO_FEATURE_BOARD_QEMU_VIRT"\)\.is_some\(\)\n                && std::env::var_os\("CARGO_FEATURE_SMP_EXERCISERS"\)\.is_some\(\);\n            let exerciser_inputs: &\[&str\] = if exerciser_image \{\n                &\[LEAN_EXERCISER_ARCHIVE, LEAN_EXERCISER_ARCHIVE_ROOTS\]\n            \} else \{\n                &\[\]\n            \};$' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -U -n '^        if std::env::var_os\("CARGO_FEATURE_HW_TARGET"\)\.is_some\(\) \{[^\n]*(\n([ \t][^\n]*)?)*?            println!\("cargo:rustc-link-arg-bin=sele4n-kernel=--gc-sections"\);$' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)[^\n]*(\n([ \t][^\n]*)?)*?            str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
-run_check "INVARIANT" rg -U -n 'check_kernel_image\.py" \\\n    --lean-kernel "\$\{ARCHIVE_DIR\}/libsele4n\.roots\.ld" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}"$' scripts/test_lean_aarch64_archive.sh
+run_check "INVARIANT" rg -U -n '^    ROOTS_SCRIPT\.write_text\(render_roots_script\(roots\)\)\n    inputs = \[str\(ROOTS_SCRIPT\), str\(ARCHIVE\)\]$' scripts/build_lean_aarch64_archive.py
+run_check "INVARIANT" rg -U -n '^    argv = \[lld, "-flavor", "gnu", "--gc-sections", "-e", roots\[0\],\n            "--unresolved-symbols=report-all", "--error-limit=0", "-o", os\.devnull, \*inputs\]$' scripts/build_lean_aarch64_archive.py
+# WS-ZA ZA5.13: and refuses an image that defines any symbol of the
+# allocation exerciser's archive.
+run_check "INVARIANT" rg -U -n 'check_kernel_image\.py" \\\n    --lean-kernel "\$\{ARCHIVE_DIR\}/libsele4n\.roots\.ld" \\\n    --excludes "\$\{ARCHIVE_DIR\}/libsele4n_exerciser\.a" \\\n    target/"\$\{CROSS_TARGET\}"/release/"\$\{IMAGE_BIN\}"$' scripts/test_lean_aarch64_archive.sh
 # WS-BP BP5.3: `link.ld` places the device tree's window after the Lean heap
 # and inside the reserved extent; the boot files pin the firmware to exactly
 # that window and to the image's entry, refuse a firmware option they do not
@@ -7850,7 +7856,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem epoch_empty : empty\.epoch = 0 :
 run_check "INVARIANT" rg -n '^def auditTimestampsFrom($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def declassificationTrailWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^    timestamp := epoch \+ position$' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^    st\.declassificationAuditEpoch st\.declassificationAudit\.length predecessorTags$' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^    st\.declassificationAuditEpoch st\.declassificationAudit\.length predecessorWords$' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem declassificationTrail_timestamp_identifies_event($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_declassificationAuditEpoch_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # The witness that the PRE-EPOCH producer is genuinely unsound once drain
@@ -8397,8 +8403,35 @@ run_check "INVARIANT" rg -n '^  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuV
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.KernelMain$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^instance qemuVirtPlatformBinding\b' SeLe4n/Platform/QemuVirt/Contract.lean
 run_check "INVARIANT" rg -n '^def qemuVirtBootRamExtensions[ :]' SeLe4n/Platform/QemuVirt/Board.lean
-run_check "INVARIANT" rg -n -F -- '#[cfg(feature = "board_qemu_virt")]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- '#[cfg(all(feature = "board_qemu_virt", not(feature = "smp_exercisers")))]' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+# WS-ZA ZA5.13: the exerciser image (`board_qemu_virt` with `smp_exercisers`)
+# boots its own entry, the exerciser's labeling; the shipped `virt` image keeps
+# `lean_kernel_main_qemu_virt` and the confined deny-all labeling.
+run_check "INVARIANT" rg -n -F -- '#[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt_exerciser(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt_exerciser\]$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+# WS-ZA ZA5.13: the exerciser is a library of its own, outside the kernel's
+# root: `SeLe4n.lean` does not import it, the builder refuses a kernel closure
+# that reaches it, the exerciser image calls its initializer in place of the
+# root's, and the shipped `virt` image is checked to carry none of its archive.
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.Exerciser$' SeLe4n.lean
+run_check "INVARIANT" rg -U -n '^\[\[lean_lib\]\]\nname = "SeLe4nQemuVirtExerciser"\nroots = \["SeLe4n\.Platform\.QemuVirt\.Exerciser"\]$' lakefile.toml
+run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -U -n '^    if EXERCISER_ROOT_MODULE in closure:\n        problems\.append' scripts/build_lean_aarch64_archive.py
+run_check "INVARIANT" rg -n -F -- 'let result = unsafe { initialize_seLe4n_SeLe4n_Platform_QemuVirt_Exerciser(1) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -U -n '^        if \[\[ "\$\{lean\}" -eq 1 && "\$\{exercisers\}" -ne 1 \]\] \\\n            && ! python3 "\$\{REPO_ROOT\}/scripts/check_kernel_image\.py" --exclusion-only \\\n                --excludes "\$\{LEAN_EXERCISER_ARCHIVE\}" "\$\{KERNEL_BIN\}"; then$' scripts/qemu_boot_lib.sh
+run_check "INVARIANT" rg -n '^theorem qemuVirt_shippedLabeling_denies\b' SeLe4n/Platform/QemuVirt/Exerciser.lean
+# WS-ZA ZA5.13: the declassification and audit calls are the register route's
+# audited arm, dispatched to the routed form the specification is proven equal
+# to; an admitted record writes its ring slot in place, the ring's append.
+run_check "INVARIANT" rg -n -U '^def routedAudited : SyscallId → Bool\n  \| \.declassify \| \.declassifySignal \| \.auditRead \| \.auditDrain => true\n  \| _ => false$' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n -U '^        \| \.audited sid capAddr =>\n          dispatchAuditedCheckedR ctx sid capAddr tcb\.registerContext tid executingCore st$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem dispatchAuditedCheckedR_eq\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^    declassificationAudit := st\.declassificationAudit\.recordEvent actorDomain dstDomain targetId$' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^theorem recordEvent_eq\b' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_stored_ok\b' SeLe4n/Kernel/RefusalCarryingDeclassification.lean
+run_check "INVARIANT" rg -n '^  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));' rust/sele4n-hal/src/mmu.rs
@@ -8407,7 +8440,7 @@ run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features boa
 run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image,smp_exercisers -- -D warnings' scripts/test_rust.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --self-test' scripts/test_tier0_hygiene.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --check' scripts/test_qemu.sh
-run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^  qemuVirt_board_check_on_qemus_own_device_tree$' tests
 run_check "INVARIANT" rg -n '^  qemuVirt_deployment_boots$' tests
 run_check "INVARIANT" rg -n '^  bootMap_the_qemu_virt_map_is_the_shared_table$' tests
@@ -9242,7 +9275,7 @@ run_check "INVARIANT" rg -n '^theorem onCore_declassificationTaint($|[ ({:\[\]])
 # default would attribute an empty history to every event while compiling
 # everywhere; and the tags are GLOBAL identities, so the field is read by the
 # detector and never exported through SM9.A's chunk protocol.
-run_check "INVARIANT" rg -n 'predecessorTags : DeclassificationTaint' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^  predecessorWords : TaintWords$' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def declassificationEventNames($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean

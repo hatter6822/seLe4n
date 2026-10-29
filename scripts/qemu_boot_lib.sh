@@ -41,6 +41,10 @@ KERNEL_BIN_DEFAULT="${HAL_TARGET_DIR}/${RUST_TARGET}/release/sele4n-kernel"
 KERNEL_BIN="${KERNEL_BIN:-${KERNEL_BIN_DEFAULT}}"
 LEAN_TARGET_DIR="${RUST_DIR}/target/qemu-virt-lean"
 LEAN_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n.a"
+# WS-ZA ZA5.13: the allocation exerciser's archive, which the same builder
+# writes.  Only the exerciser image links it; every other Lean-linked image is
+# checked to define none of its symbols.
+LEAN_EXERCISER_ARCHIVE="${REPO_ROOT}/.lake/build/${RUST_TARGET}/libsele4n_exerciser.a"
 
 QEMU_TEMP_FILES=()
 qemu_cleanup() {
@@ -140,6 +144,10 @@ qemu_build_image() {
             record_failure "BUILD" "--lean-kernel needs ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
             finalize_report
         fi
+        if [[ "${lean}" -eq 1 && ! -f "${LEAN_EXERCISER_ARCHIVE}" ]]; then
+            record_failure "BUILD" "--lean-kernel needs ${LEAN_EXERCISER_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
+            finalize_report
+        fi
         # Nothing here rebuilds the archive, so an image linked from one built
         # before the last Lean edit runs a kernel the tree no longer holds and
         # every reading taken from it describes that older kernel.  The
@@ -155,6 +163,16 @@ qemu_build_image() {
                 --target-dir "${target_dir}") 2>"${build_log}"; then
             tail -20 "${build_log}"
             record_failure "BUILD" "the ${label} virt image did not build"
+            finalize_report
+        fi
+        # WS-ZA ZA5.13: a Lean-linked image without the exercisers is the
+        # shipped `virt` kernel, so it must carry nothing of the exerciser's
+        # archive: not its boot entry, its labeling or its declassification
+        # policy.  The image's own symbol table decides it.
+        if [[ "${lean}" -eq 1 && "${exercisers}" -ne 1 ]] \
+            && ! python3 "${REPO_ROOT}/scripts/check_kernel_image.py" --exclusion-only \
+                --excludes "${LEAN_EXERCISER_ARCHIVE}" "${KERNEL_BIN}"; then
+            record_failure "BUILD" "the ${label} virt image defines symbols of ${LEAN_EXERCISER_ARCHIVE}, which only the exerciser image links"
             finalize_report
         fi
     elif [[ "${KERNEL_BIN}" == "${KERNEL_BIN_DEFAULT}" ]]; then
