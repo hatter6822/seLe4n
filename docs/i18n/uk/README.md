@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.161-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.36.162-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -96,7 +96,7 @@ security model) від seL4, водночас впроваджуючи архі�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.36.161` |
+| **Версія** | `0.36.162` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовий код (Lean LoC)** | 524 872 рядки у 478 файлах |
 | **Тестовий код (Lean LoC)** | 87 414 рядків у 70 тест-сьютах |

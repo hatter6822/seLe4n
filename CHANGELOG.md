@@ -1,3 +1,74 @@
+## v0.36.162 — WS-ZA ZA5.12: the taint table retires and the taint is read off the objects
+
+The declassification taint table is gone from both states. The taint is a
+thread's or a notification's own words, `SystemState.declassificationTaint` is
+a reader that decodes them at one key, and no compiled path calls it: every
+fused step captures the words it needs as scalars before the arm.
+
+- **The reader.** `SystemState.declassificationTaint` probes the store once at
+  the key and decodes the words held there (`SystemState.taintWordsAt`), the
+  empty taint at any other key. It keeps the `tbl oid` notation; every reader
+  and propagation theorem is stated over it.
+  - `SystemState.taintStored` is now a theorem, the reader at a key, so the
+    agreement ZA5.11 held between the table and the words is true by
+    construction.
+  - Retired with the table: `TaintTable`, `TaintEntries` and their erase and
+    lookup lemmas, `withTaintCleared` (the erase takes a retired object's words
+    out, `retireFinalObject_taint_cleared`), `setDeclassificationTaint` and its
+    bundle lemma, and the store and boot frames over the table. The checked
+    boot installs only clean words
+    (`bootFromPlatformChecked_ok_declassificationTaint`).
+  - The frozen table retires the same way: `FrozenSystemState.declassificationTaint`
+    reads the frozen store (`freeze_preserves_declassificationTaint`). The
+    builder's `withTaint` writes the words.
+- **The join.** Word to word (`TaintWords.join`), compiled as flat scalar code
+  proven equal to the list form (`@[csimp] join_eq_flat`). Its result is chosen
+  field by field (`selectWords`), so no record is rebuilt in a branch.
+  - A join's slot write is out of line, with the words as scalars
+    (`SystemState.joinTaintScalarsAt`). The table write is specialised to the
+    rewrite, so no closure over the words is built.
+- **The capture.** `withTaintWordsAt` reads a source's ten words off the object
+  at one probe, each on its own, and hands them to the arm once, so the
+  compiler builds no closure to share the arm.
+  - The fused steps join the captured words in place: send, call and reply at
+    the caller; receive at the source; reply-receive at both; signal at the
+    caller and the notification; wait at the notification.
+  - Each compiled-equals-specification proof discharges its source hypothesis
+    with the decode lemma (`decode_taintWordsAt`, `withTaintWordsAt_eq`,
+    `joinTaintAt_toWords_of_decode`).
+  - The actor snapshot a recorded event carries decodes the actor's words
+    (`declassificationActorTaint`), the one decode on a compiled path, since
+    the event holds the decoded taint.
+- **The general dispatcher.** `.declassify`, `.declassifySignal` and the audit
+  pair take fused scalar steps (`dispatchCheckedArmThenTaintFused`,
+  `dispatchCheckedArmThenTaintFused_eq`).
+  - The declassification originates over the ring's new window
+    (`declassifyTaintStep`, `originateWindow_eq`).
+  - The declassified signal seeds its flows with word joins over the same
+    window (`declassifySignalTaintStep`, `seedWordsFrom_eq`).
+  - The audit pair's step is the identity (`auditTaintStep_eq`).
+  - Every other call reaching the general dispatcher keeps the per-edge path
+    over the words captured at its plan's sources (`planSourceWords`). That path
+    is reached only through `.viaDecode`, whose decode record already allocates,
+    so it is off every measured syscall; ZA5.13 routes the declassifications and
+    the audit calls.
+- **The census.** `SeLe4n.Testing.TaintReaderCompiledReachCensus` (Tier 1)
+  walks what the compiler runs from every committing `@[export]`, a
+  `@[csimp]` or `@[implemented_by]` replacement in place of the body it
+  replaces. It fails if the reader is reached. The specification dispatcher,
+  walked into its own body, must reach it, so the census can fire.
+- **Tried and reverted.** Handing each arm and its step to a `@[noinline]`
+  function returned the arm's result record out of line and read 2 on every
+  routed IPC call. The arms stay inlined; only the slot write is out of line,
+  and it returns the state.
+- **Measured** (fresh untraced archive, `--lean-kernel`): every pin reads 0.
+  - On the way, the wait read 1: its step went out of line with the words as a
+    record (`waitTaintStepOfCap`, now inlined).
+  - Every receive and reply-receive read 2: a capture at an absent key built
+    an endpoint each time (`taintFreeObject`, now a constant).
+  - The IR against `main`'s shows no closure or record over taint words on a
+    fused path, and no lost in-place rebuild.
+
 ## v0.36.161 — WS-ZA ZA5.11: the taint lives in the object it describes
 
 A thread's and a notification's declassification taint now lives in their own

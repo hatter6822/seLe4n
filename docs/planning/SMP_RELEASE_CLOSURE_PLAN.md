@@ -226,7 +226,8 @@ lives in the plan that owns the work.
   brackets on `schedulerLockBracketDomain` over one unified footprint spanning
   both domains, sixteen arms declare a scheduler footprint, and each carries a
   write-coverage proof.  What SM10 must still not read as covered is the
-  *taint table*, the one `UncoveredLockDomain` entry left.
+  *taint words' per-key commit* (`taintWordsPerKeyCommit`), the one
+  `UncoveredLockDomain` entry left.
 - **Fine-lock migration Track D — commit partitioning**
   ([`SMP_FINE_LOCK_MIGRATION_PLAN.md`](SMP_FINE_LOCK_MIGRATION_PLAN.md) §4,
   PRs 10–13), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
@@ -262,7 +263,7 @@ lives in the plan that owns the work.
   `v0.34.89`.  The syscall seam's own wake targets
   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed at
   `v0.35.181` (RR8.12 Cut C6h), so the scheduler domain is covered end to end;
-  Track D's completion must not be read as covering the *taint table*, which is
+  Track D's completion must not be read as covering the *taint words' per-key commit*, which is
   the one entry left.
 - Tier 0..5 tests green at HEAD.
 

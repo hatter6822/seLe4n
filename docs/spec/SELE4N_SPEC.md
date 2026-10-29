@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.161` (`lakefile.toml`) |
+| **Package version** | `0.36.162` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 524,872 across 478 Lean files |
 | **Test LoC** | 87,414 across 70 Lean test suites |
@@ -5365,10 +5365,11 @@ write cover and cross-core non-interference are proven for the zombie delete
 `cspaceDeleteSlotZombie_runQueueEntryStage`, `cspaceDeleteSlotZombie_stepCovers`,
 `cspaceDeleteSlotZombie_confinedToCores`,
 `schedLockSet_cspaceDeleteSlotZombie_coversWrites`,
-`cspaceDeleteSlotZombie_crossCoreNonInterference`).  The retire also clears
-the freed id's declassification provenance (`withTaintCleared` in
-`retireRecordedObject`, `retireFinalObject_taint_cleared`), so an object carved
-at the id later inherits no stale tag.  Since `v0.36.149` the reset removes no
+`cspaceDeleteSlotZombie_crossCoreNonInterference`).  The retire also forgets
+the freed id's declassification provenance: since `v0.36.162` the provenance is
+the object's own taint words, which the passive erase takes out
+(`retireFinalObject_taint_cleared`), so an object carved at the id later
+inherits no stale tag.  Since `v0.36.149` the reset removes no
 id, so the retire is the only path that frees one.  **Set-space** deletes each old root
 through the same loop (`copyThreadSpacesZombie`), so a thread's last
 capability to its old CSpace root CNode empties and retires it; set-space is a
@@ -5780,7 +5781,7 @@ Every kernel object has a decidable well-formedness predicate:
   empty taint, so a retyped id names no provenance; saturation is the object's
   own.  The taint step is a fold of per-key joins and clears (`joinTaintAt`,
   `clearTaintAt`) that write the table entry and the key's words together, the
-  words in the key's slot (`SystemState.writeTaintWordsAt`, an
+  words in the key's slot (then `SystemState.writeTaintWordsAt`, an
   `RHTable.mapValueAt`); a join that moves nothing is elided first, so a step
   with nothing to join writes nothing.  A flow or an origination joins only at
   a key the committed state holds as a thread or a notification
@@ -5788,7 +5789,8 @@ Every kernel object has a decidable well-formedness predicate:
   holds no tracked content (`taintHolderAt_false_no_content`,
   `liveTaintEdges_mem_or_no_content`).  The table and the words are two copies
   for this row, held equal at every id by
-  `SystemState.tableReferencesRecorded.taintStored`, which the step keeps
+  `SystemState.tableReferencesRecorded.taintStored` (since ZA5.12 the reader's
+  definition, `SystemState.taintStored`), which the step keeps
   (`applyTaintStep_preserves_tableReferencesRecorded`).  The step moves the
   store only in its words (`SystemState.objectsAgreeOffTaint`), the relation the
   projection (which strips the words on every kind,
@@ -5796,7 +5798,31 @@ Every kernel object has a decidable well-formedness predicate:
   bundle and the whole `proofLayerInvariantBundle` carry across
   (`Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint`, so
   `applySyscallTaint_preserves_proofLayerInvariantBundle` holds over the word
-  write); `ObservableState` is unchanged.  The table retires in ZA5.12.
+  write); `ObservableState` is unchanged.  The table retired in ZA5.12 (below).
+- **The taint table retires and the taint is read off the objects**
+  (`v0.36.162`, WS-ZA ZA5.12).  The `declassificationTaint` field is gone from
+  both states.  `SystemState.declassificationTaint` is a reader: one probe at
+  the key, the decode of the words a thread or a notification holds there,
+  empty at every other key; every reader and propagation theorem is stated
+  over it, and `SystemState.taintStored` is its definition at a key, so the
+  agreement ZA5.11 held is true by construction.  The frozen state reads its
+  frozen store the same way (`freeze_preserves_declassificationTaint`), and the
+  checked boot installs only clean words
+  (`bootFromPlatformChecked_ok_declassificationTaint`).  Joins are word to
+  word (`TaintWords.join`), compiled as flat scalar code proven equal to the
+  list form (`@[csimp] join_eq_flat`), each slot write out of line with the
+  words as scalars (`SystemState.joinTaintScalarsAt`).  **No compiled path
+  calls the reader**: every fused step captures its sources' words as scalars
+  before the arm (`withTaintWordsAt`), and each compiled-equals-specification
+  proof discharges its source with the decode lemma (`decode_taintWordsAt`).
+  The general dispatcher gives `.declassify`, `.declassifySignal` and the audit
+  pair fused scalar steps (`dispatchCheckedArmThenTaintFused_eq`); every other
+  call there keeps the per-edge path over the words captured at its plan's
+  sources (`planSourceWords`), reached only through the decode.  A recorded
+  event's actor snapshot decodes the actor's words
+  (`declassificationActorTaint`).  `SeLe4n.Testing.TaintReaderCompiledReachCensus`
+  fails the build if a committing `@[export]` reaches the reader along what the
+  compiler runs.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
