@@ -1841,6 +1841,99 @@ def timerTickOnCore (st : SystemState) (c : CoreId) : SystemState :=
       | (st2, true) => scheduleEffectiveOnCoreState st2 c
       | (st2, false) => rescheduleIfPendingOnCore st2 c
 
+-- ── the prepared state + the `timerTickOnCore` characterisation ──
+
+/-- WS-SM SM5.D.2: the state `timerTickOnCore` reaches after the SM5.D.9 clear +
+SM5.D.4 replenishment, **before** the SM5.D.5 budget tick / preemption.
+Audit-pass-2: the tick does **no** in-tick domain accounting (rotation is the
+separate `scheduleDomainOnCore`), so the prepared state is exactly the
+post-replenishment state.  Naming it lets the SM5.D headline theorems
+characterise `timerTickOnCore`'s behaviour without restating its internal
+`let`-chain.  Since WS-ZA ZA6.2 the drain's wakes report through the
+reschedule flags, so the prepared state is the whole of what the drain hands
+the charge. -/
+def timerTickOnCorePrepared (st : SystemState) (c : CoreId) : SystemState :=
+  let st0 := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }
+  processReplenishmentsDueOnCore st0 c st0.machine.timer
+
+/-- WS-SM SM5.D.2: `timerTickOnCore` is the SM5.D.5 budget tick / preemption —
+plus the local reschedule decision — dispatched on the SM5.D.2/.4 prepared
+state.  `rfl` — the production `let`-chain *is* this composition.  Every SM5.D.2
+headline below is a corollary.  The charge is the named step
+`timerTickChargeCurrentOnCore` (raw-write migration Cut B2): its witnessed lookup
+is a *dependent* match, and one of those inline over the stuck application
+`timerTickOnCorePrepared st c` is opaque to definitional unification; a consumer
+reaches the budget tick through `timerTickChargeCurrentOnCore_eq hTcb`. -/
+theorem timerTickOnCore_eq_prepared (st : SystemState) (c : CoreId) :
+    timerTickOnCore st c =
+      (match (timerTickOnCorePrepared st c).scheduler.currentOnCore c with
+       | none => rescheduleIfPendingOnCore (timerTickOnCorePrepared st c) c
+       | some tid =>
+           match timerTickChargeCurrentOnCore (timerTickOnCorePrepared st c) c tid with
+           | (st2, true) => scheduleEffectiveOnCoreState st2 c
+           | (st2, false) => rescheduleIfPendingOnCore st2 c) := rfl
+
+/-- WS-ZA ZA6.2: the tick's four outcomes.  An idle core, and a current thread
+the store does not hold, end in the local decision on the prepared state; a
+charge that preempts ends in the dispatch; one that does not ends in the local
+decision on the charged state.  The theorems over the tick case on this. -/
+theorem timerTickOnCore_cases (st : SystemState) (c : CoreId) :
+    ((timerTickOnCorePrepared st c).scheduler.currentOnCore c = none ∧
+        timerTickOnCore st c = rescheduleIfPendingOnCore (timerTickOnCorePrepared st c) c) ∨
+    (∃ tid, (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid ∧
+        (timerTickOnCorePrepared st c).getTcb? tid = none ∧
+        timerTickOnCore st c = rescheduleIfPendingOnCore (timerTickOnCorePrepared st c) c) ∨
+    (∃ tid tcb, ∃ hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb, ∃ st3,
+        (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid ∧
+        timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, true) ∧
+        timerTickOnCore st c = scheduleEffectiveOnCoreState st3 c) ∨
+    (∃ tid tcb, ∃ hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb, ∃ st3,
+        (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid ∧
+        timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, false) ∧
+        timerTickOnCore st c = rescheduleIfPendingOnCore st3 c) := by
+  rw [timerTickOnCore_eq_prepared]
+  cases hCur : (timerTickOnCorePrepared st c).scheduler.currentOnCore c with
+  | none => exact Or.inl ⟨rfl, rfl⟩
+  | some tid =>
+    cases hTcb : (timerTickOnCorePrepared st c).getTcb? tid with
+    | none =>
+      refine Or.inr (Or.inl ⟨tid, rfl, hTcb, ?_⟩)
+      simp only [timerTickChargeCurrentOnCore_none hTcb]
+    | some tcb =>
+      simp only [timerTickChargeCurrentOnCore_eq hTcb]
+      cases hB : timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb with
+      | mk st3 b =>
+        cases b
+        · exact Or.inr (Or.inr (Or.inr ⟨tid, tcb, hTcb, st3, rfl, hB, rfl⟩))
+        · exact Or.inr (Or.inr (Or.inl ⟨tid, tcb, hTcb, st3, rfl, hB, rfl⟩))
+
+/-- The local decision keeps whatever the state and the decision both keep. -/
+theorem rescheduleIfPendingOnCore_of {P : SystemState → Prop} (st : SystemState) (c : CoreId)
+    (h : P st) (h' : P (handleRescheduleOnCoreState st c)) :
+    P (rescheduleIfPendingOnCore st c) := by
+  unfold rescheduleIfPendingOnCore; split
+  · exact h'
+  · exact h
+
+/-- The tick keeps whatever the prepared state has, the local decision and the
+dispatch both keep, and every budget tick at the prepared state's current thread
+establishes.  The theorems whose fact every phase carries alike lift through
+this. -/
+theorem timerTickOnCore_of {P : SystemState → Prop} (st : SystemState) (c : CoreId)
+    (hPrep : P (timerTickOnCorePrepared st c))
+    (hR : ∀ s, P s → P (handleRescheduleOnCoreState s c))
+    (hS : ∀ s, P s → P (scheduleEffectiveOnCoreState s c))
+    (hB : ∀ tid tcb (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb) st3 b,
+      timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) → P st3) :
+    P (timerTickOnCore st c) := by
+  rcases timerTickOnCore_cases st c with ⟨_, h⟩ | ⟨_, _, _, h⟩ | ⟨tid, tcb, hTcb, st3, _, hb, h⟩ |
+      ⟨tid, tcb, hTcb, st3, _, hb, h⟩ <;> rw [h]
+  · exact rescheduleIfPendingOnCore_of _ c hPrep (hR _ hPrep)
+  · exact rescheduleIfPendingOnCore_of _ c hPrep (hR _ hPrep)
+  · exact hS _ (hB tid tcb hTcb st3 true hb)
+  · have h3 := hB tid tcb hTcb st3 false hb
+    exact rescheduleIfPendingOnCore_of _ c h3 (hR _ h3)
+
 /-- WS-ZA ZA4.3: charge a yield to `tid`, current on core `c`.  Yield forfeits
 what is left of the caller's allotment (decided 2026-10-11; `seL4_Yield` under
 MCS): a thread bound to a SchedContext gives up its remaining budget until the

@@ -38,23 +38,24 @@ driver**.  On each per-core timer interrupt the entry now:
    SM5.D.5 budget-tick preemption), and the SM5.D.6 `scheduleDomainOnCore`
    domain transition) plus the clock-advance flag, definitionally the
    committed state's `machine.timer` delta — commits the new state, and
-   recovers the cross-core SGIs paired with the flag;
+   recovers the reschedule flags the step raised (`PerCoreFlags.raised`),
+   paired with the clock flag;
 2. **advances the HAL's `TICK_COUNT` shadow** (`ffiTimerAdvanceTickCount`)
    iff the bracket committed *and* the flag is set — the commit-coupled shadow clock (PR #880
    follow-up): the shadow moves exactly when the model clock moved, so
-   pre-readiness ticks, non-boot cores and fail-closed entries advance
-   neither, and a failed entry can no longer leave the shadow one ahead;
-3. **fires** the recovered cross-core `.reschedule` SGIs via
-   `Concurrency.fireCrossCoreSgis` — the SM5.F dispatch that actually pokes the
-   remote cores' GIC (after the state write is visible, per the SM1.F.8 ordering).
+   pre-readiness ticks, non-boot cores and out-of-range ids advance neither;
+3. **fires** a `.reschedule` SGI at every core whose flag the step raised via
+   `Concurrency.fireRaisedReschedules` — the SM5.F dispatch that actually pokes
+   the cores' GIC (after the state write is visible, per the SM1.F.8 ordering),
+   read off the flags as every other entry's SGIs are (WS-ZA ZA6.2).
 
 The pure decision core is fully verified in
 `SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean`
 (`perCoreTimerTickStep_preserves_objects_invExt`,
-`perCoreTimerTickStep_ok_currentThreadValidOnCore`, fail-closed reductions); this
+`perCoreTimerTickStep_currentThreadValidOnCore`, the out-of-range reduction); this
 entry is the thin `BaseIO` shell over it (the SM5.F pattern: verified pure core +
-side-effecting shell that is inert on the no-SGI path —
-`Concurrency.fireCrossCoreSgis [] = pure ()`).
+side-effecting shell that is inert on the no-SGI path — a word with no flag
+raised fires nothing, `Concurrency.fireRaisedReschedules_eq`).
 
 The read-tick-commit issues as a single `IO.Ref.modifyGet`, which keeps the
 recovered SGIs paired with the state they came from without a second read — but
@@ -111,7 +112,7 @@ Staged via `SeLe4n/Platform/Staged.lean` (added to the staged-module allowlist p
 the WS-RC R12.B partition gate).
 
 This driver references the `ffiSendSgi` extern transitively (via
-`Concurrency.fireCrossCoreSgis`) and the `ffiTimerAdvanceTickCount` extern
+`Concurrency.fireRaisedReschedules`) and the `ffiTimerAdvanceTickCount` extern
 directly (the commit-coupled shadow advance), and `@[export]` keeps the symbol
 live — so an executable that *linked* this module would demand `ffi_send_sgi`
 and `ffi_timer_advance_tick_count` at link time.
@@ -139,9 +140,9 @@ WS-LS LS2.2: `timerTickBracket`, run as `BracketSpec.run`, which is the step),
 advances the HAL's `TICK_COUNT` shadow **iff the step advanced the model
 clock** (the flag is definitionally the `machine.timer` delta —
 `perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot drift
-from the model on any arm, failed entries included; PR #880 follow-up closing
-the invocation-coupled residual), then fires the recovered cross-core
-`.reschedule` SGIs.  See the module docstring. -/
+from the model on any arm; PR #880 follow-up closing the invocation-coupled
+residual), then fires a `.reschedule` SGI at every core whose flag the step
+raised.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
   -- **WS-ZA ZA6.1**: the raw id is decoded once, here; an id naming no core
@@ -153,12 +154,12 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
   | none => pure ()
   | some c => do
     let frame ← Platform.FFI.ffiTrapContext
-    let (sgis, advanced, kind, context, tableBase, asid, code, writes, icache) ←
+    let (raised, advanced, kind, context, tableBase, asid, code, writes, icache) ←
       Platform.FFI.modifyGetKernelState (fun st =>
-        let (sgisAndFlag, post) := (timerTickBracket coreId).run
+        let (raisedAndFlag, post) := (timerTickBracket coreId).run
           (Architecture.saveCapturedTrapFrame st c frame)
         let post := PriorityInheritance.settleResidencyOnCore post c
-        ((sgisAndFlag.1, sgisAndFlag.2,
+        ((raisedAndFlag.1, raisedAndFlag.2,
           Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
           post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
@@ -166,7 +167,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
           Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
     Platform.FFI.completePhysicalWrites writes
     if advanced then Platform.FFI.ffiTimerAdvanceTickCount
-    Concurrency.fireCrossCoreSgis sgis
+    Concurrency.fireRaisedReschedules raised
     Platform.FFI.completeIcacheMaintenance icache
     Concurrency.releaseSwitchedFpOwnerOnCore c
     Platform.FFI.restoreTrapFrameParts kind context tableBase asid
@@ -176,7 +177,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
 bracketed-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
 shape (atomic `modifyGetKernelState` over `(timerTickBracket coreId).run`, the
 commit-coupled `ffiTimerAdvanceTickCount` on the step's clock-advance flag,
-then `fireCrossCoreSgis`) so a refactor that drops the SGI firing, the state
+then `fireRaisedReschedules`) so a refactor that drops the SGI firing, the state
 commit, the shadow advance — or, since WS-RR RR7.39, the declared-footprint
 bracket — breaks this marker at elaboration; combined with the
 `@[export]` attribute (which the Rust `lean_per_core_timer_tick` extern resolves
@@ -198,12 +199,12 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
       | none => pure ()
       | some c => do
         let frame ← Platform.FFI.ffiTrapContext
-        let (sgis, advanced, kind, context, tableBase, asid, code, writes, icache) ←
+        let (raised, advanced, kind, context, tableBase, asid, code, writes, icache) ←
           Platform.FFI.modifyGetKernelState (fun st =>
-            let (sgisAndFlag, post) := (timerTickBracket coreId).run
+            let (raisedAndFlag, post) := (timerTickBracket coreId).run
               (Architecture.saveCapturedTrapFrame st c frame)
             let post := PriorityInheritance.settleResidencyOnCore post c
-            ((sgisAndFlag.1, sgisAndFlag.2,
+            ((raisedAndFlag.1, raisedAndFlag.2,
               Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
@@ -211,7 +212,7 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
         Platform.FFI.completePhysicalWrites writes
         if advanced then Platform.FFI.ffiTimerAdvanceTickCount
-        Concurrency.fireCrossCoreSgis sgis
+        Concurrency.fireRaisedReschedules raised
         Platform.FFI.completeIcacheMaintenance icache
         Concurrency.releaseSwitchedFpOwnerOnCore c
         Platform.FFI.restoreTrapFrameParts kind context tableBase asid

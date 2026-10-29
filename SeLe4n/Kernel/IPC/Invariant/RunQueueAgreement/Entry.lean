@@ -97,22 +97,16 @@ theorem scheduleDomainOnCore_runQueueEntryStage {st st' : SystemState} {c : Core
 accounting. -/
 theorem perCoreTimerTickStep_runQueueEntryStage (st : SystemState) (coreId : UInt64) :
     SystemState.RunQueueEntryStage st (perCoreTimerTickStep st coreId).1 := by
-  unfold perCoreTimerTickStep
-  split
-  · rename_i hc
+  by_cases hc : coreId.toNat < Concurrency.numCores
+  · rw [perCoreTimerTickStep_valid_core st coreId hc]
     have hClk : RunQueueStage st (tickClockedState st ⟨coreId.toNat, hc⟩) := by
       unfold tickClockedState; split
       · exact RunQueueStage.of_frame rfl rfl rfl
       · exact RunQueueStage.refl _
-    split
-    · exact (RunQueueStage.refl _).entry
-    · rename_i r hT
-      split
-      · exact (RunQueueStage.refl _).entry
-      · rename_i st2 hD
-        exact (hClk.entry.trans (timerTickOnCore_runQueueEntryStage hT)).trans
-          (scheduleDomainOnCore_runQueueEntryStage hD)
-  · exact (RunQueueStage.refl _).entry
+    exact (hClk.entry.trans (timerTickOnCore_runQueueEntryStage _ _)).trans
+      (scheduleDomainOnCore_runQueueEntryStage (scheduleDomainOnCore_eq_state _ _))
+  · rw [perCoreTimerTickStep_invalid_core st coreId hc]
+    exact (RunQueueStage.refl _).entry
 
 /-- The reschedule interrupt's step. -/
 theorem perCoreRescheduleStep_runQueueEntryStage (st : SystemState) (coreId : UInt64) :

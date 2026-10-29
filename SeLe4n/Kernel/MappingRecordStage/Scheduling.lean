@@ -712,32 +712,29 @@ theorem spendBudgetOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : Se
 
 theorem budgetExhaustOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
-    (ticks : Nat) : MappingStage st (budgetExhaustOnCore st c tid scId sc hSc ticks).1 :=
+    (ticks : Nat) : MappingStage st (budgetExhaustOnCore st c tid scId sc hSc ticks) :=
   ((spendBudgetOnCore_mappingStage st c tid scId sc hSc ticks).trans
     (timeoutBlockedThreads_mappingStage _ scId c)).trans (MappingStage.of_objects_eq rfl)
 
 /-- The tick's charge of a thread: a slice or budget step. -/
 theorem timerTickBudgetOnCore_mappingStage {st : SystemState} {c : CoreId}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {hTcb : st.getTcb? tid = some tcb}
-    {r : SystemState × Bool × List (CoreId × Concurrency.SgiKind)}
-    (h : timerTickBudgetOnCore st c tid tcb hTcb = .ok r) : MappingStage st r.1 := by
-  unfold timerTickBudgetOnCore at h
-  split at h
-  · split at h
-    · rw [Except.ok.injEq] at h; subst h
-      exact sliceExpireOnCore_mappingStage st c tid tcb hTcb
-    · rw [Except.ok.injEq] at h; subst h
-      exact MappingStage.rewriteObject_tcb hTcb _
+    {r : SystemState × Bool}
+    (h : timerTickBudgetOnCore st c tid tcb hTcb = r) : MappingStage st r.1 := by
+  subst h
+  unfold timerTickBudgetOnCore
+  split
+  · split
+    · exact sliceExpireOnCore_mappingStage st c tid tcb hTcb
+    · exact MappingStage.rewriteObject_tcb hTcb _
   all_goals
-    split at h
+    split
     · rename_i sc hSc _
-      split at h
-      · rw [Except.ok.injEq] at h; subst h
-        exact budgetExhaustOnCore_mappingStage st c tid _ sc hSc 1
-      · rw [Except.ok.injEq] at h; subst h
-        exact MappingStage.rewriteObject_schedContext hSc _
+      split
+      · exact budgetExhaustOnCore_mappingStage st c tid _ sc hSc 1
+      · exact MappingStage.rewriteObject_schedContext hSc _
           (SystemState.rewriteAdmissible_schedContext hSc _)
-    · cases h
+    · exact MappingStage.refl _
 
 theorem idleFallbackOnCore_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (idleFallbackOnCore st c) :=
@@ -796,7 +793,7 @@ theorem yieldOnCore_mappingStage {st st' : SystemState} {c : CoreId}
 /-- One due replenishment: the refill and the wake. -/
 theorem processOneReplenishmentOnCore_mappingStage (st : SystemState) (c : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
-    MappingStage st (processOneReplenishmentOnCore st c scId now).1 := by
+    MappingStage st (processOneReplenishmentOnCore st c scId now) := by
   have hRefill : MappingStage st (refillSchedContext st scId now) := by
     unfold refillSchedContext; exact updateSchedContext_mappingStage _ _ _
   unfold processOneReplenishmentOnCore
@@ -804,19 +801,17 @@ theorem processOneReplenishmentOnCore_mappingStage (st : SystemState) (c : CoreI
   split
   · split
     · exact hRefill
-    · exact hRefill.trans (wakeThread_mappingStage _ _ c)
+    · exact (hRefill.trans (wakeThread_mappingStage _ _ c)).trans (MappingStage.of_objects_eq rfl)
   · exact hRefill
 
 /-- The replenishment drain: the replenish-queue pop, then a fold of refills. -/
 theorem processReplenishmentsDueOnCore_mappingStage (st : SystemState) (c : CoreId) (now : Nat) :
-    MappingStage st (processReplenishmentsDueOnCore st c now).1 := by
+    MappingStage st (processReplenishmentsDueOnCore st c now) := by
   unfold processReplenishmentsDueOnCore
   dsimp only
-  suffices H : ∀ (l : List SeLe4n.SchedContextId)
-      (acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool),
-      MappingStage st acc.1 → MappingStage st (l.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1 from
+  suffices H : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState),
+      MappingStage st acc → MappingStage st (l.foldl (fun acc scId =>
+        processOneReplenishmentOnCore acc c scId now) acc) from
     H _ _ (MappingStage.of_objects_eq rfl)
   intro l
   induction l with
@@ -828,41 +823,18 @@ theorem processReplenishmentsDueOnCore_mappingStage (st : SystemState) (c : Core
 
 /-- **The timer tick keeps the mappings recorded**: the diagnostic clear, the
 replenishment drain, the charge, and the reschedule or the scheduling point. -/
-theorem timerTickOnCore_mappingStage {st : SystemState} {c : CoreId}
-    {r : SystemState × List (CoreId × Concurrency.SgiKind)}
-    (h : timerTickOnCore st c = .ok r) : MappingStage st r.1 := by
-  unfold timerTickOnCore at h
-  dsimp only at h
-  have hP : MappingStage st (processReplenishmentsDueOnCore
-      { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] } c st.machine.timer).1 :=
+theorem timerTickOnCore_mappingStage (st : SystemState) (c : CoreId) :
+    MappingStage st (timerTickOnCore st c) := by
+  have hP : MappingStage st (timerTickOnCorePrepared st c) :=
     (MappingStage.of_objects_eq (st := st)
       (st' := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }) rfl).trans
       (processReplenishmentsDueOnCore_mappingStage _ c st.machine.timer)
-  split at h
-  · split at h
-    · split at h
-      · cases h
-      · rename_i hH
-        rw [Except.ok.injEq] at h; subst h
-        exact hP.trans (handleRescheduleSgiOnCore_mappingStage hH)
-    · rw [Except.ok.injEq] at h; subst h; exact hP
-  · split at h
-    · cases h
-    · rename_i st2 pre sgis hC
-      obtain ⟨_, _, hB⟩ := timerTickChargeCurrentOnCore_ok hC
-      have hC2 := hP.trans (timerTickBudgetOnCore_mappingStage hB)
-      split at h
-      · split at h
-        · cases h
-        · rename_i hS
-          rw [Except.ok.injEq] at h; subst h
-          exact hC2.trans (scheduleEffectiveOnCore_mappingStage hS)
-      · split at h
-        · split at h
-          · cases h
-          · rename_i hH
-            rw [Except.ok.injEq] at h; subst h
-            exact hC2.trans (handleRescheduleSgiOnCore_mappingStage hH)
-        · rw [Except.ok.injEq] at h; subst h; exact hC2
+  refine timerTickOnCore_of (P := MappingStage st) st c hP ?_ ?_ ?_
+  · intro s hs
+    exact hs.trans (handleRescheduleSgiOnCore_mappingStage (handleRescheduleSgiOnCore_eq_state s c))
+  · intro s hs
+    exact hs.trans (scheduleEffectiveOnCore_mappingStage (scheduleEffectiveOnCore_eq_state s c))
+  · intro tid tcb hTcb st3 b hb
+    exact hP.trans (timerTickBudgetOnCore_mappingStage hb)
 
 end SeLe4n.Kernel

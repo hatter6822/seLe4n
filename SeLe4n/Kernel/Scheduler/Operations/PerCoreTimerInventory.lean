@@ -188,10 +188,12 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       processReplenishmentsDueOnCore_preserves_objects_invExt .replenish,
     pctt! "processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed: SM5.D.4 all-replenishments preserves run-queue well-formedness"
       processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed .replenish,
-    pctt! "processOneReplenishmentOnCore_no_sgi_if_no_target: no wake target emits no SGI"
-      processOneReplenishmentOnCore_no_sgi_if_no_target .replenish,
-    pctt! "processOneReplenishmentOnCore_local_no_sgi: local wake emits no cross-core SGI"
-      processOneReplenishmentOnCore_local_no_sgi .replenish,
+    pctt! "processOneReplenishmentOnCore_of_no_target: no wake target is the refill alone"
+      processOneReplenishmentOnCore_of_no_target .replenish,
+    pctt! "processOneReplenishmentOnCore_wake_eq: a wake enqueues on the home core and raises its flag"
+      processOneReplenishmentOnCore_wake_eq .replenish,
+    pctt! "processReplenishmentsDueOnCore_flags_wake_target: every due refill's wake raises its home core's flag"
+      processReplenishmentsDueOnCore_flags_wake_target .replenish,
     pctt! "cbsReplenish_can_wake_remote_core: SM5.D.4 headline: cross-core CBS replenish wakes a remote core"
       cbsReplenish_can_wake_remote_core .replenish,
     pctt! "runningOnSomeCore: audit-pass-2 guard — is tid current on some core (no double-placement)"
@@ -222,12 +224,14 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
     pctt! "scheduleEffectiveOnCore_preserves_objects_invExt: SM5.D.5 reschedule preserves object-store invariant"
       scheduleEffectiveOnCore_preserves_objects_invExt .budget,
     -- ── .tick ──
-    pctt! "timerTickOnCorePreDomain: SM5.D.2 pre-domain prepared state"
-      timerTickOnCorePreDomain .tick,
-    pctt! "timerTickOnCorePrepared: SM5.D.2 prepared (post-replenish/post-domain) state"
+    pctt! "rescheduleIfPendingOnCore: the tick's local decision, run iff the core's flag is up"
+      rescheduleIfPendingOnCore .tick,
+    pctt! "timerTickOnCorePrepared: SM5.D.2 prepared (timeout-error clear + replenishment drain) state"
       timerTickOnCorePrepared .tick,
-    pctt! "timerTickOnCorePrepared_fst_eq: prepared state is the domain-decrement of pre-domain"
-      timerTickOnCorePrepared_fst_eq .tick,
+    pctt! "timerTickOnCore_cases: the total tick's four outcomes"
+      timerTickOnCore_cases .tick,
+    pctt! "timerTickOnCore_of: a fact every tick phase keeps holds after the tick"
+      timerTickOnCore_of .tick,
     pctt! "timerTickOnCore_eq_prepared: SM5.D.2 tick = budget dispatch on the prepared state"
       timerTickOnCore_eq_prepared .tick,
     pctt! "timerTickOnCorePrepared_machine_eq: prepared state preserves the machine"
@@ -310,10 +314,6 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
     pctt! "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore: audit-pass-2 capstone — the tick keeps current in its active domain"
       timerTickOnCore_preserves_currentThreadInActiveDomainOnCore .preservation,
     -- ── .decidability ──
-    pctt! "timerTickOnCoreSucceeds: SM5.D.8 tick-succeeds decidable predicate"
-      timerTickOnCoreSucceeds .decidability,
-    pctt! "timerTickOnCoreEmitsSgi: SM5.D.8 tick-emits-SGI decidable predicate"
-      timerTickOnCoreEmitsSgi .decidability,
     pctt! "timerTickBudgetOnCorePreempts: SM5.D.8 budget-preempts decidable predicate"
       timerTickBudgetOnCorePreempts .decidability,
     pctt! "perCoreTimerTickEntry: SM5.I live per-core timer-entry driver (C-callable seam)"
@@ -335,19 +335,19 @@ theorem perCoreTimerTheorems_domain_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .domain)).length = 10 := by decide
 
 theorem perCoreTimerTheorems_replenish_count :
-    (perCoreTimerTheorems.filter (fun t => t.category == .replenish)).length = 11 := by decide
+    (perCoreTimerTheorems.filter (fun t => t.category == .replenish)).length = 12 := by decide
 
 theorem perCoreTimerTheorems_budget_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .budget)).length = 12 := by decide
 
 theorem perCoreTimerTheorems_tick_count :
-    (perCoreTimerTheorems.filter (fun t => t.category == .tick)).length = 18 := by decide
+    (perCoreTimerTheorems.filter (fun t => t.category == .tick)).length = 19 := by decide
 
 theorem perCoreTimerTheorems_preservation_count :
     (perCoreTimerTheorems.filter (fun t => t.category == .preservation)).length = 25 := by decide
 
 theorem perCoreTimerTheorems_decidability_count :
-    (perCoreTimerTheorems.filter (fun t => t.category == .decidability)).length = 5 := by decide
+    (perCoreTimerTheorems.filter (fun t => t.category == .decidability)).length = 3 := by decide
 
 /-- WS-SM SM5.D: per-category counts sum to the total. -/
 theorem perCoreTimerTheorems_partition_sum :

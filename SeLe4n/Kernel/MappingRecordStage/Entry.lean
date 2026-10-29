@@ -81,20 +81,14 @@ theorem scheduleDomainOnCore_mappingStage {st st' : SystemState} {c : CoreId}
 accounting. -/
 theorem perCoreTimerTickStep_mappingStage (st : SystemState) (coreId : UInt64) :
     MappingStage st (perCoreTimerTickStep st coreId).1 := by
-  unfold perCoreTimerTickStep
-  split
-  · rename_i hc
+  by_cases hc : coreId.toNat < Concurrency.numCores
+  · rw [perCoreTimerTickStep_valid_core st coreId hc]
     have hClk : MappingStage st (tickClockedState st ⟨coreId.toNat, hc⟩) :=
       MappingStage.of_objects_eq (tickClockedState_objects _ _)
-    split
-    · exact MappingStage.refl _
-    · rename_i r hT
-      split
-      · exact MappingStage.refl _
-      · rename_i st2 hD
-        exact (hClk.trans (timerTickOnCore_mappingStage hT)).trans
-          (scheduleDomainOnCore_mappingStage hD)
-  · exact MappingStage.refl _
+    exact (hClk.trans (timerTickOnCore_mappingStage _ _)).trans
+      (scheduleDomainOnCore_mappingStage (scheduleDomainOnCore_eq_state _ _))
+  · rw [perCoreTimerTickStep_invalid_core st coreId hc]
+    exact MappingStage.refl _
 
 /-- The reschedule interrupt's step. -/
 theorem perCoreRescheduleStep_mappingStage (st : SystemState) (coreId : UInt64) :
