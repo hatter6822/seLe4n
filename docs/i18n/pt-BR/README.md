@@ -97,7 +97,7 @@ provas do Lean 4:
 |----------|-------|
 | **Versão** | `0.36.163` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 527.785 em 483 arquivos |
+| **LoC Lean de produção** | 527.807 em 483 arquivos |
 | **LoC Lean de testes** | 87.402 em 70 suítes de testes |
 | **Declarações provadas** | 19.478 declarações de teorema/lema (zero sorry/axiom) |
 | **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) em 80 arquivos-fonte |

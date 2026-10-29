@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/declassify-audit-routing",
-      "commit_sha": "0458ccdf62620fe045f59ade8c7abaeef3c0d6ff",
-      "tree_sha": "27ac40a607978ec47cbb8876b4bda4d594195394",
-      "committed_at_utc": "2026-10-29T08:21:13+00:00"
+      "commit_sha": "f68cbc52ee4aa60a96af976acf49ba7c64539ef9",
+      "tree_sha": "d2ddbb8863ccffac5d771581d310c6e11c2d69dc",
+      "committed_at_utc": "2026-10-29T08:59:30+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "191e5f9c8867547aec28b48844e4e279c4329cec290d33ab7474c2a3970cb699"
+    "source_digest": "3c0bf610ecf3708453a3cabdbc7fd5df63aee314b7d4992255de5c2dd97dbfa3"
   },
   "summary": {
     "module_count": 553,
@@ -27,7 +27,7 @@
     "version": "0.36.163",
     "lean_toolchain": "v4.28.0",
     "production_files": 483,
-    "production_loc": 527785,
+    "production_loc": 527807,
     "test_files": 70,
     "test_loc": 87402,
     "proved_theorem_lemma_decls": 19478,
@@ -393526,44 +393526,32 @@
           "kind": "structure",
           "name": "QemuVirtExerciserPlatform",
           "full_name": "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform",
-          "line": 59,
+          "line": 71,
           "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserDeclassificationPolicy",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeclassificationPolicy",
-          "line": 63,
-          "called": [
-            "SeLe4n.Kernel.DeclassificationPolicy",
-            "SeLe4n.Kernel.embedLegacyLabel"
-          ]
+          "line": 75,
+          "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserDeploymentLabeling",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeploymentLabeling",
-          "line": 71,
+          "line": 83,
           "called": [
-            "SeLe4n.Kernel.DeploymentLabeling",
-            "SeLe4n.Kernel.embedLegacyLabel",
-            "SeLe4n.Kernel.indexPartitionedDeploymentLabeling",
-            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeclassificationPolicy",
-            "SeLe4n.Platform.QemuVirt.qemuVirtLowerWitnessIndex",
-            "SeLe4n.Platform.QemuVirt.qemuVirtLowerWitnessIndex_admissible",
-            "SeLe4n.Platform.QemuVirt.qemuVirtLowerWitnessIndex_below_boundary",
-            "SeLe4n.Platform.QemuVirt.qemuVirtUpperDomainBase"
+            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeclassificationPolicy"
           ]
         },
         {
           "kind": "instance",
           "name": "qemuVirtExerciserPlatformBinding",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserPlatformBinding",
-          "line": 79,
+          "line": 91,
           "called": [
-            "SeLe4n.Platform.PlatformBinding",
             "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform",
-            "SeLe4n.Platform.QemuVirt.QemuVirtPlatform",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeploymentLabeling"
           ]
         },
@@ -393571,63 +393559,43 @@
           "kind": "def",
           "name": "qemuVirtExerciserAuditSlot",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserAuditSlot",
-          "line": 88,
-          "called": [
-            "SeLe4n.Slot",
-            "SeLe4n.Slot.ofNat"
-          ]
+          "line": 100,
+          "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserRootTaskCNode",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserRootTaskCNode",
-          "line": 93,
+          "line": 105,
           "called": [
-            "SeLe4n.Model.CNode",
-            "SeLe4n.Model.Capability.auditTrailManage",
-            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserAuditSlot",
-            "SeLe4n.Platform.QemuVirt.qemuVirtRootTaskCNodeGuard",
-            "SeLe4n.Platform.QemuVirt.qemuVirtRootTaskCNodeSlots",
-            "SeLe4n.Platform.RPi5.rpi5InitialCNode"
+            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserAuditSlot"
           ]
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserInitialObjects",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects",
-          "line": 100,
+          "line": 112,
           "called": [
-            "SeLe4n.Model.CNode.slotsUnique_holds",
-            "SeLe4n.Platform.Boot.ObjectEntry",
-            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserRootTaskCNode",
-            "SeLe4n.Platform.QemuVirt.qemuVirtInitialObjects",
-            "SeLe4n.Platform.QemuVirt.qemuVirtRootTaskCNodeId"
+            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserRootTaskCNode"
           ]
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserBoundPlatformConfig",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig",
-          "line": 107,
+          "line": 119,
           "called": [
-            "SeLe4n.Platform.Boot.PlatformConfig",
-            "SeLe4n.Platform.PlatformBinding",
-            "SeLe4n.Platform.PlatformBinding.initialThreads",
             "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform",
-            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects",
-            "SeLe4n.Platform.QemuVirt.qemuVirtIrqTable",
-            "SeLe4n.Platform.QemuVirt.qemuVirtMachineConfig"
+            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects"
           ]
         },
         {
           "kind": "def",
           "name": "bootAndInitialiseQemuVirtExerciser",
           "full_name": "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciser",
-          "line": 120,
+          "line": 132,
           "called": [
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.Boot.PlatformConfig",
-            "SeLe4n.Platform.FFI.bootAndInitialisePlatform",
             "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform"
           ]
         },
@@ -393635,10 +393603,8 @@
           "kind": "def",
           "name": "bootAndInitialiseQemuVirtExerciserOrHalt",
           "full_name": "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserOrHalt",
-          "line": 126,
+          "line": 138,
           "called": [
-            "SeLe4n.Platform.Boot.PlatformConfig",
-            "SeLe4n.Platform.FFI.ffiFatalHaltAll",
             "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciser"
           ]
         },
@@ -393646,51 +393612,34 @@
           "kind": "def",
           "name": "bootAndInitialiseQemuVirtExerciserFromDtbOrHalt",
           "full_name": "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt",
-          "line": 136,
+          "line": 148,
           "called": [
-            "SeLe4n.Platform.Boot.IrqEntry",
-            "SeLe4n.Platform.Boot.ObjectEntry",
-            "SeLe4n.Platform.BootVSpaceRootEntry",
-            "SeLe4n.Platform.FFI.extendBootRamMap",
-            "SeLe4n.Platform.FFI.ffiFatalHaltAll",
-            "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserOrHalt",
-            "SeLe4n.Platform.QemuVirt.qemuVirtBootRamExtensions",
-            "SeLe4n.Platform.QemuVirt.qemuVirtPlatformConfigFromDtb"
+            "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserOrHalt"
           ]
         },
         {
           "kind": "def",
           "name": "exerciserKernelMain",
           "full_name": "SeLe4n.Platform.QemuVirt.exerciserKernelMain",
-          "line": 149,
+          "line": 161,
           "called": [
             "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt",
-            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects",
-            "SeLe4n.Platform.QemuVirt.qemuVirtIrqTable"
+            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects"
           ]
         },
         {
           "kind": "theorem",
           "name": "qemuVirt_shippedLabeling_denies",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirt_shippedLabeling_denies",
-          "line": 162,
-          "called": [
-            "SeLe4n.Kernel.validatedAuditMonitorClearance",
-            "SeLe4n.Platform.PlatformBinding.labeling",
-            "SeLe4n.Platform.QemuVirt.QemuVirtPlatform"
-          ]
+          "line": 174,
+          "called": []
         },
         {
           "kind": "theorem",
           "name": "qemuVirtExerciserDeclassificationPolicy_canDeclassify_iff",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeclassificationPolicy_canDeclassify_iff",
-          "line": 172,
+          "line": 184,
           "called": [
-            "SeLe4n.Kernel.DeclassificationPolicy",
-            "SeLe4n.Kernel.SecurityDomain",
-            "SeLe4n.Kernel.SecurityLabel.highUntrusted",
-            "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
-            "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeclassificationPolicy"
           ]
         },
@@ -393698,11 +393647,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciser_validatedAuditMonitorClearance",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciser_validatedAuditMonitorClearance",
-          "line": 184,
+          "line": 196,
           "called": [
-            "SeLe4n.Kernel.embedLegacyLabel",
-            "SeLe4n.Kernel.validatedAuditMonitorClearance",
-            "SeLe4n.Platform.PlatformBinding.labeling",
             "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform"
           ]
         },
@@ -393710,21 +393656,17 @@
           "kind": "theorem",
           "name": "qemuVirtExerciser_initialThreads",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciser_initialThreads",
-          "line": 192,
+          "line": 204,
           "called": [
-            "SeLe4n.Platform.PlatformBinding.initialThreads",
-            "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform",
-            "SeLe4n.Platform.QemuVirt.QemuVirtPlatform"
+            "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform"
           ]
         },
         {
           "kind": "theorem",
           "name": "qemuVirtExerciser_bindMachineConfig",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciser_bindMachineConfig",
-          "line": 197,
+          "line": 209,
           "called": [
-            "SeLe4n.MachineConfig",
-            "SeLe4n.Platform.PlatformBinding",
             "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform"
           ]
         },
@@ -393732,11 +393674,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_wellFormed",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_wellFormed",
-          "line": 206,
+          "line": 218,
           "called": [
-            "SeLe4n.Platform.Boot.PlatformConfig.wellFormed",
-            "SeLe4n.Platform.Boot.irqsUnique_eq_transparent",
-            "SeLe4n.Platform.Boot.objectIdsUnique_eq_transparent",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393744,10 +393683,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_bootSafe",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_bootSafe",
-          "line": 212,
+          "line": 224,
           "called": [
-            "SeLe4n.Platform.Boot.PlatformConfig",
-            "SeLe4n.Platform.Boot.bootSafeObjectCheck",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393755,9 +393692,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_asidsDistinct",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_asidsDistinct",
-          "line": 217,
+          "line": 229,
           "called": [
-            "SeLe4n.Platform.Boot.bootVSpaceAsidsDistinct",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393765,9 +393701,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_irqHandlers",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_irqHandlers",
-          "line": 222,
+          "line": 234,
           "called": [
-            "SeLe4n.Platform.Boot.irqHandlersAndNotificationsReciprocal",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393775,9 +393710,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_rootDistinct",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootDistinct",
-          "line": 226,
+          "line": 238,
           "called": [
-            "SeLe4n.Platform.Boot.bootVSpaceRootObjIdDistinct",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393785,9 +393719,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_rootNonSentinel",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootNonSentinel",
-          "line": 230,
+          "line": 242,
           "called": [
-            "SeLe4n.Platform.Boot.bootVSpaceRootObjIdNonSentinel",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393795,9 +393728,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_rootSafe",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootSafe",
-          "line": 234,
+          "line": 246,
           "called": [
-            "SeLe4n.Platform.Boot.bootVSpaceRootSafe",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
           ]
         },
@@ -393805,15 +393737,8 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_checked",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_checked",
-          "line": 241,
+          "line": 253,
           "called": [
-            "SeLe4n.Platform.Boot.bootEnableInterruptsOp",
-            "SeLe4n.Platform.Boot.bootFromPlatform",
-            "SeLe4n.Platform.Boot.bootFromPlatformChecked",
-            "SeLe4n.Platform.Boot.bootFromPlatformChecked_admits_bootVSpace",
-            "SeLe4n.Platform.Boot.installBootVSpaceRoot",
-            "SeLe4n.Platform.BootVSpaceRootEntry",
-            "SeLe4n.Platform.QemuVirt.qemuVirtBootVSpaceRootEntry",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_asidsDistinct",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_bootSafe",
@@ -393821,8 +393746,7 @@
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootDistinct",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootNonSentinel",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootSafe",
-            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_wellFormed",
-            "SeLe4n.Platform.QemuVirt.qemuVirtMachineConfig_wellFormed"
+            "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_wellFormed"
           ]
         }
       ]
@@ -403709,56 +403633,56 @@
           "kind": "def",
           "name": "bootEntrySymbol",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntrySymbol",
-          "line": 71,
+          "line": 76,
           "called": []
         },
         {
           "kind": "def",
           "name": "approvedBootCall",
           "full_name": "SeLe4n.Testing.BootEntryContract.approvedBootCall",
-          "line": 85,
+          "line": 90,
           "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtBootEntrySymbol",
           "full_name": "SeLe4n.Testing.BootEntryContract.qemuVirtBootEntrySymbol",
-          "line": 91,
+          "line": 96,
           "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtApprovedBootCall",
           "full_name": "SeLe4n.Testing.BootEntryContract.qemuVirtApprovedBootCall",
-          "line": 95,
+          "line": 100,
           "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserBootEntrySymbol",
           "full_name": "SeLe4n.Testing.BootEntryContract.qemuVirtExerciserBootEntrySymbol",
-          "line": 102,
+          "line": 107,
           "called": []
         },
         {
           "kind": "def",
           "name": "qemuVirtExerciserApprovedBootCall",
           "full_name": "SeLe4n.Testing.BootEntryContract.qemuVirtExerciserApprovedBootCall",
-          "line": 106,
+          "line": 111,
           "called": []
         },
         {
           "kind": "structure",
           "name": "BootEntrySpec",
           "full_name": "SeLe4n.Testing.BootEntryContract.BootEntrySpec",
-          "line": 115,
+          "line": 120,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5BootEntry",
           "full_name": "SeLe4n.Testing.BootEntryContract.rpi5BootEntry",
-          "line": 122,
+          "line": 127,
           "called": [
             "SeLe4n.Testing.BootEntryContract.BootEntrySpec",
             "SeLe4n.Testing.BootEntryContract.approvedBootCall",
@@ -403769,7 +403693,7 @@
           "kind": "def",
           "name": "qemuVirtBootEntry",
           "full_name": "SeLe4n.Testing.BootEntryContract.qemuVirtBootEntry",
-          "line": 125,
+          "line": 130,
           "called": [
             "SeLe4n.Testing.BootEntryContract.BootEntrySpec",
             "SeLe4n.Testing.BootEntryContract.qemuVirtApprovedBootCall",
@@ -403780,7 +403704,7 @@
           "kind": "def",
           "name": "qemuVirtExerciserBootEntry",
           "full_name": "SeLe4n.Testing.BootEntryContract.qemuVirtExerciserBootEntry",
-          "line": 128,
+          "line": 133,
           "called": [
             "SeLe4n.Testing.BootEntryContract.BootEntrySpec",
             "SeLe4n.Testing.BootEntryContract.qemuVirtExerciserApprovedBootCall",
@@ -403791,7 +403715,7 @@
           "kind": "def",
           "name": "bootEntries",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntries",
-          "line": 133,
+          "line": 138,
           "called": [
             "SeLe4n.Testing.BootEntryContract.BootEntrySpec",
             "SeLe4n.Testing.BootEntryContract.qemuVirtBootEntry",
@@ -403803,21 +403727,21 @@
           "kind": "def",
           "name": "declarationValue",
           "full_name": "SeLe4n.Testing.BootEntryContract.declarationValue",
-          "line": 141,
+          "line": 146,
           "called": []
         },
         {
           "kind": "def",
           "name": "approvedBootArguments?",
           "full_name": "SeLe4n.Testing.BootEntryContract.approvedBootArguments?",
-          "line": 215,
+          "line": 220,
           "called": []
         },
         {
           "kind": "def",
           "name": "isApprovedBootApplication",
           "full_name": "SeLe4n.Testing.BootEntryContract.isApprovedBootApplication",
-          "line": 234,
+          "line": 239,
           "called": [
             "SeLe4n.Testing.BootEntryContract.approvedBootArguments?"
           ]
@@ -403826,14 +403750,14 @@
           "kind": "def",
           "name": "projectConstant",
           "full_name": "SeLe4n.Testing.BootEntryContract.projectConstant",
-          "line": 254,
+          "line": 259,
           "called": []
         },
         {
           "kind": "def",
           "name": "compiledEffectConstant",
           "full_name": "SeLe4n.Testing.BootEntryContract.compiledEffectConstant",
-          "line": 262,
+          "line": 267,
           "called": [
             "SeLe4n.Testing.BootEntryContract.projectConstant"
           ]
@@ -403842,14 +403766,14 @@
           "kind": "def",
           "name": "expectedBootEntryType",
           "full_name": "SeLe4n.Testing.BootEntryContract.expectedBootEntryType",
-          "line": 293,
+          "line": 298,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootEntryContractViolations",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryContractViolations",
-          "line": 297,
+          "line": 302,
           "called": [
             "SeLe4n.Testing.BootEntryContract.BootEntrySpec",
             "SeLe4n.Testing.BootEntryContract.approvedBootArguments?",
@@ -403862,14 +403786,14 @@
           "kind": "def",
           "name": "bootEntryDeclarations",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryDeclarations",
-          "line": 335,
+          "line": 340,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessBootAlias",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessBootAlias",
-          "line": 361,
+          "line": 366,
           "called": [
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
             "SeLe4n.Platform.Boot.IrqEntry",
@@ -403883,7 +403807,7 @@
           "kind": "def",
           "name": "bootEntryWitnessCompliant",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessCompliant",
-          "line": 368,
+          "line": 373,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
           ],
@@ -403893,7 +403817,7 @@
           "kind": "def",
           "name": "bootEntryWitnessSequenced",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessSequenced",
-          "line": 377,
+          "line": 382,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Platform.FFI.getKernelState"
@@ -403904,7 +403828,7 @@
           "kind": "def",
           "name": "bootEntryWitnessLetBoundConfig",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessLetBoundConfig",
-          "line": 384,
+          "line": 389,
           "called": [
             "SeLe4n.Platform.Boot.IrqEntry",
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
@@ -403915,7 +403839,7 @@
           "kind": "def",
           "name": "bootEntryWitnessAliasedBoot",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessAliasedBoot",
-          "line": 393,
+          "line": 398,
           "called": [
             "SeLe4n.Testing.BootEntryContract.bootEntryWitnessBootAlias"
           ],
@@ -403925,7 +403849,7 @@
           "kind": "def",
           "name": "bootEntryWitnessFixedBlob",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessFixedBlob",
-          "line": 400,
+          "line": 405,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
           ],
@@ -403935,7 +403859,7 @@
           "kind": "def",
           "name": "bootEntryWitnessEditedBlob",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessEditedBlob",
-          "line": 406,
+          "line": 411,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
           ],
@@ -403945,7 +403869,7 @@
           "kind": "def",
           "name": "bootEntryWitnessRetiredCall",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessRetiredCall",
-          "line": 412,
+          "line": 417,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5OrHalt"
           ],
@@ -403955,7 +403879,7 @@
           "kind": "def",
           "name": "bootEntryWitnessConditional",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessConditional",
-          "line": 418,
+          "line": 423,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
           ],
@@ -403965,7 +403889,7 @@
           "kind": "def",
           "name": "bootEntryWitnessHaltedFirst",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessHaltedFirst",
-          "line": 425,
+          "line": 430,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Platform.FFI.ffiFatalHaltAll"
@@ -403976,7 +403900,7 @@
           "kind": "def",
           "name": "bootEntryWitnessAliasHaltedFirst",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessAliasHaltedFirst",
-          "line": 431,
+          "line": 436,
           "called": [
             "SeLe4n.Kernel.Concurrency.fatalHaltAll",
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
@@ -403987,7 +403911,7 @@
           "kind": "def",
           "name": "bootEntryWitnessLetBoundHalt",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessLetBoundHalt",
-          "line": 440,
+          "line": 445,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Platform.FFI.ffiFatalHaltAll"
@@ -403998,7 +403922,7 @@
           "kind": "def",
           "name": "BootEntryBogusMonad",
           "full_name": "SeLe4n.Testing.BootEntryContract.BootEntryBogusMonad",
-          "line": 449,
+          "line": 454,
           "called": [],
           "private": true
         },
@@ -404006,7 +403930,7 @@
           "kind": "instance",
           "name": "instBindBootEntryBogusMonad",
           "full_name": "SeLe4n.Testing.BootEntryContract.instBindBootEntryBogusMonad",
-          "line": 451,
+          "line": 456,
           "called": [
             "SeLe4n.Testing.BootEntryContract.BootEntryBogusMonad"
           ],
@@ -404016,7 +403940,7 @@
           "kind": "def",
           "name": "bootEntryWitnessBogusBind",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessBogusBind",
-          "line": 457,
+          "line": 462,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Testing.BootEntryContract.BootEntryBogusMonad"
@@ -404027,7 +403951,7 @@
           "kind": "opaque",
           "name": "bootEntryWitnessOpaqueInstaller",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessOpaqueInstaller",
-          "line": 465,
+          "line": 470,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.FFI.initialiseKernelState"
@@ -404038,7 +403962,7 @@
           "kind": "def",
           "name": "bootEntryWitnessOpaqueBypass",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessOpaqueBypass",
-          "line": 470,
+          "line": 475,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Testing.BootEntryContract.bootEntryWitnessOpaqueInstaller"
@@ -404049,7 +403973,7 @@
           "kind": "def",
           "name": "bootEntryWitnessWrongType",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessWrongType",
-          "line": 477,
+          "line": 482,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt"
           ],
@@ -404059,7 +403983,7 @@
           "kind": "def",
           "name": "bootEntryWitnessBypass",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessBypass",
-          "line": 483,
+          "line": 488,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5",
             "SeLe4n.Platform.FFI.ffiFatalHaltAll",
@@ -404072,7 +403996,7 @@
           "kind": "def",
           "name": "bootEntryWitnessSideInstall",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessSideInstall",
-          "line": 492,
+          "line": 497,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Platform.FFI.initialiseKernelState"
@@ -404083,7 +404007,7 @@
           "kind": "def",
           "name": "bootEntryWitnessUnbooted",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessUnbooted",
-          "line": 497,
+          "line": 502,
           "called": [],
           "private": true
         },
@@ -404091,7 +404015,7 @@
           "kind": "def",
           "name": "bootEntryWitnessQemuVirtCompliant",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessQemuVirtCompliant",
-          "line": 504,
+          "line": 509,
           "called": [],
           "private": true
         },
@@ -404099,7 +404023,7 @@
           "kind": "def",
           "name": "bootEntryWitnessQemuVirtFixedBlob",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessQemuVirtFixedBlob",
-          "line": 510,
+          "line": 515,
           "called": [],
           "private": true
         },
@@ -404107,15 +404031,17 @@
           "kind": "def",
           "name": "bootEntryWitnessQemuVirtExerciserCompliant",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessQemuVirtExerciserCompliant",
-          "line": 516,
-          "called": [],
+          "line": 521,
+          "called": [
+            "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt"
+          ],
           "private": true
         },
         {
           "kind": "def",
           "name": "bootEntryWitnessEffectfulTableImpl",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessEffectfulTableImpl",
-          "line": 526,
+          "line": 531,
           "called": [
             "SeLe4n.Platform.Boot.IrqEntry",
             "SeLe4n.Platform.FFI.ffiFatalHaltAll"
@@ -404126,7 +404052,7 @@
           "kind": "opaque",
           "name": "bootEntryWitnessEffectfulTable",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessEffectfulTable",
-          "line": 530,
+          "line": 535,
           "called": [
             "SeLe4n.Platform.Boot.IrqEntry",
             "SeLe4n.Testing.BootEntryContract.bootEntryWitnessEffectfulTableImpl"
@@ -404137,7 +404063,7 @@
           "kind": "def",
           "name": "bootEntryWitnessEffectfulConfig",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessEffectfulConfig",
-          "line": 532,
+          "line": 537,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Testing.BootEntryContract.bootEntryWitnessEffectfulTable"
@@ -404148,7 +404074,7 @@
           "kind": "def",
           "name": "bootEntryWitnessDataTable",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessDataTable",
-          "line": 536,
+          "line": 541,
           "called": [
             "SeLe4n.Platform.Boot.IrqEntry"
           ],
@@ -404158,7 +404084,7 @@
           "kind": "def",
           "name": "bootEntryWitnessDataConfig",
           "full_name": "SeLe4n.Testing.BootEntryContract.bootEntryWitnessDataConfig",
-          "line": 538,
+          "line": 543,
           "called": [
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
             "SeLe4n.Testing.BootEntryContract.bootEntryContractViolations",
@@ -404528,42 +404454,42 @@
           "kind": "def",
           "name": "commitPrimitives",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.commitPrimitives",
-          "line": 75,
+          "line": 80,
           "called": []
         },
         {
           "kind": "def",
           "name": "bracketForms",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketForms",
-          "line": 95,
+          "line": 100,
           "called": []
         },
         {
           "kind": "def",
           "name": "ghostForms",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.ghostForms",
-          "line": 104,
+          "line": 109,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "CommitDiscipline",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.CommitDiscipline",
-          "line": 118,
+          "line": 123,
           "called": []
         },
         {
           "kind": "def",
           "name": "isProjectConstant",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.isProjectConstant",
-          "line": 135,
+          "line": 140,
           "called": []
         },
         {
           "kind": "def",
           "name": "reachesAny",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.reachesAny",
-          "line": 146,
+          "line": 151,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.isProjectConstant"
           ]
@@ -404572,7 +404498,7 @@
           "kind": "def",
           "name": "reachesAny.go",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.reachesAny.go",
-          "line": 149,
+          "line": 154,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.isProjectConstant"
           ]
@@ -404581,7 +404507,7 @@
           "kind": "def",
           "name": "commitsState",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.commitsState",
-          "line": 163,
+          "line": 168,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.commitPrimitives",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.reachesAny"
@@ -404591,7 +404517,7 @@
           "kind": "def",
           "name": "runsBracketed",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.runsBracketed",
-          "line": 167,
+          "line": 172,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketForms",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.reachesAny"
@@ -404601,7 +404527,7 @@
           "kind": "def",
           "name": "runsGhost",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.runsGhost",
-          "line": 171,
+          "line": 176,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.ghostForms",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.reachesAny"
@@ -404611,7 +404537,7 @@
           "kind": "def",
           "name": "disciplineViolations",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.disciplineViolations",
-          "line": 183,
+          "line": 188,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.CommitDiscipline",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.runsBracketed",
@@ -404622,7 +404548,7 @@
           "kind": "def",
           "name": "commitDisciplineRegistry",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.commitDisciplineRegistry",
-          "line": 219,
+          "line": 224,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.CommitDiscipline"
           ]
@@ -404631,7 +404557,7 @@
           "kind": "def",
           "name": "bracketedSeams",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketedSeams",
-          "line": 283,
+          "line": 288,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.commitDisciplineRegistry"
           ]
@@ -404640,14 +404566,14 @@
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.reconciliationViolations",
-          "line": 301,
+          "line": 306,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusWitnessSpec",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessSpec",
-          "line": 325,
+          "line": 330,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec"
           ],
@@ -404657,7 +404583,7 @@
           "kind": "def",
           "name": "censusWitnessBracketedSpec",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBracketedSpec",
-          "line": 331,
+          "line": 336,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec.run",
             "SeLe4n.Platform.FFI.modifyGetKernelState",
@@ -404669,7 +404595,7 @@
           "kind": "def",
           "name": "censusWitnessGhostCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessGhostCommit",
-          "line": 340,
+          "line": 345,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec.runGhost",
             "SeLe4n.Kernel.Concurrency.LockState.unheld",
@@ -404683,7 +404609,7 @@
           "kind": "def",
           "name": "censusWitnessBareCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBareCommit",
-          "line": 349,
+          "line": 354,
           "called": [
             "SeLe4n.Platform.FFI.modifyGetKernelState"
           ],
@@ -404693,7 +404619,7 @@
           "kind": "def",
           "name": "censusWitnessCommitHelper",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessCommitHelper",
-          "line": 355,
+          "line": 360,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.FFI.initialiseKernelState"
@@ -404704,7 +404630,7 @@
           "kind": "def",
           "name": "censusWitnessIndirectCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessIndirectCommit",
-          "line": 358,
+          "line": 363,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessCommitHelper"
           ],
@@ -404714,7 +404640,7 @@
           "kind": "def",
           "name": "censusWitnessNoCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessNoCommit",
-          "line": 362,
+          "line": 367,
           "called": [
             "SeLe4n.Platform.FFI.getKernelState"
           ],
@@ -404724,14 +404650,14 @@
           "kind": "def",
           "name": "exportResultTypes",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultTypes",
-          "line": 384,
+          "line": 389,
           "called": []
         },
         {
           "kind": "def",
           "name": "exportResultViolation",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultViolation",
-          "line": 389,
+          "line": 394,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultTypes"
           ]
@@ -404740,7 +404666,7 @@
           "kind": "def",
           "name": "exportResultWitnessUnit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessUnit",
-          "line": 415,
+          "line": 420,
           "called": [],
           "private": true
         },
@@ -404748,7 +404674,7 @@
           "kind": "def",
           "name": "exportResultWitnessScalar",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessScalar",
-          "line": 416,
+          "line": 421,
           "called": [],
           "private": true
         },
@@ -404756,7 +404682,7 @@
           "kind": "def",
           "name": "exportResultWitnessBoxed",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessBoxed",
-          "line": 417,
+          "line": 422,
           "called": [],
           "private": true
         },
@@ -404764,7 +404690,7 @@
           "kind": "def",
           "name": "exportResultWitnessPure",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessPure",
-          "line": 418,
+          "line": 423,
           "called": [],
           "private": true
         },
@@ -404772,7 +404698,7 @@
           "kind": "def",
           "name": "exportResultWitnessPureBoxed",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessPureBoxed",
-          "line": 419,
+          "line": 424,
           "called": [],
           "private": true
         },
@@ -404780,7 +404706,7 @@
           "kind": "def",
           "name": "exportResultWitnessIO",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessIO",
-          "line": 420,
+          "line": 425,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketForms",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketedSeams",
