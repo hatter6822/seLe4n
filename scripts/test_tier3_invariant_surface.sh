@@ -8397,8 +8397,17 @@ run_check "INVARIANT" rg -n '^  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuV
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.KernelMain$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^instance qemuVirtPlatformBinding\b' SeLe4n/Platform/QemuVirt/Contract.lean
 run_check "INVARIANT" rg -n '^def qemuVirtBootRamExtensions[ :]' SeLe4n/Platform/QemuVirt/Board.lean
-run_check "INVARIANT" rg -n -F -- '#[cfg(feature = "board_qemu_virt")]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- '#[cfg(all(feature = "board_qemu_virt", not(feature = "smp_exercisers")))]' rust/sele4n-hal/src/lean_entry.rs
 run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+# WS-ZA ZA5.13: the exerciser image (`board_qemu_virt` with `smp_exercisers`)
+# boots its own entry, the exerciser's labeling; the shipped `virt` image keeps
+# `lean_kernel_main_qemu_virt` and the confined deny-all labeling.
+run_check "INVARIANT" rg -n -F -- '#[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n -F -- 'let res = unsafe { lean_kernel_main_qemu_virt_exerciser(dtb) };' rust/sele4n-hal/src/lean_entry.rs
+run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt_exerciser\]$' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.Exerciser$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^theorem qemuVirt_shippedLabeling_denies\b' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n -F -- '"lean_kernel_main_qemu_virt",' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'println!("cargo:rustc-env=SELE4N_BOARD_LINK_SCRIPT={board_script}");' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -F -- 'pub(crate) const BOARD_LINK_SCRIPT: &str = include_str!(env!("SELE4N_BOARD_LINK_SCRIPT"));' rust/sele4n-hal/src/mmu.rs
@@ -8407,7 +8416,7 @@ run_check "INVARIANT" rg -n -F -- 'cargo test -p sele4n-hal --lib --features boa
 run_check "INVARIANT" rg -n -F -- 'cargo clippy -p sele4n-hal --all-targets --features hw_target,host_tools,kernel_image,smp_exercisers -- -D warnings' scripts/test_rust.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --self-test' scripts/test_tier0_hygiene.sh
 run_check "INVARIANT" rg -n -F -- 'qemu_virt_dtb_fixture.py" --check' scripts/test_qemu.sh
-run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n -F -- 'BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^  qemuVirt_board_check_on_qemus_own_device_tree$' tests
 run_check "INVARIANT" rg -n '^  qemuVirt_deployment_boots$' tests
 run_check "INVARIANT" rg -n '^  bootMap_the_qemu_virt_map_is_the_shared_table$' tests

@@ -95,6 +95,17 @@ device-tree boot with its failure handled. -/
 def qemuVirtApprovedBootCall : Name :=
   `SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt
 
+/-- **WS-ZA ZA5.13**: the symbol the QEMU `virt` allocation exerciser's image
+exports — `rust/sele4n-hal/src/lean_entry.rs` calls it instead of
+`lean_kernel_main_qemu_virt` on an image built with `board_qemu_virt` and
+`smp_exercisers`. -/
+def qemuVirtExerciserBootEntrySymbol : Name := `lean_kernel_main_qemu_virt_exerciser
+
+/-- **WS-ZA ZA5.13**: the one boot call the exerciser's entry may make — the
+`virt` device-tree boot at the exerciser's binding, its failure handled. -/
+def qemuVirtExerciserApprovedBootCall : Name :=
+  `SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt
+
 /-- **WS-BP BP8.1**: a hardware boot entry — the symbol the HAL calls and the
 one boot call the declaration exporting it may make.  A table rather than two
 constants, because the question is one question asked of each board: an entry
@@ -113,8 +124,14 @@ def rpi5BootEntry : BootEntrySpec := ⟨bootEntrySymbol, approvedBootCall⟩
 /-- The QEMU `virt` entry. -/
 def qemuVirtBootEntry : BootEntrySpec := ⟨qemuVirtBootEntrySymbol, qemuVirtApprovedBootCall⟩
 
-/-- Every hardware boot entry the library exports, one per board. -/
-def bootEntries : List BootEntrySpec := [rpi5BootEntry, qemuVirtBootEntry]
+/-- **WS-ZA ZA5.13**: the QEMU `virt` allocation exerciser's entry. -/
+def qemuVirtExerciserBootEntry : BootEntrySpec :=
+  ⟨qemuVirtExerciserBootEntrySymbol, qemuVirtExerciserApprovedBootCall⟩
+
+/-- Every hardware boot entry the library exports: one per board, and the
+`virt` exerciser image's. -/
+def bootEntries : List BootEntrySpec :=
+  [rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry]
 
 /-- The value of `n`, or `none` for a declaration that has none (an axiom, a
 constructor).
@@ -493,6 +510,12 @@ receive — refused under the `virt` entry for the reason
 private def bootEntryWitnessQemuVirtFixedBlob (_dtb : ByteArray) : BaseIO Unit :=
   Platform.QemuVirt.bootAndInitialiseQemuVirtFromDtbOrHalt ByteArray.empty [] [] none
 
+/-- **WS-ZA ZA5.13**: the exerciser entry's required shape — accepted under the
+exerciser's entry and **refused** under the shipped `virt` one, so the shipped
+image cannot boot the exerciser's labeling. -/
+private def bootEntryWitnessQemuVirtExerciserCompliant (dtb : ByteArray) : BaseIO Unit :=
+  Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt dtb [] [] none
+
 /-! PR #904 review (`v0.36.41`): the configuration arguments' compiled closure.
 `bootEntryWitnessEffectfulTable` has the type of data and the compiled code of
 an effect — an `@[implemented_by]` whose implementation parks every PE — so the
@@ -560,10 +583,21 @@ run_cmd Command.liftTermElabM do
       ``bootEntryWitnessQemuVirtCompliant).isEmpty do
     throwError "boot-entry contract: the compliant `virt` witness was refused"
   for witness in [``bootEntryWitnessCompliant, ``bootEntryWitnessQemuVirtFixedBlob,
-                  ``bootEntryWitnessSideInstall] do
+                  ``bootEntryWitnessSideInstall, ``bootEntryWitnessQemuVirtExerciserCompliant] do
     if (← bootEntryContractViolations qemuVirtBootEntry witness).isEmpty then
       throwError "boot-entry contract: the deviating witness `{witness}` was accepted \
         under the `virt` entry"
+  -- WS-ZA ZA5.13: the exerciser's entry — its own shape accepted, and the
+  -- shipped `virt` shape refused under it, so neither image can boot the
+  -- other's labeling.
+  unless (← bootEntryContractViolations qemuVirtExerciserBootEntry
+      ``bootEntryWitnessQemuVirtExerciserCompliant).isEmpty do
+    throwError "boot-entry contract: the compliant exerciser witness was refused"
+  for witness in [``bootEntryWitnessQemuVirtCompliant, ``bootEntryWitnessCompliant,
+                  ``bootEntryWitnessSideInstall] do
+    if (← bootEntryContractViolations qemuVirtExerciserBootEntry witness).isEmpty then
+      throwError "boot-entry contract: the deviating witness `{witness}` was accepted \
+        under the exerciser's entry"
   -- The contract itself, once per board.
   for spec in bootEntries do
     match bootEntryDeclarations env spec.symbol with

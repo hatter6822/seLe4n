@@ -51,6 +51,7 @@ import SeLe4n.Platform.RPi5.KernelMain
 -- entry, `lean_kernel_main_qemu_virt` — in the production root so the symbol
 -- is in the archive the `board_qemu_virt` image links.
 import SeLe4n.Platform.QemuVirt.KernelMain
+import SeLe4n.Platform.QemuVirt.Exerciser
 -- WS-SM SM6.A (live cross-core `.call` completion): the cross-core syscall
 -- dispatch entry `syscallDispatchCrossCoreEntry`
 -- (`@[export lean_syscall_dispatch_cross_core]`) — the live seam the Rust SVC

@@ -405,8 +405,19 @@ pub fn enter_lean_kernel(
         /// once, on the boot core, after the library initializer, before any
         /// other Lean upcall and before any secondary is released, handed the
         /// one reference of a live `ByteArray`.
-        #[cfg(feature = "board_qemu_virt")]
+        #[cfg(all(feature = "board_qemu_virt", not(feature = "smp_exercisers")))]
         fn lean_kernel_main_qemu_virt(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
+        /// # Safety
+        ///
+        /// WS-ZA ZA5.13: `lean_kernel_main_qemu_virt` on the QEMU `virt` test
+        /// image that carries the in-image drivers
+        /// (`SeLe4n.Platform.QemuVirt.exerciserKernelMain`), under the same
+        /// contract.  It boots the exerciser's labeling, which authorizes one
+        /// downgrade and configures an audit monitor so the allocation
+        /// exerciser can measure the declassification and audit calls; the
+        /// shipped `virt` image keeps the deny-all labeling.
+        #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
+        fn lean_kernel_main_qemu_virt_exerciser(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
     }
     // SAFETY: `init_mmu` admitted `mmu::dtb_window(dtb_ptr)` — `MAX_DTB_SIZE`
     // bytes from the pointer, inside the kernel's reserved extent the boot map covers and
@@ -430,8 +441,12 @@ pub fn enter_lean_kernel(
     #[cfg(not(feature = "board_qemu_virt"))]
     let res = unsafe { lean_kernel_main(dtb) };
     // SAFETY: as above — the `virt` board's entry under the same contract.
-    #[cfg(feature = "board_qemu_virt")]
+    #[cfg(all(feature = "board_qemu_virt", not(feature = "smp_exercisers")))]
     let res = unsafe { lean_kernel_main_qemu_virt(dtb) };
+    // SAFETY: as above — the `virt` exerciser image's entry under the same
+    // contract (WS-ZA ZA5.13).
+    #[cfg(all(feature = "board_qemu_virt", feature = "smp_exercisers"))]
+    let res = unsafe { lean_kernel_main_qemu_virt_exerciser(dtb) };
     // SAFETY: `res` is the `BaseIO Unit` value `lean_kernel_main` just
     // returned (`lean_box(0)`); if it is a heap object this caller owns its one
     // reference.

@@ -2407,6 +2407,17 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          it runs in its place, under the same token and before the same permit, \
          on an image built with `board_qemu_virt`",
     ),
+    // WS-ZA ZA5.13: the `virt` exerciser image's install (`board_qemu_virt`
+    // with `smp_exercisers`), in place of the shipped `virt` one.
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_qemu_virt_exerciser",
+        1,
+        "the QEMU `virt` exerciser image's boot install, `lean_kernel_main_qemu_virt` \
+         on that image: it runs in its place, under the same token and before the \
+         same permit, on an image built with `board_qemu_virt` and `smp_exercisers`",
+    ),
     // WS-BP BP2.3: the library initializer runs before any Lean code, on the
     // primary, so it precedes every readiness decision there is.  Its caller
     // refuses a second run and halts the system on a failed one.
@@ -2453,6 +2464,13 @@ const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = 
         "lean_kernel_main_qemu_virt",
         1,
         "the QEMU `virt` board's boot install, under the same ordering",
+    ),
+    (
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
+        "lean_kernel_main_qemu_virt_exerciser",
+        1,
+        "the QEMU `virt` exerciser image's boot install, under the same ordering",
     ),
     (
         "src/lean_entry.rs",

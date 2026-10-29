@@ -116,24 +116,27 @@ theorem qemuVirtRootTaskUntyped_region :
     on every lookup the gate measures. -/
 def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 59
 
-/-- The root task's CNode: its own TCB, CNode and VSpace, the interrupt
-    notification, the untyped, and the allocation exerciser's partner thread,
-    endpoint and reply object, and in slot 0 the exerciser's scheduling
-    context (slot 9 is left free for the reply capability the exerciser mints
-    from slot 8, and slots 10 to 15 for the objects it copies and carves),
+/-- The root task's boot capabilities, by slot: its own TCB, CNode and VSpace,
+    the interrupt notification, the untyped, and the allocation exerciser's
+    partner thread, endpoint and reply object, and in slot 0 the exerciser's
+    scheduling context (slot 9 is left free for the reply capability the
+    exerciser mints from slot 8, and slots 10 to 15 for the objects it copies
+    and carves). -/
+def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
+  [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 3, rpi5InitialCap qemuVirtRootTaskVSpaceId [.read, .write])
+  , (SeLe4n.Slot.ofNat 4, rpi5InitialCap qemuVirtInterruptNotificationId [.read, .write])
+  , (SeLe4n.Slot.ofNat 5, rpi5InitialCap qemuVirtRootTaskUntypedId [.read, .write, .retype])
+  , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
+  , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
+  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ]
+
+/-- The root task's CNode: its boot capabilities (`qemuVirtRootTaskCNodeSlots`),
     guarded by `qemuVirtRootTaskCNodeGuard`. -/
 def qemuVirtRootTaskCNode : CNode :=
-  { rpi5InitialCNode
-    [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 3, rpi5InitialCap qemuVirtRootTaskVSpaceId [.read, .write])
-    , (SeLe4n.Slot.ofNat 4, rpi5InitialCap qemuVirtInterruptNotificationId [.read, .write])
-    , (SeLe4n.Slot.ofNat 5, rpi5InitialCap qemuVirtRootTaskUntypedId [.read, .write, .retype])
-    , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
-    , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ]
-    with guardValue := qemuVirtRootTaskCNodeGuard }
+  { rpi5InitialCNode qemuVirtRootTaskCNodeSlots with guardValue := qemuVirtRootTaskCNodeGuard }
 
 /-- The untrusted thread's CNode: its own objects and nothing of the boot
     domain's. -/

@@ -150,12 +150,15 @@ EXTERN_FN = re.compile(
 #: The symbols the boot entries export, one per board: `lean_kernel_main`
 #: (`SeLe4n.Platform.RPi5.kernelMain`, WS-BP BP4.1) and
 #: `lean_kernel_main_qemu_virt` (`SeLe4n.Platform.QemuVirt.kernelMain`, WS-BP
-#: BP8.1).  Only the link-level reconciliation reads them here — that both
-#: archives define each, like every other HAL declaration.  What each entry must
-#: *do* is `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
+#: BP8.1); and the `virt` exerciser image's,
+#: `lean_kernel_main_qemu_virt_exerciser`
+#: (`SeLe4n.Platform.QemuVirt.exerciserKernelMain`, WS-ZA ZA5.13).  Only the
+#: link-level reconciliation reads them here — that both archives define each,
+#: like every other HAL declaration.  What each entry must *do* is
+#: `SeLe4n/Testing/BootEntryContract.lean`'s, decided over the elaborated
 #: environment (PR #889 review round 17), one row of its `bootEntries` table per
 #: symbol.
-BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt")
+BOOT_ENTRY_SYMBOLS = ("lean_kernel_main", "lean_kernel_main_qemu_virt", "lean_kernel_main_qemu_virt_exerciser")
 #: `#[link_name = "…"]` — in both spellings — on an `extern` declaration: the
 #: symbol the linker is actually asked for, whatever the Rust item is called.
 #: Matched over the string-free view, where the literal's delimiters survive
