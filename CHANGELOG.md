@@ -51,7 +51,9 @@ downgrade leaves.
   - one downgrade is allowed, from it to the upper partition
     (`qemuVirtExerciserDeclassificationPolicy`);
   - the audit monitor's clearance is the top, and the root task holds the boot
-    audit capability in slot 15.
+    audit capability in its copy slot (10), deleted after the scenario. The
+    slot's next use is a copy, so no carve meets the capability's fieldless
+    target and every other pin is unchanged.
   - The shipped entry and `Platform/QemuVirt/Contract.lean` are unchanged
     (`qemuVirt_deploymentLabeling` holds by `rfl`). The boot-entry contract
     holds each image to its own call and refuses the other's
@@ -78,10 +80,11 @@ downgrade leaves.
   - On the way the downgrade read 5: the event, actor and words cells were
     rebuilt, and so were the state and the ring, behind a join point. The
     signal read 7.
-  - The second page table's first carve now reads 14 (pinned 13 before). It
-    carves into the slot that held the audit capability, whose target is
-    fieldless (`CapTarget.auditTrail`), so there is no cell to write the
-    object's id over.
+  - With the audit capability first in slot 15, the second page table's first
+    carve read 14 (pinned 13): it carved into the slot that had held the
+    capability, whose fieldless target (`CapTarget.auditTrail`) leaves no cell
+    to write the object's id over. The capability moved to the copy slot, and
+    the pin stays 13.
 - **Forks**, registered in `docs/REGISTERED_DEBT.md` and closed by ZA6.2:
   - a declassified signal that wakes a receiver takes the general form;
   - an audit read of the basis, refusal-ledger or causality opcodes takes the

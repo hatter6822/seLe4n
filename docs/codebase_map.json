@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "za/declassify-audit-routing",
-      "commit_sha": "b8d4c059e3fc77a36ab38e4f1d6bab725380c12b",
-      "tree_sha": "e29e10a1384b51455d340f94e49a17aee87c39d0",
-      "committed_at_utc": "2026-10-29T08:01:51+00:00"
+      "commit_sha": "0458ccdf62620fe045f59ade8c7abaeef3c0d6ff",
+      "tree_sha": "27ac40a607978ec47cbb8876b4bda4d594195394",
+      "committed_at_utc": "2026-10-29T08:21:13+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9f339ab59be7ca26ec48a33fc24dbd1487f7cbb63222d2d23e2d920709b0450c"
+    "source_digest": "191e5f9c8867547aec28b48844e4e279c4329cec290d33ab7474c2a3970cb699"
   },
   "summary": {
     "module_count": 553,
@@ -27,7 +27,7 @@
     "version": "0.36.163",
     "lean_toolchain": "v4.28.0",
     "production_files": 483,
-    "production_loc": 527784,
+    "production_loc": 527785,
     "test_files": 70,
     "test_loc": 87402,
     "proved_theorem_lemma_decls": 19478,
@@ -393571,7 +393571,7 @@
           "kind": "def",
           "name": "qemuVirtExerciserAuditSlot",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserAuditSlot",
-          "line": 87,
+          "line": 88,
           "called": [
             "SeLe4n.Slot",
             "SeLe4n.Slot.ofNat"
@@ -393581,7 +393581,7 @@
           "kind": "def",
           "name": "qemuVirtExerciserRootTaskCNode",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserRootTaskCNode",
-          "line": 92,
+          "line": 93,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.Capability.auditTrailManage",
@@ -393595,7 +393595,7 @@
           "kind": "def",
           "name": "qemuVirtExerciserInitialObjects",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects",
-          "line": 99,
+          "line": 100,
           "called": [
             "SeLe4n.Model.CNode.slotsUnique_holds",
             "SeLe4n.Platform.Boot.ObjectEntry",
@@ -393608,7 +393608,7 @@
           "kind": "def",
           "name": "qemuVirtExerciserBoundPlatformConfig",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig",
-          "line": 106,
+          "line": 107,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.PlatformBinding",
@@ -393623,7 +393623,7 @@
           "kind": "def",
           "name": "bootAndInitialiseQemuVirtExerciser",
           "full_name": "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciser",
-          "line": 119,
+          "line": 120,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.Boot.PlatformConfig",
@@ -393635,7 +393635,7 @@
           "kind": "def",
           "name": "bootAndInitialiseQemuVirtExerciserOrHalt",
           "full_name": "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserOrHalt",
-          "line": 125,
+          "line": 126,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.ffiFatalHaltAll",
@@ -393646,7 +393646,7 @@
           "kind": "def",
           "name": "bootAndInitialiseQemuVirtExerciserFromDtbOrHalt",
           "full_name": "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt",
-          "line": 135,
+          "line": 136,
           "called": [
             "SeLe4n.Platform.Boot.IrqEntry",
             "SeLe4n.Platform.Boot.ObjectEntry",
@@ -393662,7 +393662,7 @@
           "kind": "def",
           "name": "exerciserKernelMain",
           "full_name": "SeLe4n.Platform.QemuVirt.exerciserKernelMain",
-          "line": 148,
+          "line": 149,
           "called": [
             "SeLe4n.Platform.QemuVirt.bootAndInitialiseQemuVirtExerciserFromDtbOrHalt",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserInitialObjects",
@@ -393673,7 +393673,7 @@
           "kind": "theorem",
           "name": "qemuVirt_shippedLabeling_denies",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirt_shippedLabeling_denies",
-          "line": 161,
+          "line": 162,
           "called": [
             "SeLe4n.Kernel.validatedAuditMonitorClearance",
             "SeLe4n.Platform.PlatformBinding.labeling",
@@ -393684,7 +393684,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserDeclassificationPolicy_canDeclassify_iff",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserDeclassificationPolicy_canDeclassify_iff",
-          "line": 171,
+          "line": 172,
           "called": [
             "SeLe4n.Kernel.DeclassificationPolicy",
             "SeLe4n.Kernel.SecurityDomain",
@@ -393698,7 +393698,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciser_validatedAuditMonitorClearance",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciser_validatedAuditMonitorClearance",
-          "line": 183,
+          "line": 184,
           "called": [
             "SeLe4n.Kernel.embedLegacyLabel",
             "SeLe4n.Kernel.validatedAuditMonitorClearance",
@@ -393710,7 +393710,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciser_initialThreads",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciser_initialThreads",
-          "line": 191,
+          "line": 192,
           "called": [
             "SeLe4n.Platform.PlatformBinding.initialThreads",
             "SeLe4n.Platform.QemuVirt.QemuVirtExerciserPlatform",
@@ -393721,7 +393721,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciser_bindMachineConfig",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciser_bindMachineConfig",
-          "line": 196,
+          "line": 197,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.PlatformBinding",
@@ -393732,7 +393732,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_wellFormed",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_wellFormed",
-          "line": 205,
+          "line": 206,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig.wellFormed",
             "SeLe4n.Platform.Boot.irqsUnique_eq_transparent",
@@ -393744,7 +393744,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_bootSafe",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_bootSafe",
-          "line": 211,
+          "line": 212,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.Boot.bootSafeObjectCheck",
@@ -393755,7 +393755,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_asidsDistinct",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_asidsDistinct",
-          "line": 216,
+          "line": 217,
           "called": [
             "SeLe4n.Platform.Boot.bootVSpaceAsidsDistinct",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
@@ -393765,7 +393765,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_irqHandlers",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_irqHandlers",
-          "line": 221,
+          "line": 222,
           "called": [
             "SeLe4n.Platform.Boot.irqHandlersAndNotificationsReciprocal",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
@@ -393775,7 +393775,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_rootDistinct",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootDistinct",
-          "line": 225,
+          "line": 226,
           "called": [
             "SeLe4n.Platform.Boot.bootVSpaceRootObjIdDistinct",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
@@ -393785,7 +393785,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_rootNonSentinel",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootNonSentinel",
-          "line": 229,
+          "line": 230,
           "called": [
             "SeLe4n.Platform.Boot.bootVSpaceRootObjIdNonSentinel",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
@@ -393795,7 +393795,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_rootSafe",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_rootSafe",
-          "line": 233,
+          "line": 234,
           "called": [
             "SeLe4n.Platform.Boot.bootVSpaceRootSafe",
             "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig"
@@ -393805,7 +393805,7 @@
           "kind": "theorem",
           "name": "qemuVirtExerciserBoundPlatformConfig_checked",
           "full_name": "SeLe4n.Platform.QemuVirt.qemuVirtExerciserBoundPlatformConfig_checked",
-          "line": 240,
+          "line": 241,
           "called": [
             "SeLe4n.Platform.Boot.bootEnableInterruptsOp",
             "SeLe4n.Platform.Boot.bootFromPlatform",
