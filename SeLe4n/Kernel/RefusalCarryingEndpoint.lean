@@ -381,6 +381,19 @@ theorem sendTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       simp [sendTaintHeadCode, sendTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
+/-- WS-ZA ZA5.12: the send's arm and taint step over the source words captured
+before it, handed over as scalars.  Out of line, so each branch of the capture
+(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
+builds no closure over them to share the arm between branches. -/
+@[noinline] def sendArmThenTaintWordsR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (headCode : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool) : RefusalCarrying Unit :=
+  fun st =>
+    match endpointSendCheckedArmR ctx layout rf len tid executingCore cap st with
+    | .error refusal => .error refusal
+    | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+
 /-- The send's slot check, gate, arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed
 (`sendOperandArmThenTaintR_eq`). -/
@@ -396,9 +409,7 @@ operand resolved to, every refusal carrying the state it was handed
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
-          match endpointSendCheckedArmR ctx layout rf len tid executingCore cap st with
-          | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+          sendArmThenTaintWordsR ctx layout rf len tid executingCore cap headCode a0 a1 a2 a3 a4 a5 a6 a7 ac as st
         else .error (.illegalAuthority, st)
 
 theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -426,7 +437,7 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
-  · simp only [sendOperandArmThenTaintR]
+  · simp only [sendOperandArmThenTaintR, sendArmThenTaintWordsR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
@@ -606,6 +617,19 @@ theorem endpointCallCheckedArmR_eq (ctx : LabelingContext)
   rw [endpointCallCheckedArmR_eq_general ctx rf capAddr mi tid executingCore cap st hFrame hR,
     endpointCallCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap hCall hSlot]
 
+/-- WS-ZA ZA5.12: the call's arm and taint step over the source words captured
+before it, handed over as scalars.  Out of line, so each branch of the capture
+(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
+builds no closure over them to share the arm between branches. -/
+@[noinline] def callArmThenTaintWordsR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (headCode : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool) : RefusalCarrying Unit :=
+  fun st =>
+    match endpointCallCheckedArmR ctx layout rf len tid executingCore cap st with
+    | .error refusal => .error refusal
+    | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+
 /-- The call's slot check, gate, arm and taint step on the capability its
 operand resolved to; a call moves content as a send does (`sendTaintStep`).
 Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -/
@@ -621,9 +645,7 @@ Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
-          match endpointCallCheckedArmR ctx layout rf len tid executingCore cap st with
-          | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+          callArmThenTaintWordsR ctx layout rf len tid executingCore cap headCode a0 a1 a2 a3 a4 a5 a6 a7 ac as st
         else .error (.illegalAuthority, st)
 
 theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -651,7 +673,7 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
-  · simp only [callOperandArmThenTaintR]
+  · simp only [callOperandArmThenTaintR, callArmThenTaintWordsR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
@@ -893,6 +915,19 @@ theorem endpointReplyCheckedArmR_eq (ctx : LabelingContext)
   rw [endpointReplyCheckedArmR_eq_general, hRegs]
   exact endpointReplyCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap hReply
 
+/-- WS-ZA ZA5.12: the reply's arm and taint step over the source words captured
+before it, handed over as scalars.  Out of line, so each branch of the capture
+(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
+builds no closure over them to share the arm between branches. -/
+@[noinline] def replyArmThenTaintWordsR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (callerCode : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool) : RefusalCarrying Unit :=
+  fun st =>
+    match endpointReplyCheckedArmR ctx layout rf len extraCaps label tid executingCore cap st with
+    | .error refusal => .error refusal
+    | .ok ((), stPost) => .ok ((), sendTaintStep callerCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+
 /-- WS-ZA ZA4.7: the reply's slot check, gate, arm and taint step on the
 capability its operand resolved to; a reply moves content to the answered
 caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
@@ -910,10 +945,8 @@ caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
         else if cap.hasRight requiredRight then
           let callerCode := ThreadId.optCode (replyTaintCaller? st cap)
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
-          match endpointReplyCheckedArmR ctx layout rf len extraCaps label tid executingCore cap
-              st with
-          | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), sendTaintStep callerCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+          replyArmThenTaintWordsR ctx layout rf len extraCaps label tid executingCore cap callerCode
+            a0 a1 a2 a3 a4 a5 a6 a7 ac as st
         else .error (.illegalAuthority, st)
 
 theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -939,7 +972,7 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
-  · simp only [replyOperandArmThenTaintR]
+  · simp only [replyOperandArmThenTaintR, replyArmThenTaintWordsR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
@@ -1390,6 +1423,18 @@ theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       simp [receiveTaintSourceCode, receiveTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
+/-- WS-ZA ZA5.12: the receive's arm and taint step over the source words captured
+before it, handed over as scalars.  Out of line, so each branch of the capture
+(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
+builds no closure over them to share the arm between branches. -/
+@[noinline] def receiveArmThenTaintWordsR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (len : Nat) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (sourceCode : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool) : RefusalCarrying Unit :=
+  fun st =>
+    match endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st with
+    | .error refusal => .error refusal
+    | .ok ((), stPost) => .ok ((), receiveTaintStep sourceCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+
 /-- The receive's slot check, gate, arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed
 (`receiveOperandArmThenTaintR_eq`). -/
@@ -1404,9 +1449,7 @@ operand resolved to, every refusal carrying the state it was handed
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
-          match endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st with
-          | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), receiveTaintStep sourceCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
+          receiveArmThenTaintWordsR ctx tid len replyAddr executingCore cap sourceCode a0 a1 a2 a3 a4 a5 a6 a7 ac as st
         else .error (.illegalAuthority, st)
 
 theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -1433,7 +1476,7 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
-  · simp only [receiveOperandArmThenTaintR]
+  · simp only [receiveOperandArmThenTaintR, receiveArmThenTaintWordsR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true

@@ -1492,7 +1492,7 @@ one probe (`taintEmptyAt_eq`): the clear's elision, building no words. -/
   match s.getObject? k with
   | some (.tcb t) => t.taintCount == 0 && !t.taintSaturated
   | some (.notification n) => n.taintCount == 0 && !n.taintSaturated
-  | _ => true
+  | some _ | none => true
 
 theorem taintEmptyAt_eq (s : SystemState) (k : SeLe4n.ObjId) :
     taintEmptyAt s k = (s.taintWordsAt k).isEmpty := by
@@ -1522,7 +1522,7 @@ state it writes and the capture builds no `TaintWords` (`withTaintWordsAt_eq`). 
   | some (.notification n) =>
       f n.taintTag0 n.taintTag1 n.taintTag2 n.taintTag3 n.taintTag4 n.taintTag5
         n.taintTag6 n.taintTag7 n.taintCount n.taintSaturated
-  | _ => f 0 0 0 0 0 0 0 0 0 false
+  | some _ | none => f 0 0 0 0 0 0 0 0 0 false
 
 /-- The capture hands `f` the fields of the words stored at `k`. -/
 theorem withTaintWordsAt_eq {α : Sort _} (s : SystemState) (k : SeLe4n.ObjId)

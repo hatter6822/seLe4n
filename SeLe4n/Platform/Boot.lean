@@ -1977,7 +1977,7 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
        ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && !ep.serviceRegistered) := rfl
 
 /-- A boot **notification** is idle, unwaited and unbadged, and carries clean
-    taint words (the boot records no taint, `tableReferencesRecorded.taintStored`).  `boundTCB` is
+    taint words (the boot records no taint, `SystemState.taintStored`).  `boundTCB` is
     unconstrained here — a boot notification may be pre-bound to a config
     thread; what it may not be bound to is an idle thread, which is the
     reservation's `notificationReferencesReservedIdleSlot`. -/
@@ -2110,7 +2110,7 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     `ipcFaultSend`, WS-ZA ZA4.7) are read only while the thread is blocked
     on a send or call, and the send or fault that blocks it writes them all.
     The taint words must be clean: the boot records no taint, and the table
-    agrees with the words (`tableReferencesRecorded.taintStored`). -/
+    agrees with the words (`SystemState.taintStored`). -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
