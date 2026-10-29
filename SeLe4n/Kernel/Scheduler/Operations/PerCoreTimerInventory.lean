@@ -188,9 +188,9 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       processReplenishmentsDueOnCore_preserves_objects_invExt .replenish,
     pctt! "processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed: SM5.D.4 all-replenishments preserves run-queue well-formedness"
       processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed .replenish,
-    pctt! "processOneReplenishmentOnCore_of_no_target: no wake target is the refill alone"
+    pctt! "processOneReplenishmentOnCore_of_no_target: no wake target is the refill under its key hook"
       processOneReplenishmentOnCore_of_no_target .replenish,
-    pctt! "processOneReplenishmentOnCore_wake_eq: a wake enqueues on the home core and raises its flag"
+    pctt! "processOneReplenishmentOnCore_wake_eq: a wake enqueues on the home core and raises its flag, under the refill key hook"
       processOneReplenishmentOnCore_wake_eq .replenish,
     pctt! "processReplenishmentsDueOnCore_flags_wake_target: every due refill's wake raises its home core's flag"
       processReplenishmentsDueOnCore_flags_wake_target .replenish,

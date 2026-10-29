@@ -1457,8 +1457,11 @@ returned the SGI and a local-wake bit beside the state; reading them off the
 state lets the drain return the state alone.  The already-queued case is the
 one PR #880 round 7 found: a thread queued but exhausted on the executing core,
 refilled with no placement and no SGI, waited out the current thread's entire
-remaining budget. -/
-def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
+remaining budget.
+
+This is the refill and the wake; `processOneReplenishmentOnCore` is this step
+under the refill's key hook (`markRefillKeyChange`). -/
+def refillWakeOnCore (st : SystemState) (execCore : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
   let refilled := refillSchedContext st scId now
   match replenishWakeTarget st refilled scId with
@@ -1469,6 +1472,271 @@ def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
         { woken with scheduler := (woken.scheduler.markReschedulePendingOnCoreIf
             (determineTargetCore refilled tid) (refilled.getTcb? tid).isSome) }
   | none => refilled
+
+/-- WS-ZA ZA6.2: the refill's key hook.  A refill reads and writes one
+scheduling context, and the only thread whose effective key or budget
+eligibility reads that context is the one it names as bound
+(`schedContextBindingBidirectional`), so the refill can stale a decision only
+through that thread: its deadline moves whenever the refilled budget is positive
+(`cbsUpdateDeadline … true`), and it becomes eligible when the budget comes back
+from zero.  The hook is the one every writer of a key input runs
+(`markKeyChangeFrom`, read against the pre-refill state): it flags each core
+whose queue holds the thread when its key moved or it gained candidacy, and the
+core it runs on when its key weakened, as seL4's refill path re-sorts the
+released thread and calls `possibleSwitchTo`.  A context with no bound thread,
+or none at all, stales nothing. -/
+def markRefillKeyChange (pre post : SystemState) (scId : SeLe4n.SchedContextId) :
+    SystemState :=
+  match pre.getSchedContext? scId with
+  | some sc =>
+    match sc.boundThread with
+    | some t => markKeyChangeFrom pre post t
+    | none => post
+  | none => post
+
+/-- Any projection the flag write leaves alone, the refill's key hook leaves
+alone. -/
+theorem markRefillKeyChange_extract_frame {F : Type} (extract : SystemState → F)
+    (pre post : SystemState) (scId : SeLe4n.SchedContextId)
+    (h : ∀ (s : SystemState) c, extract (s.markReschedulePendingOnCore c) = extract s) :
+    extract (markRefillKeyChange pre post scId) = extract post := by
+  unfold markRefillKeyChange
+  split
+  · split
+    · exact markKeyChangeFrom_extract_frame extract pre post _ h
+    · rfl
+  · rfl
+
+@[simp] theorem markRefillKeyChange_objects (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).objects = st.objects :=
+  markRefillKeyChange_extract_frame (fun s => s.objects) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_queuedOn (pre st : SystemState) (scId : SeLe4n.SchedContextId)
+    (c : CoreId) (t : SeLe4n.ThreadId) :
+    (markRefillKeyChange pre st scId).queuedOn c t = st.queuedOn c t :=
+  (SystemState.RunCoresAgree.of_objects (markRefillKeyChange_objects pre st scId)).queuedOn c t
+
+@[simp] theorem markRefillKeyChange_objectIndex (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).objectIndex = st.objectIndex :=
+  markRefillKeyChange_extract_frame (fun s => s.objectIndex) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_machine (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).machine = st.machine :=
+  markRefillKeyChange_extract_frame (fun s => s.machine) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_cdt (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).cdt = st.cdt :=
+  markRefillKeyChange_extract_frame (fun s => s.cdt) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_irqHandlers (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).irqHandlers = st.irqHandlers :=
+  markRefillKeyChange_extract_frame (fun s => s.irqHandlers) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_tlbShootdown (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).tlbShootdown = st.tlbShootdown :=
+  markRefillKeyChange_extract_frame (fun s => s.tlbShootdown) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_perCoreTlb (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).perCoreTlb = st.perCoreTlb :=
+  markRefillKeyChange_extract_frame (fun s => s.perCoreTlb) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_perCoreICache (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).perCoreICache = st.perCoreICache :=
+  markRefillKeyChange_extract_frame (fun s => s.perCoreICache) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_pendingIcacheMaintenance (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).pendingIcacheMaintenance = st.pendingIcacheMaintenance :=
+  markRefillKeyChange_extract_frame (fun s => s.pendingIcacheMaintenance) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_pendingPhysicalWrites (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).pendingPhysicalWrites = st.pendingPhysicalWrites :=
+  markRefillKeyChange_extract_frame (fun s => s.pendingPhysicalWrites) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_objectIndexSet (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).objectIndexSet = st.objectIndexSet :=
+  markRefillKeyChange_extract_frame (fun s => s.objectIndexSet) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_lifecycle (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).lifecycle = st.lifecycle :=
+  markRefillKeyChange_extract_frame (fun s => s.lifecycle) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_asidTable (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).asidTable = st.asidTable :=
+  markRefillKeyChange_extract_frame (fun s => s.asidTable) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_interfaceRegistry (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).interfaceRegistry = st.interfaceRegistry :=
+  markRefillKeyChange_extract_frame (fun s => s.interfaceRegistry) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_tlb (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).tlb = st.tlb :=
+  markRefillKeyChange_extract_frame (fun s => s.tlb) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_declassificationAuditLog (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).declassificationAuditLog = st.declassificationAuditLog :=
+  markRefillKeyChange_extract_frame (fun s => s.declassificationAuditLog) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_declassificationAuditEpoch (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).declassificationAuditEpoch = st.declassificationAuditEpoch :=
+  markRefillKeyChange_extract_frame (fun s => s.declassificationAuditEpoch) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_declassificationRefusals (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).declassificationRefusals = st.declassificationRefusals :=
+  markRefillKeyChange_extract_frame (fun s => s.declassificationRefusals) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_declassificationTaint (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).declassificationTaint = st.declassificationTaint :=
+  markRefillKeyChange_extract_frame (fun s => s.declassificationTaint) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_getTcb? (pre st : SystemState) (scId : SeLe4n.SchedContextId) (tid' : SeLe4n.ThreadId) :
+    (markRefillKeyChange pre st scId).getTcb? tid' = st.getTcb? tid' := by
+  unfold SystemState.getTcb?; rw [markRefillKeyChange_objects]
+
+@[simp] theorem markRefillKeyChange_getSchedContext? (pre st : SystemState) (scId : SeLe4n.SchedContextId)
+    (sid : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).getSchedContext? sid = st.getSchedContext? sid := by
+  unfold SystemState.getSchedContext?; rw [markRefillKeyChange_objects]
+
+@[simp] theorem markRefillKeyChange_runQueueOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.runQueueOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_currentOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.currentOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_replenishQueueOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.replenishQueueOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_activeDomainOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.activeDomainOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_domainTimeRemainingOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.domainTimeRemainingOnCore c
+      = st.scheduler.domainTimeRemainingOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.domainTimeRemainingOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_domainScheduleIndexOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.domainScheduleIndexOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_lastTimeoutErrorsOnCore (pre st : SystemState) (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (markRefillKeyChange pre st scId).scheduler.lastTimeoutErrorsOnCore c
+      = st.scheduler.lastTimeoutErrorsOnCore c :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.lastTimeoutErrorsOnCore c) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_domainSchedule (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).scheduler.domainSchedule = st.scheduler.domainSchedule :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.domainSchedule) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_configDefaultTimeSlice (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).scheduler.configDefaultTimeSlice = st.scheduler.configDefaultTimeSlice :=
+  markRefillKeyChange_extract_frame (fun s => s.scheduler.configDefaultTimeSlice) pre st scId
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markRefillKeyChange_runnableOnSomeCore (pre st : SystemState)
+    (scId : SeLe4n.SchedContextId) (tid' : SeLe4n.ThreadId) :
+    runnableOnSomeCore (markRefillKeyChange pre st scId) tid' = runnableOnSomeCore st tid' := by
+  unfold runnableOnSomeCore
+  simp only [markRefillKeyChange_queuedOn]
+
+@[simp] theorem markRefillKeyChange_placedCoreOf? (pre st : SystemState)
+    (scId : SeLe4n.SchedContextId) (tid' : SeLe4n.ThreadId) :
+    placedCoreOf? (markRefillKeyChange pre st scId) tid' = placedCoreOf? st tid' := by
+  unfold placedCoreOf?
+  simp only [markRefillKeyChange_queuedOn, markRefillKeyChange_currentOnCore]
+
+@[simp] theorem markRefillKeyChange_getObject? (pre st : SystemState) (scId : SeLe4n.SchedContextId)
+    (oid : SeLe4n.ObjId) :
+    (markRefillKeyChange pre st scId).getObject? oid = st.getObject? oid := by
+  unfold SystemState.getObject?; rw [markRefillKeyChange_objects]
+
+@[simp] theorem markRefillKeyChange_getReply? (pre st : SystemState) (scId : SeLe4n.SchedContextId)
+    (rid : SeLe4n.ReplyId) :
+    (markRefillKeyChange pre st scId).getReply? rid = st.getReply? rid := by
+  unfold SystemState.getReply?; rw [markRefillKeyChange_objects]
+
+
+theorem markRefillKeyChange_reschedulePendingOnCore_mono (pre st : SystemState)
+    (scId : SeLe4n.SchedContextId) (c : CoreId) (h : st.scheduler.reschedulePendingOnCore c = true) :
+    (markRefillKeyChange pre st scId).scheduler.reschedulePendingOnCore c = true := by
+  unfold markRefillKeyChange
+  split
+  · split
+    · unfold markKeyChangeFrom
+      split
+      · exact markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _
+          (markCandidacyGainFor_reschedulePendingOnCore_mono _ _ _ _ h)
+      · simp [markReschedulePendingWhere_reschedulePendingOnCore, h]
+    · exact h
+  · exact h
+
+theorem markRefillKeyChange_eq_with_scheduler (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    markRefillKeyChange pre st scId =
+      { st with scheduler := (markRefillKeyChange pre st scId).scheduler } :=
+  markRefillKeyChange_extract_frame
+    (fun s => ({ s with scheduler := (markRefillKeyChange pre st scId).scheduler } : SystemState))
+    pre st scId (fun _ _ => rfl)
+
+theorem markRefillKeyChange_runQueueStage (pre post : SystemState) (scId : SeLe4n.SchedContextId) :
+    SystemState.RunQueueStage post (markRefillKeyChange pre post scId) := by
+  unfold markRefillKeyChange
+  split
+  · split
+    · exact markKeyChangeFrom_runQueueStage _ _ _
+    · exact SystemState.RunQueueStage.refl _
+  · exact SystemState.RunQueueStage.refl _
+
+/-- WS-SM SM5.D.4: process **one** due replenishment on the executing core: the
+refill and its wake (`refillWakeOnCore`), under the refill's key hook
+(`markRefillKeyChange`, WS-ZA ZA6.2).  The hook closes the stale decisions the
+wake does not: a refill of a context that was not exhausted moves its bound
+thread's deadline with no wake, and a refill of a running thread's context
+moves the running thread's key. -/
+def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
+  markRefillKeyChange st (refillWakeOnCore st execCore scId now) scId
+
+/-- A property the flag write cannot change holds of a replenishment when it holds
+of the refill and wake underneath the key hook. -/
+theorem processOneReplenishmentOnCore_of_refillWake (P : SystemState → Prop)
+    (hFlag : ∀ (s : SystemState) c, P (s.markReschedulePendingOnCore c) = P s)
+    {st : SystemState} {execCore : CoreId} {scId : SeLe4n.SchedContextId} {now : Nat}
+    (h : P (refillWakeOnCore st execCore scId now)) :
+    P (processOneReplenishmentOnCore st execCore scId now) :=
+  (markRefillKeyChange_extract_frame P st _ scId hFlag).mpr h
 
 /-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
 `now`.
@@ -1683,15 +1951,21 @@ theorem markRescheduleTargets_marks (s : SchedulerState) (l : List (CoreId × Sg
     · exact ih _ h
 
 /-- A bound thread's budget runs out on the timer tick: the budget is spent
-(`spendBudgetOnCore`) and the IPC-blocked threads the SchedContext bounded time
-out, their errors recorded in core `c`'s `lastTimeoutErrorsOnCore` diagnostic
-and each woken thread's home core flagged (`markRescheduleTargets`), so its
-`.reschedule` SGI is read off the flags (WS-ZA ZA6.2). -/
+(`spendBudgetOnCore`) under the thread's key hook (`markKeyChangeFor` against
+`preKey`, its key before the spend — the spend moves the context's deadline),
+and the IPC-blocked threads the SchedContext bounded time out, their errors
+recorded in core `c`'s `lastTimeoutErrorsOnCore` diagnostic and each woken
+thread's home core flagged (`markRescheduleTargets`), so its `.reschedule` SGI is
+read off the flags (WS-ZA ZA6.2).  The hook is the yield's
+(`yieldChargeOnCore`), so the two exhausting charges answer the coverage
+question alike. -/
 @[inline] def budgetExhaustOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (preKey : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
   -- PR #880 round 8: timeout wakes land on each thread's HOME core.
-  let timedOut := timeoutBlockedThreads (spendBudgetOnCore st c tid scId sc hSc ticks) scId c
+  let timedOut := timeoutBlockedThreads
+    (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks) tid preKey) scId c
   { timedOut.1 with scheduler := (markRescheduleTargets
       (timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1) timedOut.2.2) }
 
@@ -1707,7 +1981,7 @@ Dispatches on `tcb.schedContextBinding` exactly as `timerTickBudget`:
 - **Bound, budget > 1**: decrement the SchedContext budget; no preemption.
 - **Bound, budget ≤ 1**: budget exhausted — schedule a replenishment, insert it
   into core `c`'s replenish queue, re-enqueue `tid` into core `c`'s run queue,
-  time out any IPC-blocked threads the SC bounded (recording errors in core `c`'s
+  run `tid`'s key hook against its key before the spend, time out any IPC-blocked threads the SC bounded (recording errors in core `c`'s
   `lastTimeoutErrorsOnCore` diagnostic, flagging each woken thread's home core),
   signal preemption.
 - **Bound, SC missing**: charged nothing, as an idle core is (WS-ZA ZA6.2: the
@@ -1736,7 +2010,7 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
-        (budgetExhaustOnCore st c tid scId sc hSc 1, true)
+        (budgetExhaustOnCore st c tid (effectiveSchedParams st tcb) scId sc hSc 1, true)
       else
         let sc' := consumeBudget sc 1
         (st.rewriteObject scId.toObjId (.schedContext sc')

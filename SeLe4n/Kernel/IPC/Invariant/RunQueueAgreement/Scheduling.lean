@@ -1175,15 +1175,19 @@ theorem spendBudgetOnCore_runQueueWindowStage (st : SystemState) (c : Concurrenc
 
 /-- The tick's exhausted bound arm: the spend, the timeouts and the diagnostic. -/
 theorem budgetExhaustOnCore_runQueueWindowStage (st : SystemState) (c : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (tid : SeLe4n.ThreadId) (preKey : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
     (hCur : st.scheduler.currentOnCore c = some tid) :
-    SystemState.RunQueueWindowStage (.preempt c) st (budgetExhaustOnCore st c tid scId sc hSc ticks) :=
-  ((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc ticks hCur).trans
+    SystemState.RunQueueWindowStage (.preempt c) st
+      (budgetExhaustOnCore st c tid preKey scId sc hSc ticks) :=
+  (((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc ticks hCur).trans
+    ((markKeyChangeFor_runQueueStage _ tid preKey).window (.preempt c))).trans
     (timeoutBlockedThreads_runQueueWindowStage (fun _ h => by cases h) _ scId c)).trans
     ((RunQueueStage.of_frame
-      (st := (timeoutBlockedThreads (spendBudgetOnCore st c tid scId sc hSc ticks) scId c).1)
-      (st' := (budgetExhaustOnCore st c tid scId sc hSc ticks)) rfl
+      (st := (timeoutBlockedThreads (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks)
+        tid preKey) scId c).1)
+      (st' := (budgetExhaustOnCore st c tid preKey scId sc hSc ticks)) rfl
       (by show (markRescheduleTargets _ _).runQueue = _; rw [markRescheduleTargets_eq]; rfl)
       (by show (markRescheduleTargets _ _).runQueueEnds = _; rw [markRescheduleTargets_eq]; rfl)
       (by show (markRescheduleTargets _ _).currentCode = _; rw [markRescheduleTargets_eq]; rfl)
@@ -1208,7 +1212,7 @@ theorem timerTickBudgetOnCore_runQueueWindowStage {st : SystemState} {c : Concur
     split
     · rename_i sc hSc _
       split
-      · exact budgetExhaustOnCore_runQueueWindowStage st c tid _ sc hSc 1 hCur
+      · exact budgetExhaustOnCore_runQueueWindowStage st c tid _ _ sc hSc 1 hCur
       · exact (RunQueueStage.rewriteObject_schedContext hSc
           (SystemState.rewriteAdmissible_schedContext hSc _)).window (.preempt c)
     · exact (RunQueueStage.of_frame rfl rfl rfl).window (.preempt c)
@@ -1291,13 +1295,15 @@ theorem replenishWakeTarget_runnable {stPre refilled : SystemState}
   all_goals first | cases h | exact key _ h
 
 /-- One due replenishment: the refill and, for a runnable thread it makes
-eligible and no core runs, the wake. -/
+eligible and no core runs, the wake, under the refill's key hook. -/
 theorem processOneReplenishmentOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
     RunQueueStage st (processOneReplenishmentOnCore st c scId now) := by
   have hRefill : RunQueueStage st (refillSchedContext st scId now) := by
     unfold refillSchedContext; exact RunQueueStage.updateSchedContext _ _ _
   unfold processOneReplenishmentOnCore
+  refine RunQueueStage.trans ?_ (markRefillKeyChange_runQueueStage _ _ _)
+  unfold refillWakeOnCore
   dsimp only
   split
   · rename_i tid hW

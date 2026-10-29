@@ -68,7 +68,8 @@ theorem processOneReplenishmentOnCore_replenishQueueOnCore_eq (st : SystemState)
     (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) :
     (processOneReplenishmentOnCore st ec scId now).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_replenishQueueOnCore]
+  simp only [refillWakeOnCore]
   split
   · split
     · rw [refillSchedContext_scheduler_eq]

@@ -230,6 +230,7 @@ import SeLe4n.Kernel.ReschedulePendingArms.Lifecycle
 import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 import SeLe4n.Kernel.ReschedulePendingArms.Entry
+import SeLe4n.Kernel.ReschedulePendingArms.Tick
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 -- WS-SM SM5.I: the per-core invariant suite theorem inventory — a 39-entry typed

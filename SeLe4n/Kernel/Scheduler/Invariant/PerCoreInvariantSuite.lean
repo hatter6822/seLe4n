@@ -2286,7 +2286,8 @@ theorem processOneReplenishmentOnCore_preserves_schedulerInvariantStructuralRegN
   have hRefillPre := refillSchedContext_preserves_schedulerInvariantStructuralRegNodup_smp
     st scId now hInv hPre
   have hRefillInv := refillSchedContext_preserves_objects_invExt st scId now hInv
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (schedulerInvariantStructuralRegNodup_smp) (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRefillPre
@@ -3852,8 +3853,11 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
           (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
             (resolveInsertPriority
               { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+        have h3' := allThreadsTimeSlicePositive_of_objects_eq
+          (markKeyChangeFor_objects _ tid (effectiveSchedParams st tcb)) h3
         have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
         exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
       · -- case #4: consume budget (SchedContext insert only)
         simp only [Prod.mk.injEq] at hStep
@@ -3888,8 +3892,11 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
           (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
             (resolveInsertPriority
               { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+        have h3' := allThreadsTimeSlicePositive_of_objects_eq
+          (markKeyChangeFor_objects _ tid (effectiveSchedParams st tcb)) h3
         have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
         exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
       · -- case #4
         simp only [Prod.mk.injEq] at hStep
@@ -3987,8 +3994,13 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
           (resolveInsertPriority
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
           tcb hTidR h2
+        have h3' := runQueue_frame_preserves_runQueueSafetyOnCore _
+          (markKeyChangeFor _ tid (effectiveSchedParams st tcb)) c
+          (markKeyChangeFor_runQueueOnCore _ tid _ c)
+          (fun x hx => by rw [markKeyChangeFor_getTcb?]; exact hx) h3
         have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
         refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c ?_ ?_ h4
         · simp only [markRescheduleTargets_runQueueOnCore,
             SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore]
@@ -4040,8 +4052,13 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
           (resolveInsertPriority
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
           tcb hTidR h2
+        have h3' := runQueue_frame_preserves_runQueueSafetyOnCore _
+          (markKeyChangeFor _ tid (effectiveSchedParams st tcb)) c
+          (markKeyChangeFor_runQueueOnCore _ tid _ c)
+          (fun x hx => by rw [markKeyChangeFor_getTcb?]; exact hx) h3
         have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
         refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c ?_ ?_ h4
         · simp only [markRescheduleTargets_runQueueOnCore,
             SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore]
@@ -4081,7 +4098,8 @@ theorem processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore (st
     refillSchedContext_preserves_objects_invExt st scId now hInv
   have hRef : runnableThreadsAreTCBsOnCore (refillSchedContext st scId now) c' :=
     refillSchedContext_preserves_runnableThreadsAreTCBsOnCore st scId now c' hInv h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (fun s => runnableThreadsAreTCBsOnCore s c') (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4142,7 +4160,8 @@ theorem processOneReplenishmentOnCore_preserves_currentThreadValidOnCore (st : S
     rw [refillSchedContext_scheduler_eq]
     simp only [refillSchedContext_getTcb?_eq st scId now hInv]
     exact h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (fun s => currentThreadValidOnCore s c') (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4259,7 +4278,8 @@ theorem processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore (st 
     refillSchedContext_preserves_objects_invExt st scId now hInv
   have hRef : contextMatchesCurrentOnCore (refillSchedContext st scId now) c' :=
     refillSchedContext_preserves_contextMatchesCurrentOnCore st scId now c' hInv h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (fun s => contextMatchesCurrentOnCore s c') (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4469,7 +4489,8 @@ theorem processOneReplenishmentOnCore_configDefaultTimeSlice (st : SystemState)
     (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) :
     (processOneReplenishmentOnCore st execCore scId now).scheduler.configDefaultTimeSlice
       = st.scheduler.configDefaultTimeSlice := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_configDefaultTimeSlice]
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4528,7 +4549,8 @@ theorem processOneReplenishmentOnCore_preserves_allThreadsTimeSlicePositive (st 
     refillSchedContext_preserves_objects_invExt st scId now hInv
   have hRef : allThreadsTimeSlicePositive (refillSchedContext st scId now) :=
     refillSchedContext_preserves_allThreadsTimeSlicePositive st scId now hInv h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (allThreadsTimeSlicePositive) (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split

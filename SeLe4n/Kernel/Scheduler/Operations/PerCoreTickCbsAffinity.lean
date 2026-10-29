@@ -236,7 +236,10 @@ theorem processOneReplenishmentOnCore_determineTargetCore (st : SystemState) (ec
   have hRefillInv : (refillSchedContext st scId0 now).objects.invExt := by
     unfold refillSchedContext
     exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, show ∀ X : SystemState,
+      determineTargetCore (markRefillKeyChange st X scId0) t = determineTargetCore X t from
+    fun X => by unfold determineTargetCore; rw [markRefillKeyChange_getTcb?]]
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRefillDt
@@ -257,7 +260,8 @@ theorem processOneReplenishmentOnCore_boundThread (st : SystemState) (ec : CoreI
   have hRefillInv : (refillSchedContext st scId0 now).objects.invExt := by
     unfold refillSchedContext
     exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_getSchedContext?]
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRefillBt

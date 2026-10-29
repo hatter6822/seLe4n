@@ -713,9 +713,11 @@ theorem spendBudgetOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : Se
     (SystemState.rewriteAdmissible_schedContext hSc _)).trans (MappingStage.of_objects_eq rfl)
 
 theorem budgetExhaustOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
-    (ticks : Nat) : MappingStage st (budgetExhaustOnCore st c tid scId sc hSc ticks) :=
-  ((spendBudgetOnCore_mappingStage st c tid scId sc hSc ticks).trans
+    (ticks : Nat) : MappingStage st (budgetExhaustOnCore st c tid k scId sc hSc ticks) :=
+  (((spendBudgetOnCore_mappingStage st c tid scId sc hSc ticks).trans
+    (markKeyChangeFor_mappingStage _ tid k)).trans
     (timeoutBlockedThreads_mappingStage _ scId c)).trans (MappingStage.of_objects_eq rfl)
 
 /-- The tick's charge of a thread: a slice or budget step. -/
@@ -733,7 +735,7 @@ theorem timerTickBudgetOnCore_mappingStage {st : SystemState} {c : CoreId}
     split
     · rename_i sc hSc _
       split
-      · exact budgetExhaustOnCore_mappingStage st c tid _ sc hSc 1
+      · exact budgetExhaustOnCore_mappingStage st c tid _ _ sc hSc 1
       · exact MappingStage.rewriteObject_schedContext hSc _
           (SystemState.rewriteAdmissible_schedContext hSc _)
     · exact MappingStage.refl _
@@ -792,13 +794,16 @@ theorem yieldOnCore_mappingStage {st st' : SystemState} {c : CoreId}
     · rename_i hC
       exact (yieldChargeOnCore_mappingStage hC).trans (scheduleEffectiveOnCore_mappingStage h)
 
-/-- One due replenishment: the refill and the wake. -/
+/-- One due replenishment: the refill and the wake, under the refill's key hook
+(flags only). -/
 theorem processOneReplenishmentOnCore_mappingStage (st : SystemState) (c : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
     MappingStage st (processOneReplenishmentOnCore st c scId now) := by
   have hRefill : MappingStage st (refillSchedContext st scId now) := by
     unfold refillSchedContext; exact updateSchedContext_mappingStage _ _ _
   unfold processOneReplenishmentOnCore
+  refine MappingStage.trans ?_ (MappingStage.of_objects_eq (markRefillKeyChange_objects _ _ _))
+  unfold refillWakeOnCore
   dsimp only
   split
   · split

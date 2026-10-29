@@ -607,7 +607,8 @@ theorem processOneReplenishmentOnCore_preserves_objects_invExt (st : SystemState
     (processOneReplenishmentOnCore st execCore scId now).objects.invExt := by
   have hRef : (refillSchedContext st scId now).objects.invExt :=
     refillSchedContext_preserves_objects_invExt st scId now hInv
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_objects]
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRef
@@ -627,7 +628,8 @@ theorem processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed (st : 
     unfold refillSchedContext; rw [SystemState.updateSchedContext_scheduler]
   have hRef : ((refillSchedContext st scId now).scheduler.runQueueOnCore c').wellFormed := by
     rw [hRefRq]; exact hwf
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_runQueueOnCore]
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRef
@@ -684,8 +686,9 @@ refill alone — it wakes nobody and raises no reschedule flag. -/
 theorem processOneReplenishmentOnCore_of_no_target (st : SystemState)
     (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
     (hNone : replenishWakeTarget st (refillSchedContext st scId now) scId = none) :
-    processOneReplenishmentOnCore st execCore scId now = refillSchedContext st scId now := by
-  simp only [processOneReplenishmentOnCore, hNone]
+    processOneReplenishmentOnCore st execCore scId now =
+      markRefillKeyChange st (refillSchedContext st scId now) scId := by
+  simp only [processOneReplenishmentOnCore, refillWakeOnCore, hNone]
 
 /-- WS-ZA ZA6.2: a run-queue placement only raises reschedule flags. -/
 theorem enqueueRunnableOnCore_reschedulePendingOnCore_mono (st : SystemState) (c d : CoreId)
@@ -718,7 +721,9 @@ theorem processOneReplenishmentOnCore_reschedulePendingOnCore_mono (st : SystemS
       = true := by
   have hRef : (refillSchedContext st scId now).scheduler.reschedulePendingOnCore d = true := by
     rw [refillSchedContext_scheduler_eq]; exact h
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore]
+  apply markRefillKeyChange_reschedulePendingOnCore_mono
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRef
@@ -750,7 +755,9 @@ theorem cbsReplenish_can_wake_remote_core (st : SystemState) (execCore : CoreId)
     (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false) :
     (processOneReplenishmentOnCore st execCore scId now).scheduler.reschedulePendingOnCore
       (determineTargetCore (refillSchedContext st scId now) tid) = true := by
-  simp only [processOneReplenishmentOnCore, hTarget, hNotRunning, Bool.false_eq_true,
+  rw [processOneReplenishmentOnCore]
+  apply markRefillKeyChange_reschedulePendingOnCore_mono
+  simp only [refillWakeOnCore, hTarget, hNotRunning, Bool.false_eq_true,
     if_false, hTcb, Option.isSome_some]
   simp
 
@@ -761,11 +768,13 @@ theorem processOneReplenishmentOnCore_wake_eq (st : SystemState) (execCore : Cor
     (hTarget : replenishWakeTarget st (refillSchedContext st scId now) scId = some tid)
     (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false) :
     processOneReplenishmentOnCore st execCore scId now =
-      { (wakeThread (refillSchedContext st scId now) tid execCore).1 with scheduler :=
+      markRefillKeyChange st
+        { (wakeThread (refillSchedContext st scId now) tid execCore).1 with scheduler :=
           ((wakeThread (refillSchedContext st scId now) tid execCore).1.scheduler.markReschedulePendingOnCoreIf
             (determineTargetCore (refillSchedContext st scId now) tid)
-            ((refillSchedContext st scId now).getTcb? tid).isSome) } := by
-  simp only [processOneReplenishmentOnCore, hTarget, hNotRunning, Bool.false_eq_true, if_false]
+            ((refillSchedContext st scId now).getTcb? tid).isSome) } scId := by
+  simp only [processOneReplenishmentOnCore, refillWakeOnCore, hTarget, hNotRunning,
+    Bool.false_eq_true, if_false]
 
 -- ============================================================================
 -- §4  SM5.D.5 — Per-core budget tick (+ the IPC-timeout objects preservation
@@ -884,6 +893,7 @@ theorem timerTickBudgetOnCore_preserves_objects_invExt (st : SystemState) (c : C
       · simp only [Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst
         apply timeoutBlockedThreads_preserves_objects_invExt
+        rw [markKeyChangeFor_objects]
         exact spendBudgetOnCore_objects_invExt _ _ _ _ _ _ _ hInv
       · simp only [Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst
@@ -1278,7 +1288,8 @@ theorem processReplenishmentsDueOnCore_frame {α : Type} (f : SystemState → α
 theorem processOneReplenishmentOnCore_machine_eq (st : SystemState) (ec : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
     (processOneReplenishmentOnCore st ec scId now).machine = st.machine := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_machine]
+  simp only [refillWakeOnCore]
   split
   · split
     · rw [refillSchedContext_machine_eq]
@@ -1292,7 +1303,8 @@ theorem processOneReplenishmentOnCore_lastTimeoutErrorsOnCore_eq (st : SystemSta
     (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) :
     (processOneReplenishmentOnCore st ec scId now).scheduler.lastTimeoutErrorsOnCore c'
       = st.scheduler.lastTimeoutErrorsOnCore c' := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_lastTimeoutErrorsOnCore]
+  simp only [refillWakeOnCore]
   split
   · split
     · rw [refillSchedContext_scheduler_eq]
@@ -1328,7 +1340,8 @@ theorem processOneReplenishmentOnCore_currentOnCore_eq (st : SystemState) (ec : 
     (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) :
     (processOneReplenishmentOnCore st ec scId now).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_currentOnCore]
+  simp only [refillWakeOnCore]
   split
   · split
     · rw [refillSchedContext_scheduler_eq]
@@ -2260,6 +2273,14 @@ theorem runningOnSomeCore_eq_false_currentOnCore_ne {st : SystemState}
   rw [hc] at hcc
   simp at hcc
 
+/-- Dequeue-on-dispatch consistency on core `c` reads only `c`'s current slot and
+run queue. -/
+theorem queueCurrentConsistentOnCore_of_slots {s s' : SchedulerState} {c : CoreId}
+    (hCur : s'.currentOnCore c = s.currentOnCore c) (hRq : s'.runQueueOnCore c = s.runQueueOnCore c)
+    (h : queueCurrentConsistentOnCore s c) : queueCurrentConsistentOnCore s' c := by
+  unfold queueCurrentConsistentOnCore at h ⊢
+  rw [hCur, hRq]; exact h
+
 /-- `processOneReplenishmentOnCore` preserves dequeue-on-dispatch consistency on
 **every** core `c'`: the refill frames the scheduler, and the wake fires only when
 the woken thread is not running anywhere (so it is not `c'`'s current thread) —
@@ -2270,7 +2291,10 @@ theorem processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore (st
     queueCurrentConsistentOnCore (processOneReplenishmentOnCore st execCore scId now).scheduler c' := by
   have hRef : queueCurrentConsistentOnCore (refillSchedContext st scId now).scheduler c' := by
     rw [refillSchedContext_scheduler_eq]; exact hcons
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore]
+  refine queueCurrentConsistentOnCore_of_slots (markRefillKeyChange_currentOnCore _ _ _ c')
+    (markRefillKeyChange_runQueueOnCore _ _ _ c') ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -2326,7 +2350,8 @@ theorem processOneReplenishmentOnCore_preserves_runQueueUnique (st : SystemState
     ((processOneReplenishmentOnCore st execCore scId now).scheduler.runQueueOnCore c').toList.Nodup := by
   have hRef : ((refillSchedContext st scId now).scheduler.runQueueOnCore c').toList.Nodup := by
     rw [refillSchedContext_scheduler_eq]; exact hnd
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_runQueueOnCore]
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split

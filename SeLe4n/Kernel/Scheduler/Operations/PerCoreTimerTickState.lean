@@ -69,7 +69,7 @@ re-inserting a copy of the object, so the store is updated in place. -/
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
-        (budgetExhaustOnCore st c tid scId sc hSc 1, true)
+        (budgetExhaustOnCore st c tid (effectiveSchedParams st tcb) scId sc hSc 1, true)
       else
         (st.modifyObject scId.toObjId
           (SystemState.mapSchedContextObject fun s => consumeBudget s 1), false)
