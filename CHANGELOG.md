@@ -1,3 +1,62 @@
+## v0.36.164 — WS-ZA ZA6.1: the timer tick, the reschedule SGI and each core's first entry read 0
+
+The timer tick, the `.reschedule` SGI and the secondary core's entry (each
+core's bring-up reschedule) allocate nothing. Each hands its restore target
+across the commit as words, the tick runs its checks before its first write,
+and boot gives every core's slots their own cells. The allocation exerciser
+enters the tick and the SGI on the boot core at first call and steady state,
+and reads each core's first entry; all read 0.
+
+- **The tick's state form** (`SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean`).
+  The specified step keeps the state it was given for its refusal arms, so
+  every write the tick made copied what it wrote.
+  - Neither scheduling point refuses, as seL4's `schedule` does not: the
+    selection names a thread the store holds in the core's active domain
+    (`chooseThreadEffectiveOnCoreCode_succ`), so the dispatch always succeeds
+    (`scheduleEffectiveOnCore_eq_state`), and the domain switch's index is
+    taken modulo the schedule's length (`switchDomainOnCore_eq_state`,
+    `scheduleDomainOnCore_eq_state`).
+  - The tick's own refusals, a current thread or bound context the store does
+    not hold, are read off the state first, with the check that no
+    replenishment is due (`timerTickAdmittedOnCore`). When they pass the step
+    is the state form (`timerTickStateOnCore`,
+    `perCoreTimerTickStep_of_admitted`): the slice or budget written in its
+    slot, and the clock flag the core's identity rather than a comparison of
+    two states.
+  - The compiled step (`perCoreTimerTickStepWithClockAdvanceImpl`, an
+    `@[csimp]` over the specification's, `perCoreTimerTickStepWithClockAdvance_eq_impl`)
+    takes the state form when admitted and the specification otherwise.
+- **The reschedule.** The step and the vacated core's dispatch are the
+  receiver's state form (`perCoreRescheduleStep_eq_impl`,
+  `dispatchVacatedCore_eq_impl`); the bracket builders and the core-id decode
+  are inlined, so no record or `Option` is built for them.
+- **The entries** read the restore target's parts and the core's current
+  thread off the committed state as words (ZA3.1's form,
+  `restoreTrapFrameParts`), so no `RestoreTarget` record crosses the commit.
+- **Boot** gives the register banks, the resident and FP-owner slots and the
+  scheduler's per-core vectors their own cells
+  (`SystemState.withFreshPerCoreSlots`, the state itself, applied in
+  `initialiseKernelState`). They were built from `Vector.replicate`
+  constants, so a core's first entry copied the vectors it wrote.
+- **The exerciser and its gate.** `smp_exercisers.rs` enters the timer tick
+  and the reschedule SGI over an EL0 frame (`KERNEL_ENTRIES`), and `smp.rs`
+  reads each core's first entry. `scripts/qemu_exerciser_lib.sh` pins the two
+  entries at 0 and holds each of the four cores' first entries to 0.
+- **Measured** (fresh untraced archive, `--lean-kernel`): the timer tick 0 at
+  first call and steady state (30 and 42 before), the reschedule SGI 0 and 0
+  (22 and 22), the four cores' first entries 0 (45, 44, 30 and 30).
+- **The plan.** ZA6.1 is split into six rows, one per entry or arm: ZA6.2 the
+  tick's other arms (a drained replenishment, an exhausted budget, which take
+  the general path today), ZA6.3 the fault entries, ZA6.4 the IRQ entry (no
+  device interrupt has a Lean entry yet), ZA6.5 the total suspend and ZA6.6
+  the third thread. The rule, the other plans and the closure are now ZA6.7 to
+  ZA6.9; every citation is swept.
+- **Fixed on the way.** The reschedule entry's module docstring named the
+  commit it no longer makes (`updateKernelState`). A negative anchor that
+  refused any multi-line body of the reschedule entry is now the relation it
+  meant: the entry does not commit through `updateKernelState`. The IRQ
+  handler's aging comment now cites ZA6.4.
+
 ## v0.36.163 — WS-ZA ZA5.13: the declassification and audit calls are routed and read 0
 
 `.declassify`, `.declassifySignal`, `.auditRead` and `.auditDrain` run on the

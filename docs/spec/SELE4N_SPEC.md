@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.163` (`lakefile.toml`) |
+| **Package version** | `0.36.164` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 527,807 across 483 Lean files |
 | **Test LoC** | 87,402 across 70 Lean test suites |
@@ -5851,6 +5851,21 @@ Every kernel object has a decidable well-formedness predicate:
   closure) compiled into a second archive, `libsele4n_exerciser.a`, which only
   the `virt` exerciser image links; the shipped RPi5 and `virt` images define
   none of its symbols (`scripts/check_kernel_image.py --excludes`).
+- **The timer tick, the reschedule SGI and each core's first entry allocate
+  nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore
+  target's parts and the core's current thread off the committed state as
+  words.  The tick's dispatch and domain accounting never refuse
+  (`scheduleEffectiveOnCore_eq_state`, `scheduleDomainOnCore_eq_state`); its
+  own refusals (a current thread or bound context the store does not hold)
+  and the check that no replenishment is due are read before its first write
+  (`timerTickAdmittedOnCore`), and when they pass the run-loop step is the
+  tick's state form (`perCoreTimerTickStep_of_admitted`), which the compiled
+  step takes (`perCoreTimerTickStepWithClockAdvance_eq_impl`); a tick that
+  drains a replenishment or exhausts a bound budget takes the specification's
+  step (ZA6.2).  The reschedule step is the receiver's state form
+  (`perCoreRescheduleStep_eq_impl`), and boot gives every core's slots their
+  own cells (`SystemState.withFreshPerCoreSlots`).  The exerciser reads each
+  at 0.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
@@ -5875,7 +5890,7 @@ Every kernel object has a decidable well-formedness predicate:
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
   five scheduling-context scenarios reads 0 allocations.  The suspend of a
   thread blocked in IPC or holding a donated context keeps the general path
-  (`docs/REGISTERED_DEBT.md`, ZA6.1).
+  (`docs/REGISTERED_DEBT.md`, ZA6.5).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write

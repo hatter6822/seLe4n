@@ -63,8 +63,8 @@ both seams; there is no bespoke bring-up transition to prove or to drift.
 
 ## Runtime lock discipline
 
-The entry commits through `Platform.FFI.updateKernelState` (an
-`IO.Ref.modify` — a read then a write, not a cross-core atomic), so it MUST
+The entry commits through `Platform.FFI.modifyGetKernelState` (an
+`IO.Ref.modifyGet` — a read then a write, not a cross-core atomic), so it MUST
 run inside the kernel-entry lock: the Rust callers
 (`trap.rs::reschedule_sgi_handler` and `smp.rs::rust_secondary_main`) both
 wrap the call in `kernel_entry::with_kernel_entry`.  The bring-up caller
