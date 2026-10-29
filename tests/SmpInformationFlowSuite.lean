@@ -1934,39 +1934,42 @@ link is the unsafe direction. -/
 -- `RHTable`.  A hash table's lookup-after-insert law needs `invExt`,
 -- which would force the seventeenth bundle conjunct this design
 -- deliberately avoids.
-#check @TaintTable
-#check @TaintTable.empty
-#check @TaintTable.set
-#check @TaintTable.joinAt
-#check @TaintTable.clearAt
-#check @TaintTable.empty_apply
-#check @TaintTable.set_self
-#check @TaintTable.set_ne
-#check @TaintTable.joinAt_self
-#check @TaintTable.joinAt_ne
-#check @TaintTable.clearAt_self
-#check @TaintTable.clearAt_ne
-#check @TaintTable.contains_joinAt_of_contains
-#check @TaintTable.contains_joinAt_of_source
-#check @TaintTable.contains_clearAt_self
--- WS-SM SM9.D.2: the keyed representation, and the bound it buys.
-#check @TaintTable.clearAt_set_entries
-#check @TaintTable.storeThenClear_no_growth
-#check @TaintTable.taintEntriesErase_idem
+#check @TaintMap
+#check @TaintMap.empty
+#check @TaintMap.set
+#check @TaintMap.joinAt
+#check @TaintMap.clearAt
+#check @TaintMap.empty_apply
+#check @TaintMap.set_self
+#check @TaintMap.set_ne
+#check @TaintMap.joinAt_self
+#check @TaintMap.joinAt_ne
+#check @TaintMap.clearAt_self
+#check @TaintMap.clearAt_ne
+#check @TaintMap.contains_joinAt_of_contains
+#check @TaintMap.contains_joinAt_of_source
+#check @TaintMap.contains_clearAt_self
 
 /-! ### SM9.D.2 – SM9.D.6 — the §6 mount checklist, run for the fourth time. -/
 
 #check @SystemState.declassificationTaint
-#check @default_declassificationTaint
-#check @storeObject_declassificationTaint_eq
+#check @SystemState.default_declassificationTaint
+#check @SystemState.taintStored
 #check @FrozenSystemState.declassificationTaint
 #check @freeze_preserves_declassificationTaint
 #check @SeLe4n.Kernel.OffSchedulerAgrees.declassificationTaint
 #check @SeLe4n.Platform.Boot.applyMachineConfig_declassificationTaint_eq
-#check @SeLe4n.Platform.Boot.bootFromPlatform_declassificationTaint_eq
+#check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_declassificationTaint
 #check @declassificationTaint_write_preserves_projection
 #check @onCore_declassificationTaint
-#check @SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setDeclassificationTaint
+-- WS-ZA ZA5.12: the word-level step and the captures the compiled dispatchers
+-- read before the arm.
+#check @SeLe4n.Kernel.TaintWords.join_eq_flat
+#check @withTaintWordsAt_eq
+#check @decode_taintWordsAt
+#check @sourceTaint_planSourceWords
+#check @applySyscallTaintAfter_planSourceWords
+#check @SeLe4n.Kernel.dispatchCheckedArmThenTaint_planSourceWords
 
 /-! ### SM9.D.13a — the recorded snapshot on the audit event.
 
@@ -2164,15 +2167,7 @@ no observer projects, the write is confined to no core at all. -/
 -- model replaces the field whole, so key-local locking is sound only once the
 -- runtime stores per object.  Registered as data for the same reason as the
 -- entry above: a docstring is something enabling fine locks can skip reading.
-#check @UncoveredLockDomain.taintTablePerKeyStore
-
--- SM9.D.2: the taint table's canonical form is a FIELD, and these are what make
--- it load-bearing rather than decorative — closure under erasure at the only two
--- constructors, and the consequence that every row a table holds is one the
--- lookup returns and none is empty (so the length counts tainted objects).
-#check @TaintEntries.canonical_erase
-#check @TaintEntries.noKey_erase_self
-#check @TaintTable.entries_live
+#check @UncoveredLockDomain.taintWordsPerKeyCommit
 
 -- ============================================================================
 -- §2  Elaboration-time examples: each headline theorem applied
@@ -8002,7 +7997,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   assertBool "the one uncovered lock domain is registered, with an owner"
     (decide (declaredFootprintUncoveredDomains.length = 1) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.taintTablePerKeyStore]) &&
+       = [UncoveredLockDomain.taintWordsPerKeyCommit]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
@@ -10406,12 +10401,22 @@ private def runTaintAlgebraChecks : IO Unit := do
      !(DeclassificationTaint.covers (DeclassificationTaint.singleton 1)
         (DeclassificationTaint.singleton 2)))
 
+/-- WS-ZA ZA5.12: a fixture's provenance, joined into the taint words of the
+thread or notification at `k` — the taint lives in the object it describes, so
+a key holding any other kind carries none and is left as it is. -/
+private def seedTaint (st : SystemState) (k : SeLe4n.ObjId) (T : DeclassificationTaint) :
+    SystemState :=
+  st.mapObjectAt k (·.joinTaintWords T.toWords)
+
+/-- WS-ZA ZA5.12: a fixture's tainted object where the fixture holds none — an
+idle notification at `k` carrying `T`'s words. -/
+private def withTaintedNotification (st : SystemState) (k : SeLe4n.ObjId)
+    (T : DeclassificationTaint) : SystemState :=
+  { st with objects := st.objects.insert k (.notification (idleNotification.withTaintWords T.toWords)) }
+
 /-- §12.2 fixture — the fixture state with one object's provenance recorded. -/
 private def taintProbeState : SystemState :=
-  { niState with
-      declassificationTaint :=
-        SeLe4n.Kernel.TaintTable.empty.joinAt lowCurrent.toObjId
-          (DeclassificationTaint.singleton taintTagZero) }
+  seedTaint niState lowCurrent.toObjId (DeclassificationTaint.singleton taintTagZero)
 
 /-- §12.2  SM9.D.2 / SM9.D.6 — the mounted side table. -/
 private def runTaintMountChecks : IO Unit := do
@@ -10465,10 +10470,6 @@ that ever queued here, including ones whose messages a different receiver
 consumed — the stale-transport false positive. -/
 private def taintedSender : SeLe4n.ThreadId := lowCurrent
 
-private def taintedEndpointTable : SeLe4n.Kernel.TaintTable :=
-  SeLe4n.Kernel.TaintTable.empty.joinAt taintedSender.toObjId
-    (DeclassificationTaint.singleton 42)
-
 /-- PR #873 round 4: the blocked sender has to **actually ask to transfer a
 capability**, so the negatives below are about a caps-carrying delivery and not
 a plain one.  As on the live send, it asks in its saved frame: one capability
@@ -10479,10 +10480,11 @@ private def transferMessage : IpcMessage :=
 
 private def taintedEndpointState : SystemState :=
   let base : SystemState :=
-    { successEntryState with
-        objects := successEntryState.objects.insert highEndpoint
-          (.endpoint (Endpoint.ofQueues { head := some taintedSender, tail := some taintedSender } {})),
-        declassificationTaint := taintedEndpointTable }
+    seedTaint
+      { successEntryState with
+          objects := successEntryState.objects.insert highEndpoint
+            (.endpoint (Endpoint.ofQueues { head := some taintedSender, tail := some taintedSender } {})) }
+      taintedSender.toObjId (DeclassificationTaint.singleton 42)
   match base.getTcb? taintedSender with
   | none => base
   | some stcb =>
@@ -10528,15 +10530,14 @@ private def replyLegCap : Capability :=
   { target := .replyCap replyLegReply, rights := AccessRightSet.ofList [.write] }
 
 private def replyLegState : SystemState :=
-  { successEntryState with
-      objects :=
-        (successEntryState.objects.insert probeCNode
-          (.cnode (probeCNodeValue.insert replyLegSlot replyLegCap))).insert
-            replyLegReply.toObjId
-          (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode (some lowCurrent) }),
-      declassificationTaint :=
-        SeLe4n.Kernel.TaintTable.empty.joinAt highCurrent.toObjId
-          (DeclassificationTaint.singleton 57) }
+  seedTaint
+    { successEntryState with
+        objects :=
+          (successEntryState.objects.insert probeCNode
+            (.cnode (probeCNodeValue.insert replyLegSlot replyLegCap))).insert
+              replyLegReply.toObjId
+            (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode (some lowCurrent) }) }
+    highCurrent.toObjId (DeclassificationTaint.singleton 57)
 
 /-- A hand-built `replyRecv` decode: primary operand = the endpoint cap at
 slot 2, MR0 = the reply CPtr (slot 3), `msgInfo.length = 1` so the MR0-present
@@ -10640,10 +10641,7 @@ private def runTaintPropagationChecks : IO Unit := do
   assertBool "a cleared object stays empty even when the commit recorded a downgrade"
     (let plan : TaintPlan := { edges := [], cleared := [highNotification] }
      let stTagged : SystemState :=
-       { taintedEndpointState with
-           declassificationTaint :=
-             taintedEndpointState.declassificationTaint.joinAt highNotification
-               (DeclassificationTaint.singleton 91) }
+       seedTaint taintedEndpointState highNotification (DeclassificationTaint.singleton 91)
      decide ((applySyscallTaint plan stTagged stTagged).declassificationTaint highNotification
                = DeclassificationTaint.empty))
   -- The replyRecv REPLY leg (audit Finding 1): the server's provenance reaches
@@ -10675,18 +10673,12 @@ private def runTaintPropagationChecks : IO Unit := do
 
 /-- §12.5 fixture — an object carrying one specific declassification identity. -/
 private def taintedTargetState : SystemState :=
-  { niState with
-      declassificationTaint :=
-        SeLe4n.Kernel.TaintTable.empty.joinAt declassTargetA
-          (DeclassificationTaint.singleton taintTagZero) }
+  withTaintedNotification niState declassTargetA (DeclassificationTaint.singleton taintTagZero)
 
 /-- §12.5 fixture — two tainted objects, so the clear can be shown to be
 targeted rather than a wipe. -/
 private def taintedTwoTargetState : SystemState :=
-  { taintedTargetState with
-      declassificationTaint :=
-        taintedTargetState.declassificationTaint.joinAt declassTargetB
-          (DeclassificationTaint.singleton 5) }
+  withTaintedNotification taintedTargetState declassTargetB (DeclassificationTaint.singleton 5)
 
 /-- §12.5  SM9.D.12 — the retype forgets. -/
 private def runTaintRetypeChecks : IO Unit := do
@@ -10947,28 +10939,28 @@ private def sendRendezvousCaplessEdges : List TaintFlowEdge :=
 /-- §12.8  SM9.D.17 / SM9.D.18 — the footprint and the non-interference. -/
 private def runTaintFootprintChecks : IO Unit := do
   IO.println "--- §12.8 SM9.D.17 the serialization subject and the NI carriage ---"
-  -- WS-SM SM9.D.2 (PR #873 round 9): the table is bounded by what it currently
-  -- holds, not by how many times it has been written.  The cycle below is the
-  -- ordinary authorized one — a declassified badge stored on a notification,
-  -- then taken by a wait — and it is *value-changing* in both directions, which
-  -- is exactly the case the no-op write guards do not cover.  Under the old
-  -- functional representation each pass added two closures for ever and lookups
-  -- of unrelated objects walked the whole history.
-  let taintCycle : SeLe4n.Kernel.TaintTable → SeLe4n.Kernel.TaintTable :=
-    fun t => (t.joinAt lowNotification (SeLe4n.Kernel.DeclassificationTaint.singleton 5)).clearAt
-      lowNotification
+  -- WS-SM SM9.D.2 (PR #873 round 9): provenance is bounded by what the objects
+  -- currently hold, not by how many times it has been written.  The cycle below
+  -- is the ordinary authorized one — a declassified badge stored on a
+  -- notification, then taken by a wait — and it is *value-changing* in both
+  -- directions, which is exactly the case the no-op write guards do not cover.
+  -- WS-ZA ZA5.12: the taint is the notification's own words, so a cycle leaves
+  -- them carved clean, whatever it wrote before.
+  let taintCycle : SystemState → SystemState :=
+    fun s => clearTaintAt (joinTaintAt s lowNotification
+      (SeLe4n.Kernel.DeclassificationTaint.singleton 5).toWords) lowNotification
   let afterFiveCycles :=
-    taintCycle (taintCycle (taintCycle (taintCycle (taintCycle
-      SeLe4n.Kernel.TaintTable.empty))))
-  assertBool "five store/consume cycles leave the taint table with no entries at all"
-    (decide (afterFiveCycles.entries.length = 0))
-  -- …and the table is not simply always empty: a stored tag is retained, and
-  -- retained as ONE entry however many times it is re-joined.
-  let stored := (SeLe4n.Kernel.TaintTable.empty.joinAt lowNotification
-    (SeLe4n.Kernel.DeclassificationTaint.singleton 5)).joinAt lowNotification
-      (SeLe4n.Kernel.DeclassificationTaint.singleton 5)
-  assertBool "a stored tag survives, as exactly one entry"
-    ((stored lowNotification).contains 5 && decide (stored.entries.length = 1))
+    taintCycle (taintCycle (taintCycle (taintCycle (taintCycle niState))))
+  assertBool "five store/consume cycles leave the notification's taint words carved clean"
+    (decide (afterFiveCycles.taintWordsAt lowNotification = {}))
+  -- …and the words are not simply always empty: a stored tag is retained, and
+  -- retained as ONE tag word however many times it is re-joined.
+  let stored := joinTaintAt (joinTaintAt niState lowNotification
+    (SeLe4n.Kernel.DeclassificationTaint.singleton 5).toWords) lowNotification
+      (SeLe4n.Kernel.DeclassificationTaint.singleton 5).toWords
+  assertBool "a stored tag survives, as exactly one tag word"
+    ((stored.declassificationTaint lowNotification).contains 5 &&
+      decide ((stored.taintWordsAt lowNotification).count = 1))
   -- The write set of a content-moving plan is exactly its declared sinks when
   -- the commit appended no audit event, which is every syscall but the two
   -- that write the trail.
@@ -11100,27 +11092,25 @@ private def runTaintFootprintChecks : IO Unit := do
   -- The load-bearing negative: a plan writing DIFFERENT keys leaves this plan's
   -- keys literally untouched, which is the model content of "the key's own lock
   -- is a sufficient serialization subject".  Were the update not key-local, an
-  -- unrelated plan would move the endpoint's entry and this would fail.
+  -- unrelated plan would move the notification's words and this would fail.
   -- WS-ZA ZA5.11: the other plan's sink is a notification, since a flow joins
   -- only at a thread or a notification (`taintHolderAt`).
   let otherPlan : TaintPlan :=
     { edges := [{ sink := lowNotification, source := lowCurrent.toObjId }] }
-  -- Both the endpoint this plan does *not* name and the source the other plan
-  -- reads carry content, so the second half of the assertion below is a real
-  -- observation rather than the inert plan's `rfl`.
+  -- Both the notification this plan does *not* name and the source the other
+  -- plan reads carry content, so the second half of the assertion below is a
+  -- real observation rather than the inert plan's `rfl`.  WS-ZA ZA5.12: a
+  -- notification, since only a thread or a notification holds taint words.
   let taggedBase : SystemState :=
-    { niState with
-        declassificationTaint :=
-          (niState.declassificationTaint.joinAt highEndpoint
-            (DeclassificationTaint.singleton 77)).joinAt lowCurrent.toObjId
-              (DeclassificationTaint.singleton 78) }
+    seedTaint (seedTaint niState highNotification (DeclassificationTaint.singleton 77))
+      lowCurrent.toObjId (DeclassificationTaint.singleton 78)
   assertBool "NEGATIVE: a disjoint plan leaves this plan's keys literally unchanged"
-    (decide (highEndpoint ∉ taintWriteKeys otherPlan taggedBase taggedBase) &&
+    (decide (highNotification ∉ taintWriteKeys otherPlan taggedBase taggedBase) &&
      decide ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
-               highEndpoint
-             = taggedBase.declassificationTaint highEndpoint) &&
+               highNotification
+             = taggedBase.declassificationTaint highNotification) &&
      ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
-        highEndpoint).contains 77 &&
+        highNotification).contains 77 &&
      -- and it genuinely did write its own key, so the check above is not
      -- reporting an inert plan.
      ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint

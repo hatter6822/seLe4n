@@ -555,8 +555,7 @@ private def runModifiedFieldsChecks : IO Unit := do
              StateField.physicalWrites ∉ storeObject_modifiedFields ∧
              StateField.physicalWritesDrained ∉ storeObject_modifiedFields ∧
              StateField.declassificationAudit ∉ storeObject_modifiedFields ∧
-             StateField.declassificationRefusals ∉ storeObject_modifiedFields ∧
-             StateField.declassificationTaint ∉ storeObject_modifiedFields))
+             StateField.declassificationRefusals ∉ storeObject_modifiedFields))
   -- And the CDT fields are NOT in the IPC list, nor the scheduler in the
   -- capability list: the two widened lists did not collapse into one.
   assertBool "NEGATIVE: the IPC and capability write-sets remain distinct"

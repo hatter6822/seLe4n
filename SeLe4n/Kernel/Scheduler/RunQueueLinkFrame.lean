@@ -258,6 +258,24 @@ theorem get_of_not_tcb' {x : SeLe4n.ObjId} {o : KernelObject}
     (hNot : ∀ t, o ≠ .tcb t) (hx : st'.objects[x]? = some o) : st.objects[x]? = some o :=
   h.symm.get_of_not_tcb hNot hx
 
+/-- WS-ZA ZA5.12: **the run-queue fields hold no taint words**, so two stores
+agreeing off them read the same declassification taint. -/
+theorem declassificationTaint : st'.declassificationTaint = st.declassificationTaint :=
+  funext fun x => by
+    have hx := h x
+    have key : ∀ o : KernelObject, o.withoutRunLinks.taintWords = o.taintWords := by
+      intro o; cases o <;> rfl
+    show (st'.taintWordsAt x).decode = (st.taintWordsAt x).decode
+    rw [SystemState.taintWordsAt_eq, SystemState.taintWordsAt_eq]
+    revert hx
+    cases st'.objects[x]? <;> cases st.objects[x]? <;> intro hx
+    · rfl
+    · cases hx
+    · cases hx
+    · simp only [Option.map_some, Option.some.injEq] at hx
+      dsimp only
+      rw [← key, hx, key]
+
 /-- A TCB in `st` is a TCB in `st'` agreeing off its run-queue fields. -/
 theorem get_tcb {x : SeLe4n.ObjId} {t : TCB} (hx : st.objects[x]? = some (.tcb t)) :
     ∃ t', st'.objects[x]? = some (.tcb t') ∧ t'.withoutRunLinks = t.withoutRunLinks := by

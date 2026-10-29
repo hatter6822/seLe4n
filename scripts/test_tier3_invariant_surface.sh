@@ -4421,9 +4421,11 @@ run_check "INVARIANT" rg -n '^theorem retireFinalObject_target_gone ' SeLe4n/Ker
 run_negative_check "INVARIANT" rg -n 'unrecordChild|untypedWithoutChild' SeLe4n
 # A reply-capability target in a slot's spare record is written over in place.
 run_check "INVARIANT" rg -n -U '@\[noinline\] def CapTarget\.objectOver \(t : CapTarget\) \(id : SeLe4n\.ObjId\) : CapTarget :=\n  match t with\n  \| \.object _ => \.object id\n  \| \.replyCap _ => \.object id\n  \| _ => CapTarget\.ofObject id' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => withTaintCleared \(asidReleaseRound executingCore root\.asid \(retireCarvedObject st1 x\)\) x\n  \| none => withTaintCleared \(retireCarvedObject st1 x\) x' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U 'def retireRecordedObject[^\n]*(\n([ \t][^\n]*)?){0,3}\n  match st1\.getVSpaceRoot\? x with\n  \| some root => asidReleaseRound executingCore root\.asid \(retireCarvedObject st1 x\)\n  \| none => retireCarvedObject st1 x' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.139: the retire forgets the freed id's declassification provenance.
-run_check "INVARIANT" rg -n -U '@\[inline\] def withTaintCleared \(st : SystemState\) \(x : SeLe4n\.ObjId\) : SystemState :=\n  \{ st with declassificationTaint := st\.declassificationTaint\.clearAt x \}' SeLe4n/Kernel/Capability/FinalRetire.lean
+# WS-ZA ZA5.12: the provenance is the target's own taint words, which the
+# passive erase takes out, so the separate table clear is gone.
+run_negative_check "INVARIANT" rg -n 'withTaintCleared' SeLe4n
 run_check "INVARIANT" rg -n '^theorem retireFinalObject_taint_cleared ' SeLe4n/Kernel/Capability/FinalRetire.lean
 # v0.36.133: a final delete of an endpoint, notification, reply or CNode retires
 # it while it is quiescent and nothing names it by id (seL4's finaliseCap of a
@@ -7548,7 +7550,7 @@ run_negative_check "INVARIANT" rg -n 'elapsedBetween cost 0 \(e.ops.length \+ 1\
 run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
 # list against a literal, which a third constructor would leave elaborating.
-run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintTablePerKeyStore\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintWordsPerKeyCommit\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # WS-RR RR8.12 Cut C6h (`v0.35.181`): the syscall seam's scheduler-domain entry
 # is RETIRED — the seam's bracket declares the unified footprint now — so the
 # constructor must not come back.
@@ -9208,22 +9210,28 @@ run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all($|[ ({:\[\]])' S
 # This pin replaced one requiring the old `abbrev TaintTable := ObjId → …`, which
 # sat here contradicting the negative check below (added with the keyed cut) —
 # the two could not both pass, so the tier failed until one was corrected.
-run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^  canonical : TaintEntries\.Canonical entries' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem TaintEntries\.canonical_erase' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem entries_live($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
+#
+# WS-ZA ZA5.12: the table retired.  The taint is the thread's or the
+# notification's own words, and the state's taint is a reader over the store,
+# one probe at the key, empty where no thread or notification is.
+run_negative_check "INVARIANT" rg -n '^structure TaintTable|TaintEntries' SeLe4n
+run_check "INVARIANT" rg -n '^@\[inline\] def declassificationTaint \(st : SystemState\) : SeLe4n\.Kernel\.TaintMap :=$' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.taintStored ' SeLe4n/Model/TableReferences.lean
 
 # SM9.D.2 – SM9.D.6: the §6 `SystemState` mount checklist, run for the fourth
 # time.  The frozen field is REQUIRED (a silent drop is a compile error) and the
 # bundle carriage is unconditional (v0.32.151: three conjuncts do not transport
 # by `rfl` across an arbitrary field write).
-run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_declassificationTaint_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationTaint_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n 'declassificationTaint :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+# WS-ZA ZA5.12: the field is gone from both states; each reads the words off
+# its store, and the freeze keeps the reading.  A store writes the words of the
+# object it stores, so the old store frame is not true and is retired; the
+# checked boot installs only clean words.
+run_negative_check "INVARIANT" rg -n '^  declassificationTaint\s*:' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^def FrozenSystemState\.declassificationTaint ' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint($|[ ({:\[\]])' SeLe4n/Model/FreezeProofs.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declassificationTaint($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem declassificationTaint \{s1 s2 : SystemState\} \(h : OffSchedulerAgrees s1 s2\) :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_negative_check "INVARIANT" rg -n 'setDeclassificationTaint|storeObject_declassificationTaint_eq' SeLe4n
 # Information flow: the table is OUTSIDE `ObservableState`.  Provenance names
 # `(object, declassification identity)` pairs, so projecting it would be a
 # content channel out of exactly the boundary the audit polices.
@@ -9470,15 +9478,12 @@ run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_in
 # flow the authority enables is declared where that content actually moves.
 run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 
-# PR #873 round 9: the taint table is keyed, so it is bounded by the objects
-# that currently carry provenance rather than by how many writes have happened.
-# A function-backed table recorded history: the ordinary store/consume cycle is
-# value-changing in both directions, so the no-op write guards never covered it.
-run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^def taintEntriesErase($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem storeThenClear_no_growth($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem clearAt_set_entries($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n 'five store/consume cycles leave the taint table with no entries at all' tests/SmpInformationFlowSuite.lean
+# PR #873 round 9: the taint is bounded by the objects that currently carry
+# provenance rather than by how many writes have happened.  WS-ZA ZA5.12: it is
+# each object's own fixed words, so a store/consume cycle leaves the words
+# carved clean and there is no table to grow.
+run_negative_check "INVARIANT" rg -n 'taintEntriesErase|storeThenClear_no_growth|clearAt_set_entries' SeLe4n
+run_check "INVARIANT" rg -n "five store/consume cycles leave the notification's taint words carved clean" tests/SmpInformationFlowSuite.lean
 # NEGATIVE: the function representation must not come back — it is what made the
 # table a record of every write.
 run_negative_check "INVARIANT" rg -n 'abbrev TaintTable := SeLe4n\.ObjId' SeLe4n/Kernel/InformationFlow/Taint.lean
@@ -10112,7 +10117,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List
 run_check "INVARIANT" rg -n '^theorem SystemState.eq_of_fieldEq_all($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem SystemState.eq_of_fieldEq_all \(st st. : SystemState\)\n    \(h : ∀ f : StateField, SystemState.fieldEq f st st.\) : st. = st := by\n  cases st; cases st.\n  simp only \[SystemState.mk.injEq\]" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" rg -n '^  \| tlb \| tlbShootdown$' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^  \| declassificationRefusals \| declassificationTaint$' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^  \| declassificationRefusals$' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n '^  \| \.tlb, +st, st. => st.\.tlb = st\.tlb' SeLe4n/Kernel/CrossSubsystem.lean
 # Every declared list carries its honesty theorem AT ITS OWN LIST.  Each anchor
 # ties the operation named in the step hypothesis to the list in the conclusion
@@ -10139,7 +10144,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 20 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 19 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -10627,12 +10632,12 @@ run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send f
 # object lock while the model replaces the field whole, so key-local locking is
 # sound only once the runtime stores per object — owed by the representation cut.
 # Registered so that enabling fine locks has to delete the entry deliberately.
-run_check "INVARIANT" rg -n 'taintTablePerKeyStore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'taintWordsPerKeyCommit' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The owner string is pinned as *present*, not as a literal: spelling the
 # workstream code here would put it in a non-documentation file, which the
 # identifier-naming gate forbids.  That it is non-empty is checked properly, by
 # the suite's `declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty)`.
-run_check "INVARIANT" rg -n '\(\.taintTablePerKeyStore, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.taintWordsPerKeyCommit, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM9.D.7 (audit): the gate's direct-field-writer sweep — check (C) names only
 # constants that USE the taint API; (C2) scans every definition for a direct
 # write of `declassificationTaint` through the structure's constructor, in any

@@ -273,7 +273,6 @@ def emptyFrozenSystemState : FrozenSystemState :=
     declassificationAuditLog := []
     declassificationAuditEpoch := 0
     declassificationRefusals := SeLe4n.Kernel.RefusalLedger.initial
-    declassificationTaint := SeLe4n.Kernel.TaintTable.empty
     perCoreICache :=
       _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores ICacheState.empty
     pendingIcacheMaintenance := []

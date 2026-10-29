@@ -673,6 +673,21 @@ theorem lookup_freeze_objects (ist : IntermediateState) (k : SeLe4n.ObjId) :
   rw [hDef]
   exact freezeMapWith_get?_eq ist.state.objects freezeObject k ist.hAllTables.objects.1
 
+/-- WS-SM SM9.D.3, WS-ZA ZA5.12: `freeze` preserves the declassification taint —
+the frozen store's threads and notifications are the live ones, words and all,
+so the taint read off the frozen objects is the taint read off the live ones.
+The snapshot supports the same causal laundering analysis the running system
+does. -/
+theorem freeze_preserves_declassificationTaint (ist : IntermediateState) :
+    (freeze ist).declassificationTaint = ist.state.declassificationTaint := by
+  funext k
+  simp only [FrozenSystemState.declassificationTaint, FrozenSystemState.taintWordsAt,
+    FrozenSystemState.getObject?, SystemState.declassificationTaint,
+    SystemState.taintWordsAt_eq, RHTable_getElem?_eq_get?, ← lookup_freeze_objects]
+  rcases ist.state.objects.get? k with _ | o
+  · rfl
+  · cases o <;> rfl
+
 -- ============================================================================
 -- Q6-A: Per-field lookup equivalence theorems
 -- ============================================================================
@@ -1379,10 +1394,7 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     -- WS-SM SM9.B.4: the refusal ledger is carried bitwise, so a frozen
     -- snapshot distinguishes "no declassification was attempted" from
     -- "attempts were made and refused" exactly as the live state does.
-    sst.declassificationRefusals = fst.declassificationRefusals ∧
-    -- WS-SM SM9.D.3: the taint side table is carried bitwise, so the causal
-    -- laundering analysis a frozen snapshot supports is the live one.
-    sst.declassificationTaint = fst.declassificationTaint
+    sst.declassificationRefusals = fst.declassificationRefusals
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
@@ -1402,7 +1414,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (9)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
@@ -1413,7 +1425,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId)
   · exact fun tid => lookup_freeze_threadPriority ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId)
   · exact fun tid => lookup_freeze_membership ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId)
-  -- Non-map fields (20)
+  -- Non-map fields (19)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
@@ -1440,8 +1452,6 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_declassificationAuditEpoch ist).symm
   -- WS-SM SM9.B.4: the refusal ledger carried bitwise
   · exact (freeze_preserves_declassificationRefusals ist).symm
-  -- WS-SM SM9.D.3: the taint side table carried bitwise
-  · exact (freeze_preserves_declassificationTaint ist).symm
 
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.

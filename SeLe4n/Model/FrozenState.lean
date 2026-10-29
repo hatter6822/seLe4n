@@ -498,16 +498,6 @@ structure FrozenSystemState where
       is the entire purpose of the ledger.  Complemented by the
       `freeze_preserves_declassificationRefusals := rfl` value-level guard. -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger
-  /-- WS-SM SM9.D.3: the declassification taint side table, transferred from
-      `SystemState.declassificationTaint` during freeze.  **Required** (no
-      default), like the trail, its epoch and the refusal ledger, and for a
-      reason the others do not have: a snapshot that dropped provenance would
-      report a system in which every recorded downgrade is causally
-      unconnected — the exact shape a laundering chain is *not*, so the
-      analysis a frozen snapshot exists to support would come back clean on a
-      system that is not.  Complemented by the
-      `freeze_preserves_declassificationTaint := rfl` value-level guard. -/
-  declassificationTaint : SeLe4n.Kernel.TaintTable
 
 /-- WS-BP BP7.2: the frozen state's physical-write ledger as its list. -/
 noncomputable def FrozenSystemState.pendingPhysicalWrites (fst : FrozenSystemState) :
@@ -700,10 +690,7 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     -- WS-SM SM9.B.4: forward the refusal ledger unchanged, so a frozen
     -- snapshot distinguishes "no attempts" from "attempts, all refused"
     -- exactly as the running system does.
-    declassificationRefusals := st.declassificationRefusals
-    -- WS-SM SM9.D.3: forward the taint side table unchanged, so a frozen
-    -- snapshot supports the same causal analysis the running system does.
-    declassificationTaint := st.declassificationTaint }
+    declassificationRefusals := st.declassificationRefusals }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -774,13 +761,6 @@ frozen `declassificationRefusals` is identical to the pre-freeze
 the required frozen field. -/
 theorem freeze_preserves_declassificationRefusals (ist : IntermediateState) :
     (freeze ist).declassificationRefusals = ist.state.declassificationRefusals := rfl
-
-/-- WS-SM SM9.D.3: `freeze` preserves the declassification taint side table —
-the frozen `declassificationTaint` is identical to the pre-freeze
-`SystemState.declassificationTaint`.  The value-level guard complementing the
-required frozen field. -/
-theorem freeze_preserves_declassificationTaint (ist : IntermediateState) :
-    (freeze ist).declassificationTaint = ist.state.declassificationTaint := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :
@@ -978,6 +958,26 @@ raw is reported as a stale exemption. -/
 def FrozenSystemState.getObject? (st : FrozenSystemState) (id : SeLe4n.ObjId) :
     Option FrozenKernelObject :=
   st.objects.get? id
+
+/-- WS-ZA ZA5.12: **the taint words stored at an id in the frozen store** — the
+frozen thread's or notification's, the carved words on every other kind and
+where nothing is stored; the counterpart of `SystemState.taintWordsAt`. -/
+def FrozenSystemState.taintWordsAt (st : FrozenSystemState) (k : SeLe4n.ObjId) :
+    SeLe4n.Kernel.TaintWords :=
+  match st.getObject? k with
+  | some (.tcb t) => t.taintWords
+  | some (.notification n) => n.taintWords
+  | _ => {}
+
+/-- WS-ZA ZA5.12: **the frozen declassification taint, read off the frozen
+objects** as the live reader reads the live ones
+(`SystemState.declassificationTaint`).  The taint lives in the thread or
+notification it describes, so a snapshot carries the provenance its objects
+carry and the frozen operations move it by writing their words; `freeze`
+preserves it (`freeze_preserves_declassificationTaint`). -/
+def FrozenSystemState.declassificationTaint (st : FrozenSystemState) :
+    SeLe4n.Kernel.TaintMap :=
+  fun k => (st.taintWordsAt k).decode
 
 /-- Read a TCB from the frozen object store.
 

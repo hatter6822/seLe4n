@@ -199,20 +199,12 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
       substitution hide an overwrite. -/
   declassificationRefusals :
     s2.declassificationRefusals = s1.declassificationRefusals
-  /-- WS-SM SM9.D.5: the declassification **taint side table** agrees.
-
-      The provenance analogue of the two clauses above, and load-bearing for the
-      same reason: a scheduler substitution that silently re-keyed an object's
-      taint would move a recorded downgrade's causal ancestry, so a chain the
-      detector reports would name a different subject's history. -/
-  declassificationTaint :
-    s2.declassificationTaint = s1.declassificationTaint
 
 namespace OffSchedulerAgrees
 
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
-  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
@@ -222,8 +214,7 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
    h.asidTable.symm, h.interfaceRegistry.symm, h.cdt.symm,
    h.tlb.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
    h.pendingIcacheMaintenance.symm, h.pendingPhysicalWrites.symm, h.declassificationAuditLog.symm,
-   h.declassificationAuditEpoch.symm, h.declassificationRefusals.symm,
-   h.declassificationTaint.symm⟩
+   h.declassificationAuditEpoch.symm, h.declassificationRefusals.symm⟩
 
 /-- Transitivity. -/
 theorem trans {s1 s2 s3 : SystemState}
@@ -241,8 +232,17 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.pendingPhysicalWrites.trans hFirst.pendingPhysicalWrites,
    hSecond.declassificationAuditLog.trans hFirst.declassificationAuditLog,
    hSecond.declassificationAuditEpoch.trans hFirst.declassificationAuditEpoch,
-   hSecond.declassificationRefusals.trans hFirst.declassificationRefusals,
-   hSecond.declassificationTaint.trans hFirst.declassificationTaint⟩
+   hSecond.declassificationRefusals.trans hFirst.declassificationRefusals⟩
+
+/-- WS-SM SM9.D.5: **the declassification taint agrees** — the provenance
+analogue of the trail and ledger clauses, and load-bearing for the same reason:
+a scheduler substitution that silently re-keyed an object's taint would move a
+recorded downgrade's causal ancestry.  Since WS-ZA ZA5.12 the taint is read off
+the objects' words, which the run-queue fields do not hold, so the objects
+clause carries it. -/
+theorem declassificationTaint {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
+    s2.declassificationTaint = s1.declassificationTaint :=
+  h.objects.declassificationTaint
 
 end OffSchedulerAgrees
 
@@ -254,7 +254,7 @@ end OffSchedulerAgrees
 off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
-  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- WS-ZA ZA4.5: a step that writes only the object store and the scheduler,
 and the store only off the run-queue links, agrees with its input
@@ -264,7 +264,7 @@ theorem OffSchedulerAgrees.of_runLinkStep {st st' : SystemState}
     OffSchedulerAgrees st st' := by
   have hD' := hD
   unfold SystemState.onlyObjectsSchedulerDiffer at hD'
-  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rw [hD']; try rfl)
+  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rw [hD']; try rfl)
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler — it writes the scheduler and the woken thread's run-queue
@@ -382,7 +382,7 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
       hRel.interfaceRegistry, hRel.cdt, hRel.tlb,
       hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
       hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
-      hRel.declassificationRefusals, hRel.declassificationTaint⟩
+      hRel.declassificationRefusals⟩
     · simp only [hRel.objectIndexSet, hRel.objectIndex]
     · simp only [hRel.objectIndexSet]
     · simp only [hRel.lifecycle, KernelObject.objectType]

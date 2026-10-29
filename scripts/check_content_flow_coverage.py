@@ -26,12 +26,15 @@ Three properties, and each one has caught a different mistake in review:
   reach one.  A classification that claims content movement and declares no
   edges is a lie in the other direction, and it is exactly what a hand-written
   table drifts into.
-* **(C) One taint writer.**  The constants that write `SystemState.declassificationTaint`
-  must be exactly the declared propagation surface.  This is the machine-checked
-  form of SM9.D.12's "frames for every non-content transition": rather than
-  hand-writing a frame lemma per transition, the gate establishes that no other
-  constant can move the field at all, which `storeObject_declassificationTaint_eq`
-  then makes true of every object write.
+* **(C) One taint writer.**  The constants that write an object's taint words
+  (the ten `taintTag0..7` / `taintCount` / `taintSaturated` fields of `TCB` and
+  `Notification`, which hold the provenance since WS-ZA ZA5.12 retired the
+  table) must be exactly the declared propagation surface.  This is the
+  machine-checked form of SM9.D.12's "frames for every non-content transition":
+  rather than hand-writing a frame lemma per transition, the gate establishes
+  that no other constant can move those fields at all.  The constructions the
+  sweep also reports are derived and only pinned by `TAINT_WORD_CONSTRUCTIONS`;
+  their kind is named because a construction and a clear are the same term.
 
 **What a content channel is — a declared scope, not a derivation.**  This model
 tracks user *payload*: `TCB.pendingMessage` (the IPC message a thread holds) and
@@ -93,13 +96,29 @@ TAINT = os.path.join(REPO, "SeLe4n", "Kernel", "InformationFlow", "TaintPropagat
 DISPATCHERS = ("dispatchCapabilityOnly", "dispatchWithCap", "dispatchWithCapChecked")
 
 # WS-SM SM9.D.7 (C): the declared taint-writing surface.  Every other constant
-# in the tree must leave `declassificationTaint` alone — which is what makes
-# `applySyscallTaint` "the one writer" a checked fact.  Entries are the
-# propagation API itself plus the entry point that applies it.
+# in the tree must leave the objects' taint words alone — which is what makes
+# the apply step "the one writer" a checked fact.  Entries are the propagation
+# API itself plus the entry points that apply it.
+#
+# WS-ZA ZA5.12: the provenance is the taint words of the thread or notification
+# it describes, so the surface is the word API: the two field writers
+# (`TCB.withTaintWords`, `Notification.withTaintWords`), the object-level write,
+# join and erase over them, and the state-level slot write and the per-key join
+# and clear (`SystemState.joinTaintScalarsAt`, `joinTaintAt`, `clearTaintAt`).
+# Above those sit the spec step's map-level folds (`TaintMap.set` / `joinAt` /
+# `clearAt`, `applyTaintFlow`, `applyTaintClears`, `applyOrigination`), which
+# compute the provenance a step leaves without writing any state, and the step
+# as the dispatchers run it.
 DECLARED_TAINT_WRITERS = {
-    "SeLe4n.Kernel.TaintTable.set",
-    "SeLe4n.Kernel.TaintTable.joinAt",
-    "SeLe4n.Kernel.TaintTable.clearAt",
+    "SeLe4n.Model.TCB.withTaintWords",
+    "SeLe4n.Model.Notification.withTaintWords",
+    "SeLe4n.Model.KernelObject.withTaintWords",
+    "SeLe4n.Model.KernelObject.joinTaintWords",
+    "SeLe4n.Model.KernelObject.joinTaintScalars",
+    "SeLe4n.Model.SystemState.joinTaintScalarsAt",
+    "SeLe4n.Kernel.TaintMap.set",
+    "SeLe4n.Kernel.TaintMap.joinAt",
+    "SeLe4n.Kernel.TaintMap.clearAt",
     "SeLe4n.Kernel.applyTaintFlow",
     "SeLe4n.Kernel.applyTaintClears",
     "SeLe4n.Kernel.applyOrigination",
@@ -112,35 +131,40 @@ DECLARED_TAINT_WRITERS = {
     # (shared by call and reply) and the receive's, each without the plan
     # (`sendTaintStep_eq`, `replyTaintStep_eq`, `receiveTaintStep_eq`), and
     # reply-receive's, the receive's step then the send's
-    # (`replyRecvTaintStep_eq`); it writes the field only through those two.
+    # (`replyRecvTaintStep_eq`); it writes the words only through those two.
     "SeLe4n.Kernel.applySyscallTaintAfter",
     "SeLe4n.Kernel.signalTaintStep",
     "SeLe4n.Kernel.waitTaintStepOfCap",
     "SeLe4n.Kernel.sendTaintStep",
     "SeLe4n.Kernel.receiveTaintStep",
     "SeLe4n.Kernel.replyRecvTaintStep",
-    # WS-ZA ZA5.4 part 26: the final-delete retire forgets the freed id's
-    # provenance (`retireFinalObject_taint_cleared`), a clear, never a join,
-    # so it can only drop a tag of an object that no longer exists.
-    "SeLe4n.Kernel.withTaintCleared",
-    # WS-ZA ZA5.11: the step as a fold of per-key joins and clears, each writing
-    # the table entry and the key's taint words together (`joinTaintAt`,
-    # `clearTaintAt`); `applyTaintStep` is the fold and `taintStepTable` the
-    # table it writes (`applyTaintStep_declassificationTaint`).
+    # WS-ZA ZA5.11: the step as a fold of per-key joins and clears
+    # (`joinTaintAt`, `clearTaintAt`); `applyTaintStep` is the fold and
+    # `taintStepTable` the map it computes.
     "SeLe4n.Kernel.joinTaintAt",
     "SeLe4n.Kernel.clearTaintAt",
     "SeLe4n.Kernel.applyTaintStep",
     "SeLe4n.Kernel.taintStepTable",
+    # WS-ZA ZA5.12: the declassify arms' fused steps (`declassifyTaintStep_eq`,
+    # `declassifySignalTaintStep_eq`) and the origination they apply: the
+    # window over the trail's new events and the pass that joins each one's tag
+    # (`originateWindow`, `originationPass`), and the seed that folds the
+    # trail's tags into one key's words (`seedWords`, `seedWordsFrom`).
+    "SeLe4n.Kernel.declassifyTaintStep",
+    "SeLe4n.Kernel.declassifySignalTaintStep",
+    "SeLe4n.Kernel.originateWindow",
+    "SeLe4n.Kernel.originationPass",
+    "SeLe4n.Kernel.seedWords",
+    "SeLe4n.Kernel.seedWordsFrom",
 }
 
 # **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
 #
-# `FrozenSystemState.declassificationTaint` is the **same `TaintTable`** as the
-# live field, so the frozen mirror's propagation primitives name the same API and
-# check (C) reports them.  They are not part of the live surface — nothing here
-# can move `SystemState.declassificationTaint`, which is what (C2) decides
-# type-resolved — so folding them into `DECLARED_TAINT_WRITERS` would dilute the
-# live one-writer fact into "one live writer and some others".
+# A frozen object carries the **same taint words** as a live one, so the frozen
+# mirror's propagation primitives name the same API and check (C) reports them.
+# They are not part of the live surface — they rewrite frozen objects, never a
+# live `SystemState`'s — so folding them into `DECLARED_TAINT_WRITERS` would
+# dilute the live one-writer fact into "one live writer and some others".
 #
 # They are declared as **mirrors** instead, each naming the live counterpart it
 # reproduces — the shape `ReplyStackWriteCensus`'s `.mirrors` constructor already
@@ -156,11 +180,15 @@ DECLARED_TAINT_WRITERS = {
 # censuses — which is why `DECLARED_TAINT_CONSUMERS`'s own note below records a
 # "frozen/live taint-layer mismatch" that survived until a differential scenario
 # could start from a tagged state.  This is that gap given a declaration.
-# WS-ZA ZA5.11: each mirror writes the table entry with `TaintTable.set`, as
-# `joinTaintAt` / `clearTaintAt` do, beside the frozen taint words.
+# WS-ZA ZA5.12: the table is gone, and the frozen join and clear
+# (`frozenTaintFlow`, `frozenTaintClear`) write the words only through the one
+# frozen slot write, which writes a thread's or a notification's words exactly as
+# the live object-level write does (`KernelObject.withTaintWords` over the two
+# field writers).  So the slot write is the one mirror, and the join and clear
+# above it name no member of the API.
 DECLARED_FROZEN_TAINT_WRITERS = {
-    "private@SeLe4n.Kernel.FrozenOps.frozenTaintFlow": "SeLe4n.Kernel.TaintTable.set",
-    "private@SeLe4n.Kernel.FrozenOps.frozenTaintClear": "SeLe4n.Kernel.TaintTable.set",
+    "private@SeLe4n.Kernel.FrozenOps.frozenMapTaintWords":
+        "SeLe4n.Model.TCB.withTaintWords",
 }
 
 # The two content channels, as (structure, field) pairs.  Named because they are
@@ -186,6 +214,10 @@ DECLARED_TAINT_CONSUMERS = {
     # (`dispatchSyscallChecked_eq_impl`; the refusal-carrying signal and wait
     # arms', `waitOperandArmThenTaintR_eq`).
     "SeLe4n.Kernel.dispatchCheckedArmThenTaint",
+    # WS-ZA ZA5.12: the declassify arms' fused arm-then-apply steps
+    # (`dispatchCheckedArmThenTaintFused_eq`).
+    "SeLe4n.Kernel.dispatchCheckedArmThenDeclassifyTaint",
+    "SeLe4n.Kernel.dispatchCheckedArmThenDeclassifySignalTaint",
     "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.waitOperandArmThenTaintR",
     # WS-ZA ZA4.7: the IPC arms' arm-then-apply steps on the register path
@@ -197,10 +229,6 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.receiveOperandArmThenTaintR",
     "SeLe4n.Kernel.replyOperandArmThenTaintR",
     "SeLe4n.Kernel.replyRecvOperandArmThenTaintR",
-    # WS-ZA ZA5.4 part 26: the recorded retire, the one caller of the retire's
-    # clear (`withTaintCleared`, declared above), applied to the id it frees.
-    "SeLe4n.Kernel.retireRecordedObject",
-    "SeLe4n.Kernel.TaintTable.empty",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only
     # `applySyscallTaint` moves provenance -- and a builder-phase constructor is
@@ -215,27 +243,80 @@ DECLARED_TAINT_CONSUMERS = {
     # surface is untestable, and an untestable surface is how this branch's
     # divergences kept reaching review.
     "SeLe4n.Model.Builder.withTaint",
+    # WS-ZA ZA5.12: the two views off taint.  `KernelObject.eraseTaint` is the
+    # object with its words carved clean, the term every "agrees off taint"
+    # relation compares (`SystemState.objectsAgreeOffTaint`), and the observer
+    # projection erases every object's words (`projectKernelObject_eraseTaint`);
+    # each builds a value to compare or to observe, and no state stores it.
+    "SeLe4n.Model.KernelObject.eraseTaint",
+    "SeLe4n.Kernel.projectKernelObject",
+    # The causal-witness theorem's thread, built with the taint words it is
+    # given (`chainCausal_not_table_derived`): a fixture of a proof, not a step.
+    "private@SeLe4n.Kernel.causalWitnessTcb",
 }
 
-# WS-SM SM9.D.17 (audit): the definitions allowed to write
-# `SystemState.declassificationTaint` DIRECTLY (a `{ st with .. }` update whose
-# taint argument is not the field's own projection).  Exactly the apply step —
-# everything else must route through it or leave the field alone.
+# WS-SM SM9.D.17 (audit): the definitions allowed to write an object's taint
+# words DIRECTLY (a constructor application whose taint-field argument is not
+# that field's own projection).  WS-ZA ZA5.12: the provenance is the ten taint
+# fields of a `TCB` and of a `Notification`, and exactly two definitions write
+# them, one per structure -- everything else must route through these or leave
+# the fields alone.
 DECLARED_FIELD_WRITERS = {
-    "SeLe4n.Kernel.applySyscallTaint",
-    # WS-ZA ZA5.11: the per-key join and clear the step folds; since then the
-    # step writes the field only through these two.
-    "SeLe4n.Kernel.joinTaintAt",
-    "SeLe4n.Kernel.clearTaintAt",
-    # The same apply step in its compiled forms (see `DECLARED_TAINT_WRITERS`).
-    "SeLe4n.Kernel.applySyscallTaintAfter",
-    "SeLe4n.Kernel.signalTaintStep",
-    "SeLe4n.Kernel.waitTaintStepOfCap",
-    "SeLe4n.Kernel.sendTaintStep",
-    "SeLe4n.Kernel.receiveTaintStep",
-    # The retire's clear of the freed id (see `DECLARED_TAINT_WRITERS`).
-    "SeLe4n.Kernel.withTaintCleared",
+    "SeLe4n.Model.TCB.withTaintWords",
+    "SeLe4n.Model.Notification.withTaintWords",
 }
+
+# The watched fields of (C2), per structure.  Read off the structures' own
+# source (`taint_word_fields`), so a taint word added to either structure is
+# watched with it, and a structure that has lost its words fails closed rather
+# than being swept for nothing.
+TAINT_WORD_STRUCTURES = ("TCB", "Notification")
+
+# Definitions that BUILD, CLEAR or READ a thread or a notification rather than
+# move its words, each with its kind and what it does.  The SET is derived: it is
+# exactly what (C2)'s sweep reports beyond `DECLARED_FIELD_WRITERS`, and this map
+# only pins it, reconciled in both directions -- an entry the sweep no longer
+# reports is stale and fails, a reported writer outside it is a finding.
+#
+# Why the CLASSIFICATION is named, not derived: a construction, a clearing
+# rebuild and a laundering clear are the same elaborated term (`TCB.mk` with
+# closed taint arguments), so only the spelling would tell them apart, and
+# spelling is the test PR #873 round 12 retired.
+#
+# What the code does decide is checked against each kind.  A `builds` or
+# `clears` entry must write only CLOSED values at the taint words (no provenance
+# comes in: `CF_FIELD_WRITER_OPEN` absent); a `reads` entry is a positional
+# destructure whose taint words are bound variables, so it must be reported open
+# -- an entry whose kind disagrees with its term fails.
+TAINT_WORD_CONSTRUCTIONS = {
+    "SeLe4n.Kernel.carvedTcb":
+        ("builds", "the thread a retype carves, with no provenance"),
+    "SeLe4n.Kernel.CarveRequest.object":
+        ("builds", "the object a carve request builds, with no provenance"),
+    "SeLe4n.Kernel.CarveRequest.objectImpl":
+        ("builds", "the compiled form of `CarveRequest.object`"),
+    "SeLe4n.Kernel.createIdleThread": ("builds", "the boot idle thread"),
+    "SeLe4n.Platform.RPi5.rpi5InitialThread": ("builds", "the RPi5 boot thread"),
+    "private@SeLe4n.Platform.QemuVirt.notificationEntry":
+        ("builds", "a QEMU boot notification"),
+    "private@SeLe4n.Platform.RPi5.notificationEntry":
+        ("builds", "an RPi5 boot notification"),
+    "private@SeLe4n.Kernel.causalWitnessTcb":
+        ("builds", "the causal-witness theorem's thread, before its words are written"),
+    "private@SeLe4n.Kernel.witnessTcbFresh":
+        ("builds", "a witness theorem's fresh thread"),
+    "SeLe4n.Kernel.projectKernelObject":
+        ("clears", "the observer projection, which erases every object's words"),
+    "SeLe4n.Model.TCB.ipcReadView":
+        ("clears", "a read view of a thread, with its words erased"),
+    "SeLe4n.Model.instDecidableEqNotification.decEq":
+        ("reads", "the derived equality, which destructures two notifications"),
+    "SeLe4n.Platform.Boot.notificationReferencesReservedIdleSlot":
+        ("reads", "a boot reader that destructures a notification"),
+    "SeLe4n.Platform.Boot.tcbReferencesReservedIdleSlot":
+        ("reads", "a boot reader that destructures a thread"),
+}
+TAINT_WORD_CONSTRUCTION_KINDS = ("builds", "clears", "reads")
 
 CONTENT_CHANNELS = [
     ("SeLe4n.Model.TCB", "pendingMessage"),
@@ -285,8 +366,7 @@ CONTENT_WRITE_EXEMPT: dict[str, str] = {}
 SELF_TEST_CHANNEL = ("SeLe4n.Model.TCB", "priority")
 
 # The self-test's planted rogue writer: a **private** definition that rewrites
-# `SystemState.declassificationTaint` outright and reaches it through the declared
-# API, so it must be reported by BOTH sweeps — the direct-field one (C2) and the
+# a thread's `taintCount` outright and reaches it through the declared API, so it must be reported by BOTH sweeps — the direct-field one (C2) and the
 # API-naming one (C).
 #
 # Private on purpose.  Lean stores `private def foo` as `_private.<Module>.<n>.foo`,
@@ -299,8 +379,8 @@ SELF_TEST_CHANNEL = ("SeLe4n.Model.TCB", "priority")
 SELF_TEST_ROGUE = "cfPlantedPrivateTaintWriter"
 
 # A second plant, in the shape a matcher could have hidden: the helper
-# **pattern-matches the `SystemState`** and rebuilds it with a replacement taint
-# table.  Lean puts `SystemState.mk` in the generated `.match_1` for this shape as
+# **pattern-matches the `TCB`** and rebuilds it with a replacement taint
+# count.  Lean puts `TCB.mk` in the generated `.match_1` for this shape as
 # well as in the user definition, so it is the case where "the sweep skips
 # generated auxiliaries" could have meant "the sweep skips the write".  Planted
 # so that stays a checked fact rather than a reading of the elaborator.
@@ -319,14 +399,14 @@ SELF_TEST_ROOT_ARM = "cfSelfTestPrivateRootArm"
 
 # A fourth plant, for the spelling the detector stopped depending on (PR #873
 # round 12).  The matcher plant above destructures and then rebuilds with
-# `{ st with .. }`, so its unchanged fields are still projections; this one
-# rebuilds through `SystemState.mk` positionally, so they are the *bound
+# `{ t with .. }`, so its unchanged fields are still projections; this one
+# rebuilds through `Notification.mk` positionally, so they are the *bound
 # variables* of the match and no projection appears anywhere in the term.  That
 # is the shape the old `isUpdate` test read as a fresh literal, letting a second
 # direct writer pass the one-writer gate.  Generated from the structure's own
-# field list rather than hand-written: 26 fields is too many to keep in step by
-# hand, and a plant that silently stopped elaborating would take the witness
-# with it.
+# field list rather than hand-written (`structure_fields`): a hand-kept list
+# drifts from the structure, and a plant that silently stopped elaborating would
+# take the witness with it.
 SELF_TEST_ROGUE_REBUILD = "cfPlantedRebuildTaintWriter"
 
 # A fifth plant, for the declaration KIND the sweeps stopped depending on
@@ -354,46 +434,57 @@ SELF_TEST_ROGUE_OPAQUE = "cfPlantedOpaqueTaintWriter"
 # rewriting the field -- a second live writer, silently excused by its name.
 SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNamedTaintWriter"
 
+# A seventh and eighth plant, pinning the matcher skip (`cfBodilessOwned`) on
+# both sides.  Each matches on a subtype whose predicate writes a thread's
+# `taintCount`, so the matcher the compiler mints carries that write in its own
+# body.  Owned by a THEOREM, the matcher is erased with the proof and must be
+# skipped -- and it must still be found writing, or the skip is witnessed on a
+# matcher that writes nothing.  Owned by a DEFINITION with a body, the same shape
+# must be inspected: a skip widened to every compiler-minted auxiliary would hide
+# a definition's matcher.  The two predicates differ (`0`, `1`) so the compiler
+# cannot share one matcher between the owners.
+SELF_TEST_PROOF_MATCHER = "cfPlantedProofOwnedMatcher"
+SELF_TEST_BODY_MATCHER = "cfPlantedBodyOwnedMatcher"
+
 # Definitions that build a `SystemState` from nothing rather than rewrite one.
-# See `cfStateConstructors` in the probe for why this is a named list.
-#
-# PR #873 round 16 adds the builder's provenance seed.  The one-writer rule is
-# about the *propagation* surface -- within a running system only
-# `applySyscallTaint` may move provenance -- and a builder-phase constructor is
-# the other side of that boundary, exactly as `Builder.createObject` writes
-# `objects` without being an object-store transition.  It earns its place rather
-# than being excused: without a way to build a state that already carries
-# provenance, no test can exercise the propagation step at all, which is how the
-# frozen/live taint-layer mismatch stayed invisible until round 16.  The
-# staleness check below fails if a name here stops matching a real definition,
-# so this list cannot rot into a set of excuses for code that no longer exists.
-STATE_CONSTRUCTORS = ["SeLe4n.Model.instInhabitedSystemState",
-                      "SeLe4n.Model.Builder.withTaint"]
+# See `cfStateConstructors` in the probe for why this is a named list.  (C3)
+# sweeps `declassificationAudit` with the same detector, so a construction of the
+# state supplies the trail and is named here.  WS-ZA ZA5.12: the builder's
+# provenance seed (`Builder.withTaint`) left this list -- it writes words into an
+# object at a key (`SystemState.mapObjectAt`) and builds no state.  The staleness
+# check below fails if a name here stops matching a real definition, so this
+# list cannot rot into a set of excuses for code that no longer exists.
+STATE_CONSTRUCTORS = ["SeLe4n.Model.instInhabitedSystemState"]
 
 SELF_TEST_ROGUE_SRC = f"""
-private def {SELF_TEST_ROGUE} (st : SeLe4n.Model.SystemState) :
-    SeLe4n.Model.SystemState :=
-  {{ st with declassificationTaint :=
-      SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
+private def {SELF_TEST_ROGUE} (t : SeLe4n.Model.TCB) : SeLe4n.Model.TCB :=
+  {{ t with taintCount := (SeLe4n.Model.TCB.withTaintWords t {{}}).taintCount + 1 }}
 
-private def {SELF_TEST_ROGUE_MATCH} (st : SeLe4n.Model.SystemState)
-    (t : SeLe4n.Kernel.TaintTable) : SeLe4n.Model.SystemState :=
-  match st with
-  | {{ declassificationTaint := _, .. }} => {{ st with declassificationTaint := t }}
+private def {SELF_TEST_ROGUE_MATCH} (t : SeLe4n.Model.TCB) (c : Nat) :
+    SeLe4n.Model.TCB :=
+  match t with
+  | {{ taintCount := _, .. }} => {{ t with taintCount := c }}
 
 private def {SELF_TEST_ROOT_HELPER} (tcb : SeLe4n.Model.TCB)
     (p : SeLe4n.Priority) : SeLe4n.Model.TCB :=
   {{ tcb with priority := p }}
 
-private opaque {SELF_TEST_ROGUE_OPAQUE} (st : SeLe4n.Model.SystemState) :
-    SeLe4n.Model.SystemState :=
-  {{ st with declassificationTaint :=
-      SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
+private opaque {SELF_TEST_ROGUE_OPAQUE} (t : SeLe4n.Model.TCB) :
+    Option SeLe4n.Model.TCB :=
+  some {{ t with taintCount := (SeLe4n.Model.TCB.withTaintWords t {{}}).taintCount + 1 }}
 
-private def {SELF_TEST_ROGUE_USER_NAMED} (st : SeLe4n.Model.SystemState) :
-    SeLe4n.Model.SystemState :=
-  {{ st with declassificationTaint :=
-      SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
+private def {SELF_TEST_ROGUE_USER_NAMED} (t : SeLe4n.Model.TCB) : SeLe4n.Model.TCB :=
+  {{ t with taintCount := (SeLe4n.Model.TCB.withTaintWords t {{}}).taintCount + 1 }}
+
+private theorem {SELF_TEST_PROOF_MATCHER} (t : SeLe4n.Model.TCB)
+    (o : {{ u : SeLe4n.Model.TCB // u = {{ t with taintCount := 0 }} }}) : True :=
+  match o with
+  | ⟨_, _⟩ => trivial
+
+private def {SELF_TEST_BODY_MATCHER} (t : SeLe4n.Model.TCB)
+    (o : {{ u : SeLe4n.Model.TCB // u = {{ t with taintCount := 1 }} }}) : SeLe4n.Model.TCB :=
+  match o with
+  | ⟨u, _⟩ => u
 """
 
 # PR #873 round 10: implementations that deliberately **refuse**.
@@ -416,19 +507,20 @@ FAIL_CLOSED_ARMS: set[tuple[str, str]] = {
 }
 
 SHAPE = os.path.join(REPO, "SeLe4n", "Kernel", "Architecture", "SyscallReturn.lean")
-STATE = os.path.join(REPO, "SeLe4n", "Model", "State.lean")
+TYPES = os.path.join(REPO, "SeLe4n", "Model", "Object", "Types.lean")
 
 
-def system_state_fields() -> list[str]:
-    """`SystemState`'s field names, in declaration order, read off its own source.
+def structure_fields(name: str) -> list[str]:
+    """A structure's field names, in declaration order, read off `Types.lean`.
 
-    The rebuild plant needs every field positionally, and there are 26 of them.
-    Reading the list here keeps the plant in step with the structure: a field
-    added or reordered changes the plant with it, where a hand-written list would
-    quietly stop elaborating and take the witness with it.
+    The rebuild plant needs every field of `Notification` positionally, and (C2)
+    watches every taint word of `TCB` and `Notification`.  Reading the lists
+    here keeps both in step with the structures: a field added or reordered
+    changes them with it, where a hand-written list would quietly stop
+    elaborating, or stop watching a word, and take the witness with it.
     """
-    src = code_view(STATE)
-    head = src.index("structure SystemState where")
+    src = code_view(TYPES)
+    head = src.index(f"structure {name} where")
     fields: list[str] = []
     for line in src[head:].split("\n")[1:]:
         if not line.strip():
@@ -438,25 +530,46 @@ def system_state_fields() -> list[str]:
         m = re.match(r"^  ([A-Za-z][A-Za-z0-9_']*)\s*:", line)
         if m:
             fields.append(m.group(1))
-    if "declassificationTaint" not in fields:
-        raise RuntimeError(
-            f"parsed {len(fields)} SystemState fields with no `declassificationTaint`; "
-            "the structure's shape moved and the rebuild plant cannot be generated")
     return fields
+
+
+def taint_word_fields() -> dict[str, list[str]]:
+    """The taint-word fields of each watched structure: `taint`-prefixed.
+
+    Fails closed on a structure with none, or with a set that differs from the
+    other's: the words are one representation (`TaintWords`) stored twice, and a
+    structure whose words diverged is a shape this gate does not classify.
+    """
+    out = {s: [f for f in structure_fields(s) if f.startswith("taint")]
+           for s in TAINT_WORD_STRUCTURES}
+    for s, fs in out.items():
+        if not fs or "taintCount" not in fs:
+            raise RuntimeError(
+                f"parsed no taint words (no `taintCount`) in `structure {s}`; the "
+                "provenance moved and (C2) would sweep for nothing")
+    if len({tuple(fs) for fs in out.values()}) != 1:
+        raise RuntimeError(
+            "the watched structures' taint words differ: "
+            + "; ".join(f"{s}: {', '.join(fs)}" for s, fs in out.items()))
+    return out
 
 
 def rebuild_plant_src() -> str:
     """The destructured-rebuild plant, positional so no projection appears."""
-    fields = system_state_fields()
+    fields = structure_fields("Notification")
+    if "taintCount" not in fields:
+        raise RuntimeError(
+            f"parsed {len(fields)} Notification fields with no `taintCount`; the "
+            "structure's shape moved and the rebuild plant cannot be generated")
     binders = ", ".join(f"f{i}" for i in range(len(fields)))
     args = " ".join(
-        "t" if f == "declassificationTaint" else f"f{i}"
+        "c" if f == "taintCount" else f"f{i}"
         for i, f in enumerate(fields))
     return f"""
-private def {SELF_TEST_ROGUE_REBUILD} (st : SeLe4n.Model.SystemState)
-    (t : SeLe4n.Kernel.TaintTable) : SeLe4n.Model.SystemState :=
-  match st with
-  | ⟨{binders}⟩ => SeLe4n.Model.SystemState.mk {args}
+private def {SELF_TEST_ROGUE_REBUILD} (n : SeLe4n.Model.Notification)
+    (c : Nat) : SeLe4n.Model.Notification :=
+  match n with
+  | ⟨{binders}⟩ => SeLe4n.Model.Notification.mk {args}
 """
 
 PROBE = r"""
@@ -475,6 +588,13 @@ private def cfRoots : List (String × String) :=
 
 private def cfTaintApi : List Name :=
   [@TAINTAPI@]
+
+/-- The matcher-skip witnesses' owners (empty outside `--self-test`). -/
+private def cfPlantedMatcherOwners : List String := [@MATCHEROWNERS@]
+
+/-- (C2)'s watched fields: each structure's taint words. -/
+private def cfTaintWordFields : List (Name × List Name) :=
+  [@TAINTWORDFIELDS@]
 
 private def cfJustifications : List Name :=
   [@JUSTIFICATIONS@]
@@ -709,13 +829,36 @@ private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
   else
     none
 
+/-- Is `n` an auxiliary the compiler minted for an owner that carries **no
+body** -- a theorem, or a type's own constructor or inductive?
+
+A proof that destructures an existential or a disjunction gets a generated
+matcher (`tcb_fwd.match_1`), which is a `defn` and so passes the body-bearing
+filter, and whose motive restates the theorem's own hypotheses -- so a theorem
+*about* the taint words (`objectsAgreeOffTaint.tcb_fwd`, comparing two threads
+off their words) would be reported as a caller of the word API.  The matcher is
+used only by its owner's term, and an owner that carries no body executes
+nothing of its own: a proof is erased, for the reason `cfExecutableValue` drops
+the theorem itself, and a type's minted helpers are its machinery
+(`cfStructureMachinery`).  Decided by the environment -- the auxiliary carries
+no source range (`cfOwnerName`'s test), and the constant it strips back to,
+looked up under the name the environment stores, is present and answers
+`bodyBearing` false -- never by the spelling of the name; an owner the lookup
+cannot find is not skipped. -/
+private def cfBodilessOwned (env : Environment) (n : Name) : Bool :=
+  if (Lean.declRangeExt.find? env n).isSome then false
+  else
+    let owner := cfStripReserved n
+    owner != n && (env.find? owner).isSome
+      && !SeLe4n.Testing.DeclarationKind.bodyBearingName env owner
+
 /-- Is this a constant whose body belongs to something a human wrote?
 
 Decided on the **owner**, so a generated auxiliary is inspected on behalf of its
 definition instead of being dropped, and a constant with no human-written owner
 (the matcher of a matcher, a purely internal detail) is still skipped. -/
 private def cfInspectable (env : Environment) (n : Name) : Bool :=
-  !(cfOwnerName env n).isInternalDetail
+  !(cfOwnerName env n).isInternalDetail && !cfBodilessOwned env n
 
 /-- How a writer is reported: the readable name, with private ones marked.
 
@@ -839,36 +982,69 @@ run_cmd do
   for (structName, field) in cfChannels do
     unless idxs.any (fun (s, f, _) => s == structName && f == field) do
       logInfo m!"CF_CHANNEL_UNRESOLVED {structName}.{field}"
-  -- (C2) every definition that writes `SystemState.declassificationTaint`
-  -- DIRECTLY, in a structure update — the write no API-naming check can see.
+  -- (C2) every definition that writes an object's taint words DIRECTLY -- a
+  -- constructor application of `TCB` or `Notification` whose argument at a taint
+  -- field is not that field's projection -- the write no API-naming check can
+  -- see.  One walk per structure, asking every watched index at once.
   let stateName := `SeLe4n.Model.SystemState
   let stateFields := (getStructureFields env stateName).toList
-  match stateFields.findIdx? (· == `declassificationTaint) with
-  | none => logInfo m!"CF_FIELD_UNRESOLVED declassificationTaint"
-  | some fieldIdx =>
+  for (sName, watched) in cfTaintWordFields do
+    let all := (getStructureFields env sName).toList
+    let idxs : List Nat := watched.filterMap fun f => all.findIdx? (· == f)
+    for f in watched do
+      if (all.findIdx? (· == f)).isNone then
+        logInfo m!"CF_FIELD_UNRESOLVED {sName}.{f}"
+    let hit : Expr -> Bool := fun e =>
+      idxs.any fun idx =>
+        match all[idx]? with
+        | some f => cfWritesFieldHit sName f idx e
+        | none => false
     let fieldWriters : List Name :=
       env.constants.fold (init := []) fun acc n ci =>
-        if !cfInspectable env n || !cfRewritesState env stateName n then acc
+        if !cfInspectable env n || cfStructureMachinery env sName n then acc
         else match cfExecutableValue ci with
           | some value =>
               -- Prefilter on the constructor's presence: an Expr that never
-              -- names `SystemState.mk` cannot apply it, and the used-constant
-              -- set is cached where a structural walk is not.
-              if value.getUsedConstants.contains (stateName ++ `mk)
-                  && cfWritesField stateName `declassificationTaint fieldIdx value
+              -- names `S.mk` cannot apply it, and the used-constant set is
+              -- cached where a structural walk is not.
+              if value.getUsedConstants.contains (sName ++ `mk)
+                  && (cfAnySubterm hit value {}).1
               then n :: acc
               else acc
           | none => acc
+    -- Which of them write an OPEN value at a taint word -- words that come
+    -- from somewhere (`cfScanHit`'s test) rather than a closed constant.  A
+    -- construction supplies the defaults, no provenance; a write of open words
+    -- is provenance moving, which only the two declared writers may do.
+    let openHit : Expr -> Bool := fun e =>
+      idxs.any fun idx =>
+        match all[idx]? with
+        | some f => cfScanHit sName f idx e
+        | none => false
     for w in fieldWriters do
       logInfo m!"CF_FIELD_WRITER {cfReportName env w}"
-    -- The exempted constructions, reported so a stale entry is visible: a name
-    -- that no longer writes the field (or no longer exists) must leave the list.
-    for c in cfStateConstructors do
-      match (env.find? c).bind cfExecutableValue with
+      match (env.find? w).bind cfExecutableValue with
       | some value =>
-          if cfWritesField stateName `declassificationTaint fieldIdx value then
-            logInfo m!"CF_STATE_CTOR {c}"
+          if (cfAnySubterm openHit value {}).1 then
+            logInfo m!"CF_FIELD_WRITER_OPEN {cfReportName env w}"
       | none => pure ()
+    -- The matcher-skip witnesses (`--self-test` only): every compiler-minted
+    -- auxiliary of the two planted owners, with whether the sweep inspects it
+    -- and whether its body writes a taint word.
+    for (n, ci) in env.constants.toList do
+      if (Lean.declRangeExt.find? env n).isNone then
+        let owner := cfStripReserved n
+        if owner != n && cfPlantedMatcherOwners.contains (cfLast owner) then
+          let writes :=
+            match cfExecutableValue ci with
+            | some v => (cfAnySubterm hit v {}).1
+            | none => false
+          logInfo s!"CF_PLANT_AUX {sName} {cfLast owner} {cfInspectable env n} {writes}"
+  -- Every API member must be a constant: a name that resolves to nothing is
+  -- swept for nothing, so it is reported rather than read as "no caller".
+  for a in cfTaintApi do
+    if (env.find? a).isNone then
+      logInfo m!"CF_API_UNRESOLVED {a}"
   -- (C) every constant whose value names the taint-writing API.
   -- Only constants with a **body** are reported, and not proofs: a theorem
   -- naming the API states a property of it, and a property cannot move a field.
@@ -924,6 +1100,17 @@ run_cmd do
           | none => acc
   for w in auditWriters.toList do
     logInfo m!"CF_AUDIT_WRITER {cfReportName env w}"
+  -- The exempted constructions, reported so a stale entry is visible: a name
+  -- that no longer writes the trail (or no longer exists) must leave the list.
+  match auditIdx? with
+  | none => pure ()
+  | some auditIdx =>
+    for c in cfStateConstructors do
+      match (env.find? c).bind cfExecutableValue with
+      | some value =>
+          if cfWritesField stateName `declassificationAudit auditIdx value then
+            logInfo m!"CF_STATE_CTOR {c}"
+      | none => pure ()
   -- The theorems the append exemptions below rest on.  An exemption whose
   -- justification has been deleted must stop being an exemption.
   for j in cfJustifications do
@@ -1176,12 +1363,19 @@ def run_probe(roots: dict[str, set[str]], depth: int, channels,
         f"`{n}" for n in sorted(set(AUDIT_APPEND_EXEMPT.values())
                                 | set(CONTENT_WRITE_EXEMPT.values())))
     quoted_ctors = ", ".join(f"`{n}" for n in sorted(STATE_CONSTRUCTORS))
+    quoted_words = ", ".join(
+        "(`SeLe4n.Model.{}, [{}])".format(st, ", ".join(f"`{f}" for f in fs))
+        for st, fs in sorted(taint_word_fields().items()))
     src = (PROBE
            .replace("@CHANNELS@", quoted_channels)
            .replace("@ROOTS@", quoted_roots)
            .replace("@TAINTAPI@", quoted_api)
            .replace("@JUSTIFICATIONS@", quoted_just)
            .replace("@STATECTORS@", quoted_ctors)
+           .replace("@TAINTWORDFIELDS@", quoted_words)
+           .replace("@MATCHEROWNERS@",
+                    f'"{SELF_TEST_PROOF_MATCHER}", "{SELF_TEST_BODY_MATCHER}"'
+                    if plant_rogue else "")
            .replace("@PLANTED@",
                     SELF_TEST_ROGUE_SRC + rebuild_plant_src() if plant_rogue else "")
            .replace("@DEPTH@", str(depth)))
@@ -1222,7 +1416,14 @@ def parse(out: str):
     for caller, api in re.findall(r"CF_TAINT_EDGE (\S+) (\S+)", out):
         taint_edges.setdefault(caller, set()).add(api)
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
-    field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
+    open_writers = set(re.findall(r"CF_FIELD_WRITER_OPEN (\S+)", out))
+    # (structure, owner) -> [(inspected, writes)] per minted auxiliary.
+    plant_aux: dict[tuple[str, str], list[tuple[bool, bool]]] = {}
+    for st, owner, insp, wr in re.findall(
+            r"CF_PLANT_AUX (\S+) (\S+) (true|false) (true|false)", out):
+        plant_aux.setdefault((st, owner), []).append((insp == "true", wr == "true"))
+    field_unresolved = sorted(set(re.findall(r"CF_FIELD_UNRESOLVED (\S+)", out)))
+    api_unresolved = sorted(set(re.findall(r"CF_API_UNRESOLVED (\S+)", out)))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
     state_ctors = set(re.findall(r"CF_STATE_CTOR (\S+)", out))
     truncated = set(re.findall(r"CF_TRUNCATED (\S+)", out))
@@ -1231,8 +1432,9 @@ def parse(out: str):
     audit_detail: dict[str, list[str]] = {}
     for arm, name in re.findall(r"CF_AUDIT_HIT (\S+) (\S+)", out):
         audit_detail.setdefault(arm, []).append(name)
-    return (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
-            truncated, audit_hits, audit_detail, justified, state_ctors)
+    return (hits, detail, writers, taint_edges, field_writers, field_unresolved,
+            api_unresolved, noroot, truncated, audit_hits, audit_detail, justified,
+            state_ctors, open_writers, plant_aux)
 
 
 def main() -> int:
@@ -1294,8 +1496,9 @@ def main() -> int:
         print("      A channel the probe cannot resolve is scanned for nothing;")
         print("      name the field the content is stored in.")
         return 1
-    (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
-     truncated, audit_hits, audit_detail, justified, state_ctors) = parse(out)
+    (hits, detail, writers, taint_edges, field_writers, field_unresolved,
+     api_unresolved, noroot, truncated, audit_hits, audit_detail, justified,
+     state_ctors, open_writers, plant_aux) = parse(out)
 
     failures: list[str] = []
 
@@ -1394,11 +1597,11 @@ def main() -> int:
         # has gone blind reports zero unexpected writers for the same reason it
         # would miss a rogue one, so its bite is asserted here rather than
         # trusted.
-        if "SeLe4n.Kernel.joinTaintAt" not in field_writers:
+        if "SeLe4n.Model.TCB.withTaintWords" not in field_writers:
             print("FAIL: --self-test — the direct-field-writer sweep did not detect")
-            print("      `joinTaintAt`, the step's join, which writes")
-            print("      `SystemState.declassificationTaint` outright.  The sweep is blind:")
-            print("      a rogue writer would pass check (C2) for the same reason.")
+            print("      `TCB.withTaintWords`, which writes a thread's taint words")
+            print("      outright.  The sweep is blind: a rogue writer would pass")
+            print("      check (C2) for the same reason.")
             return 1
         # …and it must detect one that hides behind `private`.  Both sweeps
         # filtered on `isInternal`, which is true of every private constant, so
@@ -1410,7 +1613,7 @@ def main() -> int:
         if rogue not in field_writers:
             print("FAIL: --self-test — the direct-field-writer sweep did not detect")
             print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE}`, which")
-            print("      rewrites `SystemState.declassificationTaint` outright.")
+            print("      rewrites a thread's `taintCount` outright.")
             print("      The sweep is skipping private definitions, so a private")
             print("      helper could launder provenance and still report one writer.")
             return 1
@@ -1420,8 +1623,8 @@ def main() -> int:
         if rogue_match not in field_writers:
             print("FAIL: --self-test — the direct-field-writer sweep did not detect")
             print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE_MATCH}`, which")
-            print("      pattern-matches the `SystemState` before rebuilding it with a")
-            print("      replacement taint table.  A helper can hide a write behind a")
+            print("      pattern-matches the `TCB` before rebuilding it with a")
+            print("      replacement taint count.  A helper can hide a write behind a")
             print("      `match` if the sweep only reads unmatched bodies.")
             return 1
         # …and the positional rebuild, where no projection appears at all.  The
@@ -1432,8 +1635,8 @@ def main() -> int:
         if rogue_rebuild not in field_writers:
             print("FAIL: --self-test — the direct-field-writer sweep did not detect")
             print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE_REBUILD}`, which")
-            print("      destructures the `SystemState` and rebuilds it positionally")
-            print("      through `SystemState.mk`.  Its unchanged fields are bound")
+            print("      destructures a `Notification` and rebuilds it positionally")
+            print("      through `Notification.mk`.  Its unchanged fields are bound")
             print("      variables rather than projections, so a detector that infers")
             print("      'this is an update' from a projection being present reads the")
             print("      rewrite as a fresh literal — and a second direct writer passes")
@@ -1480,9 +1683,38 @@ def main() -> int:
         stale = [c for c in STATE_CONSTRUCTORS if c not in state_ctors]
         if stale:
             print("FAIL: --self-test — STATE_CONSTRUCTORS names definitions that no")
-            print(f"      longer write `declassificationTaint`: {', '.join(stale)}.")
+            print(f"      longer write `declassificationAudit`: {', '.join(stale)}.")
             print("      An exemption that has stopped applying must be deleted, not")
             print("      carried: it exempts nothing and hides whatever takes the name.")
+            return 1
+        # The matcher skip, pinned on both sides.  The witness reads the
+        # minted auxiliaries themselves, since an owner's own body carries the
+        # same write and would answer for its matcher in the writer set.
+        proof_aux = plant_aux.get(("SeLe4n.Model.TCB", SELF_TEST_PROOF_MATCHER), [])
+        body_aux = plant_aux.get(("SeLe4n.Model.TCB", SELF_TEST_BODY_MATCHER), [])
+        if not any(w for _, w in proof_aux) or not any(w for _, w in body_aux):
+            print("FAIL: --self-test — a matcher-skip plant minted no auxiliary that")
+            print(f"      writes a taint word (`{SELF_TEST_PROOF_MATCHER}`: {proof_aux},")
+            print(f"      `{SELF_TEST_BODY_MATCHER}`: {body_aux}).  The witness is vacuous:")
+            print("      re-plant it so the matcher itself carries the write.")
+            return 1
+        if any(i for i, w in proof_aux if w):
+            print("FAIL: --self-test — the sweep inspects a matcher the compiler minted")
+            print(f"      for the THEOREM `{SELF_TEST_PROOF_MATCHER}`.  It is erased with")
+            print("      the proof, so a theorem about the taint words reads as a writer.")
+            return 1
+        if f"private@{SELF_TEST_PROOF_MATCHER}" in field_writers:
+            print("FAIL: --self-test — the THEOREM-owned matcher plant was reported as a")
+            print("      taint-word writer; the skip is not reaching the sweep.")
+            return 1
+        if not all(i for i, w in body_aux if w):
+            print("FAIL: --self-test — the sweep skips a matcher the compiler minted for")
+            print(f"      the DEFINITION `{SELF_TEST_BODY_MATCHER}`, which has a body.  The")
+            print("      skip has widened past body-less owners and can hide a writer.")
+            return 1
+        if f"private@{SELF_TEST_BODY_MATCHER}" not in field_writers:
+            print("FAIL: --self-test — the DEFINITION-owned matcher plant was not")
+            print("      reported as a taint-word writer.")
             return 1
         if rogue not in writers:
             print("FAIL: --self-test — the API-naming sweep did not detect the")
@@ -1716,27 +1948,56 @@ def main() -> int:
             "API the mirror actually names (the edge is the relation; two memberships "
             "are not):\n      " + "\n      ".join(misdirected))
 
-    # (C2) one field writer.  Check (C) sees only constants that NAME the taint
-    # API; a definition writing `SystemState.declassificationTaint` directly in
-    # a `{ st with .. }` update names nothing and would escape it — including a
-    # closed-term write, which for a provenance table is a silent whole-table
+    # (C2) one field writer per structure.  Check (C) sees only constants that
+    # NAME the taint API; a definition writing a thread's or a notification's
+    # taint words directly in a `{ t with .. }` update names nothing and would
+    # escape it — including a closed-term write, which for provenance is a silent
     # clear, a laundering enabler.  The probe therefore scans every definition's
-    # elaborated value for an update whose taint-field argument is not the
-    # field's own projection.  Fresh literals (boot, defaults, test builders)
-    # carry no same-structure projection and are exactly the constructions this
-    # sweep must not flag.
+    # elaborated value for a constructor application whose argument at a taint
+    # word is not that word's own projection.  What that sweeps in beyond the two
+    # writers is the constructions, named in `TAINT_WORD_CONSTRUCTIONS` with what
+    # each builds and reconciled in both directions.
     if field_unresolved:
         failures.append(
-            "  the probe could not resolve `SystemState.declassificationTaint`'s field "
-            "index — the direct-write sweep ran on nothing.  Fails closed.")
+            "  the probe could not resolve the field index of: "
+            + ", ".join(field_unresolved)
+            + " — the direct-write sweep ran on nothing for it.  Fails closed.")
+    if api_unresolved:
+        failures.append(
+            "  declared taint-writing API that names no constant (swept for nothing, "
+            "so its callers would read as none):\n      "
+            + "\n      ".join(api_unresolved))
     # No auxiliary filter here either, and for the same reason: `CF_FIELD_WRITER`
     # is reported through `cfReportName` too, so these names are owners.
     unexpected_field = sorted(w for w in field_writers
-                              if w not in DECLARED_FIELD_WRITERS)
+                              if w not in DECLARED_FIELD_WRITERS
+                              and w not in TAINT_WORD_CONSTRUCTIONS)
     if unexpected_field:
         failures.append(
-            "  constants write `SystemState.declassificationTaint` directly, outside "
-            "the declared writer:\n      " + "\n      ".join(unexpected_field[:12]))
+            "  constants write a thread's or a notification's taint words directly, "
+            "outside the declared writers and constructions:\n      "
+            + "\n      ".join(unexpected_field[:12]))
+    missing_field = sorted(w for w in DECLARED_FIELD_WRITERS if w not in field_writers)
+    if missing_field:
+        failures.append(
+            "  declared taint-word writers the sweep no longer reports (a writer that "
+            "writes nothing, or a blind sweep):\n      " + "\n      ".join(missing_field))
+    bad_kind = sorted(
+        f"{c} ({kind})" for c, (kind, _) in TAINT_WORD_CONSTRUCTIONS.items()
+        if kind not in TAINT_WORD_CONSTRUCTION_KINDS
+        or (c in field_writers and (c in open_writers) != (kind == "reads")))
+    if bad_kind:
+        failures.append(
+            "  `TAINT_WORD_CONSTRUCTIONS` entries whose kind disagrees with their term "
+            "(a `builds`/`clears` entry writes open taint words -- provenance moving "
+            "outside the declared writers -- or a `reads` entry writes only closed "
+            "ones):\n      " + "\n      ".join(bad_kind))
+    stale_ctor = sorted(c for c in TAINT_WORD_CONSTRUCTIONS if c not in field_writers)
+    if stale_ctor:
+        failures.append(
+            "  `TAINT_WORD_CONSTRUCTIONS` entries that no longer build a taint word "
+            "(stale — delete them, or the exemption hides the next writer of that "
+            "name):\n      " + "\n      ".join(stale_ctor))
 
     if noroot:
         failures.append(

@@ -13,9 +13,9 @@ that created it — a prerequisite this module depends on rather than restates.
 
 **Why a leaf.**  `DeclassificationEvent.predecessorTags` (SM9.D.13a) carries a
 taint snapshot, `AuditRecord.lean` sits below `Model/State.lean`, and the
-mounted table is a `SystemState` field — so the *value* type has to sit below
-all three.  It imports `SeLe4n.Prelude` and nothing else; the table type, the
-propagation planners and the live seam are `InformationFlow/TaintPropagation.lean`,
+objects carry their taint as words (`Model/Object/Types.lean`) — so the *value*
+type has to sit below all three.  It imports `SeLe4n.Prelude` and nothing else;
+the propagation planners and the live seam are `InformationFlow/TaintPropagation.lean`,
 above `Model/State.lean`.
 
 **Why the bound is a field of the type and not an invariant.**  §6 of
@@ -227,7 +227,7 @@ with a top.
 
 `tags_bounded` is the structural bound §6 of the plan calls for: it holds of
 every value of the type, so no writer owes a capacity obligation and no
-`proofLayerInvariantBundle` conjunct reads the mounted table. -/
+`proofLayerInvariantBundle` conjunct reads the objects' taint words. -/
 structure DeclassificationTaint where
   /-- Tainted by everything: the top of the order. -/
   saturated : Bool
@@ -742,7 +742,7 @@ type rather than as a field access.
 
 This is what §6 of the plan means by "bounded by its type": it holds of *every*
 value, including one a frame lemma carried across an unrelated transition, so no
-writer owes a capacity obligation and the mounted table needs no
+writer owes a capacity obligation and the objects' taint words need no
 `proofLayerInvariantBundle` conjunct. -/
 theorem taint_bounded_structurally (T : DeclassificationTaint) :
     T.tags.length ≤ maxTaintTags := T.tags_bounded
@@ -1013,355 +1013,95 @@ theorem taintWordsSaturate_over_approximates :
   exact ⟨a.toWords, b.toWords, t, by simpa using ha, by simpa using hb, by simpa using hj⟩
 
 -- ============================================================================
--- §6  WS-SM SM9.D.2 — the side table
+-- §6  WS-ZA ZA5.12 — the taint at every id, as the specification reads it
 -- ============================================================================
 
-/-- WS-SM SM9.D.2: the association list a `TaintTable` is, before the wrapper.
+/-- WS-ZA ZA5.12: **the taint at every object id** — the value the readers and
+the propagation theorems are stated over.
 
-Kept **canonical**: no entry ever holds `DeclassificationTaint.empty`, so the
-list's length is the number of objects that currently carry provenance rather
-than a record of how many writes have happened.  `eraseKey` is what maintains
-that, and it is why `clearAt` genuinely shrinks the table. -/
-def TaintEntries := List (SeLe4n.ObjId × DeclassificationTaint)
+The taint lives in the object it describes (§5a): a thread's or a
+notification's words.  `SystemState.declassificationTaint` reads it off the
+store at one key, the empty taint where no thread or notification is, so this
+is no stored table: it is a function, built by the specification and called by
+no compiled code (the compiled taint step reads and writes the words in place).
 
-/-- WS-SM SM9.D.2: the provenance recorded for `oid`, or none at all.
+Through WS-ZA ZA5.11 this type was a keyed association list mounted as a
+`SystemState` field, because a function representation executed on the syscall
+path records history rather than state.  Nothing executes this one, so that
+reason is gone with the field, and the plain function keeps every downstream
+site reading `tbl oid` as it did. -/
+abbrev TaintMap := SeLe4n.ObjId → DeclassificationTaint
 
-Defined by structural recursion rather than through `List.find?` so every lemma
-below is a plain induction on the list, with no `find?`-over-`filter` reasoning
-in the way. -/
-def taintEntriesLookup : TaintEntries → SeLe4n.ObjId → DeclassificationTaint
-  | [], _ => DeclassificationTaint.empty
-  | (k, v) :: rest, o => if k = o then v else taintEntriesLookup rest o
+namespace TaintMap
 
-/-- WS-SM SM9.D.2: drop every entry for `oid`.  Total, and removes duplicates as
-well as the first hit, so the canonical form survives any construction. -/
-def taintEntriesErase : TaintEntries → SeLe4n.ObjId → TaintEntries
-  | [], _ => []
-  | (k, v) :: rest, o =>
-      if k = o then taintEntriesErase rest o else (k, v) :: taintEntriesErase rest o
+/-- No object carries provenance. -/
+def empty : TaintMap := fun _ => DeclassificationTaint.empty
 
-@[simp] theorem taintEntriesLookup_erase_self (l : TaintEntries) (o : SeLe4n.ObjId) :
-    taintEntriesLookup (taintEntriesErase l o) o = DeclassificationTaint.empty := by
-  induction l with
-  | nil => rfl
-  | cons p rest ih =>
-    obtain ⟨k, v⟩ := p
-    by_cases h : k = o
-    · simp [taintEntriesErase, h, ih]
-    · simp [taintEntriesErase, taintEntriesLookup, h, ih]
-
-@[simp] theorem taintEntriesLookup_erase_ne (l : TaintEntries) {o o' : SeLe4n.ObjId}
-    (h : o' ≠ o) :
-    taintEntriesLookup (taintEntriesErase l o) o' = taintEntriesLookup l o' := by
-  induction l with
-  | nil => rfl
-  | cons p rest ih =>
-    obtain ⟨k, v⟩ := p
-    by_cases hk : k = o
-    · subst hk
-      have hne : ¬ (k = o') := fun hc => h hc.symm
-      simpa [taintEntriesErase, taintEntriesLookup, hne] using ih
-    · by_cases hk' : k = o'
-      · simp [taintEntriesErase, taintEntriesLookup, hk', h]
-      · simpa [taintEntriesErase, taintEntriesLookup, hk, hk'] using ih
-
-/-- WS-SM SM9.D.2: `o` has no entry in this list.
-
-Structural recursion rather than `∀ p ∈ l, p.1 ≠ o`, for the same reason
-`taintEntriesLookup` is: every lemma below is then a plain induction with no
-membership reasoning in the way. -/
-def TaintEntries.NoKey (o : SeLe4n.ObjId) : TaintEntries → Prop
-  | [] => True
-  | (k, _) :: rest => k ≠ o ∧ TaintEntries.NoKey o rest
-
-/-- WS-SM SM9.D.2: **the canonical form** — at most one entry per object, and no
-entry holding the empty taint.
-
-This is the property the table's size claim rests on: with it, the list's length
-*is* the number of objects currently carrying provenance rather than a record of
-how many writes have happened.  It is a **field of `TaintTable`** rather than a
-sentence in its docstring, because an invariant maintained only by convention is
-one a later constructor breaks silently — and here the convention was doing real
-work, since an unconstrained list admits duplicate and empty-valued rows that
-reintroduce exactly the unbounded growth the keyed representation removed. -/
-def TaintEntries.Canonical : TaintEntries → Prop
-  | [] => True
-  | (k, v) :: rest =>
-      v ≠ DeclassificationTaint.empty ∧ TaintEntries.NoKey k rest ∧
-        TaintEntries.Canonical rest
-
-theorem TaintEntries.noKey_erase_self (o : SeLe4n.ObjId) :
-    ∀ (l : TaintEntries), TaintEntries.NoKey o (taintEntriesErase l o) := by
-  intro l
-  induction l with
-  | nil => trivial
-  | cons p rest ih =>
-    obtain ⟨k, _⟩ := p
-    by_cases h : k = o
-    · simpa [taintEntriesErase, h] using ih
-    · simp only [taintEntriesErase, if_neg h]
-      exact ⟨h, ih⟩
-
-theorem TaintEntries.noKey_erase (o k : SeLe4n.ObjId) :
-    ∀ (l : TaintEntries), TaintEntries.NoKey k l →
-      TaintEntries.NoKey k (taintEntriesErase l o) := by
-  intro l
-  induction l with
-  | nil => intro _; trivial
-  | cons p rest ih =>
-    obtain ⟨kk, _⟩ := p
-    intro h
-    by_cases hk : kk = o
-    · simpa [taintEntriesErase, hk] using ih h.2
-    · simp only [taintEntriesErase, if_neg hk]
-      exact ⟨h.1, ih h.2⟩
-
-theorem TaintEntries.canonical_erase (o : SeLe4n.ObjId) :
-    ∀ (l : TaintEntries), TaintEntries.Canonical l →
-      TaintEntries.Canonical (taintEntriesErase l o) := by
-  intro l
-  induction l with
-  | nil => intro _; trivial
-  | cons p rest ih =>
-    obtain ⟨k, _⟩ := p
-    intro h
-    by_cases hk : k = o
-    · simpa [taintEntriesErase, hk] using ih h.2.2
-    · simp only [taintEntriesErase, if_neg hk]
-      exact ⟨h.1, TaintEntries.noKey_erase o k rest h.2.1, ih h.2.2⟩
-
-theorem TaintEntries.ne_of_noKey (k : SeLe4n.ObjId) :
-    ∀ (l : List (SeLe4n.ObjId × DeclassificationTaint)), TaintEntries.NoKey k l →
-      ∀ p ∈ l, p.1 ≠ k := by
-  intro l
-  induction l with
-  | nil => intro _ p hp; cases hp
-  | cons q rest ih =>
-    obtain ⟨_, _⟩ := q
-    intro h p hp
-    cases hp with
-    | head => exact h.1
-    | tail _ hrest => exact ih h.2 p hrest
-
-/-- WS-SM SM9.D.2: **every row of a canonical list is live** — the lookup returns
-it, and it is not the empty taint.
-
-This is what the canonicity field buys, stated so it cannot quietly stop being
-true: no row is a duplicate shadowed by an earlier one, and none is an empty
-value occupying space, so the list's length counts objects that currently carry
-provenance.  Without the field this was a docstring sentence that any
-`TaintTable.mk` could falsify without a single taint value changing. -/
-theorem TaintEntries.live_of_canonical :
-    ∀ (l : List (SeLe4n.ObjId × DeclassificationTaint)), TaintEntries.Canonical l →
-      ∀ p ∈ l,
-        taintEntriesLookup l p.1 = p.2 ∧ p.2 ≠ DeclassificationTaint.empty := by
-  intro l
-  induction l with
-  | nil => intro _ p hp; cases hp
-  | cons q rest ih =>
-    obtain ⟨kk, v⟩ := q
-    intro h p hp
-    cases hp with
-    | head => exact ⟨by simp [taintEntriesLookup], h.1⟩
-    | tail _ hrest =>
-      have hne : p.1 ≠ kk := TaintEntries.ne_of_noKey kk rest h.2.1 p hrest
-      have hrec := ih h.2.2 p hrest
-      refine ⟨?_, hrec.2⟩
-      have hkk : ¬ (kk = p.1) := fun hc => hne hc.symm
-      simpa [taintEntriesLookup, hkk] using hrec.1
-
-/-- WS-SM SM9.D.2: **the declassification taint side table** — provenance for
-every object id.
-
-A **keyed** table under a total lookup, and both halves of that are
-load-bearing.
-
-*Keyed*, because the table is read and written by `applySyscallTaint` on the
-live syscall path.  It was a bare `SeLe4n.ObjId → DeclassificationTaint`, and a
-function representation records history rather than state: every value-changing
-write closes over the previous table and a lookup walks the chain, so the
-ordinary authorized cycle — a declassified badge stored, then consumed by
-`.notificationWait`, then stored again — added two closures per cycle for ever.
-Guards that elide value-*preserving* writes made the inert case free and left
-that one untouched, because it is the case where the value really does change.
-`Machine.Memory : PAddr → UInt8` was cited as precedent for the function form,
-and that citation was the flaw in the argument: `Machine.Memory` is a
-specification of hardware that is never executed, while this table is.
-
-The association list is bounded by the number of objects that currently carry
-provenance, not by the number of writes — `clearAt` erases rather than storing
-an empty value, so a consumed transport leaves the table smaller than it found
-it.
-
-*Under a total lookup*, because the reason the function form was chosen still
-holds: `RHTable`'s lookup-after-write lemmas take `invExt` (and `erase_ne` a
-capacity bound) as hypotheses, so a hash-table representation would have to
-carry that well-formedness — a seventeenth `proofLayerInvariantBundle` conjunct
-plus an obligation at every writer, which §6 of the plan decides against for all
-three SM9 mounts.  A list needs no such invariant, and the `CoeFun` below keeps
-every downstream site reading `tbl oid` exactly as it did, so the pointwise
-lemmas are unchanged in statement and the frames stay `rfl`. -/
-structure TaintTable where
-  /-- The entries: at most one per object, never empty-valued. -/
-  entries : TaintEntries
-  /-- ...and that is *carried*, not asserted.  `TaintTable.mk` cannot build a
-  table with a duplicate or empty-valued row, so the length claim above holds of
-  every value of this type rather than only of the ones the API happens to
-  produce. -/
-  canonical : TaintEntries.Canonical entries
-
-namespace TaintTable
-
-/-- WS-SM SM9.D.2: a table *is* its lookup, so every existing `tbl oid` reads
-unchanged and no downstream statement moves. -/
-instance : CoeFun TaintTable (fun _ => SeLe4n.ObjId → DeclassificationTaint) :=
-  ⟨fun tbl => taintEntriesLookup tbl.entries⟩
-
-/-- WS-SM SM9.D.2: **the size claim, carried rather than asserted.**
-
-Every entry this table holds is one a lookup actually returns, and none of them
-is empty — so `entries.length` is the number of objects currently carrying
-provenance.  That is the claim the keyed representation was adopted for, and
-until the `canonical` field existed it rested on the API happening not to build
-a duplicate or empty-valued row. -/
-theorem entries_live (tbl : TaintTable) :
-    ∀ p ∈ show List (SeLe4n.ObjId × DeclassificationTaint) from tbl.entries,
-      tbl p.1 = p.2 ∧ p.2 ≠ DeclassificationTaint.empty :=
-  TaintEntries.live_of_canonical tbl.entries tbl.canonical
-
-/-- WS-SM SM9.D.2: no object carries provenance — the boot table. -/
-def empty : TaintTable := ⟨[], trivial⟩
-
-instance : Inhabited TaintTable := ⟨empty⟩
-
-/-- WS-SM SM9.D.2: replace one object's provenance.
-
-Storing `DeclassificationTaint.empty` **erases** rather than recording an empty
-entry, which is what keeps the representation canonical — and therefore what
-makes `clearAt` shrink the table instead of extending it. -/
-def set (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintTable :=
-  if h : T = DeclassificationTaint.empty then
-    ⟨taintEntriesErase tbl.entries oid,
-     TaintEntries.canonical_erase oid tbl.entries tbl.canonical⟩
-  else
-    ⟨(oid, T) :: taintEntriesErase tbl.entries oid,
-     ⟨h, TaintEntries.noKey_erase_self oid tbl.entries,
-      TaintEntries.canonical_erase oid tbl.entries tbl.canonical⟩⟩
+/-- Replace one object's provenance. -/
+def set (tbl : TaintMap) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintMap :=
+  fun o => if o = oid then T else tbl o
 
 /-- WS-SM SM9.D.2: **add provenance to one object**, keeping what it had — the
 propagation primitive.  A sink joins its source's taint in; nothing is ever
-replaced, so a propagation step cannot lose a causal link.
-
-**Value-preserving writes are elided.**  The rationale is no longer the closure
-chain a function representation would have grown — the table is a canonical
-association list now, so `set` rebuilds entries rather than closing over a
-previous table, and a lookup does not walk a write history.  What the guard saves
-is the erase-and-reinsert the rebuild would otherwise perform: joining an empty
-source into an untainted sink — which is what *every* edge of ordinary untainted
-IPC does — would walk the entry list, drop the key and cons it back with a value
-identical to the one removed, on the syscall hot path, for no semantic gain.  The
-guard returns the table itself when the join changes nothing, so a write survives
-only when it actually moves the value.  It is
-observationally invisible (`joinAt_self`/`joinAt_ne` below are unchanged, and
-`joinAt_eq_of_join_eq` states the elided case), because the branch it takes is
-exactly the case where the two tables are already pointwise equal. -/
-def joinAt (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintTable :=
-  let joined := DeclassificationTaint.join (tbl oid) T
-  if joined = tbl oid then tbl else tbl.set oid joined
+replaced, so a propagation step cannot lose a causal link. -/
+def joinAt (tbl : TaintMap) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) : TaintMap :=
+  tbl.set oid (DeclassificationTaint.join (tbl oid) T)
 
 /-- WS-SM SM9.D.12: **forget one object's provenance** — what a consumed
-transport owes, and the only operation in this module that removes a causal
-link.
-
-A framed transport would hand its stale tags to the next unrelated content it
+transport owes, and the only operation here that removes a causal link.  A
+framed transport would hand its stale tags to the next unrelated content it
 carries — a false positive with nothing to do with saturation, which is why
-`staleTaint_is_not_saturation` keeps the two apart.
-
-**Value-preserving clears are elided**, for the reason `joinAt` elides
-value-preserving joins and with more force: `contentFlowClears` empties the
-transport on *every* `.notificationWait` and every direct-to-waiter signal, and
-on ordinary untainted traffic that object's entry is already absent — so an
-unguarded clear would walk the whole entry list looking for a key that is not
-there, on the notification hot path, exactly where the content-derived model made
-clears frequent.  The guard
-returns the table itself when there is nothing to forget; `clearAt_eq_of_empty`
-states that case, and `clearAt_self` / `clearAt_ne` are unchanged, because the
-branch it takes is the one where the two tables are already pointwise equal. -/
-def clearAt (tbl : TaintTable) (oid : SeLe4n.ObjId) : TaintTable :=
-  if tbl oid = DeclassificationTaint.empty then tbl
-  else tbl.set oid DeclassificationTaint.empty
+`staleTaint_is_not_saturation` keeps the two apart. -/
+def clearAt (tbl : TaintMap) (oid : SeLe4n.ObjId) : TaintMap :=
+  tbl.set oid DeclassificationTaint.empty
 
 @[simp] theorem empty_apply (oid : SeLe4n.ObjId) : empty oid = DeclassificationTaint.empty := rfl
 
-@[simp] theorem set_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
+@[simp] theorem set_self (tbl : TaintMap) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
     tbl.set oid T oid = T := by
-  unfold set
-  split
-  · next hT => simpa using hT.symm
-  · simp [taintEntriesLookup]
+  simp [set]
 
-@[simp] theorem set_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
+@[simp] theorem set_ne (tbl : TaintMap) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
     (T : DeclassificationTaint) : tbl.set oid T o = tbl o := by
-  unfold set
-  split
-  · simp [taintEntriesLookup_erase_ne _ h]
-  · simp [taintEntriesLookup, Ne.symm h, taintEntriesLookup_erase_ne _ h]
+  simp [set, h]
 
-@[simp] theorem joinAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
+@[simp] theorem joinAt_self (tbl : TaintMap) (oid : SeLe4n.ObjId) (T : DeclassificationTaint) :
     tbl.joinAt oid T oid = DeclassificationTaint.join (tbl oid) T := by
-  unfold joinAt
-  -- The non-dependent `let` elaborates to `letFun`, which `split` cannot see
-  -- through; `dsimp only` reduces it without touching anything else.
-  dsimp only
-  split
-  · next hEq => exact hEq.symm
-  · simp
+  simp [joinAt]
 
-@[simp] theorem joinAt_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
+@[simp] theorem joinAt_ne (tbl : TaintMap) {oid o : SeLe4n.ObjId} (h : o ≠ oid)
     (T : DeclassificationTaint) : tbl.joinAt oid T o = tbl o := by
-  unfold joinAt
-  dsimp only
-  split
-  · rfl
-  · simp [h]
+  simp [joinAt, h]
 
-/-- WS-SM SM9.D.2 (**the elision is invisible**): when the join changes nothing
-the table is returned unchanged, which is pointwise the same table the
-unconditional `set` would have produced.  The property that lets the hot-path
-guard exist without any theorem about `joinAt` having to know it is there. -/
-theorem joinAt_eq_of_join_eq (tbl : TaintTable) (oid : SeLe4n.ObjId)
+/-- WS-SM SM9.D.2: a join that changes nothing leaves the map as it was. -/
+theorem joinAt_eq_of_join_eq (tbl : TaintMap) (oid : SeLe4n.ObjId)
     (T : DeclassificationTaint) (h : DeclassificationTaint.join (tbl oid) T = tbl oid) :
     tbl.joinAt oid T = tbl := by
-  unfold joinAt
-  simp [h]
+  funext o
+  by_cases ho : o = oid
+  · subst ho; rw [joinAt_self, h]
+  · rw [joinAt_ne _ ho]
 
-@[simp] theorem clearAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) :
+@[simp] theorem clearAt_self (tbl : TaintMap) (oid : SeLe4n.ObjId) :
     tbl.clearAt oid oid = DeclassificationTaint.empty := by
-  unfold clearAt
-  split
-  · next hEmpty => exact hEmpty
-  · simp
+  simp [clearAt]
 
-@[simp] theorem clearAt_ne (tbl : TaintTable) {oid o : SeLe4n.ObjId} (h : o ≠ oid) :
+@[simp] theorem clearAt_ne (tbl : TaintMap) {oid o : SeLe4n.ObjId} (h : o ≠ oid) :
     tbl.clearAt oid o = tbl o := by
-  unfold clearAt
-  split
-  · rfl
-  · simp [h]
+  simp [clearAt, h]
 
-/-- WS-SM SM9.D.2 (**the clear elision is invisible**): an object that carries no
-provenance is left literally alone, which is pointwise the same table the
-unconditional `set` would have produced.  The `clearAt` counterpart of
-`joinAt_eq_of_join_eq`, and what lets the hot-path guard exist without any
-theorem about `clearAt` having to know it is there. -/
-theorem clearAt_eq_of_empty (tbl : TaintTable) (oid : SeLe4n.ObjId)
+/-- WS-SM SM9.D.2: clearing an object that carries no provenance leaves the map
+as it was. -/
+theorem clearAt_eq_of_empty (tbl : TaintMap) (oid : SeLe4n.ObjId)
     (h : tbl oid = DeclassificationTaint.empty) : tbl.clearAt oid = tbl := by
-  unfold clearAt
-  simp [h]
+  funext o
+  by_cases ho : o = oid
+  · subst ho; rw [clearAt_self, h]
+  · rw [clearAt_ne _ ho]
 
-/-- WS-SM SM9.D.2: **joining never forgets** — the table-level no-loss property,
+/-- WS-SM SM9.D.2: **joining never forgets** — the map-level no-loss property,
 lifted from `DeclassificationTaint.contains_join_of_left`. -/
-theorem contains_joinAt_of_contains (tbl : TaintTable) (oid o : SeLe4n.ObjId)
+theorem contains_joinAt_of_contains (tbl : TaintMap) (oid o : SeLe4n.ObjId)
     (T : DeclassificationTaint) {t : Nat} (h : (tbl o).contains t = true) :
     ((tbl.joinAt oid T) o).contains t = true := by
   by_cases hEq : o = oid
@@ -1370,96 +1110,17 @@ theorem contains_joinAt_of_contains (tbl : TaintTable) (oid o : SeLe4n.ObjId)
 
 /-- WS-SM SM9.D.2: **joining records the source's identities at the sink** — the
 half every propagation theorem consumes. -/
-theorem contains_joinAt_of_source (tbl : TaintTable) (oid : SeLe4n.ObjId)
+theorem contains_joinAt_of_source (tbl : TaintMap) (oid : SeLe4n.ObjId)
     (T : DeclassificationTaint) {t : Nat} (h : T.contains t = true) :
     ((tbl.joinAt oid T) oid).contains t = true := by
   simp only [joinAt_self]; exact DeclassificationTaint.contains_join_of_right h
 
 /-- WS-SM SM9.D.12: **a cleared object carries nothing** — the property
 `applySyscallTaint_cleared_empty` is stated over. -/
-@[simp] theorem contains_clearAt_self (tbl : TaintTable) (oid : SeLe4n.ObjId) (t : Nat) :
+@[simp] theorem contains_clearAt_self (tbl : TaintMap) (oid : SeLe4n.ObjId) (t : Nat) :
     ((tbl.clearAt oid) oid).contains t = false := by
   simp only [clearAt_self]; exact DeclassificationTaint.contains_empty t
 
-/-! ### WS-SM SM9.D.2 — the table is bounded by what it holds, not by its history
-
-The reason the representation is keyed rather than functional.  A function-backed
-table recorded every write, so the store/consume cycle ordinary authorized
-notification traffic performs — a declassified badge stored, taken by
-`.notificationWait`, stored again — grew it without bound and made lookups of
-unrelated objects walk the whole history.  These three say that cannot happen
-here: an erase never grows the list, it is idempotent, and therefore one full
-cycle leaves the table no larger than it started. -/
-
-theorem taintEntriesErase_length_le (l : TaintEntries) (o : SeLe4n.ObjId) :
-    (taintEntriesErase l o).length ≤ l.length := by
-  induction l with
-  | nil => exact Nat.le_refl 0
-  | cons p rest ih =>
-    obtain ⟨k, v⟩ := p
-    by_cases hk : k = o
-    · simp only [taintEntriesErase, if_pos hk, List.length_cons]
-      exact Nat.le_succ_of_le ih
-    · simp only [taintEntriesErase, if_neg hk, List.length_cons]
-      exact Nat.succ_le_succ ih
-
-theorem taintEntriesErase_idem (l : TaintEntries) (o : SeLe4n.ObjId) :
-    taintEntriesErase (taintEntriesErase l o) o = taintEntriesErase l o := by
-  induction l with
-  | nil => rfl
-  | cons p rest ih =>
-    obtain ⟨k, v⟩ := p
-    by_cases hk : k = o
-    · simp only [taintEntriesErase, if_pos hk]; exact ih
-    · simp only [taintEntriesErase, if_neg hk]; rw [ih]
-
-/-- **A store then a consume leaves exactly the erase.**
-
-Computing the composition rather than bounding each half: both branches of `set`
-collapse to the same list once the clear runs, because a clear at the key the
-set just wrote removes what it wrote.  This is what makes the cycle bound tight
-rather than off by the cons. -/
-theorem clearAt_set_entries (tbl : TaintTable) (oid : SeLe4n.ObjId)
-    (T : DeclassificationTaint) :
-    ((tbl.set oid T).clearAt oid).entries = taintEntriesErase tbl.entries oid := by
-  by_cases hT : T = DeclassificationTaint.empty
-  · subst hT
-    unfold clearAt
-    rw [if_pos (set_self tbl oid DeclassificationTaint.empty)]
-    simp [set]
-  · unfold clearAt
-    rw [if_neg (by rw [set_self]; exact hT)]
-    have hentries : ((tbl.set oid T).set oid DeclassificationTaint.empty).entries
-        = taintEntriesErase (taintEntriesErase tbl.entries oid) oid := by
-      simp [set, hT, taintEntriesErase]
-    rw [hentries]
-    exact taintEntriesErase_idem _ _
-
-/-- **A store-then-consume cycle leaves the table no larger.**
-
-The property the functional representation could not have: `joinAt` then
-`clearAt` at the same key is exactly the notification cycle — a declassified
-badge stored, then taken by `.notificationWait` — and it returns a table bounded
-by the one it started from rather than one two writes longer.
-
-The bound is on *entries*, which is what a lookup walks, so an object's read cost
-depends on how many objects currently carry provenance and never on how many
-times any of them has been written. -/
-theorem storeThenClear_no_growth (tbl : TaintTable) (oid : SeLe4n.ObjId)
-    (T : DeclassificationTaint) :
-    ((tbl.joinAt oid T).clearAt oid).entries.length ≤ tbl.entries.length := by
-  unfold joinAt
-  dsimp only
-  split
-  · -- The join changed nothing, so the cycle is just the clear.
-    unfold clearAt
-    split
-    · exact Nat.le_refl _
-    · simp only [set]
-      exact taintEntriesErase_length_le _ _
-  · rw [clearAt_set_entries]
-    exact taintEntriesErase_length_le _ _
-
-end TaintTable
+end TaintMap
 
 end SeLe4n.Kernel

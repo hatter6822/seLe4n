@@ -124,10 +124,10 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
 /-- State-level agreement over everything both phases model.
 
 The object store is compared over the live index **and** the frozen index, so an
-object appearing on one side only is a disagreement.  The taint table is
-compared at every key either side holds — the frozen operations write it, and
-three of the five recorded divergences were provenance recorded against the
-wrong carrier, which no object comparison can see.  The **run queue** is
+object appearing on one side only is a disagreement.  The taint is compared with
+the objects it lives in — a thread's and a notification's taint words are among
+the fields `frozenObjectAgrees` compares — so provenance recorded against the
+wrong carrier is an object disagreement.  The **run queue** is
 compared in both directions and by priority, because whether a woken thread can
 be selected is not visible in its TCB. -/
 def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
@@ -142,14 +142,6 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
          | some f, some l => frozenObjectAgrees f l
          | none,   none   => true
          | _, _           => false)
-  let taintKeys :=
-    (show List (SeLe4n.ObjId × SeLe4n.Kernel.DeclassificationTaint)
-       from fs.declassificationTaint.entries).map Prod.fst
-      ++ (show List (SeLe4n.ObjId × SeLe4n.Kernel.DeclassificationTaint)
-            from ls.declassificationTaint.entries).map Prod.fst
-  let taintAgree :=
-    taintKeys.all (fun oid =>
-      fs.declassificationTaint oid == ls.declassificationTaint oid)
   -- The frozen phase is single-core by construction, and `freeze` takes the
   -- scheduler's state from the boot core; comparing against any other core would
   -- be comparing against something the frozen side never modelled.
@@ -187,7 +179,7 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
       (fs.scheduler.byPriority.get? prio).getD [] == (lb.get? prio).getD [])
   -- The derivation tree's stored part, its edge bound: its edges are a ghost
   -- (WS-ZA ZA5.3 part 5), read through the slot links each CNode arm compares.
-  objectsAgree && taintAgree && queueAgree
+  objectsAgree && queueAgree
     && fs.cdt.edgeBound == ls.cdt.edgeBound
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId

@@ -171,6 +171,15 @@ run_check "BUILD" lake build SeLe4n.Testing.StoreReadClassificationCensus
 # build failure rather than a reading nobody did.
 run_check "BUILD" lake build SeLe4n.Testing.KernelTransitionReachabilityCensus
 
+# WS-ZA ZA5.12: no compiled path reads the specification's taint map.  The
+# stored table is gone; `SystemState.declassificationTaint` decodes the thread
+# and notification words at a key and is what the theorems are stated over.
+# Walked from every committing `@[export]` along what the compiler runs (a
+# `@[csimp]` or `@[implemented_by]` replacement in place of the body it
+# replaces), the reader must be unreachable; the specification dispatcher,
+# walked into its own body, must reach it, so the census can fire.
+run_check "BUILD" lake build SeLe4n.Testing.TaintReaderCompiledReachCensus
+
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
 # round — `.tcbResume`, `.send`, `.tcbSetPriority`/`.tcbSetMCPriority` — each

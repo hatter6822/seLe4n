@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.Object.DerivationLinks
+import SeLe4n.Kernel.InformationFlow.TaintWordJoin
 
 /-!
 # The capability slots of an object
@@ -538,6 +539,35 @@ theorem tableBackLinks_withTaintWords {o : KernelObject} (h : o.holdsTaint = tru
 @[simp] theorem withTaintWords_withTaintWords (o : KernelObject) (w w' : SeLe4n.Kernel.TaintWords) :
     (o.withTaintWords w).withTaintWords w' = o.withTaintWords w' := by
   cases o <;> rfl
+
+/-- WS-ZA ZA5.12: **the object's taint words joined with `w`** — the words of
+the join of what the object's words and `w` decode to (`TaintWords.join`),
+written into a thread or a notification; every other kind holds no words and
+is returned as it is, so a join at a key holding no thread or notification
+lands on nothing. -/
+@[inline] def joinTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) : KernelObject :=
+  o.withTaintWords (SeLe4n.Kernel.TaintWords.join o.taintWords w)
+
+/-- WS-ZA ZA5.12: `joinTaintWords` as the taint step compiles it — out of line,
+the source's words handed over as scalars (`joinTaintScalars_eq`), so the
+caller builds no `TaintWords` and the join's scalar code
+(`TaintWords.joinFlat`) is emitted once.  The object is rebuilt over its own
+cell. -/
+@[noinline] def joinTaintScalars (o : KernelObject) (t0 t1 t2 t3 t4 t5 t6 t7 : UInt64)
+    (c : Nat) (s : Bool) : KernelObject :=
+  o.joinTaintWords ⟨t0, t1, t2, t3, t4, t5, t6, t7, c, s⟩
+
+theorem joinTaintScalars_eq (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    o.joinTaintScalars w.tag0 w.tag1 w.tag2 w.tag3 w.tag4 w.tag5 w.tag6 w.tag7 w.count
+      w.saturated = o.joinTaintWords w := rfl
+
+/-- A join keeps the kind. -/
+@[simp] theorem holdsTaint_joinTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.joinTaintWords w).holdsTaint = o.holdsTaint := holdsTaint_withTaintWords _ _
+
+/-- Erasure forgets a join. -/
+@[simp] theorem eraseTaint_joinTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.joinTaintWords w).eraseTaint = o.eraseTaint := eraseTaint_withTaintWords _ _
 
 /-- A word write keeps the kind. -/
 @[simp] theorem objectType_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :

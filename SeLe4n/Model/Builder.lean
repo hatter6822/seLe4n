@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.IntermediateState
 import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
+import SeLe4n.Kernel.InformationFlow.TaintPropagation
 
 /-!
 # Q3-B: Builder Operations — Invariant-Preserving State Construction
@@ -205,21 +206,32 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
 
 /-- **Seed an object's declassification provenance.**
 
-`declassificationTaint` is named by none of the four builder obligations — it is
-a `TaintTable`, not one of the RHTables `allTablesInvExtK` quantifies over, and
-the per-object and lifecycle obligations do not mention it — so every proof
-carries over unchanged.  Stated as its own operation rather than left to a record
+WS-ZA ZA5.12: the taint lives in the object it describes, so the seed writes
+`t`'s words into the thread or notification at `oid` (`KernelObject.withTaintWords`);
+every other kind holds none and is left as it is.  The write moves only taint
+words (`SystemState.mapObjectAt_objectsAgreeOffTaint`), so the store keeps its
+table invariant, every CNode's slots and every VSpaceRoot's mappings, and every
+object keeps its kind.  Stated as its own operation rather than left to a record
 update at the use site: updating `IntermediateState.state` in place makes Lean
 re-check the whole nested `hAllTables` conjunction against the new term, which
 does not terminate within the default heartbeat budget. -/
 def withTaint (ist : IntermediateState) (oid : SeLe4n.ObjId)
     (t : SeLe4n.Kernel.DeclassificationTaint) : IntermediateState where
-  state := { ist.state with
-               declassificationTaint := ist.state.declassificationTaint.set oid t }
-  hAllTables := ist.hAllTables
-  hPerObjectSlots := ist.hPerObjectSlots
-  hPerObjectMappings := ist.hPerObjectMappings
-  hLifecycleConsistent := ist.hLifecycleConsistent
+  state := ist.state.mapObjectAt oid (·.withTaintWords t.toWords)
+  hAllTables :=
+    SystemState.onlyObjectsSchedulerDiffer.allTablesInvExtK rfl
+      ⟨SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_invExt _ _ _ ist.hAllTables.objects.1,
+       by simpa [SystemState.mapObjectAt] using ist.hAllTables.objects.2.1,
+       by simpa [SystemState.mapObjectAt] using ist.hAllTables.objects.2.2⟩
+      ist.hAllTables
+  hPerObjectSlots := perObjectSlotsInvariant_holds _
+  hPerObjectMappings := fun id vs h => ist.hPerObjectMappings id vs
+    (((SystemState.mapObjectAt_objectsAgreeOffTaint ist.state oid _
+      (KernelObject.eraseTaint_withTaintWords · _)).inert_iff id rfl).mp h)
+  hLifecycleConsistent :=
+    (SystemState.mapObjectAt_objectsAgreeOffTaint ist.state oid _
+      (KernelObject.eraseTaint_withTaintWords · _)).objectTypeMetadataConsistent rfl
+      ist.hLifecycleConsistent
 
 -- ============================================================================
 -- Q3-B.7: mapPage — insert a page mapping into a VSpaceRoot

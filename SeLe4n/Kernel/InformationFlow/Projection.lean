@@ -983,12 +983,10 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
 
 /-- WS-ZA ZA5.11: **a step that writes only taint words is invisible to every
 observer** — the projection reads the store through `projectKernelObject`,
-which strips the words on every kind (`projectKernelObject_eraseTaint`), and
-reads no taint table. -/
+which strips the words on every kind (`projectKernelObject_eraseTaint`). -/
 theorem projectState_of_objectsAgreeOffTaint (ctx : LabelingContext) (observer : IfObserver)
     {st st' : SystemState} (h : SystemState.objectsAgreeOffTaint st st')
-    (hF : st' = { st with objects := st'.objects,
-                          declassificationTaint := st'.declassificationTaint }) :
+    (hF : st' = { st with objects := st'.objects }) :
     projectState ctx observer st' = projectState ctx observer st := by
   have hO : projectObjects ctx observer st' = projectObjects ctx observer st := by
     funext oid

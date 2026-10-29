@@ -1074,7 +1074,7 @@ theorem onCore_declassificationRefusals (ctx : LabelingContext) (L : SecurityLab
       = ObservableState.onCore ctx c L s :=
   onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- SM9.D.6: the mounted declassification **taint side table** is invisible on
+/-- SM9.D.6: an object's declassification **taint words** are invisible on
 every core.
 
 The read-set half of `declassificationTaint_write_preserves_projection`.  Both
@@ -1083,13 +1083,22 @@ says the entry seam's propagation write moves no observer's view, and being
 outside the per-core read set says the same on a core other than the one the
 propagating syscall executed on — which is the statement the cross-core
 non-interference inventory consumes for the content-moving arms, every one of
-which can run on any core. -/
+which can run on any core.  Since WS-ZA ZA5.12 the taint lives only in the
+threads' and notifications' words, so the write this states is the slot write
+of an object's words. -/
 theorem onCore_declassificationTaint (ctx : LabelingContext) (L : SecurityLabel)
-    (s : SystemState) (c : CoreId)
-    (v : SeLe4n.Kernel.TaintTable) :
-    ObservableState.onCore ctx c L { s with declassificationTaint := v }
-      = ObservableState.onCore ctx c L s :=
-  onCore_perCore_independence ctx L rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+    (s : SystemState) (c : CoreId) (k : SeLe4n.ObjId) (w : SeLe4n.Kernel.TaintWords) :
+    ObservableState.onCore ctx c L
+        { s with objects := s.objects.mapValueAt k (·.withTaintWords w) }
+      = ObservableState.onCore ctx c L s := by
+  unfold ObservableState.onCore projectStateOnCore
+  rw [projectState_of_objectsAgreeOffTaint ctx _ (fun j => by
+      simp only [RHTable_getElem?_eq_get?, SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt,
+        beq_iff_eq]
+      split
+      · simp only [Option.map_map, Function.comp_def, KernelObject.eraseTaint_withTaintWords]
+      · rfl) rfl]
+  rfl
 
 /-- SM8.A.4: the pre-SMP scalar TLB view (the 9th `proofLayerInvariantBundle`
 conjunct's subject) is invisible on every core, completing the sweep over the

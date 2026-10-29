@@ -3952,18 +3952,21 @@ theorem declassificationRefusals_write_preserves_projection
     projectState ctx observer { st with declassificationRefusals := ledger } =
       projectState ctx observer st := rfl
 
-/-- WS-SM SM9.D.6: **a write to the declassification taint side table is
+/-- WS-SM SM9.D.6: **a write of an object's declassification taint words is
 invisible to every observer.**
 
 The provenance analogue of the two theorems above, and the one whose exclusion
 points in a third direction. The trail is excluded because it records
 downgrades that happened; the ledger because it records attempts that were
-refused. The taint table records *which subjects and objects hold content
-released by which downgrades* — a per-object read of it would tell a low
-observer that a particular endpoint carried content from a particular high→low
-release, which is the boundary crossing itself rather than a fact about it.
+refused. The taint records *which subjects and objects hold content released by
+which downgrades* — a per-object read of it would tell a low observer that a
+particular endpoint carried content from a particular high→low release, which
+is the boundary crossing itself rather than a fact about it.  Since WS-ZA
+ZA5.12 the taint lives only in the threads' and notifications' words, so the
+write this states is the slot write of an object's words, which the projection
+strips on every kind (`projectState_of_objectsAgreeOffTaint`).
 
-Unlike the trail and the ledger this field has **no reader at all**: no syscall
+Unlike the trail and the ledger the taint has **no reader at all**: no syscall
 exports it, so the §3.7 reader-visibility inventory records it as owing neither
 an observational-equivalence clause nor a hidden-write argument *yet*. What a
 monitor sees of it is the per-event snapshot
@@ -3971,9 +3974,17 @@ monitor sees of it is the per-event snapshot
 clearance exactly as the epoch is. A future reader inherits both obligations. -/
 theorem declassificationTaint_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (tbl : SeLe4n.Kernel.TaintTable) :
-    projectState ctx observer { st with declassificationTaint := tbl } =
-      projectState ctx observer st := rfl
+    (k : SeLe4n.ObjId) (w : SeLe4n.Kernel.TaintWords) :
+    projectState ctx observer
+        { st with objects := st.objects.mapValueAt k (·.withTaintWords w) } =
+      projectState ctx observer st :=
+  projectState_of_objectsAgreeOffTaint ctx observer (fun j => by
+      simp only [RHTable_getElem?_eq_get?, SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt,
+        beq_iff_eq]
+      split
+      · simp only [Option.map_map, Function.comp_def, KernelObject.eraseTaint_withTaintWords]
+      · rfl)
+    rfl
 
 -- ============================================================================
 -- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)

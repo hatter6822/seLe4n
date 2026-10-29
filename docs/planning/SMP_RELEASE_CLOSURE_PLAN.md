@@ -226,7 +226,8 @@ lives in the plan that owns the work.
   brackets on `schedulerLockBracketDomain` over one unified footprint spanning
   both domains, sixteen arms declare a scheduler footprint, and each carries a
   write-coverage proof.  What SM10 must still not read as covered is the
-  *taint table*, the one `UncoveredLockDomain` entry left.
+  *taint words' per-key commit* (`taintWordsPerKeyCommit`), the one
+  `UncoveredLockDomain` entry left.
 - **Fine-lock migration Track D — commit partitioning**
   ([`SMP_FINE_LOCK_MIGRATION_PLAN.md`](SMP_FINE_LOCK_MIGRATION_PLAN.md) §4,
   PRs 10–13), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
@@ -262,7 +263,7 @@ lives in the plan that owns the work.
   `v0.34.89`.  The syscall seam's own wake targets
   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed at
   `v0.35.181` (RR8.12 Cut C6h), so the scheduler domain is covered end to end;
-  Track D's completion must not be read as covering the *taint table*, which is
+  Track D's completion must not be read as covering the *taint words' per-key commit*, which is
   the one entry left.
 - Tier 0..5 tests green at HEAD.
 
@@ -287,7 +288,7 @@ a phase that claimed it.
 | WS-RA complete | **Met, with SM10.1's inherited half named** | `Architecture.timeoutFrame` and `Architecture.cancelledIpcFrame` resolve in the elaborated environment and `KernelError.ipcCancelled` is present, so §9's staging closed at `v0.34.67` as this section records.  What SM10.1 still owes is **delivery** at the context restore (BP7) |
 | WS-DT complete | **Met** | `dispatchCapabilityOnly_preserves_ipcInvariantFull` (production) and the two staged payoffs all resolve; the RR3.1 de-threading gate reports zero post-state bindings over all 178 bundle statements |
 | Fine-lock Tracks B and C landed | **Met** | `declaredFootprintSyscall` answers `true` on exactly **8 of 35** arms and `lockSetForSyscall_undeclared_none` pins the rest; the seam declares through its `BracketSpec` (`syscallDispatchBracket`, since WS-LS LS2.4; `runUnderDeclaredLockSet` before it) |
-| Fine-lock Track D re-pointed; the scheduler domain | **Met, and the qualifier retired** | `UncoveredLockDomain` has **one** constructor in the environment — `taintTablePerKeyStore`.  `syscallSeamSchedulerDomain` is gone (RR8.12 Cut C6h, `v0.35.181`), so the bullet above no longer warns SM10 off the scheduler path |
+| Fine-lock Track D re-pointed; the scheduler domain | **Met, and the qualifier retired** | `UncoveredLockDomain` has **one** constructor in the environment — `taintWordsPerKeyCommit`.  `syscallSeamSchedulerDomain` is gone (RR8.12 Cut C6h, `v0.35.181`), so the bullet above no longer warns SM10 off the scheduler path |
 | Tier 0..5 green at HEAD | **Met, with one gate fixed to get there and one honestly NOT RUN** | `test_full.sh --continue` (Tier 0–3), `test_rust.sh`, `test_aarch64_cross_build.sh`, `test_tier4_nightly_candidates.sh` and `test_tier5_cross_language.sh` all exit 0.  With `NIGHTLY_ENABLE_EXPERIMENTAL=1` Tier 4 exits **77** (`SELE4N_SKIP_EXIT`): every check that can run passes and the QEMU boot-check gate reports **NOT RUN**, `qemu-system-aarch64` not being on this container's `PATH` — which is the "honest about what did not run" the readiness plan's box records, not a failure |
 
 **§1's scope statement matches the tree**, with the one qualification §1 already

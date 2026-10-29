@@ -388,7 +388,7 @@ theorem foldInterfaces_declassificationRefusals (ifaces : List InterfaceSpec) (i
 
 theorem foldInterfaces_declassificationTaint (ifaces : List InterfaceSpec) (ist : IntermediateState) :
     (foldInterfaces ifaces ist).state.declassificationTaint = ist.state.declassificationTaint :=
-  by rw [foldInterfaces_state]
+  by rw [foldInterfaces_state]; rfl
 
 theorem foldInterfaces_machine (ifaces : List InterfaceSpec) (ist : IntermediateState) :
     (foldInterfaces ifaces ist).state.machine = ist.state.machine :=
@@ -1977,7 +1977,7 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
        ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && !ep.serviceRegistered) := rfl
 
 /-- A boot **notification** is idle, unwaited and unbadged, and carries clean
-    taint words (the boot records no taint, `tableReferencesRecorded.taintStored`).  `boundTCB` is
+    taint words (the boot records no taint, `SystemState.taintStored`).  `boundTCB` is
     unconstrained here — a boot notification may be pre-bound to a config
     thread; what it may not be bound to is an idle thread, which is the
     reservation's `notificationReferencesReservedIdleSlot`. -/
@@ -2110,7 +2110,7 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     `ipcFaultSend`, WS-ZA ZA4.7) are read only while the thread is blocked
     on a send or call, and the send or fault that blocks it writes them all.
     The taint words must be clean: the boot records no taint, and the table
-    agrees with the words (`tableReferencesRecorded.taintStored`). -/
+    agrees with the words (`SystemState.taintStored`). -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
@@ -3338,8 +3338,6 @@ or satisfy the boot preconditions.
     (createBootObject ist e).state.declassificationAuditEpoch = ist.state.declassificationAuditEpoch := rfl
 @[simp] private theorem createBootObject_declassificationRefusals (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.declassificationRefusals = ist.state.declassificationRefusals := rfl
-@[simp] private theorem createBootObject_declassificationTaint (ist : IntermediateState) (e : ObjectEntry) :
-    (createBootObject ist e).state.declassificationTaint = ist.state.declassificationTaint := rfl
 @[simp] private theorem createBootObject_objects (ist : IntermediateState) (e : ObjectEntry) :
     (createBootObject ist e).state.objects = ist.state.objects.insert e.id e.obj := rfl
 @[simp] private theorem createBootObject_asidTable (ist : IntermediateState) (e : ObjectEntry) :
@@ -3428,14 +3426,6 @@ private theorem foldIrqs_declassificationRefusals (irqs : List IrqEntry)
     (ist : IntermediateState) :
     (foldIrqs irqs ist).state.declassificationRefusals =
       ist.state.declassificationRefusals := by
-  induction irqs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldIrqs_declassificationTaint (irqs : List IrqEntry)
-    (ist : IntermediateState) :
-    (foldIrqs irqs ist).state.declassificationTaint =
-      ist.state.declassificationTaint := by
   induction irqs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
@@ -3535,14 +3525,6 @@ private theorem foldObjects_declassificationRefusals (objs : List ObjectEntry)
     (ist : IntermediateState) :
     (foldObjects objs ist).state.declassificationRefusals =
       ist.state.declassificationRefusals := by
-  induction objs generalizing ist with
-  | nil => rfl
-  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
-
-private theorem foldObjects_declassificationTaint (objs : List ObjectEntry)
-    (ist : IntermediateState) :
-    (foldObjects objs ist).state.declassificationTaint =
-      ist.state.declassificationTaint := by
   induction objs generalizing ist with
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
@@ -5231,20 +5213,6 @@ theorem bootFromPlatform_declassificationRefusals_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_declassificationRefusals_eq, foldInterfaces_declassificationRefusals, 
       foldObjects_declassificationRefusals, foldIrqs_declassificationRefusals,
-      mkEmpty_state_eq_default]
-
-/-- WS-SM SM9.D.5: boot leaves every object untainted, so the taint side table
-after boot is the empty default.  The general bridge that makes "a
-platform-booted system carries no declassification provenance" a fact about
-*any* configuration rather than only about the default state — which is what
-the causal detector's base case rests on: a chain reported on a freshly booted
-system must have been produced by the run, not inherited from the image. -/
-theorem bootFromPlatform_declassificationTaint_eq (config : PlatformConfig) :
-    (bootFromPlatform config).state.declassificationTaint =
-    (default : SystemState).declassificationTaint := by
-  show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_declassificationTaint_eq, foldInterfaces_declassificationTaint, 
-      foldObjects_declassificationTaint, foldIrqs_declassificationTaint,
       mkEmpty_state_eq_default]
 
 /-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
@@ -8036,7 +8004,7 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
   obtain ⟨hI1, hI2⟩ := hIrq
   have hEmptyObj : ∀ k : SeLe4n.ObjId, (default : SystemState).objects[k]? = none := fun k => by
     simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_⟩
   · intro irq n hn
     rw [bootFromPlatformChecked_ok_irqHandlers config ist h] at hn
     rcases foldIrqs_irqHandlers_source _ _ _ _ hn with h0 | ⟨ie, hMem, hH⟩
@@ -8075,28 +8043,31 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
           foldIrqs_irqHandlers_of_mem _ _ (config.wellFormed_irqs_pairwise hWf) ie hieMem,
           hieH, hId]
       | _ => simp [KernelObject.tableBackLinks] at hn
-  · -- The boot records no taint, and every object it installs carries clean
-    -- words: a configured one passed `bootSafeObjectCheck`, and the binding's
-    -- VSpace root holds none.
-    intro k
-    have hTaint : ist.state.declassificationTaint = (default : SystemState).declassificationTaint := by
-      obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
-      rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
-      · exact bootFromPlatform_declassificationTaint_eq config
-      · exact bootFromPlatform_declassificationTaint_eq config
-    rw [hTaint, hD.taintStored k, hEmptyObj k, objTaint_none]
-    cases hO : ist.state.objects[k]? with
-    | none => rfl
-    | some o =>
-      have hW : o.taintWords = {} := by
-        by_cases hb : o.tableBackLinks = ({}, false, {})
-        · simp only [KernelObject.taintWords, hb]
-        · obtain ⟨en, hMem, -, hEo⟩ :=
-            bootFromPlatformChecked_ok_backLinkedObject_of_config config ist h k o hO hb
-          obtain ⟨_, hSafe, -⟩ := bootFromPlatformChecked_ok_shape config ist h
-          exact hEo ▸ bootSafeObjectCheck_taintWords (List.all_eq_true.mp hSafe en hMem)
-      simp only [objTaint, objTableBackLinks_some]
-      rw [show o.tableBackLinks.2.2 = o.taintWords from rfl, hW]; rfl
+
+/-- WS-SM SM9.D.5, WS-ZA ZA5.12: **the checked boot records no taint** — every
+object it installs carries clean words: a configured one passed
+`bootSafeObjectCheck`, and the binding's VSpace root and the idle threads hold
+none.  So a platform-booted system carries no declassification provenance,
+whatever its configuration, which is what the causal detector's base case rests
+on: a chain reported on a freshly booted system must have been produced by the
+run, not inherited from the image. -/
+theorem bootFromPlatformChecked_ok_declassificationTaint (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.declassificationTaint = SeLe4n.Kernel.TaintMap.empty := by
+  funext k
+  rw [SystemState.taintStored, SeLe4n.Kernel.TaintMap.empty_apply]
+  cases hO : ist.state.objects[k]? with
+  | none => rfl
+  | some o =>
+    have hW : o.taintWords = {} := by
+      by_cases hb : o.tableBackLinks = ({}, false, {})
+      · simp only [KernelObject.taintWords, hb]
+      · obtain ⟨en, hMem, -, hEo⟩ :=
+          bootFromPlatformChecked_ok_backLinkedObject_of_config config ist h k o hO hb
+        obtain ⟨_, hSafe, -⟩ := bootFromPlatformChecked_ok_shape config ist h
+        exact hEo ▸ bootSafeObjectCheck_taintWords (List.all_eq_true.mp hSafe en hMem)
+    simp only [objTaint, objTableBackLinks_some]
+    rw [show o.tableBackLinks.2.2 = o.taintWords from rfl, hW]; rfl
 
 /-- The idle store writes no reference table. -/
 theorem foldl_storeIdleThread_referenceTables (L : List SeLe4n.Kernel.Concurrency.CoreId)
