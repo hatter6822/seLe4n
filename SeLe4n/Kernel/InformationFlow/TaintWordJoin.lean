@@ -579,6 +579,28 @@ theorem joinImpl_eq_flat (a b : TaintWords) : joinImpl a b = joinFlat a b := by
   funext a b
   rw [join_eq_impl, joinImpl_eq_flat]
 
+/-- WS-ZA ZA5.12: `singletonWords` as compiled: its two outcomes chosen field by
+field, so a fused origination's singleton reaches the join as scalars
+(`singletonWordsFlat_eq`). -/
+@[inline] def singletonWordsFlat (t : Nat) : TaintWords :=
+  selectWords (decide (t < UInt64.size)) { tag0 := t.toUInt64, count := 1 } topWords
+
+theorem singletonWordsFlat_eq (t : Nat) : singletonWordsFlat t = singletonWords t := by
+  unfold singletonWordsFlat singletonWords
+  rw [selectWords_eq]
+  by_cases h : t < UInt64.size <;> simp [h]
+
+/-- The words a singleton is written as decode to the singleton. -/
+@[simp] theorem decode_singletonWordsFlat (t : Nat) :
+    (singletonWordsFlat t).decode = DeclassificationTaint.singleton t := by
+  rw [singletonWordsFlat_eq, singletonWords_eq, DeclassificationTaint.decode_toWords]
+
+/-- The words a join writes decode to the join of the operands' taints. -/
+@[simp] theorem decode_join (a b : TaintWords) :
+    (join a b).decode = DeclassificationTaint.join a.decode b.decode := by
+  unfold join
+  rw [DeclassificationTaint.decode_toWords]
+
 end TaintWords
 
 end SeLe4n.Kernel

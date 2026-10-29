@@ -1167,6 +1167,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.notificationWaitChecked
   , `SeLe4n.Kernel.notificationWaitCrossCoreDispatch
   , `SeLe4n.Kernel.notificationWaitPark
+  -- WS-ZA ZA5.12: the origination pass over a list of recorded events, the
+  -- statement the fused declassify step's window recursion is proven equal
+  -- to (`originateWindow_eq`); the compiled step runs `originateWindow`.
+  , `SeLe4n.Kernel.originationPass
   , `SeLe4n.Kernel.processReplenishmentsDue
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
