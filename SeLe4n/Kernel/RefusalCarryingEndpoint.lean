@@ -336,25 +336,26 @@ held across the arm is a word, not an `Option` cell. -/
       | none => 0
   | _ => 0
 
-/-- The send's taint step, without the plan: the sender's pre-state taint joins
-the receiver's, table entry and taint words (`sendTaintStep_eq`).  It builds no
-edge list and no plan record. -/
+/-- The send's taint step, without the plan: the sender's words `wT`, captured
+before the arm, join the receiver's taint words (`sendTaintStep_eq`).  It builds
+no edge list and no plan record. -/
 @[inline] def sendTaintStep (headCode : Nat) (tid : SeLe4n.ThreadId)
-    (preTaint : TaintTable) (post : SystemState) : SystemState :=
+    (wT : TaintWords) (post : SystemState) : SystemState :=
   match headCode with
   | r + 1 =>
       let receiver : SeLe4n.ThreadId := ⟨r⟩
-      joinTaintAt post receiver.toObjId (preTaint tid.toObjId)
+      joinTaintAt post receiver.toObjId wT
   | 0 => post
 
 theorem sendTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult)
     (hSend : decoded.syscallId = .send ∨ decoded.syscallId = .call)
-    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
-    (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
+    (preEpoch : Nat) (preLength : Nat) (wT : TaintWords)
+    (hT : wT.decode = st.declassificationTaint tid.toObjId) (post : SystemState) :
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength
+        st.declassificationTaint post =
       (match syscallOperandCap? st tid decoded.capAddr with
-        | some cap => sendTaintStep (sendTaintHeadCode st cap) tid preTaint post
+        | some cap => sendTaintStep (sendTaintHeadCode st cap) tid wT post
         | none => post) := by
   rcases hSend with hSend | hSend <;>
   simp only [syscallTaintPlan, contentFlowClass, hSend, contentFlowEdges, contentFlowClears,
@@ -374,7 +375,8 @@ theorem sendTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
         simp only [Option.bind_some, ← Endpoint.ofOptCode_recvHeadCode]
         cases ep.recvHeadCode <;>
           simp [sendTaintStep, SeLe4n.ThreadId.ofOptCode, applySyscallTaintAfter,
-            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
+            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep,
+            joinTaintAt_toWords_of_decode _ _ hT]
     | _ =>
       simp [sendTaintHeadCode, sendTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
@@ -385,7 +387,7 @@ operand resolved to, every refusal carrying the state it was handed
 @[inline] def sendOperandArmThenTaintR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
-    (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
+    (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
     | none => .error (.invalidCapability, st)
@@ -393,16 +395,17 @@ operand resolved to, every refusal carrying the state it was handed
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
+          withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           match endpointSendCheckedArmR ctx layout rf len tid executingCore cap st with
           | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid preTaint stPost)
+          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
         else .error (.illegalAuthority, st)
 
 theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLength : Nat)
-    (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (st : SystemState) (ref : CSpaceAddr)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hSend : decoded.syscallId = .send)
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
@@ -412,13 +415,14 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     sendOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
         gate.requiredRight
-        preTaint (SystemState.lookupSlotCap st ref) st =
+        (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-        (syscallTaintPlan st tid decoded) preEpoch preLength preTaint) st := by
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hSend, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
     syscallLookupCap, syscallResolveCap, hRef]
-  simp only [sendTaintStep_eq st tid decoded (.inl hSend), hOperand]
+  simp only [sendTaintStep_eq st tid decoded (.inl hSend) (wT := st.taintWordsAt tid.toObjId)
+    (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
@@ -426,7 +430,8 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
         rw [endpointSendCheckedArmR_eq ctx decoded tid executingCore gate cap rf capAddr mi st
           hSend hSlot hFrame hR]
         simp only [RefusalCarrying.ofKernel]
@@ -460,7 +465,7 @@ theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
   have hArm := sendOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr mi hSend hSlot hFrame hR hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hSend] at hArm ⊢
@@ -607,7 +612,7 @@ Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -
 @[inline] def callOperandArmThenTaintR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
-    (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
+    (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
     | none => .error (.invalidCapability, st)
@@ -615,16 +620,17 @@ Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
+          withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           match endpointCallCheckedArmR ctx layout rf len tid executingCore cap st with
           | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid preTaint stPost)
+          | .ok ((), stPost) => .ok ((), sendTaintStep headCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
         else .error (.illegalAuthority, st)
 
 theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLength : Nat)
-    (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (st : SystemState) (ref : CSpaceAddr)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hCall : decoded.syscallId = .call)
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
@@ -634,13 +640,14 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     callOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout rf mi.length tid executingCore
         gate.requiredRight
-        preTaint (SystemState.lookupSlotCap st ref) st =
+        (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-        (syscallTaintPlan st tid decoded) preEpoch preLength preTaint) st := by
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hCall, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
     syscallLookupCap, syscallResolveCap, hRef]
-  simp only [sendTaintStep_eq st tid decoded (.inr hCall), hOperand]
+  simp only [sendTaintStep_eq st tid decoded (.inr hCall) (wT := st.taintWordsAt tid.toObjId)
+    (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
@@ -648,7 +655,8 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
         rw [endpointCallCheckedArmR_eq ctx decoded tid executingCore gate cap rf capAddr mi st
           hCall hSlot hFrame hR]
         simp only [RefusalCarrying.ofKernel]
@@ -682,7 +690,7 @@ theorem dispatchCallCheckedR_eq (ctx : LabelingContext)
   have hArm := callOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length
     st ref rf capAddr mi hCall hSlot hFrame hR hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hCall] at hArm ⊢
@@ -700,11 +708,12 @@ before the arm: the caller the reply object its capability names records
 /-- The reply's taint step is the send's, toward the answered caller. -/
 theorem replyTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (hReply : decoded.syscallId = .reply)
-    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
-    (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
+    (preEpoch : Nat) (preLength : Nat) (wT : TaintWords)
+    (hT : wT.decode = st.declassificationTaint tid.toObjId) (post : SystemState) :
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength
+        st.declassificationTaint post =
       (match syscallOperandCap? st tid decoded.capAddr with
-        | some cap => sendTaintStep (ThreadId.optCode (replyTaintCaller? st cap)) tid preTaint post
+        | some cap => sendTaintStep (ThreadId.optCode (replyTaintCaller? st cap)) tid wT post
         | none => post) := by
   simp only [syscallTaintPlan, contentFlowClass, hReply, contentFlowEdges, contentFlowClears,
     contentFlowBypassed]
@@ -716,7 +725,8 @@ theorem replyTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       simp only [replyTaintCaller?, replyTaintEdges]
       cases (st.getReply? rid).bind (·.caller) <;>
         simp [sendTaintStep, ThreadId.optCode, applySyscallTaintAfter, syscallRecordsDeclassification,
-          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
+          applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep,
+          joinTaintAt_toWords_of_decode _ _ hT]
     | _ =>
       simp [replyTaintCaller?, sendTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
@@ -891,7 +901,7 @@ caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
-    (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
+    (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
     | none => .error (.invalidCapability, st)
@@ -899,17 +909,18 @@ caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let callerCode := ThreadId.optCode (replyTaintCaller? st cap)
+          withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           match endpointReplyCheckedArmR ctx layout rf len extraCaps label tid executingCore cap
               st with
           | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), sendTaintStep callerCode tid preTaint stPost)
+          | .ok ((), stPost) => .ok ((), sendTaintStep callerCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
         else .error (.illegalAuthority, st)
 
 theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLength : Nat)
-    (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (st : SystemState) (ref : CSpaceAddr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (hReply : decoded.syscallId = .reply)
     (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
@@ -917,13 +928,14 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     replyOperandArmThenTaintR ctx layout rf decoded.msgInfo.length decoded.msgInfo.extraCaps
         decoded.msgInfo.label tid executingCore
-        gate.requiredRight preTaint (SystemState.lookupSlotCap st ref) st =
+        gate.requiredRight (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-        (syscallTaintPlan st tid decoded) preEpoch preLength preTaint) st := by
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hReply, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
     syscallLookupCap, syscallResolveCap, hRef]
-  simp only [replyTaintStep_eq st tid decoded hReply, hOperand]
+  simp only [replyTaintStep_eq st tid decoded hReply (wT := st.taintWordsAt tid.toObjId)
+    (hT := decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
@@ -931,7 +943,8 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
         rw [endpointReplyCheckedArmR_eq ctx decoded tid executingCore gate cap layout rf hReply
           hRegs]
         simp only [RefusalCarrying.ofKernel]
@@ -965,7 +978,7 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
   have hArm := replyOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length
     st ref layout rf hReply hRegs hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hReply] at hArm ⊢
@@ -1324,41 +1337,55 @@ the arm: the head of the send queue of the endpoint its capability names
       | none => 0
   | _ => 0
 
-/-- The receive's taint step, without the plan: the sender's pre-state taint
-joins the receiver's, table entry and taint words (`receiveTaintStep_eq`). -/
+/-- The object of the thread a taint code names (`SeLe4n.ThreadId.optCode`'s
+`s + 1` for thread `s`); for the code `0`, naming none, the object of thread
+`0`, which a step taking that code never reads. -/
+@[inline] def threadObjOfCode (code : Nat) : SeLe4n.ObjId :=
+  (⟨code - 1⟩ : SeLe4n.ThreadId).toObjId
+
+/-- The receive's taint step, without the plan: the sender's words `wS`,
+captured before the arm at `threadObjOfCode sourceCode`, join the receiver's
+taint words (`receiveTaintStep_eq`). -/
 @[inline] def receiveTaintStep (sourceCode : Nat) (tid : SeLe4n.ThreadId)
-    (preTaint : TaintTable) (post : SystemState) : SystemState :=
+    (wS : TaintWords) (post : SystemState) : SystemState :=
   match sourceCode with
-  | s + 1 =>
-      let sender : SeLe4n.ThreadId := ⟨s⟩
-      joinTaintAt post tid.toObjId (preTaint sender.toObjId)
+  | _ + 1 => joinTaintAt post tid.toObjId wS
   | 0 => post
 
 theorem receiveTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (hRecv : decoded.syscallId = .receive)
-    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (wS : Capability → TaintWords)
+    (hS : ∀ cap, (wS cap).decode =
+      st.declassificationTaint (threadObjOfCode (receiveTaintSourceCode st cap)))
     (post : SystemState) :
-    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
+    applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength
+        st.declassificationTaint post =
       (match syscallOperandCap? st tid decoded.capAddr with
-        | some cap => receiveTaintStep (receiveTaintSourceCode st cap) tid preTaint post
+        | some cap => receiveTaintStep (receiveTaintSourceCode st cap) tid (wS cap) post
         | none => post) := by
   simp only [syscallTaintPlan, contentFlowClass, hRecv, contentFlowEdges, contentFlowClears,
     contentFlowBypassed]
-  rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
+  rcases syscallOperandCap? st tid decoded.capAddr with _ | cap
   · simp [applySyscallTaintAfter, syscallRecordsDeclassification,
       applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
-  · cases target with
+  · have h := hS cap
+    rcases cap with ⟨target, _, _⟩
+    cases target with
     | object epId =>
-      simp only [receiveTaintSourceCode, receiverTaintEdges]
+      simp only [receiveTaintSourceCode, receiverTaintEdges] at h ⊢
+      revert h
       cases st.getEndpoint? epId with
       | none =>
+        intro _
         simp [receiveTaintStep, applySyscallTaintAfter, syscallRecordsDeclassification,
           applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
       | some ep =>
         simp only [Option.bind_some, ← Endpoint.ofOptCode_sendHeadCode]
-        cases ep.sendHeadCode <;>
+        cases ep.sendHeadCode <;> intro h <;>
+          simp only [threadObjOfCode, Nat.add_sub_cancel] at h <;>
           simp [receiveTaintStep, SeLe4n.ThreadId.ofOptCode, applySyscallTaintAfter,
-            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
+            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow,
+            applyTaintStep, joinTaintAt_toWords_of_decode _ _ h]
     | _ =>
       simp [receiveTaintSourceCode, receiveTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
@@ -1368,7 +1395,7 @@ operand resolved to, every refusal carrying the state it was handed
 (`receiveOperandArmThenTaintR_eq`). -/
 @[inline] def receiveOperandArmThenTaintR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
-    (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
+    (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
     | none => .error (.invalidCapability, st)
@@ -1376,16 +1403,17 @@ operand resolved to, every refusal carrying the state it was handed
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
+          withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           match endpointReceiveCheckedArmR ctx tid len replyAddr executingCore cap st with
           | .error refusal => .error refusal
-          | .ok ((), stPost) => .ok ((), receiveTaintStep sourceCode tid preTaint stPost)
+          | .ok ((), stPost) => .ok ((), receiveTaintStep sourceCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ stPost)
         else .error (.illegalAuthority, st)
 
 theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLength : Nat)
-    (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (st : SystemState) (ref : CSpaceAddr)
     (hRecv : decoded.syscallId = .receive) (len : Nat) (replyAddr : SeLe4n.CPtr)
     (hRid : resolveRecvReplyIdR st tid len replyAddr = resolveRecvReplyId gate decoded st)
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
@@ -1393,13 +1421,15 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
     receiveOperandArmThenTaintR ctx tid len replyAddr executingCore gate.requiredRight
-        preTaint (SystemState.lookupSlotCap st ref) st =
+        (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
-        (syscallTaintPlan st tid decoded) preEpoch preLength preTaint) st := by
+        (syscallTaintPlan st tid decoded) preEpoch preLength st.declassificationTaint) st := by
   simp only [dispatchCheckedArmThenTaint, RefusalCarrying.ofKernel,
     hRecv, syscallChecksTargetFirst, Bool.false_eq_true, ↓reduceIte, syscallInvoke,
     syscallLookupCap, syscallResolveCap, hRef]
-  simp only [receiveTaintStep_eq st tid decoded hRecv, hOperand]
+  simp only [receiveTaintStep_eq st tid decoded hRecv
+    (wS := fun cap => st.taintWordsAt (threadObjOfCode (receiveTaintSourceCode st cap)))
+    (hS := fun _ => decode_taintWordsAt st _), hOperand]
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
@@ -1407,7 +1437,8 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
-      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+      · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
+          TaintWords.mk_fields]
         rw [endpointReceiveCheckedArmR_eq ctx decoded tid executingCore gate cap st hRecv len replyAddr
           hRid hSlot hRoot]
         simp only [RefusalCarrying.ofKernel]
@@ -1451,7 +1482,7 @@ theorem dispatchReceiveCheckedR_eq (ctx : LabelingContext)
   have hArm := receiveOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-    st.declassificationAuditEpoch st.declassificationAudit.length st.declassificationTaint
+    st.declassificationAuditEpoch st.declassificationAudit.length
     st ref hRecv len replyAddr hRid hSlot (by simp only [callerCspaceRoot, hTcb]) hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hRecv] at hArm ⊢

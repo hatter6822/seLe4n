@@ -1338,29 +1338,42 @@ private def causalWitnessSecond (tags : DeclassificationTaint) : Declassificatio
     actor := { subject := causalWitnessSubject, domain := ⟨1⟩ },
     predecessorTags := tags }
 
+/-- The acting subject's thread in the witness states, its taint words `w`. -/
+private def causalWitnessTcb (w : TaintWords) : TCB :=
+  TCB.withTaintWords
+    { tid := causalWitnessSubject, priority := ⟨0⟩, domain := ⟨1⟩,
+      spaceCells := TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096 } w
+
+/-- The witness store: the default store holding the acting subject's thread,
+its taint words `w`. -/
+private def causalWitnessObjects (w : TaintWords) :
+    SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject :=
+  (default : SystemState).objects.insert causalWitnessSubject.toObjId (.tcb (causalWitnessTcb w))
+
 /-- WS-SM SM9.D.14 (**`chainCausal_not_table_derived`**, invention half): a tag
 the subject acquires **after** the event invents a causal link that never
 existed.
 
-Two states differing in nothing but the taint table — same trail, same objects,
-same scheduler — disagree under the table-derived detector, while the recorded
+Two states differing in nothing but the subject's taint words — same trail, the
+same objects off their taint words (`SystemState.objectsAgreeOffTaint`), same
+scheduler — disagree under the table-derived detector, while the recorded
 detector reports the same verdict in both.  Read the other way: a monitor that
 re-evaluated a historical report against current state would watch its own
 findings change under it. -/
 theorem chainCausal_not_table_derived :
     ∃ (chain : List DeclassificationEvent) (st₁ st₂ : SystemState),
       st₁.declassificationAuditLog = st₂.declassificationAuditLog ∧
-      st₂ = { st₁ with declassificationTaint := st₂.declassificationTaint } ∧
+      st₁.objectsAgreeOffTaint st₂ ∧
+      st₂ = { st₁ with objects := st₂.objects } ∧
       chainCausalVerdict false st₁ chain = chainCausalVerdict false st₂ chain ∧
       chainCausalVerdict true st₁ chain ≠ chainCausalVerdict true st₂ chain := by
   refine ⟨[causalWitnessFirst, causalWitnessSecond DeclassificationTaint.empty],
-          { (default : SystemState) with
-              declassificationTaint := SeLe4n.Kernel.TaintTable.empty },
-          { (default : SystemState) with
-              declassificationTaint :=
-                SeLe4n.Kernel.TaintTable.empty.joinAt causalWitnessSubject.toObjId
-                  (DeclassificationTaint.singleton 0) },
-          rfl, rfl, rfl, ?_⟩
+          { (default : SystemState) with objects := causalWitnessObjects {} },
+          ({ (default : SystemState) with objects := causalWitnessObjects {} }).mapObjectAt
+            causalWitnessSubject.toObjId
+            (·.withTaintWords (DeclassificationTaint.singleton 0).toWords),
+          rfl, SystemState.mapObjectAt_objectsAgreeOffTaint _ _ _
+            (KernelObject.eraseTaint_withTaintWords · _), rfl, rfl, ?_⟩
   decide
 
 /-- WS-SM SM9.D.14 (**`chainCausal_not_table_derived`**, loss half): a **retype**
@@ -1372,17 +1385,14 @@ The recorded snapshot is unaffected, which is the whole reason it is a field of
 the record. -/
 theorem chainCausal_survives_subject_retype :
     ∃ (chain : List DeclassificationEvent) (st₁ st₂ : SystemState),
-      st₂ = { st₁ with declassificationTaint :=
-        st₁.declassificationTaint.clearAt causalWitnessSubject.toObjId } ∧
+      st₂ = st₁.mapObjectAt causalWitnessSubject.toObjId (·.withTaintWords {}) ∧
       chainCausalVerdict false st₁ chain = true ∧
       chainCausalVerdict false st₂ chain = true ∧
       chainCausalVerdict true st₁ chain = true ∧
       chainCausalVerdict true st₂ chain = false := by
   refine ⟨[causalWitnessFirst, causalWitnessSecond (DeclassificationTaint.singleton 0)],
           { (default : SystemState) with
-              declassificationTaint :=
-                SeLe4n.Kernel.TaintTable.empty.joinAt causalWitnessSubject.toObjId
-                  (DeclassificationTaint.singleton 0) },
+            objects := causalWitnessObjects (DeclassificationTaint.singleton 0).toWords },
           _, rfl, by decide, by decide, by decide, by decide⟩
 
 /-- WS-SM SM9.D.15 (**the sub-phase headline**): **`chainLaunders` is sound

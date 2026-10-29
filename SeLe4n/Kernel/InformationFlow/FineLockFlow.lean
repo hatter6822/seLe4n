@@ -1597,9 +1597,8 @@ theorem applySyscallTaint_preserves_onCore (ctx : LabelingContext) (L : Security
 /-- WS-SM SM9.D.18, WS-ZA ZA5.11: **the whole invariant bundle across the
 propagation.**
 
-Unconditional.  The step writes the taint table, which no
-`proofLayerInvariantBundle` conjunct reads, and the taint words of threads and
-notifications, which no conjunct reads either: the store after the step agrees
+Unconditional.  The step writes the taint words of threads and notifications
+alone, which no `proofLayerInvariantBundle` conjunct reads: the store after the step agrees
 with the one before off the words (`applySyscallTaint_objectsAgreeOffTaint`),
 keeps its table invariant and its size, and every conjunct carries across that
 one frame (`Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint`).
@@ -1615,7 +1614,7 @@ theorem applySyscallTaint_preserves_proofLayerInvariantBundle (plan : TaintPlan)
   have hB := Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint hA
     (fun hI => applySyscallTaint_invExt hI) (applySyscallTaint_size plan pre post) h
   rw [applySyscallTaint_frame plan pre post]
-  exact Architecture.proofLayerInvariantBundle_setDeclassificationTaint _ _ hB
+  exact hB
 
 /-- SM8.D.5 (**WS-LS LS2.1**: over the pair): **the 2PL-bracketed live syscall
 entry** — the shape SM3.C.9 installs at the `@[export]` bodies: take the
@@ -2684,27 +2683,27 @@ inductive UncoveredLockDomain where
   -- two locks, which is why the cut unifies the footprints rather than
   -- nesting two brackets: nesting would take that one word twice and walk the
   -- SM0.I ladder backwards.
-  /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
+  /-- WS-SM SM9.D.17 (audit): the **taint's per-key commit**.
 
-  Every content-moving syscall writes `SystemState.declassificationTaint` at the
-  keys its plan names, and declares the *objects'* own locks for them — a
-  deliberate choice, since `stateLevelLock` on the eight content-moving arms
-  would serialise unrelated IPC on unrelated endpoints and break the tick-budget
-  fit the IPC suites pin.  The **model**, though, replaces the field whole:
-  `TaintTable.set` returns a table built from the pre-state's entries.  So the
-  key-local reading is sound only once the runtime realises the table as
-  per-object storage; until it does, two cores committing disjoint taint keys
-  from their own pre-states would each write the whole field and the later commit
-  would discard the other's provenance.
+  Every content-moving syscall writes the declassification taint at the keys
+  its plan names, and declares the *objects'* own locks for them — a deliberate
+  choice, since `stateLevelLock` on the eight content-moving arms would
+  serialise unrelated IPC on unrelated endpoints and break the tick-budget fit
+  the IPC suites pin.  Since WS-ZA ZA5.12 the taint is per-object storage — the
+  threads' and notifications' own words, read by
+  `SystemState.declassificationTaint` — so the key-local reading is the object
+  store's: the **model** commits `SystemState.objects` whole, so two cores
+  committing disjoint taint keys from their own pre-states would each write the
+  whole store and the later commit would discard the other's provenance.
 
   Not a live race — SM5.I's global entry lock serialises every commit, and
-  `withLockSet` is deferred at the export bodies (SM3.C.9).  `SystemState.objects`
-  carries the identical obligation for `storeObject` under the same discipline,
-  which is why the owner is the representation cut rather than this phase.
-  Registered here rather than left in `TaintPropagation`'s prose because that is
-  the difference between an obligation a later cut must discharge and one it can
-  forget: the completeness theorem below now fails until this entry is removed. -/
-  | taintTablePerKeyStore
+  `withLockSet` is deferred at the export bodies (SM3.C.9).  `storeObject`
+  carries the identical obligation under the same discipline, which is why the
+  owner is the commit-partitioning cut rather than this phase.  Registered here
+  rather than left in `TaintPropagation`'s prose because that is the difference
+  between an obligation a later cut must discharge and one it can forget: the
+  completeness theorem below now fails until this entry is removed. -/
+  | taintWordsPerKeyCommit
   deriving DecidableEq, Repr
 
 /-- SM8.D.5: the domains this bracket does **not** cover, and the workstream that
@@ -2777,14 +2776,14 @@ table key — and the two domains were never two locks, and
 the seam acquires **one** unified footprint (`declaredUnifiedLockSetForAbiEntry`)
 rather than nesting two brackets that would take that word twice. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
+  [(.taintWordsPerKeyCommit, "SM10.1 (fine-lock Track D)"),
 ]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.taintTablePerKeyStore]
+  [.taintWordsPerKeyCommit]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive
@@ -2821,16 +2820,15 @@ as a complete serialization discipline yet?**
 consult* rather than a sequencing intention recorded in prose.
 
 Every entry in `declaredFootprintUncoveredDomains` names a write the bracket does
-not order.  `taintTablePerKeyStore` is the sharpest of them: the model replaces
-`SystemState.declassificationTaint` whole, so two cores committing **disjoint**
-taint keys from their own pre-states would each write the whole field and the
-later commit would discard the other's provenance — a lost causal chain, which is
-the direction this subsystem must never err in.  The same is true of
-`SystemState.objects` under `storeObject`, which is why the per-key realisation
-is a property of the *commit*, not of this field: a per-key taint store shipped
-on its own would leave the identical lost update reachable through the object
-store, so the two land together in the commit-partitioning cut (SM10.1 / the
-`SMP_FINE_LOCK_MIGRATION_PLAN` Track D) or neither does.
+not order.  `taintWordsPerKeyCommit` is the sharpest of them: the model commits
+`SystemState.objects` whole, and the taint lives in the objects' words, so two
+cores committing **disjoint** taint keys from their own pre-states would each
+write the whole store and the later commit would discard the other's
+provenance — a lost causal chain, which is the direction this subsystem must
+never err in.  The same is true of every other object field under
+`storeObject`, which is why the per-key realisation is a property of the
+*commit*: it lands in the commit-partitioning cut (SM10.1 / the
+`SMP_FINE_LOCK_MIGRATION_PLAN` Track D).
 
 **What this buys.**  The reviewer's ask on PR #873 was "implement that
 representation *before* relying on key-local locking".  Before was already the
@@ -2869,10 +2867,10 @@ theorem fineLockDiscipline_requires_every_domain_covered :
 
 Named on its own because it is the entry PR #873's review pressed twice, and
 because a reader should be able to check the dependency without reconstructing it
-from the list: while `taintTablePerKeyStore` is registered, the flag is false, so
+from the list: while `taintWordsPerKeyCommit` is registered, the flag is false, so
 nothing may treat a key-local taint write as serialised by the key's own lock. -/
 theorem taintPerKeyStore_blocks_fineLockDiscipline
-    (h : UncoveredLockDomain.taintTablePerKeyStore
+    (h : UncoveredLockDomain.taintWordsPerKeyCommit
       ∈ declaredFootprintUncoveredDomains.map Prod.fst) :
     fineLockDisciplineComplete = false := by
   cases hEmpty : declaredFootprintUncoveredDomains with

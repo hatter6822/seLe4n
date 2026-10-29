@@ -4811,14 +4811,15 @@ def dispatchSyscallChecked (ctx : LabelingContext)
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
 
-/-- WS-ZA ZA1.1: `dispatchSyscallChecked`'s arm and taint step, given the three
-fields of the pre-state the taint step reads (`applySyscallTaintAfter`).  A
-separate, non-inlined function so its arguments are read before the arm runs. -/
+/-- WS-ZA ZA1.1: `dispatchSyscallChecked`'s arm and taint step, given what the
+taint step reads of the pre-state (`applySyscallTaintAfter`): the audit epoch,
+the trail's length and the taint at the plan's flow sources.  A separate,
+non-inlined function so its arguments are read before the arm runs. -/
 @[noinline] def dispatchCheckedArmThenTaint (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (plan : TaintPlan) (preEpoch : Nat) (preLength : Nat)
-    (preTaint : TaintTable) : Kernel Unit :=
+    (preTaint : TaintMap) : Kernel Unit :=
   fun st =>
     match (if syscallChecksTargetFirst decoded.syscallId then
              syscallInvokeResolved gate (dispatchWithCapChecked ctx decoded tid executingCore gate)
@@ -4829,7 +4830,9 @@ separate, non-inlined function so its arguments are read before the arm runs. -/
 
 /-- WS-ZA ZA1.1: the compiled `dispatchSyscallChecked`.  It reads what the taint
 step needs of the pre-state before the arm, so the arm owns the state it writes
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  WS-ZA ZA5.12: the taint it reads is the
+words stored at the plan's flow sources, captured before the arm
+(`planSourceWords`), never the reader over the whole store. -/
 def dispatchSyscallCheckedImpl (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : Kernel Unit :=
@@ -4853,14 +4856,36 @@ def dispatchSyscallCheckedImpl (ctx : LabelingContext)
         }
         dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
           (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
-          st.declassificationAudit.length st.declassificationTaint st
+          st.declassificationAudit.length
+          (sourceTaint (planSourceWords (syscallTaintPlan st tid decoded) st)) st
       | some _ => .error .invalidCapability
       | none   => .error .objectNotFound
     | some _ => .error .illegalState
     | none   => .error .objectNotFound
 
+/-- WS-ZA ZA5.12 (**the decode lemma at the general dispatcher**): the arm and
+taint step over the captured source words is the one over the pre-state's taint
+(`applySyscallTaintAfter_planSourceWords`). -/
+theorem dispatchCheckedArmThenTaint_planSourceWords (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (plan : TaintPlan)
+    (st : SystemState) :
+    dispatchCheckedArmThenTaint ctx decoded tid executingCore gate plan
+        st.declassificationAuditEpoch st.declassificationAudit.length
+        (sourceTaint (planSourceWords plan st)) st =
+      dispatchCheckedArmThenTaint ctx decoded tid executingCore gate plan
+        st.declassificationAuditEpoch st.declassificationAudit.length
+        st.declassificationTaint st := by
+  unfold dispatchCheckedArmThenTaint
+  split
+  · rfl
+  · rw [applySyscallTaintAfter_planSourceWords]; rfl
+
 @[csimp] theorem dispatchSyscallChecked_eq_impl :
-    @dispatchSyscallChecked = @dispatchSyscallCheckedImpl := rfl
+    @dispatchSyscallChecked = @dispatchSyscallCheckedImpl := by
+  funext ctx decoded tid executingCore st
+  simp only [dispatchSyscallCheckedImpl, dispatchCheckedArmThenTaint_planSourceWords]
+  rfl
 
 /-- T6-I/M-IF-1: Top-level register-sourced syscall entry point with
     information-flow enforcement. All cross-domain operations are gated by

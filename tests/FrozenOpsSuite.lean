@@ -760,27 +760,26 @@ private def fo021_popThenPushRegression : IO Unit := do
 
 /-- FO-022: provenance follows content through the frozen operations.
 
-`FrozenSystemState.declassificationTaint` is required precisely so a snapshot
-can be analysed for laundering chains, and preserving it across `freeze` buys
-that only for the instant of the freeze.  These assertions are the ones that
-fail if the frozen operations go back to carrying the table through unchanged:
+`FrozenSystemState.declassificationTaint` reads the taint off the frozen
+threads and notifications precisely so a snapshot can be analysed for
+laundering chains, and preserving it across `freeze` buys that only for the
+instant of the freeze.  These assertions are the ones that fail if the frozen
+operations go back to leaving the taint words unchanged:
 each measures a *specific* identity reaching a thread that never held it, plus
 the negative that says the transport does not keep what it handed on. -/
 private def frozenProvenanceFollowsContent : IO Unit := do
-  let senderTcb := mkTcb 3
+  -- Tag the sender with one identity, in its own taint words, so the
+  -- assertions below name a tag that exists nowhere else in the snapshot.
+  let senderTcb := (mkTcb 3).withTaintWords
+    (SeLe4n.Kernel.DeclassificationTaint.singleton 77).toWords
   let receiverTcb := mkTcb 4
   let ep : Endpoint := (Endpoint.ofQueues {} {})
   let ntfn : Notification := { state := .idle, 
                                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
-  let base := mkFrozenState [
+  let tagged := mkFrozenState [
     (⟨3⟩, .tcb senderTcb), (⟨4⟩, .tcb receiverTcb),
     (⟨10⟩, .endpoint ep), (⟨5⟩, .notification ntfn)
   ]
-  -- Tag the sender with one identity, so the assertions below name a tag that
-  -- exists nowhere else in the snapshot.
-  let tagged : FrozenSystemState :=
-    { base with declassificationTaint :=
-        base.declassificationTaint.joinAt ⟨3⟩ (SeLe4n.Kernel.DeclassificationTaint.singleton 77) }
   expect "FO-022: the receiver starts untainted"
     (!((tagged.declassificationTaint ⟨4⟩).contains 77))
   -- A parked send followed by a receive moves the message; the provenance must
@@ -2092,8 +2091,8 @@ private def differentialTaintedSignalAgrees : IO Unit := do
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
         [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep)
       diffNotifId ntfn) boundTcb) (diffTcb 63)
-  -- The signaller carries a tag.  `declassificationTaint` is named by none of
-  -- the four builder obligations, so seeding it leaves every proof unchanged.
+  -- The signaller carries a tag, written into its taint words
+  -- (`Builder.withTaint`), a write that keeps every builder obligation.
   let tagged : SeLe4n.Kernel.DeclassificationTaint :=
     SeLe4n.Kernel.DeclassificationTaint.singleton 7
   let ist : IntermediateState := Builder.withTaint ist0 diffB.toObjId tagged

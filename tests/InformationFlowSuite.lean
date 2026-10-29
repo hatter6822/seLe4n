@@ -1354,7 +1354,8 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.4 part 32: 22, the service graph removed.
   -- WS-ZA ZA5.9: 21, the service registry read off the endpoints.
   -- WS-ZA ZA5.10: 20, the audit trail and its epoch one field (the ring).
-  expect "StateField enum has 20 variants, one per SystemState field"
+  -- WS-ZA ZA5.12: 19, the taint read off the objects.
+  expect "StateField enum has 19 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry,
@@ -1364,7 +1365,7 @@ def runInformationFlowChecks : IO Unit := do
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .physicalWrites,
        .physicalWritesDrained,
        .declassificationAudit,
-       .declassificationRefusals, .declassificationTaint ].length = 20)
+       .declassificationRefusals ].length = 19)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation added `lifecycleObjectTypeLockstep_fields`; the

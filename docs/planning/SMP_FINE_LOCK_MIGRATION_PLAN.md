@@ -14,7 +14,7 @@
 > `v0.34.88` (RR7.38) — outside Track B, whose rows never touched splice
 > neighbours — by giving the eleven footprints that can write a *queued* TCB
 > the queue owner's write lock.  **Six of the register's seven domains are
-> covered and one remains** — `taintTablePerKeyStore` (owned by the
+> covered and one remains** — `taintWordsPerKeyCommit` (owned by the
 > representation cut, Track D's PR 13); `syscallSeamSchedulerDomain` (RR7.39's
 > syscall half) closed at `v0.35.181` (RR8.12 Cut C6h).  The register itself is
 > the authority, since its completeness theorem fails until a covered
@@ -572,7 +572,7 @@ rather than beside it.
   store that may resize) is PR 13's to choose, and it cannot choose without
   this.
 - *Step 3:* register the classification's residue in `UncoveredLockDomain`,
-  beside `taintTablePerKeyStore`, which is the same shape and the only one of
+  beside `taintWordsPerKeyCommit`, which is the same shape and the only one of
   the family currently named.  Its completeness theorem is what stops a
   whole-structure write from being forgotten; PR 13 deletes the constructors it
   closes, under the deletion-last discipline RR7.40 and RR7.41 used.

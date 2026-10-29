@@ -1452,6 +1452,35 @@ theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_invExt {s : SystemState}
     (s.mapObjectAt k f).objects.invExt :=
   SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_invExt _ _ _ hInv
 
+/-- WS-ZA ZA5.12: **a slot write that moves only taint words** keeps the store
+equal off its taint words (`SystemState.objectsAgreeOffTaint`). -/
+theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_objectsAgreeOffTaint (s : SystemState)
+    (k : SeLe4n.ObjId) (f : KernelObject → KernelObject)
+    (hf : ∀ o, (f o).eraseTaint = o.eraseTaint) : s.objectsAgreeOffTaint (s.mapObjectAt k f) :=
+  fun j => by
+    rw [SystemState.mapObjectAt_objects]
+    split
+    · simp only [Option.map_map, Function.comp_def, hf]
+    · rfl
+
+/-- Erasing an object's taint words keeps its kind. -/
+@[simp] theorem _root_.SeLe4n.Model.KernelObject.objectType_eraseTaint (o : KernelObject) :
+    o.eraseTaint.objectType = o.objectType := by
+  cases o <;> rfl
+
+/-- WS-ZA ZA5.12: a store equal off its taint words, under the same lifecycle
+metadata, keeps the metadata consistent with the store: no taint write changes
+an object's kind. -/
+theorem _root_.SeLe4n.Model.SystemState.objectsAgreeOffTaint.objectTypeMetadataConsistent
+    {st st' : SystemState} (h : st.objectsAgreeOffTaint st') (hL : st'.lifecycle = st.lifecycle)
+    (hC : st.objectTypeMetadataConsistent) : st'.objectTypeMetadataConsistent := by
+  intro oid
+  have e := congrArg (Option.map KernelObject.objectType) (h oid)
+  simp only [Option.map_map, Function.comp_def, KernelObject.objectType_eraseTaint] at e
+  unfold SystemState.lookupObjectTypeMeta at *
+  rw [hL, e]
+  exact hC oid
+
 @[simp] theorem _root_.SeLe4n.Model.SystemState.mapObjectAt_size (s : SystemState)
     (k : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
     (s.mapObjectAt k f).objects.size = s.objects.size :=
@@ -1477,6 +1506,48 @@ theorem declassificationTaint_of_taintEmptyAt {s : SystemState} {k : SeLe4n.ObjI
     (h : taintEmptyAt s k = true) : s.declassificationTaint k = DeclassificationTaint.empty := by
   rw [taintEmptyAt_eq] at h
   exact (TaintWords.decode_eq_empty_iff _).mpr h
+
+/-- WS-ZA ZA5.12: **a source's words, captured as scalars before the arm** —
+the ten fields of the words stored at `k` (`SystemState.taintWordsAt`), handed
+to `f` one by one, read at one probe.  What a compiled dispatcher reads of the
+pre-state's taint: `f` runs the arm and the taint step, so the arm owns the
+state it writes and the capture builds no `TaintWords` (`withTaintWordsAt_eq`). -/
+@[inline] def withTaintWordsAt {α : Sort _} (s : SystemState) (k : SeLe4n.ObjId)
+    (f : UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      Nat → Bool → α) : α :=
+  match s.getObject? k with
+  | some (.tcb t) =>
+      f t.taintTag0 t.taintTag1 t.taintTag2 t.taintTag3 t.taintTag4 t.taintTag5
+        t.taintTag6 t.taintTag7 t.taintCount t.taintSaturated
+  | some (.notification n) =>
+      f n.taintTag0 n.taintTag1 n.taintTag2 n.taintTag3 n.taintTag4 n.taintTag5
+        n.taintTag6 n.taintTag7 n.taintCount n.taintSaturated
+  | _ => f 0 0 0 0 0 0 0 0 0 false
+
+/-- The capture hands `f` the fields of the words stored at `k`. -/
+theorem withTaintWordsAt_eq {α : Sort _} (s : SystemState) (k : SeLe4n.ObjId)
+    (f : UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
+      Nat → Bool → α) :
+    withTaintWordsAt s k f =
+      f (s.taintWordsAt k).tag0 (s.taintWordsAt k).tag1 (s.taintWordsAt k).tag2
+        (s.taintWordsAt k).tag3 (s.taintWordsAt k).tag4 (s.taintWordsAt k).tag5
+        (s.taintWordsAt k).tag6 (s.taintWordsAt k).tag7 (s.taintWordsAt k).count
+        (s.taintWordsAt k).saturated := by
+  unfold withTaintWordsAt SystemState.taintWordsAt
+  rcases s.getObject? k with _ | o
+  · rfl
+  · cases o <;> rfl
+
+/-- A capture's ten fields rebuild the words they were read from. -/
+@[simp] theorem TaintWords.mk_fields (w : TaintWords) :
+    (⟨w.tag0, w.tag1, w.tag2, w.tag3, w.tag4, w.tag5, w.tag6, w.tag7, w.count,
+      w.saturated⟩ : TaintWords) = w := rfl
+
+/-- WS-ZA ZA5.12 (**the decode lemma**): the words captured at `k` decode to
+the pre-state's taint there — what discharges the source hypothesis of every
+fused taint step's compiled-equals-specification proof. -/
+theorem decode_taintWordsAt (s : SystemState) (k : SeLe4n.ObjId) :
+    (s.taintWordsAt k).decode = s.declassificationTaint k := rfl
 
 /-- WS-ZA ZA5.12: **one join**: `w`'s taint joins the words at `k`, written in
 the key's slot (`KernelObject.joinTaintWords`) — a thread or a notification;
@@ -1529,6 +1600,13 @@ it (`joinTaintAt_congr`, `DeclassificationTaint.decode_toWords`). -/
 theorem joinTaintAt_toWords (s : SystemState) (k : SeLe4n.ObjId) (w : TaintWords) :
     joinTaintAt s k w.decode.toWords = joinTaintAt s k w :=
   joinTaintAt_congr s k (DeclassificationTaint.decode_toWords _)
+
+/-- A join of a taint's words is the join of any words decoding to it — how a
+fused step's captured words stand in for the specification's source taint. -/
+theorem joinTaintAt_toWords_of_decode (s : SystemState) (k : SeLe4n.ObjId)
+    {T : DeclassificationTaint} {w : TaintWords} (h : w.decode = T) :
+    joinTaintAt s k T.toWords = joinTaintAt s k w :=
+  joinTaintAt_congr s k (by rw [DeclassificationTaint.decode_toWords, h])
 
 /-- WS-ZA ZA5.11: **the taint step** — flows, then clears, then origination
 (the cleared and bypassed keys left out), each a join or a clear of the words
@@ -1750,13 +1828,7 @@ its taint words — every key's object, its words erased, is the committed one's
 theorem applyTaintStep_objectsAgreeOffTaint (plan : TaintPlan)
     (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintMap) (post : SystemState) :
     post.objectsAgreeOffTaint (applyTaintStep plan origins preTaint post) := by
-  have hW : ∀ (s : SystemState) k (f : KernelObject → KernelObject),
-      (∀ o, (f o).eraseTaint = o.eraseTaint) → s.objectsAgreeOffTaint (s.mapObjectAt k f) :=
-      fun s k f hf j => by
-    rw [SystemState.mapObjectAt_objects]
-    split
-    · simp only [Option.map_map, Function.comp_def, hf]
-    · rfl
+  have hW := SystemState.mapObjectAt_objectsAgreeOffTaint
   have R := foldl_taintStep_rel (fun (s s' : SystemState) => s.objectsAgreeOffTaint s')
     SystemState.objectsAgreeOffTaint.refl (fun _ _ _ h1 h2 => h1.trans h2)
   have hJ : ∀ (s : SystemState) k w, s.objectsAgreeOffTaint (joinTaintAt s k w) := fun s k w => by

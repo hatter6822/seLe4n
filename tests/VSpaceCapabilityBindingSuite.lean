@@ -3074,32 +3074,32 @@ private def ownSlotHolds (st : SystemState) (slot : Nat) : Bool :=
 
 private def runZombieDeleteChecks : IO Unit := do
   IO.println "-- §5p a final delete empties a populated CNode and a thread's spaces (WS-ZA ZA5.4 part 26)"
-  -- A carved CNode holding an endpoint's only capability: the CNode's last
-  -- capability's delete deletes the endpoint's slot first (the endpoint is
-  -- retired), then retires the emptied CNode.
+  -- A carved CNode holding a notification's only capability: the CNode's last
+  -- capability's delete deletes the notification's slot first (the
+  -- notification is retired), then retires the emptied CNode.
   match runAll carveScenario
       [decodeCarve slotUtRetype (cnodeTagOfRadix 2) 970 slotOwnCnRW 12,
-       decodeCarve slotUtRetype endpointTag 971 12 0] with
-  | .error e => assertBool s!"carving a CNode and an endpoint into it succeeds (got {repr e})" false
+       decodeCarve slotUtRetype notificationTag 971 12 0] with
+  | .error e => assertBool s!"carving a CNode and a notification into it succeeds (got {repr e})" false
   | .ok st => do
-    assertBool "setup: the carved CNode holds the endpoint's capability"
+    assertBool "setup: the carved CNode holds the notification's capability"
       (storedAt st 970 && storedAt st 971 &&
         (SystemState.lookupSlotCap st { cnode := SeLe4n.ObjId.ofNat 970, slot := SeLe4n.Slot.ofNat 0 }).isSome)
-    -- The endpoint carries declassification provenance, which its retire
-    -- forgets, so a later carve at its id inherits none.
+    -- The notification carries declassification provenance in its taint
+    -- words, which its retire removes with it, so a later carve at its id
+    -- inherits none.
     let ep := SeLe4n.ObjId.ofNat 971
     let tainted : SystemState :=
-      { st with declassificationTaint :=
-          st.declassificationTaint.set ep (SeLe4n.Kernel.DeclassificationTaint.singleton 3) }
-    assertBool "setup: the endpoint carries a declassification tag"
+      st.mapObjectAt ep (·.withTaintWords (SeLe4n.Kernel.DeclassificationTaint.singleton 3).toWords)
+    assertBool "setup: the notification carries a declassification tag"
       ((tainted.declassificationTaint ep).contains 3)
     match runAll tainted [decodeDelete 12] with
     | .error e => assertBool s!"deleting the populated CNode's last capability succeeds (got {repr e})" false
     | .ok st1 => do
-      assertBool "deleting a populated CNode's last capability retires the endpoint it held and the CNode"
+      assertBool "deleting a populated CNode's last capability retires the notification it held and the CNode"
         (!storedAt st1 970 && !storedAt st1 971 && !recordsChildAt st1 carveUt 970 &&
           !recordsChildAt st1 carveUt 971 && !ownSlotHolds st1 12)
-      assertBool "the retire clears the endpoint's declassification provenance"
+      assertBool "the retire removes the notification's declassification provenance"
         (!(st1.declassificationTaint ep).contains 3)
       -- WS-ZA ZA5.4 part 36: the reset removes no id, so it owes no clear; the
       -- id the retire freed is carved again after the reset with no tag.
@@ -3108,10 +3108,10 @@ private def runZombieDeleteChecks : IO Unit := do
       | .ok stR => do
         assertBool "the reset rewinds the free index"
           (freeIndexAt stR slotUtRetype == some 0)
-        match runAll stR [decodeCarve slotUtRetype endpointTag 971 slotOwnCnRW 12] with
-        | .error e => assertBool s!"carving the endpoint's id again after the reset succeeds (got {repr e})" false
+        match runAll stR [decodeCarve slotUtRetype notificationTag 971 slotOwnCnRW 12] with
+        | .error e => assertBool s!"carving the notification's id again after the reset succeeds (got {repr e})" false
         | .ok st2 =>
-          assertBool "an endpoint carved at the retired id after the reset inherits no tag"
+          assertBool "a notification carved at the retired id after the reset inherits no tag"
             (storedAt st2 971 && !(st2.declassificationTaint ep).contains 3)
   -- A carved thread holding the last capability to a carved CNode, its CSpace
   -- root: the thread's last capability's delete finalises it, then deletes its

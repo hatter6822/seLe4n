@@ -7548,7 +7548,7 @@ run_negative_check "INVARIANT" rg -n 'elapsedBetween cost 0 \(e.ops.length \+ 1\
 run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
 # list against a literal, which a third constructor would leave elaborating.
-run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintTablePerKeyStore\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintWordsPerKeyCommit\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # WS-RR RR8.12 Cut C6h (`v0.35.181`): the syscall seam's scheduler-domain entry
 # is RETIRED — the seam's bracket declares the unified footprint now — so the
 # constructor must not come back.
@@ -10627,12 +10627,12 @@ run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send f
 # object lock while the model replaces the field whole, so key-local locking is
 # sound only once the runtime stores per object — owed by the representation cut.
 # Registered so that enabling fine locks has to delete the entry deliberately.
-run_check "INVARIANT" rg -n 'taintTablePerKeyStore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'taintWordsPerKeyCommit' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The owner string is pinned as *present*, not as a literal: spelling the
 # workstream code here would put it in a non-documentation file, which the
 # identifier-naming gate forbids.  That it is non-empty is checked properly, by
 # the suite's `declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty)`.
-run_check "INVARIANT" rg -n '\(\.taintTablePerKeyStore, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '\(\.taintWordsPerKeyCommit, "' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM9.D.7 (audit): the gate's direct-field-writer sweep — check (C) names only
 # constants that USE the taint API; (C2) scans every definition for a direct
 # write of `declassificationTaint` through the structure's constructor, in any

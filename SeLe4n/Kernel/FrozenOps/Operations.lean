@@ -238,14 +238,15 @@ def frozenTimerTick : FrozenKernel Unit :=
 
 /-! ### WS-SM SM9.D: provenance follows content here too.
 
-`FrozenSystemState.declassificationTaint` is **required**, with the reason
-stated on the field: a snapshot that dropped provenance would report a system in
-which every recorded downgrade is causally unconnected — the shape a laundering
-chain is precisely *not* — so the analysis a frozen snapshot exists to support
-would come back clean on a system that is not.  Preserving the table across
-`freeze` buys that only for the instant of the freeze: the frozen operations
-below move content between objects, and carrying the table through unchanged
-would reproduce the same blind snapshot one operation later.
+A snapshot that dropped provenance would report a system in which every
+recorded downgrade is causally unconnected — the shape a laundering chain is
+precisely *not* — so the analysis a frozen snapshot exists to support would come
+back clean on a system that is not.  The taint lives in the frozen threads and
+notifications it describes (`FrozenSystemState.declassificationTaint`), so
+`freeze` carries it (`freeze_preserves_declassificationTaint`); that buys it only
+for the instant of the freeze: the frozen operations below move content between
+objects, and leaving the words unchanged would reproduce the same blind snapshot
+one operation later.
 
 The moves mirror the live content-derived model exactly, because they are the
 same transitions on the same content channels (`TCB.pendingMessage`,
@@ -253,49 +254,35 @@ same transitions on the same content channels (`TCB.pendingMessage`,
 transport that hands its content on is cleared, since its taint reflects what it
 currently holds rather than everything it ever held. -/
 
-/-- WS-ZA ZA5.11: the frozen mirror of the live word write
-(`SystemState.writeTaintWordsAt`): the taint words of the thread or the
-notification at `k` become `T`'s; any other key is left as it is. -/
-private def frozenWriteTaintWords (st : FrozenSystemState) (k : SeLe4n.ObjId)
-    (T : SeLe4n.Kernel.DeclassificationTaint) : FrozenSystemState :=
+/-- WS-ZA ZA5.12: the frozen mirror of the live slot write: the taint words of
+the thread or the notification at `k` become `f` of its own; any other key is
+left as it is. -/
+private def frozenMapTaintWords (st : FrozenSystemState) (k : SeLe4n.ObjId)
+    (f : SeLe4n.Kernel.TaintWords → SeLe4n.Kernel.TaintWords) : FrozenSystemState :=
   match st.getObject? k with
-  | some (.tcb t) => frozenRewriteObject st k (.tcb (t.withTaintWords T.toWords))
+  | some (.tcb t) => frozenRewriteObject st k (.tcb (t.withTaintWords (f t.taintWords)))
   | some (.notification n) =>
-    frozenRewriteObject st k (.notification (n.withTaintWords T.toWords))
+    frozenRewriteObject st k (.notification (n.withTaintWords (f n.taintWords)))
   | _ => st
 
-/-- WS-ZA ZA5.11: the frozen mirror of the live guard (`taintHolderAt`). -/
-private def frozenTaintHolderAt (st : FrozenSystemState) (k : SeLe4n.ObjId) : Bool :=
-  match st.getObject? k with
-  | some (.tcb _) => true
-  | some (.notification _) => true
-  | _ => false
-
 /-- WS-SM SM9.D: a frozen content move — the sink joins the source's
-provenance.  `joinAt` accumulates, so a propagation step cannot lose a link.
-WS-ZA ZA5.11: the live step's mirror (`joinTaintAt`) — the table entry and the
-sink's taint words together, only at a thread or a notification. -/
+provenance.  The join accumulates, so a propagation step cannot lose a link.
+WS-ZA ZA5.12: the live step's mirror (`joinTaintAt`) — the source's words join
+the sink's, only at a thread or a notification, and words naming no provenance
+write nothing. -/
 private def frozenTaintFlow (st : FrozenSystemState)
     (sink source : SeLe4n.ObjId) : FrozenSystemState :=
-  let old := st.declassificationTaint sink
-  let joined := SeLe4n.Kernel.DeclassificationTaint.join old (st.declassificationTaint source)
-  if joined = old then st
-  else if frozenTaintHolderAt st sink then
-    frozenWriteTaintWords
-      { st with declassificationTaint := st.declassificationTaint.set sink joined } sink joined
-  else st
+  let w := st.taintWordsAt source
+  if w.isEmpty then st
+  else frozenMapTaintWords st sink (SeLe4n.Kernel.TaintWords.join · w)
 
 /-- WS-SM SM9.D: a frozen content consumption — the transport holds nothing
-afterwards, so it carries no provenance either.  WS-ZA ZA5.11: the table entry
-and the words together (`clearTaintAt`'s mirror). -/
+afterwards, so it carries no provenance either.  WS-ZA ZA5.12: the words are
+carved clean (`clearTaintAt`'s mirror). -/
 private def frozenTaintClear (st : FrozenSystemState)
     (oid : SeLe4n.ObjId) : FrozenSystemState :=
-  if st.declassificationTaint oid = SeLe4n.Kernel.DeclassificationTaint.empty then st
-  else
-    frozenWriteTaintWords
-      { st with declassificationTaint :=
-          st.declassificationTaint.set oid SeLe4n.Kernel.DeclassificationTaint.empty }
-      oid SeLe4n.Kernel.DeclassificationTaint.empty
+  if (st.taintWordsAt oid).isEmpty then st
+  else frozenMapTaintWords st oid (fun _ => {})
 
 /-- **WS-SM SM6.B (PR #873 round 8): the frozen bound-delivery target.**
 
@@ -360,8 +347,8 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
     | some (.notification ntfn) =>
         -- **The signaller must resolve to a live TCB**, for the reason the
         -- replier must in `frozenEndpointReply`, and with one failure mode more.
-        -- `frozenTaintFlow` reads `declassificationTaint` at whatever `ObjId` it
-        -- is handed: an absent signaller yields the total table's empty default,
+        -- `frozenTaintFlow` reads the taint words at whatever `ObjId` it
+        -- is handed: an absent signaller yields the carved words' empty taint,
         -- so the badge reaches its destination having lost its predecessor —
         -- but an id naming some *other* live object yields that object's
         -- provenance, so the snapshot would report a predecessor the badge
@@ -720,7 +707,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
         -- path already did this and the rendezvous path did not, so whether a
         -- nonexistent sender was refused depended on whether a receiver
         -- happened to be waiting — and on the rendezvous ordering the message
-        -- was delivered while `frozenTaintFlow` read the total table at an id
+        -- was delivered while `frozenTaintFlow` read the taint words at an id
         -- that names nothing (empty provenance) or names a non-TCB object
         -- (that object's provenance).  Hoisting the lookup removes the
         -- asymmetry structurally rather than adding a second guard that could

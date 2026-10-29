@@ -365,7 +365,7 @@ theorem routedInvocation_classic (sid : SyscallId) (h : routedInvocation sid = t
 /-- A routed invocation's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_routed (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : routedInvocation decoded.syscallId = true)
-    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintMap)
     (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
@@ -1378,8 +1378,8 @@ there is none. -/
 @[inline] def invocationOperandArmR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) :
-    TaintTable → Option Capability → RefusalCarrying Unit :=
-  fun _ operand st =>
+    Option Capability → RefusalCarrying Unit :=
+  fun operand st =>
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
@@ -1520,7 +1520,7 @@ theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : Registe
 /-- A configure's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .schedContextConfigure)
-    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintMap)
     (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
@@ -1531,8 +1531,8 @@ theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.Thread
 /-- The configure's arm behind the operand check: the rights gate
 `syscallLookupCap` applies, then `dispatchConfigureByR`. -/
 @[inline] def configureOperandArmR (regs : RegisterFile) (w : UInt64) :
-    TaintTable → Option Capability → RefusalCarrying Unit :=
-  fun _ operand st =>
+    Option Capability → RefusalCarrying Unit :=
+  fun operand st =>
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
@@ -1749,7 +1749,7 @@ to `dispatchServiceRegisterByR` (`dispatchServiceRegisterByR_eq_impl`). -/
 /-- A service register's taint step leaves the state as its arm left it. -/
 theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.ThreadId)
     (decoded : SyscallDecodeResult) (h : decoded.syscallId = .serviceRegister)
-    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintTable)
+    (preEpoch : Nat) (preLength : Nat) (preTaint : TaintMap)
     (post : SystemState) :
     applySyscallTaintAfter (syscallTaintPlan st tid decoded) preEpoch preLength preTaint post =
       post := by
@@ -1761,8 +1761,8 @@ theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.
 `syscallLookupCap` applies, then `dispatchServiceRegisterByR`. -/
 @[inline] def serviceRegisterOperandArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (regs : RegisterFile) (w : UInt64) :
-    TaintTable → Option Capability → RefusalCarrying Unit :=
-  fun _ operand st =>
+    Option Capability → RefusalCarrying Unit :=
+  fun operand st =>
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
