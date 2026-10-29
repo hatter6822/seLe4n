@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.164` (`lakefile.toml`) |
+| **Package version** | `0.36.165` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 528,389 across 484 Lean files |
 | **Test LoC** | 87,409 across 70 Lean test suites |
@@ -5855,17 +5855,37 @@ Every kernel object has a decidable well-formedness predicate:
   nothing** (`v0.36.164`, WS-ZA ZA6.1).  Each entry reads its restore
   target's parts and the core's current thread off the committed state as
   words.  The tick's dispatch and domain accounting never refuse
-  (`scheduleEffectiveOnCore_eq_state`, `scheduleDomainOnCore_eq_state`); its
-  own refusals (a current thread or bound context the store does not hold)
-  and the check that no replenishment is due are read before its first write
-  (`timerTickAdmittedOnCore`), and when they pass the run-loop step is the
-  tick's state form (`perCoreTimerTickStep_of_admitted`), which the compiled
-  step takes (`perCoreTimerTickStepWithClockAdvance_eq_impl`); a tick that
-  drains a replenishment or exhausts a bound budget takes the specification's
-  step (ZA6.2).  The reschedule step is the receiver's state form
+  (`scheduleEffectiveOnCore_eq_state`, `scheduleDomainOnCore_eq_state`), and
+  the compiled step is the specification's
+  (`perCoreTimerTickStepWithClockAdvance_eq_impl`).  The reschedule step is the receiver's state form
   (`perCoreRescheduleStep_eq_impl`), and boot gives every core's slots their
   own cells (`SystemState.withFreshPerCoreSlots`).  The exerciser reads each
   at 0.
+- **The tick is total and reports through the reschedule flags**
+  (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
+  a current thread or bound context the store does not hold is charged
+  nothing (`timerTickChargeCurrentOnCore`), and the frames the replenishment
+  drain needs come from the store's invariant
+  (`processReplenishmentsDueOnCore_preserves_bidirectional`).  The drain's
+  wakes and an exhausting charge's timeout wakes raise the flag of every core
+  whose decision they staled (`markRescheduleTargets`,
+  `markCandidacyGainFor`, `markRefillKeyChange`), as seL4's `possibleSwitchTo`
+  sets `ksSchedulerAction`; the ticking core reschedules locally
+  (`rescheduleIfPendingOnCore`) and the step's SGIs are the raised flags.
+  Completeness: every core whose decision the tick staled is flagged, and in
+  the SGI set unless it is the ticking core
+  (`perCoreTimerTickStep_stepCovers`, `perCoreTimerTickStep_sgis_complete`,
+  `perCoreTimerTickStep_sgis_cover_diff`, `perCoreTimerTickStep_raised_self`).
+  The coverage relation reads everything the chooser reads, budget
+  eligibility included (`keyInputsOf`, `candidacyNotGained`), and the
+  chooser's result depends only on those views
+  (`chooseBestRunnableEffective_eq_of_views`).  The drain, the refill and the
+  exhausting charge write in place (`ReplenishQueue.headDue`,
+  `ReplenishQueue.dropDueQueue`, `refillSchedContextImpl`, `refillRecord_eq`,
+  `budgetExhaustOnCoreImpl`), and boot gives each idle TCB its own cells
+  (`storeIdleThreadOnCoreImpl`).  The exerciser reads a tick that drains a
+  refill at 0; the bound yield that sets it up reads 11 until the release
+  queue links through the scheduling contexts (ZA6.3).
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
@@ -5890,7 +5910,7 @@ Every kernel object has a decidable well-formedness predicate:
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
   five scheduling-context scenarios reads 0 allocations.  The suspend of a
   thread blocked in IPC or holding a donated context keeps the general path
-  (`docs/REGISTERED_DEBT.md`, ZA6.5).
+  (`docs/REGISTERED_DEBT.md`, ZA6.6).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
