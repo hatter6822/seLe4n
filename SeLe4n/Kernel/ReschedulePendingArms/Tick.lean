@@ -654,6 +654,31 @@ theorem perCoreTimerTickStep_sgis_complete (st : SystemState) (coreId : UInt64)
     rw [hG, hF']; rfl
   · exact Or.inr rfl
 
+/-- **The run-loop step fires every SGI the diff names**, unless it was already
+outstanding: the whole-index diff between the pre-state and the committed state
+— what the tick returned as its SGI list before the flags carried it — names
+no core the step's SGI set misses, but for a core whose flag was already up
+(the duplicate collapse).  `hId` is the committed store's self-identity. -/
+theorem perCoreTimerTickStep_sgis_cover_diff (st : SystemState) (coreId : UInt64)
+    (h : coreId.toNat < Concurrency.numCores) (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st)
+    (hId : ∀ oid (tcb : TCB), (perCoreTimerTickStep st coreId).1.getObject? oid = some (.tcb tcb) →
+      tcb.tid.toObjId = oid)
+    {d : CoreId} {k : SgiKind}
+    (hMem : (d, k) ∈ PriorityInheritance.computeCrossCoreSgis st (perCoreTimerTickStep st coreId).1
+      ⟨coreId.toNat, h⟩) :
+    (perCoreTimerTickStep st coreId).2.get d = true ∨
+      st.scheduler.reschedulePendingOnCore d = true := by
+  have hF := computeCrossCoreSgis_core_flagged_of_covers hId
+    (perCoreTimerTickStep_stepCovers st coreId h hInv hBi).1 hMem
+  rw [perCoreTimerTickStep_raised_get]
+  cases hPre : st.scheduler.reschedulePendingOnCore d
+  · left
+    have hG : st.scheduler.reschedulePending.get d = false := hPre
+    have hF' : (perCoreTimerTickStep st coreId).1.scheduler.reschedulePending.get d = true := hF
+    rw [hG, hF']; rfl
+  · exact Or.inr rfl
+
 /-- The domain step leaves the ticking core's flag where the tick left it, or
 down when it dispatches. -/
 theorem scheduleDomainOnCoreState_reschedulePendingOnCore_self (st : SystemState) (c : CoreId)

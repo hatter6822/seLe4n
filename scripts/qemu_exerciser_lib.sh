@@ -336,7 +336,10 @@ for driver in drivers:
             "audit-drain", "upper-notification-delete",
             # WS-ZA ZA6.1: the timer tick and the reschedule SGI, each entered
             # over an EL0 frame on the boot core.
-            "timer-tick", "reschedule-sgi")}
+            "timer-tick", "reschedule-sgi",
+            # WS-ZA ZA6.2: the tick that drains a due refill, and the tick
+            # before it that finds none due.
+            "refill-wait-tick", "refill-drain-tick")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -436,6 +439,10 @@ for driver in drivers:
             # (`registerServiceWordsPerform`), and its compiled arm builds no
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
+            # WS-ZA ZA6.2: the refill scenario's configure, bind, forfeit and
+            # unbind (PLACEHOLDER).
+            "refill-configure": (0, 0), "refill-bind-root": (0, 0),
+            "refill-yield": (0, 0), "refill-unbind-root": (0, 0),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

@@ -158,6 +158,38 @@ def processReplenishments (sc : SchedContext) (currentTime : Nat) : SchedContext
   let refilled := applyRefill sc refillAmount
   refilled.withReplenishments remaining
 
+/-- WS-ZA ZA6.2: the compiled `processReplenishments`.  A context whose one
+pending refill is due takes it in its own fields: the refill's amount is added
+to the remaining budget and the entry is cleared, with no list built (the
+specification reads the refills as a list and partitions it, two cells and a
+pair for the one refill a drained context holds).  Any other context runs the
+specification.  Proven equal (`processReplenishments_eq_impl`). -/
+@[inline] def processReplenishmentsImpl (sc : SchedContext) (currentTime : Nat) : SchedContext :=
+  if sc.refillHeadPresent && sc.refillTail.isEmpty && decide (sc.refillHeadEligibleAt ≤ currentTime) then
+    let newRemaining : Budget := ⟨min (sc.budgetRemaining.val + sc.refillHeadAmount) sc.budget.val⟩
+    { sc with
+      budgetRemaining := newRemaining
+      isActive := newRemaining.isPositive
+      refillHeadPresent := false
+      refillTail := [] }
+  else processReplenishments sc currentTime
+
+@[csimp] theorem processReplenishments_eq_impl :
+    @processReplenishments = @processReplenishmentsImpl := by
+  funext sc t
+  unfold processReplenishmentsImpl
+  split
+  · rename_i h
+    simp only [Bool.and_eq_true, decide_eq_true_eq, List.isEmpty_iff] at h
+    obtain ⟨⟨hP, hT⟩, hE⟩ := h
+    have hR : sc.replenishments =
+        [{ amount := ⟨sc.refillHeadAmount⟩, eligibleAt := sc.refillHeadEligibleAt }] := by
+      simp [SchedContext.replenishments, hP, hT]
+    simp [processReplenishments, partitionEligible, hR, ReplenishmentEntry.isEligible, hE,
+      sumReplenishments, applyRefill, SchedContext.withReplenishments, List.partition,
+      List.partition.loop, hP, hT]
+  · rfl
+
 -- ============================================================================
 -- Z2-E: cbsUpdateDeadline operation
 -- ============================================================================

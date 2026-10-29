@@ -20,8 +20,12 @@ bound context the store does not hold is charged nothing.  So the compiled step
 (`perCoreTimerTickStepWithClockAdvanceImpl`,
 `perCoreTimerTickStepWithClockAdvance_eq_impl`) keeps no pre-state: it reads the
 reschedule flags before the tick, writes the state in place, and reads the clock
-flag off the core's identity (`c = bootCoreId`).  The charge writes the thread's
-time slice or the context's budget in its slot (`timerTickBudgetOnCore_eq_impl`).
+flag off the core's identity (`c = bootCoreId`).  The tick's own compiled
+forms — the charge (`timerTickBudgetOnCore_eq_impl`), the exhausting charge
+(`budgetExhaustOnCore_eq_impl`) and the drain
+(`processReplenishmentsDueOnCore_eq_impl`, `processOneReplenishmentOnCore_eq_impl`)
+— are registered in `Core.lean` ahead of `timerTickOnCore`, since a `@[csimp]`
+reaches only code compiled after it.
 -/
 
 namespace SeLe4n.Kernel
@@ -50,68 +54,7 @@ theorem scheduleDomainOnCoreState_machine_timer (st : SystemState) (c : CoreId) 
     · rfl
 
 -- ============================================================================
--- §3  The charge in place
--- ============================================================================
-
-/-- WS-ZA ZA6.2: the compiled `timerTickBudgetOnCore`.  The two arms that
-decrement a counter write it in its slot (`modifyObject`) rather than
-re-inserting a copy of the object, so the store is updated in place. -/
-@[inline] def timerTickBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) : SystemState × Bool :=
-  match tcb.schedContextBinding with
-  | .unbound =>
-    if tcb.timeSlice ≤ 1 then
-      (sliceExpireOnCore st c tid tcb hTcb, true)
-    else
-      (st.modifyObject tid.toObjId
-        (SystemState.mapTcbObject fun t => { t with timeSlice := t.timeSlice - 1 }), false)
-  | .bound scId | .donated scId _ =>
-    match st.getSchedContextWitnessed? scId with
-    | some ⟨sc, hSc⟩ =>
-      if sc.budgetRemaining.val ≤ 1 then
-        (budgetExhaustOnCore st c tid (effectiveSchedParams st tcb) scId sc hSc 1, true)
-      else
-        (st.modifyObject scId.toObjId
-          (SystemState.mapSchedContextObject fun s => consumeBudget s 1), false)
-    | none => (st, false)
-
-@[csimp] theorem timerTickBudgetOnCore_eq_impl :
-    @timerTickBudgetOnCore = @timerTickBudgetOnCoreImpl := by
-  funext st c tid tcb hTcb
-  have hx := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-  unfold timerTickBudgetOnCore timerTickBudgetOnCoreImpl
-  cases hB : tcb.schedContextBinding with
-  | unbound =>
-    by_cases hS : tcb.timeSlice ≤ 1
-    · simp only [hS, ↓reduceIte]
-    · simp only [hS, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
-      rw [RobinHood.RHTable.modify_of_get? hx]
-      rfl
-  | bound scId =>
-    cases hS : st.getSchedContext? scId with
-    | none => simp only [SystemState.getSchedContextWitnessed?_eq_none hS]
-    | some sc =>
-      have hy := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS
-      simp only [SystemState.getSchedContextWitnessed?_eq_some hS]
-      by_cases hBud : sc.budgetRemaining.val ≤ 1
-      · simp only [hBud, ↓reduceIte]
-      · simp only [hBud, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
-        rw [RobinHood.RHTable.modify_of_get? hy]
-        rfl
-  | donated scId o =>
-    cases hS : st.getSchedContext? scId with
-    | none => simp only [SystemState.getSchedContextWitnessed?_eq_none hS]
-    | some sc =>
-      have hy := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS
-      simp only [SystemState.getSchedContextWitnessed?_eq_some hS]
-      by_cases hBud : sc.budgetRemaining.val ≤ 1
-      · simp only [hBud, ↓reduceIte]
-      · simp only [hBud, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
-        rw [RobinHood.RHTable.modify_of_get? hy]
-        rfl
-
--- ============================================================================
--- §4  The step
+-- §3  The step
 -- ============================================================================
 
 theorem tickClockedState_machine_timer (st : SystemState) (c : CoreId) :

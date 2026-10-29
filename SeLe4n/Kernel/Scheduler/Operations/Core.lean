@@ -1755,6 +1755,126 @@ def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
   let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore c remainingQueue }
   dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) st'
 
+/-- WS-ZA ZA6.2: the compiled `refillWakeOnCore`.  The facts the wake reads off
+the refilled state — the target core and whether the store holds the thread —
+are read before the wake writes, and the wake is the run-queue placement
+`wakeThread` makes (`enqueueRunnableOnCore` at the target), so no state is read
+after a later one is built from it and no pair is built for the SGI the flags
+now carry (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1, D2). -/
+@[inline] def refillWakeOnCoreImpl (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
+  let wasExhausted := match st.getSchedContext? scId with
+    | some sc => sc.budgetRemaining.isZero
+    | none => false
+  let refilled := refillSchedContext st scId now
+  match (match refilled.getSchedContext? scId with
+    | some sc =>
+      if wasExhausted && sc.budgetRemaining.isPositive then
+        sc.boundThread.filter fun t => (refilled.getTcb? t).any TCB.isRunnable
+      else none
+    | none => none) with
+  | some tid =>
+    if runningOnSomeCore refilled tid then refilled
+    else
+      let target := determineTargetCore refilled tid
+      let held := (refilled.getTcb? tid).isSome
+      let woken := enqueueRunnableOnCore refilled target tid
+      { woken with scheduler := woken.scheduler.markReschedulePendingOnCoreIf target held }
+  | none => refilled
+
+theorem refillWakeOnCore_eq_impl (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) :
+    refillWakeOnCore st execCore scId now = refillWakeOnCoreImpl st execCore scId now := rfl
+
+/-- WS-ZA ZA6.2: the compiled `processOneReplenishmentOnCore`.  The key hook's
+reads of the pre-refill state — the bound thread, its budget eligibility and
+its effective key — are taken before the refill writes, so the refill rewrites
+the context in its slot and the hook reads only what it was handed
+(`markKeyChangeFor`, `markCandidacyGainFor`); the specification's hook reads the
+pre-state after the refill. -/
+@[inline] def processOneReplenishmentOnCoreImpl (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
+  match st.getSchedContext? scId with
+  | some sc =>
+    match sc.boundThread with
+    | some t =>
+      match st.getTcb? t with
+      | some tcb =>
+        let preElig := hasSufficientBudget st tcb
+        let preDeadline := effectiveDeadline st tcb
+        markKeyChangeParts (markCandidacyGainFor (refillWakeOnCoreImpl st execCore scId now) t preElig)
+          t tcb.boostedPriority preDeadline tcb.domain
+      | none =>
+        let post := refillWakeOnCoreImpl st execCore scId now
+        markReschedulePendingWhere post
+          (fun c => post.queuedOn c t || post.scheduler.currentOnCore c == some t)
+          Concurrency.allCores
+    | none => refillWakeOnCoreImpl st execCore scId now
+  | none => refillWakeOnCoreImpl st execCore scId now
+
+@[csimp] theorem processOneReplenishmentOnCore_eq_impl :
+    @processOneReplenishmentOnCore = @processOneReplenishmentOnCoreImpl := by
+  funext st execCore scId now
+  unfold processOneReplenishmentOnCore processOneReplenishmentOnCoreImpl markRefillKeyChange
+    markKeyChangeFrom
+  rw [refillWakeOnCore_eq_impl]
+  split
+  · split
+    · rename_i t _
+      cases st.getTcb? t with
+      | none => rfl
+      | some tcb =>
+        dsimp only
+        rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+    · rfl
+  · rfl
+
+/-- WS-ZA ZA6.2: the due replenishments of `entries` processed in order, read
+off the queue's own list: the fold `processReplenishmentsDueOnCore` runs over
+the due prefix, without building the list of due ids
+(`foldl_splitDue_eq_foldDueReplenishmentsOnCore`). -/
+def foldDueReplenishmentsOnCore (c : CoreId) (now : Nat) :
+    List (SchedContextId × Nat) → SystemState → SystemState
+  | [], st => st
+  | (scId, eligibleAt) :: tail, st =>
+    if eligibleAt ≤ now then
+      foldDueReplenishmentsOnCore c now tail (processOneReplenishmentOnCore st c scId now)
+    else st
+
+theorem foldl_splitDue_eq_foldDueReplenishmentsOnCore (c : CoreId) (now : Nat)
+    (entries : List (SchedContextId × Nat)) (st : SystemState) :
+    (ReplenishQueue.splitDue entries now).1.foldl
+        (fun acc scId => processOneReplenishmentOnCore acc c scId now) st =
+      foldDueReplenishmentsOnCore c now entries st := by
+  induction entries generalizing st with
+  | nil => rfl
+  | cons e tail ih =>
+    obtain ⟨scId, t⟩ := e
+    simp only [ReplenishQueue.splitDue, foldDueReplenishmentsOnCore]
+    split
+    · rw [List.foldl_cons]; exact ih _
+    · rfl
+
+/-- WS-ZA ZA6.2: the compiled `processReplenishmentsDueOnCore`.  The queue
+keeps its suffix past the due prefix, written in its slot
+(`modifyReplenishQueueOnCore`), and the due replenishments are processed off
+the prefix of the queue's own list; the specification builds the due ids and
+the remaining queue as a pair. -/
+@[inline] def processReplenishmentsDueOnCoreImpl (st : SystemState) (c : CoreId) (now : Nat) :
+    SystemState :=
+  let entries := (st.scheduler.replenishQueueOnCore c).entries
+  let st' := { st with scheduler := st.scheduler.modifyReplenishQueueOnCore c fun rq =>
+    { entries := ReplenishQueue.dropDue rq.entries now,
+      size := rq.size - ReplenishQueue.countDue rq.entries now } }
+  foldDueReplenishmentsOnCore c now entries st'
+
+@[csimp] theorem processReplenishmentsDueOnCore_eq_impl :
+    @processReplenishmentsDueOnCore = @processReplenishmentsDueOnCoreImpl := by
+  funext st c now
+  unfold processReplenishmentsDueOnCore processReplenishmentsDueOnCoreImpl
+  rw [ReplenishQueue.popDue_eq, SchedulerState.modifyReplenishQueueOnCore_eq]
+  exact foldl_splitDue_eq_foldDueReplenishmentsOnCore c now _ _
+
 /-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
 `scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
 `c`'s replenish queue.  The named CBS-replenishment-scheduling primitive that the
@@ -1969,6 +2089,71 @@ question alike. -/
   { timedOut.1 with scheduler := (markRescheduleTargets
       (timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1) timedOut.2.2) }
 
+/-- WS-ZA ZA6.2: the timeout pass has nothing to do: the context names no
+thread the store holds blocked on IPC (`tcbBlockingInfo`), so the pass records
+no error and owes no wake (`timeoutBlockedThreads_of_quiet`). -/
+@[inline] def timeoutPassQuiet (st : SystemState) (scId : SchedContextId) : Bool :=
+  match st.getSchedContext? scId with
+  | some sc =>
+    match sc.boundThread with
+    | some t =>
+      match st.getTcb? t with
+      | some tcb => (tcbBlockingInfo tcb).isNone
+      | none => true
+    | none => true
+  | none => true
+
+theorem timeoutBlockedThreads_of_quiet {st : SystemState} {scId : SchedContextId}
+    (h : timeoutPassQuiet st scId = true) (execCore : CoreId) :
+    timeoutBlockedThreads st scId execCore = (st, [], []) := by
+  unfold timeoutPassQuiet at h
+  unfold timeoutBlockedThreads
+  split
+  · rename_i sc hS
+    rw [hS] at h; dsimp only at h
+    split
+    · rename_i t hB
+      rw [hB] at h; dsimp only at h
+      unfold timeoutBlockedThreadStep
+      dsimp only
+      cases hT : st.getTcb? t with
+      | none => rfl
+      | some tcb =>
+        rw [hT] at h; dsimp only at h
+        cases hI : tcbBlockingInfo tcb with
+        | none => simp only [hI]
+        | some _ => rw [hI] at h; cases h
+    · rfl
+  · rfl
+
+/-- WS-ZA ZA6.2: the compiled `budgetExhaustOnCore`.  The timeout pass visits
+the context's one bound thread and times it out only when it is blocked on IPC;
+on every other path (`timeoutPassQuiet`) it records no error and owes no wake,
+so the diagnostic is cleared in its slot with no triple built for the pass's
+result.  A bound thread blocked on IPC runs the specification. -/
+@[inline] def budgetExhaustOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (preKey : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
+    (scId : SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
+  let spent := markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks) tid preKey
+  if timeoutPassQuiet spent scId then
+    { spent with scheduler := spent.scheduler.setLastTimeoutErrorsOnCore c [] }
+  else
+    let timedOut := timeoutBlockedThreads spent scId c
+    { timedOut.1 with scheduler := (markRescheduleTargets
+        (timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1) timedOut.2.2) }
+
+@[csimp] theorem budgetExhaustOnCore_eq_impl :
+    @budgetExhaustOnCore = @budgetExhaustOnCoreImpl := by
+  funext st c tid preKey scId sc hSc ticks
+  unfold budgetExhaustOnCore budgetExhaustOnCoreImpl
+  dsimp only
+  split
+  · rename_i hQ
+    rw [timeoutBlockedThreads_of_quiet hQ]
+    rfl
+  · rfl
+
 /-- WS-SM SM5.D.5 (per-core budget/time-slice tick): the per-core analogue of
 `timerTickBudget`.  Charges the current thread `tid` (with TCB `tcb`) one tick of
 budget on core `c`, returning `(updatedState, wasPreempted)`.
@@ -2016,6 +2201,64 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
         (st.rewriteObject scId.toObjId (.schedContext sc')
           (SystemState.rewriteAdmissible_schedContext hSc sc'), false)
     | none => (st, false)
+
+/-- WS-ZA ZA6.2: the compiled `timerTickBudgetOnCore`.  The two arms that
+decrement a counter write it in its slot (`modifyObject`) rather than
+re-inserting a copy of the object, so the store is updated in place. -/
+@[inline] def timerTickBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) : SystemState × Bool :=
+  match tcb.schedContextBinding with
+  | .unbound =>
+    if tcb.timeSlice ≤ 1 then
+      (sliceExpireOnCore st c tid tcb hTcb, true)
+    else
+      (st.modifyObject tid.toObjId
+        (SystemState.mapTcbObject fun t => { t with timeSlice := t.timeSlice - 1 }), false)
+  | .bound scId | .donated scId _ =>
+    match st.getSchedContextWitnessed? scId with
+    | some ⟨sc, hSc⟩ =>
+      if sc.budgetRemaining.val ≤ 1 then
+        (budgetExhaustOnCore st c tid (tcb.boostedPriority, effectiveDeadline st tcb, tcb.domain)
+          scId sc hSc 1, true)
+      else
+        (st.modifyObject scId.toObjId
+          (SystemState.mapSchedContextObject fun s => consumeBudget s 1), false)
+    | none => (st, false)
+
+@[csimp] theorem timerTickBudgetOnCore_eq_impl :
+    @timerTickBudgetOnCore = @timerTickBudgetOnCoreImpl := by
+  funext st c tid tcb hTcb
+  have hx := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  unfold timerTickBudgetOnCore timerTickBudgetOnCoreImpl
+  cases hB : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hS : tcb.timeSlice ≤ 1
+    · simp only [hS, ↓reduceIte]
+    · simp only [hS, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
+      rw [RobinHood.RHTable.modify_of_get? hx]
+      rfl
+  | bound scId =>
+    cases hS : st.getSchedContext? scId with
+    | none => simp only [SystemState.getSchedContextWitnessed?_eq_none hS]
+    | some sc =>
+      have hy := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS
+      simp only [SystemState.getSchedContextWitnessed?_eq_some hS]
+      by_cases hBud : sc.budgetRemaining.val ≤ 1
+      · simp only [hBud, ↓reduceIte, effectiveSchedParams_eq_parts]
+      · simp only [hBud, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
+        rw [RobinHood.RHTable.modify_of_get? hy]
+        rfl
+  | donated scId o =>
+    cases hS : st.getSchedContext? scId with
+    | none => simp only [SystemState.getSchedContextWitnessed?_eq_none hS]
+    | some sc =>
+      have hy := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS
+      simp only [SystemState.getSchedContextWitnessed?_eq_some hS]
+      by_cases hBud : sc.budgetRemaining.val ≤ 1
+      · simp only [hBud, ↓reduceIte, effectiveSchedParams_eq_parts]
+      · simp only [hBud, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
+        rw [RobinHood.RHTable.modify_of_get? hy]
+        rfl
 
 /-- WS-SM SM5.D.5 (raw-write migration Cut B2): charge core `c`'s current thread
 `tid` one tick, **resolved from the store** — the witnessed lookup

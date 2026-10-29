@@ -7593,7 +7593,7 @@ run_check "INVARIANT" rg -n '^@\[inline\] def rescheduleBracket($|[ ({:\[\]])' S
 # their own cells.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem perCoreTimerTickStepWithClockAdvance_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_valid_core($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem timerTickBudgetOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem timerTickBudgetOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem scheduleEffectiveOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem scheduleDomainOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem chooseThreadEffectiveOnCoreCode_succ($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean

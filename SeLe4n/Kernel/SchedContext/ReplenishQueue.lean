@@ -178,6 +178,51 @@ O(1) via the sorted invariant — the earliest entry is always the head. -/
   | [] => false
   | (_, eligibleAt) :: _ => eligibleAt ≤ currentTime
 
+/-- WS-ZA ZA6.2: the entries past the due prefix — the remaining queue
+`popDue` keeps — as a suffix of `entries`, so no cell is built
+(`splitDue_snd_eq_dropDue`). -/
+def dropDue : List (SchedContextId × Nat) → Nat → List (SchedContextId × Nat)
+  | [], _ => []
+  | l@((_, eligibleAt) :: tail), currentTime =>
+    if eligibleAt ≤ currentTime then dropDue tail currentTime else l
+
+/-- WS-ZA ZA6.2: how many entries are due — the length of the due list
+`popDue` returns (`splitDue_fst_length`). -/
+def countDue : List (SchedContextId × Nat) → Nat → Nat
+  | [], _ => 0
+  | (_, eligibleAt) :: tail, currentTime =>
+    if eligibleAt ≤ currentTime then countDue tail currentTime + 1 else 0
+
+theorem splitDue_snd_eq_dropDue (entries : List (SchedContextId × Nat)) (currentTime : Nat) :
+    (splitDue entries currentTime).2 = dropDue entries currentTime := by
+  induction entries with
+  | nil => rfl
+  | cons e tail ih =>
+    obtain ⟨scId, t⟩ := e
+    simp only [splitDue, dropDue]
+    split
+    · exact ih
+    · rfl
+
+theorem splitDue_fst_length (entries : List (SchedContextId × Nat)) (currentTime : Nat) :
+    (splitDue entries currentTime).1.length = countDue entries currentTime := by
+  induction entries with
+  | nil => rfl
+  | cons e tail ih =>
+    obtain ⟨scId, t⟩ := e
+    simp only [splitDue, countDue]
+    split
+    · simp only [List.length_cons, ih]
+    · rfl
+
+theorem popDue_eq (rq : ReplenishQueue) (currentTime : Nat) :
+    rq.popDue currentTime =
+      ({ entries := dropDue rq.entries currentTime,
+         size := rq.size - countDue rq.entries currentTime },
+       (splitDue rq.entries currentTime).1) := by
+  rw [← splitDue_snd_eq_dropDue, ← splitDue_fst_length]
+  rfl
+
 end ReplenishQueue
 
 -- ============================================================================
