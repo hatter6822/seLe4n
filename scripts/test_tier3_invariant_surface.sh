@@ -3019,19 +3019,19 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : S
 run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext scId fun sc => processReplenishments sc currentTime" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 # The per-core tick's charge is ONE definition, spelled exactly: the witnessed
-# lookup handing `timerTickBudgetOnCore` its proof, and the fail-closed arm.
+# lookup handing `timerTickBudgetOnCore` its proof, and the arm that charges a
+# thread the store does not hold nothing (WS-ZA ZA6.2: the tick is total).
 # A dependent match inline in the tick -- under its `have`-bound state -- is
 # opaque to definitional unification and broke `timerTickOnCore_eq_prepared`'s
 # `rfl`; the tick's own match tree stays non-dependent, so the negatives refuse
 # both the witnessed and the typed lookup coming back into it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickChargeCurrentOnCore \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) :\n    Except KernelError \(SystemState × Bool × List \(CoreId × SgiKind\)\) :=\n  match st\.getTcbWitnessed\? tid with\n  \| some ⟨tcb, hTcb⟩ => timerTickBudgetOnCore st c tid tcb hTcb\n  \| none => \.error \.schedulerInvariantViolation" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def timerTickChargeCurrentOnCore \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) :\n    SystemState × Bool :=\n  match st\.getTcbWitnessed\? tid with\n  \| some ⟨tcb, hTcb⟩ => timerTickBudgetOnCore st c tid tcb hTcb\n  \| none => \(st, false\)$" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match timerTickChargeCurrentOnCore st1 c tid with" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*getTcb(Witnessed)?\?" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 # The equation every SM5.D.2 headline is a corollary of is still `rfl`, and
 # reads the charge through the named step.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem timerTickOnCore_eq_prepared[^\n]*(\n([ \t][^\n]*)?)*match timerTickChargeCurrentOnCore \(timerTickOnCorePrepared st c\)\.1 c tid with[^\n]*(\n([ \t][^\n]*)?)*\) := rfl$" SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean'
-# The three frames a consumer reads the charge through.
-run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_ok\b' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem timerTickOnCore_eq_prepared[^\n]*(\n([ \t][^\n]*)?)*match timerTickChargeCurrentOnCore \(timerTickOnCorePrepared st c\) c tid with[^\n]*(\n([ \t][^\n]*)?)*\) := rfl$" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The two frames a consumer reads the charge through.
 run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_eq\b' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_none\b' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 # The decidable preemption predicate is stated over the witness, as the tick is.
@@ -7584,18 +7584,19 @@ run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites($|[ ({:\
 run_check "INVARIANT" rg -n '^@\[inline\] def timerTickBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def rescheduleBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
 # WS-ZA ZA6.1: the timer tick, the reschedule SGI and the secondary entry
-# allocate nothing.  The tick's checks precede its first write and the step is
-# its state form when they pass (an @[csimp] over the specification's step);
-# its dispatch and domain accounting never refuse; the reschedule step and the
+# allocate nothing.  The tick is total (WS-ZA ZA6.2), so the step is its state
+# form on every valid core (an @[csimp] over the specification's step) and the
+# charge writes its counter in its slot; its dispatch and domain accounting
+# never refuse; the reschedule step and the
 # vacated core's dispatch are the receiver's state form; each entry hands its
 # restore target across the commit as words; boot gives the per-core slots
 # their own cells.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem perCoreTimerTickStepWithClockAdvance_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
-run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
-run_check "INVARIANT" rg -n '^theorem timerTickOnCore_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
-run_check "INVARIANT" rg -n '^theorem scheduleEffectiveOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
-run_check "INVARIANT" rg -n '^theorem scheduleDomainOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
-run_check "INVARIANT" rg -n '^theorem chooseThreadEffectiveOnCoreCode_succ($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_valid_core($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem timerTickBudgetOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem scheduleEffectiveOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem scheduleDomainOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem chooseThreadEffectiveOnCoreCode_succ($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.PerCoreTimerTickState$' SeLe4n/Kernel/SchedLockBracket.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem perCoreRescheduleStep_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem dispatchVacatedCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
@@ -8296,7 +8297,7 @@ run_check "INVARIANT" rg -n -U '^    Concurrency\.releaseSwitchedFpOwnerOnCore c
 # physical writes and the instruction-cache operands — in its atomic step, and
 # performs them before its restore (the writes before any SGI).
 run_check "INVARIANT" rg -n -U '          post\.pendingIcacheMaintenance\),\n          Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites post\)\)\)\n    Platform\.FFI\.completePhysicalWrites writes\n    if advanced then Platform\.FFI\.ffiTimerAdvanceTickCount$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '^    Concurrency\.fireCrossCoreSgis sgis\n    Platform\.FFI\.completeIcacheMaintenance icache\n    Concurrency\.releaseSwitchedFpOwnerOnCore c$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^    Concurrency\.fireRaisedReschedules raised\n    Platform\.FFI\.completeIcacheMaintenance icache\n    Concurrency\.releaseSwitchedFpOwnerOnCore c$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '          post\.pendingIcacheMaintenance\),\n          Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites post\)\)\)\n    Platform\.FFI\.completePhysicalWrites writes\n    Platform\.FFI\.completeIcacheMaintenance icache$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n([ \t]*(--[^\n]*)?\n)*  Concurrency\.stallChangedCores result\.2\.2\.2 execCore\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -15805,12 +15806,13 @@ open SeLe4n.Kernel
 -- SM5.D.4 CBS replenishment + cross-core wake.
 #check @cbsReplenish_can_wake_remote_core
 #check @runningOnSomeCore
-#check @processOneReplenishmentOnCore_local_no_sgi
-#check @processOneReplenishmentOnCore_no_sgi_if_no_target
--- The round-7 local-wake bit: raised exactly where the SGI is not, so the
--- tick can run the receiver-side reschedule decision for its own core.
-#check @processOneReplenishmentOnCore_local_wake_bit
-#check @processOneReplenishmentOnCore_no_target_no_bit
+-- The wakes report through the reschedule flags, the flag of the target
+-- core whether local or remote, and the step reads its SGIs off them.
+#check @processOneReplenishmentOnCore_of_no_target
+#check @processOneReplenishmentOnCore_wake_eq
+#check @processOneReplenishmentOnCore_reschedulePendingOnCore_mono
+#check @processReplenishmentsDueOnCore_reschedulePendingOnCore_mono
+#check @processReplenishmentsDueOnCore_flags_wake_target
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
@@ -15826,7 +15828,9 @@ open SeLe4n.Kernel
 -- SM5.D.2 headlines + preservation.
 #check @timerTickOnCore_eq_prepared
 #check @timerTickOnCorePrepared
-#check @timerTickOnCorePreDomain
+#check @timerTickOnCore_cases
+#check @timerTickOnCore_of
+#check @rescheduleIfPendingOnCore
 #check @timerTickOnCore_idle
 #check @timerTickOnCore_idle_local_wake_reschedules
 #check @timerTickOnCore_cannot_dispatch_vacated_core
@@ -15840,18 +15844,14 @@ open SeLe4n.Kernel
 #check @scheduleEffectiveOnCore_getTcb?_domain
 #check @timerTickBudgetOnCore_notPreempted_getTcb?_domain
 -- SM5.D.8 decidability.
-#check @timerTickOnCoreSucceeds
-#check @timerTickOnCoreEmitsSgi
 #check @timerTickBudgetOnCorePreempts
 -- SM5.I per-core run-loop step + the live timer-entry driver.
 #check @perCoreTimerTickStep
 #check @perCoreTimerTickStep_invalid_core
-#check @perCoreTimerTickStep_ok
-#check @perCoreTimerTickStep_error
-#check @perCoreTimerTickStep_domain_error
-#check @perCoreTimerTickStep_sgis_eq_tick
+#check @perCoreTimerTickStep_valid_core
+#check @perCoreTimerTickStep_raised_get
 #check @perCoreTimerTickStep_preserves_objects_invExt
-#check @perCoreTimerTickStep_ok_currentThreadValidOnCore
+#check @perCoreTimerTickStep_currentThreadValidOnCore
 #check @tickClockedState
 #check @tickClockedState_objects
 #check @tickClockedState_scheduler
@@ -15862,12 +15862,10 @@ open SeLe4n.Kernel
 -- the committed step advanced the model clock).
 #check @perCoreTimerTickStepWithClockAdvance
 #check @perCoreTimerTickStepWithClockAdvance_state
-#check @perCoreTimerTickStepWithClockAdvance_sgis
+#check @perCoreTimerTickStepWithClockAdvance_raised
 #check @perCoreTimerTickStepWithClockAdvance_flag_def
 #check @perCoreTimerTickStepWithClockAdvance_flag_iff
 #check @perCoreTimerTickStepWithClockAdvance_flag_invalid_core
-#check @perCoreTimerTickStepWithClockAdvance_flag_error
-#check @perCoreTimerTickStepWithClockAdvance_flag_domain_error
 #check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 #check @perCoreTimerTickEntry
 #check @perCoreTimerTickEntry_def
@@ -15890,7 +15888,7 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_machine
 #check @scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore
 #check @timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
-#check @perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self
+#check @perCoreTimerTickStep_establishes_replenishmentPipelineOrderOnCore_self
 -- SM5.D.5/.6 per-core invariant preservation (§7 B1/B2/B3).
 #check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
 #check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore

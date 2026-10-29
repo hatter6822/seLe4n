@@ -268,23 +268,21 @@ example (a b c : RegisterFile) (hab : (a == b) = true) (hbc : (b == c) = true) :
 /-- SM5.I.8 (the closed capstone applies): the per-core timer tick preserves the
 full register-bank+Nodup base invariant given ONLY the bundled pre-state invariant
 — no budget hypotheses (the SM5.F per-core-PIP gap is discharged internally). -/
-example (st st' : SystemState) (c : CoreId) (sgis : List (CoreId × Concurrency.SgiKind))
+example (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
-    (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    schedulerInvariantStructuralRegNodup_perCore st' c :=
+    (hPre : schedulerInvariantStructuralRegNodup_perCore st c) :
+    schedulerInvariantStructuralRegNodup_perCore (timerTickOnCore st c) c :=
   timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
-    st c st' sgis hInv hPre hStep
+    st c hInv hPre
 
 /-- SM5.I.8 (the qcc-free run-queue safety sub-bundle survives the budget tick):
 `timerTickBudgetOnCore` — including the bound-budget-exhausted timeoutBlockedThreads
 path — preserves rat / rqWf / Nodup on core `c`. -/
 example (st st3 : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (b : Bool)
-    {sgis3 : List (CoreId × SgiKind)}
     (hInv : st.objects.invExt) (hTid : st.getTcb? tid = some tcb)
     (h : runQueueSafetyOnCore st c)
     {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis3)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st3, b)) :
     runQueueSafetyOnCore st3 c :=
   timerTickBudgetOnCore_preserves_runQueueSafetyOnCore st c tid tcb st3 b hInv hTid h hStep
 
@@ -432,14 +430,11 @@ run queue + current in the safety-satisfying shape — exercising the FULLY CLOS
 capstone's computation end-to-end (no budget hypotheses needed). -/
 private def runTimerTickChecks : IO Unit := do
   IO.println "--- §3.5 timer-tick budget closure (idle path, no budget hyps) ---"
-  match timerTickOnCore stEmpty bootCoreId with
-  | .ok (st', _) =>
-    assertBool "idle timer tick succeeds; post-tick boot run queue stays empty"
-      (decide ((st'.runQueueWalk bootCoreId) = []))
-    assertBool "idle timer tick: post-tick boot current stays none"
-      (decide ((st'.scheduler.currentOnCore bootCoreId) = none))
-  | .error _ =>
-    assertBool "idle timer tick should succeed (.ok)" false
+  let st' := timerTickOnCore stEmpty bootCoreId
+  assertBool "idle timer tick: post-tick boot run queue stays empty"
+    (decide ((st'.runQueueWalk bootCoreId) = []))
+  assertBool "idle timer tick: post-tick boot current stays none"
+    (decide ((st'.scheduler.currentOnCore bootCoreId) = none))
 
 -- §3.6 (elaboration-time, non-vacuity): the Strong SMP invariant's timeslice
 -- projections applied to a verified input.  The default boot state satisfies the
@@ -467,9 +462,8 @@ private def runStrongInvariantChecks : IO Unit := do
      | some t => decide (0 < t.timeSlice) | none => false)
   -- the timer tick (the only timeSlice writer) preserves it on a populated state.
   assertBool "the idle timer tick keeps every TCB's slice positive (tick capstone)"
-    (match timerTickOnCore stRun bootCoreId with
-     | .ok (st', _) => match st'.getTcb? tidA with | some t => decide (0 < t.timeSlice) | none => false
-     | .error _ => false)
+    (match (timerTickOnCore stRun bootCoreId).getTcb? tidA with
+     | some t => decide (0 < t.timeSlice) | none => false)
 
 /-- Run all SM5.I runtime checks. -/
 def runAllChecks : IO Unit := do

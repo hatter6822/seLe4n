@@ -311,10 +311,10 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
 
 -- SM5.H.2 (A4): the live per-core budget tick preserves replenish-queue validity.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (st' : SystemState) (b : Bool) {sgis3 : List (CoreId × SgiKind)} (c' : CoreId)
+    (st' : SystemState) (b : Bool) (c' : CoreId)
     (hValid : ∀ c'', replenishQueueValidOnCore st c'')
     {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis3)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) :
     replenishQueueValidOnCore st' c' :=
   timerTickBudgetOnCore_preserves_replenishQueueValidOnCore st c tid tcb st' b c' hValid hStep
 
@@ -635,7 +635,7 @@ private def runLiveTickScenarios : IO Unit := do
   | none => assertBool "the CBS fixture stores tid0 (the exhausted charge runs)" false
   | some ⟨tcbX, hX⟩ =>
       match timerTickBudgetOnCore stExhausted core1 tid0 tcbX hX with
-      | .ok (st', preempted, _tsgis) =>
+      | (st', preempted) =>
           assertBool "bound-exhausted budget tick preempts (returns true)"
             (preempted == true)
           -- A2: the LIVE tick's replenish-queue write on core 1 is exactly the
@@ -661,10 +661,8 @@ private def runLiveTickScenarios : IO Unit := do
             (match stUnboundThread.getTcbWitnessed? tid0 with
              | some ⟨tcbU, hU⟩ =>
                match timerTickBudgetOnCore stUnboundThread core1 tid0 tcbU hU with
-               | .ok (stU, _) => (stU.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)]
-               | .error _ => false
+               | (stU, _) => (stU.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)]
              | none => false)
-      | .error _ => assertBool "bound-exhausted budget tick succeeds" false
 
 /-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
@@ -752,16 +750,14 @@ its replenish queue is sorted, size-consistent, and future-ordered. -/
 private def runSm5iTickCbsChecks : IO Unit := do
   IO.println "--- §3.9 SM5.I live-tick preserves perCoreCbsInvariant (validity + pipeline) ---"
   let st := BootstrapBuilder.empty.build
-  match timerTickOnCore st bootCoreId with
-  | .ok (st1, _) =>
-      let rq := st1.scheduler.replenishQueueOnCore bootCoreId
-      assertBool "SM5.I: live-tick result replenish queue is size-consistent (validity)"
-        (rq.size == rq.entries.length)
-      assertBool "SM5.I: live-tick result replenish queue is future-ordered (pipeline)"
-        (rq.entries.all (fun pair => decide (pair.2 > st1.machine.timer)))
-      assertBool "SM5.I: live-tick reads but does not advance the global timer"
-        (st1.machine.timer == st.machine.timer)
-  | .error _ => assertBool "SM5.I: live-tick succeeds on an idle core" false
+  let st1 := timerTickOnCore st bootCoreId
+  let rq := st1.scheduler.replenishQueueOnCore bootCoreId
+  assertBool "SM5.I: live-tick result replenish queue is size-consistent (validity)"
+    (rq.size == rq.entries.length)
+  assertBool "SM5.I: live-tick result replenish queue is future-ordered (pipeline)"
+    (rq.entries.all (fun pair => decide (pair.2 > st1.machine.timer)))
+  assertBool "SM5.I: live-tick reads but does not advance the global timer"
+    (st1.machine.timer == st.machine.timer)
 
 -- ============================================================================
 -- §4  The binding lifecycle (WS-RR bind/unbind affinity closure)
