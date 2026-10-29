@@ -610,21 +610,6 @@ theorem replyRecvTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
         receiveTaintStep, sendTaintStep, applySyscallTaintAfter,
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
-/-- WS-ZA ZA5.12: the reply-receive's arm and taint step over the source words captured
-before it, handed over as scalars.  Out of line, so each branch of the capture
-(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
-builds no closure over them to share the arm between branches. -/
-@[noinline] def replyRecvArmThenTaintWordsR (ctx : LabelingContext)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
-    (sourceCode callerCode : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
-    (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool) : RefusalCarrying Unit :=
-  fun st =>
-    match endpointReplyRecvCheckedArmR ctx layout rf len extraCaps label tid executingCore cap st with
-    | .error refusal => .error refusal
-    | .ok ((), stPost) =>
-        .ok ((), replyRecvTaintStep sourceCode callerCode tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ stPost)
-
 /-- WS-ZA ZA4.7: the reply-receive's slot check, gate, arm and taint step on
 the capability its operand resolved to.  Every refusal carries the state it was
 handed (`replyRecvOperandArmThenTaintR_eq`). -/
@@ -643,8 +628,13 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
           let callerCode := replyRecvTaintCallerCodeOf st tid cap layout rf len
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
           withTaintWordsAt st tid.toObjId fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
-          replyRecvArmThenTaintWordsR ctx layout rf len extraCaps label tid executingCore cap
-            sourceCode callerCode a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st
+          match endpointReplyRecvCheckedArmR ctx layout rf len extraCaps label tid executingCore
+              cap st with
+          | .error refusal => .error refusal
+          | .ok ((), stPost) =>
+              .ok ((), replyRecvTaintStep sourceCode callerCode tid
+                ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
+                stPost)
         else .error (.illegalAuthority, st)
 
 theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -677,7 +667,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
-  · simp only [replyRecvOperandArmThenTaintR, replyRecvArmThenTaintWordsR]
+  · simp only [replyRecvOperandArmThenTaintR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true

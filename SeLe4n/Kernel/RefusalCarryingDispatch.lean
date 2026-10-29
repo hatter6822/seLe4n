@@ -292,21 +292,6 @@ theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
         applySyscallTaintAfter, hSig, syscallRecordsDeclassification, applyOrigination,
         applyTaintClears, applyTaintFlow, applyTaintStep]
 
-/-- WS-ZA ZA5.12: the signal's arm and taint step over the source words captured
-before it, handed over as scalars.  Out of line, so each branch of the capture
-(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
-builds no closure over them to share the arm between branches. -/
-@[noinline] def signalArmThenTaintWordsR (ctx : LabelingContext)
-    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
-    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
-    (taintCode : Nat) (sink : SeLe4n.ObjId) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
-    (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool) : RefusalCarrying Unit :=
-  fun st =>
-    match notificationSignalCheckedArmR ctx sigArgs tid executingCore cap st with
-    | .error refusal => .error refusal
-    | .ok ((), stPost) =>
-        .ok ((), signalTaintStep (SignalTaintCase.ofCode taintCode) sink ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ stPost)
-
 /-- The signal's gate and arm, from the capability its operand resolved to:
 `syscallResolveCap`'s idle-object check, the rights gate, then the capture of
 the caller's and the notification's taint words as scalars
@@ -321,7 +306,12 @@ refusal carrying the state it was handed (`signalOperandArmThenTaintR_eq`). -/
     else if cap.hasRight requiredRight then
       withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
       withTaintWordsAt st sink fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
-      signalArmThenTaintWordsR ctx sigArgs tid executingCore cap taintCode sink a0 a1 a2 a3 a4 a5 a6 a7 ac as b0 b1 b2 b3 b4 b5 b6 b7 bc bs st
+      match notificationSignalCheckedArmR ctx sigArgs tid executingCore cap st with
+      | .error refusal => .error refusal
+      | .ok ((), stPost) =>
+          .ok ((), signalTaintStep (SignalTaintCase.ofCode taintCode) sink
+            ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩ ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩
+            stPost)
     else .error (.illegalAuthority, st)
 
 /-- The signal's slot check, then `signalResolvedArmThenTaintR` on the
@@ -359,7 +349,7 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
     (decode_taintWordsAt st tid.toObjId) (decode_taintWordsAt st (operandObjectId operand))]
   rcases operand with _ | cap
   · rfl
-  · simp only [signalResolvedArmThenTaintR, signalArmThenTaintWordsR, signalTaintCaseOf, operandObjectId,
+  · simp only [signalResolvedArmThenTaintR, signalTaintCaseOf, operandObjectId,
       SignalTaintCase.ofCode_code]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
@@ -548,17 +538,6 @@ theorem waitTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
         syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow,
         applyTaintStep, joinTaintAt_toWords_of_decode _ _ h]
 
-/-- WS-ZA ZA5.12: the wait's arm and taint step over the source words captured
-before it, handed over as scalars.  Out of line, so each branch of the capture
-(`withTaintWordsAt`) is one call with the words as arguments, and the compiler
-builds no closure over them to share the arm between branches. -/
-@[noinline] def waitArmThenTaintWordsR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) (b0 b1 b2 b3 b4 b5 b6 b7 : UInt64) (bc : Nat) (bs : Bool) : RefusalCarrying Unit :=
-  fun st =>
-    match notificationWaitCheckedArmR ctx tid executingCore cap st with
-    | .error refusal => .error refusal
-    | .ok ((), stPost) => .ok ((), waitTaintStepOfCap cap tid ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ stPost)
-
 /-- The wait's slot check, gate, the capture of the notification's taint words
 as scalars (`withTaintWordsAt`), arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed
@@ -573,7 +552,10 @@ operand resolved to, every refusal carrying the state it was handed
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           withTaintWordsAt st (capObjectId cap) fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
-          waitArmThenTaintWordsR ctx tid executingCore cap b0 b1 b2 b3 b4 b5 b6 b7 bc bs st
+          match notificationWaitCheckedArmR ctx tid executingCore cap st with
+          | .error refusal => .error refusal
+          | .ok ((), stPost) =>
+              .ok ((), waitTaintStepOfCap cap tid ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ stPost)
         else .error (.illegalAuthority, st)
 
 theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -596,7 +578,7 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
   generalize SystemState.lookupSlotCap st ref = operand
   rcases operand with _ | cap
   · rfl
-  · simp only [waitOperandArmThenTaintR, waitArmThenTaintWordsR]
+  · simp only [waitOperandArmThenTaintR]
     by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true

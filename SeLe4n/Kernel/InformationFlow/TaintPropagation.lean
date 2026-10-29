@@ -1507,22 +1507,144 @@ theorem declassificationTaint_of_taintEmptyAt {s : SystemState} {k : SeLe4n.ObjI
   rw [taintEmptyAt_eq] at h
   exact (TaintWords.decode_eq_empty_iff _).mpr h
 
+/-- WS-ZA ZA5.12: **the object a capture reads its source's words from** — the
+object stored at `k`, or, where none is, an endpoint, which holds no words.  One
+probe, whose `Option` the match consumes. -/
+@[inline] def taintSourceObjectAt (s : SystemState) (k : SeLe4n.ObjId) : KernelObject :=
+  match s.getObject? k with
+  | some o => o
+  | none => .endpoint {}
+
+theorem taintSourceObjectAt_taintWords (s : SystemState) (k : SeLe4n.ObjId) :
+    (taintSourceObjectAt s k).taintWords = s.taintWordsAt k := by
+  unfold taintSourceObjectAt SystemState.taintWordsAt
+  rcases s.getObject? k with _ | o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag0_eq`). -/
+@[inline] def taintWordTag0 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag0
+  | .notification n => n.taintTag0
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag0_eq (o : KernelObject) : taintWordTag0 o = o.taintWords.tag0 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag1_eq`). -/
+@[inline] def taintWordTag1 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag1
+  | .notification n => n.taintTag1
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag1_eq (o : KernelObject) : taintWordTag1 o = o.taintWords.tag1 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag2_eq`). -/
+@[inline] def taintWordTag2 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag2
+  | .notification n => n.taintTag2
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag2_eq (o : KernelObject) : taintWordTag2 o = o.taintWords.tag2 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag3_eq`). -/
+@[inline] def taintWordTag3 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag3
+  | .notification n => n.taintTag3
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag3_eq (o : KernelObject) : taintWordTag3 o = o.taintWords.tag3 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag4_eq`). -/
+@[inline] def taintWordTag4 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag4
+  | .notification n => n.taintTag4
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag4_eq (o : KernelObject) : taintWordTag4 o = o.taintWords.tag4 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag5_eq`). -/
+@[inline] def taintWordTag5 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag5
+  | .notification n => n.taintTag5
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag5_eq (o : KernelObject) : taintWordTag5 o = o.taintWords.tag5 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag6_eq`). -/
+@[inline] def taintWordTag6 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag6
+  | .notification n => n.taintTag6
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag6_eq (o : KernelObject) : taintWordTag6 o = o.taintWords.tag6 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordTag7_eq`). -/
+@[inline] def taintWordTag7 (o : KernelObject) : UInt64 :=
+  match o with
+  | .tcb t => t.taintTag7
+  | .notification n => n.taintTag7
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordTag7_eq (o : KernelObject) : taintWordTag7 o = o.taintWords.tag7 := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordCount_eq`). -/
+@[inline] def taintWordCount (o : KernelObject) : Nat :=
+  match o with
+  | .tcb t => t.taintCount
+  | .notification n => n.taintCount
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => 0
+
+theorem taintWordCount_eq (o : KernelObject) : taintWordCount o = o.taintWords.count := by
+  cases o <;> rfl
+
+/-- One field of an object's taint words, read on its own (`taintWordSaturated_eq`). -/
+@[inline] def taintWordSaturated (o : KernelObject) : Bool :=
+  match o with
+  | .tcb t => t.taintSaturated
+  | .notification n => n.taintSaturated
+  | .endpoint _ | .reply _ | .cnode _ | .vspaceRoot _ | .untyped _ | .schedContext _
+  | .frame _ | .pageTable _ => false
+
+theorem taintWordSaturated_eq (o : KernelObject) : taintWordSaturated o = o.taintWords.saturated := by
+  cases o <;> rfl
+
 /-- WS-ZA ZA5.12: **a source's words, captured as scalars before the arm** —
 the ten fields of the words stored at `k` (`SystemState.taintWordsAt`), handed
-to `f` one by one, read at one probe.  What a compiled dispatcher reads of the
-pre-state's taint: `f` runs the arm and the taint step, so the arm owns the
-state it writes and the capture builds no `TaintWords` (`withTaintWordsAt_eq`). -/
+to `f` one by one, read off the object at one probe.  What a compiled
+dispatcher reads of the pre-state's taint: `f` runs the arm and the taint step,
+so the arm owns the state it writes and the capture builds no `TaintWords`
+(`withTaintWordsAt_eq`).  `f` is applied once, each field read on its own off
+the one object, so the compiler has no branch to share the arm between and
+builds no closure over the words. -/
 @[inline] def withTaintWordsAt {α : Sort _} (s : SystemState) (k : SeLe4n.ObjId)
     (f : UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 → UInt64 →
       Nat → Bool → α) : α :=
-  match s.getObject? k with
-  | some (.tcb t) =>
-      f t.taintTag0 t.taintTag1 t.taintTag2 t.taintTag3 t.taintTag4 t.taintTag5
-        t.taintTag6 t.taintTag7 t.taintCount t.taintSaturated
-  | some (.notification n) =>
-      f n.taintTag0 n.taintTag1 n.taintTag2 n.taintTag3 n.taintTag4 n.taintTag5
-        n.taintTag6 n.taintTag7 n.taintCount n.taintSaturated
-  | some _ | none => f 0 0 0 0 0 0 0 0 0 false
+  let o := taintSourceObjectAt s k
+  f (taintWordTag0 o) (taintWordTag1 o) (taintWordTag2 o) (taintWordTag3 o) (taintWordTag4 o)
+    (taintWordTag5 o) (taintWordTag6 o) (taintWordTag7 o) (taintWordCount o)
+    (taintWordSaturated o)
 
 /-- The capture hands `f` the fields of the words stored at `k`. -/
 theorem withTaintWordsAt_eq {α : Sort _} (s : SystemState) (k : SeLe4n.ObjId)
@@ -1533,10 +1655,9 @@ theorem withTaintWordsAt_eq {α : Sort _} (s : SystemState) (k : SeLe4n.ObjId)
         (s.taintWordsAt k).tag3 (s.taintWordsAt k).tag4 (s.taintWordsAt k).tag5
         (s.taintWordsAt k).tag6 (s.taintWordsAt k).tag7 (s.taintWordsAt k).count
         (s.taintWordsAt k).saturated := by
-  unfold withTaintWordsAt SystemState.taintWordsAt
-  rcases s.getObject? k with _ | o
-  · rfl
-  · cases o <;> rfl
+  simp only [withTaintWordsAt, taintWordTag0_eq, taintWordTag1_eq, taintWordTag2_eq,
+    taintWordTag3_eq, taintWordTag4_eq, taintWordTag5_eq, taintWordTag6_eq, taintWordTag7_eq,
+    taintWordCount_eq, taintWordSaturated_eq, taintSourceObjectAt_taintWords]
 
 /-- A capture's ten fields rebuild the words they were read from. -/
 @[simp] theorem TaintWords.mk_fields (w : TaintWords) :
@@ -1548,6 +1669,16 @@ the pre-state's taint there — what discharges the source hypothesis of every
 fused taint step's compiled-equals-specification proof. -/
 theorem decode_taintWordsAt (s : SystemState) (k : SeLe4n.ObjId) :
     (s.taintWordsAt k).decode = s.declassificationTaint k := rfl
+
+/-- WS-ZA ZA5.12: **the slot write of one join, out of line**: the source's
+words reach it as scalars, and the slot's rewrite (`KernelObject.joinTaintScalars`)
+is the table write's own argument, so the write is specialised to it and no
+closure over the words is built — inlined into an arm, the rewrite was floated
+above the arm as a closure the generic table write then called. -/
+@[noinline] def _root_.SeLe4n.Model.SystemState.joinTaintScalarsAt (s : SystemState)
+    (k : SeLe4n.ObjId) (t0 t1 t2 t3 t4 t5 t6 t7 : UInt64) (c : Nat) (sat : Bool) :
+    SystemState :=
+  s.mapObjectAt k (·.joinTaintScalars t0 t1 t2 t3 t4 t5 t6 t7 c sat)
 
 /-- WS-ZA ZA5.12: **one join**: `w`'s taint joins the words at `k`, written in
 the key's slot (`KernelObject.joinTaintWords`) — a thread or a notification;
@@ -1568,7 +1699,7 @@ nothing.  Compiled, the source words reach the slot's join as scalars
     let t7 := w.tag7
     let c := w.count
     let sat := w.saturated
-    s.mapObjectAt k (·.joinTaintScalars t0 t1 t2 t3 t4 t5 t6 t7 c sat)
+    s.joinTaintScalarsAt k t0 t1 t2 t3 t4 t5 t6 t7 c sat
 
 /-- `joinTaintAt` read as the slot write it is. -/
 theorem joinTaintAt_eq (s : SystemState) (k : SeLe4n.ObjId) (w : TaintWords) :
