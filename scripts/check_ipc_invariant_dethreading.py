@@ -341,6 +341,10 @@ MACHINERY_PINS = {
     # defines one closed constant and no command, and it is named in
     # `nonExecutedTransitions`, so the census that would not see it does.
     ("SeLe4n/Testing/KernelTransitionReachabilityCensus.lean", "run_cmd"): 2,
+    # WS-ZA ZA5.12: the taint-reader census, decided over the elaborated
+    # environment.  One `run_cmd` -- the witness and the compiled-closure
+    # check; it mints no declaration and defines no command.
+    ("SeLe4n/Testing/TaintReaderCompiledReachCensus.lean", "run_cmd"): 1,
     # The census's own loop witness: a `local macro` minting a hygienic
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.
