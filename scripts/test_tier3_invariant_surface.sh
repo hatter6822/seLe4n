@@ -4969,8 +4969,8 @@ run_check "INVARIANT" rg -n '^ +..bootEntryWitnessEditedBlob, ..bootEntryWitness
 # WS-BP BP8.1: the `virt` entry's shape is refused under the RPi5 entry, and the
 # RPi5 entry's shape under the `virt` one — the table decides which board.
 run_check "INVARIANT" rg -n '^ +..bootEntryWitnessQemuVirtCompliant, ..bootEntryWitnessEffectfulConfig\] do$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def bootEntries : List BootEntrySpec := \[rpi5BootEntry, qemuVirtBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^  for witness in \[..bootEntryWitnessCompliant, ..bootEntryWitnessQemuVirtFixedBlob,\n +..bootEntryWitnessSideInstall, ..bootEntryWitnessQemuVirtExerciserCompliant\] do\n    if \(← bootEntryContractViolations qemuVirtBootEntry witness\)\.isEmpty then' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -U -n '^def bootEntries : List BootEntrySpec :=\n  \[rpi5BootEntry, qemuVirtBootEntry, qemuVirtExerciserBootEntry\]$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  `SeLe4n\.Platform\.QemuVirt\.bootAndInitialiseQemuVirtFromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n '^  \.forallE .dtb \(mkConst ..ByteArray\) \(mkApp \(mkConst ..BaseIO\) \(mkConst ..Unit\)\) \.default$' SeLe4n/Testing/BootEntryContract.lean
 # WS-BP BP4.3: the HAL copies the firmware's blob into the `ByteArray` the entry
@@ -7850,7 +7850,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem epoch_empty : empty\.epoch = 0 :
 run_check "INVARIANT" rg -n '^def auditTimestampsFrom($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def declassificationTrailWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^    timestamp := epoch \+ position$' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^    st\.declassificationAuditEpoch st\.declassificationAudit\.length predecessorTags$' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^    st\.declassificationAuditEpoch st\.declassificationAudit\.length predecessorWords$' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem declassificationTrail_timestamp_identifies_event($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_declassificationAuditEpoch_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # The witness that the PRE-EPOCH producer is genuinely unsound once drain
@@ -9251,7 +9251,7 @@ run_check "INVARIANT" rg -n '^theorem onCore_declassificationTaint($|[ ({:\[\]])
 # default would attribute an empty history to every event while compiling
 # everywhere; and the tags are GLOBAL identities, so the field is read by the
 # detector and never exported through SM9.A's chunk protocol.
-run_check "INVARIANT" rg -n 'predecessorTags : DeclassificationTaint' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^  predecessorWords : TaintWords$' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^def declassificationEventNames($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
