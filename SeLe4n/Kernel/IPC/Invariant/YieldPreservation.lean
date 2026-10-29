@@ -66,7 +66,7 @@ theorem spendBudgetOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
       hObjInv hInv hPre (by
         unfold cbsUpdateDeadline scheduleReplenishment consumeBudget
         repeat' split
-        all_goals rfl)
+        all_goals simp [SchedContext.boundThread])
   unfold spendBudgetOnCore
   dsimp only
   have h2 : ipcInvariantFull (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) c scId

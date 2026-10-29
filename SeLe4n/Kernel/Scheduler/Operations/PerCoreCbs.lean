@@ -835,9 +835,7 @@ replenishment list within `maxReplenishments` (`truncateReplenishments_length_le
 theorem scheduleReplenishment_replenishments_bounded (sc : SchedContext)
     (currentTime : Nat) (consumed : Budget) :
     (scheduleReplenishment sc currentTime consumed).replenishments.length ≤ maxReplenishments := by
-  unfold scheduleReplenishment
-  simp only [SchedContext.withReplenishments_replenishments]
-  exact truncateReplenishments_length_le _
+  exact SchedContext.replenishments_length_le _
 
 -- ============================================================================
 -- §8  SM5.H.2 (B8) — `replenishScOnCore`: faithful `sc`-based scheduling

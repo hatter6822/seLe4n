@@ -170,7 +170,7 @@ def test_schedContext_configure_replenishment_eligibility : IO Bool := do
       budgetRemaining := { val := 50 }
       boundThreadCode := 0
       isActive := false
-      refillTail := [] }
+      refillTailCount := 0 }
   let post := SeLe4n.Kernel.SchedContextOps.applyConfigureParamsFull
                 scInit (budget := 100) (period := 1000)
                 (priority := 0) (deadline := 0) (domain := 0) (timer := 100)
@@ -195,7 +195,7 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
       budgetRemaining := { val := 60 }
       boundThreadCode := 0
       isActive := true
-      refillTail := [] }
+      refillTailCount := 0 }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert scId.toObjId
       (.schedContext sc) }

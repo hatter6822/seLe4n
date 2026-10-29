@@ -1088,9 +1088,17 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,
-     boundThreadCode, scReply, donationOrigin, _isActive⟩ =>
+     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
+     _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
+     _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
+     _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
+     _refillSlot7Amount, _refillSlot7EligibleAt,
+     boundThreadCode, scReply, donationOrigin, _isActive,
+     releaseNextCode, _releaseCoreCode, _releaseAt⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
+    -- **WS-ZA ZA6.3**: and its release-queue successor, which names a scheduling
+    -- context by its code (`0` is none, `s + 1` is `s`).
+    (releaseNextCode != 0 && SeLe4n.Kernel.isIdleObjId (SeLe4n.ObjId.ofNat (releaseNextCode - 1))) ||
     (SeLe4n.ThreadId.ofOptCode boundThreadCode).any SeLe4n.Kernel.isIdleThreadId ||
     scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
     -- **WS-HP HP10.3**: and the recorded reservation origin, which is a
@@ -2235,8 +2243,13 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
   | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,
-     _boundThread, _scReply, _donationOrigin, _isActive⟩ =>
+     _refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTailCount,
+     _refillSlot1Amount, _refillSlot1EligibleAt, _refillSlot2Amount, _refillSlot2EligibleAt,
+     _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
+     _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
+     _refillSlot7Amount, _refillSlot7EligibleAt,
+     _boundThread, _scReply, _donationOrigin, _isActive,
+     _releaseNextCode, _releaseCoreCode, _releaseAt⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -2249,7 +2262,11 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     -- thread a loan came from, and a boot state has made no loan -- every
     -- admissible boot SchedContext is unbound with an empty reply stack, so a
     -- config-supplied origin could only name a loan that does not exist.
-    sc.donationOrigin.isNone
+    sc.donationOrigin.isNone &&
+    -- **WS-ZA ZA6.3**: and on no release queue.  Boot installs every core's
+    -- release queue empty, so a config-supplied core could only name a queue
+    -- place that does not exist.
+    sc.releaseCoreCode == 0
 
 @[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
     bootSafeSchedContextCheck sc =
@@ -2261,7 +2278,8 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
        sc.boundThread.isNone &&
        sc.scReply.isNone &&
-       sc.donationOrigin.isNone) := rfl
+       sc.donationOrigin.isNone &&
+       sc.releaseCoreCode == 0) := rfl
 
 /-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
     no `prev` link.  `replyId` is pinned to the slot by
@@ -2379,7 +2397,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
       -- **WS-HP HP10.3**: and no recorded reservation origin.
-      sc.donationOrigin = none) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0) ∧
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
     -- reply-stack link in either direction.
     (∀ r, obj = .reply r →
@@ -2464,15 +2482,15 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
             fun _ he => by injection he, fun _ he => by injection he⟩
     injection hs; subst_vars
     refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack,
-            Option.eq_none_of_isNone hNoOrigin⟩
+            Option.eq_none_of_isNone hNoOrigin, by simpa using hNoRelease⟩
     unfold schedContextWellFormed
     refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
             ⟨hRepLen, ?_⟩, ?_⟩
@@ -2530,7 +2548,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0) ∧
     (∀ r, obj = .reply r →
       r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
     (∀ ut, obj = .untyped ut →
@@ -5445,7 +5463,7 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- executable side the stricter: the direction that reads as coverage.
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0) ∧
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
   -- link in either direction.
   (∀ r, obj = .reply r →
@@ -5532,7 +5550,7 @@ def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
     SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0) ∧
   (∀ r, obj = .reply r →
     r.caller = none ∧ r.prev = none ∧ r.next = none)
 

@@ -1468,7 +1468,7 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
             refillHeadPresent := true
             refillHeadAmount := budget
             refillHeadEligibleAt := 0 + period
-            refillTail := [] }
+            refillTailCount := 0 }
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
           match obj with

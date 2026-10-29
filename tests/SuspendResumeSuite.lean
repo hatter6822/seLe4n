@@ -363,7 +363,7 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
     { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (some tid),
       budget := ⟨1000⟩, period := ⟨1000⟩,
       priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-      budgetRemaining := ⟨1000⟩, isActive := true, refillTail := [] }
+      budgetRemaining := ⟨1000⟩, isActive := true, refillTailCount := 0 }
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
   match cancelBoundDonation st tid tcb with

@@ -1009,7 +1009,7 @@ private def mkSc (bound : Option SeLe4n.ThreadId) (active : Bool) : SchedContext
   { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (bound),
     budget := ⟨1000⟩, period := ⟨1000⟩,
     priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨1000⟩, isActive := active, refillTail := [] }
+    budgetRemaining := ⟨1000⟩, isActive := active, refillTailCount := 0 }
 
 private def stBoundDonation : SystemState :=
   let base :=

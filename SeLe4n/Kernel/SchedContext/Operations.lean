@@ -633,7 +633,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
             refillHeadPresent := true
             refillHeadAmount := budget
             refillHeadEligibleAt := st.machine.timer + period
-            refillTail := [] }
+            refillTailCount := 0 }
         if checkAdmission st updated (some vScId.val) then
           -- AK2-G: purge stale system replenishQueue entries for this vScId.val
           -- before storing the reconfigured object.
@@ -713,7 +713,7 @@ the stored one, so the store can rewrite it in its slot. -/
     refillHeadPresent := true
     refillHeadAmount := budget
     refillHeadEligibleAt := timer + period
-    refillTail := [] }
+    refillTailCount := 0 }
 
 /-- **WS-ZA ZA5.2**: `schedContextConfigure`'s checks, read before any write:
 the parameters, the context, admission (`checkAdmission` of the configured
@@ -828,7 +828,7 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
           { sc with budget := ⟨budget⟩, period := ⟨period⟩, priority := ⟨priority⟩,
                     deadline := ⟨deadline⟩, domain := ⟨domain⟩, budgetRemaining := ⟨budget⟩,
                     refillHeadPresent := true, refillHeadAmount := budget,
-                    refillHeadEligibleAt := st.machine.timer + period, refillTail := [] }
+                    refillHeadEligibleAt := st.machine.timer + period, refillTailCount := 0 }
           (some vScId.val) = true := by
         rw [checkAdmission_eq_impl]
         simpa [checkAdmissionImpl, admissionUtilizationOf, SchedContext.utilizationPerMille,
@@ -839,7 +839,7 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
           { sc with budget := ⟨budget⟩, period := ⟨period⟩, priority := ⟨priority⟩,
                     deadline := ⟨deadline⟩, domain := ⟨domain⟩, budgetRemaining := ⟨budget⟩,
                     refillHeadPresent := true, refillHeadAmount := budget,
-                    refillHeadEligibleAt := st.machine.timer + period, refillTail := [] } := by
+                    refillHeadEligibleAt := st.machine.timer + period, refillTailCount := 0 } := by
         simp only [configuredSchedContext]
       generalize hC : purgeReplenishmentOnCore st (schedContextReplenishHome st sc)
         ⟨vScId.val.toNat⟩ = stC

@@ -78,7 +78,7 @@ def truncateReplenishments (rs : List ReplenishmentEntry) : List ReplenishmentEn
   rs.drop (rs.length - maxReplenishments)
 
 /-- `truncateReplenishments` produces a list within the bound. -/
-theorem truncateReplenishments_length_le (rs : List ReplenishmentEntry) :
+@[simp] theorem truncateReplenishments_length_le (rs : List ReplenishmentEntry) :
     (truncateReplenishments rs).length ≤ maxReplenishments := by
   simp [truncateReplenishments, List.length_drop]
   omega
@@ -95,6 +95,65 @@ def scheduleReplenishment (sc : SchedContext) (currentTime : Nat)
   let entry := mkReplenishmentEntry consumed currentTime sc.period
   let newList := sc.replenishments ++ [entry]
   sc.withReplenishments (truncateReplenishments newList)
+
+/-- WS-ZA ZA6.3: the compiled `scheduleReplenishment`.  The specification
+reads the refills as a list, appends the new one and writes the list back, a
+cell and an entry per refill; seL4-MCS writes the new refill into the next
+slot of the context's own storage (`refill_add_tail`).  A context with no
+refill takes the new one as its first, and one with a free slot takes it in
+the next slot, each a record update of the context's own fields; a context
+whose slots are full (the specification drops its oldest refill) runs the
+specification.  Proven equal (`scheduleReplenishment_eq_impl`). -/
+@[inline] def scheduleReplenishmentImpl (sc : SchedContext) (currentTime : Nat)
+    (consumed : Budget) : SchedContext :=
+  let eligibleAt := currentTime + sc.period.val
+  if sc.refillHeadPresent then
+    if sc.refillTailCount < refillTailCapacity then
+      { sc.setTailSlot sc.refillTailCount { amount := consumed, eligibleAt := eligibleAt } with
+        refillHeadPresent := true
+        refillHeadAmount := sc.refillHeadAmount
+        refillHeadEligibleAt := sc.refillHeadEligibleAt
+        refillTailCount := sc.refillTailCount + 1 }
+    else scheduleReplenishment sc currentTime consumed
+  else
+    { sc with
+      refillHeadPresent := true
+      refillHeadAmount := consumed.val
+      refillHeadEligibleAt := eligibleAt
+      refillTailCount := 0 }
+
+@[csimp] theorem scheduleReplenishment_eq_impl :
+    @scheduleReplenishment = @scheduleReplenishmentImpl := by
+  funext sc t consumed
+  unfold scheduleReplenishmentImpl
+  split
+  · rename_i hP
+    split
+    · rename_i hN
+      have hTail : sc.refillTail.length = sc.refillTailCount := by
+        rw [SchedContext.refillTail_length]; omega
+      have hR : sc.replenishments =
+          { amount := ⟨sc.refillHeadAmount⟩, eligibleAt := sc.refillHeadEligibleAt } ::
+            sc.refillTail := by
+        simp [SchedContext.replenishments, hP]
+      have hLen : (sc.replenishments ++ [mkReplenishmentEntry consumed t sc.period]).length ≤
+          maxReplenishments := by
+        rw [hR]; simp only [List.length_append, List.length_cons, List.length_nil, hTail]
+        unfold refillTailCapacity at hN; unfold maxReplenishments at hN ⊢; omega
+      unfold scheduleReplenishment truncateReplenishments
+      dsimp only
+      rw [Nat.sub_eq_zero_of_le hLen, List.drop_zero, hR]
+      simp only [List.cons_append, SchedContext.withReplenishments, List.isEmpty_cons,
+        Bool.not_false, List.tail_cons, SchedContext.writeTail_append,
+        SchedContext.writeTail_refillTail, List.length_append, List.length_cons,
+        List.length_nil, hTail, Nat.zero_add, SchedContext.writeTail, mkReplenishmentEntry]
+    · rfl
+  · rename_i hP
+    have hR : sc.replenishments = [] := by simp [SchedContext.replenishments, hP]
+    unfold scheduleReplenishment truncateReplenishments
+    rw [hR]
+    simp [SchedContext.withReplenishments, SchedContext.writeTail, mkReplenishmentEntry,
+      maxReplenishments]
 
 -- ============================================================================
 -- Z2-D1: partitionEligible helper
@@ -175,6 +234,72 @@ theorem partition_of_allReplenishmentsEligible (currentTime : Nat) :
     simp only [Prod.mk.injEq] at ih ⊢
     simp [List.filter_cons, h.1, ih.1, ih.2]
 
+/-- WS-ZA ZA6.3: a slot's amount, read as its field. -/
+@[inline] def SchedContext.tailSlotAmount (sc : SchedContext) : Nat → Nat
+  | 0 => sc.refillSlot1Amount | 1 => sc.refillSlot2Amount | 2 => sc.refillSlot3Amount
+  | 3 => sc.refillSlot4Amount | 4 => sc.refillSlot5Amount | 5 => sc.refillSlot6Amount
+  | 6 => sc.refillSlot7Amount | _ => 0
+
+/-- WS-ZA ZA6.3: a slot's release time, read as its field. -/
+@[inline] def SchedContext.tailSlotEligibleAt (sc : SchedContext) : Nat → Nat
+  | 0 => sc.refillSlot1EligibleAt | 1 => sc.refillSlot2EligibleAt | 2 => sc.refillSlot3EligibleAt
+  | 3 => sc.refillSlot4EligibleAt | 4 => sc.refillSlot5EligibleAt | 5 => sc.refillSlot6EligibleAt
+  | 6 => sc.refillSlot7EligibleAt | _ => 0
+
+theorem SchedContext.tailSlot_eq (sc : SchedContext) (i : Nat) :
+    sc.tailSlot i = { amount := ⟨sc.tailSlotAmount i⟩, eligibleAt := sc.tailSlotEligibleAt i } := by
+  match i with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | _ + 7 => rfl
+
+/-- WS-ZA ZA6.3: whether the `k` slots from `i` are all due, read from the
+fields. -/
+def SchedContext.tailAllEligibleFrom (sc : SchedContext) (currentTime : Nat) (i : Nat) :
+    Nat → Bool
+  | 0 => true
+  | k + 1 => decide (sc.tailSlotEligibleAt i ≤ currentTime) &&
+      sc.tailAllEligibleFrom currentTime (i + 1) k
+
+/-- WS-ZA ZA6.3: the `k` slots' amounts from `i`, read from the fields. -/
+def SchedContext.tailSumFrom (sc : SchedContext) (i : Nat) : Nat → Nat
+  | 0 => 0
+  | k + 1 => sc.tailSlotAmount i + sc.tailSumFrom (i + 1) k
+
+/-- WS-ZA ZA6.3: whether every replenishment after the first is due, with no
+list built. -/
+@[inline] def SchedContext.tailAllEligible (sc : SchedContext) (currentTime : Nat) : Bool :=
+  sc.tailAllEligibleFrom currentTime 0 (min sc.refillTailCount refillTailCapacity)
+
+/-- WS-ZA ZA6.3: the amounts of the replenishments after the first, with no
+list built. -/
+@[inline] def SchedContext.tailSum (sc : SchedContext) : Nat :=
+  sc.tailSumFrom 0 (min sc.refillTailCount refillTailCapacity)
+
+theorem SchedContext.tailAllEligibleFrom_eq (sc : SchedContext) (t : Nat) :
+    ∀ i k, sc.tailAllEligibleFrom t i k =
+      allReplenishmentsEligible t ((List.range' i k).map sc.tailSlot)
+  | _, 0 => rfl
+  | i, k + 1 => by
+    simp only [SchedContext.tailAllEligibleFrom, List.range'_succ, List.map_cons,
+      allReplenishmentsEligible, SchedContext.tailAllEligibleFrom_eq sc t (i + 1) k,
+      SchedContext.tailSlot_eq, ReplenishmentEntry.isEligible]
+
+theorem SchedContext.tailSumFrom_eq (sc : SchedContext) :
+    ∀ i k, sc.tailSumFrom i k = sumReplenishments ((List.range' i k).map sc.tailSlot)
+  | _, 0 => rfl
+  | i, k + 1 => by
+    simp only [SchedContext.tailSumFrom, List.range'_succ, List.map_cons, sumReplenishments,
+      SchedContext.tailSumFrom_eq sc (i + 1) k, SchedContext.tailSlot_eq]
+
+theorem SchedContext.tailAllEligible_eq (sc : SchedContext) (t : Nat) :
+    sc.tailAllEligible t = allReplenishmentsEligible t sc.refillTail := by
+  rw [SchedContext.tailAllEligible, SchedContext.tailAllEligibleFrom_eq, SchedContext.refillTail,
+    List.range_eq_range']
+
+theorem SchedContext.tailSum_eq (sc : SchedContext) :
+    sc.tailSum = sumReplenishments sc.refillTail := by
+  rw [SchedContext.tailSum, SchedContext.tailSumFrom_eq, SchedContext.refillTail,
+    List.range_eq_range']
+
 /-- WS-ZA ZA6.2: the compiled `processReplenishments`.  The refills are held as
 the context's own fields (`refillHeadPresent`, `refillHeadAmount`,
 `refillHeadEligibleAt`) and a tail, and the specification reads them as a list
@@ -187,23 +312,21 @@ re-capped).  A context with a refill not yet due runs the specification.
 Proven equal (`processReplenishments_eq_impl`). -/
 @[inline] def processReplenishmentsImpl (sc : SchedContext) (currentTime : Nat) : SchedContext :=
   if sc.refillHeadPresent then
-    if decide (sc.refillHeadEligibleAt ≤ currentTime) &&
-        allReplenishmentsEligible currentTime sc.refillTail then
+    if decide (sc.refillHeadEligibleAt ≤ currentTime) && sc.tailAllEligible currentTime then
       let newRemaining : Budget :=
-        ⟨min (sc.budgetRemaining.val + (sc.refillHeadAmount + sumReplenishments sc.refillTail))
-          sc.budget.val⟩
+        ⟨min (sc.budgetRemaining.val + (sc.refillHeadAmount + sc.tailSum)) sc.budget.val⟩
       { sc with
         budgetRemaining := newRemaining
         isActive := newRemaining.isPositive
         refillHeadPresent := false
-        refillTail := [] }
+        refillTailCount := 0 }
     else processReplenishments sc currentTime
   else
     let newRemaining : Budget := ⟨min sc.budgetRemaining.val sc.budget.val⟩
     { sc with
       budgetRemaining := newRemaining
       isActive := newRemaining.isPositive
-      refillTail := [] }
+      refillTailCount := 0 }
 
 @[csimp] theorem processReplenishments_eq_impl :
     @processReplenishments = @processReplenishmentsImpl := by
@@ -213,7 +336,7 @@ Proven equal (`processReplenishments_eq_impl`). -/
   · rename_i hP
     split
     · rename_i h
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+      simp only [Bool.and_eq_true, decide_eq_true_eq, SchedContext.tailAllEligible_eq] at h
       obtain ⟨hE, hT⟩ := h
       have hR : sc.replenishments =
           { amount := ⟨sc.refillHeadAmount⟩, eligibleAt := sc.refillHeadEligibleAt } ::
@@ -225,12 +348,13 @@ Proven equal (`processReplenishments_eq_impl`). -/
       simp only [processReplenishments, partitionEligible,
         partition_of_allReplenishmentsEligible t _ hAll]
       rw [hR]
-      simp [sumReplenishments, applyRefill, SchedContext.withReplenishments]
+      simp [sumReplenishments, applyRefill, SchedContext.withReplenishments,
+        SchedContext.tailSum_eq, SchedContext.writeTail]
     · rfl
   · rename_i hP
     have hR : sc.replenishments = [] := by simp [SchedContext.replenishments, hP]
     simp [processReplenishments, partitionEligible, hR, sumReplenishments, applyRefill,
-      SchedContext.withReplenishments, hP]
+      SchedContext.withReplenishments, SchedContext.writeTail, hP]
 
 -- ============================================================================
 -- Z2-E: cbsUpdateDeadline operation
@@ -251,13 +375,12 @@ then `cbsUpdateDeadline` as an exhausted context) is the one record update
 `refillRecord`: no pending refill, or every pending refill due. -/
 @[inline] def refillInPlace (sc : SchedContext) (currentTime : Nat) : Bool :=
   !sc.refillHeadPresent ||
-    (decide (sc.refillHeadEligibleAt ≤ currentTime) &&
-      allReplenishmentsEligible currentTime sc.refillTail)
+    (decide (sc.refillHeadEligibleAt ≤ currentTime) && sc.tailAllEligible currentTime)
 
 /-- WS-ZA ZA6.2: the amount the drain's refill adds: every pending refill's,
 when all are due (`refillInPlace`). -/
 @[noinline] def refillDueAmount (sc : SchedContext) : Nat :=
-  if sc.refillHeadPresent then sc.refillHeadAmount + sumReplenishments sc.refillTail else 0
+  if sc.refillHeadPresent then sc.refillHeadAmount + sc.tailSum else 0
 
 /-- WS-ZA ZA6.2: the deadline after the drain's refill: a period on when the
 budget is now positive (`cbsUpdateDeadline` for an exhausted context). -/
@@ -278,7 +401,7 @@ update is straight-line and the compiled write reuses the context's cell
     budgetRemaining := newRemaining
     isActive := newRemaining.isPositive
     refillHeadPresent := false
-    refillTail := [] }
+    refillTailCount := 0 }
 
 theorem refillRecord_eq (sc : SchedContext) (currentTime : Nat)
     (h : refillInPlace sc currentTime = true) :

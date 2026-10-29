@@ -1456,8 +1456,8 @@ run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4
 run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
 # The two exhaustive positional patterns keep their arity pin: a field added to
 # `SchedContext` fails these definitions rather than defaulting to "unread".
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,\n\s*boundThreadCode, scReply, donationOrigin, _isActive⟩" SeLe4n/Platform/Boot.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillHeadPresent, _refillHeadAmount, _refillHeadEligibleAt, _refillTail,\n\s*_boundThread, _scReply, _donationOrigin, _isActive⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, donationOrigin, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _donationOrigin, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt⟩" SeLe4n/Platform/Boot.lean'
 # A boot SchedContext heads no reply stack: every admissible boot Reply is inert
 # (`bootSafeReplyCheck` refuses a linked one), so a config-supplied head could
 # only dangle — a `donationChainWellFormed` violation installed before the first
@@ -22367,7 +22367,7 @@ run_check "INVARIANT" rg -n '\(tcb\.pendingFault\.isNone \|\| st\.objects\.finds
 run_check "INVARIANT" rg -n '^theorem resumeAdmitted_retirePendingFault \{' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 # A configure writes the context's first refill into its own fields, never a
 # fresh list cell: the pin ends at the record's close, so a tail entry fails it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def configuredSchedContext[^\n]*(\n([ \t][^\n]*)?)*    refillHeadPresent := true\n    refillHeadAmount := budget\n    refillHeadEligibleAt := timer \+ period\n    refillTail := \[\] \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def configuredSchedContext[^\n]*(\n([ \t][^\n]*)?)*    refillHeadPresent := true\n    refillHeadAmount := budget\n    refillHeadEligibleAt := timer \+ period\n    refillTailCount := 0 \}" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" rg -n '^@\[simp\] theorem SchedContext\.withReplenishments_replenishments' SeLe4n/Kernel/SchedContext/Types.lean
 # The preemption and the queue removal replace their specifications through
 # proven equalities.

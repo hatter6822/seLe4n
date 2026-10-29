@@ -160,7 +160,7 @@ theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedC
     have hBT : (cbsUpdateDeadline (processReplenishments sc now) now true).boundThread
         = sc.boundThread := by
       simp only [cbsUpdateDeadline, processReplenishments, applyRefill]
-      split <;> rfl
+      split <;> simp [SchedContext.boundThread]
     exact getSchedContext?_boundThread_insert_schedContext st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) hBT rfl scId
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` (a register-context TCB write) preserves
