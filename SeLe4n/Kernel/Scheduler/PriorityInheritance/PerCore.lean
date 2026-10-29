@@ -1503,6 +1503,22 @@ def dispatchVacatedCore (st : SystemState) (c : CoreId) : SystemState :=
     | .ok st' => st'
     | .error _ => st
 
+/-- **WS-ZA ZA6.1**: the compiled `dispatchVacatedCore`: the reschedule's state
+form (`handleRescheduleOnCoreState`), which never refuses, so nothing keeps the
+pre-state for a refusal and the dispatch writes the state in place. -/
+def dispatchVacatedCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | some _ => st
+  | none => handleRescheduleOnCoreState st c
+
+@[csimp] theorem dispatchVacatedCore_eq_impl :
+    @dispatchVacatedCore = @dispatchVacatedCoreImpl := by
+  funext st c
+  unfold dispatchVacatedCore dispatchVacatedCoreImpl
+  cases st.scheduler.currentOnCore c with
+  | some _ => rfl
+  | none => simp only [handleRescheduleSgiOnCore_eq_state]
+
 /-- `v0.36.40`: the rule does nothing on a core that runs a thread. -/
 theorem dispatchVacatedCore_of_current (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (h : st.scheduler.currentOnCore c = some tid) :

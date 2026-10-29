@@ -1550,6 +1550,56 @@ def SystemState.withFreshAuditRing (st : SystemState) : SystemState :=
 theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAuditRing = st := by
   simp only [SystemState.withFreshAuditRing, SeLe4n.Kernel.AuditRing.fresh_eq]
 
+/-- A register file rebuilt through `opaqueWord`: its own cell. -/
+@[inline] def RegisterFile.fresh (rf : RegisterFile) : RegisterFile :=
+  { rf with x0 := opaqueWord rf.x0 }
+
+/-- A run queue's ends rebuilt, its bucket table's slot array its own. -/
+@[inline] def _root_.SeLe4n.Kernel.RunQueueEnds.fresh (e : SeLe4n.Kernel.RunQueueEnds) :
+    SeLe4n.Kernel.RunQueueEnds :=
+  { e with buckets := e.buckets.unshare, head := opaqueId e.head }
+
+/-- A replenish queue rebuilt: its own cell. -/
+@[inline] def _root_.SeLe4n.Kernel.ReplenishQueue.fresh (q : SeLe4n.Kernel.ReplenishQueue) :
+    SeLe4n.Kernel.ReplenishQueue :=
+  { q with size := opaqueId q.size }
+
+/-- WS-ZA ZA6.1: **the per-core slots prepared at boot.**  The boot state's
+per-core vectors (each core's register bank and its scheduler slots) are built
+from the defaults' constants, `Vector.replicate` of one value, which the
+compiled kernel holds as shared values: the first entry on a core then copied
+the vector it wrote, and its bank's register file and resident slot (the
+secondary entry's first call read 4 on the boot core and 1 on the first
+secondary).  Each vector and each element is rebuilt here through an identity
+the compiler cannot see through (`opaqueId`, `opaqueWord`), so every core's
+slots are the state's own.  The state itself (`withFreshPerCoreSlots_eq`). -/
+def SystemState.withFreshPerCoreSlots (st : SystemState) : SystemState :=
+  { st with
+    machine := { st.machine with
+      coreRegs := st.machine.coreRegs.map RegisterFile.fresh
+      fpOwner := st.machine.fpOwner.map opaqueId
+      residentCode := st.machine.residentCode.map opaqueId }
+    scheduler := { st.scheduler with
+      runQueueEnds := st.scheduler.runQueueEnds.map SeLe4n.Kernel.RunQueueEnds.fresh
+      currentCode := st.scheduler.currentCode.map opaqueId
+      activeDomain := st.scheduler.activeDomain.map opaqueId
+      domainTimeRemaining := st.scheduler.domainTimeRemaining.map opaqueId
+      domainScheduleIndex := st.scheduler.domainScheduleIndex.map opaqueId
+      replenishQueue := st.scheduler.replenishQueue.map SeLe4n.Kernel.ReplenishQueue.fresh
+      lastTimeoutErrors := st.scheduler.lastTimeoutErrors.map opaqueId } }
+
+theorem SystemState.withFreshPerCoreSlots_eq (st : SystemState) :
+    st.withFreshPerCoreSlots = st := by
+  have hR : RegisterFile.fresh = id := rfl
+  have hE : SeLe4n.Kernel.RunQueueEnds.fresh = id := rfl
+  have hQ : SeLe4n.Kernel.ReplenishQueue.fresh = id := rfl
+  have hN : (opaqueId : Nat → Nat) = id := rfl
+  have hD : (opaqueId : SeLe4n.DomainId → SeLe4n.DomainId) = id := rfl
+  have hO : (opaqueId : Option SeLe4n.ThreadId → Option SeLe4n.ThreadId) = id := rfl
+  have hL : (opaqueId : List (SeLe4n.ThreadId × KernelError) → List (SeLe4n.ThreadId × KernelError))
+      = id := rfl
+  simp only [SystemState.withFreshPerCoreSlots, hR, hE, hQ, hN, hD, hO, hL, Vector.map_id]
+
 /-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
 order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
 noncomputable def SystemState.pendingPhysicalWrites (st : SystemState) :

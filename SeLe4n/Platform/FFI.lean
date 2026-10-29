@@ -1074,9 +1074,11 @@ buffer).  The state installed carries seeded shootdown spares
 unmap after boot allocates nothing, and an audit ring with its own slot array
 (`SystemState.withFreshAuditRing`, the state itself), so the first
 declassification record after boot writes its slot in place instead of copying
-the shared initial ring. -/
+the shared initial ring, and per-core slots of its own
+(`SystemState.withFreshPerCoreSlots`, the state itself), so the first entry on
+each core writes its register bank and scheduler slots in place. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
-  kernelStateRef.set (Architecture.withShootdownSparesSeeded st).withFreshAuditRing
+  kernelStateRef.set (Architecture.withShootdownSparesSeeded st).withFreshAuditRing.withFreshPerCoreSlots
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 
