@@ -2271,16 +2271,29 @@ def checked_archives(require_cross: bool) -> list[tuple[str, tuple[Path, ...]]]:
     """The archives the reconciliation is decided on, per side: the host pair
     always, the cross pair when present -- and when `--require-cross` is
     passed, its absence is a failure rather than a narrower check.  Each side
-    is the kernel's archive and the exerciser's; one without the other is a
-    failure, since a side missing a provider would report its symbols as
-    unresolved for the wrong reason."""
+    is the kernel's archive and the exerciser's; the host side without both is
+    a failure, since a side missing a provider would report its symbols as
+    unresolved for the wrong reason.  The archive builder always writes the
+    cross pair together, so a cross side holding only one of them was left by
+    an earlier tree (a restored build cache): it is not what this tree links,
+    and it is read as an absent cross pair -- a narrower check, and a failure
+    under `--require-cross`."""
     archives = [("host", (ARCHIVE, EXERCISER_ARCHIVE))]
-    if CROSS_ARCHIVE.exists() or CROSS_EXERCISER_ARCHIVE.exists():
-        archives.append(("aarch64", (CROSS_ARCHIVE, CROSS_EXERCISER_ARCHIVE)))
+    cross = (CROSS_ARCHIVE, CROSS_EXERCISER_ARCHIVE)
+    present = [path for path in cross if path.exists()]
+    if len(present) == len(cross):
+        archives.append(("aarch64", cross))
     elif require_cross:
+        missing = next(path for path in cross if not path.exists())
         sys.exit(
-            f"[FAIL] {CROSS_ARCHIVE} does not exist and {REQUIRE_CROSS_FLAG} was passed. "
+            f"[FAIL] {missing} does not exist and {REQUIRE_CROSS_FLAG} was passed. "
             "Build it first: `python3 scripts/build_lean_aarch64_archive.py`"
+        )
+    elif present:
+        print(
+            f"[SKIP] aarch64 side: {present[0]} has no partner archive, so it predates "
+            "this tree's archive builder; build both with "
+            "`python3 scripts/build_lean_aarch64_archive.py` to check that side"
         )
     for _, paths in archives:
         for path in paths:
