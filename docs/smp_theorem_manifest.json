@@ -130,7 +130,7 @@
         }
       ],
       "entryCount": 669,
-      "theoremCount": 596
+      "theoremCount": 598
     },
     {
       "phase": "SM6",
@@ -179,7 +179,7 @@
     }
   ],
   "entryTotal": 960,
-  "theoremTotal": 781,
+  "theoremTotal": 783,
   "ledgerEntryTotal": 14,
   "registeredEntryTotal": 974,
   "theoremInventoryCount": 12,

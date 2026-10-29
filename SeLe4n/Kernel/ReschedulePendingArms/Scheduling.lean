@@ -683,17 +683,17 @@ theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
   · -- The spend only consumes budget: no context's budget goes from empty to
     -- positive.
     rw [(SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _).getSchedContext?] at hs
-    unfold SystemState.getSchedContext? at hs ⊢
-    change (match (st.rewriteObject scId.toObjId _ hAdm).objects[s.toObjId]? with
-      | some (.schedContext sc) => some sc | _ => none).map _ = _ at hs
-    by_cases hS : s.toObjId = scId.toObjId
-    · rw [hS, hAt] at hs
-      rw [hS, hScRaw]
+    change ((st.rewriteObject scId.toObjId _ hAdm).getSchedContext? s).map _ = _ at hs
+    by_cases hS : s = scId
+    · subst hS
+      rw [SystemState.rewriteObject_schedContext_getSchedContext?_self st s _ hAdm hObjInv] at hs
+      rw [hSc]
       simp only [Option.map_some, Option.some.injEq, cbsUpdateDeadline, scheduleReplenishment,
         consumeBudget, Budget.decrement, Budget.isPositive, decide_eq_true_eq] at hs ⊢
       split at hs <;> simp_all <;> omega
-    · have hNe' := hNe s.toObjId (Ne.symm hS)
-      rw [hNe'] at hs; exact hs
+    · rw [SystemState.rewriteObject_getSchedContext?_ne st _ _ hAdm hObjInv s
+        (fun h => hS (SchedContextId.toObjId_injective _ _ h).symm)] at hs
+      exact hs
   · intro t ht
     have := SystemState.runEnqueueOnCore_queuedOn_imp_ne hc ht
     have hRep : ∀ c t, (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) e scId

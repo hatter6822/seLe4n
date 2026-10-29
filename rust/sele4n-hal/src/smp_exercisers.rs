@@ -2504,7 +2504,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         configure(
             "refill-configure",
             SCHED_CONTEXT_CAP,
-            [REFILL_BUDGET, REFILL_PERIOD, PARTNER_PRIORITY, REFILL_PERIOD],
+            [
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+                REFILL_PERIOD,
+            ],
         ),
         invocation(
             "refill-bind-root",
