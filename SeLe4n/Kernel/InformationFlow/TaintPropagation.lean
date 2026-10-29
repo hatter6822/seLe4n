@@ -1507,13 +1507,18 @@ theorem declassificationTaint_of_taintEmptyAt {s : SystemState} {k : SeLe4n.ObjI
   rw [taintEmptyAt_eq] at h
   exact (TaintWords.decode_eq_empty_iff _).mpr h
 
+/-- WS-ZA ZA5.12: the object a capture reads where the store holds none: an
+endpoint, which holds no taint words.  A constant, built once when the module
+is initialised, so the absent key's read builds nothing. -/
+def taintFreeObject : KernelObject := .endpoint {}
+
 /-- WS-ZA ZA5.12: **the object a capture reads its source's words from** — the
-object stored at `k`, or, where none is, an endpoint, which holds no words.  One
-probe, whose `Option` the match consumes. -/
+object stored at `k`, or, where none is, `taintFreeObject`.  One probe, whose
+`Option` the match consumes. -/
 @[inline] def taintSourceObjectAt (s : SystemState) (k : SeLe4n.ObjId) : KernelObject :=
   match s.getObject? k with
   | some o => o
-  | none => .endpoint {}
+  | none => taintFreeObject
 
 theorem taintSourceObjectAt_taintWords (s : SystemState) (k : SeLe4n.ObjId) :
     (taintSourceObjectAt s k).taintWords = s.taintWordsAt k := by
