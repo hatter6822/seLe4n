@@ -1856,6 +1856,13 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
     let _ = core_id;
 }
 
+/// **WS-ZA ZA6.1**: the `.reschedule` SGI's entry, as its handler takes it,
+/// for the allocation exerciser, which measures it on the boot core.
+#[cfg(all(feature = "hw_target", feature = "smp_exercisers"))]
+pub(crate) fn reschedule_sgi_entry(_core_id: u64) {
+    reschedule_sgi_handler(RESCHEDULE_INTID, 0);
+}
+
 /// **WS-SM SM5.C.5**: register the `.reschedule` handler.
 ///
 /// # Safety
