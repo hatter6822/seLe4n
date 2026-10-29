@@ -2033,11 +2033,17 @@ totality over the wrong domain proves nothing, which is why the
 #check @applySyscallTaint
 
 -- The frame is what keeps the propagation write out of every existing
--- invariant argument: `applySyscallTaint` touches exactly one field, so
--- `authorizeDeclassificationOnCore_frame` and the SM8.C
+-- invariant argument: `applySyscallTaint` touches the taint table and, since
+-- WS-ZA ZA5.11, the taint words in the store alone (one frame, many
+-- consumers), so `authorizeDeclassificationOnCore_frame` and the SM8.C
 -- "writes only the trail" rule both stand unchanged.
 #check @applySyscallTaint_frame
-#check @applySyscallTaint_objects
+#check @applySyscallTaint_objectsAgreeOffTaint
+#check @applySyscallTaint_invExt
+#check @applySyscallTaint_preserves_tableReferencesRecorded
+#check @applyTaintStep_declassificationTaint
+#check @taintHolderAt_false_no_content
+#check @liveTaintEdges_mem_or_no_content
 #check @applySyscallTaint_scheduler
 #check @applySyscallTaint_machine
 #check @applySyscallTaint_declassificationAuditLog
@@ -2134,6 +2140,10 @@ no observer projects, the write is confined to no core at all. -/
 #check @applySyscallTaint_confinedToCores_nil
 #check @applySyscallTaint_preserves_onCore
 #check @applySyscallTaint_preserves_proofLayerInvariantBundle
+-- WS-ZA ZA5.11: the bundle's carriage across the word write, through one frame.
+#check @SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_of_objectsAgreeOffTaint
+#check @SeLe4n.Model.SystemState.objectsAgreeOffTaint.getElem?_eq
+#check @applySyscallTaint_size
 
 -- WS-RR RR7.8: the cap-transfer destination domain is **covered and deleted**.
 -- What stands in its place is the closure — every object either caps-carrying
@@ -11091,8 +11101,10 @@ private def runTaintFootprintChecks : IO Unit := do
   -- keys literally untouched, which is the model content of "the key's own lock
   -- is a sufficient serialization subject".  Were the update not key-local, an
   -- unrelated plan would move the endpoint's entry and this would fail.
+  -- WS-ZA ZA5.11: the other plan's sink is a notification, since a flow joins
+  -- only at a thread or a notification (`taintHolderAt`).
   let otherPlan : TaintPlan :=
-    { edges := [{ sink := lowEndpoint, source := lowCurrent.toObjId }] }
+    { edges := [{ sink := lowNotification, source := lowCurrent.toObjId }] }
   -- Both the endpoint this plan does *not* name and the source the other plan
   -- reads carry content, so the second half of the assertion below is a real
   -- observation rather than the inert plan's `rfl`.
@@ -11112,7 +11124,7 @@ private def runTaintFootprintChecks : IO Unit := do
      -- and it genuinely did write its own key, so the check above is not
      -- reporting an inert plan.
      ((applySyscallTaint otherPlan taggedBase taggedBase).declassificationTaint
-        lowEndpoint) != (taggedBase.declassificationTaint lowEndpoint))
+        lowNotification) != (taggedBase.declassificationTaint lowNotification))
   assertBool "the propagation is confined to no core, and invisible on every one"
     (let plan : TaintPlan := { edges := [{ sink := lowCurrent.toObjId, source := declassTargetA }] }
      let after := applySyscallTaint plan niState niState

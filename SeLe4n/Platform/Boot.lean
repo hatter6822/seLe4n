@@ -917,7 +917,9 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
   | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode,
-      _irqBound⟩ =>
+      _irqBound,
+      -- The taint words name no object.
+      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
     (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
@@ -981,7 +983,9 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
      _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
-     _spaceSpare⟩ =>
+     _spaceSpare,
+     -- The taint words name no object.
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[0]) ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[1]) ||
@@ -1972,21 +1976,24 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
       (ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
        ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone && !ep.serviceRegistered) := rfl
 
-/-- A boot **notification** is idle, unwaited and unbadged.  `boundTCB` is
+/-- A boot **notification** is idle, unwaited and unbadged, and carries clean
+    taint words (the boot records no taint, `tableReferencesRecorded.taintStored`).  `boundTCB` is
     unconstrained here — a boot notification may be pre-bound to a config
     thread; what it may not be bound to is an idle thread, which is the
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
   | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode,
-      _irqBound⟩ =>
+      _irqBound,
+      -- The taint words name no object.
+      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
     decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
-    notif.pendingBadge.isNone
+    notif.pendingBadge.isNone && decide (notif.taintWords = {})
 
 @[simp] theorem bootSafeNotificationCheck_def (notif : Notification) :
     bootSafeNotificationCheck notif =
       (decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
-       notif.pendingBadge.isNone) := rfl
+       notif.pendingBadge.isNone && decide (notif.taintWords = {})) := rfl
 
 /-- **WS-BP BP3.5**: a boot **capability** carries a valid badge if it carries
     one, and is not a reply capability.
@@ -2101,7 +2108,9 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     reply-blocked on it, so its own queue is empty with a count of zero.  The
     blocked-sender fields (`ipcBadge`, `ipcBadged`, `ipcCanGrant`,
     `ipcFaultSend`, WS-ZA ZA4.7) are read only while the thread is blocked
-    on a send or call, and the send or fault that blocks it writes them all. -/
+    on a send or call, and the send or fault that blocks it writes them all.
+    The taint words must be clean: the boot records no taint, and the table
+    agrees with the words (`tableReferencesRecorded.taintStored`). -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _spaceCells, _spaceLinks, _ipcBuffer, _ipcObjectCode, _threadState,
@@ -2113,7 +2122,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
      _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
-     _spaceSpare⟩ =>
+     _spaceSpare,
+     -- The taint words name no object.
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -2125,7 +2136,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone &&
     tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
     tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
-    tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear
+    tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear &&
+    decide (tcb.taintWords = {})
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -2140,7 +2152,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone &&
        tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
        tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
-       tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear) := rfl
+       tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear &&
+       decide (tcb.taintWords = {})) := rfl
 
 /-- What a boot thread's two space slots hold: every capability carries a valid
     badge, none is a reply capability and none records a mapping, as
@@ -2389,7 +2402,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | notification notif =>
     simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩ := h
+    obtain ⟨⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩, -⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h2t, Option.eq_none_of_isNone h3⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
@@ -2410,8 +2423,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
-      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
+      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩, -⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
            fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC, bootSpaceSlotsSafe_of_check hSC hSL⟩,
@@ -4314,7 +4327,9 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
      _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
-     _spaceSpare⟩ =>
+     _spaceSpare,
+     -- The taint words name no object.
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true
@@ -7973,12 +7988,26 @@ theorem bootFromPlatformChecked_ok_irqHandlers (config : PlatformConfig)
   · exact bootFromPlatform_irqHandlers config
   · exact bootFromPlatform_irqHandlers config
 
+/-- A configured object that passes the boot check carries clean taint words. -/
+theorem bootSafeObjectCheck_taintWords {obj : KernelObject}
+    (h : bootSafeObjectCheck obj = true) : obj.taintWords = {} := by
+  cases obj with
+  | notification n =>
+    simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
+      decide_eq_true_eq] at h
+    exact h.2
+  | tcb t =>
+    simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
+      decide_eq_true_eq] at h
+    exact h.2
+  | _ => rfl
+
 /-- **Every object the checked boot holds that holds a table back-link is a
     configured object at its id** — the binding's VSpace root holds none. -/
 theorem bootFromPlatformChecked_ok_backLinkedObject_of_config (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
     (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ ({}, false)) :
+    (hObj : ist.state.objects[oid]? = some obj) (hb : obj.tableBackLinks ≠ ({}, false, {})) :
     ∃ e ∈ config.initialObjects, e.id = oid ∧ e.obj = obj := by
   have hBase := bootFromPlatform_objects_of_config config oid obj
   obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
@@ -8007,7 +8036,7 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
   obtain ⟨hI1, hI2⟩ := hIrq
   have hEmptyObj : ∀ k : SeLe4n.ObjId, (default : SystemState).objects[k]? = none := fun k => by
     simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · intro irq n hn
     rw [bootFromPlatformChecked_ok_irqHandlers config ist h] at hn
     rcases foldIrqs_irqHandlers_source _ _ _ _ hn with h0 | ⟨ie, hMem, hH⟩
@@ -8046,6 +8075,28 @@ theorem bootFromPlatformChecked_ok_tableReferencesRecorded (config : PlatformCon
           foldIrqs_irqHandlers_of_mem _ _ (config.wellFormed_irqs_pairwise hWf) ie hieMem,
           hieH, hId]
       | _ => simp [KernelObject.tableBackLinks] at hn
+  · -- The boot records no taint, and every object it installs carries clean
+    -- words: a configured one passed `bootSafeObjectCheck`, and the binding's
+    -- VSpace root holds none.
+    intro k
+    have hTaint : ist.state.declassificationTaint = (default : SystemState).declassificationTaint := by
+      obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+      rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+      · exact bootFromPlatform_declassificationTaint_eq config
+      · exact bootFromPlatform_declassificationTaint_eq config
+    rw [hTaint, hD.taintStored k, hEmptyObj k, objTaint_none]
+    cases hO : ist.state.objects[k]? with
+    | none => rfl
+    | some o =>
+      have hW : o.taintWords = {} := by
+        by_cases hb : o.tableBackLinks = ({}, false, {})
+        · simp only [KernelObject.taintWords, hb]
+        · obtain ⟨en, hMem, -, hEo⟩ :=
+            bootFromPlatformChecked_ok_backLinkedObject_of_config config ist h k o hO hb
+          obtain ⟨_, hSafe, -⟩ := bootFromPlatformChecked_ok_shape config ist h
+          exact hEo ▸ bootSafeObjectCheck_taintWords (List.all_eq_true.mp hSafe en hMem)
+      simp only [objTaint, objTableBackLinks_some]
+      rw [show o.tableBackLinks.2.2 = o.taintWords from rfl, hW]; rfl
 
 /-- The idle store writes no reference table. -/
 theorem foldl_storeIdleThread_referenceTables (L : List SeLe4n.Kernel.Concurrency.CoreId)
@@ -8058,18 +8109,35 @@ theorem foldl_storeIdleThread_referenceTables (L : List SeLe4n.Kernel.Concurrenc
     rw [ih]
     exact storeObject_referenceTables (SystemState.storeObject_eq_withObjectStored _ _ _)
 
+/-- The idle store keeps every object's taint words: an idle thread lands on an
+    empty slot and carries clean words. -/
+theorem foldl_storeIdleThread_sameTaintWords (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) (hFresh : idleSlotsFreshAt ist) :
+    SameTaintWords ist.state.objects (L.foldl storeIdleThread ist).state.objects := fun k => by
+  by_cases hIdle : ∃ c ∈ L, (idleThreadId c).toObjId = k
+  · obtain ⟨c, -, rfl⟩ := hIdle
+    rw [hFresh c]
+    cases hk : (L.foldl storeIdleThread ist).state.objects[(idleThreadId c).toObjId]? with
+    | none => rfl
+    | some o =>
+      rcases foldl_storeIdleThread_objects_cases L ist _ o hk with h0 | ⟨_, _, rfl⟩
+      · rw [hFresh c] at h0; cases h0
+      · rfl
+  · rw [foldl_storeIdleThread_objects_frame_of_not_idle L ist k
+      (fun c hc hEq => hIdle ⟨c, hc, hEq⟩)]
+
 /-- **The idle store keeps the table references recorded**: an idle thread lands
     on an empty slot and holds no back-link. -/
 theorem foldl_storeIdleThread_tableReferenceFrame (L : List SeLe4n.Kernel.Concurrency.CoreId)
     (ist : IntermediateState) (hFresh : idleSlotsFreshAt ist) :
     SystemState.TableReferenceFrame ist.state (L.foldl storeIdleThread ist).state :=
-  .of_offTcb (foldl_storeIdleThread_referenceTables L ist) fun k o hNot =>
+  .of_offTcb (foldl_storeIdleThread_referenceTables L ist) (fun k o hNot =>
     ⟨fun hk => (foldl_storeIdleThread_objects_cases L ist k o hk).resolve_right
         (fun ⟨_, _, he⟩ => hNot _ he),
       fun hk => by
         rw [foldl_storeIdleThread_objects_frame_of_not_idle L ist k (fun c _ hEq => by
           rw [← hEq, hFresh c] at hk; cases hk)]
-        exact hk⟩
+        exact hk⟩) (foldl_storeIdleThread_sameTaintWords L ist hFresh)
 
 /-- **WS-ZA ZA5.4**: ...and the idle store keeps it so: an idle TCB holds no
     capability. -/
@@ -8468,7 +8536,7 @@ theorem bootSafeObjectCheck_slotCap_freeIndex {obj : KernelObject}
   | tcb t =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true] at h
     obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hs
-    have hc := (List.all_eq_true.mp h.1.2) _ hm
+    have hc := (List.all_eq_true.mp h.1.1.2) _ hm
     simp only at hc
     unfold bootSafeCapCheck at hc
     simp only [Bool.and_eq_true, beq_iff_eq] at hc

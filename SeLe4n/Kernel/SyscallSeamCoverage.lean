@@ -640,7 +640,8 @@ unless the caller is the executing core's current thread, builds its gate from
 the caller's TCB and root CNode (the two lookups `abiEntryGate` made), runs the
 rights-gated lookup (or the resolve-only one for the two target-first audit
 arms, neither of which declares a footprint), dispatches, and applies the taint
-plan — which writes neither the store nor the scheduler. -/
+plan — which writes only taint words in the store, under the table write lock
+every scheduler footprint names, and leaves the scheduler alone. -/
 theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (e : CoreId)
     (st st' : SystemState) (ops : Concurrency.SyscallLockOperands) (S : LockSet)
@@ -677,7 +678,8 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
     fun stPost hD => footprintCoversWrites_trans S
       (dispatchWithCapChecked_coversWrites ctx decoded tid e tcb gate cap st stPost ops S hObjInv
         hHeads hGate hLk hOps hSched hD)
-      (footprintCoversWrites_of_objects_scheduler_eq S (applySyscallTaint_objects _ _ _)
+      (footprintCoversWrites_of_scheduler_eq S
+        (schedLockSetForSyscall_contains_objStore_write _ _ _ _ _ hSched)
         (applySyscallTaint_scheduler _ _ _))
   unfold dispatchSyscallChecked at hDisp
   split at hDisp

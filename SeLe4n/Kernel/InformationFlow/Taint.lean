@@ -247,6 +247,13 @@ structure DeclassificationTaint where
       A causal verdict could then be manufactured from a value naming two.  Also
       a `Prop` field, so it stays invisible to equality. -/
   tags_canonical : tagsCanonical tags
+  /-- WS-ZA ZA5.11: **every tag fits a machine word**, so an object holds its
+      taint as plain 64-bit words (`TaintWords`) and reads back exactly the
+      value it was given (`DeclassificationTaint.decode_toWords`).  An identity at or above
+      `2^64` is one the words cannot name, so inserting one saturates
+      (`insert`): the over-approximation, never a dropped identity.  A `Prop`
+      field, invisible to equality. -/
+  tags_fit : ∀ t ∈ tags, t < UInt64.size
 
 namespace DeclassificationTaint
 
@@ -301,7 +308,7 @@ instance : Repr DeclassificationTaint where
 
 /-- WS-SM SM9.D.1: **no identities** — the boot value and the value every object
 starts with. -/
-def empty : DeclassificationTaint := ⟨false, [], by simp, trivial⟩
+def empty : DeclassificationTaint := ⟨false, [], by simp, trivial, by simp⟩
 
 /-- WS-SM SM9.D.1: **tainted by everything** — the top of the order, and the
 canonical saturated value.
@@ -309,7 +316,7 @@ canonical saturated value.
 Canonical deliberately: an operation that saturates drops the tags it was
 carrying, so `saturated = true` and a non-empty `tags` list is not a shape the
 API produces (`insert_saturated`, `join_saturated`). -/
-def top : DeclassificationTaint := ⟨true, [], by simp, trivial⟩
+def top : DeclassificationTaint := ⟨true, [], by simp, trivial, by simp⟩
 
 instance : Inhabited DeclassificationTaint := ⟨empty⟩
 
@@ -344,12 +351,20 @@ theorem contains_iff_mem {T : DeclassificationTaint} (h : T.saturated = false) (
 Saturates rather than evicting when the bound is reached, and collapses a
 saturated input to `top` so the result is canonical.  The bound is checked on
 the *output* list, which is what makes `insert` total and its result
-unconditionally well-formed. -/
+unconditionally well-formed.  WS-ZA ZA5.11: an identity no machine word can
+name (`2^64` or above) saturates too, so every tag an object stores fits its
+word (`tags_fit`). -/
 def insert (T : DeclassificationTaint) (t : Nat) : DeclassificationTaint :=
   if T.saturated then top
   else
-    if h : (insertTag T.tags t).length ≤ maxTaintTags then
-      ⟨false, insertTag T.tags t, h, insertTag_canonical T.tags t T.tags_canonical⟩
+    if hT : t < UInt64.size then
+      if h : (insertTag T.tags t).length ≤ maxTaintTags then
+        ⟨false, insertTag T.tags t, h, insertTag_canonical T.tags t T.tags_canonical,
+          fun a ha => by
+            rcases (mem_insertTag T.tags t a).mp ha with rfl | ha
+            · exact hT
+            · exact T.tags_fit a ha⟩
+      else top
     else top
 
 /-- WS-SM SM9.D.1: a saturated taint absorbs insertion. -/
@@ -364,9 +379,10 @@ def insert (T : DeclassificationTaint) (t : Nat) : DeclassificationTaint :=
   split
   · simp
   · split
-    · rename_i hb
-      simp only [contains, Bool.false_or, decide_eq_true_eq]
-      exact (mem_insertTag T.tags t t).mpr (Or.inl rfl)
+    · split
+      · simp only [contains, Bool.false_or, decide_eq_true_eq]
+        exact (mem_insertTag T.tags t t).mpr (Or.inl rfl)
+      · simp
     · simp
 
 /-- WS-SM SM9.D.1: **insertion never forgets** — the no-loss property, and the
@@ -379,9 +395,10 @@ theorem contains_insert_of_contains {T : DeclassificationTaint} {a : Nat}
   · rename_i hsat
     simp only [Bool.not_eq_true] at hsat
     split
-    · rename_i hb
-      simp only [contains, Bool.false_or, decide_eq_true_eq]
-      exact (mem_insertTag T.tags t a).mpr (Or.inr ((contains_iff_mem hsat a).mp h))
+    · split
+      · simp only [contains, Bool.false_or, decide_eq_true_eq]
+        exact (mem_insertTag T.tags t a).mpr (Or.inr ((contains_iff_mem hsat a).mp h))
+      · simp
     · simp
 
 
@@ -390,23 +407,27 @@ unsaturated and the result still fits** — the branch analysis every exactness
 statement below reduces to. -/
 theorem insert_not_saturated_iff (T : DeclassificationTaint) (t : Nat) :
     (T.insert t).saturated = false ↔
-      (T.saturated = false ∧ (insertTag T.tags t).length ≤ maxTaintTags) := by
+      (T.saturated = false ∧ t < UInt64.size ∧
+        (insertTag T.tags t).length ≤ maxTaintTags) := by
   unfold insert
   cases hsat : T.saturated with
   | true => simp [top]
   | false =>
     simp only [Bool.false_eq_true, if_false, true_and]
     split
-    · rename_i hb; simp [hb]
-    · rename_i hb; simp [hb, top]
+    · rename_i ht
+      split
+      · rename_i hb; simp [hb, ht]
+      · rename_i hb; simp [hb, top]
+    · rename_i ht; simp [ht, top]
 
 /-- WS-SM SM9.D.1: the tags of an unsaturated insertion. -/
 theorem insert_tags_of_not_saturated {T : DeclassificationTaint} {t : Nat}
     (hOut : (T.insert t).saturated = false) :
     (T.insert t).tags = insertTag T.tags t := by
-  obtain ⟨hsat, hb⟩ := (insert_not_saturated_iff T t).mp hOut
+  obtain ⟨hsat, ht, hb⟩ := (insert_not_saturated_iff T t).mp hOut
   unfold insert
-  simp [hsat, hb]
+  simp [hsat, ht, hb]
 
 /-- WS-SM SM9.D.1: insertion adds **only** the identity asked for, whenever it
 does not saturate — the exactness half of `contains_insert_of_contains`, and
@@ -696,11 +717,12 @@ def singleton (t : Nat) : DeclassificationTaint := empty.insert t
   contains_insert_self empty t
 
 /-- WS-SM SM9.D.1: a singleton carries nothing else — `maxTaintTags` is positive,
-so the single insertion never saturates. -/
-@[simp] theorem contains_singleton_iff (t a : Nat) :
+so the single insertion of an identity a word can name never saturates.  (An
+identity at or above `2^64` saturates instead, WS-ZA ZA5.11, `insert`.) -/
+@[simp] theorem contains_singleton_iff {t : Nat} (ht : t < UInt64.size) (a : Nat) :
     (singleton t).contains a = true ↔ a = t := by
   have hOut : (singleton t).saturated = false := by
-    simp [singleton, insert, empty, insertTag, maxTaintTags]
+    simp [singleton, insert, empty, insertTag, maxTaintTags, ht]
   rw [singleton, contains_insert_iff_of_not_saturated hOut]
   simp
 
@@ -837,6 +859,158 @@ theorem join_assoc_equiv {a b c : DeclassificationTaint}
       (covers_trans (covers_join_right a (join b c)) (covers_join_right b c))
 
 end DeclassificationTaint
+
+-- ============================================================================
+-- §5a  WS-ZA ZA5.11 — the taint as an object holds it: plain words
+-- ============================================================================
+
+/-- WS-ZA ZA5.11: **a strictly increasing list, decided** — `tagsAbove` as a
+`Bool`, so a decode can check the words it reads (`tagsAboveB_iff`). -/
+def tagsAboveB : Nat → List Nat → Bool
+  | _, [] => true
+  | b, a :: rest => decide (b < a) && tagsAboveB a rest
+
+theorem tagsAboveB_iff : ∀ (b : Nat) (l : List Nat), tagsAboveB b l = true ↔ tagsAbove b l
+  | _, [] => by simp [tagsAboveB, tagsAbove]
+  | b, a :: rest => by simp [tagsAboveB, tagsAbove, tagsAboveB_iff a rest]
+
+/-- WS-ZA ZA5.11: `tagsCanonical`, decided. -/
+def tagsCanonicalB : List Nat → Bool
+  | [] => true
+  | a :: rest => tagsAboveB a rest
+
+theorem tagsCanonicalB_iff : ∀ l : List Nat, tagsCanonicalB l = true ↔ tagsCanonical l
+  | [] => by simp [tagsCanonicalB, tagsCanonical]
+  | a :: rest => by simp [tagsCanonicalB, tagsCanonical, tagsAboveB_iff]
+
+/-- WS-ZA ZA5.11: **the taint as an object holds it** — `maxTaintTags` tag words,
+the count of those in use and the saturated bit.  A *view*, never stored: a
+thread and a notification carry these as eight `UInt64` fields beside a count
+and a flag (`TCB.taintWords`, `Notification.taintWords`), the scalar-field
+shape ZA5.8 gave an endpoint's registration words, so a carved object's words
+are scalar zeros and writing them builds no cell. -/
+structure TaintWords where
+  tag0 : UInt64 := 0
+  tag1 : UInt64 := 0
+  tag2 : UInt64 := 0
+  tag3 : UInt64 := 0
+  tag4 : UInt64 := 0
+  tag5 : UInt64 := 0
+  tag6 : UInt64 := 0
+  tag7 : UInt64 := 0
+  /-- How many of the tag words are in use, from `tag0`. -/
+  count : Nat := 0
+  /-- Tainted by everything: the top of the order. -/
+  saturated : Bool := false
+  deriving Repr, DecidableEq
+
+namespace TaintWords
+
+/-- WS-ZA ZA5.11: the tag words in use, in order — the computable view the
+proofs read the words through. -/
+def toList (w : TaintWords) : List UInt64 :=
+  [w.tag0, w.tag1, w.tag2, w.tag3, w.tag4, w.tag5, w.tag6, w.tag7].take w.count
+
+theorem toList_length_le (w : TaintWords) : w.toList.length ≤ maxTaintTags := by
+  simp only [toList, List.length_take, List.length_cons, List.length_nil, maxTaintTags]
+  omega
+
+/-- WS-ZA ZA5.11: **the taint the words name.**  Exact on the words a taint
+value writes (`decode_toWords`); words that do not name one — out of order or
+duplicated, which no writer produces — read as `top`, the over-approximation,
+so a decode can never report less provenance than was written. -/
+def decode (w : TaintWords) : DeclassificationTaint :=
+  let l := w.toList.map UInt64.toNat
+  if h : tagsCanonicalB l = true then
+    ⟨w.saturated, l, by simpa [l] using w.toList_length_le, (tagsCanonicalB_iff l).mp h,
+      fun t ht => by
+        obtain ⟨x, -, rfl⟩ := List.mem_map.mp ht
+        exact x.toNat_lt_size⟩
+  else DeclassificationTaint.top
+
+/-- WS-ZA ZA5.11: carved words name no provenance. -/
+@[simp] theorem decode_default : ({} : TaintWords).decode = DeclassificationTaint.empty := rfl
+
+end TaintWords
+
+namespace DeclassificationTaint
+
+/-- WS-ZA ZA5.11: **the words an object holds for this taint**: its tags in
+order from `tag0`, zero past the count. -/
+def toWords (T : DeclassificationTaint) : TaintWords where
+  tag0 := (T.tags.getD 0 0).toUInt64
+  tag1 := (T.tags.getD 1 0).toUInt64
+  tag2 := (T.tags.getD 2 0).toUInt64
+  tag3 := (T.tags.getD 3 0).toUInt64
+  tag4 := (T.tags.getD 4 0).toUInt64
+  tag5 := (T.tags.getD 5 0).toUInt64
+  tag6 := (T.tags.getD 6 0).toUInt64
+  tag7 := (T.tags.getD 7 0).toUInt64
+  count := T.tags.length
+  saturated := T.saturated
+
+/-- WS-ZA ZA5.11: the words of a taint, read back as numbers, are its tags. -/
+theorem toWords_toList (T : DeclassificationTaint) :
+    T.toWords.toList.map UInt64.toNat = T.tags := by
+  obtain ⟨s, l, hb, -, hf⟩ := T
+  have hfit : ∀ t ∈ l, (t.toUInt64).toNat = t := fun t ht =>
+    Nat.mod_eq_of_lt (hf t ht)
+  simp only [toWords, TaintWords.toList]
+  simp only [maxTaintTags] at hb
+  match l, hb, hfit with
+  | [], _, _ => rfl
+  | [a], _, h => simp [h]
+  | [a, b], _, h => simp [h]
+  | [a, b, c], _, h => simp [h]
+  | [a, b, c, d], _, h => simp [h]
+  | [a, b, c, d, e], _, h => simp [h]
+  | [a, b, c, d, e, f], _, h => simp [h]
+  | [a, b, c, d, e, f, g], _, h => simp [h]
+  | [a, b, c, d, e, f, g, i], _, h => simp [h]
+  | _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _ :: _, hb, _ => simp at hb
+
+/-- WS-ZA ZA5.11: **the words read back exactly the taint they were written
+from** — the equality between the object form and the list form every
+statement about an object's taint travels along. -/
+@[simp] theorem decode_toWords (T : DeclassificationTaint) : T.toWords.decode = T := by
+  have hl := T.toWords_toList
+  unfold TaintWords.decode
+  have hc : tagsCanonicalB (T.toWords.toList.map UInt64.toNat) = true := by
+    rw [hl]; exact (tagsCanonicalB_iff _).mpr T.tags_canonical
+  rw [dif_pos hc]
+  obtain ⟨s, l, _, _, _⟩ := T
+  simp only [mk.injEq]
+  exact ⟨rfl, hl⟩
+
+/-- WS-ZA ZA5.11: the empty taint is the carved words. -/
+@[simp] theorem empty_toWords : empty.toWords = {} := rfl
+
+/-- WS-ZA ZA5.11: two taints with the same words are equal. -/
+theorem toWords_injective {a b : DeclassificationTaint} (h : a.toWords = b.toWords) : a = b := by
+  rw [← decode_toWords a, h, decode_toWords]
+
+/-- WS-ZA ZA5.11: **do these words hold this taint?**  Compared word by word
+against the tag list, building nothing, so a writer can tell an unchanged object
+from a changed one without decoding it (`wordsAgree_iff`). -/
+def wordsAgree (T : DeclassificationTaint) (w : TaintWords) : Bool :=
+  w == T.toWords
+
+theorem wordsAgree_iff (T : DeclassificationTaint) (w : TaintWords) :
+    T.wordsAgree w = true ↔ w = T.toWords := by
+  simp [wordsAgree]
+
+end DeclassificationTaint
+
+/-- WS-ZA ZA5.11 (**saturation over-approximates, over the words**): the words
+an object holds for a saturated join read back a provenance neither operand's
+words named — `taintSaturate_over_approximates` through the equality between
+the two forms (`decode_toWords`). -/
+theorem taintWordsSaturate_over_approximates :
+    ∃ (a b : TaintWords) (t : Nat),
+      a.decode.contains t = false ∧ b.decode.contains t = false ∧
+      (DeclassificationTaint.join a.decode b.decode).toWords.decode.contains t = true := by
+  obtain ⟨a, b, t, ha, hb, hj⟩ := DeclassificationTaint.taintSaturate_over_approximates
+  exact ⟨a.toWords, b.toWords, t, by simpa using ha, by simpa using hb, by simpa using hj⟩
 
 -- ============================================================================
 -- §6  WS-SM SM9.D.2 — the side table

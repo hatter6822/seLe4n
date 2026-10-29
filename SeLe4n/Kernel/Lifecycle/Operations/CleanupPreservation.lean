@@ -355,10 +355,11 @@ theorem notificationQueueWellFormed_unlink (notif : Notification)
           waitTailCode := SeLe4n.ThreadId.optCode tail'
           state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state } := by
   have hPB : ∀ st hc tc, (Notification.mk st hc tc notif.hasPendingBadge notif.pendingWord
-      notif.pendingWord_cleared notif.boundTCBCode notif.irqBound).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
+      notif.pendingWord_cleared notif.boundTCBCode notif.irqBound
+      notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
   have hWH : ∀ st tc, (Notification.mk st (SeLe4n.ThreadId.optCode head') tc
       notif.hasPendingBadge notif.pendingWord notif.pendingWord_cleared
-      notif.boundTCBCode notif.irqBound).waitHead = head' :=
+      notif.boundTCBCode notif.irqBound notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).waitHead = head' :=
     fun _ _ => SeLe4n.ThreadId.ofOptCode_optCode head'
   unfold notificationQueueWellFormed at hWF ⊢
   rw [hPB, hWH]
@@ -2496,6 +2497,30 @@ theorem queueNeighbourPatch_invExt (objs : RHTable SeLe4n.ObjId KernelObject)
   · split
     · exact RHTable.insert_preserves_invExt _ _ _ hInv
     · exact hInv
+
+/-- WS-ZA ZA5.11: a neighbour patch whose update keeps a thread's taint words
+keeps every slot's. -/
+theorem queueNeighbourPatch_sameTaintWords (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt)
+    (hU : ∀ t, (upd t).taintWords = t.taintWords := by taint_words_kept) :
+    SameTaintWords objs (queueNeighbourPatch objs nid? upd) := by
+  unfold queueNeighbourPatch
+  split
+  · exact .refl _
+  · split
+    · next t hAt => exact .insert_tcb hInv hAt (hU t)
+    · exact .refl _
+
+/-- WS-ZA ZA5.11: the mid-queue splice keeps every slot's taint words. -/
+theorem spliceOutMidQueueNode_sameTaintWords (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    SameTaintWords st.objects (spliceOutMidQueueNode st tid).objects := by
+  rw [spliceOutMidQueueNode_eq_patches]
+  split
+  · exact .refl _
+  · rename_i tcb _
+    exact (queueNeighbourPatch_sameTaintWords _ _ _ hInv).trans
+      (queueNeighbourPatch_sameTaintWords _ _ _ (queueNeighbourPatch_invExt _ _ _ hInv))
 
 /-- A neighbour patch installs only TCBs, so a non-TCB reading is the input's,
 in both directions. -/

@@ -27,11 +27,21 @@ namespace SeLe4n.Model
 namespace TCB
 
 /-- The capability a thread's space slot `s` holds; slots 0 and 1 only.  Out
-of line, so its bound check is no branch of its caller: a caller that rebuilds
-the thread after reading a slot (`removeSpaceCapImpl`) rebuilds it over the old
-thread's cell when that is unshared. -/
+of line, so its bound check is no branch of its caller. -/
 @[noinline] def spaceSlotCap (t : TCB) (s : SeLe4n.Slot) : Option Capability :=
   if h : s.toNat < 2 then t.spaceCells[s.toNat] else none
+
+/-- The cell of slot `s` of a thread's space cells, read from the cells alone
+(`spaceCellAt_eq`).  Out of line and taking only the cells, so a caller that
+rebuilds the thread after reading a slot (`removeSpaceCapImpl`) hands the
+thread to no call and rebuilds it over the old thread's cell when that is
+unshared. -/
+@[noinline] def spaceCellAt (cells : Vector (Option Capability) 2) (s : SeLe4n.Slot) :
+    Option Capability :=
+  if h : s.toNat < 2 then cells[s.toNat] else none
+
+theorem spaceCellAt_eq (t : TCB) (s : SeLe4n.Slot) :
+    spaceCellAt t.spaceCells s = t.spaceSlotCap s := rfl
 
 /-- The object word of link `f` of the thread's space slot `s` (0 past slot 1). -/
 @[inline] def spaceLinkNodeWord (t : TCB) (s : SeLe4n.Slot) (f : LinkField) : Nat :=
@@ -49,6 +59,10 @@ def spaceLinkAt (t : TCB) (s : SeLe4n.Slot) (f : LinkField) : Option SlotRef :=
 @[inline] def setSpaceLinkWords (t : TCB) (s : SeLe4n.Slot) (f : LinkField) (c w : Nat) : TCB :=
   { t with spaceLinks :=
       (t.spaceLinks.setIfInBounds (CNode.linkBase s f) c).setIfInBounds (CNode.linkBase s f + 1) w }
+
+/-- A space-slot link write keeps the thread's taint words. -/
+@[simp] theorem setSpaceLinkWords_taintWords (t : TCB) (s : SeLe4n.Slot) (f : LinkField)
+    (c w : Nat) : (t.setSpaceLinkWords s f c w).taintWords = t.taintWords := rfl
 
 /-- The thread with every space-slot link cleared.  The information-flow
 projection reads a thread through this, so the links, like the derivation tree
@@ -69,7 +83,7 @@ before the slot is written, is kept as the slot's spare record
 (`TCB.spaceSpare`, `SpareCells.keep`), so the next capability written there
 overwrites it in place (`removeSpaceCap_eq_impl`). -/
 @[inline] def removeSpaceCapImpl (t : TCB) (s : SeLe4n.Slot) : TCB :=
-  let o := t.spaceSlotCap s
+  let o := spaceCellAt t.spaceCells s
   { t with
     spaceCells := t.spaceCells.setIfInBounds s.toNat none
     spaceSpare := t.spaceSpare.keep s.toNat o }
@@ -446,12 +460,139 @@ back-link whatever words an endpoint carries) and a notification's interrupt
 flag; every other kind holds neither.  The part of the
 store the table references read: a registration names an endpoint, an interrupt
 names a notification, and each of those objects records the entry that names it
-(`SystemState.tableReferencesRecorded`). -/
-@[inline] def tableBackLinks (o : KernelObject) : EndpointService × Bool :=
+(`SystemState.tableReferencesRecorded`).
+
+WS-ZA ZA5.11: and **the taint words** a thread or a notification holds (the
+carved words, the empty taint, on every other kind): the declassification
+taint table names objects by id outside every slot too, and each object records
+the entry naming it, so a write keeping an object's back-links keeps its taint
+(`kindPreservingWrite`, `SystemState.TableReferenceFrame`).  Only threads and
+notifications hold content (`contentTrackedFields`), so only they hold taint. -/
+@[inline] def tableBackLinks (o : KernelObject) :
+    EndpointService × Bool × SeLe4n.Kernel.TaintWords :=
   match o with
-  | .endpoint ep => (if ep.serviceRegistered then ep.service else {}, false)
-  | .notification n => ({}, n.irqBound)
-  | _ => ({}, false)
+  | .endpoint ep => (if ep.serviceRegistered then ep.service else {}, false, {})
+  | .notification n => ({}, n.irqBound, n.taintWords)
+  | .tcb t => ({}, false, t.taintWords)
+  | _ => ({}, false, {})
+
+/-- WS-ZA ZA5.11: **the taint words an object holds** — a thread's or a
+notification's; the carved words on every other kind. -/
+@[inline] def taintWords (o : KernelObject) : SeLe4n.Kernel.TaintWords :=
+  o.tableBackLinks.2.2
+
+/-- WS-ZA ZA5.11: **the object with its taint words written** — a thread or a
+notification; every other kind holds none and is returned as it is. -/
+@[inline] def withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) : KernelObject :=
+  match o with
+  | .tcb t => .tcb (t.withTaintWords w)
+  | .notification n => .notification (n.withTaintWords w)
+  | o => o
+
+/-- WS-ZA ZA5.11: **the object with its taint words carved clean** — the
+erasure the relation "equal modulo taint" is stated through
+(`SystemState.objectsAgreeOffTaint`). -/
+@[inline] def eraseTaint (o : KernelObject) : KernelObject := o.withTaintWords {}
+
+/-- WS-ZA ZA5.11: **the object holds taint words** — a thread or a
+notification, the two kinds that hold content (`contentTrackedFields`). -/
+@[inline] def holdsTaint (o : KernelObject) : Bool :=
+  match o with
+  | .tcb _ => true
+  | .notification _ => true
+  | _ => false
+
+/-- Writing an object's words leaves its kind. -/
+@[simp] theorem holdsTaint_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).holdsTaint = o.holdsTaint := by
+  cases o <;> rfl
+
+/-- An object that holds no words reads the carved ones. -/
+theorem taintWords_of_not_holdsTaint {o : KernelObject} (h : o.holdsTaint = false) :
+    o.taintWords = {} := by
+  cases o <;> first | rfl | (simp [holdsTaint] at h)
+
+/-- A holder reads back the words written into it. -/
+theorem taintWords_withTaintWords {o : KernelObject} (h : o.holdsTaint = true)
+    (w : SeLe4n.Kernel.TaintWords) : (o.withTaintWords w).taintWords = w := by
+  cases o <;> first | rfl | (simp [holdsTaint] at h)
+
+/-- A word write changes no back-link but the words. -/
+theorem tableBackLinks_withTaintWords {o : KernelObject} (h : o.holdsTaint = true)
+    (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).tableBackLinks = (o.tableBackLinks.1, o.tableBackLinks.2.1, w) := by
+  cases o <;> first | rfl | (simp [holdsTaint] at h)
+
+/-- A word write keeps the interrupt back-link, on every kind. -/
+@[simp] theorem tableBackLinks_withTaintWords_irq (o : KernelObject)
+    (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).tableBackLinks.2.1 = o.tableBackLinks.2.1 := by
+  cases o <;> rfl
+
+/-- Erasure forgets every word write. -/
+@[simp] theorem eraseTaint_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).eraseTaint = o.eraseTaint := by
+  cases o <;> rfl
+
+/-- A second word write overrides the first. -/
+@[simp] theorem withTaintWords_withTaintWords (o : KernelObject) (w w' : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).withTaintWords w' = o.withTaintWords w' := by
+  cases o <;> rfl
+
+/-- A word write keeps the kind. -/
+@[simp] theorem objectType_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).objectType = o.objectType := by
+  cases o <;> rfl
+
+/-- A word write keeps every capability slot. -/
+@[simp] theorem slotCap_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).slotCap = o.slotCap := by
+  cases o <;> rfl
+
+/-- A word write keeps a thread's slots and their links. -/
+@[simp] theorem tcbSlots_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).tcbSlots = o.tcbSlots := by
+  cases o <;> rfl
+
+/-- A holder is no CNode. -/
+theorem objectType_ne_cnode_of_holdsTaint {o : KernelObject} (h : o.holdsTaint = true) :
+    o.objectType ≠ KernelObjectType.cnode := by
+  cases o <;> simp_all [holdsTaint, objectType]
+
+/-- A word write keeps the binding codes. -/
+@[simp] theorem bindingCodes_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).bindingCodes = o.bindingCodes := by
+  cases o <;> rfl
+
+/-- A kind holding no words is its own erasure. -/
+theorem eraseTaint_of_not_holdsTaint {o : KernelObject} (h : o.holdsTaint = false) :
+    o.eraseTaint = o := by
+  cases o <;> first | rfl | (simp [holdsTaint] at h)
+
+/-- **Erasure inverts off the holders**: an object agreeing off its words with
+one of a kind holding none is that object. -/
+theorem eq_of_eraseTaint_eq {o o' : KernelObject} (h' : o'.holdsTaint = false)
+    (h : o'.eraseTaint = o.eraseTaint) : o = o' := by
+  rw [eraseTaint_of_not_holdsTaint h'] at h
+  have hH : o.holdsTaint = false := by
+    rw [← holdsTaint_withTaintWords o {}]; exact (congrArg holdsTaint h).symm.trans h'
+  rw [eraseTaint_of_not_holdsTaint hH] at h
+  exact h.symm
+
+/-- **Erasure keeps a thread a thread.** -/
+theorem eraseTaint_eq_tcb {o : KernelObject} {t' : TCB}
+    (h : (KernelObject.tcb t').eraseTaint = o.eraseTaint) :
+    ∃ t, o = .tcb t ∧ t'.withTaintWords {} = t.withTaintWords {} := by
+  cases o <;> simp only [eraseTaint, withTaintWords, KernelObject.tcb.injEq, reduceCtorEq] at h
+  exact ⟨_, rfl, h⟩
+
+/-- **Erasure keeps a notification a notification.** -/
+theorem eraseTaint_eq_notification {o : KernelObject} {n' : Notification}
+    (h : (KernelObject.notification n').eraseTaint = o.eraseTaint) :
+    ∃ n, o = .notification n ∧ n'.withTaintWords {} = n.withTaintWords {} := by
+  cases o <;> simp only [eraseTaint, withTaintWords, KernelObject.notification.injEq,
+    reduceCtorEq] at h
+  exact ⟨_, rfl, h⟩
 
 /-- **The mapping facts an object holds**: a VSpace root's ASID, translations
 and mapping epochs, and a frame's base; every other kind holds none.  The part
@@ -470,6 +611,11 @@ the map advances it and no record names it. -/
 /-- Clearing an object's derivation links keeps its table back-links. -/
 @[simp] theorem tableBackLinks_withoutLinks (o : KernelObject) :
     o.withoutLinks.tableBackLinks = o.tableBackLinks := by
+  cases o <;> rfl
+
+/-- A word write keeps the mapping facts. -/
+@[simp] theorem mappingView_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    (o.withTaintWords w).mappingView = o.mappingView := by
   cases o <;> rfl
 
 /-- Clearing an object's derivation links keeps its mapping facts. -/

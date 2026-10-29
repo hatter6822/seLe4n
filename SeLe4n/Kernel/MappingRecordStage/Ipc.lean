@@ -285,10 +285,11 @@ theorem endpointCallCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext
 theorem updateTcb_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
     (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
       (f t).boundNotificationCode = t.boundNotificationCode := by
-      intro _; exact ⟨rfl, rfl, rfl⟩) :
+      intro _; exact ⟨rfl, rfl, rfl⟩)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
     MappingStage st (st.updateTcb tid f) :=
   MappingStage.of_kindPreservingWrite (SystemState.updateTcb_preserves_objects_invExt _ _ _)
-    (fun h => SystemState.updateTcb_kindPreservingWrite st tid f h hf)
+    (fun h => SystemState.updateTcb_kindPreservingWrite st tid f h hf hW)
 
 theorem writeReturnFrameToTcb_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Architecture.SyscallReturnFrame) :

@@ -232,15 +232,20 @@ theorem mapTcbInPlace_getTcb?_ne (st : SystemState) (t : SeLe4n.ThreadId) (g : T
     (st.mapTcbInPlace t g).scheduler = st.scheduler := rfl
 
 /-- **The in-place thread write primitive keeps the table references**: a
-thread holds no back-link and the tables are untouched. -/
+thread's only back-link is its taint words, which the write keeps, and the
+tables are untouched. -/
 theorem TableReferenceFrame.mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId)
-    (g : TCB → TCB) : TableReferenceFrame st (st.mapTcbInPlace t g) :=
+    (g : TCB → TCB) (hW : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept) :
+    TableReferenceFrame st (st.mapTcbInPlace t g) :=
   ⟨rfl, fun x => by
     rw [objects_mapTcbInPlace]
     split
     · cases st.objects[x]? with
       | none => rfl
-      | some o => cases o <;> rfl
+      | some o =>
+        cases o <;> try rfl
+        simp only [Option.map_some, objTableBackLinks_some, KernelObject.mapTcb,
+          KernelObject.tableBackLinks, hW]
     · rfl⟩
 
 theorem mapTcbInPlace_objects_invExt (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
@@ -448,11 +453,12 @@ theorem updateTcbAtCode_objects_invExt (st : SystemState) (k : Nat) (g : TCB →
   · exact hInv
   · exact mapTcbInPlace_objects_invExt _ _ _ hInv
 
-theorem TableReferenceFrame.updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) :
+theorem TableReferenceFrame.updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB)
+    (hW : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept) :
     TableReferenceFrame st (st.updateTcbAtCode k g) := by
   unfold SystemState.updateTcbAtCode; split
   · exact .refl st
-  · exact .mapTcbInPlace _ _ _
+  · exact .mapTcbInPlace _ _ _ hW
 
 theorem updateTcbAtCode_scheduler (st : SystemState) (k : Nat) (g : TCB → TCB) :
     (st.updateTcbAtCode k g).scheduler = st.scheduler := by
@@ -2022,7 +2028,9 @@ macro "table_backlinks" : tactic =>
     | (rw [(getCNode?_eq_some_iff _ _ _).mp ‹SystemState.getCNode? _ _ = some _›]; rfl)
     | (rw [(getUntyped?_eq_some_iff _ _ _).mp ‹SystemState.getUntyped? _ _ = some _›]; rfl)
     | (simp_all only [objTableBackLinks_some, objTableBackLinks_none,
-        KernelObject.tableBackLinks]; done))
+        KernelObject.tableBackLinks]; done)
+    | (simp_all only [objTableBackLinks_some, objTableBackLinks_none,
+        KernelObject.tableBackLinks, TCB.setSpaceLinkWords_taintWords]; done))
 
 /-- `t` is a thread a core may run: its TCB is ready in IPC and not suspended
 (seL4's `st_tcb_at runnable`). -/
@@ -2878,6 +2886,26 @@ theorem RunQueueStage.of_frameWith {st st' : SystemState} (hO : st'.objects = st
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
       (StateMono.of_objects hO) d, fun _ _ => StateMono.of_objects hO⟩
 
+/-- WS-ZA ZA5.11: **a word write is a stage** — a step whose store agrees with
+the pre-state's off the taint words, keeping the run queues, their ends and every
+core's current slot: no thread's links or state fields are taint words. -/
+theorem RunQueueStage.of_objectsAgreeOffTaint {st st' : SystemState}
+    (hA : st.objectsAgreeOffTaint st')
+    (hI : st.objects.invExt → st'.objects.invExt)
+    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode) : RunQueueStage st st' := by
+  have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun c t => by
+    have e := getTcb?_map_of_objectsAgreeOffTaint hA (fun x => x.runLinkOn c) (fun _ => rfl) t
+    unfold runLinkOn
+    cases h2 : st'.getTcb? t <;> cases h1 : st.getTcb? t <;> rw [h1, h2] at e <;>
+      first | rfl | cases e | exact Option.some.inj e
+  have hM : StateMono st st' := StateMono.of_stateFields
+    (getTcb?_map_of_objectsAgreeOffTaint hA _ (fun _ => rfl))
+  exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL hQ hE r⟩, fun h _ t => hTab h t⟩,
+    fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC hL hM d, fun _ _ => hM⟩
+
 /-- A step that writes neither the objects nor the run queues and their ends,
 and only empties or keeps each core's current slot. -/
 theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects = st.objects)
@@ -2893,15 +2921,19 @@ theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects =
 
 /-- A TCB write that keeps the run-queue fields keeps the link agreement. -/
 theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) : RunQueueLinkStage st (st.updateTcb tid f) :=
+    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
+    RunQueueLinkStage st (st.updateTcb tid f) :=
   .of_tableFrame
     (fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩)
-    (TableReferenceFrame.updateTcb st tid f)
+    (fun h => TableReferenceFrame.updateTcb st tid f h hW)
 
 theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hm : TCB.StateMono f := by tcb_state_mono) : RunQueueStage st (st.updateTcb tid f) :=
-  ⟨RunQueueLinkStage.updateTcb st tid hf,
+    (hm : TCB.StateMono f := by tcb_state_mono)
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
+    RunQueueStage st (st.updateTcb tid f) :=
+  ⟨RunQueueLinkStage.updateTcb st tid hf hW,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
       unfold SystemState.updateTcb; split
       · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x
@@ -3147,10 +3179,11 @@ theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjI
 theorem RunQueueStage.storeObject_tcb {st st' : SystemState} {k : SeLe4n.ObjId}
     {t old : TCB} (hS : SeLe4n.Model.storeObject k (.tcb t) st = .ok ((), st'))
     (hOld : st.objects[k]? = some (.tcb old)) (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
-    (hm : objStateMono (some (.tcb old)) (.tcb t) := by obj_state_mono) :
+    (hm : objStateMono (some (.tcb old)) (.tcb t) := by obj_state_mono)
+    (hW : t.taintWords = old.taintWords := by taint_words_kept) :
     RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c) (by rw [hOld]; exact hm)
-    (by rw [hOld]; rfl)
+    (by rw [hOld]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])
 
 
 /-- **The block write**: a TCB stored over core `c`'s current thread `t` that
@@ -3161,7 +3194,8 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
     (hS : SeLe4n.Model.storeObject t.toObjId (.tcb new) st = .ok ((), st'))
     (hOld : st.getTcb? t = some old) (h : ∀ c, new.runLinkOn c = old.runLinkOn c)
     (hT : new.threadState = old.threadState)
-    (hCur : st.scheduler.currentOnCore c = some t) (hNI : Kernel.isIdleThreadId t = false) :
+    (hCur : st.scheduler.currentOnCore c = some t) (hNI : Kernel.isIdleThreadId t = false)
+    (hW : new.taintWords = old.taintWords := by taint_words_kept) :
     RunQueueWindowStage (.block c) st st' := by
   have hO : st'.objects = st.objects.insert t.toObjId (.tcb new) := by
     unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
@@ -3174,7 +3208,8 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
     unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
   refine ⟨.of_tableFrame (fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects _ _ hInv,
     runQueueRefined_of_frame (runLinkOn_insert hInv hO hLk) (by rw [hSc]) (by rw [hSc]) r⟩)
-    (fun hInv => .insert hInv hO hTb (by rw [hRaw]; rfl)),
+    (fun hInv => .insert hInv hO hTb (by
+      rw [hRaw]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])),
     fun hInv _ _ d => ?_⟩
   have hGet : ∀ u, st'.getTcb? u = if u = t then some new else st.getTcb? u := fun u => by
     rw [getTcb?_eq_objTcb?, getTcb?_eq_objTcb? st u, hO]

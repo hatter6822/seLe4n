@@ -171,7 +171,7 @@ any nonzero reading.  At `v0.36.95` a capability address is a machine word
 (`CPtr` holds a `UInt64`), so an address `≥ 2^63` reads 0 at the decode.  At
 `v0.36.96` (ZA5.1) 27 capability invocations run on the register file, their
 arguments read as words; the exerciser pins each at its reading, the
-operation's own cells, which ZA5.2–ZA5.12 take to zero.  At `v0.36.97`
+operation's own cells, which ZA5.2–ZA5.13 take to zero.  At `v0.36.97`
 (ZA5.2 part 1) the ten thread and notification invocations check first and
 write in place, and read 0.  At `v0.36.98` (ZA5.2 part 2) the
 scheduling-context invocations do too, configure routed; the entry captures
@@ -396,7 +396,7 @@ a registry fold on a syscall path.  Since `v0.36.159` (ZA5.9) there is no servic
 table at all: a registration is its endpoint's record, `SystemState.serviceRegistry`
 is a specification reader over the endpoint at `sid` (one read, never a scan), and
 compiled code reads the flag in place (`recordedRegistrationPresent`) — new code must
-not call the reader on a compiled path or add a second copy of a registration.  Since `v0.36.160` (ZA5.10) the declassification audit trail is a fixed ring (`SystemState.declassificationAudit : AuditRing`): `declassificationAuditLog` and `declassificationAuditEpoch` are readers, so new code writes the ring through `AuditRing.append` behind `recordDeclassificationChecked` (never past capacity) or `AuditRing.dropFront`, and never rebuilds the trail as a list on a compiled path.  Since `v0.36.145` the kernel has no
+not call the reader on a compiled path or add a second copy of a registration.  Since `v0.36.160` (ZA5.10) the declassification audit trail is a fixed ring (`SystemState.declassificationAudit : AuditRing`): `declassificationAuditLog` and `declassificationAuditEpoch` are readers, so new code writes the ring through `AuditRing.append` behind `recordDeclassificationChecked` (never past capacity) or `AuditRing.dropFront`, and never rebuilds the trail as a list on a compiled path.  Since `v0.36.161` (ZA5.11) a thread's and a notification's taint is held in their own words (`TCB.taintWords`, `Notification.taintWords`) beside the taint table, the two held equal by `tableReferencesRecorded.taintStored`: new code writes the taint only through `joinTaintAt` / `clearTaintAt` (the table entry and the words together), joins only at a thread or a notification, and carries a consumer across the taint step through `SystemState.objectsAgreeOffTaint` rather than an object-equality frame; a new bundle conjunct owes a transport in `Architecture/TaintWordFrame.lean`, which `proofLayerInvariantBundle_of_objectsAgreeOffTaint` composes.  Since `v0.36.145` the kernel has no
 service dependency graph (`SystemState.services` and everything over it is
 deleted, plan row 32): service isolation comes from capabilities and dependency
 policy belongs to a user-level service manager, as in seL4, so new code must not

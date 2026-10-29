@@ -253,18 +253,49 @@ same transitions on the same content channels (`TCB.pendingMessage`,
 transport that hands its content on is cleared, since its taint reflects what it
 currently holds rather than everything it ever held. -/
 
+/-- WS-ZA ZA5.11: the frozen mirror of the live word write
+(`SystemState.writeTaintWordsAt`): the taint words of the thread or the
+notification at `k` become `T`'s; any other key is left as it is. -/
+private def frozenWriteTaintWords (st : FrozenSystemState) (k : SeLe4n.ObjId)
+    (T : SeLe4n.Kernel.DeclassificationTaint) : FrozenSystemState :=
+  match st.getObject? k with
+  | some (.tcb t) => frozenRewriteObject st k (.tcb (t.withTaintWords T.toWords))
+  | some (.notification n) =>
+    frozenRewriteObject st k (.notification (n.withTaintWords T.toWords))
+  | _ => st
+
+/-- WS-ZA ZA5.11: the frozen mirror of the live guard (`taintHolderAt`). -/
+private def frozenTaintHolderAt (st : FrozenSystemState) (k : SeLe4n.ObjId) : Bool :=
+  match st.getObject? k with
+  | some (.tcb _) => true
+  | some (.notification _) => true
+  | _ => false
+
 /-- WS-SM SM9.D: a frozen content move — the sink joins the source's
-provenance.  `joinAt` accumulates, so a propagation step cannot lose a link. -/
+provenance.  `joinAt` accumulates, so a propagation step cannot lose a link.
+WS-ZA ZA5.11: the live step's mirror (`joinTaintAt`) — the table entry and the
+sink's taint words together, only at a thread or a notification. -/
 private def frozenTaintFlow (st : FrozenSystemState)
     (sink source : SeLe4n.ObjId) : FrozenSystemState :=
-  { st with declassificationTaint :=
-      st.declassificationTaint.joinAt sink (st.declassificationTaint source) }
+  let old := st.declassificationTaint sink
+  let joined := SeLe4n.Kernel.DeclassificationTaint.join old (st.declassificationTaint source)
+  if joined = old then st
+  else if frozenTaintHolderAt st sink then
+    frozenWriteTaintWords
+      { st with declassificationTaint := st.declassificationTaint.set sink joined } sink joined
+  else st
 
 /-- WS-SM SM9.D: a frozen content consumption — the transport holds nothing
-afterwards, so it carries no provenance either. -/
+afterwards, so it carries no provenance either.  WS-ZA ZA5.11: the table entry
+and the words together (`clearTaintAt`'s mirror). -/
 private def frozenTaintClear (st : FrozenSystemState)
     (oid : SeLe4n.ObjId) : FrozenSystemState :=
-  { st with declassificationTaint := st.declassificationTaint.clearAt oid }
+  if st.declassificationTaint oid = SeLe4n.Kernel.DeclassificationTaint.empty then st
+  else
+    frozenWriteTaintWords
+      { st with declassificationTaint :=
+          st.declassificationTaint.set oid SeLe4n.Kernel.DeclassificationTaint.empty }
+      oid SeLe4n.Kernel.DeclassificationTaint.empty
 
 /-- **WS-SM SM6.B (PR #873 round 8): the frozen bound-delivery target.**
 
@@ -443,7 +474,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active, 
-              hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+              hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok stored =>
                 -- Stored on the notification: it now holds the badge, so it
@@ -469,7 +500,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
                 -- **No enqueue here** (PR #873 round 17).  The waiter on this

@@ -162,11 +162,15 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_tcb {st : SystemState}
     {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
     (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
-    (hm : TCB.StepMono t t' := by exact ⟨id, id⟩) :
+    (hm : TCB.StepMono t t' := by exact ⟨id, id⟩)
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
     RunQueueStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
   RunQueueStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
     (fun c => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact hL c)
     (by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact SystemState.objStateMono_tcb hm)
+    (hB := by
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
+      simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])
 
 /-- The configure's bound-thread propagation: TCB rewrites that keep the
 thread's run-queue fields, and a re-bucket of a thread its home queue holds. -/

@@ -1335,6 +1335,437 @@ theorem planOriginationTags_eq_of_no_events (plan : TaintPlan) (pre post : Syste
   | true => rfl
   | false => rw [h hp]; simp [originationTags]
 
+/-! ### WS-ZA ZA5.11: the step, its guard and its word writes
+
+The taint lives in the object it describes: a thread's or a notification's
+taint words (`TCB.taintWords`, `Notification.taintWords`).  For ZA5.11 the
+table is kept beside the words as a deliberate second copy, held equal by
+`SystemState.tableReferencesRecorded.taintStored`; the step therefore writes
+both, the table first and then the words of every key whose entry moved.
+
+**The guard.**  Content only lives in a holder — a thread's `pendingMessage` or
+a notification's badge (`contentTrackedFields`) — so a flow or an origination
+whose key the committed state does not hold as a thread or a notification
+lands on nothing.  The step drops it (`liveTaintEdges`,
+`liveOriginationTags`) rather than tag a dead key, which keeps the agreement
+exact: a key with no holder reads the empty taint, both in the table and through
+the words, so an id carved again starts clean.  `taintHolderAt_false_no_content`
+is the companion that says a dropped key holds no tracked content. -/
+
+/-- WS-ZA ZA5.11: **the committed state holds taint words at `k`** — a thread or
+a notification is stored there.  A kind-agnostic read (`getObject?`); compiled,
+the lookup's `some` meets the match and is never built. -/
+@[inline] def taintHolderAt (st : SystemState) (k : SeLe4n.ObjId) : Bool :=
+  objHoldsTaint (st.getObject? k)
+
+/-- WS-ZA ZA5.11 (**the guard's companion**): a key the guard drops holds no
+tracked content — no thread (so no `pendingMessage`) and no notification (so no
+badge) is stored there. -/
+theorem taintHolderAt_false_no_content {st : SystemState} {k : SeLe4n.ObjId}
+    (h : taintHolderAt st k = false) :
+    (∀ t : TCB, st.objects[k]? ≠ some (.tcb t)) ∧
+      (∀ n : Notification, st.objects[k]? ≠ some (.notification n)) := by
+  unfold taintHolderAt SystemState.getObject? at h
+  refine ⟨fun t ht => ?_, fun n hn => ?_⟩
+  · rw [ht] at h; cases h
+  · rw [hn] at h; cases h
+
+/-- WS-ZA ZA5.11: the plan's flows whose sink the committed state holds. -/
+@[inline] def liveTaintEdges (post : SystemState) (edges : List TaintFlowEdge) :
+    List TaintFlowEdge :=
+  edges.filter (fun e => taintHolderAt post e.sink)
+
+/-- WS-ZA ZA5.11: the origination tags the final pass applies — those landing
+on a holder, past the cleared and bypassed keys (`applySyscallTaint`). -/
+@[inline] def liveOriginationTags (plan : TaintPlan) (post : SystemState)
+    (origins : List (SeLe4n.ObjId × Nat)) : List (SeLe4n.ObjId × Nat) :=
+  origins.filter (fun p => taintHolderAt post p.1 && !(plan.cleared ++ plan.bypassed).contains p.1)
+
+/-- A key no flow of the plan sinks into is sunk by none of its live flows. -/
+theorem liveTaintEdges_not_mem_sinks (post : SystemState) {edges : List TaintFlowEdge}
+    {o : SeLe4n.ObjId} (h : o ∉ edges.map (·.sink)) :
+    o ∉ (liveTaintEdges post edges).map (·.sink) := fun hm => by
+  obtain ⟨e, he, hEo⟩ := List.mem_map.mp hm
+  exact h (List.mem_map.mpr ⟨e, (List.mem_filter.mp he).1, hEo⟩)
+
+/-- WS-ZA ZA5.11 (**the guard drops nothing live**): every flow the plan
+declares is applied, or its sink holds no tracked content in the committed
+state — so the guard cannot hide a flow into a thread or a notification. -/
+theorem liveTaintEdges_mem_or_no_content (post : SystemState) {edges : List TaintFlowEdge}
+    {e : TaintFlowEdge} (h : e ∈ edges) :
+    e ∈ liveTaintEdges post edges ∨
+      ((∀ t : TCB, post.objects[e.sink]? ≠ some (.tcb t)) ∧
+        (∀ n : Notification, post.objects[e.sink]? ≠ some (.notification n))) := by
+  cases hL : taintHolderAt post e.sink with
+  | true => exact .inl (List.mem_filter.mpr ⟨h, hL⟩)
+  | false => exact .inr (taintHolderAt_false_no_content hL)
+
+/-- WS-ZA ZA5.11: **the table the step writes**: flows (sources read from the
+origination-seeded pre-table), then clears, then origination — the flows and
+the originations on the keys the committed state holds as a thread or a
+notification (the guard). -/
+def taintStepTable (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintTable) (post : SystemState) : TaintTable :=
+  applyOrigination (liveOriginationTags plan post origins)
+    (applyTaintClears plan.cleared
+      (applyTaintFlow (applyOrigination origins preTaint)
+        (liveTaintEdges post plan.edges) post.declassificationTaint))
+
+/-- WS-ZA ZA5.11: **one key's words written in its slot**: the object's taint
+words become `T`'s, by the store's in-place slot write (`RHTable.mapValueAt`,
+the run queue's link write) — no probe for a free slot, no resize, and a frame
+that holds on every table.  An absent key and a kind holding no words are left
+as they are (`KernelObject.withTaintWords`). -/
+@[inline] def _root_.SeLe4n.Model.SystemState.writeTaintWordsAt (s : SystemState)
+    (k : SeLe4n.ObjId) (T : DeclassificationTaint) : SystemState :=
+  { s with objects := s.objects.mapValueAt k (·.withTaintWords T.toWords) }
+
+/-- One word write, at every key: the key it names is its object with the new
+words, every other key is as it was — on every table. -/
+theorem _root_.SeLe4n.Model.SystemState.writeTaintWordsAt_objects (s : SystemState)
+    (k j : SeLe4n.ObjId) (T : DeclassificationTaint) :
+    (s.writeTaintWordsAt k T).objects[j]? =
+      (if k = j then (s.objects[j]?).map (·.withTaintWords T.toWords) else s.objects[j]?) := by
+  unfold SystemState.writeTaintWordsAt
+  simp only [RHTable_getElem?_eq_get?, SeLe4n.Kernel.RobinHood.RHTable.get?_mapValueAt,
+    beq_iff_eq]
+
+theorem _root_.SeLe4n.Model.SystemState.writeTaintWordsAt_invExt {s : SystemState}
+    (hInv : s.objects.invExt) (k : SeLe4n.ObjId) (T : DeclassificationTaint) :
+    (s.writeTaintWordsAt k T).objects.invExt :=
+  SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_invExt _ _ _ hInv
+
+/-- The taint a slot reads after a word write: the written taint at a holder,
+the empty taint elsewhere. -/
+theorem objTaint_map_withTaintWords (o : Option KernelObject) (T : DeclassificationTaint) :
+    objTaint (o.map (·.withTaintWords T.toWords)) =
+      if objHoldsTaint o then T else DeclassificationTaint.empty := by
+  cases o with
+  | none => rfl
+  | some o =>
+    simp only [Option.map_some, objHoldsTaint_some]
+    cases hH : o.holdsTaint with
+    | true =>
+      show ((o.withTaintWords _).taintWords).decode = _
+      rw [KernelObject.taintWords_withTaintWords hH, DeclassificationTaint.decode_toWords]; rfl
+    | false =>
+      show ((o.withTaintWords _).taintWords).decode = _
+      rw [KernelObject.taintWords_of_not_holdsTaint (by rw [KernelObject.holdsTaint_withTaintWords]; exact hH)]
+      rfl
+
+/-- A word write keeps every key's holder probe. -/
+@[simp] theorem taintHolderAt_writeTaintWordsAt (s : SystemState) (k j : SeLe4n.ObjId)
+    (T : DeclassificationTaint) : taintHolderAt (s.writeTaintWordsAt k T) j = taintHolderAt s j := by
+  unfold taintHolderAt SystemState.getObject?
+  rw [SystemState.writeTaintWordsAt_objects]
+  split
+  · cases s.objects[j]? with
+    | none => rfl
+    | some o => simp only [Option.map_some, objHoldsTaint_some, KernelObject.holdsTaint_withTaintWords]
+  · rfl
+
+/-- **A table entry and its words written together keep the agreement**, at a
+holder or with the empty taint. -/
+theorem tableReferencesRecorded_writeTaint {s : SystemState} (hR : s.tableReferencesRecorded)
+    (k : SeLe4n.ObjId) (V : DeclassificationTaint)
+    (hV : taintHolderAt s k = true ∨ V = DeclassificationTaint.empty) :
+    ({ s with declassificationTaint := s.declassificationTaint.set k V }.writeTaintWordsAt k V
+      ).tableReferencesRecorded := by
+  have h2 : ∀ j, (objTableBackLinks
+      ({ s with declassificationTaint := s.declassificationTaint.set k V }.writeTaintWordsAt k V
+        ).objects[j]?).2.1 = (objTableBackLinks s.objects[j]?).2.1 := fun j => by
+    rw [SystemState.writeTaintWordsAt_objects]; dsimp only; split
+    · cases s.objects[j]? <;> simp
+    · rfl
+  refine ⟨fun irq n hn => ?_, fun n hn => ?_, fun j => ?_⟩
+  · rw [h2]; exact hR.irqHandlers irq n hn
+  · rw [h2] at hn; exact hR.irqBound n hn
+  · show (s.declassificationTaint.set k V) j = _
+    rw [SystemState.writeTaintWordsAt_objects]
+    dsimp only
+    by_cases hj : k = j
+    · subst hj
+      rw [if_pos rfl, TaintTable.set_self, objTaint_map_withTaintWords]
+      rcases hV with hH | hE
+      · unfold taintHolderAt SystemState.getObject? at hH; rw [if_pos hH]
+      · split <;> simp [hE]
+    · rw [if_neg hj, TaintTable.set_ne _ (Ne.symm hj)]
+      exact hR.taintStored j
+
+/-- WS-ZA ZA5.11: **one join, the table and the words**: `T` joins the entry at
+`k`, and the words at `k` become the new entry's — when the join moves the
+entry and `k` holds a thread or a notification (the guard).  The elision comes
+first: a join that moves nothing reads no object and writes nothing, so a step
+with nothing to join is the identity; compiled, the probe's lookup meets its
+match and builds no `Option` (`taintHolderAt`). -/
+@[inline] def joinTaintAt (s : SystemState) (k : SeLe4n.ObjId) (T : DeclassificationTaint) :
+    SystemState :=
+  let old := s.declassificationTaint k
+  let joined := DeclassificationTaint.join old T
+  if joined = old then s
+  else if taintHolderAt s k then
+    { s with declassificationTaint := s.declassificationTaint.set k joined }.writeTaintWordsAt k
+      joined
+  else s
+
+/-- WS-ZA ZA5.11: **one clear, the table and the words**: the entry at `k`
+emptied and its words with it; elided on an empty entry.  A clear is not
+guarded: it writes the empty taint, which a key holding nothing already reads. -/
+@[inline] def clearTaintAt (s : SystemState) (k : SeLe4n.ObjId) : SystemState :=
+  if s.declassificationTaint k = DeclassificationTaint.empty then s
+  else
+    { s with declassificationTaint := s.declassificationTaint.set k DeclassificationTaint.empty
+      }.writeTaintWordsAt k DeclassificationTaint.empty
+
+/-- WS-ZA ZA5.11: **the taint step** — flows, then clears, then origination
+(the cleared and bypassed keys left out), each a join or a clear of the table
+entry and the words together. -/
+def applyTaintStep (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintTable) (post : SystemState) : SystemState :=
+  let seed := applyOrigination origins preTaint
+  let s₁ := plan.edges.foldl (fun s e => joinTaintAt s e.sink (seed e.source)) post
+  let s₂ := plan.cleared.foldl clearTaintAt s₁
+  (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).foldl
+    (fun s p => joinTaintAt s p.1 (DeclassificationTaint.singleton p.2)) s₂
+
+theorem joinTaintAt_declassificationTaint (s : SystemState) (k : SeLe4n.ObjId)
+    (T : DeclassificationTaint) :
+    (joinTaintAt s k T).declassificationTaint =
+      if taintHolderAt s k then s.declassificationTaint.joinAt k T else s.declassificationTaint := by
+  unfold joinTaintAt TaintTable.joinAt
+  dsimp only
+  by_cases hJ : DeclassificationTaint.join (s.declassificationTaint k) T = s.declassificationTaint k
+  · simp only [hJ, if_true]; split <;> rfl
+  · simp only [hJ, if_false]; split <;> rfl
+
+theorem clearTaintAt_declassificationTaint (s : SystemState) (k : SeLe4n.ObjId) :
+    (clearTaintAt s k).declassificationTaint = s.declassificationTaint.clearAt k := by
+  unfold clearTaintAt TaintTable.clearAt
+  split <;> rfl
+
+@[simp] theorem taintHolderAt_joinTaintAt (s : SystemState) (k j : SeLe4n.ObjId)
+    (T : DeclassificationTaint) : taintHolderAt (joinTaintAt s k T) j = taintHolderAt s j := by
+  unfold joinTaintAt; dsimp only
+  split
+  · rfl
+  · split
+    · rw [taintHolderAt_writeTaintWordsAt]; rfl
+    · rfl
+
+@[simp] theorem taintHolderAt_clearTaintAt (s : SystemState) (k j : SeLe4n.ObjId) :
+    taintHolderAt (clearTaintAt s k) j = taintHolderAt s j := by
+  unfold clearTaintAt
+  split
+  · rfl
+  · rw [taintHolderAt_writeTaintWordsAt]; rfl
+
+/-- A relation every step keeps is kept by a fold of steps. -/
+theorem foldl_taintStep_rel (R : SystemState → SystemState → Prop)
+    (hRefl : ∀ s, R s s) (hTrans : ∀ a b c, R a b → R b c → R a c) ⦃α : Type⦄
+    (f : SystemState → α → SystemState) (hf : ∀ s a, R s (f s a)) :
+    ∀ (L : List α) (s : SystemState), R s (L.foldl f s)
+  | [], s => hRefl s
+  | a :: L, s => hTrans _ _ _ (hf s a) (foldl_taintStep_rel R hRefl hTrans f hf L (f s a))
+
+/-- A fold of guarded joins writes the table the guarded fold of `joinAt`
+writes, reading the guard off the state it starts from. -/
+theorem foldl_joinTaintAt_declassificationTaint {α : Type _} (key : α → SeLe4n.ObjId)
+    (val : α → DeclassificationTaint) :
+    ∀ (L : List α) (s : SystemState),
+      (L.foldl (fun s a => joinTaintAt s (key a) (val a)) s).declassificationTaint =
+        (L.filter (fun a => taintHolderAt s (key a))).foldl
+          (fun t a => t.joinAt (key a) (val a)) s.declassificationTaint
+  | [], _ => rfl
+  | a :: L, s => by
+      rw [List.foldl_cons, foldl_joinTaintAt_declassificationTaint key val L]
+      have hH : ∀ j, taintHolderAt (joinTaintAt s (key a) (val a)) j = taintHolderAt s j :=
+        fun j => taintHolderAt_joinTaintAt _ _ _ _
+      simp only [hH, joinTaintAt_declassificationTaint]
+      cases h : taintHolderAt s (key a) <;> simp [h]
+
+theorem foldl_clearTaintAt_declassificationTaint :
+    ∀ (L : List SeLe4n.ObjId) (s : SystemState),
+      (L.foldl clearTaintAt s).declassificationTaint = applyTaintClears L s.declassificationTaint
+  | [], _ => rfl
+  | k :: L, s => by
+      rw [List.foldl_cons, foldl_clearTaintAt_declassificationTaint L,
+        clearTaintAt_declassificationTaint]
+      rfl
+
+/-- **The taint step keeps every holder probe**: no word write changes a kind. -/
+theorem applyTaintStep_taintHolderAt (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintTable) (post : SystemState) (j : SeLe4n.ObjId) :
+    taintHolderAt (applyTaintStep plan origins preTaint post) j = taintHolderAt post j := by
+  have R := foldl_taintStep_rel (fun s s' => ∀ j, taintHolderAt s' j = taintHolderAt s j)
+    (fun _ _ => rfl) (fun _ _ _ h1 h2 j => (h2 j).trans (h1 j))
+  unfold applyTaintStep; dsimp only
+  refine ((R _ (fun s p j => taintHolderAt_joinTaintAt s _ j _) _ _) j).trans ?_
+  refine ((R _ (fun s k j => taintHolderAt_clearTaintAt s k j) _ _) j).trans ?_
+  exact (R _ (fun s e j => taintHolderAt_joinTaintAt s _ j _) _ _) j
+
+/-- WS-ZA ZA5.11: **the table the step writes is the pipeline's.** -/
+@[simp] theorem applyTaintStep_declassificationTaint (plan : TaintPlan)
+    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintTable) (post : SystemState) :
+    (applyTaintStep plan origins preTaint post).declassificationTaint =
+      taintStepTable plan origins preTaint post := by
+  have R := foldl_taintStep_rel (fun s s' => ∀ j, taintHolderAt s' j = taintHolderAt s j)
+    (fun _ _ => rfl) (fun _ _ _ h1 h2 j => (h2 j).trans (h1 j))
+  unfold applyTaintStep taintStepTable; dsimp only
+  rw [foldl_joinTaintAt_declassificationTaint, foldl_clearTaintAt_declassificationTaint,
+    foldl_joinTaintAt_declassificationTaint]
+  have hH : ∀ j, taintHolderAt (plan.cleared.foldl clearTaintAt
+      (plan.edges.foldl (fun s e => joinTaintAt s e.sink
+        (applyOrigination origins preTaint e.source)) post)) j = taintHolderAt post j := fun j =>
+    ((R _ (fun s k j => taintHolderAt_clearTaintAt s k j) _ _) j).trans
+      ((R _ (fun s e j => taintHolderAt_joinTaintAt s _ j _) _ _) j)
+  simp only [hH]
+  rw [List.filter_filter]
+  rfl
+
+/-- **The taint step writes the table and the store alone.** -/
+theorem applyTaintStep_frame (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintTable) (post : SystemState) :
+    applyTaintStep plan origins preTaint post =
+      { post with
+          declassificationTaint := taintStepTable plan origins preTaint post
+          objects := (applyTaintStep plan origins preTaint post).objects } := by
+  have R := foldl_taintStep_rel
+    (fun s s' => ∃ T O, s' = { s with declassificationTaint := T, objects := O })
+    (fun s => ⟨s.declassificationTaint, s.objects, rfl⟩)
+    (fun a b c h1 h2 => by
+      obtain ⟨T1, O1, h1⟩ := h1
+      obtain ⟨T2, O2, h2⟩ := h2
+      exact ⟨T2, O2, by rw [h2, h1]⟩)
+  have hJ : ∀ s k T, ∃ T' O, joinTaintAt s k T = { s with declassificationTaint := T', objects := O } :=
+    fun s k T => by
+      unfold joinTaintAt; dsimp only
+      split
+      · exact ⟨_, _, rfl⟩
+      · split
+        · exact ⟨_, _, rfl⟩
+        · exact ⟨_, _, rfl⟩
+  have hC : ∀ s k, ∃ T' O, clearTaintAt s k = { s with declassificationTaint := T', objects := O } :=
+    fun s k => by
+      unfold clearTaintAt
+      split
+      · exact ⟨_, _, rfl⟩
+      · exact ⟨_, _, rfl⟩
+  rw [← applyTaintStep_declassificationTaint]
+  obtain ⟨T, O, h⟩ : ∃ T O, applyTaintStep plan origins preTaint post =
+      { post with declassificationTaint := T, objects := O } := by
+    unfold applyTaintStep; dsimp only
+    obtain ⟨T1, O1, h1⟩ := R _ (fun s e => hJ s _ _) plan.edges post
+    obtain ⟨T2, O2, h2⟩ := R _ (fun s k => hC s k) plan.cleared
+      (plan.edges.foldl (fun s e => joinTaintAt s e.sink (applyOrigination origins preTaint e.source)) post)
+    obtain ⟨T3, O3, h3⟩ := R _ (fun s p => hJ s _ _)
+      (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
+      (plan.cleared.foldl clearTaintAt
+        (plan.edges.foldl (fun s e => joinTaintAt s e.sink (applyOrigination origins preTaint e.source)) post))
+    exact ⟨T3, O3, by rw [h3, h2, h1]⟩
+  rw [h]
+
+/-- WS-ZA ZA5.11 (**the one frame**): the taint step moves the store only in
+its taint words — every key's object, its words erased, is the committed one's. -/
+theorem applyTaintStep_objectsAgreeOffTaint (plan : TaintPlan)
+    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintTable) (post : SystemState) :
+    post.objectsAgreeOffTaint (applyTaintStep plan origins preTaint post) := by
+  have hW : ∀ (s : SystemState) k (T : TaintTable) (V : DeclassificationTaint),
+      s.objectsAgreeOffTaint ({ s with declassificationTaint := T }.writeTaintWordsAt k V) :=
+      fun s k T V j => by
+    rw [SystemState.writeTaintWordsAt_objects]
+    dsimp only
+    split
+    · simp only [Option.map_map, Function.comp_def, KernelObject.eraseTaint_withTaintWords]
+    · rfl
+  have R := foldl_taintStep_rel (fun (s s' : SystemState) => s.objectsAgreeOffTaint s')
+    SystemState.objectsAgreeOffTaint.refl (fun _ _ _ h1 h2 => h1.trans h2)
+  have hJ : ∀ (s : SystemState) k T, s.objectsAgreeOffTaint (joinTaintAt s k T) := fun s k T => by
+    unfold joinTaintAt; dsimp only
+    split
+    · exact .refl s
+    · split
+      · exact hW s _ _ _
+      · exact .refl s
+  have hC : ∀ (s : SystemState) k, s.objectsAgreeOffTaint (clearTaintAt s k) := fun s k => by
+    unfold clearTaintAt
+    split
+    · exact .refl s
+    · exact hW s _ _ _
+  unfold applyTaintStep; dsimp only
+  exact ((R _ (fun s e => hJ s _ _) _ _).trans (R _ (fun s k => hC s k) _ _)).trans
+    (R _ (fun s p => hJ s _ _) _ _)
+
+/-- The taint step keeps the store's table invariant. -/
+theorem applyTaintStep_invExt (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintTable) {post : SystemState} (h : post.objects.invExt) :
+    (applyTaintStep plan origins preTaint post).objects.invExt := by
+  have R := foldl_taintStep_rel (fun s s' => s.objects.invExt → s'.objects.invExt)
+    (fun _ h => h) (fun _ _ _ h1 h2 h => h2 (h1 h))
+  have hJ : ∀ s k T, s.objects.invExt → (joinTaintAt s k T).objects.invExt := fun s k T h => by
+    unfold joinTaintAt; dsimp only
+    split
+    · exact h
+    · split
+      · exact SystemState.writeTaintWordsAt_invExt h _ _
+      · exact h
+  have hC : ∀ s k, s.objects.invExt → (clearTaintAt s k).objects.invExt := fun s k h => by
+    unfold clearTaintAt
+    split
+    · exact h
+    · exact SystemState.writeTaintWordsAt_invExt h _ _
+  unfold applyTaintStep; dsimp only
+  exact R _ (fun s p => hJ s _ _) _ _ (R _ (fun s k => hC s k) _ _ (R _ (fun s e => hJ s _ _) _ _ h))
+
+/-- The step keeps the store's size: each word write is an in-place slot write. -/
+theorem applyTaintStep_size (plan : TaintPlan) (origins : List (SeLe4n.ObjId × Nat))
+    (preTaint : TaintTable) (post : SystemState) :
+    (applyTaintStep plan origins preTaint post).objects.size = post.objects.size := by
+  have R := foldl_taintStep_rel (fun s s' => s'.objects.size = s.objects.size)
+    (fun _ => rfl) (fun _ _ _ h1 h2 => h2.trans h1)
+  have hJ : ∀ s k T, (joinTaintAt s k T).objects.size = s.objects.size := fun s k T => by
+    unfold joinTaintAt; dsimp only
+    split
+    · rfl
+    · split
+      · exact SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_size _ _ _
+      · rfl
+  have hC : ∀ s k, (clearTaintAt s k).objects.size = s.objects.size := fun s k => by
+    unfold clearTaintAt
+    split
+    · rfl
+    · exact SeLe4n.Kernel.RobinHood.RHTable.mapValueAt_size _ _ _
+  unfold applyTaintStep; dsimp only
+  exact (R _ (fun s p => hJ s _ _) _ _).trans
+    ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
+
+/-- WS-ZA ZA5.11 (**the step keeps the agreement**): every join and every clear
+writes the table entry and the words of its key together, a join only at a
+holder (the guard) and a clear only the empty taint, so the table and the words
+stay one value; the interrupt table and every interrupt flag are as committed. -/
+theorem applyTaintStep_preserves_tableReferencesRecorded (plan : TaintPlan)
+    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintTable) {post : SystemState}
+    (hR : post.tableReferencesRecorded) :
+    (applyTaintStep plan origins preTaint post).tableReferencesRecorded := by
+  have R := foldl_taintStep_rel
+    (fun s s' => s.tableReferencesRecorded → s'.tableReferencesRecorded)
+    (fun _ h => h) (fun _ _ _ h1 h2 h => h2 (h1 h))
+  have hJ : ∀ s k T, s.tableReferencesRecorded → (joinTaintAt s k T).tableReferencesRecorded :=
+    fun s k T h => by
+      unfold joinTaintAt; dsimp only
+      split
+      · exact h
+      · split
+        · rename_i hH; exact tableReferencesRecorded_writeTaint h _ _ (.inl hH)
+        · exact h
+  have hC : ∀ s k, s.tableReferencesRecorded → (clearTaintAt s k).tableReferencesRecorded :=
+    fun s k h => by
+      unfold clearTaintAt
+      split
+      · exact h
+      · exact tableReferencesRecorded_writeTaint h _ _ (.inr rfl)
+  unfold applyTaintStep; dsimp only
+  exact R _ (fun s p => hJ s _ _) _ _ (R _ (fun s k => hC s k) _ _ (R _ (fun s e => hJ s _ _) _ _ hR))
+
 /-- WS-SM SM9.D.7 (**the one writer**): apply a syscall's whole taint effect to
 the state the dispatch committed.
 
@@ -1370,16 +1801,7 @@ def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState 
   -- since the entry always applies a plan.  Computing it twice made every syscall
   -- pay four list walks where two suffice; computing it at all made 32 of the 34
   -- arms pay two walks for a diff that is provably empty (SM9.D.13a).
-  let origins := planOriginationTags plan pre post
-  { post with
-      declassificationTaint :=
-        applyOrigination
-          (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-          (applyTaintClears plan.cleared
-            (applyTaintFlow
-              (applyOrigination origins pre.declassificationTaint)
-              plan.edges
-              post.declassificationTaint)) }
+  applyTaintStep plan (planOriginationTags plan pre post) pre.declassificationTaint post
 
 /-- WS-ZA ZA1.1: **the taint step over what it reads of the pre-state**, read
 before the arm runs.
@@ -1393,20 +1815,11 @@ state before the arm (`applySyscallTaintAfter_pre` says the two agree). -/
 def applySyscallTaintAfter (plan : TaintPlan) (preEpoch : Nat)
     (preLength : Nat) (preTaint : TaintTable)
     (post : SystemState) : SystemState :=
-  let origins :=
-    if plan.originates then
-      originationTags plan.noRelease
-        (recordedSince preEpoch preLength post)
-    else []
-  { post with
-      declassificationTaint :=
-        applyOrigination
-          (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-          (applyTaintClears plan.cleared
-            (applyTaintFlow
-              (applyOrigination origins preTaint)
-              plan.edges
-              post.declassificationTaint)) }
+  applyTaintStep plan
+    (if plan.originates then
+      originationTags plan.noRelease (recordedSince preEpoch preLength post)
+    else [])
+    preTaint post
 
 /-- WS-ZA ZA1.1: given the pre-state's own fields, the early-read form is the
 taint step. -/
@@ -1415,51 +1828,55 @@ taint step. -/
         pre.declassificationAudit.length pre.declassificationTaint post =
       applySyscallTaint plan pre post := rfl
 
-/-- WS-SM SM9.D.7 (**the frame**): the taint write touches the taint table and
+/-- WS-SM SM9.D.7 (**the frame**): the taint step writes the taint table and,
+since WS-ZA ZA5.11, the taint words of the objects whose entry it moved — and
 nothing else.
 
 The theorem every carriage argument rides: the entry's propagation step changes
-no object, no scheduler slot, no register bank, no trail, and no lock — so every
+no scheduler slot, no register bank, no trail and no lock, and no object field
+but its taint words (`applySyscallTaint_objectsAgreeOffTaint`) — so every
 invariant and non-interference result about the dispatch transfers across it. -/
 theorem applySyscallTaint_frame (plan : TaintPlan) (pre post : SystemState) :
     applySyscallTaint plan pre post =
       { post with
           declassificationTaint :=
-            applyOrigination
-              ((planOriginationTags plan pre post).filter
-                (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-              (applyTaintClears plan.cleared
-                (applyTaintFlow
-                  (applyOrigination (planOriginationTags plan pre post)
-                    pre.declassificationTaint)
-                  plan.edges
-                  post.declassificationTaint)) } := rfl
+            taintStepTable plan (planOriginationTags plan pre post)
+              pre.declassificationTaint post
+          objects := (applySyscallTaint plan pre post).objects } :=
+  applyTaintStep_frame _ _ _ _
 
-/-- WS-SM SM9.D.7: every field but the taint table is carried through — the
-projection form the carriage arguments read. -/
-@[simp] theorem applySyscallTaint_objects (plan : TaintPlan) (pre post : SystemState) :
-    (applySyscallTaint plan pre post).objects = post.objects := rfl
+/-- WS-SM SM9.D.7: the taint table the step writes is the pipeline's. -/
+@[simp] theorem applySyscallTaint_declassificationTaint (plan : TaintPlan)
+    (pre post : SystemState) :
+    (applySyscallTaint plan pre post).declassificationTaint =
+      taintStepTable plan (planOriginationTags plan pre post) pre.declassificationTaint post :=
+  applyTaintStep_declassificationTaint _ _ _ _
 
 @[simp] theorem applySyscallTaint_scheduler (plan : TaintPlan) (pre post : SystemState) :
-    (applySyscallTaint plan pre post).scheduler = post.scheduler := rfl
+    (applySyscallTaint plan pre post).scheduler = post.scheduler := by
+  rw [applySyscallTaint_frame]
 
 @[simp] theorem applySyscallTaint_machine (plan : TaintPlan) (pre post : SystemState) :
-    (applySyscallTaint plan pre post).machine = post.machine := rfl
+    (applySyscallTaint plan pre post).machine = post.machine := by
+  rw [applySyscallTaint_frame]
 
 @[simp] theorem applySyscallTaint_declassificationAuditLog (plan : TaintPlan)
     (pre post : SystemState) :
     (applySyscallTaint plan pre post).declassificationAuditLog =
-      post.declassificationAuditLog := rfl
+      post.declassificationAuditLog := by
+  rw [applySyscallTaint_frame]
 
 @[simp] theorem applySyscallTaint_declassificationAuditEpoch (plan : TaintPlan)
     (pre post : SystemState) :
     (applySyscallTaint plan pre post).declassificationAuditEpoch =
-      post.declassificationAuditEpoch := rfl
+      post.declassificationAuditEpoch := by
+  rw [applySyscallTaint_frame]
 
 @[simp] theorem applySyscallTaint_declassificationRefusals (plan : TaintPlan)
     (pre post : SystemState) :
     (applySyscallTaint plan pre post).declassificationRefusals =
-      post.declassificationRefusals := rfl
+      post.declassificationRefusals := by
+  rw [applySyscallTaint_frame]
 
 /-- WS-SM SM9.D.7: an inert plan is the identity — the property that makes "most
 syscalls do not touch the table" a fact rather than an expectation.
@@ -1472,17 +1889,7 @@ append at all, and `TaintPlan.inert` says it cannot — so the identity is
 structural. -/
 theorem applySyscallTaint_inert (pre post : SystemState) :
     applySyscallTaint TaintPlan.inert pre post = post := by
-  show { post with
-      declassificationTaint :=
-        applyOrigination
-          ((planOriginationTags TaintPlan.inert pre post).filter
-            (fun p => !([] : List SeLe4n.ObjId).contains p.1))
-          (applyTaintClears [] (applyTaintFlow
-            (applyOrigination (planOriginationTags TaintPlan.inert pre post)
-              pre.declassificationTaint) []
-            post.declassificationTaint)) } = post
-  simp [planOriginationTags, TaintPlan.inert, applyOrigination, applyTaintClears,
-    applyTaintFlow]
+  simp [applySyscallTaint, applyTaintStep, planOriginationTags, TaintPlan.inert]
 
 /-- WS-ZA ZA4.3: a yield's plan is the inert plan — it moves no content, records
 no declassification and names no bypassed target — so the taint step leaves the
@@ -1585,23 +1992,39 @@ theorem applySyscallTaint_cleared_empty (plan : TaintPlan) (pre post : SystemSta
     (o : SeLe4n.ObjId) (h : o ∈ plan.cleared) :
     (applySyscallTaint plan pre post).declassificationTaint o =
       DeclassificationTaint.empty := by
-  have hOrigF : o ∉ ((planOriginationTags plan pre post).filter
-      (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).map (·.fst) := by
+  have hOrigF : o ∉ (liveOriginationTags plan post (planOriginationTags plan pre post)).map
+      (·.fst) := by
     intro hm
     obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
     have hkeep := (List.mem_filter.mp hq).2
     rw [← hqo] at h
     simp [h] at hkeep
-  show applyOrigination
-      ((planOriginationTags plan pre post).filter
-        (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-      (applyTaintClears plan.cleared
-        (applyTaintFlow
-          (applyOrigination (planOriginationTags plan pre post)
-            pre.declassificationTaint)
-          plan.edges post.declassificationTaint)) o = DeclassificationTaint.empty
+  rw [applySyscallTaint_declassificationTaint]
+  unfold taintStepTable
   rw [applyOrigination_not_mem o _ _ hOrigF]
   exact applyTaintClears_empty_of_mem_or_empty o plan.cleared _ (Or.inl h)
+
+/-- WS-ZA ZA5.11 (**the one frame**): the syscall's taint step moves the store
+only in its taint words. -/
+theorem applySyscallTaint_objectsAgreeOffTaint (plan : TaintPlan) (pre post : SystemState) :
+    post.objectsAgreeOffTaint (applySyscallTaint plan pre post) :=
+  applyTaintStep_objectsAgreeOffTaint _ _ _ _
+
+/-- The syscall's taint step keeps the store's table invariant. -/
+theorem applySyscallTaint_invExt {plan : TaintPlan} {pre post : SystemState}
+    (h : post.objects.invExt) : (applySyscallTaint plan pre post).objects.invExt :=
+  applyTaintStep_invExt _ _ _ h
+
+/-- The syscall's taint step keeps the store's size. -/
+theorem applySyscallTaint_size (plan : TaintPlan) (pre post : SystemState) :
+    (applySyscallTaint plan pre post).objects.size = post.objects.size :=
+  applyTaintStep_size _ _ _ _
+
+/-- The syscall's taint step keeps the table references recorded. -/
+theorem applySyscallTaint_preserves_tableReferencesRecorded {plan : TaintPlan}
+    {pre post : SystemState} (h : post.tableReferencesRecorded) :
+    (applySyscallTaint plan pre post).tableReferencesRecorded :=
+  applyTaintStep_preserves_tableReferencesRecorded _ _ _ h
 
 -- ============================================================================
 -- §3b  WS-SM SM9.D.8-.D.12 — what propagation establishes
@@ -1700,23 +2123,19 @@ The source is read from the origination-seeded pre-table (`applySyscallTaint`),
 which only *adds* tags, so the raw-pre-table hypothesis suffices by monotonicity
 (`contains_applyOrigination_mono`). -/
 theorem taintPropagation_edge (plan : TaintPlan) (pre post : SystemState)
-    (e : TaintFlowEdge) (hMem : e ∈ plan.edges) (hClear : e.sink ∉ plan.cleared) {t : Nat}
+    (e : TaintFlowEdge) (hMem : e ∈ plan.edges) (hClear : e.sink ∉ plan.cleared)
+    (hLive : taintHolderAt post e.sink = true) {t : Nat}
     (hSrc : (pre.declassificationTaint e.source).contains t = true) :
     ((applySyscallTaint plan pre post).declassificationTaint e.sink).contains t = true := by
-  show ((applyOrigination
-      ((planOriginationTags plan pre post).filter
-        (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-      (applyTaintClears plan.cleared
-        (applyTaintFlow
-          (applyOrigination (planOriginationTags plan pre post)
-            pre.declassificationTaint)
-          plan.edges post.declassificationTaint))) e.sink).contains t = true
+  rw [applySyscallTaint_declassificationTaint]
+  unfold taintStepTable
   refine contains_applyOrigination_mono _ _ e.sink ?_
   refine contains_applyTaintClears_of_not_mem plan.cleared _ e.sink hClear ?_
   exact contains_applyTaintFlow_of_mem
     (applyOrigination (planOriginationTags plan pre post)
       pre.declassificationTaint)
-    plan.edges post.declassificationTaint e hMem
+    (liveTaintEdges post plan.edges) post.declassificationTaint e
+    (List.mem_filter.mpr ⟨hMem, hLive⟩)
     (contains_applyOrigination_mono _ pre.declassificationTaint e.source hSrc)
 
 /-- WS-SM SM9.D.13a (**origination**): a downgrade recorded by this commit tags
@@ -1738,16 +2157,16 @@ theorem taintOrigination_target (plan : TaintPlan) (pre post : SystemState)
     (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
     (hRec : plan.originates = true)
     (hClear : ev.targetObject ∉ plan.cleared ++ plan.bypassed)
-    (hRel : ev.targetObject ∉ plan.noRelease) :
+    (hRel : ev.targetObject ∉ plan.noRelease)
+    (hLive : taintHolderAt post ev.targetObject = true) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.targetObject).contains
       ev.timestamp = true := by
-  show ((applyOrigination
-    ((planOriginationTags plan pre post).filter
-      (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)) _)
-    ev.targetObject).contains ev.timestamp = true
+  rw [applySyscallTaint_declassificationTaint]
+  unfold taintStepTable liveOriginationTags
   rw [planOriginationTags_of_originates plan pre post hRec]
   exact contains_applyOrigination_of_mem _ _ (ev.targetObject, ev.timestamp)
-    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp [hRel]⟩, by simp [hClear]⟩)
+    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp [hRel]⟩,
+      by simp [hClear, hLive]⟩)
 
 /-- WS-SM SM9.D.13a (**origination, actor half**): a downgrade also tags the
 subject that performed it, so a subject that releases content twice carries the
@@ -1759,16 +2178,16 @@ theorem taintOrigination_actor (plan : TaintPlan) (pre post : SystemState)
     (ev : DeclassificationEvent) (hMem : ev ∈ newlyRecordedEvents pre post)
     (hRec : plan.originates = true)
     (hClear : ev.sourceSubject ∉ plan.cleared ++ plan.bypassed)
-    (hRel : ev.targetObject ∉ plan.noRelease) :
+    (hRel : ev.targetObject ∉ plan.noRelease)
+    (hLive : taintHolderAt post ev.sourceSubject = true) :
     ((applySyscallTaint plan pre post).declassificationTaint ev.sourceSubject).contains
       ev.timestamp = true := by
-  show ((applyOrigination
-    ((planOriginationTags plan pre post).filter
-      (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)) _)
-    ev.sourceSubject).contains ev.timestamp = true
+  rw [applySyscallTaint_declassificationTaint]
+  unfold taintStepTable liveOriginationTags
   rw [planOriginationTags_of_originates plan pre post hRec]
   exact contains_applyOrigination_of_mem _ _ (ev.sourceSubject, ev.timestamp)
-    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp [hRel]⟩, by simp [hClear]⟩)
+    (List.mem_filter.mpr ⟨List.mem_flatMap.mpr ⟨ev, hMem, by simp [hRel]⟩,
+      by simp [hClear, hLive]⟩)
 
 /-- WS-SM SM9.D.8: the edge a content-moving syscall's plan carries, named once
 so every per-site corollary below reads the same resolution. -/
@@ -1804,7 +2223,8 @@ theorem taintPropagation_send_to_receiver (st post : SystemState) (tid : SeLe4n.
     (hSid : decoded.syscallId = .send ∨ decoded.syscallId = .call)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object epId)
-    (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some receiver) {t : Nat}
+    (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some receiver)
+    (hLive : taintHolderAt post receiver.toObjId = true) {t : Nat}
     (hSender : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       receiver.toObjId).contains t = true := by
@@ -1813,7 +2233,7 @@ theorem taintPropagation_send_to_receiver (st post : SystemState) (tid : SeLe4n.
     simp only [contentFlowEdges, hCap]
     rcases hSid with h | h <;> simp only [h, hTarget] <;> simp [senderTaintEdges, hRecv]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hSender
+  refine taintPropagation_edge _ st post _ hIn ?_ hLive hSender
   rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h]
 
 /-- WS-SM SM9.D.8 (**receive / replyRecv ← sender**): a receiver picks up the
@@ -1828,7 +2248,8 @@ theorem taintPropagation_receive_from_sender (st post : SystemState) (tid : SeLe
     (hSid : decoded.syscallId = .receive ∨ decoded.syscallId = .replyRecv)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object epId)
-    (hSender : (st.getEndpoint? epId).bind (·.sendQ.head) = some sender) {t : Nat}
+    (hSender : (st.getEndpoint? epId).bind (·.sendQ.head) = some sender)
+    (hLive : taintHolderAt post tid.toObjId = true) {t : Nat}
     (hSrc : (st.declassificationTaint sender.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       tid.toObjId).contains t = true := by
@@ -1840,7 +2261,7 @@ theorem taintPropagation_receive_from_sender (st post : SystemState) (tid : SeLe
     · simp only [h, hTarget]
       exact List.mem_append_left _ (by simp [receiverTaintEdges, hSender])
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hSrc
+  refine taintPropagation_edge _ st post _ hIn ?_ hLive hSrc
   rw [hCleared]; rcases hSid with h | h <;> simp [contentFlowClears, hCap, h]
 
 -- Three receive-side theorems are deliberately GONE, not moved — and PR #873
@@ -1878,7 +2299,8 @@ theorem taintPropagation_reply_to_caller (st post : SystemState) (tid : SeLe4n.T
     (hSid : decoded.syscallId = .reply)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .replyCap rid)
-    (hCaller : (st.getReply? rid).bind (·.caller) = some caller) {t : Nat}
+    (hCaller : (st.getReply? rid).bind (·.caller) = some caller)
+    (hLive : taintHolderAt post caller.toObjId = true) {t : Nat}
     (hReplier : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       caller.toObjId).contains t = true := by
@@ -1887,7 +2309,7 @@ theorem taintPropagation_reply_to_caller (st post : SystemState) (tid : SeLe4n.T
     simp only [contentFlowEdges, hCap, hSid, hTarget]
     simp [replyTaintEdges, hCaller]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hReplier
+  refine taintPropagation_edge _ st post _ hIn ?_ hLive hReplier
   rw [hCleared]; simp [contentFlowClears, hCap, hSid]
 
 /-- WS-SM SM9.D.9 (**replyRecv → previous caller**): the reply half of the
@@ -1905,7 +2327,8 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     (hArgs : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded = .ok rargs)
     (hRCap : syscallOperandCap? st tid (rargs.replyCPtr) = some rcap)
     (hRTarget : rcap.target = .replyCap rid)
-    (hCaller : (st.getReply? rid).bind (·.caller) = some prevCaller) {t : Nat}
+    (hCaller : (st.getReply? rid).bind (·.caller) = some prevCaller)
+    (hLive : taintHolderAt post prevCaller.toObjId = true) {t : Nat}
     (hServer : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       prevCaller.toObjId).contains t = true := by
@@ -1916,7 +2339,7 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     simp only [replyRecvReplyLegEdges, hLen, hArgs, hRCap, hRTarget]
     simp [replyTaintEdges, hCaller]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hServer
+  refine taintPropagation_edge _ st post _ hIn ?_ hLive hServer
   rw [hCleared]; simp [contentFlowClears, hCap, hSid]
 
 /-- WS-SM SM9.D.10 (**signal → notification, stored**): when no waiter is present
@@ -1934,7 +2357,8 @@ theorem taintPropagation_signal_to_notification (st post : SystemState)
     (hSid : decoded.syscallId = .notificationSignal ∨ decoded.syscallId = .declassifySignal)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object nid)
-    (hNoWaiter : declassifiedSignalReceiver? st nid = none) {t : Nat}
+    (hNoWaiter : declassifiedSignalReceiver? st nid = none)
+    (hLive : taintHolderAt post nid = true) {t : Nat}
     (hSignaller : (st.declassificationTaint tid.toObjId).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       nid).contains t = true := by
@@ -1944,7 +2368,7 @@ theorem taintPropagation_signal_to_notification (st post : SystemState)
     rcases hSid with h | h <;>
       simp [h, hTarget, signalTaintEdges, signalDelivery_stored_of_no_receiver st nid hNoWaiter]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hSignaller
+  refine taintPropagation_edge _ st post _ hIn ?_ hLive hSignaller
   rw [hCleared]; rcases hSid with h | h <;>
     simp [contentFlowClears, hCap, h, hTarget,
       signalClearedNotification_of_no_receiver st nid hNoWaiter]
@@ -1962,7 +2386,8 @@ theorem taintPropagation_wait_from_notification (st post : SystemState)
     (hSid : decoded.syscallId = .notificationWait)
     (hCap : syscallOperandCap? st tid decoded.capAddr = some cap)
     (hTarget : cap.target = .object nid)
-    (hNe : tid.toObjId ≠ nid) {t : Nat}
+    (hNe : tid.toObjId ≠ nid)
+    (hLive : taintHolderAt post tid.toObjId = true) {t : Nat}
     (hNotification : (st.declassificationTaint nid).contains t = true) :
     ((applySyscallTaint (syscallTaintPlan st tid decoded) st post).declassificationTaint
       tid.toObjId).contains t = true := by
@@ -1971,7 +2396,7 @@ theorem taintPropagation_wait_from_notification (st post : SystemState)
     simp only [contentFlowEdges, hCap, hSid, hTarget]
     simp [waitTaintEdges]
   obtain ⟨hIn, hCleared⟩ := mem_movesContent_edges hClass hMem
-  refine taintPropagation_edge _ st post _ hIn ?_ hNotification
+  refine taintPropagation_edge _ st post _ hIn ?_ hLive hNotification
   rw [hCleared]; simp [contentFlowClears, hCap, hSid, hTarget, hNe]
 
 /-- WS-SM SM9.D.10 (**the consumed transport is emptied**): after a
@@ -2128,24 +2553,18 @@ theorem bypassedObject_not_originated (plan : TaintPlan) (pre post : SystemState
     (hFlow : o ∉ plan.edges.map (fun e => e.sink)) :
     (applySyscallTaint plan pre post).declassificationTaint o =
       post.declassificationTaint o := by
-  have hOrigF : o ∉ ((planOriginationTags plan pre post).filter
-      (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).map (·.fst) := by
+  have hOrigF : o ∉ (liveOriginationTags plan post (planOriginationTags plan pre post)).map
+      (·.fst) := by
     intro hm
     obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
     have hkeep := (List.mem_filter.mp hq).2
     rw [← hqo] at hBypass
     simp [hBypass] at hkeep
-  show applyOrigination
-      ((planOriginationTags plan pre post).filter
-        (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-      (applyTaintClears plan.cleared
-        (applyTaintFlow
-          (applyOrigination (planOriginationTags plan pre post)
-            pre.declassificationTaint)
-          plan.edges post.declassificationTaint)) o = post.declassificationTaint o
+  rw [applySyscallTaint_declassificationTaint]
+  unfold taintStepTable
   rw [applyOrigination_not_mem o _ _ hOrigF,
       applyTaintClears_not_mem o _ _ hClear,
-      applyTaintFlow_not_mem _ o _ _ hFlow]
+      applyTaintFlow_not_mem _ o _ _ (liveTaintEdges_not_mem_sinks post hFlow)]
 
 /-- WS-SM SM9.D.12 / SM9.D.15 (**the distinction that keeps the residual claim
 true**): stale taint is **not** saturation.
@@ -2311,22 +2730,16 @@ theorem applySyscallTaint_frame_off_writeKeys (plan : TaintPlan)
     simp only [taintWriteKeys, List.mem_append]; exact Or.inl (Or.inr hm))
   have hOrig : o ∉ taintOriginationKeys plan pre post := fun hm => h (by
     simp only [taintWriteKeys, List.mem_append]; exact Or.inr hm)
-  have hOrigF : o ∉ ((planOriginationTags plan pre post).filter
-      (fun p => !(plan.cleared ++ plan.bypassed).contains p.1)).map (·.fst) := by
+  have hOrigF : o ∉ (liveOriginationTags plan post (planOriginationTags plan pre post)).map
+      (·.fst) := by
     intro hm
     obtain ⟨q, hq, hqo⟩ := List.mem_map.mp hm
     exact hOrig (List.mem_map.mpr ⟨q, (List.mem_filter.mp hq).1, hqo⟩)
-  show applyOrigination
-      ((planOriginationTags plan pre post).filter
-        (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
-      (applyTaintClears plan.cleared
-        (applyTaintFlow
-          (applyOrigination (planOriginationTags plan pre post)
-            pre.declassificationTaint)
-          plan.edges post.declassificationTaint)) o = post.declassificationTaint o
+  rw [applySyscallTaint_declassificationTaint]
+  unfold taintStepTable
   rw [applyOrigination_not_mem o _ _ hOrigF,
       applyTaintClears_not_mem o _ _ hClear,
-      applyTaintFlow_not_mem _ o _ _ hFlow]
+      applyTaintFlow_not_mem _ o _ _ (liveTaintEdges_not_mem_sinks post hFlow)]
 
 /-- WS-SM SM9.D.17: two plans whose write sets are disjoint touch disjoint keys,
 so **applying both preserves each one's result at its own keys** — in either
@@ -2430,13 +2843,18 @@ theorem taintWriteKeys_inert (pre post : SystemState) :
 
 /-- WS-SM SM9.D.6: **the propagation write moves no observer's view.**
 
-Immediate from the frame plus `declassificationTaint_write_preserves_projection`,
-and stated here so every consumer of the entry seam — the SM8.D bracket, the
-per-core non-interference inventory, the SM8.B live-arm results — reads one
-name rather than re-deriving it. -/
+The store moves only in its taint words (`applySyscallTaint_objectsAgreeOffTaint`),
+which the projection strips (`projectState_of_objectsAgreeOffTaint`), and every
+other field moves as the frame says (`applySyscallTaint_frame`).  Stated here so
+every consumer of the entry seam — the SM8.D bracket, the per-core
+non-interference inventory, the SM8.B live-arm results — reads one name rather
+than re-deriving it. -/
 theorem applySyscallTaint_preserves_projection (ctx : LabelingContext)
     (observer : IfObserver) (plan : TaintPlan) (pre post : SystemState) :
     projectState ctx observer (applySyscallTaint plan pre post) =
-      projectState ctx observer post := rfl
+      projectState ctx observer post :=
+  projectState_of_objectsAgreeOffTaint ctx observer
+    (applySyscallTaint_objectsAgreeOffTaint plan pre post)
+    (by rw [applySyscallTaint_declassificationTaint]; exact applySyscallTaint_frame plan pre post)
 
 end SeLe4n.Kernel

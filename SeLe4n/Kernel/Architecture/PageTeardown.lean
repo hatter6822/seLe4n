@@ -477,6 +477,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame
     obtain ⟨u, stK⟩ := pr; cases u
     obtain ⟨hObjsK, -, hSchedK, -, -, -, -, hIrqK⟩ :=
       Architecture.withIcacheBroadcast_frame hK hStep
+    have hTaintK := Architecture.withIcacheBroadcast_declassificationTaint hK hStep
     unfold Architecture.vspaceUnmapPageWithShootdownPerCore at hK
     cases hS : Architecture.vspaceUnmapPageWithShootdown ec asid vaddr st with
     | error e => rw [hS] at hK; cases hK
@@ -506,7 +507,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame
           have hObjs : st'.objects = stU.objects := hObjsK
           have hSch : st'.scheduler = stU.scheduler := hSchedK
           have hT : st'.referenceTables = stU.referenceTables := by
-            simp only [SystemState.referenceTables, hIrqK]; rfl
+            simp only [SystemState.referenceTables, hIrqK, hTaintK]; rfl
           refine ⟨hObjs ▸ hInvU, fun oid => ?_, hSch.trans hSchU, hT.trans hTU⟩
           rw [hObjs]; exact hWU oid
 

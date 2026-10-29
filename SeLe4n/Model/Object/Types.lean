@@ -17,6 +17,7 @@ import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Model.Object.UniqueSlotMap
 import SeLe4n.Model.Erased
 import SeLe4n.Model.Object.SlotOccupancy
+import SeLe4n.Kernel.InformationFlow.Taint
 
 namespace SeLe4n.Model
 
@@ -1607,7 +1608,57 @@ structure TCB where
       capability written there overwrites it in place.  Logically one value
       (`SpareCells`), so no theorem reads it. -/
   spaceSpare : SpareCells := Squash.mk #[none, none]
+  /-- WS-ZA ZA5.11: **the thread's declassification provenance**, as plain
+      words: eight tag words, the count of those in use and the saturated bit,
+      read through `TCB.taintWords` (`SeLe4n.Kernel.TaintWords`) and written in
+      place by the taint step.  A carved thread starts with scalar zeros, the
+      empty taint, so a reused id names no provenance. -/
+  taintTag0 : UInt64 := 0
+  taintTag1 : UInt64 := 0
+  taintTag2 : UInt64 := 0
+  taintTag3 : UInt64 := 0
+  taintTag4 : UInt64 := 0
+  taintTag5 : UInt64 := 0
+  taintTag6 : UInt64 := 0
+  taintTag7 : UInt64 := 0
+  /-- How many of the tag words are in use. -/
+  taintCount : Nat := 0
+  /-- Tainted by everything. -/
+  taintSaturated : Bool := false
   deriving Repr
+
+/-- WS-ZA ZA5.11: the thread's taint words. -/
+@[inline] def TCB.taintWords (t : TCB) : SeLe4n.Kernel.TaintWords :=
+  { tag0 := t.taintTag0, tag1 := t.taintTag1, tag2 := t.taintTag2, tag3 := t.taintTag3,
+    tag4 := t.taintTag4, tag5 := t.taintTag5, tag6 := t.taintTag6, tag7 := t.taintTag7,
+    count := t.taintCount, saturated := t.taintSaturated }
+
+/-- WS-ZA ZA5.11: the thread with its taint words written. -/
+@[inline] def TCB.withTaintWords (t : TCB) (w : SeLe4n.Kernel.TaintWords) : TCB :=
+  { t with taintTag0 := w.tag0, taintTag1 := w.tag1, taintTag2 := w.tag2,
+           taintTag3 := w.tag3, taintTag4 := w.tag4, taintTag5 := w.tag5,
+           taintTag6 := w.tag6, taintTag7 := w.tag7, taintCount := w.count,
+           taintSaturated := w.saturated }
+
+@[simp] theorem TCB.taintWords_withTaintWords (t : TCB) (w : SeLe4n.Kernel.TaintWords) :
+    (t.withTaintWords w).taintWords = w := rfl
+
+@[simp] theorem TCB.withTaintWords_taintWords (t : TCB) : t.withTaintWords t.taintWords = t := rfl
+
+/-- WS-ZA ZA5.11: **discharges "this write keeps the thread's taint words"** —
+the obligation every thread write that is not the taint step owes, since a
+thread's taint words are one of its table back-links
+(`KernelObject.tableBackLinks`).  A record update leaving them alone closes by
+`rfl`; a generic update closes by the hypothesis its own caller supplied. -/
+macro "taint_words_kept" : tactic =>
+  `(tactic| first
+    | rfl
+    | (intro _; rfl)
+    | assumption
+    | (intro _; split <;> rfl)
+    | (intro _; dsimp only; split <;> rfl)
+    | (simp_all [TCB.taintWords, Notification.taintWords]; done)
+    | (intro _; simp_all [TCB.taintWords, Notification.taintWords]; done))
 
 /-! ### A thread's space slots (seL4's `tcbCTable` and `tcbVTable`)
 
@@ -1915,26 +1966,26 @@ every other field is the record's. -/
 /-- WS-ZA ZA5.2: the binding of a constructed TCB is the one its two code fields
 stand for, so a record update writing a binding's codes reads back that binding
 (`SchedContextBinding.ofCodes_codes`). -/
-@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).schedContextBinding =
+@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
 
 /-- The roots of a constructed TCB are the objects its two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
-@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
 
-@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -1979,14 +2030,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1996,11 +2047,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -2513,7 +2564,9 @@ theorem TCB.ext {a b : TCB}
     (hIBadge : a.ipcBadge = b.ipcBadge) (hIBadged : a.ipcBadged = b.ipcBadged)
     (hIGrant : a.ipcCanGrant = b.ipcCanGrant) (hIFault : a.ipcFaultSend = b.ipcFaultSend)
     -- and the context it is the recorded donation origin of.
-    (hOrigin : a.originScCode = b.originScCode) :
+    (hOrigin : a.originScCode = b.originScCode)
+    -- WS-ZA ZA5.11: and its taint words.
+    (hTaint : a.taintWords = b.taintWords) :
     a = b := by
   have hNPrevC : a.ntfnPrevCode = b.ntfnPrevCode := by
     rw [← TCB.optCode_ntfnPrev a, ← TCB.optCode_ntfnPrev b, hNPrev]
@@ -2546,13 +2599,16 @@ theorem TCB.ext {a b : TCB}
       ← SeLe4n.Priority.optCode_ofOptCode b.pipBoostCode]
     exact congrArg _ hPip
   clear hReply hPendReply hPip hBn
+  simp only [TCB.taintWords, SeLe4n.Kernel.TaintWords.mk.injEq] at hTaint
+  obtain ⟨hT0, hT1, hT2, hT3, hT4, hT5, hT6, hT7, hTC, hTS⟩ := hTaint
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCells, hLinks, hBuf, hIpcO, hTs, hSlice, hDeadline,
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
-         hIpcS, hIBadge, hIBadged, hIGrant, hIFault, hOrigin, Subsingleton.elim _ _⟩
+         hIpcS, hIBadge, hIBadged, hIGrant, hIFault, hOrigin, Subsingleton.elim _ _,
+         hT0, hT1, hT2, hT3, hT4, hT5, hT6, hT7, hTC, hTS⟩
 
 /-- A thread's spare space cells are logically one value (`SpareCells`). -/
 @[simp] theorem TCB.with_spaceSpare (t : TCB) (v : SpareCells) : { t with spaceSpare := v } = t := by
@@ -3304,7 +3360,44 @@ structure Notification where
       (`SystemState.tableReferencesRecorded`), so a final delete reads this flag
       instead of walking the table.  A carved notification starts `false`. -/
   irqBound : Bool := false
+  /-- WS-ZA ZA5.11: **the notification's declassification provenance**, as plain
+      words: eight tag words, the count of those in use and the saturated bit,
+      read through `TCB.taintWords` (`SeLe4n.Kernel.TaintWords`) and written in
+      place by the taint step.  A carved notification starts with scalar zeros, the
+      empty taint, so a reused id names no provenance. -/
+  taintTag0 : UInt64 := 0
+  taintTag1 : UInt64 := 0
+  taintTag2 : UInt64 := 0
+  taintTag3 : UInt64 := 0
+  taintTag4 : UInt64 := 0
+  taintTag5 : UInt64 := 0
+  taintTag6 : UInt64 := 0
+  taintTag7 : UInt64 := 0
+  /-- How many of the tag words are in use. -/
+  taintCount : Nat := 0
+  /-- Tainted by everything. -/
+  taintSaturated : Bool := false
   deriving Repr, DecidableEq
+
+/-- WS-ZA ZA5.11: the notification's taint words. -/
+@[inline] def Notification.taintWords (n : Notification) : SeLe4n.Kernel.TaintWords :=
+  { tag0 := n.taintTag0, tag1 := n.taintTag1, tag2 := n.taintTag2, tag3 := n.taintTag3,
+    tag4 := n.taintTag4, tag5 := n.taintTag5, tag6 := n.taintTag6, tag7 := n.taintTag7,
+    count := n.taintCount, saturated := n.taintSaturated }
+
+/-- WS-ZA ZA5.11: the notification with its taint words written. -/
+@[inline] def Notification.withTaintWords (n : Notification) (w : SeLe4n.Kernel.TaintWords) :
+    Notification :=
+  { n with taintTag0 := w.tag0, taintTag1 := w.tag1, taintTag2 := w.tag2,
+           taintTag3 := w.tag3, taintTag4 := w.tag4, taintTag5 := w.tag5,
+           taintTag6 := w.tag6, taintTag7 := w.tag7, taintCount := w.count,
+           taintSaturated := w.saturated }
+
+@[simp] theorem Notification.taintWords_withTaintWords (n : Notification)
+    (w : SeLe4n.Kernel.TaintWords) : (n.withTaintWords w).taintWords = w := rfl
+
+@[simp] theorem Notification.withTaintWords_taintWords (n : Notification) :
+    n.withTaintWords n.taintWords = n := rfl
 
 /-- WS-ZA ZA5.2: the bound thread, read from its code.  Reducible, so a record
 update that leaves the code alone reads the old value by `rfl`.  Written as
@@ -3318,14 +3411,14 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b i) :
-    (Notification.mk s hd tl h p c b i).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b i) :
-    (Notification.mk s hd tl true p c b i).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl true p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b i) :
-    (Notification.mk s hd tl false p c b i).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl false p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -3335,11 +3428,11 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p c b i) :
-    (Notification.mk s hd tl h p c b i).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p c b i) :
-    (Notification.mk s hd tl h p c b i).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
@@ -3376,7 +3469,7 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound }
+    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
@@ -3387,7 +3480,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound }
+    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by

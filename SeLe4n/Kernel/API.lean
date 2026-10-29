@@ -6467,8 +6467,9 @@ theorem syscallEntry_preserves_proofLayerInvariantBundle
   -- PR #873 round 6: the taint seam moved into `dispatchSyscall`, so the entry's
   -- post-state IS the dispatcher's and this is a delegation.  The seam's own
   -- bundle preservation has not gone anywhere — it is
-  -- `proofLayerInvariantBundle_setDeclassificationTaint`, which is what a
-  -- discharger of `hDispatchPres` composes with its per-arm result.
+  -- `applySyscallTaint_preserves_proofLayerInvariantBundle` (the table write and,
+  -- since WS-ZA ZA5.11, the taint-word write), which is what a discharger of
+  -- `hDispatchPres` composes with its per-arm result.
   exact hDispatchPres decoded tid st st' hInv hOk
 
 -- ============================================================================

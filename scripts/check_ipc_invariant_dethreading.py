@@ -267,6 +267,9 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "macro"): 2,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "run_cmd"): 2,
+    # WS-ZA ZA5.11: the `taint_words_kept` tactic, which discharges "this
+    # thread write keeps the taint words"; a tactic macro mints no declaration.
+    ("SeLe4n/Model/Object/Types.lean", "macro"): 1,
     # WS-ZA ZA4.5: the `run_queue_stage` tactic and its step rules -- each
     # `macro_rules` adds one tactic-category alternative (a step's stage) and
     # `macro` declares the driver tactics; none mints a declaration.

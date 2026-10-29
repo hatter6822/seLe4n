@@ -575,7 +575,7 @@ theorem replyRecvTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     contentFlowBypassed]
   rcases syscallOperandCap? st tid decoded.capAddr with _ | ⟨target, _, _⟩
   · simp [applySyscallTaintAfter, syscallRecordsDeclassification,
-      applyOrigination, applyTaintClears, applyTaintFlow]
+      applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
   · cases target with
     | object epId =>
       simp only [receiveTaintSourceCode, receiverTaintEdges, replyRecvTaintCallerCodeOf,
@@ -586,17 +586,17 @@ theorem replyRecvTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       | none =>
         cases k <;>
           simp [receiveTaintStep, sendTaintStep, applySyscallTaintAfter,
-            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+            syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
       | some ep =>
         simp only [Option.bind_some, ← Endpoint.ofOptCode_sendHeadCode]
         cases ep.sendHeadCode <;> cases k <;>
           simp [receiveTaintStep, sendTaintStep, SeLe4n.ThreadId.ofOptCode,
             applySyscallTaintAfter, syscallRecordsDeclassification, applyOrigination,
-            applyTaintClears, applyTaintFlow]
+            applyTaintClears, applyTaintFlow, applyTaintStep]
     | _ =>
       simp [receiveTaintSourceCode, replyRecvTaintCallerCodeOf, replyRecvTaintStep,
         receiveTaintStep, sendTaintStep, applySyscallTaintAfter,
-        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow]
+        syscallRecordsDeclassification, applyOrigination, applyTaintClears, applyTaintFlow, applyTaintStep]
 
 /-- WS-ZA ZA4.7: the reply-receive's slot check, gate, arm and taint step on
 the capability its operand resolved to.  Every refusal carries the state it was

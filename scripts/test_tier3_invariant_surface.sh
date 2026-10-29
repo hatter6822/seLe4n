@@ -4393,9 +4393,10 @@ run_check "INVARIANT" rg -n -U '      spaceSpare := Quot\.lift \(fun a => Squash
 # A thread slot's delete keeps its cell as the slot's spare, and the set writes
 # over that spare.
 run_check "INVARIANT" rg -n -U '@\[csimp\] theorem removeSpaceCap_eq_impl : @removeSpaceCap = @removeSpaceCapImpl' SeLe4n/Model/ObjectSlots.lean
-run_check "INVARIANT" rg -n -U '  let o := t\.spaceSlotCap s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
-# The slot read is out of line, so the thread is rebuilt in its own cell.
-run_check "INVARIANT" rg -n '^@\[noinline\] def spaceSlotCap ' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n -U '  let o := spaceCellAt t\.spaceCells s\n  \{ t with\n    spaceCells := t\.spaceCells\.setIfInBounds s\.toNat none\n    spaceSpare := t\.spaceSpare\.keep s\.toNat o \}' SeLe4n/Model/ObjectSlots.lean
+# The slot read is out of line and takes only the cells, so the clear hands the
+# thread to no call and the thread is rebuilt in its own cell.
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def spaceCellAt \(cells : Vector \(Option Capability\) 2\) \(s : SeLe4n\.Slot\) :\n    Option Capability :=$' SeLe4n/Model/ObjectSlots.lean
 # The set reads the spare record, takes it out of the spares, then writes the
 # capability and its object target over it, before the one rebuild.
 run_check "INVARIANT" rg -n -U '  let o := spareRecordAt a i\n  let a. := a\.setIfInBounds i none\n  let c := capabilityCellOver o target rights\n  \{ t with spaceCells := t\.spaceCells\.setIfInBounds i c, spaceSpare := Squash\.mk a. \}' SeLe4n/Kernel/Lifecycle/Operations/SetSpace.lean
@@ -10688,13 +10689,24 @@ run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events($|[ ({:\[\]])'
 # decompose by key — so a file-wide negative would be wrong.)
 run_check "INVARIANT" rg -n '^       \(endpointLock endpointObjId, .write\)\]\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem taintWriteKeys_inert($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-# SM9.D.18: the propagation is framed to one field and visible to no observer,
-# so every existing invariant argument and every NI result stands unchanged.
+# SM9.D.18: the propagation is framed to the taint table and (ZA5.11) the taint
+# words, and visible to no observer, so every existing invariant argument and
+# every NI result stands unchanged; the whole bundle carries across the one
+# word-write frame.
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_confinedToCores_nil($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_onCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
+run_check "INVARIANT" rg -n '^theorem getElem\?_eq($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_size($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applyTaintStep_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem applyTaintStep_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem liveTaintEdges_mem_or_no_content($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem projectState_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
 
 # SM9.D tests: the eight runtime groups, their load-bearing negatives, the
 # surface anchors and the golden-fixture lines.
@@ -22513,14 +22525,15 @@ run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\
 # flag, since the registration's id is the endpoint's own.  A number stored here
 # would be a second answer to "which service is this" that the id already gives.
 run_check "INVARIANT" rg -n -U '^structure Endpoint where(\n([ \t][^\n]*)?)*\n  serviceRegistered : Bool := false$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def objTableBackLinks : Option KernelObject → EndpointService × Bool$' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def objTableBackLinks :\n    Option KernelObject → EndpointService × Bool × SeLe4n\.Kernel\.TaintWords$' SeLe4n/Model/TableReferences.lean
 run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
 # The endpoint holds the registration's words beside its flag, and since the
 # table retired (WS-ZA ZA5.9) the registry reads them at the endpoint.  The
 # back-link is the record while the flag is set and the clear record otherwise,
 # so a clear flag is a clear back-link whatever words an endpoint carries.
 run_check "INVARIANT" rg -n '^structure EndpointService where$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false\)$' SeLe4n/Model/ObjectSlots.lean
+# Since WS-ZA ZA5.11 the third component is the taint words; an endpoint holds none.
+run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false, \{\}\)$' SeLe4n/Model/ObjectSlots.lean
 run_check "INVARIANT" rg -n '^theorem registrationAt_ofRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Interface.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.serviceRegistry_of_endpoint($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
 # The register's one write: its endpoint's slot, and nothing beside it.

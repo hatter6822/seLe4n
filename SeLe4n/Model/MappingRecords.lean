@@ -411,6 +411,29 @@ theorem trans {st st' st'' : SystemState} (h₁ : st.mappingFactsKept st')
     · rw [hq₁] at hp₂; cases hp₂
       exact .inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂, hs₂.trans hs₁, hm₂.trans hm₁⟩
 
+/-- WS-ZA ZA5.11: **a word write keeps every object's mapping facts** — a word
+write rewrites no CNode, no thread slot and no mapping fact. -/
+theorem of_objectsAgreeOffTaint {st st' : SystemState} (h : st.objectsAgreeOffTaint st') :
+    st.mappingFactsKept st' := fun oid => by
+  cases h2 : st'.objects[oid]? with
+  | none =>
+    have hk := h oid
+    rw [h2] at hk
+    cases h1 : st.objects[oid]? with
+    | none => exact .inl rfl
+    | some _ => rw [h1] at hk; cases hk
+  | some o' =>
+    obtain ⟨o, h1, e⟩ := h.some_iff oid o' h2
+    cases hH : o'.holdsTaint with
+    | false => rw [KernelObject.eq_of_eraseTaint_eq hH e] at h1; exact .inl (h1 ▸ rfl)
+    | true =>
+      have hT := congrArg KernelObject.objectType e
+      have hS := congrArg KernelObject.tcbSlots e
+      have hM := congrArg KernelObject.mappingView e
+      simp only [KernelObject.eraseTaint, KernelObject.objectType_withTaintWords,
+        KernelObject.tcbSlots_withTaintWords, KernelObject.mappingView_withTaintWords] at hT hS hM
+      exact .inr ⟨o, o', h1, rfl, hT, KernelObject.objectType_ne_cnode_of_holdsTaint hH, hS, hM⟩
+
 end SystemState.mappingFactsKept
 
 /-- A kind-preserving write keeps every object's mapping facts. -/

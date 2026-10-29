@@ -630,7 +630,8 @@ theorem dispatchSyscallChecked_mappingStage (ctx : LabelingContext)
     rename_i stPost hD
     cases h
     refine MappingStage.trans (st' := stPost) ?_
-      (MappingStage.of_objects_eq (applySyscallTaint_objects _ _ _))
+      (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
+        (applySyscallTaint_objectsAgreeOffTaint _ _ _))
   · unfold syscallInvoke at hD
     split at hD
     · cases hD
@@ -794,7 +795,8 @@ theorem dispatchSyscall_mappingStage (decoded : SyscallDecodeResult)
   rename_i stPost hD
   cases h
   refine MappingStage.trans (st' := stPost) ?_
-    (MappingStage.of_objects_eq (applySyscallTaint_objects _ _ _))
+    (MappingStage.of_objectsAgreeOffTaint applySyscallTaint_invExt
+        (applySyscallTaint_objectsAgreeOffTaint _ _ _))
   unfold syscallInvoke at hD
   split at hD
   · cases hD

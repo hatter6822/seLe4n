@@ -83,6 +83,12 @@ theorem of_mappingFactsKept (hI : st.objects.invExt → st'.objects.invExt)
     (hK : st.objects.invExt → st.mappingFactsKept st') : MappingStage st st' :=
   fun h => ⟨hI h, fun hL => hL.of_mappingFactsKept (hK h)⟩
 
+/-- WS-ZA ZA5.11: a step whose store agrees with the pre-state's off the taint
+words — the taint step. -/
+theorem of_objectsAgreeOffTaint (hI : st.objects.invExt → st'.objects.invExt)
+    (hA : st.objectsAgreeOffTaint st') : MappingStage st st' :=
+  of_mappingFactsKept hI fun _ => .of_objectsAgreeOffTaint hA
+
 /-- One store of an object of the kind it replaces, not a CNode, with the
 replaced object's thread slots and mapping facts. -/
 theorem storeObject {k : SeLe4n.ObjId} {obj pre : KernelObject}

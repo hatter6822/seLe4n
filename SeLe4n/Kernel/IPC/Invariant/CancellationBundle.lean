@@ -513,6 +513,7 @@ theorem spliceOutMidQueueNode_tableReferenceFrame (st : SystemState) (tid : SeLe
   SystemState.TableReferenceFrame.of_offTcb
     (by rw [spliceOutMidQueueNode_eq_patches]; split <;> rfl)
     (fun k o hNot => spliceOutMidQueueNode_nonTcb st tid hInv k o hNot)
+    (spliceOutMidQueueNode_sameTaintWords st tid hInv)
 
 /-- The endpoint sweep rewrites queue ends only, so it keeps every endpoint's
 registration flag. -/
@@ -545,7 +546,8 @@ theorem removeFromAllEndpointQueues_tableReferenceFrame (st : SystemState)
 /-- A thread write chained onto a frame. -/
 private theorem tableReferenceFrame_updateTcb_step {st s : SystemState}
     (h : s.objects.invExt ∧ SystemState.TableReferenceFrame st s)
-    (p : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (p : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
     (s.updateTcb p f).objects.invExt ∧ SystemState.TableReferenceFrame st (s.updateTcb p f) :=
   ⟨SystemState.updateTcb_preserves_objects_invExt s p f h.1,
     h.2.trans (.updateTcb s p f h.1)⟩

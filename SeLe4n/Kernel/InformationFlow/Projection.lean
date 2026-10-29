@@ -235,7 +235,14 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- The derivation links of the thread's two space slots
                        -- are cleared, as a CNode's are: the tree they encode is
                        -- not projected.  The space capabilities stay visible.
-                       spaceLinks := Vector.replicate _ 0 }
+                       spaceLinks := Vector.replicate _ 0,
+                       -- WS-ZA ZA5.11: the taint words are provenance about
+                       -- the content the thread holds, recorded for the
+                       -- downgrade detector, not observable state — erased as
+                       -- the table they mirror is never projected.
+                       taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0,
+                       taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0,
+                       taintCount := 0, taintSaturated := false }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -314,11 +321,27 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- when an IRQ names the notification, which `projectIrqHandlers` already
   -- shows for every visible notification.
   | .endpoint e => .endpoint e
-  | .notification n => .notification n
+  -- WS-ZA ZA5.11: a notification's taint words are erased as a thread's are.
+  | .notification n => .notification (n.withTaintWords {})
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u
   | .frame f => .frame f
   | .pageTable p => .pageTable p
+
+/-- WS-ZA ZA5.11 (**the projection strips the taint words, on every kind**):
+an object projects as its erasure does, so a write of nothing but taint words
+moves no observer's view. -/
+theorem projectKernelObject_eraseTaint (ctx : LabelingContext) (observer : IfObserver)
+    (o : KernelObject) :
+    projectKernelObject ctx observer o.eraseTaint = projectKernelObject ctx observer o := by
+  cases o <;> rfl
+
+/-- ...and so does the object with any words written. -/
+theorem projectKernelObject_withTaintWords (ctx : LabelingContext) (observer : IfObserver)
+    (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :
+    projectKernelObject ctx observer (o.withTaintWords w) = projectKernelObject ctx observer o := by
+  rw [← projectKernelObject_eraseTaint ctx observer (o.withTaintWords w),
+    KernelObject.eraseTaint_withTaintWords, projectKernelObject_eraseTaint]
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.
@@ -957,6 +980,26 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
     machineRegs := projectMachineRegs ctx observer st
     memory := projectMemory ctx observer st
   }
+
+/-- WS-ZA ZA5.11: **a step that writes only taint words is invisible to every
+observer** — the projection reads the store through `projectKernelObject`,
+which strips the words on every kind (`projectKernelObject_eraseTaint`), and
+reads no taint table. -/
+theorem projectState_of_objectsAgreeOffTaint (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} (h : SystemState.objectsAgreeOffTaint st st')
+    (hF : st' = { st with objects := st'.objects,
+                          declassificationTaint := st'.declassificationTaint }) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  have hO : projectObjects ctx observer st' = projectObjects ctx observer st := by
+    funext oid
+    unfold projectObjects SystemState.getObject?
+    split
+    · have hk := congrArg (Option.map (projectKernelObject ctx observer)) (h oid)
+      simpa only [Option.map_map, Function.comp_def, projectKernelObject_eraseTaint] using hk
+    · rfl
+  rw [hF]
+  simp only [projectState]
+  congr 1
 
 /-- AK6-F.2a: Modifying `scheduler.replenishQueue` does not affect
 `projectState`. The CBS replenishment queue is a scheduler-internal

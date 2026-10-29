@@ -100,7 +100,7 @@ theorem notificationSignal_preserves_ipcInvariant
         -- Merge path: storeObject only
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_ipcInvariant st st' notificationId
-          _ hInv hObjInv hStep (notificationSignal_result_wellFormed_merge _ _ _)
+          _ hInv hObjInv hStep (notificationSignal_result_wellFormed_merge _ _ _ _)
 
 /-- WS-F4: notificationSignal preserves schedulerInvariantBundle.
 Wake path: storeObject + storeTcbIpcStateAndMessage (scheduler unchanged) + ensureRunnable.
@@ -242,14 +242,14 @@ theorem notificationWaitPark_preserves_ipcInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
         | error e => simp
         | ok pair =>
           simp only []
           have hObjInv1 : pair.2.objects.invExt :=
             storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
           have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId
-            _ hInv hObjInv hStore (notificationWait_result_wellFormed_badge _ _)
+            _ hInv hObjInv hStore (notificationWait_result_wellFormed_badge _ _ _)
           cases hTcb : storeTcbIpcState pair.2 waiter .ready with
           | error e => simp
           | ok st'' =>
@@ -316,7 +316,7 @@ theorem notificationWaitPark_preserves_schedulerInvariantBundle
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -630,7 +630,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
         | error e => simp
         | ok pair =>
           simp only []

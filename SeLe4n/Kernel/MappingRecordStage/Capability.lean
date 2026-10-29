@@ -54,12 +54,13 @@ theorem of_tables_eq (P : MappingArmPremises st) (hO : st'.objects = st.objects)
 theorem updateTcb (P : MappingArmPremises st) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
     (hf : ∀ t, (f t).spaceCells = t.spaceCells ∧ (f t).spaceLinks = t.spaceLinks ∧
       (f t).boundNotificationCode = t.boundNotificationCode := by
-      intro _; exact ⟨rfl, rfl, rfl⟩) :
+      intro _; exact ⟨rfl, rfl, rfl⟩)
+    (hW : ∀ t, (f t).taintWords = t.taintWords := by taint_words_kept) :
     MappingArmPremises (st.updateTcb tid f) := by
   have hI := P.objInv
   have hI' := SystemState.updateTcb_preserves_objects_invExt st tid f hI
   refine ⟨capabilityInvariantBundle_of_kindPreserving P.caps (SystemState.updateTcb_cdt _ _ _) hI'
-    (SystemState.updateTcb_kindPreservingWrite st tid f hI hf), ?_⟩
+    (SystemState.updateTcb_kindPreservingWrite st tid f hI hf hW), ?_⟩
   refine teardownWellFormed_of_roots_eq hI' (SystemState.updateTcb_asidTable _ _ _)
     (fun oid r => ?_) P.teardown
   by_cases hk : tid.toObjId = oid

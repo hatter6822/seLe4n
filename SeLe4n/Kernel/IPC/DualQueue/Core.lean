@@ -1599,11 +1599,14 @@ private theorem BackLinksKept.insert_step {base T : RHTable SeLe4n.ObjId KernelO
   · rename_i hk; have := eq_of_beq hk; subst this; rw [← hF.2 k₀, hB]; rfl
   · exact hF.2 k
 
-/-- A thread written over a thread of `T` keeps the back-links (a thread holds none). -/
+/-- A thread written over a thread of `T` keeping its taint words keeps the
+back-links (its taint words are a thread's only one). -/
 private theorem BackLinksKept.insert_tcb_step {base T : RHTable SeLe4n.ObjId KernelObject}
     {k₀ : SeLe4n.ObjId} {t t' : TCB} (hF : BackLinksKept base T)
-    (hAt : T.get? k₀ = some (.tcb t)) : BackLinksKept base (T.insert k₀ (.tcb t')) :=
-  hF.insert_step (by rw [hAt]; rfl)
+    (hAt : T.get? k₀ = some (.tcb t))
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
+    BackLinksKept base (T.insert k₀ (.tcb t')) :=
+  hF.insert_step (by rw [hAt]; simp only [Option.map_some, KernelObject.tableBackLinks, hW])
 
 /-- The splice writes only threads over threads and an endpoint over itself with
 its queues changed, so every slot keeps its table back-links. -/
@@ -1647,7 +1650,8 @@ theorem endpointQueueRemove_tableBackLinks
         repeat (first
           | exact hBase
           | (apply BackLinksKept.insert_tcb_step
-             case hAt => assumption)
+             case hAt => assumption
+             case hW => rfl)
           | split)
 
 /-- **The timeout splice keeps the table references**: it writes no reference

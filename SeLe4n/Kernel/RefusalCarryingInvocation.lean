@@ -371,7 +371,7 @@ theorem applySyscallTaintAfter_routed (st : SystemState) (tid : SeLe4n.ThreadId)
       post := by
   obtain ⟨hC, hR, -, -⟩ := routedInvocation_classic _ h
   simp only [applySyscallTaintAfter, syscallTaintPlan, hC, hR, Bool.false_eq_true,
-    ↓reduceIte, applyOrigination, applyTaintFlow, applyTaintClears, List.foldl,
+    ↓reduceIte, applyOrigination, applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl,
     List.filter]
 
 /-- `dispatchWithCapChecked` at a routed invocation whose message registers are
@@ -1526,7 +1526,7 @@ theorem applySyscallTaintAfter_configure (st : SystemState) (tid : SeLe4n.Thread
       post := by
   simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
     syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
-    applyTaintFlow, applyTaintClears, List.foldl, List.filter]
+    applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl, List.filter]
 
 /-- The configure's arm behind the operand check: the rights gate
 `syscallLookupCap` applies, then `dispatchConfigureByR`. -/
@@ -1755,7 +1755,7 @@ theorem applySyscallTaintAfter_serviceRegister (st : SystemState) (tid : SeLe4n.
       post := by
   simp only [applySyscallTaintAfter, syscallTaintPlan, h, contentFlowClass,
     syscallRecordsDeclassification, Bool.false_eq_true, ↓reduceIte, applyOrigination,
-    applyTaintFlow, applyTaintClears, List.foldl, List.filter]
+    applyTaintFlow, applyTaintClears, applyTaintStep, List.foldl, List.filter]
 
 /-- The service register's arm behind the operand check: the rights gate
 `syscallLookupCap` applies, then `dispatchServiceRegisterByR`. -/
