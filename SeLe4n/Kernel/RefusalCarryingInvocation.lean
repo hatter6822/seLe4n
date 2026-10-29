@@ -28,7 +28,8 @@ step leaves the state as the arm left it (`applySyscallTaintAfter_inert`), and
 checks its rights in the classic order.  The scheduling-context configure and
 the service register carry a fifth argument word and are routed as the entry's
 `overflowOne` arm (`dispatchOverflowOneCheckedR`, at the end of this file); the
-declassification and audit calls keep the general path.
+declassification and audit calls are the entry's `audited` arm
+(`RefusalCarryingDeclassification`).
 -/
 
 namespace SeLe4n.Kernel
