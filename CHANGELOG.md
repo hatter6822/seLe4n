@@ -67,9 +67,16 @@ fused step captures the words it needs as scalars before the arm.
     `Notification.withTaintWords` may write them. The constructions that also
     supply them (boot threads, carves, the observer projection) are named with
     what each builds, and the list is reconciled both ways.
+  - That list only pins the set the sweep derives. Each entry's kind is named
+    (`builds`, `clears`, `reads`), because a construction and a clear are the
+    same term. The kind is checked against the term: a `builds` or `clears`
+    entry must write only closed taint values, and a `reads` entry must not.
   - The frozen mirror is the frozen slot write (`frozenMapTaintWords`).
-  - A matcher the compiler minted for a theorem is skipped, since it is erased
-    with the proof. The plants now rewrite a thread's or a notification's words.
+  - A matcher the compiler minted for an owner with no body (a theorem) is
+    skipped, since it is erased with the proof. Two plants pin the skip from
+    both sides: a theorem-owned matcher that writes taint words must be skipped,
+    and the same shape owned by a definition must still be reported. The plants
+    now rewrite a thread's or a notification's words.
 - **Tried and reverted.** Handing each arm and its step to a `@[noinline]`
   function returned the arm's result record out of line and read 2 on every
   routed IPC call. The arms stay inlined; only the slot write is out of line,

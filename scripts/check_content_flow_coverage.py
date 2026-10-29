@@ -32,7 +32,9 @@ Three properties, and each one has caught a different mistake in review:
   table) must be exactly the declared propagation surface.  This is the
   machine-checked form of SM9.D.12's "frames for every non-content transition":
   rather than hand-writing a frame lemma per transition, the gate establishes
-  that no other constant can move those fields at all.
+  that no other constant can move those fields at all.  The constructions the
+  sweep also reports are derived and only pinned by `TAINT_WORD_CONSTRUCTIONS`;
+  their kind is named because a construction and a clear are the same term.
 
 **What a content channel is — a declared scope, not a derivation.**  This model
 tracks user *payload*: `TCB.pendingMessage` (the IPC message a thread holds) and
@@ -270,42 +272,51 @@ DECLARED_FIELD_WRITERS = {
 # than being swept for nothing.
 TAINT_WORD_STRUCTURES = ("TCB", "Notification")
 
-# Definitions that BUILD a thread or a notification rather than rewrite one,
-# each with what it builds.  A constructor application counts as a write of every
-# field it supplies, which is right for a rewrite and wrong for a construction:
-# something has to build the first thread, and it necessarily supplies the
-# words -- here, each one's defaults (no provenance).  Named, not inferred, the
-# `STATE_CONSTRUCTORS` shape, and reconciled in both directions: an entry the
-# probe no longer reports as writing a taint field is stale and fails, and a
-# writer outside this map and `DECLARED_FIELD_WRITERS` is a finding.
+# Definitions that BUILD, CLEAR or READ a thread or a notification rather than
+# move its words, each with its kind and what it does.  The SET is derived: it is
+# exactly what (C2)'s sweep reports beyond `DECLARED_FIELD_WRITERS`, and this map
+# only pins it, reconciled in both directions -- an entry the sweep no longer
+# reports is stale and fails, a reported writer outside it is a finding.
+#
+# Why the CLASSIFICATION is named, not derived: a construction, a clearing
+# rebuild and a laundering clear are the same elaborated term (`TCB.mk` with
+# closed taint arguments), so only the spelling would tell them apart, and
+# spelling is the test PR #873 round 12 retired.
+#
+# What the code does decide is checked against each kind.  A `builds` or
+# `clears` entry must write only CLOSED values at the taint words (no provenance
+# comes in: `CF_FIELD_WRITER_OPEN` absent); a `reads` entry is a positional
+# destructure whose taint words are bound variables, so it must be reported open
+# -- an entry whose kind disagrees with its term fails.
 TAINT_WORD_CONSTRUCTIONS = {
-    "SeLe4n.Kernel.carvedTcb": "the thread a retype carves, with no provenance",
+    "SeLe4n.Kernel.carvedTcb":
+        ("builds", "the thread a retype carves, with no provenance"),
     "SeLe4n.Kernel.CarveRequest.object":
-        "the object a carve request builds, with no provenance",
+        ("builds", "the object a carve request builds, with no provenance"),
     "SeLe4n.Kernel.CarveRequest.objectImpl":
-        "the compiled form of `CarveRequest.object` (`CarveRequest.object_eq_impl`)",
-    "SeLe4n.Kernel.createIdleThread": "the boot idle thread, with no provenance",
-    "SeLe4n.Platform.RPi5.rpi5InitialThread":
-        "the RPi5 boot thread, with no provenance",
+        ("builds", "the compiled form of `CarveRequest.object`"),
+    "SeLe4n.Kernel.createIdleThread": ("builds", "the boot idle thread"),
+    "SeLe4n.Platform.RPi5.rpi5InitialThread": ("builds", "the RPi5 boot thread"),
     "private@SeLe4n.Platform.QemuVirt.notificationEntry":
-        "a QEMU boot notification, with no provenance",
+        ("builds", "a QEMU boot notification"),
     "private@SeLe4n.Platform.RPi5.notificationEntry":
-        "an RPi5 boot notification, with no provenance",
+        ("builds", "an RPi5 boot notification"),
     "private@SeLe4n.Kernel.causalWitnessTcb":
-        "the causal-witness theorem's thread, built with the words it is given",
+        ("builds", "the causal-witness theorem's thread, before its words are written"),
     "private@SeLe4n.Kernel.witnessTcbFresh":
-        "a witness theorem's fresh thread, with no provenance",
+        ("builds", "a witness theorem's fresh thread"),
     "SeLe4n.Kernel.projectKernelObject":
-        "the observer projection, which rebuilds an object with its words erased",
+        ("clears", "the observer projection, which erases every object's words"),
     "SeLe4n.Model.TCB.ipcReadView":
-        "a read view of a thread, which rebuilds it with its words erased",
+        ("clears", "a read view of a thread, with its words erased"),
     "SeLe4n.Model.instDecidableEqNotification.decEq":
-        "the derived equality, which destructures two notifications and builds none",
+        ("reads", "the derived equality, which destructures two notifications"),
     "SeLe4n.Platform.Boot.notificationReferencesReservedIdleSlot":
-        "a boot reader that destructures a notification and builds none",
+        ("reads", "a boot reader that destructures a notification"),
     "SeLe4n.Platform.Boot.tcbReferencesReservedIdleSlot":
-        "a boot reader that destructures a thread and builds none",
+        ("reads", "a boot reader that destructures a thread"),
 }
+TAINT_WORD_CONSTRUCTION_KINDS = ("builds", "clears", "reads")
 
 CONTENT_CHANNELS = [
     ("SeLe4n.Model.TCB", "pendingMessage"),
@@ -423,6 +434,18 @@ SELF_TEST_ROGUE_OPAQUE = "cfPlantedOpaqueTaintWriter"
 # rewriting the field -- a second live writer, silently excused by its name.
 SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNamedTaintWriter"
 
+# A seventh and eighth plant, pinning the matcher skip (`cfBodilessOwned`) on
+# both sides.  Each matches on a subtype whose predicate writes a thread's
+# `taintCount`, so the matcher the compiler mints carries that write in its own
+# body.  Owned by a THEOREM, the matcher is erased with the proof and must be
+# skipped -- and it must still be found writing, or the skip is witnessed on a
+# matcher that writes nothing.  Owned by a DEFINITION with a body, the same shape
+# must be inspected: a skip widened to every compiler-minted auxiliary would hide
+# a definition's matcher.  The two predicates differ (`0`, `1`) so the compiler
+# cannot share one matcher between the owners.
+SELF_TEST_PROOF_MATCHER = "cfPlantedProofOwnedMatcher"
+SELF_TEST_BODY_MATCHER = "cfPlantedBodyOwnedMatcher"
+
 # Definitions that build a `SystemState` from nothing rather than rewrite one.
 # See `cfStateConstructors` in the probe for why this is a named list.  (C3)
 # sweeps `declassificationAudit` with the same detector, so a construction of the
@@ -452,6 +475,16 @@ private opaque {SELF_TEST_ROGUE_OPAQUE} (t : SeLe4n.Model.TCB) :
 
 private def {SELF_TEST_ROGUE_USER_NAMED} (t : SeLe4n.Model.TCB) : SeLe4n.Model.TCB :=
   {{ t with taintCount := (SeLe4n.Model.TCB.withTaintWords t {{}}).taintCount + 1 }}
+
+private theorem {SELF_TEST_PROOF_MATCHER} (t : SeLe4n.Model.TCB)
+    (o : {{ u : SeLe4n.Model.TCB // u = {{ t with taintCount := 0 }} }}) : True :=
+  match o with
+  | ⟨_, _⟩ => trivial
+
+private def {SELF_TEST_BODY_MATCHER} (t : SeLe4n.Model.TCB)
+    (o : {{ u : SeLe4n.Model.TCB // u = {{ t with taintCount := 1 }} }}) : SeLe4n.Model.TCB :=
+  match o with
+  | ⟨u, _⟩ => u
 """
 
 # PR #873 round 10: implementations that deliberately **refuse**.
@@ -555,6 +588,9 @@ private def cfRoots : List (String × String) :=
 
 private def cfTaintApi : List Name :=
   [@TAINTAPI@]
+
+/-- The matcher-skip witnesses' owners (empty outside `--self-test`). -/
+private def cfPlantedMatcherOwners : List String := [@MATCHEROWNERS@]
 
 /-- (C2)'s watched fields: each structure's taint words. -/
 private def cfTaintWordFields : List (Name × List Name) :=
@@ -976,8 +1012,34 @@ run_cmd do
               then n :: acc
               else acc
           | none => acc
+    -- Which of them write an OPEN value at a taint word -- words that come
+    -- from somewhere (`cfScanHit`'s test) rather than a closed constant.  A
+    -- construction supplies the defaults, no provenance; a write of open words
+    -- is provenance moving, which only the two declared writers may do.
+    let openHit : Expr -> Bool := fun e =>
+      idxs.any fun idx =>
+        match all[idx]? with
+        | some f => cfScanHit sName f idx e
+        | none => false
     for w in fieldWriters do
       logInfo m!"CF_FIELD_WRITER {cfReportName env w}"
+      match (env.find? w).bind cfExecutableValue with
+      | some value =>
+          if (cfAnySubterm openHit value {}).1 then
+            logInfo m!"CF_FIELD_WRITER_OPEN {cfReportName env w}"
+      | none => pure ()
+    -- The matcher-skip witnesses (`--self-test` only): every compiler-minted
+    -- auxiliary of the two planted owners, with whether the sweep inspects it
+    -- and whether its body writes a taint word.
+    for (n, ci) in env.constants.toList do
+      if (Lean.declRangeExt.find? env n).isNone then
+        let owner := cfStripReserved n
+        if owner != n && cfPlantedMatcherOwners.contains (cfLast owner) then
+          let writes :=
+            match cfExecutableValue ci with
+            | some v => (cfAnySubterm hit v {}).1
+            | none => false
+          logInfo s!"CF_PLANT_AUX {sName} {cfLast owner} {cfInspectable env n} {writes}"
   -- Every API member must be a constant: a name that resolves to nothing is
   -- swept for nothing, so it is reported rather than read as "no caller".
   for a in cfTaintApi do
@@ -1311,6 +1373,9 @@ def run_probe(roots: dict[str, set[str]], depth: int, channels,
            .replace("@JUSTIFICATIONS@", quoted_just)
            .replace("@STATECTORS@", quoted_ctors)
            .replace("@TAINTWORDFIELDS@", quoted_words)
+           .replace("@MATCHEROWNERS@",
+                    f'"{SELF_TEST_PROOF_MATCHER}", "{SELF_TEST_BODY_MATCHER}"'
+                    if plant_rogue else "")
            .replace("@PLANTED@",
                     SELF_TEST_ROGUE_SRC + rebuild_plant_src() if plant_rogue else "")
            .replace("@DEPTH@", str(depth)))
@@ -1351,6 +1416,12 @@ def parse(out: str):
     for caller, api in re.findall(r"CF_TAINT_EDGE (\S+) (\S+)", out):
         taint_edges.setdefault(caller, set()).add(api)
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
+    open_writers = set(re.findall(r"CF_FIELD_WRITER_OPEN (\S+)", out))
+    # (structure, owner) -> [(inspected, writes)] per minted auxiliary.
+    plant_aux: dict[tuple[str, str], list[tuple[bool, bool]]] = {}
+    for st, owner, insp, wr in re.findall(
+            r"CF_PLANT_AUX (\S+) (\S+) (true|false) (true|false)", out):
+        plant_aux.setdefault((st, owner), []).append((insp == "true", wr == "true"))
     field_unresolved = sorted(set(re.findall(r"CF_FIELD_UNRESOLVED (\S+)", out)))
     api_unresolved = sorted(set(re.findall(r"CF_API_UNRESOLVED (\S+)", out)))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
@@ -1363,7 +1434,7 @@ def parse(out: str):
         audit_detail.setdefault(arm, []).append(name)
     return (hits, detail, writers, taint_edges, field_writers, field_unresolved,
             api_unresolved, noroot, truncated, audit_hits, audit_detail, justified,
-            state_ctors)
+            state_ctors, open_writers, plant_aux)
 
 
 def main() -> int:
@@ -1427,7 +1498,7 @@ def main() -> int:
         return 1
     (hits, detail, writers, taint_edges, field_writers, field_unresolved,
      api_unresolved, noroot, truncated, audit_hits, audit_detail, justified,
-     state_ctors) = parse(out)
+     state_ctors, open_writers, plant_aux) = parse(out)
 
     failures: list[str] = []
 
@@ -1615,6 +1686,35 @@ def main() -> int:
             print(f"      longer write `declassificationAudit`: {', '.join(stale)}.")
             print("      An exemption that has stopped applying must be deleted, not")
             print("      carried: it exempts nothing and hides whatever takes the name.")
+            return 1
+        # The matcher skip, pinned on both sides.  The witness reads the
+        # minted auxiliaries themselves, since an owner's own body carries the
+        # same write and would answer for its matcher in the writer set.
+        proof_aux = plant_aux.get(("SeLe4n.Model.TCB", SELF_TEST_PROOF_MATCHER), [])
+        body_aux = plant_aux.get(("SeLe4n.Model.TCB", SELF_TEST_BODY_MATCHER), [])
+        if not any(w for _, w in proof_aux) or not any(w for _, w in body_aux):
+            print("FAIL: --self-test — a matcher-skip plant minted no auxiliary that")
+            print(f"      writes a taint word (`{SELF_TEST_PROOF_MATCHER}`: {proof_aux},")
+            print(f"      `{SELF_TEST_BODY_MATCHER}`: {body_aux}).  The witness is vacuous:")
+            print("      re-plant it so the matcher itself carries the write.")
+            return 1
+        if any(i for i, w in proof_aux if w):
+            print("FAIL: --self-test — the sweep inspects a matcher the compiler minted")
+            print(f"      for the THEOREM `{SELF_TEST_PROOF_MATCHER}`.  It is erased with")
+            print("      the proof, so a theorem about the taint words reads as a writer.")
+            return 1
+        if f"private@{SELF_TEST_PROOF_MATCHER}" in field_writers:
+            print("FAIL: --self-test — the THEOREM-owned matcher plant was reported as a")
+            print("      taint-word writer; the skip is not reaching the sweep.")
+            return 1
+        if not all(i for i, w in body_aux if w):
+            print("FAIL: --self-test — the sweep skips a matcher the compiler minted for")
+            print(f"      the DEFINITION `{SELF_TEST_BODY_MATCHER}`, which has a body.  The")
+            print("      skip has widened past body-less owners and can hide a writer.")
+            return 1
+        if f"private@{SELF_TEST_BODY_MATCHER}" not in field_writers:
+            print("FAIL: --self-test — the DEFINITION-owned matcher plant was not")
+            print("      reported as a taint-word writer.")
             return 1
         if rogue not in writers:
             print("FAIL: --self-test — the API-naming sweep did not detect the")
@@ -1882,6 +1982,16 @@ def main() -> int:
         failures.append(
             "  declared taint-word writers the sweep no longer reports (a writer that "
             "writes nothing, or a blind sweep):\n      " + "\n      ".join(missing_field))
+    bad_kind = sorted(
+        f"{c} ({kind})" for c, (kind, _) in TAINT_WORD_CONSTRUCTIONS.items()
+        if kind not in TAINT_WORD_CONSTRUCTION_KINDS
+        or (c in field_writers and (c in open_writers) != (kind == "reads")))
+    if bad_kind:
+        failures.append(
+            "  `TAINT_WORD_CONSTRUCTIONS` entries whose kind disagrees with their term "
+            "(a `builds`/`clears` entry writes open taint words -- provenance moving "
+            "outside the declared writers -- or a `reads` entry writes only closed "
+            "ones):\n      " + "\n      ".join(bad_kind))
     stale_ctor = sorted(c for c in TAINT_WORD_CONSTRUCTIONS if c not in field_writers)
     if stale_ctor:
         failures.append(
