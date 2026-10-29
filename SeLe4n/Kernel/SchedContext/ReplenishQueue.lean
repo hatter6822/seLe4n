@@ -223,6 +223,32 @@ theorem popDue_eq (rq : ReplenishQueue) (currentTime : Nat) :
   rw [← splitDue_snd_eq_dropDue, ← splitDue_fst_length]
   rfl
 
+/-- WS-ZA ZA6.2: the queue past its due prefix, as a call of its own.  The slot
+write (`Array.modify`) takes the queue out of its slot before calling its
+update; inlined, the update's test that the queue is unshared ran ahead of
+that, so the queue's cell was rebuilt on every drain.  `popDue`'s queue
+(`popDue_eq`). -/
+@[noinline] def dropDueQueue (rq : ReplenishQueue) (currentTime : Nat) : ReplenishQueue :=
+  { entries := dropDue rq.entries currentTime, size := rq.size - countDue rq.entries currentTime }
+
+/-- WS-ZA ZA6.2: whether the queue's first entry is due — the drain's loop
+test, as seL4's `awaken` reads `refill_ready` of the release queue's head. -/
+@[inline] def headDue : List (SchedContextId × Nat) → Nat → Bool
+  | [], _ => false
+  | (_, eligibleAt) :: _, currentTime => decide (eligibleAt ≤ currentTime)
+
+/-- A queue whose head is not due pops nothing and keeps every entry. -/
+theorem popDue_of_not_headDue (rq : ReplenishQueue) (currentTime : Nat)
+    (h : headDue rq.entries currentTime = false) :
+    rq.popDue currentTime = (rq, []) := by
+  obtain ⟨entries, size⟩ := rq
+  cases entries with
+  | nil => rfl
+  | cons e tail =>
+    obtain ⟨scId, t⟩ := e
+    simp only [headDue, decide_eq_false_iff_not] at h
+    simp [popDue, splitDue, h]
+
 end ReplenishQueue
 
 -- ============================================================================

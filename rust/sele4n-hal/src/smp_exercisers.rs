@@ -2140,9 +2140,12 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   deleted; an endpoint, a notification, a reply and a CNode each carved
 ///   and its only capability deleted, which retires it; and the untyped
 ///   reset.  While the frame is mapped it is also the
-///   root task's IPC buffer, and the image's scheduling context is configured
-///   (its fifth word read from that buffer), bound to the suspended partner
-///   and unbound, then bound again and held while the partner is resumed and
+///   root task's IPC buffer, and the image's scheduling context is first
+///   configured to a one-tick budget every two ticks and bound to the root
+///   task, which yields its budget away and is refilled by the second of two
+///   kernel-entered timer ticks (the timer masked across them) and unbound;
+///   then configured (its fifth word read from that buffer), bound to the
+///   suspended partner and unbound, then bound again and held while the partner is resumed and
 ///   suspended, which releases it.  A service is registered on the image's
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
@@ -2490,7 +2493,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         // WS-ZA ZA6.2: a tick that drains a due refill.  The context is
         // configured to a one-tick budget every two ticks and bound to the
         // root task, which yields: the forfeit spends the budget and queues
-        // its refill two ticks on, and core 0 runs its idle thread.  The
+        // its refill two ticks on, the yield returns its frame to the root
+        // task (ready, but ineligible), and core 0 runs its idle thread.  The
         // first tick finds nothing due; the second drains the refill, which
         // makes the root task eligible again, and the tick's own decision
         // (the flag the refill raised) switches back to it, which the unbind
@@ -2515,7 +2519,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             msg_len: 0,
             msg: [0, 0, 0, 0],
             primed: None,
-            blocks: true,
+            blocks: false,
         },
         kernel_step("refill-wait-tick", TIMER_TICK_STEP),
         kernel_step("refill-drain-tick", TIMER_TICK_STEP),

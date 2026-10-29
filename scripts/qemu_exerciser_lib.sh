@@ -337,9 +337,12 @@ for driver in drivers:
             # WS-ZA ZA6.1: the timer tick and the reschedule SGI, each entered
             # over an EL0 frame on the boot core.
             "timer-tick", "reschedule-sgi",
-            # WS-ZA ZA6.2: the tick that drains a due refill, and the tick
-            # before it that finds none due.
-            "refill-wait-tick", "refill-drain-tick")}
+            # WS-ZA ZA6.2: the refill scenario: the context configured and
+            # bound to the root task, the tick that finds no refill due, the
+            # tick that drains the yield's refill and switches back to the root
+            # task, and the unbind.
+            "refill-configure", "refill-bind-root", "refill-wait-tick",
+            "refill-drain-tick", "refill-unbind-root")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -439,10 +442,12 @@ for driver in drivers:
             # (`registerServiceWordsPerform`), and its compiled arm builds no
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
-            # WS-ZA ZA6.2: the refill scenario's configure, bind, forfeit and
-            # unbind (PLACEHOLDER).
-            "refill-configure": (0, 0), "refill-bind-root": (0, 0),
-            "refill-yield": (0, 0), "refill-unbind-root": (0, 0),
+            # WS-ZA ZA6.2: the bound yield, the refill scenario's setup, forfeits
+            # its budget through the exhausting charge's own step
+            # (`spendBudgetOnCore`): the refill it queues is inserted into the
+            # core's list queue and appended to the context's refill list, the
+            # cells ZA6.3's linked release queue retires.
+            "refill-yield": (11, 11),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

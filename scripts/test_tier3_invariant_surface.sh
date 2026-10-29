@@ -7594,6 +7594,22 @@ run_check "INVARIANT" rg -n '^@\[inline\] def rescheduleBracket($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem perCoreTimerTickStepWithClockAdvance_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_valid_core($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem timerTickBudgetOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+# the total tick's in-place drain, refill and exhaust forms; the tick's
+# reschedule completeness over the strengthened coverage relation.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem processReplenishmentsDueOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem processOneReplenishmentOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem budgetExhaustOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem refillSchedContext_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem processReplenishments_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Budget.lean
+run_check "INVARIANT" rg -n '^theorem refillRecord_eq($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Budget.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem storeIdleThreadOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/IdleStore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_sgis_complete($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_sgis_cover_diff($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_raised_self($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
+run_check "INVARIANT" rg -n '^theorem chooseBestRunnableEffective_eq_of_views($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^def candidacyNotGained($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^def markCandidacyGainFor($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^theorem scheduleEffectiveOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem scheduleDomainOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem chooseThreadEffectiveOnCoreCode_succ($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean

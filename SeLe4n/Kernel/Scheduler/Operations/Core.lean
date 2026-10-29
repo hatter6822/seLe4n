@@ -500,6 +500,37 @@ def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
   st.updateSchedContext scId fun sc =>
     cbsUpdateDeadline (processReplenishments sc now) now true
 
+/-- WS-ZA ZA6.2: the compiled `refillSchedContext`.  The context is read first,
+and when its refill is the one record update (`refillInPlace`: no pending
+refill, or every pending refill due — the drain's case) it is written as that
+straight-line record in its slot (`refillRecord`), reusing the object and the
+context; the specification's write runs the refill and the deadline as two
+steps with a branch between them, so the compiled write built a new context.
+Any other context takes the specification's write.  A call, as the
+specification is, so each write is specialized once here and its callers pass
+no closure.  Proven equal (`refillSchedContext_eq_impl`). -/
+@[noinline] def refillSchedContextImpl (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (now : Nat) : SystemState :=
+  match st.getSchedContext? scId with
+  | some sc =>
+    if refillInPlace sc now then st.updateSchedContext scId fun s => refillRecord s now
+    else st.updateSchedContext scId fun s =>
+      cbsUpdateDeadline (processReplenishments s now) now true
+  | none => st
+
+@[csimp] theorem refillSchedContext_eq_impl : @refillSchedContext = @refillSchedContextImpl := by
+  funext st scId now
+  unfold refillSchedContext refillSchedContextImpl
+  cases hSc : st.getSchedContext? scId with
+  | none => exact SystemState.updateSchedContext_eq_self_of_none hSc _
+  | some sc =>
+    dsimp only
+    split
+    · rename_i hIn
+      rw [SystemState.updateSchedContext_eq_of_some hSc, SystemState.updateSchedContext_eq_of_some hSc,
+        refillRecord_eq sc now hIn]
+    · rfl
+
 /-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
 was restored. Pops due entries from the replenish queue, refills each
 SchedContext, and for any bound thread whose budget went from 0 to positive,
@@ -1855,25 +1886,49 @@ theorem foldl_splitDue_eq_foldDueReplenishmentsOnCore (c : CoreId) (now : Nat)
     · rw [List.foldl_cons]; exact ih _
     · rfl
 
-/-- WS-ZA ZA6.2: the compiled `processReplenishmentsDueOnCore`.  The queue
-keeps its suffix past the due prefix, written in its slot
+/-- WS-ZA ZA6.2: the compiled `processReplenishmentsDueOnCore`.  The queue's
+head is read first, and a queue whose head is not due is left as it is, with
+no write, as seL4's `awaken` loop stops at the first entry not ready.
+Otherwise the queue keeps its suffix past the due prefix, written in its slot
 (`modifyReplenishQueueOnCore`), and the due replenishments are processed off
 the prefix of the queue's own list; the specification builds the due ids and
-the remaining queue as a pair. -/
-@[inline] def processReplenishmentsDueOnCoreImpl (st : SystemState) (c : CoreId) (now : Nat) :
+the remaining queue as a pair.  A call, so the state it receives is a value:
+inlined after the tick's diagnostic clear, the branch that keeps the state made
+the compiler build that state ahead of the test, and the due branch then
+rebuilt it. -/
+@[noinline] def processReplenishmentsDueOnCoreImpl (st : SystemState) (c : CoreId) (now : Nat) :
     SystemState :=
   let entries := (st.scheduler.replenishQueueOnCore c).entries
-  let st' := { st with scheduler := st.scheduler.modifyReplenishQueueOnCore c fun rq =>
-    { entries := ReplenishQueue.dropDue rq.entries now,
-      size := rq.size - ReplenishQueue.countDue rq.entries now } }
-  foldDueReplenishmentsOnCore c now entries st'
+  if ReplenishQueue.headDue entries now then
+    let st' := { st with scheduler := st.scheduler.modifyReplenishQueueOnCore c fun rq =>
+      ReplenishQueue.dropDueQueue rq now }
+    foldDueReplenishmentsOnCore c now entries st'
+  else st
 
 @[csimp] theorem processReplenishmentsDueOnCore_eq_impl :
     @processReplenishmentsDueOnCore = @processReplenishmentsDueOnCoreImpl := by
   funext st c now
-  unfold processReplenishmentsDueOnCore processReplenishmentsDueOnCoreImpl
-  rw [ReplenishQueue.popDue_eq, SchedulerState.modifyReplenishQueueOnCore_eq]
-  exact foldl_splitDue_eq_foldDueReplenishmentsOnCore c now _ _
+  unfold processReplenishmentsDueOnCoreImpl
+  by_cases h : ReplenishQueue.headDue (st.scheduler.replenishQueueOnCore c).entries now = true
+  · rw [if_pos h]
+    unfold processReplenishmentsDueOnCore ReplenishQueue.dropDueQueue
+    rw [ReplenishQueue.popDue_eq, SchedulerState.modifyReplenishQueueOnCore_eq]
+    exact foldl_splitDue_eq_foldDueReplenishmentsOnCore c now _ _
+  · rw [if_neg h]
+    unfold processReplenishmentsDueOnCore
+    rw [ReplenishQueue.popDue_of_not_headDue _ now (by simpa using h)]
+    have hs : st.scheduler.setReplenishQueueOnCore c (st.scheduler.replenishQueueOnCore c) =
+        st.scheduler := by
+      have hv : st.scheduler.replenishQueue.set c.val (st.scheduler.replenishQueue.get c) c.isLt =
+          st.scheduler.replenishQueue := by
+        apply Vector.ext
+        intro i hi
+        rw [Vector.getElem_set]
+        split
+        · rename_i hc; subst hc; rfl
+        · rfl
+      simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore, hv]
+    simp only [List.foldl_nil, hs]
 
 /-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
 `scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
