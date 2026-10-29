@@ -1344,12 +1344,6 @@ private def causalWitnessTcb (w : TaintWords) : TCB :=
     { tid := causalWitnessSubject, priority := ⟨0⟩, domain := ⟨1⟩,
       spaceCells := TCB.spaceCellsOf ⟨10⟩ ⟨20⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096 } w
 
-/-- The witness store: the default store holding the acting subject's thread,
-its taint words `w`. -/
-private def causalWitnessObjects (w : TaintWords) :
-    SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject :=
-  (default : SystemState).objects.insert causalWitnessSubject.toObjId (.tcb (causalWitnessTcb w))
-
 /-- WS-SM SM9.D.14 (**`chainCausal_not_table_derived`**, invention half): a tag
 the subject acquires **after** the event invents a causal link that never
 existed.
@@ -1368,8 +1362,12 @@ theorem chainCausal_not_table_derived :
       chainCausalVerdict false st₁ chain = chainCausalVerdict false st₂ chain ∧
       chainCausalVerdict true st₁ chain ≠ chainCausalVerdict true st₂ chain := by
   refine ⟨[causalWitnessFirst, causalWitnessSecond DeclassificationTaint.empty],
-          { (default : SystemState) with objects := causalWitnessObjects {} },
-          ({ (default : SystemState) with objects := causalWitnessObjects {} }).mapObjectAt
+          { (default : SystemState) with objects :=
+            ((default : SystemState).objects.insert causalWitnessSubject.toObjId
+              (.tcb (causalWitnessTcb {}))) },
+          ({ (default : SystemState) with objects :=
+            ((default : SystemState).objects.insert causalWitnessSubject.toObjId
+              (.tcb (causalWitnessTcb {}))) }).mapObjectAt
             causalWitnessSubject.toObjId
             (·.withTaintWords (DeclassificationTaint.singleton 0).toWords),
           rfl, SystemState.mapObjectAt_objectsAgreeOffTaint _ _ _
@@ -1392,7 +1390,8 @@ theorem chainCausal_survives_subject_retype :
       chainCausalVerdict true st₂ chain = false := by
   refine ⟨[causalWitnessFirst, causalWitnessSecond (DeclassificationTaint.singleton 0)],
           { (default : SystemState) with
-            objects := causalWitnessObjects (DeclassificationTaint.singleton 0).toWords },
+            objects := ((default : SystemState).objects.insert causalWitnessSubject.toObjId
+              (.tcb (causalWitnessTcb (DeclassificationTaint.singleton 0).toWords))) },
           _, rfl, by decide, by decide, by decide, by decide⟩
 
 /-- WS-SM SM9.D.15 (**the sub-phase headline**): **`chainLaunders` is sound

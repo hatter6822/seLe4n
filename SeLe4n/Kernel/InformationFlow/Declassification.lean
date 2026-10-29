@@ -96,14 +96,17 @@ abbrev declassifyStoreEventWithTags (c : CoreId) (actor : DeclassificationActor)
 /-- WS-SM SM9.D.13a: **the acting subject's provenance at production time** —
 the snapshot an event carries.
 
-Read from the mounted side table at the state the event is recorded against, so
-the causality the trail preserves is the causality that held *then*.  Re-reading
-the table later would be wrong in both directions (`chainCausal_not_table_derived`),
-which is why the snapshot is a field of the record rather than a lookup the
-detector performs. -/
+Decoded from the acting thread's taint words at the state the event is recorded
+against, so the causality the trail preserves is the causality that held *then*.
+Re-reading the taint later would be wrong in both directions
+(`chainCausal_not_table_derived`), which is why the snapshot is a field of the
+record rather than a lookup the detector performs.  WS-ZA ZA5.12: it decodes the
+one key's words (`SystemState.taintWordsAt`) — the only decode a compiled path
+performs, since the record holds the decoded taint — and equals the
+specification's reader there by `rfl` (`decode_taintWordsAt`). -/
 abbrev declassificationActorTaint (actor : DeclassificationActor) (st : SystemState) :
     DeclassificationTaint :=
-  st.declassificationTaint actor.subject.toObjId
+  (st.taintWordsAt actor.subject.toObjId).decode
 
 /-- WS-SM SM8.C.1: the event a given pre-state records, with the acting
 subject's provenance snapshotted from that same pre-state (WS-SM SM9.D.13a). -/
