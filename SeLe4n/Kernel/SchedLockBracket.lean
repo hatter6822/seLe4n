@@ -21,6 +21,7 @@ import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTickState
 
 /-!
 # WS-RR RR7.39 — the declared footprint, at the per-core scheduler entries
@@ -534,8 +535,11 @@ is the kernel projection of the proven one.
 
 No core argument: the executed bracket acquires nothing, so it names no
 acquirer.  The former `schedEntryLockCore` fall-back — whose only use was an
-acquire the undeclared arm never performed — is gone with the acquire. -/
-def timerTickBracket (coreId : UInt64) :
+acquire the undeclared arm never performed — is gone with the acquire.
+
+Inlined (WS-ZA ZA6.1), with `BracketSpec.run`, so the entry runs the step's own
+application and the record is never built at runtime. -/
+@[inline] def timerTickBracket (coreId : UInt64) :
     BracketSpec (List (CoreId × SgiKind) × Bool) where
   declared := declaredLockSetForTimerTick coreId
   step := fun s => perCoreTimerTickStepWithClockAdvance s coreId
@@ -551,8 +555,9 @@ def timerTickBracket (coreId : UInt64) :
 
 /-- **WS-LS LS2.2**: the per-core reschedule step's bracket — and, through
 `secondaryKernelMain_eq_perCoreRescheduleEntry`, the secondary bring-up
-entry's.  The proof field is `perCoreRescheduleStep_coversWrites` (§4). -/
-def rescheduleBracket (coreId : UInt64) : BracketSpec Unit where
+entry's.  The proof field is `perCoreRescheduleStep_coversWrites` (§4).
+Inlined like the timer tick's (WS-ZA ZA6.1). -/
+@[inline] def rescheduleBracket (coreId : UInt64) : BracketSpec Unit where
   declared := declaredLockSetForReschedule coreId
   step := fun s => ((), perCoreRescheduleStep s coreId)
   inv := fun _ => True

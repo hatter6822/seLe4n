@@ -1748,8 +1748,9 @@ pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
         } else {
             // Non-timer, non-SGI INTID: log with per-core attribution.
             //
-            // AG7 will additionally wire device interrupts (SPIs) to
-            // notification signals via FFI; that's SM5+ work.
+            // No device interrupt has a Lean entry yet: wiring one to its
+            // handler's notification, as seL4's `handleInterrupt` does, is
+            // `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` WS-ZA ZA6.4.
             //
             // Audit-pass-4: per-line atomicity via `kprintln_core!`
             // (see SGI branch above for rationale).
@@ -1854,6 +1855,13 @@ fn reschedule_sgi_handler(_intid: u8, _source_cpu: u8) {
     }
     #[cfg(not(feature = "hw_target"))]
     let _ = core_id;
+}
+
+/// **WS-ZA ZA6.1**: the `.reschedule` SGI's entry, as its handler takes it,
+/// for the allocation exerciser, which measures it on the boot core.
+#[cfg(all(feature = "hw_target", feature = "smp_exercisers"))]
+pub(crate) fn reschedule_sgi_entry(_core_id: u64) {
+    reschedule_sgi_handler(RESCHEDULE_INTID, 0);
 }
 
 /// **WS-SM SM5.C.5**: register the `.reschedule` handler.

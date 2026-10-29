@@ -3096,6 +3096,97 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
+    // WS-ZA ZA6.1: the kernel entries that are not syscalls, each entered as
+    // its trap handler enters it, twice.
+    for entry in KERNEL_ENTRIES.iter() {
+        for first in [true, false] {
+            let which = if first { " (first call)" } else { "" };
+            if heap_allocations_kernel_entry(entry, which) != Some(true) {
+                return Some(false);
+            }
+        }
+    }
+    Some(true)
+}
+
+/// **WS-ZA ZA6.1**: a kernel entry the allocation exerciser drives that is not
+/// a syscall: its name and the handler that enters it.
+#[cfg(feature = "hw_target")]
+struct KernelEntry {
+    name: &'static str,
+    enter: fn(u64),
+}
+
+/// The timer tick as `handle_irq_per_core`'s timer branch takes it
+/// (`timer::per_core_timer_tick_isr`), and the `.reschedule` SGI as its
+/// handler takes it (`trap::reschedule_sgi_handler`).
+#[cfg(feature = "hw_target")]
+const KERNEL_ENTRIES: [KernelEntry; 2] = [
+    KernelEntry {
+        name: "timer-tick",
+        enter: crate::timer::per_core_timer_tick_isr,
+    },
+    KernelEntry {
+        name: "reschedule-sgi",
+        enter: crate::trap::reschedule_sgi_entry,
+    },
+];
+
+/// One measured entry of `heap_allocations_per_syscall`: an EL0 frame
+/// published as the in-flight frame, the entry taken with IRQs masked, and
+/// this core's heap counter read before and after.  The entry must restore a
+/// thread over the frame, as it does on the way back to user.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr();
+    let name = entry.name;
+    let mut frame = crate::trap::TrapFrame {
+        gprs: [0; 31],
+        sp_el0: 0,
+        elr_el1: 0,
+        spsr_el1: ROUND_TRIP_SPSR,
+        esr_el1: 0,
+        far_el1: 0,
+        tpidr_el0: 0,
+        reserved: 0,
+    };
+    let saved_daif = crate::interrupts::disable_interrupts();
+    let before = own_heap_allocations(core as usize);
+    let restored = {
+        let _in_flight = crate::trap::InFlightFrame::publish(&mut frame);
+        (entry.enter)(core);
+        crate::trap::take_restored()
+    };
+    let after = own_heap_allocations(core as usize);
+    crate::interrupts::restore_interrupts(saved_daif);
+    crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
+    crate::fp_context::set_trap_for_resume(false);
+    let (Some(before), Some(after)) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
+        );
+        return Some(false);
+    };
+    if !restored {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: resumed no thread"
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered, a thread restored"
+    );
+    if after < before {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
+         delta={}",
+        after - before
+    );
     Some(true)
 }
 

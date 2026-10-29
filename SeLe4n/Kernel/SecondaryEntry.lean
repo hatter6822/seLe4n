@@ -147,24 +147,31 @@ bring-up no trap handler has published a frame, so it captures `none` and
 saves nothing.
 
 **`v0.36.39`**: like every state-committing entry it drains the physical-write
-ledger in its atomic step and performs it before the restore. -/
+ledger in its atomic step and performs it before the restore.
+
+**WS-ZA ZA6.1**: and, being the reschedule entry, it decodes the core once and
+reads the restore target's parts and the current thread off the committed
+state as words. -/
 theorem secondaryKernelMain_def (coreId : UInt64) :
     secondaryKernelMain coreId =
-      (do
+      (match Concurrency.coreIdOfUInt64? coreId with
+      | none => pure ()
+      | some c => do
         let frame ← Platform.FFI.ffiTrapContext
-        let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := ((rescheduleBracket coreId).run
-            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
-      |> (PriorityInheritance.settleResidencyAt · coreId)
-          (((Concurrency.coreIdOfUInt64? coreId).map
-            (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId,
-            (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
-            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-        Platform.FFI.completePhysicalWrites record.2.2.1
-        Platform.FFI.completeIcacheMaintenance record.2.2.2
-        Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame record.2.1
-        Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
+        let (kind, context, tableBase, asid, code, writes, icache) ←
+          Platform.FFI.modifyGetKernelState (fun st =>
+            let post := PriorityInheritance.settleResidencyOnCore
+              ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+            ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+              Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
+              post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+              post.pendingIcacheMaintenance),
+              Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
+        Platform.FFI.completePhysicalWrites writes
+        Platform.FFI.completeIcacheMaintenance icache
+        Concurrency.releaseSwitchedFpOwnerOnCore c
+        Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+        Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
+  rfl
 
 end SeLe4n.Kernel

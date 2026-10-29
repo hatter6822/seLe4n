@@ -513,8 +513,9 @@ with into a typed `CoreId`, or `none` when it names no core the model has.
 The same guard the verified steps make (`perCoreRescheduleStep`,
 `perCoreTimerTickStep`), lifted so the entry's *effects* can be gated by it too:
 an entry called with an out-of-range id commits nothing, and must therefore
-record nothing on the HAL either. -/
-def coreIdOfUInt64? (coreId : UInt64) : Option CoreId :=
+record nothing on the HAL either.  Inlined (WS-ZA ZA6.1), so an entry that
+matches on it never builds the `some`. -/
+@[inline] def coreIdOfUInt64? (coreId : UInt64) : Option CoreId :=
   if h : coreId.toNat < numCores then some ⟨coreId.toNat, h⟩ else none
 
 /-- **WS-RR RR7.26**: `coreIdOfUInt64?` accepts exactly the ids the model has a

@@ -386,6 +386,21 @@ def perCoreRescheduleStep (st : SystemState) (coreId : UInt64) : SystemState :=
     | .error _ => st
   else st
 
+/-- **WS-ZA ZA6.1**: the compiled `perCoreRescheduleStep`: the handler's state
+form (`handleRescheduleOnCoreState`), which never refuses, so nothing keeps the
+pre-state for a refusal and the step writes the state in place. -/
+def perCoreRescheduleStepImpl (st : SystemState) (coreId : UInt64) : SystemState :=
+  if h : coreId.toNat < numCores then handleRescheduleOnCoreState st ⟨coreId.toNat, h⟩
+  else st
+
+@[csimp] theorem perCoreRescheduleStep_eq_impl :
+    @perCoreRescheduleStep = @perCoreRescheduleStepImpl := by
+  funext st coreId
+  unfold perCoreRescheduleStep perCoreRescheduleStepImpl
+  split
+  · rw [handleRescheduleSgiOnCore_eq_state]
+  · rfl
+
 /-- **WS-SM SM5.C.5**: an out-of-range core id is a no-op (state unchanged). -/
 theorem perCoreRescheduleStep_invalid_core (st : SystemState) (coreId : UInt64)
     (h : ¬ coreId.toNat < numCores) :

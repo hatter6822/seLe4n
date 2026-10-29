@@ -143,25 +143,34 @@ from the model on any arm, failed entries included; PR #880 follow-up closing
 the invocation-coupled residual), then fires the recovered cross-core
 `.reschedule` SGIs.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
-def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
-  let frame ← Platform.FFI.ffiTrapContext
-  let r ← Platform.FFI.modifyGetKernelState (fun st =>
-    let (sgisAndFlag, post) := (timerTickBracket coreId).run
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame)
-    let st' := PriorityInheritance.settleResidencyAt post coreId
-    ((sgisAndFlag,
-      (Concurrency.coreIdOfUInt64? coreId).map
-        (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId,
-      (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
-      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-  Platform.FFI.completePhysicalWrites r.2.2.2.1
-  if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
-  Concurrency.fireCrossCoreSgis r.1.1
-  Platform.FFI.completeIcacheMaintenance r.2.2.2.2
-  Concurrency.releaseSwitchedFpOwner coreId
-  Platform.FFI.restoreTrapFrame r.2.2.1
-  Concurrency.recordCommittedCurrentThreadHw r.2.1
+def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
+  -- **WS-ZA ZA6.1**: the raw id is decoded once, here; an id naming no core
+  -- enters nothing, as the step commits nothing for it.  Inside the atomic
+  -- step the restore target's parts and the core's current thread are read
+  -- off the committed state as words (ZA3.1's form), so no target, no
+  -- decoded core and no record of the current thread crosses the commit.
+  match Concurrency.coreIdOfUInt64? coreId with
+  | none => pure ()
+  | some c => do
+    let frame ← Platform.FFI.ffiTrapContext
+    let (sgis, advanced, kind, context, tableBase, asid, code, writes, icache) ←
+      Platform.FFI.modifyGetKernelState (fun st =>
+        let (sgisAndFlag, post) := (timerTickBracket coreId).run
+          (Architecture.saveCapturedTrapFrame st c frame)
+        let post := PriorityInheritance.settleResidencyOnCore post c
+        ((sgisAndFlag.1, sgisAndFlag.2,
+          Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+          Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
+          post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+          post.pendingIcacheMaintenance),
+          Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
+    Platform.FFI.completePhysicalWrites writes
+    if advanced then Platform.FFI.ffiTimerAdvanceTickCount
+    Concurrency.fireCrossCoreSgis sgis
+    Platform.FFI.completeIcacheMaintenance icache
+    Concurrency.releaseSwitchedFpOwnerOnCore c
+    Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+    Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
 bracketed-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
@@ -177,27 +186,36 @@ against) and the `build.rs` Check-5 scanner, the seam cannot regress silently.
 physical-write ledger, performed before any SGI fires, and the
 instruction-cache ledger, emitted after the SGIs and before the restore.
 Every state-committing entry drains both, so no transition the tick reaches
-can record work that is skipped or performed late by another core's entry. -/
+can record work that is skipped or performed late by another core's entry.
+
+**WS-ZA ZA6.1**: the raw id is decoded once, before anything is read, and the
+step's result crosses the commit as words: the restore target's parts
+(`Platform.FFI.restoreTrapFrameParts_onCore`) and the core's current-thread
+code. -/
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
-      (do
+      (match Concurrency.coreIdOfUInt64? coreId with
+      | none => pure ()
+      | some c => do
         let frame ← Platform.FFI.ffiTrapContext
-        let r ← Platform.FFI.modifyGetKernelState (fun st =>
-          let (sgisAndFlag, post) := (timerTickBracket coreId).run
-            (Concurrency.saveCapturedTrapFrameAt st coreId frame)
-          let st' := PriorityInheritance.settleResidencyAt post coreId
-          ((sgisAndFlag,
-            (Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId,
-            (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
-            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-        Platform.FFI.completePhysicalWrites r.2.2.2.1
-        if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
-        Concurrency.fireCrossCoreSgis r.1.1
-        Platform.FFI.completeIcacheMaintenance r.2.2.2.2
-        Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame r.2.2.1
-        Concurrency.recordCommittedCurrentThreadHw r.2.1) := rfl
+        let (sgis, advanced, kind, context, tableBase, asid, code, writes, icache) ←
+          Platform.FFI.modifyGetKernelState (fun st =>
+            let (sgisAndFlag, post) := (timerTickBracket coreId).run
+              (Architecture.saveCapturedTrapFrame st c frame)
+            let post := PriorityInheritance.settleResidencyOnCore post c
+            ((sgisAndFlag.1, sgisAndFlag.2,
+              Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+              Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
+              post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+              post.pendingIcacheMaintenance),
+              Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
+        Platform.FFI.completePhysicalWrites writes
+        if advanced then Platform.FFI.ffiTimerAdvanceTickCount
+        Concurrency.fireCrossCoreSgis sgis
+        Platform.FFI.completeIcacheMaintenance icache
+        Concurrency.releaseSwitchedFpOwnerOnCore c
+        Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+        Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
+  rfl
 
 end SeLe4n.Kernel

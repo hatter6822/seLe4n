@@ -997,6 +997,11 @@ pub(crate) fn first_reschedule(core_idx: usize, halt: fn() -> !) {
                 /// `TPIDR_EL1`, which the caller asserts.
                 fn lean_secondary_kernel_main(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
             }
+            // WS-ZA ZA6.1: the allocation exerciser's image measures this
+            // entry, the core's first, by its own heap counter; IRQs are
+            // still masked here.
+            #[cfg(feature = "smp_exercisers")]
+            let before = crate::lean_heap::kernel_allocations_on(core_idx).ok();
             // SAFETY: `lean_secondary_kernel_main` is the Lean-emitted
             // C-callable wrapper for `SeLe4n.Kernel.secondaryKernelMain`.
             // The function takes one u64 argument (the PSCI context_id)
@@ -1009,6 +1014,18 @@ pub(crate) fn first_reschedule(core_idx: usize, halt: fn() -> !) {
             let res = crate::kernel_entry::with_kernel_entry(core_idx, || unsafe {
                 lean_secondary_kernel_main(core_id)
             });
+            #[cfg(feature = "smp_exercisers")]
+            match (before, crate::lean_heap::kernel_allocations_on(core_idx).ok()) {
+                (Some(before), Some(after)) if after >= before => crate::kprintln!(
+                    "[smp-test] heap-allocations-per-syscall: secondary-entry: core {core_id} (first call): \
+                     before={before} after={after} delta={}",
+                    after - before
+                ),
+                _ => crate::kprintln!(
+                    "[smp-test] FAIL: heap-allocations-per-syscall: secondary-entry: core {core_id}: \
+                     the heap counter could not be read"
+                ),
+            }
             // The export returns its `BaseIO Unit` value, `lean_box(0)`,
             // checked outside the bracket so a malformed one halts this PE
             // without holding the kernel-entry lock

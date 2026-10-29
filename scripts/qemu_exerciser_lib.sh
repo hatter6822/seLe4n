@@ -224,8 +224,12 @@ for driver in drivers:
         # and is its pinned reading: zero, or (WS-ZA ZA5.1) for a capability
         # invocation a later row brings to zero, the reading it has today, so
         # a change either way has to move the pin.
-        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
+        # WS-ZA ZA6.1: a kernel entry other than a syscall (the timer tick, the
+        # reschedule SGI) is measured the same way and reports that it was
+        # entered and restored a thread; the secondary core's entry is
+        # measured once per core, below.
+        readings = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)") if m.group(1) != "secondary-entry"]
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
         names = [m.group(1) for m in readings]
         # The scenario set is pinned: a round trip renamed or dropped from
         # `ROUND_TRIPS`, `PARTNER_SCENARIOS` or `INVOCATION_SCENARIOS`
@@ -329,7 +333,10 @@ for driver in drivers:
             # reads and its drain, and the notification's delete.
             "declassify", "declassified-signal", "send-tainted-blocks",
             "receive-tainted", "audit-read-status", "audit-read-entry",
-            "audit-drain", "upper-notification-delete")}
+            "audit-drain", "upper-notification-delete",
+            # WS-ZA ZA6.1: the timer tick and the reschedule SGI, each entered
+            # over an EL0 frame on the boot core.
+            "timer-tick", "reschedule-sgi")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -448,6 +455,19 @@ for driver in drivers:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
             elif delta != pin:
                 failures.append(f"heap-allocations-per-syscall: a syscall read {delta}, pinned at {pin}: {m.group(0)!r}")
+        # WS-ZA ZA6.1: each core's first entry, its bring-up reschedule, read
+        # once per core (the boot core's after boot, each secondary's as it
+        # comes up), each a delta of zero.
+        secondary = matches(r"\[smp-test\] heap-allocations-per-syscall: secondary-entry: core (\d+) \(first call\): before=(\d+) after=(\d+) delta=(\d+)$")
+        cores = sorted(int(m.group(1)) for m in secondary)
+        if cores != [0, 1, 2, 3]:
+            failures.append(f"heap-allocations-per-syscall: secondary-entry: readings on cores {cores}, expected one on each of cores [0, 1, 2, 3]")
+        for m in secondary:
+            before, after, delta = (int(g) for g in m.groups()[1:])
+            if after < before or delta != after - before:
+                failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
+            elif delta != 0:
+                failures.append(f"heap-allocations-per-syscall: a core's first entry read {delta}, pinned at 0: {m.group(0)!r}")
     else:
         failures.append(f"unknown driver {driver!r}")
 for failure in failures:

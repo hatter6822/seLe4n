@@ -63,8 +63,8 @@ both seams; there is no bespoke bring-up transition to prove or to drift.
 
 ## Runtime lock discipline
 
-The entry commits through `Platform.FFI.updateKernelState` (an
-`IO.Ref.modify` — a read then a write, not a cross-core atomic), so it MUST
+The entry commits through `Platform.FFI.modifyGetKernelState` (an
+`IO.Ref.modifyGet` — a read then a write, not a cross-core atomic), so it MUST
 run inside the kernel-entry lock: the Rust callers
 (`trap.rs::reschedule_sgi_handler` and `smp.rs::rust_secondary_main`) both
 wrap the call in `kernel_entry::with_kernel_entry`.  The bring-up caller
@@ -149,22 +149,30 @@ phases live on the ghost lock table alone, so there is no refusal arm and no
 unwound state to project — the committed state is the step's.  See the module
 docstring. -/
 @[export lean_per_core_reschedule]
-def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
-  let frame ← Platform.FFI.ffiTrapContext
-  let record ← Platform.FFI.modifyGetKernelState (fun st =>
-    let st' := ((rescheduleBracket coreId).run
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
-      |> (PriorityInheritance.settleResidencyAt · coreId)
-    (((Concurrency.coreIdOfUInt64? coreId).map
-      (fun c => (c, st'.scheduler.currentOnCore c)),
-      Concurrency.restoreTargetAt st' coreId,
-      (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
-      Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-  Platform.FFI.completePhysicalWrites record.2.2.1
-  Platform.FFI.completeIcacheMaintenance record.2.2.2
-  Concurrency.releaseSwitchedFpOwner coreId
-  Platform.FFI.restoreTrapFrame record.2.1
-  Concurrency.recordCommittedCurrentThreadHw record.1
+def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit :=
+  -- **WS-ZA ZA6.1**: the raw id is decoded once, here; an id naming no core
+  -- enters nothing, as the step commits nothing for it.  Inside the atomic
+  -- step the restore target's parts and the core's current thread are read
+  -- off the committed state as words (ZA3.1's form), so no target, no
+  -- decoded core and no record of the current thread crosses the commit.
+  match Concurrency.coreIdOfUInt64? coreId with
+  | none => pure ()
+  | some c => do
+    let frame ← Platform.FFI.ffiTrapContext
+    let (kind, context, tableBase, asid, code, writes, icache) ←
+      Platform.FFI.modifyGetKernelState (fun st =>
+        let post := PriorityInheritance.settleResidencyOnCore
+          ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+        ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+          Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
+          post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+          post.pendingIcacheMaintenance),
+          Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
+    Platform.FFI.completePhysicalWrites writes
+    Platform.FFI.completeIcacheMaintenance icache
+    Concurrency.releaseSwitchedFpOwnerOnCore c
+    Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+    Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))
 
 /-- **WS-SM SM5.C.5** structural marker: `perCoreRescheduleEntry` unfolds to
 the atomic commit of the bracketed reschedule step followed by the HAL
@@ -179,24 +187,33 @@ and the `build.rs` trap-path scanner, the seam cannot regress silently.
 
 **`v0.36.39`**: the step also reads and clears both hardware ledgers — the
 physical writes and then the instruction-cache operands, both before the
-restore — as every state-committing entry does. -/
+restore — as every state-committing entry does.
+
+**WS-ZA ZA6.1**: the raw id is decoded once, before anything is read, and the
+step's result crosses the commit as words: the restore target's parts
+(`Architecture.restoreCommitKindOnCore` and its siblings, whose equality with
+the target is `Platform.FFI.restoreTrapFrameParts_onCore`) and the core's
+current-thread code. -/
 theorem perCoreRescheduleEntry_def (coreId : UInt64) :
     perCoreRescheduleEntry coreId =
-      (do
+      (match Concurrency.coreIdOfUInt64? coreId with
+      | none => pure ()
+      | some c => do
         let frame ← Platform.FFI.ffiTrapContext
-        let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := ((rescheduleBracket coreId).run
-            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
-      |> (PriorityInheritance.settleResidencyAt · coreId)
-          (((Concurrency.coreIdOfUInt64? coreId).map
-            (fun c => (c, st'.scheduler.currentOnCore c)),
-            Concurrency.restoreTargetAt st' coreId,
-            (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
-            Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
-        Platform.FFI.completePhysicalWrites record.2.2.1
-        Platform.FFI.completeIcacheMaintenance record.2.2.2
-        Concurrency.releaseSwitchedFpOwner coreId
-        Platform.FFI.restoreTrapFrame record.2.1
-        Concurrency.recordCommittedCurrentThreadHw record.1) := rfl
+        let (kind, context, tableBase, asid, code, writes, icache) ←
+          Platform.FFI.modifyGetKernelState (fun st =>
+            let post := PriorityInheritance.settleResidencyOnCore
+              ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+            ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+              Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
+              post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+              post.pendingIcacheMaintenance),
+              Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
+        Platform.FFI.completePhysicalWrites writes
+        Platform.FFI.completeIcacheMaintenance icache
+        Concurrency.releaseSwitchedFpOwnerOnCore c
+        Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+        Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
+  rfl
 
 end SeLe4n.Kernel

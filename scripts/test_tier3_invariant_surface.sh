@@ -4869,7 +4869,7 @@ run_check "INVARIANT" rg -n -U '^    if captured\.is_none\(\) \{\n        crate:
 run_check "INVARIANT" rg -n '^        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '^          \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2 c$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than
 # resuming nothing, which the trap layer answers by halting the PE.  The rule,
@@ -4888,7 +4888,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def faultEntryDeliver [^\n]*
 run_check "INVARIANT" rg -n '^def bootRootPaddrBound : Nat := 2 \^ 40$' SeLe4n/Platform/RPi5/VSpaceBoot.lean
 run_check "INVARIANT" rg -n '^theorem bootRootPaddrBound_eq_physicalAddressWidth($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
 run_negative_check "INVARIANT" rg -n '2 ?\^ ?44' SeLe4n/Platform/RPi5/VSpaceBoot.lean SeLe4n/Platform/Sim/Contract.lean
-run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '^          \(Architecture\.saveCapturedTrapFrame st c frame\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^theorem saveTrapFrameOnCore_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TrapFrameSaveInvariant.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TrapFrameSaveInvariant$' SeLe4n.lean
@@ -4931,8 +4931,8 @@ run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.sch
 run_check "INVARIANT" rg -n '^theorem faultDeliveredState_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueRefined[A-Za-z]* \(faultDeliveredState|\(faultDeliveredState [^)]*\)\.runQueueRefined' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^    Platform\.FFI\.restoreTrapFrameParts kind context tableBase asid\n    Concurrency\.recordCommittedCurrentThreadHw \(some \(c, SeLe4n\.ThreadId\.ofOptCode code\)\)$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^    Platform\.FFI\.restoreTrapFrameParts kind context tableBase asid\n    Concurrency\.recordCommittedCurrentThreadHw \(some \(c, SeLe4n\.ThreadId\.ofOptCode code\)\)$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.idle$' SeLe4n/Kernel/Architecture/ContextRestore.lean
 run_check "INVARIANT" rg -n '^    value & 0xF000_0000$' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^        frame\.spsr_el1 = sanitise_user_spsr\(word\(33\)\);$' rust/sele4n-hal/src/trap.rs
@@ -7246,7 +7246,8 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem toList_dropFront($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem bounded \(r : AuditRing\) : auditLogBounded r\.toList' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^  kernelStateRef\.set \(Architecture\.withShootdownSparesSeeded st\)\.withFreshAuditRing$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  kernelStateRef\.set \(Architecture\.withShootdownSparesSeeded st\)\.withFreshAuditRing\.withFreshPerCoreSlots$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPerCoreSlots_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
 # recorder that truncates instead of failing closed, and it can only live in
 # the record/producer modules.  The authorized remover (`AuditRead.lean`'s
@@ -7580,8 +7581,25 @@ run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites($|[ ({:\
 # WS-LS (lock-state separation): the scheduler seams run a `BracketSpec` whose
 # coverage field IS the containment theorem, and whose kernel projection is the
 # step by `rfl`; the bring-up seam runs the reschedule specification too.
-run_check "INVARIANT" rg -n '^def timerTickBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
-run_check "INVARIANT" rg -n '^def rescheduleBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def timerTickBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def rescheduleBracket($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+# WS-ZA ZA6.1: the timer tick, the reschedule SGI and the secondary entry
+# allocate nothing.  The tick's checks precede its first write and the step is
+# its state form when they pass (an @[csimp] over the specification's step);
+# its dispatch and domain accounting never refuse; the reschedule step and the
+# vacated core's dispatch are the receiver's state form; each entry hands its
+# restore target across the commit as words; boot gives the per-core slots
+# their own cells.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem perCoreTimerTickStepWithClockAdvance_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCore_of_admitted($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem scheduleEffectiveOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem scheduleDomainOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^theorem chooseThreadEffectiveOnCoreCode_succ($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTickState.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Scheduler\.Operations\.PerCoreTimerTickState$' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem perCoreRescheduleStep_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreRunLoop.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem dispatchVacatedCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_negative_check "INVARIANT" rg -n 'restoreTargetAt|restoreTrapFrame ' SeLe4n/Kernel/PerCoreTimerEntry.lean SeLe4n/Kernel/PerCoreRescheduleEntry.lean SeLe4n/Kernel/SecondaryEntry.lean
 run_check "INVARIANT" rg -n '^theorem timerTickBracket_runGhost_locks($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
 run_check "INVARIANT" rg -n '\(timerTickBracket coreId\)\.run' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n '\(rescheduleBracket coreId\)\.run' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -8229,9 +8247,9 @@ run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*
 run_check "INVARIANT" rg -n -U '^  \| some ic =>\n    let rf := ic\.snapshot\n    saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_current_not_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
-run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/SecondaryEntry.lean
-run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n 'PriorityInheritance\.settleResidencyOnCore' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n 'PriorityInheritance\.settleResidencyOnCore' SeLe4n/Kernel/SecondaryEntry.lean
+run_check "INVARIANT" rg -n '^        let post := PriorityInheritance\.settleResidencyOnCore post c$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n '^      let st. := PriorityInheritance\.settleResidencyAt st. coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^    let res := \(res\.1, PriorityInheritance\.settleResidencyAt res\.2 coreId\)$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)$' SeLe4n/Kernel/FaultEntry.lean
@@ -8272,14 +8290,14 @@ run_check "INVARIANT" rg -n '^        \.user tcb\.registerContext ops\.1 ops\.2 
 run_check "INVARIANT" rg -n '^    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export lean_handle_fp_access\]$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^    Concurrency\.releaseSwitchedFpOwner coreId\n    Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame record\.2\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwner coreId\n  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^    Concurrency\.releaseSwitchedFpOwnerOnCore c\n    Platform\.FFI\.restoreTrapFrameParts kind context tableBase asid$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^    Concurrency\.releaseSwitchedFpOwnerOnCore c\n    Platform\.FFI\.restoreTrapFrameParts kind context tableBase asid$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 # v0.36.39: every state-committing entry drains both hardware ledgers — the
 # physical writes and the instruction-cache operands — in its atomic step, and
 # performs them before its restore (the writes before any SGI).
-run_check "INVARIANT" rg -n -U '      \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.fireCrossCoreSgis r\.1\.1\n  Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2\n  Concurrency\.releaseSwitchedFpOwner coreId$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n -U '      \(st.\.drainedPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '          post\.pendingIcacheMaintenance\),\n          Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites post\)\)\)\n    Platform\.FFI\.completePhysicalWrites writes\n    if advanced then Platform\.FFI\.ffiTimerAdvanceTickCount$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '^    Concurrency\.fireCrossCoreSgis sgis\n    Platform\.FFI\.completeIcacheMaintenance icache\n    Concurrency\.releaseSwitchedFpOwnerOnCore c$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n -U '          post\.pendingIcacheMaintenance\),\n          Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites post\)\)\)\n    Platform\.FFI\.completePhysicalWrites writes\n    Platform\.FFI\.completeIcacheMaintenance icache$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n([ \t]*(--[^\n]*)?\n)*  Concurrency\.stallChangedCores result\.2\.2\.2 execCore\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -15396,7 +15414,8 @@ EOF'
 # markers are `rfl` over the whole body, so a refactor that drops the record
 # fails at elaboration; these anchors say which bodies are covered, and the
 # negative below says the pre-RR7.26 shape (a bare `updateKernelState` with no
-# record) cannot come back to the reschedule entry.
+# record) cannot come back to the reschedule entry: its body commits through
+# `modifyGetKernelState`, which returns what the record needs.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.PerCoreRescheduleEntry
 import SeLe4n.Kernel.PerCoreTimerEntry
@@ -15411,7 +15430,7 @@ open SeLe4n.Kernel
 #check @faultEntry_def
 EOF'
 run_check "INVARIANT" bash -lc 'rg -n "recordCommittedCurrentThreadHw" SeLe4n/Kernel/PerCoreRescheduleEntry.lean SeLe4n/Kernel/PerCoreTimerEntry.lean SeLe4n/Kernel/SyscallDispatchEntry.lean SeLe4n/Kernel/FaultEntry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -n "def perCoreRescheduleEntry \(coreId : UInt64\) : BaseIO Unit :=\s*$" SeLe4n/Kernel/PerCoreRescheduleEntry.lean'
+run_negative_check "INVARIANT" rg -n 'updateKernelState' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 
 # WS-RR RR7.27: the DeviceTree → PlatformConfig bridge and its board check.
 # Register §6 finding 46 was "fromDtbFull has zero consumers"; these anchor the

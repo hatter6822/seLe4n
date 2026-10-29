@@ -368,25 +368,32 @@ example (coreId : UInt64) :
   SeLe4n.Kernel.secondaryKernelMain_eq_perCoreRescheduleEntry coreId
 example (coreId : UInt64) :
     SeLe4n.Kernel.secondaryKernelMain coreId
-      = (do
+      = (match SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId with
+        | none => pure ()
+        | some c => do
           let frame ← SeLe4n.Platform.FFI.ffiTrapContext
-          let record ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
-            let st' := ((SeLe4n.Kernel.rescheduleBracket coreId).run
-              (SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
-            -- PR #904 review (`v0.36.41`): the core's residency settles on the
-            -- successor the reschedule staged.
-            let st' := SeLe4n.Kernel.PriorityInheritance.settleResidencyAt st' coreId
-            (((SeLe4n.Kernel.Concurrency.coreIdOfUInt64? coreId).map
-              (fun c => (c, st'.scheduler.currentOnCore c)),
-              SeLe4n.Kernel.Concurrency.restoreTargetAt st' coreId,
-              (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
-              SeLe4n.Kernel.Architecture.clearIcacheMaintenance
-                (SeLe4n.Kernel.Architecture.clearPhysicalWrites st')))
-          SeLe4n.Platform.FFI.completePhysicalWrites record.2.2.1
-          SeLe4n.Platform.FFI.completeIcacheMaintenance record.2.2.2
-          SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwner coreId
-          SeLe4n.Platform.FFI.restoreTrapFrame record.2.1
-          SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw record.1) :=
+          let (kind, context, tableBase, asid, code, writes, icache) ←
+            SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
+              -- PR #904 review (`v0.36.41`): the core's residency settles on
+              -- the successor the reschedule staged; WS-ZA ZA6.1: the
+              -- restore target and the current thread cross as words.
+              let post := SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore
+                ((SeLe4n.Kernel.rescheduleBracket coreId).run
+                  (SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st c frame)).2 c
+              ((SeLe4n.Kernel.Architecture.restoreCommitKindOnCore post c,
+                SeLe4n.Kernel.Architecture.restoreContextOnCore post c,
+                SeLe4n.Kernel.Architecture.restoreTableBaseOnCore post c,
+                SeLe4n.Kernel.Architecture.restoreAsidOnCore post c,
+                post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+                post.pendingIcacheMaintenance),
+                SeLe4n.Kernel.Architecture.clearIcacheMaintenance
+                  (SeLe4n.Kernel.Architecture.clearPhysicalWrites post)))
+          SeLe4n.Platform.FFI.completePhysicalWrites writes
+          SeLe4n.Platform.FFI.completeIcacheMaintenance icache
+          SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwnerOnCore c
+          SeLe4n.Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+          SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw
+            (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
   SeLe4n.Kernel.secondaryKernelMain_def coreId
 -- Concrete-instance checks at each secondary context id (1, 2, 3) and
 -- the boot-core context id (0): the seam identity holds at every core.
