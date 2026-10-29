@@ -400,7 +400,7 @@ When they pass the operation's state is `resumePerform` of the answered state
   | none => false
 
 /-- WS-ZA ZA5.2: the resume once admitted.  The home core and the thread's
-entry-time scheduling key are read before anything is written, so the state is
+entry-time scheduling key and budget eligibility are read before anything is written, so the state is
 handed to the writes alone; the local reschedule never refuses
 (`handleRescheduleSgiOnCore_eq_state`). -/
 def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) :
@@ -412,8 +412,8 @@ def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : Co
     let p0 := tcb.boostedPriority
     let d0 := effectiveDeadline st tcb
     let dom0 := tcb.domain
-    let st2 := markKeyChangeParts
-      (markCandidacyGainFor (resumeReadyMidState st tid) tid (hasSufficientBudget st tcb))
+    let e0 := hasSufficientBudget st tcb
+    let st2 := markKeyChangeParts (markCandidacyGainFor (resumeReadyMidState st tid) tid e0)
       tid p0 d0 dom0
     let st3 := enqueueRunnableOnCore st2 target tid
     if target == executingCore then handleRescheduleOnCoreState st3 executingCore
