@@ -2819,7 +2819,14 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         primed: None,
         blocks: false,
     },
-    partner_step("send-tainted-blocks", SEND, ENDPOINT_CAP, 1, [0x77, 0], true),
+    partner_step(
+        "send-tainted-blocks",
+        SEND,
+        ENDPOINT_CAP,
+        1,
+        [0x77, 0],
+        true,
+    ),
     partner_step("receive-tainted", RECEIVE, ENDPOINT_CAP, 0, [0, 0], false),
     RoundTrip {
         name: "audit-read-status",
@@ -2867,7 +2874,12 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
     "untyped-retype-upper-notification",
     UNTYPED_RETYPE,
     UNTYPED_CAP,
-    [NOTIFICATION_TYPE, UPPER_NOTIFICATION_ID, CNODE_CAP, FRAME_SLOT],
+    [
+        NOTIFICATION_TYPE,
+        UPPER_NOTIFICATION_ID,
+        CNODE_CAP,
+        FRAME_SLOT,
+    ],
 );
 #[cfg(feature = "hw_target")]
 const PARTNER_SETUP: [RoundTrip; 3] = [
