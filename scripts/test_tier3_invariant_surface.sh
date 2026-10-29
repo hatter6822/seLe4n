@@ -19835,10 +19835,9 @@ run_check "INVARIANT" rg -F -n 'positive check passed [timerTickChecked saves th
 run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare timerTick leaves the outgoing context alone]' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -F -n 'switchDomainChecked refuses a dangling current thread' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare switchDomain proceeds on the state the wrapper refuses]' tests/NegativeStateSuite.lean
-# ...and the honest half: on the dangling state the tick's guard adds nothing,
-# because its own internals refuse with the same discriminant.  Asserted rather
-# than left implicit — it is why the tick's witness had to measure the save.
-run_check "INVARIANT" rg -F -n '…and so does the bare timerTick, with the same discriminant' tests/NegativeStateSuite.lean
+# ...and the tick's: the bare tick is total (it charges a dangling current
+# thread nothing), so on the dangling state its guard is what refuses.
+run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare timerTick proceeds on the state the wrapper refuses]' tests/NegativeStateSuite.lean
 
 
 # ===========================================================================
