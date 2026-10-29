@@ -342,13 +342,7 @@ for driver in drivers:
             # own their object targets (`unshareSpareCell`), so neither first
             # call builds the record's target (`CapTarget.objectOver`).
             "untyped-retype-page-table-1": (15, 13),
-            # Its first call carves into the root CNode slot whose spare
-            # record last held the exerciser's audit capability (WS-ZA
-            # ZA5.13, deleted after the audit scenario): that capability's
-            # target is fieldless (`CapTarget.auditTrail`, a boxed scalar),
-            # so there is no target cell to write the object's id over
-            # (`CapTarget.objectOver`) and the carve builds one: 14.
-            "untyped-retype-page-table-2": (14, 13),
+            "untyped-retype-page-table-2": (13, 13),
             "untyped-retype-page-table-3": (14, 13),
             # The first carve after boot takes one cell more than its steady
             # state; since v0.36.134 that is the busy-endpoint carve, which

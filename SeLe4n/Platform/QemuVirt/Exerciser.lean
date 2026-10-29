@@ -35,9 +35,9 @@ each the least the four calls need, and nothing else.
   domain to the upper one, the one pair the base lattice refuses that a boot
   thread can reach.
 * **The audit monitor**: the clearance is the top, so the boot domain's threads
-  qualify, and the root task holds the boot audit capability in slot 15
-  (`qemuVirtExerciserAuditSlot`), which the exerciser deletes before the
-  invocation scenarios carve into it.
+  qualify, and the root task holds the boot audit capability in slot 10
+  (`qemuVirtExerciserAuditSlot`, the exerciser's copy slot), which the
+  exerciser deletes before the invocation scenarios copy into it.
 
 The shipped `virt` entry (`QemuVirt.kernelMain`, `lean_kernel_main_qemu_virt`)
 is untouched: it boots `QemuVirtPlatform`, whose labeling is the confined
@@ -83,8 +83,9 @@ instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPla
     witnessesOffBootVSpaceRoot := by decide }
 
 /-- The root task's CNode slot holding the exerciser's boot audit capability:
-    the last slot, which no scenario fills before the audit scenarios end. -/
-def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 15
+    the exerciser's copy slot, which no scenario fills before the audit
+    scenarios end, and whose next use is a copy rather than a carve. -/
+def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
 
 /-- The exerciser's root CNode: the shipped root CNode's capabilities and the
     audit trail's, with read and write (`Capability.auditTrailManage`), in

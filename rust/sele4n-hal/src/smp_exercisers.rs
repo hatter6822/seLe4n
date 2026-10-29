@@ -1638,11 +1638,12 @@ const PAGE_TABLE_SLOTS: [u64; 3] = [14, 15, COPY_SLOT];
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_SLOT: u64 = 0;
 /// The slot of the exerciser image's boot audit capability
-/// (`qemuVirtExerciserAuditSlot`, WS-ZA ZA5.13), deleted once the
-/// declassification scenario ends, before the invocation scenarios carve page
-/// tables into it.
+/// (`qemuVirtExerciserAuditSlot`, WS-ZA ZA5.13): the copy slot, deleted once
+/// the declassification scenario ends.  Its next use is the invocation
+/// scenarios' copy, which writes the copied capability's target over the
+/// slot's record, so no carve meets the audit capability's fieldless target.
 #[cfg(feature = "hw_target")]
-const AUDIT_SLOT: u64 = 15;
+const AUDIT_SLOT: u64 = COPY_SLOT;
 
 /// The capability addresses of those slots.
 #[cfg(feature = "hw_target")]
@@ -3002,7 +3003,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         }
     }
     // WS-ZA ZA5.13: the declassification scenario, the partner runnable, then
-    // the boot audit capability deleted so its slot is the page tables' again.
+    // the boot audit capability deleted so its slot is the copy's again.
     for first in [true, false] {
         if !unmeasured(
             &UPPER_NOTIFICATION_CARVE,
