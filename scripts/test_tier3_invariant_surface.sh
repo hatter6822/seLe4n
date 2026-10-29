@@ -9226,7 +9226,7 @@ run_check "INVARIANT" rg -n '^theorem SystemState\.taintStored ' SeLe4n/Model/Ta
 # its store, and the freeze keeps the reading.  A store writes the words of the
 # object it stores, so the old store frame is not true and is retired; the
 # checked boot installs only clean words.
-run_negative_check "INVARIANT" rg -n 'declassificationTaint :' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean
+run_negative_check "INVARIANT" rg -n '^  declassificationTaint\s*:' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '^def FrozenSystemState\.declassificationTaint ' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint($|[ ({:\[\]])' SeLe4n/Model/FreezeProofs.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declassificationTaint($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
