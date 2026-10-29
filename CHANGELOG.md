@@ -57,6 +57,19 @@ fused step captures the words it needs as scalars before the arm.
   `@[csimp]` or `@[implemented_by]` replacement in place of the body it
   replaces. It fails if the reader is reached. The specification dispatcher,
   walked into its own body, must reach it, so the census can fire.
+- **The one-writer gate.** `scripts/check_content_flow_coverage.py` watches the
+  taint words, not the retired field.
+  - Check (C) names the word API: the two field writers, the object-level and
+    slot writes, the per-key join and clear, and the steps above them. An API
+    name that resolves to no constant fails closed.
+  - Check (C2) sweeps the ten taint fields of `TCB` and `Notification`, read off
+    the structures' source. Exactly `TCB.withTaintWords` and
+    `Notification.withTaintWords` may write them. The constructions that also
+    supply them (boot threads, carves, the observer projection) are named with
+    what each builds, and the list is reconciled both ways.
+  - The frozen mirror is the frozen slot write (`frozenMapTaintWords`).
+  - A matcher the compiler minted for a theorem is skipped, since it is erased
+    with the proof. The plants now rewrite a thread's or a notification's words.
 - **Tried and reverted.** Handing each arm and its step to a `@[noinline]`
   function returned the arm's result record out of line and read 2 on every
   routed IPC call. The arms stay inlined; only the slot write is out of line,

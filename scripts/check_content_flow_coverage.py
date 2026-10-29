@@ -793,27 +793,28 @@ private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
   else
     none
 
-/-- Is `n` an auxiliary the compiler minted for a **theorem**?
+/-- Is `n` an auxiliary the compiler minted for an owner that carries **no
+body** -- a theorem, or a type's own constructor or inductive?
 
 A proof that destructures an existential or a disjunction gets a generated
 matcher (`tcb_fwd.match_1`), which is a `defn` and so passes the body-bearing
 filter, and whose motive restates the theorem's own hypotheses -- so a theorem
 *about* the taint words (`objectsAgreeOffTaint.tcb_fwd`, comparing two threads
-off their words) would be reported as a caller of the word API.  Its owner is a
-theorem, the matcher is used only by that theorem's proof term, and a proof term
-is erased: it executes nothing and writes nothing, for the reason
-`cfExecutableValue` drops the theorem itself.  Decided by the environment --
-the auxiliary carries no source range (`cfOwnerName`'s test), and the
-constant it strips back to, looked up under the name the environment stores, is
-a `theorem` -- never by the spelling of the name; an owner the lookup cannot
-find is not skipped. -/
-private def cfProofOwned (env : Environment) (n : Name) : Bool :=
+off their words) would be reported as a caller of the word API.  The matcher is
+used only by its owner's term, and an owner that carries no body executes
+nothing of its own: a proof is erased, for the reason `cfExecutableValue` drops
+the theorem itself, and a type's minted helpers are its machinery
+(`cfStructureMachinery`).  Decided by the environment -- the auxiliary carries
+no source range (`cfOwnerName`'s test), and the constant it strips back to,
+looked up under the name the environment stores, is present and answers
+`bodyBearing` false -- never by the spelling of the name; an owner the lookup
+cannot find is not skipped. -/
+private def cfBodilessOwned (env : Environment) (n : Name) : Bool :=
   if (Lean.declRangeExt.find? env n).isSome then false
   else
     let owner := cfStripReserved n
-    owner != n && (match env.find? owner with
-      | some (.thmInfo _) => true
-      | _ => false)
+    owner != n && (env.find? owner).isSome
+      && !SeLe4n.Testing.DeclarationKind.bodyBearingName env owner
 
 /-- Is this a constant whose body belongs to something a human wrote?
 
@@ -821,7 +822,7 @@ Decided on the **owner**, so a generated auxiliary is inspected on behalf of its
 definition instead of being dropped, and a constant with no human-written owner
 (the matcher of a matcher, a purely internal detail) is still skipped. -/
 private def cfInspectable (env : Environment) (n : Name) : Bool :=
-  !(cfOwnerName env n).isInternalDetail && !cfProofOwned env n
+  !(cfOwnerName env n).isInternalDetail && !cfBodilessOwned env n
 
 /-- How a writer is reported: the readable name, with private ones marked.
 
