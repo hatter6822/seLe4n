@@ -1360,6 +1360,7 @@ fn sched_context_required_rights() {
 fn sched_context_configure_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs {
+        sched_context: CPtr::from((1u64 << 63) | 4),
         budget: 1000,
         period: 5000,
         priority: 200,
@@ -1405,14 +1406,15 @@ fn sched_context_configure_insufficient_regs() {
     );
 }
 
-/// AA1-F-5: SchedContextConfigureArgs boundary — invalid priority.
+/// AA1-F-5: SchedContextConfigureArgs — the priority is the parameter word's
+/// low byte (WS-ZA ZA6.4: priority and domain share MR3), so a priority of 256
+/// is a domain of 1, and the word it encodes to decodes to priority 0.
 #[test]
-fn sched_context_configure_invalid_priority() {
+fn sched_context_configure_priority_is_low_byte() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    assert_eq!(
-        SchedContextConfigureArgs::decode(&[1000, 5000, 256, 10000, 0]),
-        Err(KernelError::InvalidSyscallArgument)
-    );
+    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 256, 10000]).unwrap();
+    assert_eq!(args.priority, 0);
+    assert_eq!(args.domain, 1);
 }
 
 /// AA1-F-6: SchedContextBindArgs boundary — empty registers.
@@ -1432,12 +1434,12 @@ fn sched_context_configure_invalid_domain() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     // Domain 16 is the first invalid value
     assert_eq!(
-        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 16]),
+        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (16 << 8), 10000]),
         Err(KernelError::InvalidSyscallArgument)
     );
     // Domain 256 is also invalid (well beyond range)
     assert_eq!(
-        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 256]),
+        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (256 << 8), 10000]),
         Err(KernelError::InvalidSyscallArgument)
     );
 }
@@ -1447,7 +1449,8 @@ fn sched_context_configure_invalid_domain() {
 #[test]
 fn sched_context_configure_max_valid() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 15]).unwrap();
+    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 255 | (15 << 8), 10000]).unwrap();
+    assert_eq!(args.sched_context, CPtr::from(7u64));
     assert_eq!(args.priority, 255);
     assert_eq!(args.domain, 15);
     assert_eq!(args.budget, 1000);
@@ -1460,6 +1463,7 @@ fn sched_context_configure_max_valid() {
 fn sched_context_configure_zero_values() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs::decode(&[0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(args.sched_context, CPtr::from(0u64));
     assert_eq!(args.budget, 0);
     assert_eq!(args.period, 0);
     assert_eq!(args.priority, 0);
@@ -1917,13 +1921,14 @@ fn max_domain_matches_lean() {
 fn domain_boundary_validation() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
 
+    // WS-ZA ZA6.4: the domain is bits 8–11 of MR3, beside the priority.
     // Domain 15 (max valid) — accepted
-    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 15]).unwrap();
+    let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (15 << 8), 10000]).unwrap();
     assert_eq!(args.domain, 15);
 
     // Domain 16 (first invalid) — rejected
     assert_eq!(
-        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 16]),
+        SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (16 << 8), 10000]),
         Err(KernelError::InvalidSyscallArgument)
     );
 }
@@ -1933,7 +1938,8 @@ fn domain_boundary_validation() {
 fn all_valid_domains_accepted() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     for domain in 0..=15u64 {
-        let result = SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, domain]);
+        let result =
+            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (domain << 8), 10000]);
         assert!(result.is_ok(), "Domain {} should be accepted", domain);
         assert_eq!(result.unwrap().domain, domain);
     }
@@ -1943,9 +1949,9 @@ fn all_valid_domains_accepted() {
 #[test]
 fn invalid_domains_rejected() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    for domain in [16u64, 17, 100, 255, 256, u64::MAX] {
+    for domain in [16u64, 17, 100, 255, 256, u64::MAX >> 8] {
         assert_eq!(
-            SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, domain]),
+            SchedContextConfigureArgs::decode(&[7, 1000, 5000, 128 | (domain << 8), 10000]),
             Err(KernelError::InvalidSyscallArgument),
             "Domain {} should be rejected",
             domain
@@ -1956,7 +1962,10 @@ fn invalid_domains_rejected() {
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]
 fn sys_sched_context_module_exports() {
+    // WS-ZA ZA6.4: the configure invokes a core's scheduling control and names
+    // the context by its capability, two `CPtr`s ahead of the parameters.
     let _configure: fn(
+        CPtr,
         CPtr,
         u64,
         u64,
@@ -2632,7 +2641,16 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     let _ = sele4n_sys::service::service_query(cap);
     assert_clears("service_query", SyscallId::ServiceQuery);
 
-    let _ = sele4n_sys::sched_context::sched_context_configure(cap, 1, 1, 1, 1, 1, &mut buf);
+    let _ = sele4n_sys::sched_context::sched_context_configure(
+        cap,
+        CPtr::from(1u64),
+        1,
+        1,
+        1,
+        1,
+        1,
+        &mut buf,
+    );
     assert_clears("sched_context_configure", SyscallId::SchedContextConfigure);
     let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64));
     assert_clears("sched_context_bind", SyscallId::SchedContextBind);

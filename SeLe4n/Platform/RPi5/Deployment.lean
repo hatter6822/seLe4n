@@ -191,6 +191,18 @@ def rpi5InitialCap (target : SeLe4n.ObjId) (rights : List AccessRight) : Capabil
 def rpi5InitialCNode (slots : List (SeLe4n.Slot × Capability)) : CNode :=
   CNode.ofList 64 60 0 4 slots
 
+/-- **WS-ZA ZA6.4**: the scheduling-control capabilities the boot hands the root
+    task, one per core, core `c`'s at slot `base + c` — seL4-MCS's boot info
+    `schedcontrol` range, the only authority to configure a scheduling
+    context's budget and period. -/
+def schedControlBootSlots (base : Nat) : List (SeLe4n.Slot × Capability) :=
+  (List.range SeLe4n.Kernel.Concurrency.numCores).map fun c =>
+    (SeLe4n.Slot.ofNat (base + c), Capability.schedControlOf c)
+
+/-- The first of the root task's scheduling-control slots: the CNode's top
+    four, above the untypeds'. -/
+def rpi5SchedControlSlotBase : Nat := 12
+
 /-- An empty user address space on `asid` — what `bootSafeUserVSpaceRootCheck`
     admits — whose top-level table is the `page`-th page of the binding's
     table-page pool (WS-BP BP7.1, `Platform.Boot.bootRootTablesPlaced`). -/
@@ -251,15 +263,17 @@ theorem rpi5BootRamExtensions_length (v : BCM2712Config) (hv : v.Admissible) :
 
 /-- **WS-BP BP7.10**: the root task's CNode slots for `n` untypeds: its own TCB,
     CNode and VSpace, the interrupt notification, and untyped `i` at slot
-    `5 + i` (`rpi5RootTaskUntypedSlot`).  A function of the count, because a
-    capability names an object and not its extent. -/
+    `5 + i` (`rpi5RootTaskUntypedSlot`), and (WS-ZA ZA6.4) each core's
+    scheduling control from `rpi5SchedControlSlotBase`.  A function of the
+    count, because a capability names an object and not its extent. -/
 def rpi5RootTaskCNodeSlotsOfCount (n : Nat) : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5RootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5RootTaskCNodeId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 3, rpi5InitialCap rpi5RootTaskVSpaceId [.read, .write])
   , (SeLe4n.Slot.ofNat 4, rpi5InitialCap rpi5InterruptNotificationId [.read, .write]) ] ++
-  (List.range n).map fun i =>
-    (rpi5RootTaskUntypedSlot i, rpi5InitialCap (rpi5RootTaskUntypedId i) [.read, .write, .retype])
+  ((List.range n).map fun i =>
+    (rpi5RootTaskUntypedSlot i, rpi5InitialCap (rpi5RootTaskUntypedId i) [.read, .write, .retype])) ++
+  schedControlBootSlots rpi5SchedControlSlotBase
 
 /-- The root task's CNode slots on a board bound to `v` — one untyped
     capability per extension. -/

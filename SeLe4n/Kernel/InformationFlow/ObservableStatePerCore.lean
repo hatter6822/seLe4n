@@ -999,6 +999,8 @@ theorem capTargetObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
   -- that *every* target arm reduces to an object-observability test or to a
   -- constant, and a wildcard would stop saying which.
   | auditTrail => exact h
+  -- WS-ZA ZA6.4: a scheduling-control capability names a core, constant `true`.
+  | schedControl _ => exact h
 
 /-- SM8.A.4: the SM7.D per-core instruction-cache view is invisible to every
 per-core observer — the structural sibling of `perCoreTlb` above, and a timing

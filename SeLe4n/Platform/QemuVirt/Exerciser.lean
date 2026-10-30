@@ -65,7 +65,6 @@ namespace SeLe4n.Platform.QemuVirt
 open SeLe4n.Model
 open SeLe4n.Platform.Boot
 open SeLe4n.Platform.FFI
-open SeLe4n.Platform.RPi5 (rpi5InitialCNode)
 
 /-- The allocation exerciser's `virt` deployment. -/
 structure QemuVirtExerciserPlatform where
@@ -103,9 +102,8 @@ def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
     audit trail's, with read and write (`Capability.auditTrailManage`), in
     `qemuVirtExerciserAuditSlot`. -/
 def qemuVirtExerciserRootTaskCNode : CNode :=
-  { rpi5InitialCNode
-      (qemuVirtRootTaskCNodeSlots ++ [(qemuVirtExerciserAuditSlot, Capability.auditTrailManage)])
-    with guardValue := qemuVirtRootTaskCNodeGuard }
+  qemuVirtRootCNodeOf
+    (qemuVirtRootTaskCNodeSlots ++ [(qemuVirtExerciserAuditSlot, Capability.auditTrailManage)])
 
 /-- The exerciser's initial objects: the shipped deployment's, its root CNode
     (the second entry) replaced by the exerciser's. -/
@@ -221,6 +219,8 @@ theorem qemuVirtExerciserBoundPlatformConfig_wellFormed :
   rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
   decide
 
+-- WS-ZA ZA6.4: the root CNode's 32 cells, as the shipped deployment's.
+set_option maxRecDepth 8192 in
 theorem qemuVirtExerciserBoundPlatformConfig_bootSafe :
     qemuVirtExerciserBoundPlatformConfig.initialObjects.all
       (fun entry => bootSafeObjectCheck entry.obj) = true := by

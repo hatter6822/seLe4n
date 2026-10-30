@@ -26,7 +26,7 @@
 //! a live consumer. The answer is **live**: this type is consumed by the
 //! production syscall wrappers
 //! - `sele4n_sys::sched_context_configure` (writes the 5th argument
-//!   `domain` into IPC buffer overflow slot 0 — see
+//!   `deadline` into IPC buffer overflow slot 0 — see
 //!   `rust/sele4n-sys/src/sched_context.rs`),
 //! - `sele4n_sys::service_register` (writes the 5th argument
 //!   `requires_grant` into IPC buffer overflow slot 0 — see

@@ -118,6 +118,10 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- unlocks is gated by the reader's clearance at the read
   -- (`auditLogVisibleTo`), never by whether the capability is visible.
   | .auditTrail => true
+  -- WS-ZA ZA6.4: a scheduling-control capability names a core, which every
+  -- observer knows; the authority it carries is the configure's, whose writes
+  -- are the context's.
+  | .schedControl _ => true
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable

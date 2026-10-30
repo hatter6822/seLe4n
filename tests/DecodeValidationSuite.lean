@@ -77,19 +77,21 @@ def test_t03_noncanonical_vaddr_boundary_rejected : IO Unit := do
   | _ =>
     throw <| IO.userError "T03: expected addressOutOfBounds at the canonical boundary"
 
-/-- T04: AK3-J — checked schedContextConfigure rejects priority > 255. -/
+/-- T04: AK3-J — checked schedContextConfigure rejects a priority-and-domain
+word with a bit above the domain's (WS-ZA ZA6.4: priority is bits 0–7 and the
+domain bits 8–11 of MR3, so no priority above 255 can be named). -/
 def test_t04_sc_rejects_high_priority : IO Unit := do
-  -- budget=1000, period=10000, priority=256 (too high), deadline=5000, domain=0
-  let stub := stubOf #[1000, 10000, 256, 5000, 0]
+  -- context cptr=7, budget=1000, period=10000, params=4096 (bit 12), deadline=5000
+  let stub := stubOf #[7, 1000, 10000, 4096, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
-    IO.println "check passed [priority > 255 rejected]"
+    IO.println "check passed [parameter word ≥ 4096 rejected]"
   | _ =>
-    throw <| IO.userError "T04: expected invalidArgument for priority > 255"
+    throw <| IO.userError "T04: expected invalidArgument for a parameter word ≥ 4096"
 
 /-- T05: AK3-J — checked schedContextConfigure rejects domain ≥ 16. -/
 def test_t05_sc_rejects_high_domain : IO Unit := do
-  let stub := stubOf #[1000, 10000, 100, 5000, 16]
+  let stub := stubOf #[7, 1000, 10000, 100 + 16 * 256, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
     IO.println "check passed [domain ≥ 16 rejected]"
@@ -98,7 +100,7 @@ def test_t05_sc_rejects_high_domain : IO Unit := do
 
 /-- T06: AK3-J — checked schedContextConfigure rejects budget = 0. -/
 def test_t06_sc_rejects_zero_budget : IO Unit := do
-  let stub := stubOf #[0, 10000, 100, 5000, 0]
+  let stub := stubOf #[7, 0, 10000, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
     IO.println "check passed [budget = 0 rejected]"
@@ -107,7 +109,7 @@ def test_t06_sc_rejects_zero_budget : IO Unit := do
 
 /-- T07: AK3-J — checked schedContextConfigure rejects period = 0. -/
 def test_t07_sc_rejects_zero_period : IO Unit := do
-  let stub := stubOf #[1000, 0, 100, 5000, 0]
+  let stub := stubOf #[7, 1000, 0, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
     IO.println "check passed [period = 0 rejected]"
@@ -116,10 +118,11 @@ def test_t07_sc_rejects_zero_period : IO Unit := do
 
 /-- T08: AK3-J — checked schedContextConfigure accepts valid args. -/
 def test_t08_sc_accepts_valid : IO Unit := do
-  -- budget=1000, period=10000, priority=100, deadline=5000, domain=1
-  let stub := stubOf #[1000, 10000, 100, 5000, 1]
+  -- context cptr=7, budget=1000, period=10000, priority=100 domain=1, deadline=5000
+  let stub := stubOf #[7, 1000, 10000, 100 + 1 * 256, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
+    expectCond "decode-validation" "context cptr" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
     expectCond "decode-validation" "budget" (args.budget == 1000)
     expectCond "decode-validation" "period" (args.period == 10000)
     expectCond "decode-validation" "priority" (args.priority == 100)
@@ -129,7 +132,7 @@ def test_t08_sc_accepts_valid : IO Unit := do
 
 /-- T09: AK3-J — boundary: priority = 255 accepted, domain = 15 accepted. -/
 def test_t09_sc_boundary_accepted : IO Unit := do
-  let stub := stubOf #[1, 1, 255, 0, 15]
+  let stub := stubOf #[7, 1, 1, 255 + 15 * 256, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
     expectCond "decode-validation" "priority boundary" (args.priority == 255)

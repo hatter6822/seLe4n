@@ -359,6 +359,7 @@ theorem slotRetireTarget_names {st : SystemState} {cnode : SeLe4n.ObjId} {slot :
         exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
       · exact absurd rfl hT
     | auditTrail => rw [hTg] at hT; exact absurd rfl hT
+    | schedControl _ => rw [hTg] at hT; exact absurd rfl hT
 
 /-- **What a nonzero retire word names, under the capability bundle**: the
 target's final capability (`slotRetireTarget_names`, `capIsFinal_iff_capFinalSpec`). -/

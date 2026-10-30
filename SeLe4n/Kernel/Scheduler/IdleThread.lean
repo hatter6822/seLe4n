@@ -163,6 +163,7 @@ def capTargetsReservedIdleObject (cap : SeLe4n.Model.Capability) : Bool :=
   | .cnodeSlot cnode _ => isIdleObjId cnode
   | .replyCap _ => false
   | .auditTrail => false
+  | .schedControl _ => false
 
 /-- PR #889 review round 2: on an object capability the predicate is the idle
     test of its target. -/

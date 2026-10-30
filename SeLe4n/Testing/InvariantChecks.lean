@@ -299,6 +299,8 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   -- coherent — and deliberately not "check the trail exists", since a
   -- `SystemState` always has one.
   | .auditTrail => true
+  -- WS-ZA ZA6.4: a scheduling-control capability names a core, not an object.
+  | .schedControl _ => true
 
 /-- One check per occupied capability slot of every listed object: a CNode's
 slots and a thread's two space slots, read as `KernelObject.slotCap` reads them. -/

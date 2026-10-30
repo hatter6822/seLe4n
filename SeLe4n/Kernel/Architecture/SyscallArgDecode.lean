@@ -1164,15 +1164,30 @@ theorem decodeRecvArgs_roundtrip (args : RecvArgs) :
 -- ============================================================================
 
 /-- Z5-A: Per-syscall argument structure for `schedContextConfigure`.
-    Register mapping: msgRegs[0]=budget, msgRegs[1]=period, msgRegs[2]=priority,
-    msgRegs[3]=deadline, msgRegs[4]=domain. -/
+
+WS-ZA ZA6.4: the configure is invoked on a **scheduling-control** capability and
+names the context it configures by a capability, as seL4-MCS's
+`seL4_SchedControl_ConfigureFlags` takes the context as an extra capability.
+Register mapping: msgRegs[0]=scCPtr (the context capability's address in the
+caller's CSpace), msgRegs[1]=budget, msgRegs[2]=period, msgRegs[3]=schedParams
+(the priority in bits 0–7 and the domain from bit 8, `priority` / `domain`),
+msgRegs[4]=deadline.  Priority and domain share a word so the configure keeps
+five words, one of them the IPC buffer's first overflow word. -/
 structure SchedContextConfigureArgs where
-  budget   : Nat
-  period   : Nat
-  priority : Nat
-  deadline : Nat
-  domain   : Nat
+  scCPtr      : SeLe4n.CPtr
+  budget      : Nat
+  period      : Nat
+  schedParams : Nat
+  deadline    : Nat
   deriving Repr, DecidableEq
+
+/-- The configured priority: bits 0–7 of the parameter word. -/
+@[inline] def SchedContextConfigureArgs.priority (a : SchedContextConfigureArgs) : Nat :=
+  a.schedParams % 256
+
+/-- The configured domain: the parameter word from bit 8. -/
+@[inline] def SchedContextConfigureArgs.domain (a : SchedContextConfigureArgs) : Nat :=
+  a.schedParams / 256
 
 /-- Z5-B: Per-syscall argument structure for `schedContextBind`.
     Register mapping: msgRegs[0]=tcbCPtr — the **capability address**, in the
@@ -1199,7 +1214,8 @@ structure SchedContextUnbindArgs where
 -- ============================================================================
 
 /-- Z5-A: Decode schedContextConfigure arguments from message registers.
-    Requires 5 message registers (budget, period, priority, deadline, domain). -/
+    Requires 5 message registers (context capability, budget, period, the
+    priority-and-domain word, deadline). -/
 def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
@@ -1207,8 +1223,8 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
   let r4 ← requireMsgReg decoded.msgRegs 4
-  pure { budget := r0.val, period := r1.val, priority := r2.val,
-         deadline := r3.val, domain := r4.val }
+  pure { scCPtr := SeLe4n.CPtr.ofNat r0.val, budget := r1.val, period := r2.val,
+         schedParams := r3.val, deadline := r4.val }
 
 /-- AK3-J (A-M07 / MEDIUM): Validation wrapper that rejects configurations
     violating core CBS/scheduler invariants before reaching the scheduler
@@ -1216,8 +1232,10 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     `decodeVSpaceMapArgsChecked`; WS-BP BP7.1 tombstone in this file).
 
     Checks:
-    - priority ≤ 255   (fits in `Priority` type)
-    - domain < 16      (fits in `numDomains`)
+    - domain < 16      (fits in `numDomains`; WS-ZA ZA6.4: with the priority in
+                        bits 0–7 of the same word, so a word with any bit at or
+                        above 12 set is refused and the priority, its low byte,
+                        fits in `Priority` by construction)
     - budget > 0       (non-degenerate CBS server; also closes SC-H01 part)
     - period > 0       (CBS replenishment math requires positive period)
 
@@ -1227,8 +1245,7 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let args ← decodeSchedContextConfigureArgs decoded
-  if args.priority > 255 then .error .invalidArgument
-  else if args.domain ≥ 16 then .error .invalidArgument
+  if args.domain ≥ 16 then .error .invalidArgument
   else if args.budget = 0 then .error .invalidArgument
   else if args.period = 0 then .error .invalidArgument
   else pure args
@@ -1250,16 +1267,14 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
       · simp at hOk
       · split at hOk
         · simp at hOk
-        · split at hOk
-          · simp at hOk
-          · rename_i hP hD hB hPer
-            simp only [pure, Except.pure, Except.ok.injEq] at hOk
-            subst hOk
-            refine ⟨?_, ?_, ?_, ?_⟩
-            · exact Nat.not_lt.mp hP
-            · exact Nat.not_le.mp hD
-            · omega
-            · omega
+        · rename_i hD hB hPer
+          simp only [pure, Except.pure, Except.ok.injEq] at hOk
+          subst hOk
+          refine ⟨?_, ?_, ?_, ?_⟩
+          · unfold SchedContextConfigureArgs.priority; omega
+          · exact Nat.not_le.mp hD
+          · omega
+          · omega
 
 /-- Z5-B: Decode schedContextBind arguments from message registers.
     Requires 1 message register (`tcbCPtr`, the TCB capability's address in
@@ -1306,7 +1321,7 @@ def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
 
 /-- Z5-A: Encode schedContextConfigure arguments into message registers. -/
 @[inline] def encodeSchedContextConfigureArgs (args : SchedContextConfigureArgs) : Array RegValue :=
-  #[⟨args.budget⟩, ⟨args.period⟩, ⟨args.priority⟩, ⟨args.deadline⟩, ⟨args.domain⟩]
+  #[⟨args.scCPtr.toNat⟩, ⟨args.budget⟩, ⟨args.period⟩, ⟨args.schedParams⟩, ⟨args.deadline⟩]
 
 /-- Z5-B: Encode schedContextBind arguments into message registers. -/
 @[inline] def encodeSchedContextBindArgs (args : SchedContextBindArgs) : Array RegValue :=
@@ -1323,7 +1338,8 @@ def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
 /-- Z5-A: SchedContextConfigureArgs decode round-trip. -/
 theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureArgs) :
     decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args := by
-  rcases args with ⟨b, p, pr, d, dm⟩; rfl
+  simp [decodeSchedContextConfigureArgs, encodeSchedContextConfigureArgs, stubDecoded, requireMsgReg,
+        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Z5-B: SchedContextBindArgs decode round-trip. -/
 theorem decodeSchedContextBindArgs_roundtrip (args : SchedContextBindArgs) :
@@ -2142,8 +2158,17 @@ theorem requireMsgReg_map_readReg_push (layout : SyscallRegisterLayout) (regs : 
         omega
       simp only [hi, hi', hEq, ↓reduceDIte, ↓reduceIte, Except.map]
 
+/-- WS-ZA ZA6.4: the parameter word's domain is out of range exactly when the
+word is at least `16 * 256`: the check read on the machine word, so a word of any
+value is compared without a heap number. -/
+theorem schedParamsDomain_ge_iff (w : UInt64) : 16 ≤ w.toNat / 256 ↔ 4096 ≤ w := by
+  rw [UInt64.le_iff_toNat_le]
+  simp only [UInt64.toNat_ofNat]
+  omega
+
 /-- WS-ZA ZA5.2: `decodeSchedContextConfigureArgsChecked` over a reader, each
-check in the decode's order. -/
+check in the decode's order.  WS-ZA ZA6.4: the context capability's address is
+read as its word (`CPtr.ofWord`), as the bind reads its thread's. -/
 @[inline] def decodeSchedContextConfigureArgsCheckedBy (get : MsgRegReader)
     : Except KernelError SchedContextConfigureArgs := do
   let r0 ← get 0
@@ -2151,12 +2176,11 @@ check in the decode's order. -/
   let r2 ← get 2
   let r3 ← get 3
   let r4 ← get 4
-  if r2.toNat > 255 then .error .invalidArgument
-  else if r4.toNat ≥ 16 then .error .invalidArgument
-  else if r0.toNat = 0 then .error .invalidArgument
+  if 4096 ≤ r3 then .error .invalidArgument
   else if r1.toNat = 0 then .error .invalidArgument
-  else pure { budget := r0.toNat, period := r1.toNat, priority := r2.toNat,
-              deadline := r3.toNat, domain := r4.toNat }
+  else if r2.toNat = 0 then .error .invalidArgument
+  else pure { scCPtr := SeLe4n.CPtr.ofWord r0, budget := r1.toNat, period := r2.toNat,
+              schedParams := r3.toNat, deadline := r4.toNat }
 
 theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
@@ -2169,7 +2193,8 @@ theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLa
   simp only [requireMsgReg_map_readReg_push]
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
-    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SchedContextConfigureArgs.domain, schedParamsDomain_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat]
 
 /-- WS-ZA ZA5.5: `decodeServiceRegisterArgs` over a reader, each check in the
 decode's order. -/

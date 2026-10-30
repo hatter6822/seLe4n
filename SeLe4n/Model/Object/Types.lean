@@ -340,6 +340,12 @@ inductive CapTarget where
       a singleton `SystemState` component, not an object in the store — so this
       capability carries authority and nothing else. -/
   | auditTrail
+  /-- WS-ZA ZA6.4: core `core`'s scheduling control, seL4-MCS's `SchedControl`
+      capability: the one authority to configure a scheduling context's budget
+      and period (`seL4_SchedControl_ConfigureFlags`).  One per core, created at
+      boot and held by the root task; a scheduling-context capability binds,
+      unbinds and names the context to configure, and configures nothing. -/
+  | schedControl (core : Nat)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -733,6 +739,17 @@ theorem auditTrail_capabilities_not_null :
     Capability.auditTrailRead.isNull = false ∧
     Capability.auditTrailManage.isNull = false := by
   constructor <;> rfl
+
+/-- WS-ZA ZA6.4: **core `core`'s scheduling-control capability**, as the boot
+hands it to the root task: the `.write` right a configure requires
+(`syscallRequiredRight .schedContextConfigure`) and nothing else. -/
+def schedControlOf (core : Nat) : Capability :=
+  { target := .schedControl core, rights := AccessRightSet.ofList [.write] }
+
+/-- WS-ZA ZA6.4: a scheduling-control capability is non-null, so it survives the
+null-capability gate at every entry point that runs it. -/
+theorem schedControlOf_not_null (core : Nat) : (Capability.schedControlOf core).isNull = false := by
+  rfl
 
 /-- AK7-I (F-M07 / MEDIUM): Fail-closed gate helper for capability-using
 entry points. Returns `some cap` when the capability is non-null, `none`

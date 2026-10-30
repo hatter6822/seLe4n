@@ -1453,6 +1453,120 @@ theorem resolveSchedContextBindThread_ok_authorised
                 | exact congrArg CapTarget.object rfl
           all_goals (rw [hTgt] at h; cases h)
 
+/-- **WS-ZA ZA6.4**: whether core `core`'s scheduling control may configure `sc`:
+the core is one the kernel runs, and a bound context's thread is homed on it
+(`determineTargetCore`), so the context's refills are released on the core whose
+control configured them.  seL4-MCS's `invokeSchedControl_ConfigureFlags` moves the
+context to the control's core and migrates its bound thread with it; this kernel
+refuses the mismatch instead (`.threadOnDifferentCore`), and the thread's own
+affinity call moves it. -/
+@[inline] def schedControlCoversContext (st : SystemState) (core : Nat) (sc : SchedContext) :
+    Bool :=
+  decide (core < SeLe4n.Kernel.Concurrency.numCores) &&
+    match sc.boundThread with
+    | none => true
+    | some t => (determineTargetCore st t).val == core
+
+/-- **WS-ZA ZA6.4**: the scheduling context a configure through core `core`'s
+scheduling control names: seL4-MCS's `decodeSchedControl_ConfigureFlags` takes the
+context as an extra capability, and here, as `.schedContextBind` takes its thread,
+it is a capability at MR0 in the caller's own CSpace, resolved by
+`syscallLookupCap` requiring `.write`.  The capability must name a scheduling
+context the store holds (anything else is `.invalidCapability`, seL4's answer to
+an extra capability of the wrong type), the control's core must cover it
+(`schedControlCoversContext`), and `validateObjIdArg` promotes the id.  Every
+check reads the state handed in; nothing is written.
+
+**One resolver, two askers.**  The live arm (`dispatchCapabilityOnly`) and the
+scheduler-domain operand builder (`abiEntryLockOperands`) both read this
+definition, so the context the footprint declares and the context the transition
+configures are one reading of one register. -/
+def resolveSchedControlConfigureTarget (callerTid : SeLe4n.ThreadId) (core : Nat)
+    (scCPtr : SeLe4n.CPtr) (st : SystemState) : Except KernelError SeLe4n.ValidObjId :=
+  match st.getTcb? callerTid with
+  | none => .error .objectNotFound
+  | some callerTcb =>
+    match st.getCNode? callerTcb.cspaceRoot with
+    | none => .error .invalidCapability
+    | some rootCn =>
+      let scGate : SyscallGate := {
+        callerId      := callerTid
+        cspaceRoot    := callerTcb.cspaceRoot
+        capAddr       := scCPtr
+        capDepth      := rootCn.depth
+        requiredRight := .write
+      }
+      match syscallLookupCap scGate st with
+      | .error e => .error e
+      | .ok (scCap, _) =>
+        match scCap.target with
+        | .object scObjId =>
+          match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
+          | none => .error .invalidCapability
+          | some sc =>
+            if schedControlCoversContext st core sc then validateObjIdArg scObjId
+            else .error .threadOnDifferentCore
+        | _ => .error .invalidCapability
+
+/-- **WS-ZA ZA6.4 (the authority fact)**: a context the resolver answers is one the
+caller holds a **writable capability** to, found at `scCPtr` in the caller's own
+CSpace; the store holds it as a scheduling context, and the control's core covers
+it. -/
+theorem resolveSchedControlConfigureTarget_ok_authorised
+    (callerTid : SeLe4n.ThreadId) (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState)
+    (v : SeLe4n.ValidObjId)
+    (h : resolveSchedControlConfigureTarget callerTid core scCPtr st = .ok v) :
+    ∃ (callerTcb : TCB) (rootCn : CNode) (scCap : Capability) (sc : SchedContext),
+      st.getTcb? callerTid = some callerTcb ∧
+      st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
+      syscallLookupCap
+        { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+          capAddr := scCPtr, capDepth := rootCn.depth,
+          requiredRight := .write } st = .ok (scCap, st) ∧
+      scCap.hasRight .write = true ∧
+      scCap.target = .object v.val ∧
+      st.getSchedContext? (SchedContextId.ofObjId v.val) = some sc ∧
+      schedControlCoversContext st core sc = true := by
+  unfold resolveSchedControlConfigureTarget at h
+  cases hCaller : st.getTcb? callerTid with
+  | none => rw [hCaller] at h; cases h
+  | some callerTcb =>
+    rw [hCaller] at h
+    simp only at h
+    cases hRoot : st.getCNode? callerTcb.cspaceRoot with
+    | none => rw [hRoot] at h; cases h
+    | some rootCn =>
+      rw [hRoot] at h
+      simp only at h
+      cases hLk : syscallLookupCap
+          { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+            capAddr := scCPtr, capDepth := rootCn.depth,
+            requiredRight := .write } st with
+      | error e => rw [hLk] at h; cases h
+      | ok pair =>
+        obtain ⟨scCap, s'⟩ := pair
+        rw [hLk] at h
+        simp only at h
+        obtain ⟨_, _, _, hRight, hSt⟩ :=
+          syscallLookupCap_implies_capability_held _ st scCap s' hLk
+        rw [hSt] at hLk
+        cases hTgt : scCap.target
+        case object scObjId =>
+          rw [hTgt] at h
+          simp only at h
+          cases hSc : st.getSchedContext? (SchedContextId.ofObjId scObjId) with
+          | none => rw [hSc] at h; cases h
+          | some sc =>
+            rw [hSc] at h
+            simp only at h
+            by_cases hCov : schedControlCoversContext st core sc = true
+            · rw [if_pos hCov] at h
+              have hVal : v.val = scObjId := validateObjIdArg_ok_val _ _ h
+              subst hVal
+              exact ⟨callerTcb, rootCn, scCap, sc, rfl, hRoot, hLk, hRight, hTgt, hSc, hCov⟩
+            · rw [if_neg hCov] at h; cases h
+        all_goals (rw [hTgt] at h; cases h)
+
 /-- **`v0.35.204`**: a TCB capability naming a reserved idle object is refused at
 the capability chokepoint — `syscallResolveCap`'s own refusal, reached through
 the resolver's lookup — with `.invalidCapability`, the answer an empty slot gives.
@@ -2812,15 +2926,23 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- AK3-J (A-M07 / MEDIUM): Use `decodeSchedContextConfigureArgsChecked` to
   -- enforce priority ≤ 255, domain < 16, budget > 0, period > 0 at decode
   -- time (prevents malformed CBS servers before scheduler subsystem).
+  --
+  -- WS-ZA ZA6.4: the configure is invoked on core `core`'s SCHEDULING CONTROL
+  -- capability, seL4-MCS's `SchedControl`, the one authority to set a context's
+  -- budget and period; the context is a capability at MR0
+  -- (`resolveSchedControlConfigureTarget`).  A scheduling-context capability
+  -- configures nothing: a holder of one could otherwise reset the budget it was
+  -- handed, period after period.
   | .schedContextConfigure =>
     some <| match cap.target with
-    | .object scId =>
+    | .schedControl core =>
       fun st => match decodeSchedContextConfigureArgsChecked decoded with
       | .error e => .error e
       | .ok args =>
           -- AL7-G / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
-          -- via ValidObjId signature on schedContextConfigure.
-          match validateObjIdArg scId with
+          -- via the ValidObjId signature on schedContextConfigure; the
+          -- context's promotion is the resolver's.
+          match resolveSchedControlConfigureTarget tid core args.scCPtr st with
           | .error e => .error e
           | .ok vScId =>
               SchedContextOps.schedContextConfigure vScId args.budget args.period
@@ -3338,13 +3460,13 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object scId =>
+    case schedControl core =>
       try dsimp only [] at hStep
       cases hDec : decodeSchedContextConfigureArgsChecked decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hVal : validateObjIdArg scId with
+          cases hVal : resolveSchedControlConfigureTarget tid core args.scCPtr st with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep

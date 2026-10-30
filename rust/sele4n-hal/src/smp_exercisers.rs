@@ -1619,7 +1619,8 @@ const AUDIT_DRAIN: u64 = 32;
 const DECLASSIFY_SIGNAL: u64 = 33;
 
 /// The root CNode's guard bit (`qemuVirtRootTaskCNodeGuard`, the top bit of its
-/// 60-bit guard): a slot's capability address is the slot with bit 63 set, so
+/// 59-bit guard over a 32-slot radix): a slot's capability address is the slot
+/// with bit 63 set, so
 /// every address the round trips resolve is a word `≥ 2^63`, read without a
 /// heap number at the decode and at every guard and slot extraction of the
 /// lookup (WS-ZA ZA4.8).
@@ -1665,10 +1666,15 @@ const FRAME_SLOT: u64 = 13;
 /// again once the copy sequence has deleted what it moved.
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_SLOTS: [u64; 3] = [14, 15, COPY_SLOT];
-/// The boot-configured scheduling context's slot, the one slot of the
+/// The boot-configured scheduling context's slot, the one slot of the first
 /// sixteen no other object or scenario uses.
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_SLOT: u64 = 0;
+/// The slot of core 0's scheduling-control capability
+/// (`qemuVirtSchedControlSlot`, WS-ZA ZA6.4): the authority every configure
+/// round trip invokes, the context it configures named at MR0.
+#[cfg(feature = "hw_target")]
+const SCHED_CONTROL_SLOT: u64 = 16;
 /// The slot of the exerciser image's boot audit capability
 /// (`qemuVirtExerciserAuditSlot`, WS-ZA ZA5.13): the copy slot, deleted once
 /// the declassification scenario ends.  Its next use is the invocation
@@ -1684,6 +1690,8 @@ const ROOT_TCB_CAP: u64 = cap_address(ROOT_TCB_SLOT);
 const CNODE_CAP: u64 = cap_address(CNODE_SLOT);
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_CAP: u64 = cap_address(SCHED_CONTEXT_SLOT);
+#[cfg(feature = "hw_target")]
+const SCHED_CONTROL_CAP: u64 = cap_address(SCHED_CONTROL_SLOT);
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_CAP: u64 = cap_address(NOTIFICATION_SLOT);
 #[cfg(feature = "hw_target")]
@@ -2012,15 +2020,17 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
     }
 }
 
-/// The scheduling-context configure: five message words, the fifth (the
-/// domain) read from the root task's IPC buffer, which the kernel's model of
-/// memory holds as zero, so domain 0.
+/// The scheduling-context configure (WS-ZA ZA6.4): invoked on core 0's
+/// scheduling control, the context's capability at MR0, then the budget, the
+/// period and the priority-and-domain word (`priority | domain << 8`); the fifth
+/// word (the deadline) is read from the root task's IPC buffer, which the
+/// kernel's model of memory holds as zero, so deadline 0.
 #[cfg(feature = "hw_target")]
-const fn configure(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
+const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SCHED_CONTEXT_CONFIGURE,
-        cptr,
+        cptr: SCHED_CONTROL_CAP,
         msg_len: 5,
         msg,
         primed: None,
@@ -2503,12 +2513,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "refill-configure",
-            SCHED_CONTEXT_CAP,
             [
+                SCHED_CONTEXT_CAP,
                 REFILL_BUDGET,
                 REFILL_PERIOD,
                 PARTNER_PRIORITY,
-                REFILL_PERIOD,
             ],
         ),
         invocation(
@@ -2546,12 +2555,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         ),
         configure(
             "sched-context-configure",
-            SCHED_CONTEXT_CAP,
             [
+                SCHED_CONTEXT_CAP,
                 SCHED_CONTEXT_BUDGET,
                 SCHED_CONTEXT_PERIOD,
                 PARTNER_PRIORITY,
-                SCHED_CONTEXT_PERIOD,
             ],
         ),
         service_register("service-register", ENDPOINT_CAP, SERVICE_INTERFACE),
