@@ -347,13 +347,18 @@ private def tcb0 : TCB :=
   { tid := tid0, priority := ⟨5⟩, domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf (ObjId.ofNat 0) (ObjId.ofNat 0), ipcBuffer := SeLe4n.VAddr.ofNat 0,
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId0), scBindingOwnerCode := 0, cpuAffinity := some core1 }
 
+/-- `sc0` + `tcb0` with `sc0`'s head holding budget: tid0 is runnable, so its
+context is on no release queue (seL4-MCS queues only a context whose head is used
+up). -/
+private def stCbsRunnable : SystemState :=
+  ((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
+    tid0.toObjId (.tcb tcb0)).build
+
 /-- A CBS state: `sc0` + `tcb0` in the object store; core 1's replenish queue holds
-`scId0`'s pending replenishment (eligible at tick 5000); machine timer = 0.  This is
+`scId0`'s pending replenishment, its head used up (eligible at tick 5000); machine timer = 0.  This is
 affinity-consistent (`scId0` is homed on core 1 — `tcb0.cpuAffinity = some core1`). -/
 private def stCbs : SystemState :=
-  let base := ((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
-    tid0.toObjId (.tcb tcb0)).build
-  withReleaseEntryOnCore base core1 scId0 5000
+  withReleaseEntryOnCore stCbsRunnable core1 scId0 5000
 
 /-- Core `c`'s release queue is count-consistent (Bool form for runtime
 assertions): the walk along the contexts' release links from the core's head
@@ -374,8 +379,8 @@ refill, as seL4-MCS's release queue is). -/
 private def runReplenishScenarios : IO Unit := do
   IO.println "--- §3.1 SM5.H.2 replenishOnCore scheduling ---"
   let base := ((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext
-      { sc0 with refillHeadPresent := true, refillHeadAmount := 50,
-                 refillHeadEligibleAt := 6000 })).withObject tid0.toObjId (.tcb tcb0)).build
+      { sc0 with budgetRemaining := ⟨0⟩, refillHeadPresent := true,
+                 refillHeadAmount := 50, refillHeadEligibleAt := 6000 })).withObject tid0.toObjId (.tcb tcb0)).build
   let st' := replenishOnCore base core1 scId0
   assertBool "replenishOnCore queues scId0 on core 1 at its refill's release time (6000)"
     (st'.releaseEntriesOn core1 == [(scId0, 6000)])
@@ -611,9 +616,13 @@ private def runRunQueueMigrationScenarios : IO Unit := do
   -- D15 witness: after migrating tid0 (in core 1's run queue, SC budget 50 > 0) to the
   -- boot core, the SM4.C run-queue↔budget consistency content holds for tid0 on the new
   -- core — it is in the boot core's run queue AND its SchedContext has positive budget.
+  -- The thread is runnable, so its context is off every release queue: the
+  -- witness starts from `stCbsRunnable`.
+  let stMovedPos := migrateRunQueueOnAffinityChange (stCbsRunnable.runEnqueueOnCore core1 tid0 ⟨5⟩)
+    tid0 core1 bootCoreId
   assertBool "D15: a migrated runnable thread carries its positive SC budget to the new core"
-    (((stMoved.queuedOn bootCoreId tid0)) &&
-     (match stMoved.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
+    (((stMovedPos.queuedOn bootCoreId tid0)) &&
+     (match stMovedPos.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
   -- #2: rebinding a thread RUNNING on its home to another core takes it off that
   -- core in the same transition (WS-ZA ZA6.3, seL4's `remoteTCBStall`), where the
   -- retired reading refused it (`.threadOnDifferentCore`, Codex P1) — and refused
@@ -644,12 +653,12 @@ validity (A4) — driven on a genuine budget-exhausted SchedContext. -/
 private def runLiveTickScenarios : IO Unit := do
   IO.println "--- §3.7 SM5.H.2 (A2/A4) live-tick CBS bridge ---"
   -- A budget-EXHAUSTED SchedContext (budgetRemaining = 1 ≤ 1) bound to tid0, on core 1.
-  -- Built and queued as `stCbs` is: a context's release links live in its own
-  -- fields, so the queued context is not overwritten in place.
+  -- Its head holds budget, so it is on no release queue (seL4-MCS queues only a
+  -- context whose head is used up); the tick's charge queues it.
   let scExhausted : SchedContext := { sc0 with budgetRemaining := ⟨1⟩ }
   let stExhausted : SystemState :=
-    withReleaseEntryOnCore (((BootstrapBuilder.empty.withObject scId0.toObjId
-      (.schedContext scExhausted)).withObject tid0.toObjId (.tcb tcb0)).build) core1 scId0 5000
+    ((BootstrapBuilder.empty.withObject scId0.toObjId
+      (.schedContext scExhausted)).withObject tid0.toObjId (.tcb tcb0)).build
   -- Cut B2: the tick charges the thread the store holds, resolved through the
   -- witnessed lookup that supplies the proof its in-place rewrite consumes.
   match stExhausted.getTcbWitnessed? tid0 with
@@ -665,9 +674,9 @@ private def runLiveTickScenarios : IO Unit := do
           assertBool "A2: live bound-exhausted tick's core-1 replenish queue == replenishOnCore's"
             ((st'.releaseEntriesOn core1) ==
               ((replenishOnCore st' core1 scId0).releaseEntriesOn core1))
-          -- A2 (concretely): the new refill (0 + period = 1000) is earlier than the
-          -- pending one (5000), so the context's one entry moves up to 1000.
-          assertBool "A2: the tick re-keyed scId0 to its earliest refill (now + period = 1000)"
+          -- A2 (concretely): the used tick is scheduled one period on (0 + period =
+          -- 1000, seL4-MCS's `schedule_used`), and the context's one entry is there.
+          assertBool "A2: the tick keyed scId0 at its earliest refill (now + period = 1000)"
             ((st'.releaseEntriesOn core1) == [(scId0, 1000)])
           -- A4: the post-tick core-1 replenish queue is still valid (size-consistent).
           assertBool "A4: live bound-exhausted tick keeps core 1's replenish queue size-consistent"
@@ -720,7 +729,7 @@ run-queue↔budget consistency on its new core. -/
 private def runSm5hCompletionScenarios : IO Unit := do
   IO.println "--- §3.8 SM5.H.4 D15 composite + SGI characterisation ---"
   -- tid0 runnable on core 1, re-homed to the (remote, from core 1) boot core.
-  let stRq : SystemState := stCbs.runEnqueueOnCore core1 tid0 ⟨5⟩
+  let stRq : SystemState := stCbsRunnable.runEnqueueOnCore core1 tid0 ⟨5⟩
   match setThreadCpuAffinityWithMigration stRq tid0 (some bootCoreId) core1 with
   | .ok (st', sgi) =>
       -- §18 `_emits_reschedule_of_remote_runnable`: remote (boot ≠ core1) + runnable

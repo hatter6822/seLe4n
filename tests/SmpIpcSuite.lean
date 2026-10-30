@@ -925,12 +925,17 @@ private def bystanderSchedContext : SchedContext :=
   { scId := scBystander, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨10⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩ }
 
-private def stDonWithReplenishments : SystemState :=
+/-- The donation round trip with the bystander's refill pending on core 1 and the
+client's context still runnable. -/
+private def stDonWithBystanderEntry : SystemState :=
   let withBystander : SystemState :=
     { stDonRunning with
         objects := (stDonRunning.objects.insert scBystander.toObjId
           (.schedContext bystanderSchedContext)) }
-  withReleaseEntryOnCore (withReleaseEntryOnCore withBystander c0 scClient 100) c1 scBystander 300
+  withReleaseEntryOnCore withBystander c1 scBystander 300
+
+private def stDonWithReplenishments : SystemState :=
+  withReleaseEntryOnCore stDonWithBystanderEntry c0 scClient 100
 
 /-- The delegated receiver of the RR2.20 `.replyRecv` rendezvous check: a passive
 thread homed on a **third** core, so the return hop (core 1 → core 0) and the
@@ -1540,8 +1545,12 @@ private def runCancellationCompositionChecks : IO Unit := do
 
 private def runSuspendArmChecks : IO Unit := do
   IO.println "--- §3.13b WS-RR RR2.19: the live `.tcbSuspend` arm (suspendThreadOnCore) ---"
+  -- The round trip runs with the client's context runnable: a context queued
+  -- for release has its head used up (seL4-MCS), so a server running on it would
+  -- not be eligible, and this check needs the server current.  Its refill is
+  -- queued on the server's core once the server runs (`stPend` below).
   match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1
-      stDonWithReplenishments) with
+      stDonWithBystanderEntry) with
   | none => assertBool "suspend-arm setup (server recv) succeeded" false
   | some (stRecv, _) =>
     let (stCall, _) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
@@ -1557,7 +1566,10 @@ private def runSuspendArmChecks : IO Unit := do
       match SeLe4n.ThreadId.toValid? donServer with
       | none => assertBool "the server id promotes to a ValidThreadId" false
       | some serverV =>
-        match okExcept (Lifecycle.Suspend.suspendThreadOnCore stDispatched serverV c1) with
+        -- The donated context used up its head while the server ran: its refill
+        -- waits on the server's core.
+        let stPend := withReleaseEntryOnCore stDispatched c1 scClient 100
+        match okExcept (Lifecycle.Suspend.suspendThreadOnCore stPend serverV c1) with
         | none => assertBool "suspending the donated server succeeds" false
         | some (stSusp, _) =>
           assertBool "the suspended server is .Inactive"
@@ -4419,17 +4431,23 @@ private def fpClientXSchedContext : SchedContext :=
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
     boundThreadCode := SeLe4n.ThreadId.optCode (some fpClientX), isActive := true }
 
-/-- `stDonBase` — a bound client homed on the boot core, a passive server homed on
-core 1 — plus the second client on core 2, with one replenishment per context on
-its holder's home core.  The shape the invariant is about: a queue holding no entry
-for a context satisfies it vacuously and could witness no migration. -/
-private def stFpPassiveBase : SystemState :=
+/-- `stFpPassiveBase` before the first client's refill is queued: its context's
+head holds budget, so a server running on it is eligible (seL4-MCS queues only a
+context whose head is used up). -/
+private def stFpPassiveRunnable : SystemState :=
   let objs := stDonBase.objects
     |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
     |>.insert fpClient2.toObjId
         (.tcb { mkTcb 871 55 (some c2) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound fpClient2Sc), scBindingOwnerCode := 0 })
   let base : SystemState := { stDonBase with objects := objs }
-  withReleaseEntryOnCore (withReleaseEntryOnCore base c0 scClient 100) c2 fpClient2Sc 100
+  withReleaseEntryOnCore base c2 fpClient2Sc 100
+
+/-- `stDonBase` — a bound client homed on the boot core, a passive server homed on
+core 1 — plus the second client on core 2, with one replenishment per context on
+its holder's home core.  The shape the invariant is about: a queue holding no entry
+for a context satisfies it vacuously and could witness no migration. -/
+private def stFpPassiveBase : SystemState :=
+  withReleaseEntryOnCore stFpPassiveRunnable c0 scClient 100
 
 /-- The same, with the FIRST client a legacy `.unbound` thread — its `Call` donates
 nothing, so the server's reply hands nothing back. -/
@@ -4779,9 +4797,12 @@ private def runCallReplyFootprintChecks : IO Unit := do
       && hasRunQueueWrite fpC c0 && !hasRunQueueWrite fpC c1 && replenishMemberCount fpC == 0)
   -- (d) the `.reply` on the steady state: the server answers the first client from
   --     core 1, and the pop returns the loaned context 1 -> 0.
-  match fpSteadyState stFpPassiveBase with
+  --     The loaned context's head is used up once the server has run on it, so
+  --     its refill is queued on the server's core 1 after the dispatch.
+  match fpSteadyState stFpPassiveRunnable with
   | none => assertBool "Cut C3a setup (d): recv, call, dispatch and second call succeed" false
-  | some stQ =>
+  | some stQ0 =>
+    let stQ := withReleaseEntryOnCore stQ0 c1 scClient 100
     assertBool "(d) setup: the server executes on core 1 holding the client's context, and the client carries no fault"
       (stQ.scheduler.currentOnCore c1 == some donServer
         && (match stQ.getTcb? donServer with
