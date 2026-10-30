@@ -97,12 +97,6 @@ theorem getEndpoint?_congr_getElem {s1 s2 : SystemState}
     (oid : SeLe4n.ObjId) : s2.getEndpoint? oid = s1.getEndpoint? oid := by
   unfold SystemState.getEndpoint?; rw [hEq]
 
-/-- Pointwise object-lookup agreement lifts to `lookupTcb` agreement. -/
-theorem lookupTcb_congr_getElem {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (tid : SeLe4n.ThreadId) : lookupTcb s2 tid = lookupTcb s1 tid := by
-  unfold lookupTcb SystemState.getTcb?; rw [hEq]
-
 -- ============================================================================
 -- §1  Frame lemmas for single TCB rewrites
 -- ============================================================================
@@ -251,12 +245,6 @@ end OffSchedulerAgrees
 -- ============================================================================
 -- §3  Scheduler-substitution agreements
 -- ============================================================================
-
-/-- SM6.D: a scheduler-only record update agrees with its base state
-off-scheduler. -/
-theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
-    OffSchedulerAgrees st { st with scheduler := σ } :=
-  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- WS-ZA ZA4.5: a step that writes only the object store and the scheduler,
 and the store only off the run-queue links, agrees with its input
@@ -474,19 +462,6 @@ theorem lookupTcb_back_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
       h.get_tcb_back ((SystemState.getTcb?_eq_some_iff s2 tid t').mp hL)
     exact ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, ifs, (SystemState.getTcb?_eq_some_iff s1 tid t).mpr ht, e⟩
   · simp only [hr, ↓reduceIte] at hL; cases hL
-
-/-- The same across a run-link step. -/
-theorem lookupTcb_back_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
-    (h : s2.objectsAgreeOffRunLinks s1) {tid : SeLe4n.ThreadId} {t' : TCB}
-    (hL : lookupTcb s2 tid = some t') :
-    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
-      lookupTcb s1 tid = some t ∧
-      t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
-                    runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
-                    replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
-                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
-                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } :=
-  lookupTcb_back_of_objectsAgreeOffSchedulerLinks (.of_runLinks h) hL
 
 open SeLe4n.Model.SystemState in
 /-- WS-ZA ZA4.4 step congruence: a `modifyTcb` whose rewrite reads no
@@ -902,14 +877,6 @@ def ipcReadInert : Option KernelObject → Prop
   | some (.frame _) => True
   | some (.pageTable _) => True
   | _ => False
-
-/-- A run-queue clearing keeps a slot's binding view. -/
-theorem notificationBindingCodes_map_withoutRunLinks (o : Option KernelObject) :
-    notificationBindingCodes (o.map KernelObject.withoutRunLinks) =
-      notificationBindingCodes o := by
-  cases o with
-  | none => rfl
-  | some o => cases o <;> rfl
 
 /-- A scheduler-link clearing keeps a slot's binding view. -/
 theorem notificationBindingCodes_map_withoutSchedulerLinks (o : Option KernelObject) :
@@ -1896,14 +1863,6 @@ theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
   ipcInvariantFull_of_readViewAgreement_of_reciprocal hView hCapBadges
     (.of_codes hCodes h.notificationBindingReciprocal) h
 
-/-- WS-ZA ZA4.5: object slots read the same in stores that agree off the
-run-queue links, so the capability half of `badgeWellFormed` carries across them. -/
-theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
-    (hA : s2.objectsAgreeOffRunLinks s1) (h : capabilityBadgesWellFormed s1) :
-    capabilityBadgesWellFormed s2 :=
-  capabilityBadgesWellFormed_of_slotCap_back h fun _ _ hO =>
-    let ⟨o, ho, hs, _⟩ := hA.slots_back hO; ⟨o, ho, hs⟩
-
 /-- WS-ZA ZA6.3: the same off every scheduler link — no release-queue field is a
 capability slot. -/
 theorem capabilityBadgesWellFormed_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
@@ -2051,14 +2010,6 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffSchedulerLinks {s1
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
    .of_codes (.of_objectsAgreeOffSchedulerLinks hA) h.notificationBindingReciprocal,
    endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩
-
-/-- The relaxed bundle across a run-link step. -/
-theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
-    {woken : SeLe4n.ThreadId}
-    (hA : s2.objectsAgreeOffRunLinks s1)
-    (h : ipcInvariantFullExceptDonationOwner s1 woken) :
-    ipcInvariantFullExceptDonationOwner s2 woken :=
-  ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffSchedulerLinks (.of_runLinks hA) h
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
 objects untouched.  `ipcInvariantFull` reads nothing else, so it transports

@@ -96,6 +96,48 @@ def scheduleReplenishment (sc : SchedContext) (currentTime : Nat)
   let newList := sc.replenishments ++ [entry]
   sc.withReplenishments (truncateReplenishments newList)
 
+/-- WS-ZA ZA6.3: a tail slot's field after a write of `v` into slot `i`: `v` in
+slot `k = i`, its old value `old` in every other.  A call, so the record update
+that applies it to each slot is straight-line. -/
+@[noinline] def tailSlotWrite (old k i v : Nat) : Nat := if k = i then v else old
+
+/-- WS-ZA ZA6.3: a refill of `amount` released at `eligibleAt` appended behind
+the context's first, into tail slot `n`, as one straight-line record update over
+every slot (`tailSlotWrite`): the slot match writes the slot in one of seven
+arms, and the compiler joins the arms before the count's update, which then
+builds a new context. -/
+@[inline] def SchedContext.appendTailRecord (sc : SchedContext) (n amount eligibleAt : Nat) :
+    SchedContext :=
+  { sc with
+    refillSlot1Amount := tailSlotWrite sc.refillSlot1Amount 0 n amount
+    refillSlot1EligibleAt := tailSlotWrite sc.refillSlot1EligibleAt 0 n eligibleAt
+    refillSlot2Amount := tailSlotWrite sc.refillSlot2Amount 1 n amount
+    refillSlot2EligibleAt := tailSlotWrite sc.refillSlot2EligibleAt 1 n eligibleAt
+    refillSlot3Amount := tailSlotWrite sc.refillSlot3Amount 2 n amount
+    refillSlot3EligibleAt := tailSlotWrite sc.refillSlot3EligibleAt 2 n eligibleAt
+    refillSlot4Amount := tailSlotWrite sc.refillSlot4Amount 3 n amount
+    refillSlot4EligibleAt := tailSlotWrite sc.refillSlot4EligibleAt 3 n eligibleAt
+    refillSlot5Amount := tailSlotWrite sc.refillSlot5Amount 4 n amount
+    refillSlot5EligibleAt := tailSlotWrite sc.refillSlot5EligibleAt 4 n eligibleAt
+    refillSlot6Amount := tailSlotWrite sc.refillSlot6Amount 5 n amount
+    refillSlot6EligibleAt := tailSlotWrite sc.refillSlot6EligibleAt 5 n eligibleAt
+    refillSlot7Amount := tailSlotWrite sc.refillSlot7Amount 6 n amount
+    refillSlot7EligibleAt := tailSlotWrite sc.refillSlot7EligibleAt 6 n eligibleAt
+    refillTailCount := n + 1 }
+
+theorem SchedContext.appendTailRecord_eq (sc : SchedContext) (n : Nat) (e : ReplenishmentEntry)
+    (h : n < refillTailCapacity) (hP : sc.refillHeadPresent = true) :
+    sc.appendTailRecord n e.amount.val e.eligibleAt =
+      { sc.setTailSlot n e with
+        refillHeadPresent := true
+        refillHeadAmount := sc.refillHeadAmount
+        refillHeadEligibleAt := sc.refillHeadEligibleAt
+        refillTailCount := n + 1 } := by
+  unfold refillTailCapacity maxReplenishments at h
+  match n, h with
+  | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ =>
+    simp [SchedContext.appendTailRecord, SchedContext.setTailSlot, tailSlotWrite, ← hP]
+
 /-- WS-ZA ZA6.3: the compiled `scheduleReplenishment`.  The specification
 reads the refills as a list, appends the new one and writes the list back, a
 cell and an entry per refill; seL4-MCS writes the new refill into the next
@@ -109,11 +151,7 @@ specification.  Proven equal (`scheduleReplenishment_eq_impl`). -/
   let eligibleAt := currentTime + sc.period.val
   if sc.refillHeadPresent then
     if sc.refillTailCount < refillTailCapacity then
-      { sc.setTailSlot sc.refillTailCount { amount := consumed, eligibleAt := eligibleAt } with
-        refillHeadPresent := true
-        refillHeadAmount := sc.refillHeadAmount
-        refillHeadEligibleAt := sc.refillHeadEligibleAt
-        refillTailCount := sc.refillTailCount + 1 }
+      sc.appendTailRecord sc.refillTailCount consumed.val eligibleAt
     else scheduleReplenishment sc currentTime consumed
   else
     { sc with
@@ -130,6 +168,7 @@ specification.  Proven equal (`scheduleReplenishment_eq_impl`). -/
   · rename_i hP
     split
     · rename_i hN
+      rw [SchedContext.appendTailRecord_eq sc _ { amount := consumed, eligibleAt := _ } hN hP]
       have hTail : sc.refillTail.length = sc.refillTailCount := by
         rw [SchedContext.refillTail_length]; omega
       have hR : sc.replenishments =

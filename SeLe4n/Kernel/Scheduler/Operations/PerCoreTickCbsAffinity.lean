@@ -619,14 +619,17 @@ def currentBoundHomedOnCore (st : SystemState) (c : CoreId) : Prop :=
 
 
 
-/-- The context an exhausting charge writes back keeps its release link core. -/
-theorem spentSchedContext_releaseCoreCode (sc : SchedContext) (now : Nat) :
-    (spentSchedContext sc now).releaseCoreCode = sc.releaseCoreCode := by
-  have h : (scheduleReplenishment (consumeBudget sc 1) now ⟨sc.budgetRemaining.val⟩).releaseCoreCode =
+/-- The context a charge writes back — `ticks` consumed, the consumed budget
+scheduled as a refill, the deadline moved on — keeps its release link core: the
+exhausting tick's (`spentSchedContext`, one tick) and the bound yield's (its whole
+remaining budget). -/
+theorem chargedSchedContext_releaseCoreCode (sc : SchedContext) (now ticks : Nat) :
+    (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks) now
+      ⟨sc.budgetRemaining.val⟩) now true).releaseCoreCode = sc.releaseCoreCode := by
+  have h : (scheduleReplenishment (consumeBudget sc ticks) now ⟨sc.budgetRemaining.val⟩).releaseCoreCode =
       sc.releaseCoreCode := by
     unfold scheduleReplenishment
     rw [SchedContext.withReplenishments_releaseCoreCode]; rfl
-  show (cbsUpdateDeadline _ now true).releaseCoreCode = _
   unfold cbsUpdateDeadline; split <;> exact h
 
 /-- **A context is linked on its bound thread's home core or on none** (WS-ZA
@@ -644,25 +647,28 @@ theorem releaseFreeFor_of_boundHome {st : SystemState} {c : CoreId} {s : SchedCo
   have hm := (hRef d).mem_of_queued (SystemState.releaseQueuedOn_of_releaseCoreOf hd)
   rw [← hAff d s _ hm sc hSc t hB, hH]
 
-/-- **The exhausting tick's requeue is on the context's own core** (WS-ZA ZA6.3):
-the charged thread's context, written back charged, is free on the tick core — it
+/-- **A charge's requeue is on the context's own core** (WS-ZA ZA6.3): the
+charged thread's context, written back charged, is free on the charging core — it
 names the charged thread, homed there (`currentBoundHomedOnCore`), and the write
 keeps its link core — so the requeue's branch that leaves both queues as they are
-is unreachable. -/
-theorem budgetExhaust_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
+is unreachable.  The exhausting tick charges one tick (`spentSchedContext`); the
+bound yield charges the whole remaining budget (`yieldChargeOnCore`). -/
+theorem spendBudget_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {scId : SchedContextId} {sc : SchedContext}
-    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (ticks : Nat) (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d)
     (hCur : currentBoundHomedOnCore st c) (hc : st.scheduler.currentOnCore c = some tid)
     (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
-    (st.rewriteObject scId.toObjId (.schedContext (spentSchedContext sc st.machine.timer))
+    (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
+        (scheduleReplenishment (consumeBudget sc ticks) st.machine.timer
+          ⟨sc.budgetRemaining.val⟩) st.machine.timer true))
       (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true := by
   have h := releaseFreeFor_of_boundHome hRef hAff hSc ((hCur tid tcb hc hT).2 scId sc hb hSc)
     (hCur tid tcb hc hT).1
   unfold SystemState.releaseFreeFor at h ⊢
   rw [SystemState.releaseCoreOf_rewriteObject_schedContext _ _ _ _ hSc hInv
-    (spentSchedContext_releaseCoreCode sc _)]
+    (chargedSchedContext_releaseCoreCode sc _ _)]
   exact h
 
 -- ============================================================================

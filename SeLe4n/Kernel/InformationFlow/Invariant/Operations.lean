@@ -19,6 +19,7 @@ import SeLe4n.Kernel.Architecture.IpcBufferValidation
 import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.Operations
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Service.Registry
@@ -4277,6 +4278,47 @@ theorem migrateSchedContextReplenishment_preserves_projection
   projectState_of_releaseOnlyWrite ctx observer
     (migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore)
     (migrateSchedContextReplenishment_agree st scId fromCore toCore)
+
+/-- WS-ZA ZA6.3 (NI): **every release-queue edit preserves the projection
+unconditionally** — the insert, the remove, the requeue (`releasePlace`, the
+exhausting charge's and the drain's re-placement), the purge (configure, unbind,
+suspend, destroy) and the scheduling primitive (`replenishOnCore`).  Each writes
+the contexts' release fields — its own and its neighbours', of whatever domain,
+so a low context's successor link naming a high context included — which the
+projection strips, and the scheduler's release slots, which no projection reads
+(`projectState_of_releaseOnlyWrite`).  No hypothesis on any context's domain, as
+the run-queue links' edits in WS-ZA ZA4.5. -/
+theorem releaseInsertOn_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) : projectState ctx observer (st.releaseInsertOn c s t) = projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (SystemState.releaseInsertOn_releaseOnlyWrite st c s t) (SystemState.releaseInsertOn_agree st c s t)
+
+theorem releaseRemoveOn_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    projectState ctx observer (st.releaseRemoveOn c s) = projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (SystemState.releaseRemoveOn_releaseOnlyWrite st c s) (SystemState.releaseRemoveOn_agree st c s)
+
+theorem releasePlace_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    projectState ctx observer (st.releasePlace c s) = projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (SystemState.releasePlace_releaseOnlyWrite st c s) (SystemState.releasePlace_agree st c s)
+
+theorem purgeReplenishment_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (s : SeLe4n.SchedContextId) :
+    projectState ctx observer (SchedContextOps.purgeReplenishment st s) =
+      projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s)
+    (SchedContextOps.purgeReplenishment_agree st s)
+
+theorem replenishOnCore_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    projectState ctx observer (replenishOnCore st c s) = projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (replenishOnCore_releaseOnlyWrite st c s) (replenishOnCore_agree st c s)
 
 /-- WS-SM SM5.H.4 (NI): the full-thread-migration **run-queue** move preserves the
 projection when the migrated thread is **non-observable** (high). The op rewrites

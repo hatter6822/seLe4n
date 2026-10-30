@@ -1787,6 +1787,80 @@ theorem processOneReplenishmentOnCore_of_refillWake (P : SystemState → Prop)
     P (processOneReplenishmentOnCore st execCore scId now) :=
   (markRefillKeyChange_extract_frame P st _ scId hFlag).mpr h
 
+/-- WS-ZA ZA6.2: the compiled `refillWakeOnCore`.  The facts the wake reads off
+the refilled state — the target core and whether the store holds the thread —
+are read before the wake writes, and the wake is the run-queue placement
+`wakeThread` makes (`enqueueRunnableOnCore` at the target), so no state is read
+after a later one is built from it and no pair is built for the SGI the flags
+now carry (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1, D2). -/
+@[inline] def refillWakeOnCoreImpl (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
+  let wasExhausted := match st.getSchedContext? scId with
+    | some sc => sc.budgetRemaining.isZero
+    | none => false
+  let refilled := refillSchedContext st scId now
+  match (match refilled.getSchedContext? scId with
+    | some sc =>
+      if wasExhausted && sc.budgetRemaining.isPositive then
+        sc.boundThread.filter fun t => (refilled.getTcb? t).any TCB.isRunnable
+      else none
+    | none => none) with
+  | some tid =>
+    if runningOnSomeCore refilled tid then refilled
+    else
+      let target := determineTargetCore refilled tid
+      let held := (refilled.getTcb? tid).isSome
+      let woken := enqueueRunnableOnCore refilled target tid
+      { woken with scheduler := woken.scheduler.markReschedulePendingOnCoreIf target held }
+  | none => refilled
+
+theorem refillWakeOnCore_eq_impl (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) :
+    refillWakeOnCore st execCore scId now = refillWakeOnCoreImpl st execCore scId now := rfl
+
+/-- WS-ZA ZA6.2: the compiled `processOneReplenishmentOnCore`.  The key hook's
+reads of the pre-refill state — the bound thread, its budget eligibility and
+its effective key — are taken before the refill writes, so the refill rewrites
+the context in its slot and the hook reads only what it was handed
+(`markKeyChangeFor`, `markCandidacyGainFor`); the specification's hook reads the
+pre-state after the refill. -/
+@[inline] def processOneReplenishmentOnCoreImpl (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
+  match st.getSchedContext? scId with
+  | some sc =>
+    match sc.boundThread with
+    | some t =>
+      match st.getTcb? t with
+      | some tcb =>
+        let preElig := hasSufficientBudget st tcb
+        let preDeadline := effectiveDeadline st tcb
+        markKeyChangeParts (markCandidacyGainFor (refillWakeOnCoreImpl st execCore scId now) t preElig)
+          t tcb.boostedPriority preDeadline tcb.domain
+      | none =>
+        let post := refillWakeOnCoreImpl st execCore scId now
+        markReschedulePendingWhere post
+          (fun c => post.queuedOn c t || post.scheduler.currentOnCore c == some t)
+          Concurrency.allCores
+    | none => refillWakeOnCoreImpl st execCore scId now
+  | none => refillWakeOnCoreImpl st execCore scId now
+
+@[csimp] theorem processOneReplenishmentOnCore_eq_impl :
+    @processOneReplenishmentOnCore = @processOneReplenishmentOnCoreImpl := by
+  funext st execCore scId now
+  unfold processOneReplenishmentOnCore processOneReplenishmentOnCoreImpl markRefillKeyChange
+    markKeyChangeFrom
+  rw [refillWakeOnCore_eq_impl]
+  split
+  · split
+    · rename_i t _
+      cases st.getTcb? t with
+      | none => rfl
+      | some tcb =>
+        dsimp only
+        rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+    · rfl
+  · rfl
+
 /-- WS-ZA ZA6.3: the drain's loop: while core `c`'s release queue has a head
 released by `now`, take it, refill it (`processOneReplenishmentOnCore`) and put
 it back where its refills now say (`SystemState.releasePlace`: off every queue
@@ -1890,80 +1964,6 @@ theorem processReplenishmentsDueOnCore_frame {α : Type} (f : SystemState → α
   processReplenishmentsDueOnCore_induction (fun s => f s = f st) st c now
     (fun s scId h => (hStep s scId).trans h) (fun s scId h => (hPlace s scId).trans h) rfl
 
-/-- WS-ZA ZA6.2: the compiled `refillWakeOnCore`.  The facts the wake reads off
-the refilled state — the target core and whether the store holds the thread —
-are read before the wake writes, and the wake is the run-queue placement
-`wakeThread` makes (`enqueueRunnableOnCore` at the target), so no state is read
-after a later one is built from it and no pair is built for the SGI the flags
-now carry (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1, D2). -/
-@[inline] def refillWakeOnCoreImpl (st : SystemState) (execCore : CoreId)
-    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
-  let wasExhausted := match st.getSchedContext? scId with
-    | some sc => sc.budgetRemaining.isZero
-    | none => false
-  let refilled := refillSchedContext st scId now
-  match (match refilled.getSchedContext? scId with
-    | some sc =>
-      if wasExhausted && sc.budgetRemaining.isPositive then
-        sc.boundThread.filter fun t => (refilled.getTcb? t).any TCB.isRunnable
-      else none
-    | none => none) with
-  | some tid =>
-    if runningOnSomeCore refilled tid then refilled
-    else
-      let target := determineTargetCore refilled tid
-      let held := (refilled.getTcb? tid).isSome
-      let woken := enqueueRunnableOnCore refilled target tid
-      { woken with scheduler := woken.scheduler.markReschedulePendingOnCoreIf target held }
-  | none => refilled
-
-theorem refillWakeOnCore_eq_impl (st : SystemState) (execCore : CoreId)
-    (scId : SeLe4n.SchedContextId) (now : Nat) :
-    refillWakeOnCore st execCore scId now = refillWakeOnCoreImpl st execCore scId now := rfl
-
-/-- WS-ZA ZA6.2: the compiled `processOneReplenishmentOnCore`.  The key hook's
-reads of the pre-refill state — the bound thread, its budget eligibility and
-its effective key — are taken before the refill writes, so the refill rewrites
-the context in its slot and the hook reads only what it was handed
-(`markKeyChangeFor`, `markCandidacyGainFor`); the specification's hook reads the
-pre-state after the refill. -/
-@[inline] def processOneReplenishmentOnCoreImpl (st : SystemState) (execCore : CoreId)
-    (scId : SeLe4n.SchedContextId) (now : Nat) : SystemState :=
-  match st.getSchedContext? scId with
-  | some sc =>
-    match sc.boundThread with
-    | some t =>
-      match st.getTcb? t with
-      | some tcb =>
-        let preElig := hasSufficientBudget st tcb
-        let preDeadline := effectiveDeadline st tcb
-        markKeyChangeParts (markCandidacyGainFor (refillWakeOnCoreImpl st execCore scId now) t preElig)
-          t tcb.boostedPriority preDeadline tcb.domain
-      | none =>
-        let post := refillWakeOnCoreImpl st execCore scId now
-        markReschedulePendingWhere post
-          (fun c => post.queuedOn c t || post.scheduler.currentOnCore c == some t)
-          Concurrency.allCores
-    | none => refillWakeOnCoreImpl st execCore scId now
-  | none => refillWakeOnCoreImpl st execCore scId now
-
-@[csimp] theorem processOneReplenishmentOnCore_eq_impl :
-    @processOneReplenishmentOnCore = @processOneReplenishmentOnCoreImpl := by
-  funext st execCore scId now
-  unfold processOneReplenishmentOnCore processOneReplenishmentOnCoreImpl markRefillKeyChange
-    markKeyChangeFrom
-  rw [refillWakeOnCore_eq_impl]
-  split
-  · split
-    · rename_i t _
-      cases st.getTcb? t with
-      | none => rfl
-      | some tcb =>
-        dsimp only
-        rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
-    · rfl
-  · rfl
-
 /-- WS-SM SM5.H.2 (plan §3.8): schedule SchedContext `scId`'s CBS
 replenishment on core `c` — put it on core `c`'s release queue at its earliest
 pending refill (`SystemState.releasePlace`, WS-ZA ZA6.3), off whichever queue
@@ -2029,28 +2029,62 @@ object table rebuilt; proven equal to the specification
   simp only [RobinHood.RHTable.modify_of_get? hx]
   rfl
 
+/-- WS-ZA ZA6.3: the context a charge writes back: `ticks` consumed, the
+`consumed` budget scheduled as a refill, the deadline rule applied.  A call, so
+the slot's rewrite is one straight-line write of the object it holds and reuses
+that object's cell. -/
+@[noinline] def chargeSchedContext (s : SchedContext) (now ticks consumed : Nat) : SchedContext :=
+  cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now ⟨consumed⟩) now true
+
+/-- WS-ZA ZA6.3: the priority a thread is re-enqueued at: its boosted priority
+(`resolveEffectivePrioDeadline_fst_eq_boostedPriority`), or `fallback` when the
+store holds no thread under `tid`.  Read as one number, with no pair built for
+the deadline the insert does not read. -/
+@[noinline] def insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (fallback : SeLe4n.Priority) : SeLe4n.Priority :=
+  match st.getTcb? tid with
+  | some tcb => tcb.boostedPriority
+  | none => fallback
+
+theorem resolveInsertPriority_eq_insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sc : SchedContext) : resolveInsertPriority st tid sc = insertPriorityOf st tid sc.priority := by
+  unfold resolveInsertPriority insertPriorityOf
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb => exact resolveEffectivePrioDeadline_fst_eq_boostedPriority st tcb
+
+/-- WS-ZA ZA6.3: the budget spend's writes, handed the charge (`ticks`), the
+consumed budget and the fallback priority read off the context: the context
+rewritten in its slot (`chargeSchedContext`), placed on core `c`'s release queue
+(`replenishOnCore`) and `tid` re-enqueued.  A call, so the caller's context is
+not held across the rewrite of its slot. -/
+@[noinline] def spendBudgetWrite (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (scId : SchedContextId) (ticks consumed : Nat) (fallback : SeLe4n.Priority) : SystemState :=
+  let now := st.machine.timer
+  let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
+    chargeSchedContext s now ticks consumed)
+  let prio := insertPriorityOf st' tid fallback
+  (replenishOnCore st' c scId).runEnqueueOnCore c tid prio
+
 /-- WS-ZA ZA4.3: the compiled `spendBudgetOnCore`.  The SchedContext is written
 in its slot, and the insert priority is read off the state before the refill
 is queued on it, so no state is read after a later one is built from it
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1); proven equal to the specification
-(`spendBudgetOnCore_eq_impl`). -/
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  WS-ZA ZA6.3: the writes are one call
+(`spendBudgetWrite`) handed the numbers they read off the context, so the
+context the caller looked up is released before its slot is rewritten.
+Proven equal to the specification (`spendBudgetOnCore_eq_impl`). -/
 @[inline] def spendBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SchedContextId) (sc : SchedContext)
     (_hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
-  let now := st.machine.timer
-  let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-  let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
-    cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
-  let prio := resolveInsertPriority st' tid sc
-  let stReplenished := replenishOnCore st' c scId
-  stReplenished.runEnqueueOnCore c tid prio
+  spendBudgetWrite st c tid scId ticks sc.budgetRemaining.val sc.priority
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
   funext st c tid scId sc hSc ticks
   have hx := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
-  unfold spendBudgetOnCore spendBudgetOnCoreImpl SystemState.modifyObject
-    SystemState.rewriteObject
+  unfold spendBudgetOnCore spendBudgetOnCoreImpl spendBudgetWrite chargeSchedContext
+    SystemState.modifyObject SystemState.rewriteObject
   simp only [RobinHood.RHTable.modify_of_get? hx]
+  rw [resolveInsertPriority_eq_insertPriorityOf]
   rfl
 
 /-- The slice expiry keeps the object table's invariant: the slice reset is an

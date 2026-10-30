@@ -728,6 +728,51 @@ def releaseUnlinkOn (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) 
     { st2 with scheduler := st2.scheduler.setReleaseCountOnCore c (count - 1) }
   else st
 
+/-- WS-ZA ZA6.3: `releaseUnlinkOn`'s object writes, handed the predecessor `p`
+and the successor `n`: `s` marked on no queue, and its predecessor (when it has
+one) linked to `n`, each context in its slot. -/
+@[noinline] def releaseUnlinkObjects (objs : RHTable SeLe4n.ObjId KernelObject)
+    (s : SeLe4n.SchedContextId) (p n : Nat) : RHTable SeLe4n.ObjId KernelObject :=
+  let o := objs.mapValueAt s.toObjId (mapSchedContextObject SchedContext.leaveRelease)
+  if p = 0 then o
+  else o.mapValueAt (decode p).toObjId (mapSchedContextObject (SchedContext.withReleaseNext n))
+
+/-- WS-ZA ZA6.3: `releaseUnlinkOn`'s scheduler writes: the head takes over `n`
+when `s` was the head (`p = 0`), and the count drops. -/
+@[noinline] def releaseUnlinkScheduler (sch : SchedulerState) (c : CoreId) (count p n : Nat) :
+    SchedulerState :=
+  (if p = 0 then sch.setReleaseHeadOnCore c n else sch).setReleaseCountOnCore c (count - 1)
+
+/-- WS-ZA ZA6.3: `releaseUnlinkOn`'s writes, handed the count, the predecessor
+`p` and the successor `n` it read: one record update whose fields are calls
+(`releaseUnlinkObjects`, `releaseUnlinkScheduler`), so every read is taken
+before the state is written and the update reuses the state's cell. -/
+@[noinline] def releaseUnlinkWrite (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (count p n : Nat) : SystemState :=
+  { st with objects := releaseUnlinkObjects st.objects s p n
+            scheduler := releaseUnlinkScheduler st.scheduler c count p n }
+
+/-- WS-ZA ZA6.3: the compiled `releaseUnlinkOn`: the links read, then written by
+one call (`releaseUnlinkWrite`).  Compiled as written, the specification took
+the state's fields apart before its last read of the state, so its write built
+a new state.  Proven equal (`releaseUnlinkOn_eq_impl`). -/
+def releaseUnlinkOnImpl (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) :
+    SystemState :=
+  if st.releaseQueuedOn c s then
+    let count := st.scheduler.releaseCountOnCore c
+    st.releaseUnlinkWrite c s count
+      (st.releasePredOf c s count 0 (st.scheduler.releaseHeadOnCore c)) (st.releaseNextOn c s)
+  else st
+
+@[csimp] theorem releaseUnlinkOn_eq_impl : @releaseUnlinkOn = @releaseUnlinkOnImpl := by
+  funext st c s
+  unfold releaseUnlinkOn releaseUnlinkOnImpl releaseUnlinkWrite releaseUnlinkObjects
+    releaseUnlinkScheduler mapSchedContextInPlace
+  split
+  · dsimp only
+    split <;> rfl
+  · rfl
+
 /-- WS-ZA ZA6.3: drop `s` from core `c`'s release queue — the links unlinked
 (`releaseUnlinkOn`) and the abstract queue's removal written. -/
 def releaseRemoveOn (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) : SystemState :=
@@ -748,6 +793,45 @@ def releaseLinkIn (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) (t
   let st2 := if p = 0 then { st1 with scheduler := st1.scheduler.setReleaseHeadOnCore c (code s) }
     else st1.mapSchedContextInPlace (decode p) (SchedContext.withReleaseNext (code s))
   { st2 with scheduler := st2.scheduler.setReleaseCountOnCore c (count + 1) }
+
+/-- WS-ZA ZA6.3: `releaseLinkIn`'s object writes, handed the predecessor `p` and
+the successor `n`: `s` linked to `n` at `t` on core `c`, and its predecessor
+(when it has one) linked to `s`, each context in its slot. -/
+@[noinline] def releaseLinkObjects (objs : RHTable SeLe4n.ObjId KernelObject) (c : CoreId)
+    (s : SeLe4n.SchedContextId) (t p n : Nat) : RHTable SeLe4n.ObjId KernelObject :=
+  let o := objs.mapValueAt s.toObjId (mapSchedContextObject (SchedContext.joinRelease c n t))
+  if p = 0 then o
+  else o.mapValueAt (decode p).toObjId (mapSchedContextObject (SchedContext.withReleaseNext (code s)))
+
+/-- WS-ZA ZA6.3: `releaseLinkIn`'s scheduler writes: `s` is the head when it has
+no predecessor (`p = 0`), and the count rises. -/
+@[noinline] def releaseLinkScheduler (sch : SchedulerState) (c : CoreId)
+    (s : SeLe4n.SchedContextId) (count p : Nat) : SchedulerState :=
+  (if p = 0 then sch.setReleaseHeadOnCore c (code s) else sch).setReleaseCountOnCore c (count + 1)
+
+/-- WS-ZA ZA6.3: `releaseLinkIn`'s writes, handed the count, the predecessor `p`
+and the successor `n` it read: one record update whose fields are calls, as
+`releaseUnlinkWrite` is. -/
+@[noinline] def releaseLinkWrite (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (t count p n : Nat) : SystemState :=
+  { st with objects := releaseLinkObjects st.objects c s t p n
+            scheduler := releaseLinkScheduler st.scheduler c s count p }
+
+/-- WS-ZA ZA6.3: the compiled `releaseLinkIn`: the place read, then written by one
+call (`releaseLinkWrite`).  Proven equal (`releaseLinkIn_eq_impl`). -/
+def releaseLinkInImpl (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) (t : Nat) :
+    SystemState :=
+  let head := st.scheduler.releaseHeadOnCore c
+  let count := st.scheduler.releaseCountOnCore c
+  let p := st.releasePredBefore c t count 0 head
+  st.releaseLinkWrite c s t count p (if p = 0 then head else st.releaseNextOn c (decode p))
+
+@[csimp] theorem releaseLinkIn_eq_impl : @releaseLinkIn = @releaseLinkInImpl := by
+  funext st c s t
+  unfold releaseLinkIn releaseLinkInImpl releaseLinkWrite releaseLinkObjects releaseLinkScheduler
+    mapSchedContextInPlace
+  dsimp only
+  split <;> rfl
 
 /-- Does context `s`'s link name a core?  Read from the context alone. -/
 @[inline] def releaseQueuedAnywhere (st : SystemState) (s : SeLe4n.SchedContextId) : Bool :=
@@ -2022,6 +2106,68 @@ def releasePlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) : S
     | some t => (st.releaseRemoveOn c s).releaseInsertOn c s t
     | none => st.releaseRemoveOn c s
   else st
+
+/-- WS-ZA ZA6.3: `releasePlace`'s writes for a context with a pending refill, its
+earliest at `t`: a call, so the place is read off the context before the
+context's links are written, and the context's cell is not held across them. -/
+@[noinline] def releaseReplace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) : SystemState :=
+  (st.releaseRemoveOn c s).releaseInsertOn c s t
+
+/-- WS-ZA ZA6.3: the compiled `releasePlace`.  The context is read once: its
+link's core compared as a number and its place read from its refill fields
+(`releaseKeyImpl`), then the writes are one call.  The specification reads the
+core and the place as options (`releaseCoreOf`, `releaseKeyOf`), each built
+when the store shares the context's entry.  Proven equal
+(`releasePlace_eq_impl`). -/
+def releasePlaceImpl (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) : SystemState :=
+  match st.getSchedContext? s with
+  | some sc =>
+    if sc.releaseCoreCode == 0 || decide (Concurrency.numCores < sc.releaseCoreCode) ||
+        sc.releaseCoreCode == c.val + 1 then
+      if sc.refillHeadPresent then
+        st.releaseReplace c s
+          (sc.tailEarliest (min sc.refillTailCount refillTailCapacity) sc.refillHeadEligibleAt)
+      else st.releaseRemoveOn c s
+    else st
+  | none => st.releaseRemoveOn c s
+
+theorem releaseCore?_beq_eq (sc : SchedContext) (c : CoreId) :
+    (match sc.releaseCore? with | some d => d == c | none => true) =
+      (sc.releaseCoreCode == 0 || decide (Concurrency.numCores < sc.releaseCoreCode) ||
+        sc.releaseCoreCode == c.val + 1) := by
+  have hc := c.isLt
+  apply Bool.eq_iff_iff.mpr
+  simp only [Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq]
+  cases e : sc.releaseCore? with
+  | some d =>
+    have hd := (sc.releaseCore?_eq_some_iff d).mp e
+    have hdl := d.isLt
+    simp only [beq_iff_eq, Fin.ext_iff]
+    omega
+  | none =>
+    have hn := (sc.releaseCore?_eq_none_iff).mp e
+    simp only [true_iff]
+    by_cases h0 : sc.releaseCoreCode = 0
+    · exact Or.inl (Or.inl h0)
+    · by_cases hl : Concurrency.numCores < sc.releaseCoreCode
+      · exact Or.inl (Or.inr hl)
+      · exact absurd rfl (hn ⟨sc.releaseCoreCode - 1, by omega⟩ |> fun h => fun _ => h (by simp only; omega))
+
+@[csimp] theorem releasePlace_eq_impl : @releasePlace = @releasePlaceImpl := by
+  funext st c s
+  unfold releasePlace releasePlaceImpl releaseReplace releaseFreeFor releaseKeyOf releaseCoreOf
+  cases st.getSchedContext? s with
+  | none => rfl
+  | some sc =>
+    simp only [Option.bind_some]
+    rw [releaseCore?_beq_eq, releaseKey?_eq_impl]
+    unfold SchedContext.releaseKeyImpl
+    split
+    · by_cases hP : sc.refillHeadPresent = true
+      · simp only [hP, ↓reduceIte]
+      · simp only [hP, Bool.false_eq_true, ↓reduceIte]
+    · rfl
 
 /-! ## The edits keep the object table's invariant -/
 

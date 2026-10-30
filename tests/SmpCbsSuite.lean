@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
+import SeLe4n.Kernel.ReschedulePendingArms.Tick
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.SyscallSchedFootprint
@@ -763,7 +764,9 @@ open SeLe4n.Kernel
 #check @budgetExhaustOnCore_preserves_replenishQueueAffinityConsistentOnCore
 #check @timeoutBlockedThreads_homeBindFrame
 #check @releaseFreeFor_of_boundHome
-#check @budgetExhaust_requeue_releaseFreeFor
+#check @spendBudget_requeue_releaseFreeFor
+#check @currentBoundHomedOnCore_of_placement
+#check @yieldCharge_requeue_releaseFreeFor
 -- non-vacuity: the freshly-booted system is affinity-consistent on every core, so the
 -- pre-state `hCons` hypothesis of the headline is satisfiable.
 example (c : SeLe4n.Kernel.Concurrency.CoreId) :

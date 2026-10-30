@@ -7033,28 +7033,6 @@ part 5 the tree's edges are a ghost and its one stored part is the edge bound
 theorem modifyCdt_eq (st : SystemState) (f : CapDerivationTree → CapDerivationTree) :
     st.modifyCdt f = { st with cdt := f st.cdt } := rfl
 
-/-- **`v0.35.183` (register row 63)**: `updateTcb` reads and writes the object
-table and nothing else, so two states that agree on it agree after the update.
-
-The bridge a *composite* needs when its TCB write is not the outermost one: an
-operation that writes the scheduler between its object writes leaves a state
-whose `objects` field is the earlier one's but whose other fields are not, and
-`rfl` will not see through the dependent `getTcbWitnessed?` match at two
-different states.  Proved through the update's own two equations rather than by
-unfolding it, which is what makes it independent of how the witness is spelled. -/
-theorem updateTcb_objects_congr {A B : SystemState} (hObj : A.objects = B.objects)
-    (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
-    (A.updateTcb tid f).objects = (B.updateTcb tid f).objects := by
-  have hGet : A.getTcb? tid = B.getTcb? tid := getTcb?_frame hObj tid
-  cases hA : A.getTcb? tid with
-  | none =>
-    rw [updateTcb_eq_self_of_none hA, updateTcb_eq_self_of_none (hGet ▸ hA)]
-    exact hObj
-  | some t =>
-    rw [updateTcb_eq_of_some hA, updateTcb_eq_of_some (hGet ▸ hA)]
-    simp only []
-    rw [hObj]
-
 /-- `updateTcb` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/
 theorem updateTcb_eq_objects_update (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :

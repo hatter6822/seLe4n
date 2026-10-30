@@ -465,6 +465,41 @@ theorem timerTickOnCorePrepared_currentBoundHomedOnCore (st : SystemState) (c : 
     cases hSc
     exact hB0
 
+/-- **Every committed state carries `currentBoundHomedOnCore` at every core**
+(WS-ZA ZA6.3): the placement invariant homes each current thread on its core
+(`currentHome`), and the binding pair has its context name it — the state a
+syscall on core `c` (the bound yield's charge among them) starts from. -/
+theorem currentBoundHomedOnCore_of_placement (st : SystemState) (c : CoreId)
+    (hD : st.currentDequeuedUnique) (hBi : schedContextBindingBidirectional st) :
+    currentBoundHomedOnCore st c := by
+  intro tid tcb hCur hTcb
+  obtain ⟨x, hx, -⟩ := hD.currentActive c tid hCur
+  refine ⟨determineTargetCore_eq_of_homedOn hx (hD.currentHome c tid hCur),
+    fun scId sc hb hSc => ?_⟩
+  obtain ⟨sc0, hS0, hB0⟩ := hBi tid tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb) hb
+  rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hS0] at hSc
+  cases hSc
+  exact hB0
+
+/-- **The bound yield's requeue is on the context's own core** (WS-ZA ZA6.3):
+the yielding thread is current on `c`, so its context, charged its whole
+remaining budget, is free on `c`, and the requeue's branch that leaves both
+queues as they are is unreachable (`spendBudget_requeue_releaseFreeFor`). -/
+theorem yieldCharge_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {scId : SchedContextId} {sc : SchedContext}
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d)
+    (hD : st.currentDequeuedUnique) (hBi : schedContextBindingBidirectional st)
+    (hc : st.scheduler.currentOnCore c = some tid)
+    (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc) :
+    (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
+        (scheduleReplenishment (consumeBudget sc sc.budgetRemaining.val) st.machine.timer
+          ⟨sc.budgetRemaining.val⟩) st.machine.timer true))
+      (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true :=
+  spendBudget_requeue_releaseFreeFor _ hInv hRef hAff
+    (currentBoundHomedOnCore_of_placement st c hD hBi) hc hT hb hSc
+
 /-- **The exhausting charge covers**: the spend and its key hook cover, the
 timeout pass covers, and the diagnostic write and the timeout wakes' flags
 frame every view and slot and only raise flags. -/

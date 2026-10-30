@@ -226,6 +226,12 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 #check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_preserves_projection
 #check @SeLe4n.Kernel.migrateRunQueueOnAffinityChange_preserves_projection
 #check @SeLe4n.Kernel.migrateSchedContextReplenishment_preserves_projection
+#check @SeLe4n.Kernel.releaseInsertOn_preserves_projection
+#check @SeLe4n.Kernel.releaseRemoveOn_preserves_projection
+#check @SeLe4n.Kernel.releasePlace_preserves_projection
+#check @SeLe4n.Kernel.purgeReplenishment_preserves_projection
+#check @SeLe4n.Kernel.replenishOnCore_preserves_projection
+#check @SeLe4n.Kernel.projectState_of_releaseOnlyWrite
 -- SM5.H.4 audit-pass-2: the *unconditional* affinity-write NI — the affinity write
 -- preserves the projection for ANY target (high OR low), because the projection
 -- erases cpuAffinity (`projectKernelObject_tcb_cpuAffinity_irrelevant`).  Strictly
