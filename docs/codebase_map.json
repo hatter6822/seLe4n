@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "za54-part53",
-      "commit_sha": "379c3666761d49c5ed92578b631920c319b41b48",
-      "tree_sha": "638c0b88aec4296696574df0e356593e7d9a4895",
-      "committed_at_utc": "2026-10-30T10:59:30+00:00"
+      "branch": "main",
+      "commit_sha": "377b13ae6bd1c6d8de82dadcfaed20120613966b",
+      "tree_sha": "e0c6fcee54c76dd624aecd75e1df62b46d08c449",
+      "committed_at_utc": "2026-10-30T13:46:44-04:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6e2070a87e4831bcc6706d40af72e3e318edb18f4d7231f59c412ebe34d5df5b"
+    "source_digest": "8de278b7c1f379290729853752fd0518f6c534db9c5ff12cebb35a72b6c7d690"
   },
   "summary": {
     "module_count": 558,
@@ -27,9 +27,9 @@
     "version": "0.36.166",
     "lean_toolchain": "v4.28.0",
     "production_files": 488,
-    "production_loc": 536975,
+    "production_loc": 536987,
     "test_files": 70,
-    "test_loc": 87494,
+    "test_loc": 87495,
     "proved_theorem_lemma_decls": 20211,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -418978,7 +418978,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1272,
+          "line": 1271,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -418987,7 +418987,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1315,
+          "line": 1314,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -418997,21 +418997,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1341,
+          "line": 1340,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1365,
+          "line": 1364,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1398,
+          "line": 1397,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -419020,7 +419020,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1430,
+          "line": 1429,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -419029,7 +419029,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1443,
+          "line": 1442,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -419038,7 +419038,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1483,
+          "line": 1482,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -419048,7 +419048,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1491,
+          "line": 1490,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -419058,7 +419058,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1498,
+          "line": 1497,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -419068,7 +419068,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1503,
+          "line": 1502,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -419079,7 +419079,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1515,
+          "line": 1514,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
@@ -420385,7 +420385,7 @@
           "kind": "def",
           "name": "primitiveCoverageViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.primitiveCoverageViolations",
-          "line": 425,
+          "line": 438,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.chainWritePrimitives"
           ]
@@ -420394,28 +420394,28 @@
           "kind": "def",
           "name": "isProjectConstant",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isProjectConstant",
-          "line": 445,
+          "line": 458,
           "called": []
         },
         {
           "kind": "def",
           "name": "isAuxiliary",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isAuxiliary",
-          "line": 477,
+          "line": 490,
           "called": []
         },
         {
           "kind": "def",
           "name": "usesDirectly",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.usesDirectly",
-          "line": 482,
+          "line": 495,
           "called": []
         },
         {
           "kind": "def",
           "name": "storesVia",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.storesVia",
-          "line": 514,
+          "line": 527,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.isProjectConstant",
             "SeLe4n.Testing.ReplyStackWriteCensus.usesDirectly"
@@ -420425,7 +420425,7 @@
           "kind": "def",
           "name": "storesObject",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.storesObject",
-          "line": 522,
+          "line": 535,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.objectStoreSpellings",
             "SeLe4n.Testing.ReplyStackWriteCensus.storesVia"
@@ -420435,14 +420435,14 @@
           "kind": "def",
           "name": "chainWriteFrontier",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.chainWriteFrontier",
-          "line": 526,
+          "line": 539,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.directWriteCandidates",
-          "line": 546,
+          "line": 559,
           "called": [
             "SeLe4n.Testing.DeclarationKind.bodyBearingName",
             "SeLe4n.Testing.ReplyStackWriteCensus.chainWritePrimitives",
@@ -420455,7 +420455,7 @@
           "kind": "def",
           "name": "constructsChainRecord",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.constructsChainRecord",
-          "line": 558,
+          "line": 571,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.chainRecordConstructors",
             "SeLe4n.Testing.ReplyStackWriteCensus.usesDirectly"
@@ -420465,7 +420465,7 @@
           "kind": "def",
           "name": "reachesChainConstructor",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.reachesChainConstructor",
-          "line": 579,
+          "line": 592,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.chainRecordConstructors",
             "SeLe4n.Testing.ReplyStackWriteCensus.isProjectConstant"
@@ -420475,7 +420475,7 @@
           "kind": "def",
           "name": "recordConstructingStoreCandidates",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.recordConstructingStoreCandidates",
-          "line": 600,
+          "line": 613,
           "called": [
             "SeLe4n.Testing.DeclarationKind.bodyBearingName",
             "SeLe4n.Testing.ReplyStackWriteCensus.constructsChainRecord",
@@ -420491,28 +420491,28 @@
           "kind": "inductive",
           "name": "ChainDiscipline",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
-          "line": 618,
+          "line": 631,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isChainForm",
-          "line": 644,
+          "line": 657,
           "called": []
         },
         {
           "kind": "def",
           "name": "conclusionOf",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf",
-          "line": 650,
+          "line": 663,
           "called": []
         },
         {
           "kind": "def",
           "name": "isPredicate",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isPredicate",
-          "line": 657,
+          "line": 670,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -420521,7 +420521,7 @@
           "kind": "def",
           "name": "isChainPredicate",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isChainPredicate",
-          "line": 668,
+          "line": 681,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.isChainForm",
             "SeLe4n.Testing.ReplyStackWriteCensus.isPredicate"
@@ -420531,7 +420531,7 @@
           "kind": "def",
           "name": "resultViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.resultViolations",
-          "line": 677,
+          "line": 690,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf",
             "SeLe4n.Testing.ReplyStackWriteCensus.isChainPredicate"
@@ -420541,7 +420541,7 @@
           "kind": "def",
           "name": "chainWriteRegistry",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.chainWriteRegistry",
-          "line": 710,
+          "line": 723,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
@@ -420551,7 +420551,7 @@
           "kind": "def",
           "name": "halfStepResolves",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
-          "line": 881,
+          "line": 894,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline"
           ]
@@ -420560,14 +420560,14 @@
           "kind": "def",
           "name": "halfStepResolves.go",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves.go",
-          "line": 884,
+          "line": 897,
           "called": []
         },
         {
           "kind": "def",
           "name": "disciplineViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.disciplineViolations",
-          "line": 897,
+          "line": 910,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
             "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
@@ -420579,14 +420579,14 @@
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.reconciliationViolations",
-          "line": 937,
+          "line": 950,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusWitnessBareConsume",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessBareConsume",
-          "line": 969,
+          "line": 982,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.SystemState.consumeCallerReply",
@@ -420599,7 +420599,7 @@
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDirectLinkWrite",
-          "line": 980,
+          "line": 993,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -420612,7 +420612,7 @@
           "kind": "def",
           "name": "censusWitnessRawTableWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessRawTableWrite",
-          "line": 999,
+          "line": 1012,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -420626,7 +420626,7 @@
           "kind": "def",
           "name": "censusWitnessSplitHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitHelper",
-          "line": 1009,
+          "line": 1022,
           "called": [
             "SeLe4n.Kernel.Reply"
           ],
@@ -420636,7 +420636,7 @@
           "kind": "def",
           "name": "censusWitnessSplitWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter",
-          "line": 1016,
+          "line": 1029,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -420650,7 +420650,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreHelper",
-          "line": 1029,
+          "line": 1042,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.KernelObject",
@@ -420663,7 +420663,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreWriter",
-          "line": 1033,
+          "line": 1046,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.ReplyId",
@@ -420676,7 +420676,7 @@
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed",
-          "line": 1045,
+          "line": 1058,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -420689,7 +420689,7 @@
           "kind": "def",
           "name": "eq_1",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_1",
-          "line": 1060,
+          "line": 1073,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -420702,7 +420702,7 @@
           "kind": "def",
           "name": "censusWitnessNoWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessNoWrite",
-          "line": 1067,
+          "line": 1080,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -451216,105 +451216,105 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 161,
+          "line": 162,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 213,
+          "line": 214,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 219,
+          "line": 220,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 226,
+          "line": 227,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 234,
+          "line": 235,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 240,
+          "line": 241,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 247,
+          "line": 248,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 264,
+          "line": 265,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 279,
+          "line": 280,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 294,
+          "line": 295,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 300,
+          "line": 301,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 308,
+          "line": 309,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 317,
+          "line": 318,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 326,
+          "line": 327,
           "called": []
         },
         {
           "kind": "def",
           "name": "core1",
           "full_name": "SeLe4n.Testing.SmpCbs.core1",
-          "line": 334,
+          "line": 335,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId"
           ],
@@ -451324,7 +451324,7 @@
           "kind": "def",
           "name": "scId0",
           "full_name": "SeLe4n.Testing.SmpCbs.scId0",
-          "line": 335,
+          "line": 336,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.ofNat"
@@ -451335,7 +451335,7 @@
           "kind": "def",
           "name": "tid0",
           "full_name": "SeLe4n.Testing.SmpCbs.tid0",
-          "line": 336,
+          "line": 337,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofNat"
@@ -451346,7 +451346,7 @@
           "kind": "def",
           "name": "sc0",
           "full_name": "SeLe4n.Testing.SmpCbs.sc0",
-          "line": 339,
+          "line": 340,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Testing.SmpCbs.scId0",
@@ -451359,7 +451359,7 @@
           "kind": "def",
           "name": "tcb0",
           "full_name": "SeLe4n.Testing.SmpCbs.tcb0",
-          "line": 345,
+          "line": 346,
           "called": [
             "SeLe4n.Kernel.SchedContextBinding",
             "SeLe4n.Kernel.SchedContextBinding.scCode",
@@ -451377,7 +451377,7 @@
           "kind": "def",
           "name": "stCbs",
           "full_name": "SeLe4n.Testing.SmpCbs.stCbs",
-          "line": 352,
+          "line": 353,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.SchedContextId.toObjId",
@@ -451398,7 +451398,7 @@
           "kind": "def",
           "name": "sizeConsistentB",
           "full_name": "SeLe4n.Testing.SmpCbs.sizeConsistentB",
-          "line": 360,
+          "line": 361,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SchedulerState.releaseCountOnCore",
@@ -451411,7 +451411,7 @@
           "kind": "def",
           "name": "assertBool",
           "full_name": "SeLe4n.Testing.SmpCbs.assertBool",
-          "line": 363,
+          "line": 364,
           "called": [],
           "private": true
         },
@@ -451419,7 +451419,7 @@
           "kind": "def",
           "name": "runReplenishScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runReplenishScenarios",
-          "line": 373,
+          "line": 374,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.replenishOnCore",
@@ -451444,7 +451444,7 @@
           "kind": "def",
           "name": "runMigrationScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runMigrationScenarios",
-          "line": 399,
+          "line": 400,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.migrateSchedContextReplenishment",
@@ -451461,7 +451461,7 @@
           "kind": "def",
           "name": "runCompositeScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runCompositeScenarios",
-          "line": 424,
+          "line": 425,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -451493,7 +451493,7 @@
           "kind": "def",
           "name": "runBudgetScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runBudgetScenarios",
-          "line": 486,
+          "line": 487,
           "called": [
             "SeLe4n.Kernel.applyRefill",
             "SeLe4n.Kernel.consumeBudget",
@@ -451508,7 +451508,7 @@
           "kind": "def",
           "name": "runAffinityScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runAffinityScenarios",
-          "line": 504,
+          "line": 505,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.determineTargetCore",
@@ -451526,7 +451526,7 @@
           "kind": "def",
           "name": "stSingleCore",
           "full_name": "SeLe4n.Testing.SmpCbs.stSingleCore",
-          "line": 527,
+          "line": 528,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.SmpCbs.stCbs"
@@ -451537,7 +451537,7 @@
           "kind": "def",
           "name": "runDeclaredCoreScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runDeclaredCoreScenarios",
-          "line": 530,
+          "line": 531,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -451565,7 +451565,7 @@
           "kind": "def",
           "name": "runRunQueueMigrationScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runRunQueueMigrationScenarios",
-          "line": 588,
+          "line": 589,
           "called": [
             "SeLe4n.Kernel.Concurrency.SgiKind",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -451591,7 +451591,7 @@
           "kind": "def",
           "name": "runLiveTickScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runLiveTickScenarios",
-          "line": 645,
+          "line": 646,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Kernel.SchedContext",
@@ -451621,7 +451621,7 @@
           "kind": "def",
           "name": "runInventoryChecks",
           "full_name": "SeLe4n.Testing.SmpCbs.runInventoryChecks",
-          "line": 691,
+          "line": 692,
           "called": [
             "SeLe4n.Kernel.perCoreCbsTheorems",
             "SeLe4n.Testing.SmpCbs.assertBool"
@@ -451632,7 +451632,7 @@
           "kind": "def",
           "name": "runSm5hCompletionScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runSm5hCompletionScenarios",
-          "line": 721,
+          "line": 722,
           "called": [
             "SeLe4n.Kernel.Concurrency.SgiKind",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -451653,14 +451653,14 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 771,
+          "line": 772,
           "called": []
         },
         {
           "kind": "def",
           "name": "runSm5iTickCbsChecks",
           "full_name": "SeLe4n.Testing.SmpCbs.runSm5iTickCbsChecks",
-          "line": 781,
+          "line": 782,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.timerTickOnCore",
@@ -451677,56 +451677,56 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 822,
+          "line": 823,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 831,
+          "line": 832,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 839,
+          "line": 840,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 846,
+          "line": 847,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 855,
+          "line": 856,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 864,
+          "line": 865,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 876,
+          "line": 877,
           "called": []
         },
         {
           "kind": "def",
           "name": "scIdLifecycle",
           "full_name": "SeLe4n.Testing.SmpCbs.scIdLifecycle",
-          "line": 884,
+          "line": 885,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.ofNat"
@@ -451737,7 +451737,7 @@
           "kind": "def",
           "name": "tidLifecycle",
           "full_name": "SeLe4n.Testing.SmpCbs.tidLifecycle",
-          "line": 885,
+          "line": 886,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofNat"
@@ -451748,7 +451748,7 @@
           "kind": "def",
           "name": "scLifecycle",
           "full_name": "SeLe4n.Testing.SmpCbs.scLifecycle",
-          "line": 889,
+          "line": 890,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Testing.SmpCbs.scIdLifecycle"
@@ -451759,7 +451759,7 @@
           "kind": "def",
           "name": "tcbLifecycle",
           "full_name": "SeLe4n.Testing.SmpCbs.tcbLifecycle",
-          "line": 895,
+          "line": 896,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.spaceCellsOf",
@@ -451774,7 +451774,7 @@
           "kind": "def",
           "name": "stLifecycle",
           "full_name": "SeLe4n.Testing.SmpCbs.stLifecycle",
-          "line": 901,
+          "line": 902,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.SchedContextId.toObjId",
@@ -451799,7 +451799,7 @@
           "kind": "def",
           "name": "scIdLifecycleValid",
           "full_name": "SeLe4n.Testing.SmpCbs.scIdLifecycleValid",
-          "line": 908,
+          "line": 909,
           "called": [
             "SeLe4n.SchedContextId.toObjId",
             "SeLe4n.Testing.SmpCbs.scIdLifecycle",
@@ -451811,7 +451811,7 @@
           "kind": "def",
           "name": "tidLifecycleValid",
           "full_name": "SeLe4n.Testing.SmpCbs.tidLifecycleValid",
-          "line": 909,
+          "line": 910,
           "called": [
             "SeLe4n.Testing.SmpCbs.tidLifecycle",
             "SeLe4n.ValidThreadId"
@@ -451822,7 +451822,7 @@
           "kind": "def",
           "name": "scId0Valid",
           "full_name": "SeLe4n.Testing.SmpCbs.scId0Valid",
-          "line": 910,
+          "line": 911,
           "called": [
             "SeLe4n.SchedContextId.toObjId",
             "SeLe4n.Testing.SmpCbs.scId0",
@@ -451834,7 +451834,7 @@
           "kind": "def",
           "name": "core2",
           "full_name": "SeLe4n.Testing.SmpCbs.core2",
-          "line": 912,
+          "line": 913,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId"
           ],
@@ -451844,7 +451844,7 @@
           "kind": "def",
           "name": "tidDangling",
           "full_name": "SeLe4n.Testing.SmpCbs.tidDangling",
-          "line": 922,
+          "line": 923,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofNat"
@@ -451855,7 +451855,7 @@
           "kind": "def",
           "name": "scIdDangling",
           "full_name": "SeLe4n.Testing.SmpCbs.scIdDangling",
-          "line": 923,
+          "line": 924,
           "called": [
             "SeLe4n.SchedContextId",
             "SeLe4n.SchedContextId.ofNat"
@@ -451866,7 +451866,7 @@
           "kind": "def",
           "name": "scDangling",
           "full_name": "SeLe4n.Testing.SmpCbs.scDangling",
-          "line": 924,
+          "line": 925,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Testing.SmpCbs.scIdDangling",
@@ -451879,7 +451879,7 @@
           "kind": "def",
           "name": "stDangling",
           "full_name": "SeLe4n.Testing.SmpCbs.stDangling",
-          "line": 928,
+          "line": 929,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.SchedContextId.toObjId",
@@ -451897,7 +451897,7 @@
           "kind": "def",
           "name": "scIdDanglingValid",
           "full_name": "SeLe4n.Testing.SmpCbs.scIdDanglingValid",
-          "line": 932,
+          "line": 933,
           "called": [
             "SeLe4n.SchedContextId.toObjId",
             "SeLe4n.Testing.SmpCbs.scIdDangling",
@@ -451909,7 +451909,7 @@
           "kind": "def",
           "name": "runBindingLifecycleScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runBindingLifecycleScenarios",
-          "line": 940,
+          "line": 941,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContextOps.schedContextBind",
@@ -451939,7 +451939,7 @@
           "kind": "def",
           "name": "tidUnbound",
           "full_name": "SeLe4n.Testing.SmpCbs.tidUnbound",
-          "line": 1018,
+          "line": 1019,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.ofNat"
@@ -451950,7 +451950,7 @@
           "kind": "def",
           "name": "tcbUnbound",
           "full_name": "SeLe4n.Testing.SmpCbs.tcbUnbound",
-          "line": 1020,
+          "line": 1021,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.spaceCellsOf",
@@ -451965,7 +451965,7 @@
           "kind": "def",
           "name": "stAffinityFp",
           "full_name": "SeLe4n.Testing.SmpCbs.stAffinityFp",
-          "line": 1024,
+          "line": 1025,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.SchedContextId.toObjId",
@@ -451988,7 +451988,7 @@
           "kind": "def",
           "name": "hasReplenishWriteLock",
           "full_name": "SeLe4n.Testing.SmpCbs.hasReplenishWriteLock",
-          "line": 1030,
+          "line": 1031,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -452000,7 +452000,7 @@
           "kind": "def",
           "name": "hasRunQueueWriteLock",
           "full_name": "SeLe4n.Testing.SmpCbs.hasRunQueueWriteLock",
-          "line": 1035,
+          "line": 1036,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -452012,7 +452012,7 @@
           "kind": "def",
           "name": "runAffinityFootprintScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runAffinityFootprintScenarios",
-          "line": 1054,
+          "line": 1055,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -452039,7 +452039,7 @@
           "kind": "def",
           "name": "homeOnlyUnbindReplenishCores",
           "full_name": "SeLe4n.Testing.SmpCbs.homeOnlyUnbindReplenishCores",
-          "line": 1115,
+          "line": 1116,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.SchedContextOps.schedContextBoundThread?",
@@ -452053,7 +452053,7 @@
           "kind": "def",
           "name": "runSchedContextFootprintScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runSchedContextFootprintScenarios",
-          "line": 1136,
+          "line": 1137,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -452096,7 +452096,7 @@
           "kind": "def",
           "name": "runSyscallSchedResolverScenarios",
           "full_name": "SeLe4n.Testing.SmpCbs.runSyscallSchedResolverScenarios",
-          "line": 1228,
+          "line": 1229,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -452120,7 +452120,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "SeLe4n.Testing.SmpCbs.main",
-          "line": 1308,
+          "line": 1309,
           "called": [
             "SeLe4n.Testing.SmpCbs.runAffinityFootprintScenarios",
             "SeLe4n.Testing.SmpCbs.runAffinityScenarios",
@@ -452143,7 +452143,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1329,
+          "line": 1330,
           "called": [
             "SeLe4n.Testing.SmpCbs.main"
           ]
