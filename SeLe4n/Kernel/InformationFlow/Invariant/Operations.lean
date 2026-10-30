@@ -4348,6 +4348,99 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
           · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hFrom]
       · rfl
 
+/-- WS-ZA ZA6.3 (NI): taking a **high** thread off its old home preserves the
+projection — the boot core's `current` is projected only for an observable
+thread, so a high one already reads `none`, and the reschedule flag is not
+projected. -/
+theorem vacateForAffinityChange_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (vacateForAffinityChange st tid oldCore newCore)
+      = projectState ctx observer st := by
+  unfold vacateForAffinityChange
+  split
+  · rename_i h
+    have hC : projectCurrent ctx observer { st with scheduler :=
+        (st.scheduler.setCurrentOnCore oldCore none).markReschedulePendingOnCore oldCore }
+          = projectCurrent ctx observer st := by
+      unfold projectCurrent
+      simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore]
+      by_cases hb : oldCore = bootCoreId
+      · subst hb
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_self, h.2]
+        simp [hTidHigh]
+      · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hb]
+    have hM : projectMachineRegs ctx observer { st with scheduler :=
+        (st.scheduler.setCurrentOnCore oldCore none).markReschedulePendingOnCore oldCore }
+          = projectMachineRegs ctx observer st := by
+      unfold projectMachineRegs
+      simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore]
+      by_cases hb : oldCore = bootCoreId
+      · subst hb
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_self, h.2]
+        simp [hTidHigh]
+      · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hb]
+    simp only [projectState, hC, hM]
+    rfl
+  · rfl
+
+/-- WS-ZA ZA6.3 (NI): requeueing a **high** thread on its new home preserves the
+projection — the store agrees off the run-queue links, which the projection
+strips, and the boot core's projected run queue filters the high thread out. -/
+theorem requeueVacatedOnNewHome_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newCore : SeLe4n.Kernel.Concurrency.CoreId) (vacated : Bool)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (requeueVacatedOnNewHome st tid newCore vacated)
+      = projectState ctx observer st := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · rename_i tcb _
+      unfold SystemState.runEnqueueOnCore
+      split
+      rotate_left
+      · rfl
+      have hA := SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks st newCore tid
+        tcb.boostedPriority
+      have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer hA
+      have hD := SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer st newCore tid
+        tcb.boostedPriority
+      unfold SystemState.onlyObjectsSchedulerDiffer at hD
+      dsimp only
+      rw [hD] at hObj ⊢
+      simp only [projectState, projectCurrent, projectActiveDomain,
+        projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+        SystemState.runEnqueueAdmitted_scheduler,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
+        SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+        SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+        SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+      congr 1
+      simp only [projectRunnable, SchedulerState.runnable,
+        SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+      by_cases hTo : newCore = bootCoreId
+      · subst hTo
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+          (st.scheduler.runQueueOnCore bootCoreId) tid _ (threadObservable ctx observer) hTidHigh
+      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hTo]
+        simp only [SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+    · rfl
+  · rfl
+
 /-- WS-SM SM5.H.4 (NI): the bare affinity **write** preserves the projection when the
 target object is non-observable (high). `setThreadCpuAffinity` writes only the
 target TCB's `cpuAffinity` field — which the projection erases — so for a high
@@ -4458,29 +4551,16 @@ theorem setThreadCpuAffinityWithMigration_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok (st', sgi)) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold setThreadCpuAffinityWithMigration at hStep
-  split at hStep
-  · rename_i tcb _
-    -- PR #889 review round 20: the declared-core refusal is a new leading
-    -- branch, ahead of the running-on-a-forbidden-core guard below.
-    split at hStep
-    · simp at hStep
-    · split at hStep
-      · simp at hStep
-      · split at hStep
-        · rename_i stSet hSet
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep
-          subst hst
-          rw [migrateRunQueueOnAffinityChange_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh]
-          have hSetProj : projectState ctx observer stSet = projectState ctx observer st :=
-            setThreadCpuAffinity_preserves_projection ctx observer st targetTid affinity stSet
-              hTargetObjHigh hObjInv hSet
-          split
-          · rw [migrateSchedContextReplenishment_preserves_projection]; exact hSetProj
-          · exact hSetProj
-        · simp at hStep
-  · simp at hStep
+  obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape hStep
+  rw [requeueVacatedOnNewHome_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh,
+    migrateRunQueueOnAffinityChange_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh]
+  have hSetProj : projectState ctx observer stSet = projectState ctx observer st :=
+    (setThreadCpuAffinity_preserves_projection ctx observer _ targetTid affinity stSet
+      hTargetObjHigh (by rw [vacateForAffinityChange_objects]; exact hObjInv) hSet).trans
+      (vacateForAffinityChange_preserves_projection ctx observer st targetTid _ _ hTargetThreadHigh)
+  split
+  · rw [migrateSchedContextReplenishment_preserves_projection]; exact hSetProj
+  · exact hSetProj
 
 /-- WS-SM SM5.H.4 (NI, the syscall op): `setThreadCpuAffinityOp` (the production op the
 `tcbSetAffinity` dispatch invokes) preserves the projection for a high target —

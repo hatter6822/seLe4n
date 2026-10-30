@@ -508,38 +508,38 @@ theorem schedContextUnbindOnCore_mappingStage {vScId : SeLe4n.ValidObjId} {ec : 
   · rename_i stU hU
     exact (schedContextUnbind_mappingStage hU).trans (priorityRescheduleOnCore_mappingStage h)
 
-/-- The affinity op: the affinity field written in place, the replenishment
-move (replenish queues only) and the run-queue migration. -/
+/-- The affinity op: the vacate (the scheduler alone), the affinity field
+written in place, the replenishment move (replenish queues only), the run-queue
+migration and the requeue (run-queue links only). -/
 theorem setThreadCpuAffinityOnCore_mappingStage {st st' : SystemState}
     {vTargetTid : SeLe4n.ValidThreadId} {affinity : Option CoreId} {ec : CoreId}
     {sgi? : Option (CoreId × Concurrency.SgiKind)}
     (h : setThreadCpuAffinityOnCore st vTargetTid affinity ec = .ok (st', sgi?)) :
     MappingStage st st' := by
-  unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration at h
-  split at h
-  · split at h
-    · cases h
-    · split at h
-      · cases h
-      · split at h
-        · rename_i stSet hSet
-          rw [Except.ok.injEq, Prod.mk.injEq] at h
-          rw [← h.1]
-          have hS1 : MappingStage st stSet := by
-            unfold setThreadCpuAffinity at hSet
-            split at hSet
-            · rename_i t hT _
-              rw [Except.ok.injEq] at hSet; subst hSet
-              exact MappingStage.rewriteObject_tcb hT _
-            · cases hSet
-          refine hS1.trans (MappingStage.trans ?_ (MappingStage.of_objectsAgreeOffRunLinks
-            (migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _)
-            (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _)))
-          split
-          · exact migrateSchedContextReplenishment_mappingStage _ _ _ _
-          · exact MappingStage.refl _
-        · cases h
-  · cases h
+  unfold setThreadCpuAffinityOnCore at h
+  obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
+  have hS0 : MappingStage st (vacateForAffinityChange st vTargetTid.val
+      (determineTargetCore st vTargetTid.val) (affinity.getD Concurrency.bootCoreId)) :=
+    MappingStage.of_objectsAgreeOffRunLinks
+      (fun hI => by rw [vacateForAffinityChange_objects]; exact hI)
+      (vacateForAffinityChange_objectsAgreeOffRunLinks _ _ _ _)
+  have hS1 : MappingStage (vacateForAffinityChange st vTargetTid.val
+      (determineTargetCore st vTargetTid.val) (affinity.getD Concurrency.bootCoreId)) stSet := by
+    unfold setThreadCpuAffinity at hSet
+    split at hSet
+    · rename_i t hT _
+      rw [Except.ok.injEq] at hSet; subst hSet
+      exact MappingStage.rewriteObject_tcb hT _
+    · cases hSet
+  refine hS0.trans (hS1.trans (MappingStage.trans ?_ ((MappingStage.of_objectsAgreeOffRunLinks
+    (migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _)
+    (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _)).trans
+    (MappingStage.of_objectsAgreeOffRunLinks
+      (requeueVacatedOnNewHome_preserves_objects_invExt _ _ _ _)
+      (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _)))))
+  split
+  · exact migrateSchedContextReplenishment_mappingStage _ _ _ _
+  · exact MappingStage.refl _
 
 /-! ### The timer path -/
 

@@ -7148,7 +7148,8 @@ theorem bootFromPlatformCheckedWithIdleThreads_tcb_cases (config : PlatformConfi
     state fields agree, every core's idle thread is runnable).  Nothing is
     current and nothing is queued, so the current-thread and queue clauses are
     vacuous; the idle store makes every core's idle thread runnable; every
-    configured thread is ready in IPC, so coherent. -/
+    configured thread is ready in IPC, so coherent; every core's idle thread is
+    pinned to it, so homed there. -/
 theorem bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique (config : PlatformConfig)
     (ist' : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist') :
     ist'.state.currentDequeuedUnique := by
@@ -7168,7 +7169,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique (config : P
     | some tcb => simp only [(hCases t tcb hT).2]; simp
   refine ⟨fun c t ht => ?_, fun t _ c' => hNotQ c' t, fun c c' ht => ?_,
     fun c t hq => ?_, fun t tcb hT => .inl (hCases t tcb hT).1, fun c => ?_,
-    fun c t ht => ?_⟩
+    fun c t ht => ?_, fun c t ht => ?_, fun c t hq => ?_, fun c => ?_⟩
   · rw [hNone c] at ht; cases ht
   · rw [hNone c'] at ht; cases ht
   · rw [hNotQ c t] at hq; cases hq
@@ -7176,6 +7177,13 @@ theorem bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique (config : P
       (bootFromPlatformCheckedWithIdleThreads_idle_resident config ist' h c).1, rfl, ?_⟩
     simp
   · rw [hNone c] at ht; cases ht
+  · rw [hNone c] at ht; cases ht
+  · rw [hNotQ c t] at hq; cases hq
+  · intro x hx
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+      (bootFromPlatformCheckedWithIdleThreads_idle_resident config ist' h c).1] at hx
+    cases hx
+    rw [readyIdleThread_cpuAffinity]; rfl
 
 -- ============================================================================
 -- WS-RR RR7.27 — the DeviceTree → PlatformConfig bridge

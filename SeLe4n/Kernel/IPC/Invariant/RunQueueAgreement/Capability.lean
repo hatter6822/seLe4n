@@ -96,7 +96,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : Sys
     | tcb t =>
       rw [SystemState.setSlotLinkWords_of_tcb hcn]
       exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
-        (by rw [hcn]; exact SystemState.objStateMono_tcb ⟨id, id⟩)
+        (by rw [hcn]; exact SystemState.objStateMono_tcb ⟨id, id, rfl⟩)
     | _ =>
       exact RunQueueStage.of_eq
         (SystemState.setSlotLinkWords_of_not_slots (fun _ h => by
@@ -397,7 +397,7 @@ theorem lookupServiceByRecordedRegistration_runQueueStage {epId : SeLe4n.ObjId} 
 /-- The raw-insert form of a TCB rewrite that keeps the run-queue fields. -/
 theorem insertTcb_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {tcb tcb' : TCB}
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) (hm : TCB.StepMono tcb tcb' := by exact ⟨id, id⟩)
+    (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) (hm : TCB.StepMono tcb tcb' := by exact ⟨id, id, by first | rfl | simp_all⟩)
     (hW : tcb'.taintWords = tcb.taintWords := by taint_words_kept) :
     RunQueueStage st { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } :=
   RunQueueStage.insert rfl rfl rfl (fun c => by rw [hPre]; exact h c)
@@ -528,7 +528,7 @@ theorem wakeCancelledWaiter_runQueueStage (st : SystemState) (t : SeLe4n.ThreadI
     (hRun : runningOnSomeCore st t = false) (hA : st.activeAt t) :
     RunQueueStage st (wakeCancelledWaiter st t) :=
   enqueueRunnableOnCore_runQueueStage st _ t
-    (fun c => currentNowhere_of_runningOnSomeCore_false hRun c) hA
+    (fun c => currentNowhere_of_runningOnSomeCore_false hRun c) hA (homedOn_determineTargetCore _ _)
 
 /-- **An endpoint waiter's cancel is a stage**: the head pop
 (`endpointQueuePopHead_runQueueStage`, through `popHead_inPlace`), the waiter's
@@ -555,10 +555,10 @@ theorem storeEndpointWaiterCancelled_runQueueStage (st : SystemState)
   generalize storePopHead st endpointId isReceiveQ t tcb.queueNext = s1 at hPop hFr hS1 hI1 ⊢
   have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
     ⟨fun _ => TCB.ipcState_setIpcState
-      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id⟩
+      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id, rfl⟩
   refine ((endpointQueuePopHead_runQueueStage hPop).trans
     (RunQueueStage.updateTcb s1 t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM)).trans
-    (enqueueRunnableOnCore_runQueueStage _ _ t (fun c => ?_) ?_)
+    (enqueueRunnableOnCore_runQueueStage _ _ t (fun c => ?_) ?_ (homedOn_determineTargetCore _ _))
   · have hR : runningOnSomeCore (s1.updateTcb t cancelledEndpointWaiterTcb) t =
         runningOnSomeCore st t := by
       unfold runningOnSomeCore; rw [SystemState.updateTcb_scheduler, hS1]
@@ -617,7 +617,7 @@ theorem storeEndpointBlockedCancelled_runQueueStage (st : SystemState) (e : SeLe
     ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) hG
   have hM : TCB.StateMono cancelledEndpointWaiterTcb := fun x =>
     ⟨fun _ => TCB.ipcState_setIpcState
-      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id⟩
+      { x with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready, id, rfl⟩
   unfold storeEndpointBlockedCancelled
   exact (endpointQueueRemoveDual_runQueueStage hRem).trans
     (RunQueueStage.updateTcb _ t (f := cancelledEndpointWaiterTcb) (fun _ _ => rfl) hM)

@@ -139,18 +139,22 @@ def TCB.Active (t : TCB) : Prop := t.threadState ≠ .Inactive
 
 /-- One TCB replaced by another **monotonely**: a ready thread stays ready and
 an active one active, so a runnable thread stays runnable and a coherent one
-coherent.  Every write that leaves both state fields alone is one; so is every
-write that makes a thread ready. -/
+coherent — and its affinity, so its home core, is kept.  Every write that
+leaves both state fields and the affinity alone is one; so is every write that
+makes a thread ready.  The affinity write (`setThreadCpuAffinity`) is the one
+TCB write that is not: it moves the thread's home, and the operation around it
+moves the thread with it. -/
 def TCB.StepMono (x x' : TCB) : Prop :=
-  (x.ipcState = .ready → x'.ipcState = .ready) ∧ (x.Active → x'.Active)
+  (x.ipcState = .ready → x'.ipcState = .ready) ∧ (x.Active → x'.Active) ∧
+    x'.cpuAffinity = x.cpuAffinity
 
 theorem TCB.StepMono.runnable {x x' : TCB} (h : x.StepMono x') (hr : x.Runnable) :
     x'.Runnable :=
-  ⟨h.1 hr.1, h.2 hr.2⟩
+  ⟨h.1 hr.1, h.2.1 hr.2⟩
 
 theorem TCB.StepMono.coherent {x x' : TCB} (h : x.StepMono x') (hc : x.Coherent) :
     x'.Coherent :=
-  hc.imp h.1 h.2
+  hc.imp h.1 h.2.1
 
 /-- A TCB write that is a monotone step on every TCB. -/
 abbrev TCB.StateMono (f : TCB → TCB) : Prop := ∀ x : TCB, TCB.StepMono x (f x)
@@ -2005,10 +2009,10 @@ theorem runRemoveOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.Thr
 /-- Closes `TCB.StateMono f` for a record update that leaves both state fields
 alone, or that only marks the thread ready or active. -/
 macro "tcb_state_mono" : tactic => `(tactic| first
-  | (intro _; exact ⟨id, id⟩)
-  | (intro _; exact ⟨fun _ => rfl, id⟩)
-  | (intro _; exact ⟨id, fun _ => by simp [TCB.Active]⟩)
-  | (intro _; exact ⟨fun _ => rfl, fun _ => by simp [TCB.Active]⟩))
+  | (intro _; exact ⟨id, id, rfl⟩)
+  | (intro _; exact ⟨fun _ => rfl, id, rfl⟩)
+  | (intro _; exact ⟨id, fun _ => by simp [TCB.Active], rfl⟩)
+  | (intro _; exact ⟨fun _ => rfl, fun _ => by simp [TCB.Active], rfl⟩))
 
 /-- Closes `st'.scheduler.currentCode = st.scheduler.currentCode` for a step that
 leaves the current slots alone: by definition, or from a hypothesis that
@@ -2095,12 +2099,20 @@ theorem activeAt.coherentAt {st : SystemState} {t : SeLe4n.ThreadId} (h : st.act
   obtain ⟨x, hx, ha⟩ := h
   rw [hx] at hy; cases hy; exact .inr ha
 
+/-- `t`'s TCB, if it has one, is homed on core `c`: its affinity, with an
+unpinned thread homed on the boot core (`determineTargetCore`'s reading). -/
+def homedOn (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId) : Prop :=
+  ∀ x, st.getTcb? t = some x → x.cpuAffinity.getD Concurrency.bootCoreId = c
+
 /-- A step that keeps every runnable thread runnable, every coherent TCB
-coherent and every active thread active: what every step but a block or a
-suspend does to the state fields. -/
+coherent and every active thread active, and every active thread on its
+affinity: what every step but a block, a suspend or an affinity change does to
+the state fields. -/
 def StateMono (st st' : SystemState) : Prop :=
   ∀ t, (st.runnable t → st'.runnable t) ∧ (st.coherentAt t → st'.coherentAt t) ∧
-    (st.activeAt t → st'.activeAt t)
+    (st.activeAt t → st'.activeAt t) ∧
+    (st.activeAt t → ∀ x x', st.getTcb? t = some x → st'.getTcb? t = some x' →
+      x'.cpuAffinity = x.cpuAffinity)
 
 theorem StateMono.runnable {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
     (hr : st.runnable t) : st'.runnable t := (h t).1 hr
@@ -2109,14 +2121,29 @@ theorem StateMono.coherentAt {st st' : SystemState} (h : StateMono st st') {t : 
     (hc : st.coherentAt t) : st'.coherentAt t := (h t).2.1 hc
 
 theorem StateMono.activeAt {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
-    (ha : st.activeAt t) : st'.activeAt t := (h t).2.2 ha
+    (ha : st.activeAt t) : st'.activeAt t := (h t).2.2.1 ha
 
-theorem StateMono.refl (st : SystemState) : StateMono st st := fun _ => ⟨id, id, id⟩
+/-- An active thread's kept TCB keeps its affinity. -/
+theorem StateMono.affinity {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
+    (ha : st.activeAt t) {x x' : TCB} (hx : st.getTcb? t = some x)
+    (hx' : st'.getTcb? t = some x') : x'.cpuAffinity = x.cpuAffinity :=
+  (h t).2.2.2 ha x x' hx hx'
+
+/-- An active thread stays homed where it was. -/
+theorem StateMono.homedOn {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
+    {c : CoreId} (ha : st.activeAt t) (hh : st.homedOn t c) : st'.homedOn t c := fun x' hx' => by
+  obtain ⟨x, hx, hA⟩ := ha
+  rw [h.affinity ⟨x, hx, hA⟩ hx hx']; exact hh x hx
+
+theorem StateMono.refl (st : SystemState) : StateMono st st :=
+  fun _ => ⟨id, id, id, fun _ _ _ h h' => by rw [h] at h'; cases h'; rfl⟩
 
 theorem StateMono.trans {st st' st'' : SystemState} (h1 : StateMono st st')
     (h2 : StateMono st' st'') : StateMono st st'' :=
-  fun _ => ⟨fun h => h2.runnable (h1.runnable h), fun h => h2.coherentAt (h1.coherentAt h),
-    fun h => h2.activeAt (h1.activeAt h)⟩
+  fun t => ⟨fun h => h2.runnable (h1.runnable h), fun h => h2.coherentAt (h1.coherentAt h),
+    fun h => h2.activeAt (h1.activeAt h), fun ha x x'' hx hx'' => by
+      obtain ⟨x', hx', hA'⟩ := h1.activeAt ha
+      rw [h2.affinity ⟨x', hx', hA'⟩ hx' hx'', h1.affinity ha hx hx']⟩
 
 /-- A step is state-monotone when, thread by thread, a TCB it keeps is
 replaced by a monotone step of it and a TCB it creates is coherent. -/
@@ -2126,7 +2153,10 @@ theorem StateMono.of_pointwise {st st' : SystemState}
       x'.Coherent) : StateMono st st' := fun t =>
   ⟨fun ⟨x, hx, hr⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.runnable hr⟩,
     fun hc x' hx' => h2 t x' hx' hc,
-    fun ⟨x, hx, ha⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.2 ha⟩⟩
+    fun ⟨x, hx, ha⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.2.1 ha⟩,
+    fun _ x y hx hy => by
+      obtain ⟨x', hx', hm⟩ := h1 t x hx
+      rw [hy] at hx'; cases hx'; exact hm.2.2⟩
 
 /-- **A step that may also erase suspended threads is state-monotone**: a TCB
 it keeps is replaced by a monotone step of it, or the TCB is gone and was not
@@ -2143,8 +2173,12 @@ theorem StateMono.of_pointwise_erase {st st' : SystemState}
     fun hc x' hx' => h2 t x' hx' hc,
     fun ⟨x, hx, ha⟩ => by
       rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
-      · exact ⟨x', hx', hm.2 ha⟩
-      · exact absurd ha hA⟩
+      · exact ⟨x', hx', hm.2.1 ha⟩
+      · exact absurd ha hA,
+    fun _ x y hx hy => by
+      rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨hn, -⟩
+      · rw [hy] at hx'; cases hx'; exact hm.2.2
+      · rw [hy] at hn; cases hn⟩
 
 /-- The same, read off a step that rewrites every TCB through a monotone map
 and adds or removes none. -/
@@ -2162,15 +2196,17 @@ theorem StateMono.of_map {st st' : SystemState} {f : SeLe4n.ThreadId → TCB →
 theorem StateMono.of_getTcb {st st' : SystemState} (h : ∀ t, st'.getTcb? t = st.getTcb? t) :
     StateMono st st' :=
   StateMono.of_map (f := fun _ x => x) (fun t => by rw [h]; cases st.getTcb? t <;> rfl)
-    (fun _ _ => ⟨id, id⟩)
+    (fun _ _ => ⟨id, id, rfl⟩)
 
-/-- A step that keeps every TCB's two state fields keeps them monotone. -/
+/-- A step that keeps every TCB's two state fields and its affinity keeps them
+monotone. -/
 theorem StateMono.of_stateFields {st st' : SystemState}
-    (h : ∀ t, (st'.getTcb? t).map (fun x => (x.ipcState, x.threadState)) =
-      (st.getTcb? t).map (fun x => (x.ipcState, x.threadState))) : StateMono st st' := by
+    (h : ∀ t, (st'.getTcb? t).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) =
+      (st.getTcb? t).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity))) :
+    StateMono st st' := by
   have hs : ∀ x x' : TCB, x'.ipcState = x.ipcState → x'.threadState = x.threadState →
-      x.StepMono x' := fun x x' e1 e2 =>
-    ⟨fun h => e1.trans h, fun h => by unfold TCB.Active; rw [e2]; exact h⟩
+      x'.cpuAffinity = x.cpuAffinity → x.StepMono x' := fun x x' e1 e2 e3 =>
+    ⟨fun h => e1.trans h, fun h => by unfold TCB.Active; rw [e2]; exact h, e3⟩
   refine StateMono.of_pointwise (fun t x hx => ?_) (fun t x' hx' hc => ?_)
   · have ht := h t
     rw [hx] at ht
@@ -2179,7 +2215,7 @@ theorem StateMono.of_stateFields {st st' : SystemState}
     | some x' =>
       rw [hT] at ht
       simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at ht
-      exact ⟨x', rfl, hs x x' ht.1 ht.2⟩
+      exact ⟨x', rfl, hs x x' ht.1 ht.2.1 ht.2.2⟩
   · have ht := h t
     rw [hx'] at ht
     cases hT : st.getTcb? t with
@@ -2187,7 +2223,40 @@ theorem StateMono.of_stateFields {st st' : SystemState}
     | some x =>
       rw [hT] at ht
       simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at ht
-      exact (hs x x' ht.1 ht.2).coherent (hc x hT)
+      exact (hs x x' ht.1 ht.2.1 ht.2.2).coherent (hc x hT)
+
+/-- A step keeping every thread's two state fields keeps it runnable, coherent
+and active — whatever it does to its affinity (the first three `StateMono`
+clauses, which an affinity change keeps and the fourth it does not). -/
+theorem stateFieldsKept_of_pair {st st' : SystemState}
+    (h : ∀ t, (st'.getTcb? t).map (fun x => (x.ipcState, x.threadState)) =
+      (st.getTcb? t).map (fun x => (x.ipcState, x.threadState))) (u : SeLe4n.ThreadId) :
+    (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
+      (st.activeAt u → st'.activeAt u) := by
+  have hu := h u
+  refine ⟨fun ⟨x, hx, hr⟩ => ?_, fun hc x' hx' => ?_, fun ⟨x, hx, ha⟩ => ?_⟩
+  · rw [hx] at hu
+    cases hT : st'.getTcb? u with
+    | none => rw [hT] at hu; cases hu
+    | some x' =>
+      rw [hT] at hu
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hu
+      exact ⟨x', hT, by unfold TCB.Runnable at hr ⊢; rw [hu.1, hu.2]; exact hr⟩
+  · rw [hx'] at hu
+    cases hT : st.getTcb? u with
+    | none => rw [hT] at hu; cases hu
+    | some x =>
+      rw [hT] at hu
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hu
+      have := hc x hT
+      unfold TCB.Coherent at this ⊢; rw [hu.1, hu.2]; exact this
+  · rw [hx] at hu
+    cases hT : st'.getTcb? u with
+    | none => rw [hT] at hu; cases hu
+    | some x' =>
+      rw [hT] at hu
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hu
+      exact ⟨x', hT, by unfold TCB.Active at ha ⊢; rw [hu.2]; exact ha⟩
 
 theorem StateMono.of_objects {st st' : SystemState} (h : st'.objects = st.objects) :
     StateMono st st' :=
@@ -2209,7 +2278,7 @@ theorem StateMono.updateTcb {st : SystemState} (hInv : st.objects.invExt) (tid :
   · dsimp only
     split
     · exact hm
-    · exact fun _ => ⟨id, id⟩
+    · exact fun _ => ⟨id, id, rfl⟩
 
 /-- The TCB an object slot holds, if any. -/
 def objTcb? : Option KernelObject → Option TCB
@@ -2243,8 +2312,8 @@ theorem objStateMono_nonTcb {old : Option KernelObject} {new : KernelObject}
 
 /-- Closes `objStateMono (some (.tcb old)) (.tcb new)` the same way. -/
 macro "obj_state_mono" : tactic => `(tactic| first
-  | exact objStateMono_tcb ⟨id, id⟩
-  | exact objStateMono_tcb ⟨fun _ => rfl, id⟩
+  | exact objStateMono_tcb ⟨id, id, rfl⟩
+  | exact objStateMono_tcb ⟨fun _ => rfl, id, rfl⟩
   | exact objStateMono_nonTcb rfl rfl)
 
 /-- One object slot rewritten monotonely: the `objStateMono` relation with the
@@ -2255,7 +2324,7 @@ def slotStateMono (old new : Option KernelObject) : Prop :=
 
 theorem slotStateMono.of_eq {old new : Option KernelObject} (h : new = old) :
     slotStateMono old new :=
-  by subst h; exact ⟨fun x hx => ⟨x, hx, ⟨id, id⟩⟩, fun x' hx' hc => hc x' hx'⟩
+  by subst h; exact ⟨fun x hx => ⟨x, hx, ⟨id, id, rfl⟩⟩, fun x' hx' hc => hc x' hx'⟩
 
 theorem slotStateMono.of_obj {old new : Option KernelObject} {o : KernelObject}
     (h : new = some o) (hm : objStateMono old o) : slotStateMono old new := by
@@ -2288,7 +2357,7 @@ theorem StateMono.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Kernel
   refine StateMono.of_pointwise (fun t x hx => ?_) (fun t x' hx' hc => ?_)
   · rw [key]; split
     · rename_i hk; exact hm.1 x (by rw [← hold t hk]; exact hx)
-    · exact ⟨x, hx, ⟨id, id⟩⟩
+    · exact ⟨x, hx, ⟨id, id, rfl⟩⟩
   · rw [key] at hx'; split at hx'
     · rename_i hk; exact hm.2 x' hx' (fun x h => hc x (by rw [hold t hk]; exact h))
     · exact hc x' hx'
@@ -2304,7 +2373,14 @@ until the dispatch that replaces it; seL4 states the same exceptions by asking
 these facts only while the scheduler action is `resume_cur_thread`.  The two
 exceptions cannot meet: every queued thread is runnable.  In every case no idle thread is queued (seL4 never enqueues the idle
 thread), an idle thread runs only on its own core and is always runnable, and
-every TCB's two state fields agree (`TCB.Coherent`). -/
+every TCB's two state fields agree (`TCB.Coherent`).
+
+**Every placed thread is on its home core** (seL4's `tcbAffinity` placement:
+`tcbSchedEnqueue` queues a thread on `tcbAffinity`'s queue and a core runs only
+what its own queue holds).  A thread current on core `c` or queued on `c` is
+homed on `c` (`homedOn`: its affinity, an unpinned thread on the boot core), and
+so is each core's idle thread.  An affinity change keeps it by taking the
+thread off its old home in the same transition (`setThreadCpuAffinityWithMigration`). -/
 structure currentDequeuedUniqueExcept (st : SystemState) (e : Option SchedPoint) : Prop where
   current : ∀ c t, st.scheduler.currentOnCore c = some t →
     (∀ c', st.queuedOn c' t = true → e = some (.preempt c) ∧ c' = c) ∧
@@ -2316,6 +2392,9 @@ structure currentDequeuedUniqueExcept (st : SystemState) (e : Option SchedPoint)
   coherent : ∀ t, st.coherentAt t
   idleRunnable : ∀ c, st.runnable (Kernel.idleThreadId c)
   currentActive : ∀ c t, st.scheduler.currentOnCore c = some t → st.activeAt t
+  currentHome : ∀ c t, st.scheduler.currentOnCore c = some t → st.homedOn t c
+  queuedHome : ∀ c t, st.queuedOn c t = true → st.homedOn t c
+  idleHomed : ∀ c, st.homedOn (Kernel.idleThreadId c) c
 
 /-- `t` is no core's current thread: the premise a wake of `t` needs. -/
 def currentNowhere (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
@@ -2355,23 +2434,29 @@ theorem currentDequeuedUnique.except {st : SystemState} (h : st.currentDequeuedU
     (e : Option SchedPoint) : st.currentDequeuedUniqueExcept e :=
   ⟨fun c t ht => ⟨fun c' hq => absurd ((h.current c t ht).1 c' hq).1 (fun h => by cases h),
     (h.current c t ht).2.1, .inr (h.runnable ht)⟩,
-    h.idleOff, h.idleHome, h.queuedRunnable, h.coherent, h.idleRunnable, h.currentActive⟩
+    h.idleOff, h.idleHome, h.queuedRunnable, h.coherent, h.idleRunnable, h.currentActive,
+    h.currentHome, h.queuedHome, h.idleHomed⟩
 
 /-- A step that empties or keeps every current slot, takes no current thread
-and no idle thread onto a queue, queues only runnable threads and keeps the
-state fields monotone keeps the property whatever point is open. -/
+and no idle thread onto a queue, queues only runnable threads on their home
+cores and keeps the state fields monotone keeps the property whatever point is
+open. -/
 theorem currentDequeuedUniqueExcept_of_frame {st st' : SystemState} {e : Option SchedPoint}
     (hC : ∀ c t, st'.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c = some t)
     (hQ : ∀ c t, st.scheduler.currentOnCore c = some t → ∀ c',
       st'.queuedOn c' t = true → st.queuedOn c' t = true)
     (hI : ∀ t, Kernel.isIdleThreadId t = true → ∀ c',
       st'.queuedOn c' t = true → st.queuedOn c' t = true)
-    (hN : ∀ c t, st'.queuedOn c t = true → st.queuedOn c t = true ∨ st'.runnable t)
+    (hN : ∀ c t, st'.queuedOn c t = true →
+      st.queuedOn c t = true ∨ (st'.runnable t ∧ st'.homedOn t c))
     (hM : StateMono st st')
     (h : st.currentDequeuedUniqueExcept e) : st'.currentDequeuedUniqueExcept e := by
   refine ⟨fun c t hc => ?_, fun t ht c' => ?_, fun c c' hc => h.idleHome c c' (hC c' _ hc),
     fun c t hq => ?_, fun t => (hM t).2.1 (h.coherent t), fun c => (hM _).1 (h.idleRunnable c),
-    fun c t hc => hM.activeAt (h.currentActive c t (hC c t hc))⟩
+    fun c t hc => hM.activeAt (h.currentActive c t (hC c t hc)),
+    fun c t hc => hM.homedOn (h.currentActive c t (hC c t hc)) (h.currentHome c t (hC c t hc)),
+    fun c t hq => ?_,
+    fun c => hM.homedOn (h.idleRunnable c).activeAt (h.idleHomed c)⟩
   · have hc0 := hC c t hc
     obtain ⟨h1, h2, h3⟩ := h.current c t hc0
     exact ⟨fun c' hq => h1 c' (hQ c t hc0 c' hq), fun c' hc' => h2 c' (hC c' t hc'),
@@ -2383,7 +2468,59 @@ theorem currentDequeuedUniqueExcept_of_frame {st st' : SystemState} {e : Option 
       cases h'
   · rcases hN c t hq with h' | h'
     · exact (hM t).1 (h.queuedRunnable c t h')
+    · exact h'.1
+  · rcases hN c t hq with h' | h'
+    · exact hM.homedOn (h.queuedRunnable c t h').activeAt (h.queuedHome c t h')
+    · exact h'.2
+
+/-- **A step that moves one thread's home** — the affinity change: it empties
+or keeps every current slot, takes no thread current after it onto a queue it
+was not on, queues no idle thread and no new thread but `t`, keeps the state
+fields monotone and every other active thread on its home, and leaves `t`
+current or queued only on its new home.  The property holds whatever point is
+open. -/
+theorem currentDequeuedUniqueExcept_of_rehome {st st' : SystemState} {e : Option SchedPoint}
+    {t : SeLe4n.ThreadId}
+    (hC : ∀ c u, st'.scheduler.currentOnCore c = some u → st.scheduler.currentOnCore c = some u)
+    (hQ : ∀ c u, st'.scheduler.currentOnCore c = some u → ∀ c',
+      st'.queuedOn c' u = true → st.queuedOn c' u = true)
+    (hI : ∀ u, Kernel.isIdleThreadId u = true → ∀ c',
+      st'.queuedOn c' u = true → st.queuedOn c' u = true)
+    (hN : ∀ c u, st'.queuedOn c u = true → st.queuedOn c u = true ∨ (u = t ∧ st'.runnable t))
+    (hM : ∀ u, (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
+      (st.activeAt u → st'.activeAt u))
+    (hA : ∀ u c, u ≠ t → st.activeAt u → st.homedOn u c → st'.homedOn u c)
+    (hTq : ∀ c, st'.queuedOn c t = true → st'.homedOn t c)
+    (hTc : ∀ c, st'.scheduler.currentOnCore c = some t → st'.homedOn t c)
+    (hTi : Kernel.isIdleThreadId t = false)
+    (h : st.currentDequeuedUniqueExcept e) : st'.currentDequeuedUniqueExcept e := by
+  refine ⟨fun c u hc => ?_, fun u hu c' => ?_, fun c c' hc => h.idleHome c c' (hC c' _ hc),
+    fun c u hq => ?_, fun u => (hM u).2.1 (h.coherent u), fun c => (hM _).1 (h.idleRunnable c),
+    fun c u hc => (hM u).2.2 (h.currentActive c u (hC c u hc)),
+    fun c u hc => ?_, fun c u hq => ?_, fun c => ?_⟩
+  · have hc0 := hC c u hc
+    obtain ⟨h1, h2, h3⟩ := h.current c u hc0
+    exact ⟨fun c' hq => h1 c' (hQ c u hc c' hq), fun c' hc' => h2 c' (hC c' u hc'),
+      h3.imp_right (hM u).1⟩
+  · cases hq : st'.queuedOn c' u
+    · rfl
+    · have h' := hI u hu c' hq
+      rw [h.idleOff u hu c'] at h'
+      cases h'
+  · rcases hN c u hq with h' | ⟨rfl, h'⟩
+    · exact (hM u).1 (h.queuedRunnable c u h')
     · exact h'
+  · by_cases hu : u = t
+    · subst hu; exact hTc c hc
+    · exact hA u c hu (h.currentActive c u (hC c u hc)) (h.currentHome c u (hC c u hc))
+  · rcases hN c u hq with h' | ⟨rfl, -⟩
+    · by_cases hu : u = t
+      · subst hu; exact hTq c hq
+      · exact hA u c hu (h.queuedRunnable c u h').activeAt (h.queuedHome c u h')
+    · exact hTq c hq
+  · have hne : Kernel.idleThreadId c ≠ t := fun hh => by
+      rw [← hh, Kernel.isIdleThreadId_idleThreadId] at hTi; cases hTi
+    exact hA _ c hne (h.idleRunnable c).activeAt (h.idleHomed c)
 
 /-- The same, for a step whose queues only lose threads. -/
 theorem currentDequeuedUniqueExcept_of_shrink {st st' : SystemState} {e : Option SchedPoint}
@@ -2418,9 +2555,10 @@ theorem queuedOn_core_unique {st : SystemState} {c c' : CoreId} {t : SeLe4n.Thre
 
 /-- **A dispatch on core `c`** — `c`'s slot gets `new`, every other core's slot
 is kept, and every thread queued afterwards was queued before or is `c`'s
-outgoing (non-idle, runnable) thread — closes `c`'s scheduling point, when the
-incoming thread ends queued nowhere, runs on no other core, is runnable, and is
-an idle thread only if it is `c`'s own.  Any other core's open point stays open
+outgoing (non-idle, runnable) thread, requeued on `c` — closes `c`'s
+scheduling point, when the incoming thread ends queued nowhere, runs on no other
+core, is runnable and homed on `c`, and is an idle thread only if it is `c`'s
+own.  Any other core's open point stays open
 (`he`). -/
 theorem currentDequeuedUniqueExcept_of_dispatch {st st' : SystemState} {c : CoreId}
     {new : Option SeLe4n.ThreadId} {e e' : Option SchedPoint}
@@ -2430,25 +2568,35 @@ theorem currentDequeuedUniqueExcept_of_dispatch {st st' : SystemState} {c : Core
       if c' = c then new else st.scheduler.currentOnCore c')
     (hNew : ∀ t, new = some t →
       (∀ c', st'.queuedOn c' t = false) ∧
-      (∀ c', c' ≠ c → st.scheduler.currentOnCore c' ≠ some t) ∧ st'.runnable t)
+      (∀ c', c' ≠ c → st.scheduler.currentOnCore c' ≠ some t) ∧ st'.runnable t ∧
+      st'.homedOn t c)
     (hIdle : ∀ c0, new = some (Kernel.idleThreadId c0) → c0 = c)
     (hQ : ∀ c' x, st'.queuedOn c' x = true → st.queuedOn c' x = true ∨
       (st.scheduler.currentOnCore c = some x ∧ Kernel.isIdleThreadId x = false ∧
-        st'.runnable x))
+        st'.runnable x ∧ c' = c))
     (hM : StateMono st st') :
     st'.currentDequeuedUniqueExcept e' := by
   refine ⟨fun c1 t h1 => ?_, fun t ht c' => ?_, fun c0 c' h' => ?_, fun c' x hq => ?_,
     fun t => (hM t).2.1 (hD.coherent t), fun c0 => (hM _).1 (hD.idleRunnable c0),
-    fun c1 t h1 => ?_⟩
+    fun c1 t h1 => ?_, fun c1 t h1 => ?_, fun c' x hq => ?_,
+    fun c0 => hM.homedOn (hD.idleRunnable c0).activeAt (hD.idleHomed c0)⟩
   rotate_left 4
   · rw [hCur] at h1
     by_cases hc : c1 = c
-    · rw [if_pos hc] at h1; exact (hNew t h1).2.2.activeAt
+    · rw [if_pos hc] at h1; exact (hNew t h1).2.2.1.activeAt
     · rw [if_neg hc] at h1; exact hM.activeAt (hD.currentActive c1 t h1)
   · rw [hCur] at h1
     by_cases hc : c1 = c
+    · rw [if_pos hc] at h1; rw [hc]; exact (hNew t h1).2.2.2
+    · rw [if_neg hc] at h1
+      exact hM.homedOn (hD.currentActive c1 t h1) (hD.currentHome c1 t h1)
+  · rcases hQ c' x hq with h | ⟨h, _, _, hc'⟩
+    · exact hM.homedOn (hD.queuedRunnable c' x h).activeAt (hD.queuedHome c' x h)
+    · rw [hc']; exact hM.homedOn (hD.currentActive c x h) (hD.currentHome c x h)
+  · rw [hCur] at h1
+    by_cases hc : c1 = c
     · rw [if_pos hc] at h1
-      refine ⟨fun c' hq => ?_, fun c' hc' => ?_, .inr (hNew t h1).2.2⟩
+      refine ⟨fun c' hq => ?_, fun c' hc' => ?_, .inr (hNew t h1).2.2.1⟩
       · rw [(hNew t h1).1 c'] at hq; cases hq
       · rw [hCur] at hc'
         by_cases hc'c : c' = c
@@ -2477,7 +2625,7 @@ theorem currentDequeuedUniqueExcept_of_dispatch {st st' : SystemState} {c : Core
     by_cases hc : c' = c
     · rw [if_pos hc] at h'; rw [hc, hIdle c0 h']
     · rw [if_neg hc] at h'; exact hD.idleHome c0 c' h'
-  · rcases hQ c' x hq with h | ⟨_, _, h⟩
+  · rcases hQ c' x hq with h | ⟨_, _, h, _⟩
     · exact (hM x).1 (hD.queuedRunnable c' x h)
     · exact h
 
@@ -2495,7 +2643,14 @@ theorem currentDequeuedUniqueExcept_of_requeue {st st' : SystemState} {c : CoreI
   refine ⟨fun c1 t h1 => ?_, fun t ht c' => ?_,
     fun c0 c' h' => hD.idleHome c0 c' (by rw [← hC]; exact h'), fun c' x hq => ?_,
     fun t => (hM t).2.1 (hD.coherent t), fun c0 => (hM _).1 (hD.idleRunnable c0),
-    fun c1 t h1 => hM.activeAt (hD.currentActive c1 t (by rw [← hC]; exact h1))⟩
+    fun c1 t h1 => hM.activeAt (hD.currentActive c1 t (by rw [← hC]; exact h1)),
+    fun c1 t h1 => hM.homedOn (hD.currentActive c1 t (by rw [← hC]; exact h1))
+      (hD.currentHome c1 t (by rw [← hC]; exact h1)),
+    fun c' x hq => ?_, fun c0 => hM.homedOn (hD.idleRunnable c0).activeAt (hD.idleHomed c0)⟩
+  rotate_left 3
+  · rcases hQ c' x hq with h | ⟨hx, hc', _⟩
+    · exact hM.homedOn (hD.queuedRunnable c' x h).activeAt (hD.queuedHome c' x h)
+    · rw [hc']; exact hM.homedOn (hD.currentActive c x hx) (hD.currentHome c x hx)
   · rw [hC] at h1
     obtain ⟨hNo, hU, hRun⟩ := hD.current c1 t h1
     refine ⟨fun c' hq => ?_, fun c' hc' => hU c' (by rw [← hC]; exact hc'),
@@ -2527,6 +2682,7 @@ theorem currentDequeuedUniqueExcept_of_block {st st' : SystemState} {c : CoreId}
     (hNI : Kernel.isIdleThreadId t = false)
     (hM : ∀ u, u ≠ t → (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
       (st.activeAt u → st'.activeAt u))
+    (hH : ∀ u c', st.homedOn u c' → st'.homedOn u c')
     (hA : st'.activeAt t) :
     st'.currentDequeuedUniqueExcept (some (.block c)) := by
   have hNQ : ∀ c', st.queuedOn c' t = false := fun c' => by
@@ -2539,7 +2695,10 @@ theorem currentDequeuedUniqueExcept_of_block {st st' : SystemState} {c : CoreId}
     rw [queuedOn_eq_runLinkOn, hL, ← queuedOn_eq_runLinkOn]
   refine ⟨fun c1 u h1 => ?_, fun u hu c' => by rw [hQ]; exact hD.idleOff u hu c',
     fun c0 c' h' => hD.idleHome c0 c' (by rw [← hCur]; exact h'), fun c' u hq => ?_,
-    fun u => ?_, fun c0 => ?_, fun c1 u h1 => ?_⟩
+    fun u => ?_, fun c0 => ?_, fun c1 u h1 => ?_,
+    fun c1 u h1 => hH u c1 (hD.currentHome c1 u (by rw [← hCur]; exact h1)),
+    fun c' u hq => hH u c' (hD.queuedHome c' u (by rw [← hQ]; exact hq)),
+    fun c0 => hH _ c0 (hD.idleHomed c0)⟩
   · rw [hCur] at h1
     obtain ⟨hNo, hU, hRun⟩ := hD.current c1 u h1
     refine ⟨fun c' hq => hNo c' (by rw [← hQ]; exact hq),
@@ -2577,6 +2736,7 @@ theorem currentDequeuedUniqueExcept_of_offWrite {st st' : SystemState} {e : Opti
     (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u) (hNI : Kernel.isIdleThreadId t = false)
     (hM : ∀ u, u ≠ t → (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
       (st.activeAt u → st'.activeAt u))
+    (hH : ∀ u c', u ≠ t → st.homedOn u c' → st'.homedOn u c')
     (hCo : st'.coherentAt t) : st'.currentDequeuedUniqueExcept e := by
   have hCur : ∀ c', st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := fun c' => by
     unfold SchedulerState.currentOnCore; rw [hC]
@@ -2586,7 +2746,13 @@ theorem currentDequeuedUniqueExcept_of_offWrite {st st' : SystemState} {e : Opti
     subst hu; exact hNC c h
   refine ⟨fun c1 u h1 => ?_, fun u hu c' => by rw [hQ]; exact hD.idleOff u hu c',
     fun c0 c' h' => hD.idleHome c0 c' (by rw [← hCur]; exact h'), fun c' u hq => ?_,
-    fun u => ?_, fun c0 => ?_, fun c1 u h1 => ?_⟩
+    fun u => ?_, fun c0 => ?_, fun c1 u h1 => ?_,
+    fun c1 u h1 => hH u c1 (hNe c1 u (by rw [← hCur]; exact h1))
+      (hD.currentHome c1 u (by rw [← hCur]; exact h1)),
+    fun c' u hq => hH u c' (fun h => by subst h; rw [hQ, hNQ c'] at hq; cases hq)
+      (hD.queuedHome c' u (by rw [← hQ]; exact hq)),
+    fun c0 => hH _ c0 (fun h => by rw [← h, Kernel.isIdleThreadId_idleThreadId] at hNI; cases hNI)
+      (hD.idleHomed c0)⟩
   · rw [hCur] at h1
     obtain ⟨hNo, hU, hRun⟩ := hD.current c1 u h1
     exact ⟨fun c' hq => hNo c' (by rw [← hQ]; exact hq),
@@ -2856,7 +3022,8 @@ theorem RunQueueStage.of_link' {st st' : SystemState} (hL : RunQueueLinkStage st
       st'.queuedOn c' t = true → st.queuedOn c' t = true)
     (hI : ∀ t, Kernel.isIdleThreadId t = true → ∀ c',
       st'.queuedOn c' t = true → st.queuedOn c' t = true)
-    (hN : ∀ c t, st'.queuedOn c t = true → st.queuedOn c t = true ∨ st'.runnable t)
+    (hN : ∀ c t, st'.queuedOn c t = true →
+      st.queuedOn c t = true ∨ (st'.runnable t ∧ st'.homedOn t c))
     (hM : StateMono st st') : RunQueueStage st st' :=
   ⟨hL, fun _ _ _ _ d => currentDequeuedUniqueExcept_of_frame hC hQ hI hN hM d, fun _ _ => hM⟩
 
@@ -3045,7 +3212,7 @@ theorem currentDequeuedUniqueExcept_updateTcb_offWrite {st : SystemState} {e : O
     (fun c x => by
       unfold SystemState.updateTcb; split
       · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ hInv hT (hf t) c x
-      · rfl) hNI (fun u hu => ?_) (fun y hy => ?_)
+      · rfl) hNI (fun u hu => ?_) (fun u c' hu hh y hy => hh y (by rw [← hNe u hu]; exact hy)) (fun y hy => ?_)
   · refine ⟨fun ⟨x, hx, hr⟩ => ⟨x, by rw [hNe u hu]; exact hx, hr⟩,
       fun hc x hx => hc x (by rw [← hNe u hu]; exact hx),
       fun ⟨x, hx, ha⟩ => ⟨x, by rw [hNe u hu]; exact hx, ha⟩⟩
@@ -3079,7 +3246,7 @@ theorem currentDequeuedUniqueExcept_insert_offTcb {st st' : SystemState}
   have hNe : ∀ u, u ≠ x.tid → st'.getTcb? u = st.getTcb? u := fun u hu => by
     rw [key, if_neg (fun h => hu (ThreadId.toObjId_injective _ _ (hk.trans h)).symm)]
   refine currentDequeuedUniqueExcept_of_offWrite hD hNC hNQ hC hL hNI (fun u hu => ?_)
-    (fun y hy => ?_)
+    (fun u c' hu hh y hy => hh y (by rw [← hNe u hu]; exact hy)) (fun y hy => ?_)
   · refine ⟨fun ⟨z, hz, hr⟩ => ⟨z, by rw [hNe u hu]; exact hz, hr⟩,
       fun hc z hz => hc z (by rw [← hNe u hu]; exact hz),
       fun ⟨z, hz, ha⟩ => ⟨z, by rw [hNe u hu]; exact hz, ha⟩⟩
@@ -3116,7 +3283,7 @@ theorem currentDequeuedUniqueExcept_updateTcb₂_offWrite {st : SystemState}
   refine currentDequeuedUniqueExcept_of_offWrite hD hNC hNQ
     (by rw [updateTcb_scheduler, updateTcb_scheduler])
     (fun c x => by rw [updateTcb_runLinkOn hInv1 hg, updateTcb_runLinkOn hInv hf]) hNI
-    (fun u hu => ?_) (fun y hy => ?_)
+    (fun u hu => ?_) (fun u c' hu hh y hy => hh y (by rw [← hNe u hu]; exact hy)) (fun y hy => ?_)
   · refine ⟨fun ⟨x, hx, hr⟩ => ⟨x, by rw [hNe u hu]; exact hx, hr⟩,
       fun hc x hx => hc x (by rw [← hNe u hu]; exact hx),
       fun ⟨x, hx, ha⟩ => ⟨x, by rw [hNe u hu]; exact hx, ha⟩⟩
@@ -3160,6 +3327,38 @@ theorem runLinkOn_insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Kernel
   · simp only [RHTable_getElem?_eq_get?]
     rw [RHTable.getElem?_insert_ne st.objects _ _ obj (fun hb => hk (eq_of_beq hb)) hInv]
 
+/-- The link half of a one-object write giving the same run-queue entries, and
+no run queue or end, with the table references carried by `hTab` — whatever the
+object's state fields, so it holds of a write that moves a thread's home too
+(the affinity change). -/
+theorem RunQueueLinkStage.insertWith {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject}
+    (hO : st'.objects = st.objects.insert k obj)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
+    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
+    (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
+    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame) :
+    RunQueueLinkStage st st' :=
+  ⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
+    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩, fun hInv _ t => hTab hInv t,
+    fun hInv _ q => (show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q⟩
+
+/-- ...holding the slot's table back-links and every reference table. -/
+theorem RunQueueLinkStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hO : st'.objects = st.objects.insert k obj)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
+    (hT : st'.referenceTables = st.referenceTables := by table_frame)
+    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
+    (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
+    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame) :
+    RunQueueLinkStage st st' :=
+  .insertWith hO hQ hE h (fun hInv t => (TableReferenceFrame.insert hInv hO hT hB).preserves t)
+    hR hS
+
 /-- A step that writes one object giving the same run-queue entries, and no
 run queue or end, with the table references carried by `hTab`: the store
 primitive both the frame (`RunQueueStage.insert`) and a registry writer, which
@@ -3175,9 +3374,7 @@ theorem RunQueueStage.insertWith {st st' : SystemState} {k : SeLe4n.ObjId} {obj 
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame) :
     RunQueueStage st st' :=
-  ⟨⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
-    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩, fun hInv _ t => hTab hInv t,
-    fun hInv _ q => (show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q⟩,
+  ⟨RunQueueLinkStage.insertWith hO hQ hE h hTab hR hS,
     fun _ hInv _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_insert hInv hO h)
       (StateMono.insert hInv hO hm) d, fun hInv _ => StateMono.insert hInv hO hm⟩
 
@@ -3298,7 +3495,8 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
     (hOld : st.getTcb? t = some old) (h : ∀ c, new.runLinkOn c = old.runLinkOn c)
     (hT : new.threadState = old.threadState)
     (hCur : st.scheduler.currentOnCore c = some t) (hNI : Kernel.isIdleThreadId t = false)
-    (hW : new.taintWords = old.taintWords := by taint_words_kept) :
+    (hW : new.taintWords = old.taintWords := by taint_words_kept)
+    (hAff : new.cpuAffinity = old.cpuAffinity := by first | rfl | simp_all) :
     RunQueueWindowStage (.block c) st st' := by
   have hO : st'.objects = st.objects.insert t.toObjId (.tcb new) := by
     unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
@@ -3324,11 +3522,15 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
       rw [RHTable.getElem?_insert_ne st.objects _ _ _ (fun hb => hu
         (ThreadId.toObjId_injective _ _ (eq_of_beq hb)).symm) hInv]
   refine currentDequeuedUniqueExcept_of_block d hCur (by rw [hSc]) (runLinkOn_insert hInv hO hLk)
-    hNI (fun u hu => ?_) ?_
+    hNI (fun u hu => ?_) (fun u c' hh y hy => ?_) ?_
   · have e : st'.getTcb? u = st.getTcb? u := by rw [hGet, if_neg hu]
     refine ⟨fun ⟨x, hx, hr⟩ => ⟨x, by rw [e]; exact hx, hr⟩,
       fun hc x hx => hc x (by rw [← e]; exact hx),
       fun ⟨x, hx, ha⟩ => ⟨x, by rw [e]; exact hx, ha⟩⟩
+  · rw [hGet] at hy
+    split at hy
+    · rename_i hu; subst hu; cases hy; rw [hAff]; exact hh old hOld
+    · exact hh y hy
   · obtain ⟨x, hx, ha⟩ := d.currentActive c t hCur
     rw [hOld] at hx; cases hx
     exact ⟨new, by rw [hGet, if_pos rfl], by unfold TCB.Active; rw [hT]; exact ha⟩

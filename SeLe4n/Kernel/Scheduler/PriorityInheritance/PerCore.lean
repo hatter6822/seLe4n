@@ -965,6 +965,22 @@ theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (t
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hst1Inv, hst1]
   exact ⟨_, rfl, rfl⟩
 
+/-- WS-ZA ZA6.3: the resume's ready mid-state keeps the thread's affinity, so its
+home core. -/
+theorem resumeReadyMidState_getTcb?_affinity (st : SystemState) (tid : ThreadId) (tcb : TCB)
+    (hGet : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧
+      tm.cpuAffinity = tcb.cpuAffinity := by
+  have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
+  have hst1 : (restoreToReady st tid).getTcb? tid
+      = some (TCB.setIpcState { tcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0, pendingReceiveReplyCode := 0 } .ready) := by
+    unfold restoreToReady restoreToReadyStaging
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hGet]
+    rfl
+  simp only [resumeReadyMidState]
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hst1Inv, hst1]
+  exact ⟨_, rfl, rfl⟩
+
 /-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" preserves the object-store
 invariant (`restoreToReady` then a single TCB `insert`). -/
 theorem resumeReadyMidState_objects_invExt (st : SystemState) (tid : ThreadId)

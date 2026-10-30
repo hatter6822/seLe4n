@@ -1951,7 +1951,8 @@ stage. -/
 theorem schedContextUnbindQueueStage_runQueueStage (st0 : SystemState)
     (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
     (hNC : ∀ c, st0.scheduler.currentOnCore c ≠ some tid)
-    (hRun : wasCurrent = true → st0.runnable tid) :
+    (hRun : wasCurrent = true → st0.runnable tid)
+    (hHome : wasCurrent = true → st0.homedOn tid home) :
     SystemState.RunQueueStage st0 (schedContextUnbindQueueStage st0 home tid prio wasCurrent) := by
   unfold schedContextUnbindQueueStage
   split
@@ -1961,7 +1962,7 @@ theorem schedContextUnbindQueueStage_runQueueStage (st0 : SystemState)
     exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq
   · split
     · rename_i hW
-      exact (SystemState.RunQueueStage.runEnqueueOnCore _ _ _ _ hNC (hRun hW)).trans
+      exact (SystemState.RunQueueStage.runEnqueueOnCore _ _ _ _ hNC (hRun hW) (hHome hW)).trans
         (SystemState.RunQueueStage.markReschedulePendingOnCore _ home)
     · exact .refl _
 
@@ -2036,7 +2037,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
             (purgeReplenishment_runQueueStage _ _)
           refine SystemState.RunQueueStage.trans (st' := SystemState.updateTcb _ _ _) ?_
             (schedContextUnbindQueueStage_runQueueStage _ _ _ _ _ (by simpa only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] using hNC)
-              (fun hW => ?hRun))
+              (fun hW => ?hRun) (fun hW => ?hHome))
           refine SystemState.RunQueueStage.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
             (SystemState.RunQueueStage.updateTcb _ _
               (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
@@ -2065,6 +2066,14 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
               ((SystemState.StateMono.insert hInv rfl
                 (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)).trans
               (SystemState.StateMono.updateTcb (RHTable_insert_preserves_invExt _ _ _ hInv) tid (by tcb_state_mono)))) tid).1 hR0
+          case hHome =>
+            obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
+            have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
+            exact ((SystemState.StateMono.of_objects rfl).trans
+              ((SystemState.StateMono.insert hInv rfl
+                (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)).trans
+              (SystemState.StateMono.updateTcb (RHTable_insert_preserves_invExt _ _ _ hInv) tid (by tcb_state_mono)))).homedOn
+              hR0.activeAt (homedOn_determineTargetCore st tid)
       · dsimp only [] at hStep
         cases hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st

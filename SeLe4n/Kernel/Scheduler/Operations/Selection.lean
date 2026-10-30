@@ -2234,6 +2234,27 @@ def determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :=
       | some c' => c'
       | none    => bootCoreId
   | none => bootCoreId
+
+/-- WS-ZA ZA6.3: a thread is homed on the core `determineTargetCore` names. -/
+theorem homedOn_determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) :
+    st.homedOn tid (determineTargetCore st tid) := fun x hx => by
+  unfold determineTargetCore; simp only [hx]; cases hA : x.cpuAffinity <;> simp
+
+/-- WS-ZA ZA6.3: ...and a thread with a TCB homed on `c` has `c` for its
+`determineTargetCore`. -/
+theorem determineTargetCore_eq_of_homedOn {st : SystemState} {tid : SeLe4n.ThreadId}
+    {c : CoreId} {x : TCB} (hx : st.getTcb? tid = some x) (h : st.homedOn tid c) :
+    determineTargetCore st tid = c := by
+  have := h x hx
+  unfold determineTargetCore; rw [hx]; cases hA : x.cpuAffinity <;> simp_all
+
+/-- WS-ZA ZA6.3: an active thread homed on `c` has `c` for its
+`determineTargetCore`. -/
+theorem determineTargetCore_eq_of_active_homedOn {st : SystemState} {tid : SeLe4n.ThreadId}
+    {c : CoreId} (ha : st.activeAt tid) (h : st.homedOn tid c) :
+    determineTargetCore st tid = c :=
+  let ⟨_, hx, _⟩ := ha; determineTargetCore_eq_of_homedOn hx h
+
 /-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
 the first core whose current slot holds it (`none` when not current anywhere).
 `determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),

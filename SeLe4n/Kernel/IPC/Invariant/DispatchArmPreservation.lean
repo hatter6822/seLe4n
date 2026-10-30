@@ -847,18 +847,6 @@ theorem migrateSchedContextReplenishment_preserves_ipcInvariantFull (st : System
   exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
     (.of_releaseLinks (migrateSchedContextReplenishment_agree st scId fromCore toCore)) hInv
 
-/-- The affinity run-queue migration repoints no core's `current` slot. -/
-theorem migrateRunQueueOnAffinityChange_currentOnCore (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' := by
-  unfold migrateRunQueueOnAffinityChange
-  split
-  · rfl
-  · split
-    · rfl
-    · split <;> simp
-
 /-- The affinity run-queue migration preserves the whole bundle: it moves only
 run-queue links and queue membership, which no conjunct reads. -/
 theorem migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull (st : SystemState)
@@ -878,37 +866,38 @@ theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : setThreadCpuAffinityOnCore st vtid affinity ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
-  unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration at hStep
-  split at hStep
-  · rename_i tcb hT
-    -- PR #889 review round 20: the declared-core refusal is a new leading
-    -- branch; `hStep` says it did not fire.
-    split at hStep
-    · contradiction
-    · split at hStep
-      · contradiction
-      · split at hStep
-        · rename_i stSet hSet
-          have hSetEq : stSet = { st with objects := st.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
-            unfold setThreadCpuAffinity at hSet
-            rw [SystemState.getTcbWitnessed?_eq_some hT] at hSet
-            exact (Except.ok.inj hSet).symm
-          subst hSetEq
-          dsimp only [] at hStep
-          cases hStep
-          have hPreRaw := (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT
-          have hInvSet := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val
-            tcb { tcb with cpuAffinity := affinity } hObjInv hInv hPreRaw
-            rfl rfl rfl rfl rfl rfl rfl rfl rfl
-          cases hScid : tcb.schedContextBinding.scId? with
-          | some scId =>
-              exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
-                (migrateSchedContextReplenishment_preserves_ipcInvariantFull _ _ _ _ hInvSet)
-          | none =>
-              exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
-                hInvSet
-        · contradiction
-  · contradiction
+  unfold setThreadCpuAffinityOnCore at hStep
+  obtain ⟨tcb, stSet, hT, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape hStep
+  -- WS-ZA ZA6.3: the vacate writes the scheduler alone.
+  have hInvV := ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (vacateForAffinityChange_objectsAgreeOffRunLinks st vtid.val
+      (determineTargetCore st vtid.val) (affinity.getD bootCoreId)) hInv
+  have hObjInvV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+      (affinity.getD bootCoreId)).objects.invExt := by
+    rw [vacateForAffinityChange_objects]; exact hObjInv
+  have hTV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+      (affinity.getD bootCoreId)).getTcb? vtid.val = some tcb := by
+    rw [vacateForAffinityChange_getTcb?]; exact hT
+  generalize vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+    (affinity.getD bootCoreId) = sv at hSet hInvV hObjInvV hTV
+  have hSetEq : stSet =
+      { sv with objects := sv.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
+    unfold setThreadCpuAffinity at hSet
+    rw [SystemState.getTcbWitnessed?_eq_some hTV] at hSet
+    exact (Except.ok.inj hSet).symm
+  subst hSetEq
+  have hPreRaw := (SystemState.getTcb?_eq_some_iff _ vtid.val tcb).mp hTV
+  have hInvSet := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ vtid.val
+    tcb { tcb with cpuAffinity := affinity } hObjInvV hInvV hPreRaw
+    rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  apply ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _)
+  cases hScid : tcb.schedContextBinding.scId? with
+  | some scId =>
+      exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _
+        (migrateSchedContextReplenishment_preserves_ipcInvariantFull _ _ _ _ hInvSet)
+  | none =>
+      exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _ hInvSet
 
 -- ============================================================================
 -- §9  Capability arms (`.cspaceDelete`, `.cspaceMint`, `.cspaceCopy`,

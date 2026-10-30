@@ -252,43 +252,107 @@ theorem migrateRunQueueOnAffinityChange_stepCovers (e : CoreId) (st : SystemStat
           · simp [hTo, hp]
         · exact hp
 
+/-- WS-ZA ZA6.3: the vacate covers — the one slot it empties is on a core it
+flags. -/
+theorem vacateForAffinityChange_stepCovers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (oldCore newCore : CoreId) :
+    stepCovers e st (vacateForAffinityChange st tid oldCore newCore) := by
+  apply stepCovers_of_keys_slots
+    (schedKeyView_of_objectsAgreeOffRunLinks
+      (vacateForAffinityChange_objectsAgreeOffRunLinks _ _ _ _))
+    (budgetEligibleView_of_objectsAgreeOffRunLinks
+      (vacateForAffinityChange_objectsAgreeOffRunLinks _ _ _ _))
+  · intro c _
+    unfold vacateForAffinityChange
+    split
+    · by_cases hc : c = oldCore
+      · subst hc; left; simp
+      · right
+        refine ⟨fun t ht => ht, ?_⟩
+        simp [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc)]
+    · exact Or.inr ⟨fun _ h => h, rfl⟩
+  · intro c _ hp
+    unfold vacateForAffinityChange
+    split
+    · by_cases hc : oldCore = c
+      · subst hc; simp
+      · simp [hc, hp]
+    · exact hp
+
+/-- WS-ZA ZA6.3: the requeue covers — the one queue it grows is on a core it
+flags. -/
+theorem requeueVacatedOnNewHome_stepCovers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) :
+    stepCovers e st (requeueVacatedOnNewHome st tid newCore vacated) := by
+  apply stepCovers_of_keys_slots
+    (schedKeyView_of_objectsAgreeOffRunLinks
+      (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _))
+    (budgetEligibleView_of_objectsAgreeOffRunLinks
+      (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _))
+  · intro c _
+    unfold requeueVacatedOnNewHome
+    split
+    · split
+      · by_cases hc : c = newCore
+        · subst hc; left; simp
+        · right
+          refine ⟨fun t ht => ?_, by simp⟩
+          change (st.runEnqueueOnCore newCore tid _).queuedOn c t = true at ht
+          exact SystemState.runEnqueueOnCore_queuedOn_imp_ne hc ht
+      · exact Or.inr ⟨fun _ h => h, rfl⟩
+    · exact Or.inr ⟨fun _ h => h, rfl⟩
+  · intro c _ hp
+    unfold requeueVacatedOnNewHome
+    split
+    · split
+      · by_cases hc : newCore = c
+        · subst hc; simp
+        · simp [hc, hp]
+      · exact hp
+    · exact hp
+
 theorem setThreadCpuAffinityOnCore_stepCovers (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (affinity : Option CoreId) (e : CoreId)
     (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
     (hStep : setThreadCpuAffinityOnCore st vtid affinity e = .ok (st', sgi)) :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration at hStep
-  split at hStep
-  · rename_i tcb hT
-    split at hStep
-    · contradiction
-    · split at hStep
-      · contradiction
-      · split at hStep
-        · rename_i stSet hSet
-          have hSetEq : stSet = { st with objects := (st.objects.insert vtid.val.toObjId
-              (.tcb { tcb with cpuAffinity := affinity })) } := by
-            unfold setThreadCpuAffinity at hSet
-            rw [SystemState.getTcbWitnessed?_eq_some hT] at hSet
-            exact (Except.ok.inj hSet).symm
-          subst hSetEq
-          dsimp only [] at hStep
-          cases hStep
-          have kSet := insertObjects_tcbKeyKeeping_keyFrame (tcb' := { tcb with
-            cpuAffinity := affinity }) hInv ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT) rfl
-          have s1 := kSet.stepCovers (e := e)
-          cases tcb.schedContextBinding.scId? with
-          | some scId =>
-            refine ⟨stepCovers_trans s1 (stepCovers_trans
-              (migrateSchedContextReplenishment_stepCovers e _ scId _ _)
-              (migrateRunQueueOnAffinityChange_stepCovers e _ _ _ _)), ?_⟩
-            exact migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _
-              (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ kSet.2.2)
-          | none =>
-            exact ⟨stepCovers_trans s1 (migrateRunQueueOnAffinityChange_stepCovers e _ _ _ _),
-              migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _ kSet.2.2⟩
-        · contradiction
-  · contradiction
+  unfold setThreadCpuAffinityOnCore at hStep
+  obtain ⟨tcb, stSet, hT, -, -, -, hSet, rfl, -⟩ :=
+    setThreadCpuAffinityWithMigration_ok_shape hStep
+  have hInvV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+      (affinity.getD Concurrency.bootCoreId)).objects.invExt := by
+    rw [vacateForAffinityChange_objects]; exact hInv
+  have hTV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+      (affinity.getD Concurrency.bootCoreId)).getTcb? vtid.val = some tcb := by
+    rw [vacateForAffinityChange_getTcb?]; exact hT
+  have s0 := vacateForAffinityChange_stepCovers e st vtid.val (determineTargetCore st vtid.val)
+    (affinity.getD Concurrency.bootCoreId)
+  generalize vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+    (affinity.getD Concurrency.bootCoreId) = sv at hSet hInvV hTV s0
+  have hSetEq : stSet =
+      { sv with objects := sv.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
+    unfold setThreadCpuAffinity at hSet
+    rw [SystemState.getTcbWitnessed?_eq_some hTV] at hSet
+    exact (Except.ok.inj hSet).symm
+  subst hSetEq
+  have kSet := insertObjects_tcbKeyKeeping_keyFrame (tcb' := { tcb with
+    cpuAffinity := affinity }) hInvV ((SystemState.getTcb?_eq_some_iff sv vtid.val tcb).mp hTV) rfl
+  have s1 := stepCovers_trans s0 (kSet.stepCovers (e := e))
+  cases tcb.schedContextBinding.scId? with
+  | some scId =>
+    refine ⟨stepCovers_trans s1 (stepCovers_trans
+      (migrateSchedContextReplenishment_stepCovers e _ scId _ _)
+      (stepCovers_trans (migrateRunQueueOnAffinityChange_stepCovers e _ _ _ _)
+        (requeueVacatedOnNewHome_stepCovers e _ _ _ _))), ?_⟩
+    exact requeueVacatedOnNewHome_preserves_objects_invExt _ _ _ _
+      (migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _
+        (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ kSet.2.2))
+  | none =>
+    exact ⟨stepCovers_trans s1 (stepCovers_trans
+        (migrateRunQueueOnAffinityChange_stepCovers e _ _ _ _)
+        (requeueVacatedOnNewHome_stepCovers e _ _ _ _)),
+      requeueVacatedOnNewHome_preserves_objects_invExt _ _ _ _
+        (migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _ kSet.2.2)⟩
 
 /-! ### Scheduling-context configure -/
 

@@ -761,8 +761,8 @@ theorem donateSchedContext_getTcb?_stateFields_eq
     (hObjInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st')
     (tid : SeLe4n.ThreadId) :
-    (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) =
-      (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) :=
+    (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) =
+      (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) :=
   donateSchedContext_getTcb?_map_eq _ (fun _ _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
 
 /-- WS-RR RR2.3: `donateSchedContext` frames every SchedContext **other than**
@@ -973,8 +973,8 @@ theorem returnDonatedSchedContext_getTcb?_stateFields_eq
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st')
     (tid : SeLe4n.ThreadId) :
-    (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) =
-      (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) :=
+    (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) =
+      (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) :=
   returnDonatedSchedContext_getTcb?_map_eq _ (fun _ _ _ => rfl) st st' serverTid scId originalOwner hObjInv newOwner? h tid
 
 /-- **WS-ZA ZA4.5**: the donation return moves no thread's run-queue core. -/

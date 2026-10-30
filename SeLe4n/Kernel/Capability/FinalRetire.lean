@@ -2788,7 +2788,7 @@ theorem retireFinalObject_stateMono (ec : Concurrency.CoreId) (target recorder :
   · have hk := (SystemState.getTcb?_eq_some_iff st t x).mp hx
     rcases retireFinalObject_tcb_kept_or_quiescent ec target recorder st hObjInv hk with
       e | ⟨hn, -, -, hQ, -⟩
-    · exact .inl ⟨x, (SystemState.getTcb?_eq_some_iff _ t x).mpr (e.trans hk), ⟨id, id⟩⟩
+    · exact .inl ⟨x, (SystemState.getTcb?_eq_some_iff _ t x).mpr (e.trans hk), ⟨id, id, rfl⟩⟩
     · refine .inr ⟨?_, fun hA => hA (threadQuiescent_codes hQ).1⟩
       unfold SystemState.getTcb?; rw [hn]
   · have hp := (SystemState.getTcb?_eq_some_iff _ t x').mp hx'

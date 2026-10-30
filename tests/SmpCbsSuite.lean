@@ -169,7 +169,7 @@ example (oldCore newCore : SeLe4n.Kernel.Concurrency.CoreId) :
   setThreadCpuAffinityWithMigrationLockSet_pairwise_le oldCore newCore
 -- #2 (Codex P1): rebinding a thread RUNNING on a core its new affinity forbids is
 -- rejected fail-closed (`.threadOnDifferentCore`).
-#check @setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
+#check @setThreadCpuAffinityWithMigration_rejects_running_off_home
 -- PR #889 review round 20: an affinity naming a PE the platform does not
 -- declare is refused fail-closed (`.invalidArgument`), and unpinning is not.
 #check @setThreadCpuAffinityWithMigration_rejects_undeclared_core

@@ -84,7 +84,7 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
     have hM : SystemState.StateMono st s := SystemState.StateMono.of_slots fun oid => by
       rcases hD.2.2 oid with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
       · exact SystemState.slotStateMono.of_eq e
-      · rw [h0]; exact SystemState.slotStateMono.of_obj h1 (SystemState.objStateMono_tcb ⟨id, id⟩)
+      · rw [h0]; exact SystemState.slotStateMono.of_obj h1 (SystemState.objStateMono_tcb ⟨id, id, rfl⟩)
     have hF : SystemState.TableReferenceFrame st s := ⟨by rw [hD.1]; rfl, fun k => by
       rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
       · rw [e]

@@ -598,7 +598,8 @@ theorem runRemoveOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
 theorem StateMono.of_agreeOffRunLinks {st st' : SystemState} (h : objectsAgreeOffRunLinks st' st) :
     StateMono st st' :=
   StateMono.of_stateFields fun t =>
-    TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun x => (x.ipcState, x.threadState)) (h.getTcb? t)
+    TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun x => (x.ipcState, x.threadState, x.cpuAffinity))
+      (h.getTcb? t)
 
 /-- A step that writes only run-queue links keeps every table back-link: a
 thread holds none. -/
@@ -1293,11 +1294,12 @@ theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : 
     fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runEnqueueOnCore_scheduler]; split <;> rfl)
 
-/-- The guarded enqueue of a runnable thread current on no core is a stage:
-every current thread stays off the queues, and every queued one is runnable. -/
+/-- The guarded enqueue of a runnable thread current on no core, on its home
+core, is a stage: every current thread stays off the queues, and every queued
+one is runnable and on its home. -/
 theorem RunQueueStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hNC : ∀ c', st.scheduler.currentOnCore c' ≠ some t)
-    (hRun : st.runnable t) :
+    (hRun : st.runnable t) (hHome : st.homedOn t c) :
     RunQueueStage st (st.runEnqueueOnCore c t p) :=
   RunQueueStage.of_link' (RunQueueLinkStage.runEnqueueOnCore st c t p)
     (fun c' y h' => by rwa [SchedulerState.currentOnCore, runEnqueueOnCore_current] at h')
@@ -1314,25 +1316,31 @@ theorem RunQueueStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe
       rw [runEnqueueOnCore_queuedOn] at h'
       split at h'
       · rename_i h; obtain ⟨rfl, -⟩ := h
-        exact .inr ((StateMono.of_agreeOffRunLinks
-          (runEnqueueOnCore_objectsAgreeOffRunLinks st c y p) y).1 hRun)
+        exact .inr ⟨(StateMono.of_agreeOffRunLinks
+          (runEnqueueOnCore_objectsAgreeOffRunLinks st c y p) y).1 hRun,
+          (of_decide_eq_true h') ▸
+            (StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c y p)).homedOn
+              hRun.activeAt hHome⟩
       · exact .inl h')
     (StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))
 
 /-- A stage, then the enqueue of a thread runnable before it and current nowhere
-after it: the stage keeps the thread runnable. -/
+after it, on its home core: the stage keeps the thread runnable. -/
 theorem RunQueueStage.then_enqueue {st s : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
     {p : SeLe4n.Priority} (h1 : RunQueueStage st s)
-    (hNC : ∀ c', s.scheduler.currentOnCore c' ≠ some t) (hRun : st.runnable t) :
+    (hNC : ∀ c', s.scheduler.currentOnCore c' ≠ some t) (hRun : st.runnable t)
+    (hHome : s.homedOn t c) :
     RunQueueStage st (s.runEnqueueOnCore c t p) :=
   ⟨h1.1.trans (RunQueueLinkStage.runEnqueueOnCore s c t p), fun e h r r'' d =>
     let ⟨h', r'⟩ := h1.1 h r
-    (RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)).2.1 e h' r' r''
+    (RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)
+      hHome).2.1 e h' r' r''
       (h1.2.1 e h r r' d),
     fun h r =>
       let ⟨h', r'⟩ := h1.1 h r
       (h1.2.2 h r).trans
-        ((RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)).2.2 h' r')⟩
+        ((RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)
+          hHome).2.2 h' r')⟩
 
 /-- **A preemption**: the guarded enqueue of core `c`'s current thread back on
 `c`'s queue keeps `c`'s scheduling point open. -/

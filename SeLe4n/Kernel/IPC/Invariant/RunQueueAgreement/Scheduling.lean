@@ -142,7 +142,7 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                     refine RunQueueStage.trans ?_
                       (SystemState.RunQueueStage.markReschedulePendingOnCore _ _)
                     refine RunQueueStage.then_enqueue ?_ (bindPlacesParkedThread_not_current hPlace)
-                      (bindPlacesParkedThread_runnable hPlace hTcb)
+                      (bindPlacesParkedThread_runnable hPlace hTcb) (homedOn_determineTargetCore _ _)
                     refine RunQueueStage.trans ?_ (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
                     exact RunQueueStage.insert rfl rfl rfl
                       (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
@@ -165,7 +165,7 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_tcb {st : SystemState}
     {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
     (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
-    (hm : TCB.StepMono t t' := by exact ⟨id, id⟩)
+    (hm : TCB.StepMono t t' := by exact ⟨id, id, by first | rfl | simp_all⟩)
     (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
     RunQueueStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
   RunQueueStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
@@ -334,7 +334,7 @@ theorem preemptCurrentOnCore_stateMono (st : SystemState) (c : Concurrency.CoreI
       · rename_i prevTcb h _
         exact (SystemState.StateMono.insert hInv rfl (by
           rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
-          exact SystemState.objStateMono_tcb ⟨id, id⟩)).trans
+          exact SystemState.objStateMono_tcb ⟨id, id, rfl⟩)).trans
           (SystemState.StateMono.of_agreeOffRunLinks
             (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
       · exact SystemState.StateMono.refl _
@@ -432,7 +432,17 @@ theorem switchToThreadOnCore_runQueueSwitchStage {st st' : SystemState} {c : Con
           rw [SystemState.runRemoveOnCore_current]
           exact preemptCurrentOnCore_currentOnCore st c tid c'
       · cases ht
-        refine ⟨fun c' => ?_, hNotElse, (hM hInv).runnable ?_⟩
+        have hRun0 : st.runnable tid := by
+          rcases hSel hRf with hq | hc | hI
+          · exact hD.queuedRunnable c tid hq
+          · exact hRunCur tid hc
+          · subst hI; exact hD.idleRunnable c
+        refine ⟨fun c' => ?_, hNotElse, (hM hInv).runnable hRun0, (hM hInv).homedOn hRun0.activeAt ?_⟩
+        rotate_left
+        · rcases hSel hRf with hq | hc | hI
+          · exact hD.queuedHome c tid hq
+          · exact hD.currentHome c tid hc
+          · subst hI; exact hD.idleHomed c
         · rw [hQ']
           by_cases hc : c' = c
           · simp [hc]
@@ -446,10 +456,6 @@ theorem switchToThreadOnCore_runQueueSwitchStage {st st' : SystemState} {c : Con
                 · subst hI
                   rw [hD.idleOff _ (Kernel.isIdleThreadId_idleThreadId c) c'] at hq0; cases hq0
               · exact absurd rfl hne
-        · rcases hSel hRf with hq | hc | hI
-          · exact hD.queuedRunnable c tid hq
-          · exact hRunCur tid hc
-          · subst hI; exact hD.idleRunnable c
       · cases h0
         rcases hSel hRf with hq | hc | hI
         · rw [hD.idleOff _ (Kernel.isIdleThreadId_idleThreadId c0) c] at hq; cases hq
@@ -458,9 +464,9 @@ theorem switchToThreadOnCore_runQueueSwitchStage {st st' : SystemState} {c : Con
       · rw [hQ'] at hq
         split at hq
         · cases hq
-        · rcases preemptCurrentOnCore_queuedOn_imp hInv hq with hq0 | ⟨hc0, _, _, hI⟩
+        · rcases preemptCurrentOnCore_queuedOn_imp hInv hq with hq0 | ⟨hc0, hcc, _, hI⟩
           · exact .inl hq0
-          · exact .inr ⟨hc0, hI, (hM hInv).runnable (hRunCur _ hc0)⟩
+          · exact .inr ⟨hc0, hI, (hM hInv).runnable (hRunCur _ hc0), hcc⟩
     · cases h
   · cases h
 
@@ -482,9 +488,9 @@ theorem dropCurrentOnCore_runQueueSwitchStage (st : SystemState) (c : Concurrenc
     · subst hc; simp
     · rw [if_neg hc, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc)]
       exact preemptCurrentOnCore_currentOnCore st c _ c'
-  · rcases preemptCurrentOnCore_queuedOn_imp hInv hq with hq0 | ⟨hc0, _, _, hI⟩
+  · rcases preemptCurrentOnCore_queuedOn_imp hInv hq with hq0 | ⟨hc0, hcc, _, hI⟩
     · exact .inl hq0
-    · exact .inr ⟨hc0, hI, (hM hInv).runnable ((hD.current c x hc0).2.2.resolve_left hb)⟩
+    · exact .inr ⟨hc0, hI, (hM hInv).runnable ((hD.current c x hc0).2.2.resolve_left hb), hcc⟩
 
 /-- The reschedule handler: a switch, a drop or nothing, then the flag clear — a
 kernel entry's scheduling point. -/
@@ -663,7 +669,15 @@ theorem resumeThreadOnCore_runQueueEntryStage {st st' : SystemState}
         refine SystemState.RunQueueEntryStage.of_inv
           (hS2.1.trans (enqueueRunnableOnCore_runQueueLinkStage _ _ _)) fun hInv _ d => ?_
         have hIn' : tcb.threadState = .Inactive := by simpa using hIn
-        refine (hS2.trans (enqueueRunnableOnCore_runQueueStage _ _ _ (fun c hc => ?_) ?_)).entry
+        refine (hS2.trans (enqueueRunnableOnCore_runQueueStage _ _ _ (fun c hc => ?_) ?_
+          (fun x hx => ?_))).entry
+        rotate_left 2
+        · obtain ⟨tm, htm, ha⟩ :=
+            PriorityInheritance.resumeReadyMidState_getTcb?_affinity st _ tcb hT hInv
+          have hx' : (resumeReadyMidState st vtid.val).getTcb? vtid.val = some x := by
+            unfold SystemState.getTcb? at hx ⊢; rw [markKeyChangeFrom_objects] at hx; exact hx
+          rw [htm] at hx'; cases hx'
+          rw [ha]; exact homedOn_determineTargetCore st _ tcb hT
         · rw [markKeyChangeFrom_currentOnCore] at hc
           have hc' : st.scheduler.currentOnCore c = some vtid.val := by
             unfold SchedulerState.currentOnCore at hc ⊢
@@ -762,26 +776,36 @@ theorem _root_.SeLe4n.Model.SystemState.runLinksAdmit_of_contains {st : SystemSt
     · simp [hc]
     · rw [if_neg hc] at h; cases h
 
+/-- The link half of a TCB rewritten through the witnessed lookup keeping its
+run-queue fields, whatever it writes to its state fields and affinity. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueLinkStage.rewriteObject_tcb {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
+    (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
+    SystemState.RunQueueLinkStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
+  SystemState.RunQueueLinkStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
+    (fun c => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact hL c)
+    (hB := by
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
+      simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])
+
 /-- The affinity migration moves a thread from the queue that holds it to its
-new home core's: after the removal it is on no queue, so the enqueue is admitted.
-It is a kernel entry's step, not a stage: between scheduling points the thread
-it moves is no core's current thread, but inside one it may be the outgoing
-thread a preemption queued, which the move would take off its core. -/
-theorem migrateRunQueueOnAffinityChange_runQueueEntryStage (st : SystemState)
+new home core's: after the removal it is on no queue, so the enqueue is admitted
+and the run queues stay in agreement with the threads.  Its placement half is
+the affinity change's (`setThreadCpuAffinityOnCore_runQueueEntryStage`), which
+reads where it leaves the thread (`migrateRunQueueOnAffinityChange_queuedOn`). -/
+theorem migrateRunQueueOnAffinityChange_runQueueLinkStage (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore : Concurrency.CoreId) :
-    SystemState.RunQueueEntryStage st (migrateRunQueueOnAffinityChange st tid fromCore toCore) := by
+    SystemState.RunQueueLinkStage st (migrateRunQueueOnAffinityChange st tid fromCore toCore) := by
   unfold migrateRunQueueOnAffinityChange
   split
-  · exact (RunQueueStage.refl _).entry
-  · rename_i hNe
-    split
-    · exact (RunQueueStage.refl _).entry
+  · exact .refl _
+  · split
+    · exact .refl _
     · rename_i tcb hTcb
       split
       · rename_i hC
-        have hQd : st.queuedOn fromCore tid = true := by
-          unfold SystemState.queuedOn; simp [hTcb, hC]
-        refine SystemState.RunQueueEntryStage.trans
+        refine SystemState.RunQueueLinkStage.trans
           (st' := (st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid tcb.boostedPriority)
           ?_ (RunQueueStage.of_frame
             (st := (st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid tcb.boostedPriority)
@@ -789,47 +813,7 @@ theorem migrateRunQueueOnAffinityChange_runQueueEntryStage (st : SystemState)
                 tcb.boostedPriority with
               scheduler := ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid
                 tcb.boostedPriority).scheduler.markReschedulePendingOnCore toCore })
-            rfl rfl rfl).entry
-        have hL : SystemState.RunQueueLinkStage st
-            ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid tcb.boostedPriority) := ?_
-        · have hM : SystemState.StateMono st
-              ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid tcb.boostedPriority) :=
-            SystemState.StateMono.of_agreeOffRunLinks
-              ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
-                (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _))
-          refine ⟨hL, fun _ _ _ hD => SystemState.currentDequeuedUniqueExcept_of_frame ?_ ?_ ?_
-            ?_ hM hD⟩
-          · intro c t h
-            rw [SystemState.runEnqueueAdmitted_currentOnCore] at h
-            unfold SchedulerState.currentOnCore at h ⊢
-            rwa [SystemState.runRemoveOnCore_current] at h
-          · intro c t hc c' hq
-            rw [SystemState.runEnqueueAdmitted_queuedOn] at hq
-            split at hq
-            · rename_i ht; subst ht
-              cases ((hD.current c t hc).1 fromCore hQd).1
-            · rw [SystemState.runRemoveOnCore_queuedOn] at hq
-              split at hq
-              · cases hq
-              · exact hq
-          · intro t ht c' hq
-            rw [SystemState.runEnqueueAdmitted_queuedOn] at hq
-            split at hq
-            · rename_i ht'; subst ht'
-              rw [hD.idleOff _ ht fromCore] at hQd; cases hQd
-            · rw [SystemState.runRemoveOnCore_queuedOn] at hq
-              split at hq
-              · cases hq
-              · exact hq
-          · intro c t hq
-            rw [SystemState.runEnqueueAdmitted_queuedOn] at hq
-            split at hq
-            · rename_i ht; subst ht
-              exact .inr (hM.runnable (hD.queuedRunnable _ _ hQd))
-            · rw [SystemState.runRemoveOnCore_queuedOn] at hq
-              split at hq
-              · cases hq
-              · exact .inl hq
+            rfl rfl rfl).1
         refine .of_tableFrame (fun hInv hR => ?_) (fun _ => .of_agreeOffRunLinks
           ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
             (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)))
@@ -850,39 +834,170 @@ theorem migrateRunQueueOnAffinityChange_runQueueEntryStage (st : SystemState)
             exact SystemState.runLinksAdmit_not_contains hR
               (SystemState.runLinksAdmit_of_contains hR
                 ((hR fromCore).contains_of_runCoreCode hTcb hC)) c' hf
-      · exact (RunQueueStage.refl _).entry
+      · exact .refl _
 
-/-- The affinity op: the affinity field write, the replenishment move (replenish
-queues only) and the run-queue migration. -/
+/-- The requeue of a vacated thread: the guarded enqueue, then the reschedule
+flag. -/
+theorem requeueVacatedOnNewHome_runQueueLinkStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newCore : Concurrency.CoreId) (vacated : Bool) :
+    SystemState.RunQueueLinkStage st (requeueVacatedOnNewHome st tid newCore vacated) := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · exact (SystemState.RunQueueLinkStage.runEnqueueOnCore _ _ _ _).trans
+        (SystemState.RunQueueLinkStage.of_frame rfl rfl rfl)
+    · exact .refl _
+  · exact .refl _
+
+/-- The vacate writes a `current` slot and a reschedule flag alone. -/
+theorem vacateForAffinityChange_runQueueLinkStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : Concurrency.CoreId) :
+    SystemState.RunQueueLinkStage st (vacateForAffinityChange st tid oldCore newCore) := by
+  unfold vacateForAffinityChange
+  split
+  · exact SystemState.RunQueueLinkStage.of_frame rfl rfl rfl
+  · exact .refl _
+
+/-- **Where a committed affinity change leaves every thread** (WS-ZA ZA6.3): the
+`current` slots are the vacate's, every other thread keeps its TCB off its
+run-queue links and its queue, the target keeps its TCB but for the affinity,
+and the target ends queued only on its new home or where it already was off its
+old home — newly so only when it was queued on or running on the home it left. -/
+theorem setThreadCpuAffinityWithMigration_placement {st st' : SystemState}
+    {t : SeLe4n.ThreadId} {affinity : Option Concurrency.CoreId} {ec : Concurrency.CoreId}
+    {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : setThreadCpuAffinityWithMigration st t affinity ec = .ok (st', sgi)) :
+    ∃ tcb, st.getTcb? t = some tcb ∧ Kernel.isIdleThreadId t = false ∧
+      affinityRunningElsewhere st t (determineTargetCore st t) Concurrency.allCores = false ∧
+      (∀ c, st'.scheduler.currentOnCore c = (vacateForAffinityChange st t
+        (determineTargetCore st t) (affinity.getD Concurrency.bootCoreId)).scheduler.currentOnCore c) ∧
+      (∀ u, u ≠ t → (st'.getTcb? u).map TCB.withoutRunLinks =
+        (st.getTcb? u).map TCB.withoutRunLinks) ∧
+      (st'.getTcb? t).map TCB.withoutRunLinks =
+        some ({ tcb with cpuAffinity := affinity }).withoutRunLinks ∧
+      (∀ c u, u ≠ t → st'.queuedOn c u = st.queuedOn c u) ∧
+      (∀ c, st'.queuedOn c t = true → c = affinity.getD Concurrency.bootCoreId ∨
+        (c ≠ determineTargetCore st t ∧ st.queuedOn c t = true)) ∧
+      (∀ c, st'.queuedOn c t = true → st.queuedOn c t = true ∨
+        (determineTargetCore st t ≠ affinity.getD Concurrency.bootCoreId ∧
+          (st.queuedOn (determineTargetCore st t) t = true ∨
+            st.scheduler.currentOnCore (determineTargetCore st t) = some t))) := by
+  obtain ⟨tcb, stSet, hT, -, hI, hR, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
+  have hInvV : (vacateForAffinityChange st t (determineTargetCore st t)
+      (affinity.getD Concurrency.bootCoreId)).objects.invExt := by
+    rw [vacateForAffinityChange_objects]; exact hInv
+  have hTV : (vacateForAffinityChange st t (determineTargetCore st t)
+      (affinity.getD Concurrency.bootCoreId)).getTcb? t = some tcb := by
+    rw [vacateForAffinityChange_getTcb?]; exact hT
+  obtain ⟨hS1, hS2, hS3⟩ := setThreadCpuAffinity_getTcb?_view hInvV hTV hSet
+  refine ⟨tcb, hT, hI, hR, ?_⟩
+  cases hb : tcb.schedContextBinding.scId? with
+  | none =>
+    exact affinityChange_placement_of_mid hT hS1
+      (fun u hu => by rw [hS2 u hu, vacateForAffinityChange_getTcb?]) (fun c => by rw [hS3])
+  | some scId =>
+    exact affinityChange_placement_of_mid hT
+      (by rw [migrateSchedContextReplenishment_getTcb?]; exact hS1)
+      (fun u hu => by
+        rw [migrateSchedContextReplenishment_getTcb?, hS2 u hu, vacateForAffinityChange_getTcb?])
+      (fun c => by rw [(migrateSchedContextReplenishment_runQueue_current_eq _ _ _ _ c).2, hS3])
+
+/-- **The affinity op is a kernel entry** (WS-ZA ZA6.3): the vacate, the
+affinity write, the replenishment move, the run-queue migration and the requeue
+keep the run queues in agreement with the threads, and every thread current or
+queued on a core stays homed on it — the target, moved, is current or queued
+only on its new home (`currentDequeuedUniqueExcept_of_rehome`). -/
 theorem setThreadCpuAffinityOnCore_runQueueEntryStage {st st' : SystemState}
     {vTargetTid : SeLe4n.ValidThreadId} {affinity : Option Concurrency.CoreId}
     {ec : Concurrency.CoreId} {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
     (h : setThreadCpuAffinityOnCore st vTargetTid affinity ec = .ok (st', sgi?)) :
     SystemState.RunQueueEntryStage st st' := by
-  unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration at h
-  split at h
-  · split at h
-    · cases h
-    · split at h
-      · cases h
-      · split at h
-        · rename_i stSet hSet
-          rw [Except.ok.injEq, Prod.mk.injEq] at h
-          rw [← h.1]
-          have hS1 : RunQueueStage st stSet := by
-            unfold setThreadCpuAffinity at hSet
-            split at hSet
-            · rename_i t hT _
-              rw [Except.ok.injEq] at hSet; subst hSet
-              exact RunQueueStage.rewriteObject_tcb hT (fun _ => by rfl) _
-            · cases hSet
-          refine hS1.entry.trans (SystemState.RunQueueEntryStage.trans (RunQueueStage.entry ?_)
-            (migrateRunQueueOnAffinityChange_runQueueEntryStage _ _ _ _))
-          split
-          · exact migrateSchedContextReplenishment_runQueueStage _ _ _ _
-          · exact RunQueueStage.refl _
-        · cases h
-  · cases h
+  unfold setThreadCpuAffinityOnCore at h
+  refine ⟨?_, fun hInv _ _ hD => ?_⟩
+  · obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
+    have hL2 : SystemState.RunQueueLinkStage (vacateForAffinityChange st vTargetTid.val
+        (determineTargetCore st vTargetTid.val) (affinity.getD Concurrency.bootCoreId)) stSet := by
+      unfold setThreadCpuAffinity at hSet
+      split at hSet
+      · rename_i t0 hT0 _
+        rw [Except.ok.injEq] at hSet; subst hSet
+        exact SystemState.RunQueueLinkStage.rewriteObject_tcb
+          (t' := { t0 with cpuAffinity := affinity }) hT0 (fun _ => rfl) _
+      · cases hSet
+    refine (vacateForAffinityChange_runQueueLinkStage _ _ _ _).trans (hL2.trans ?_)
+    refine SystemState.RunQueueLinkStage.trans ?_
+      ((migrateRunQueueOnAffinityChange_runQueueLinkStage _ _ _ _).trans
+        (requeueVacatedOnNewHome_runQueueLinkStage _ _ _ _))
+    split
+    · exact (migrateSchedContextReplenishment_runQueueStage _ _ _ _).1
+    · exact .refl _
+  · obtain ⟨tcb, hT, hI, hR, hCur, hNe, hTv, hQne, hQself, hQnew⟩ :=
+      setThreadCpuAffinityWithMigration_placement hInv h
+    have hTv' : (st'.getTcb? vTargetTid.val).map TCB.withoutRunLinks =
+        (some { tcb with cpuAffinity := affinity }).map TCB.withoutRunLinks := hTv
+    have hHomeNew : st'.homedOn vTargetTid.val (affinity.getD Concurrency.bootCoreId) :=
+      fun x' hx' => by
+        have := TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity) hTv'
+        rw [hx'] at this
+        simp only [Option.map_some, Option.some.injEq] at this
+        rw [this]
+    have hStay : ∀ c, st'.scheduler.currentOnCore c = some vTargetTid.val →
+        c = determineTargetCore st vTargetTid.val ∧
+          determineTargetCore st vTargetTid.val = affinity.getD Concurrency.bootCoreId := by
+      intro c hc
+      rw [hCur, vacateForAffinityChange_currentOnCore] at hc
+      split at hc
+      · cases hc
+      · rename_i hn
+        have hco := affinityRunningElsewhere_false hR c hc
+        exact ⟨hco, Classical.byContradiction fun hon => hn ⟨hco, hon, hco ▸ hc⟩⟩
+    have hPair : ∀ u, (st'.getTcb? u).map (fun x => (x.ipcState, x.threadState)) =
+        (st.getTcb? u).map (fun x => (x.ipcState, x.threadState)) := fun u => by
+      by_cases hu : u = vTargetTid.val
+      · rw [hu, TCB.map_proj_eq_of_map_withoutRunLinks_eq
+          (fun x => (x.ipcState, x.threadState)) hTv', hT]
+        rfl
+      · exact TCB.map_proj_eq_of_map_withoutRunLinks_eq _ (hNe u hu)
+    have hM := SystemState.stateFieldsKept_of_pair hPair
+    refine SystemState.currentDequeuedUniqueExcept_of_rehome (t := vTargetTid.val)
+      (fun c u hc => ?_) (fun c u hc c' hq => ?_) (fun u hu c' hq => ?_) (fun c u hq => ?_)
+      hM (fun u c hu _ hh => ?_) (fun c hq => ?_) (fun c hc => ?_) hI hD
+    · rw [hCur, vacateForAffinityChange_currentOnCore] at hc
+      split at hc
+      · cases hc
+      · exact hc
+    · by_cases hu : u = vTargetTid.val
+      · rw [hu] at hc hq ⊢
+        rcases hQnew c' hq with h0 | ⟨hne, -⟩
+        · exact h0
+        · exact absurd (hStay c hc).2 hne
+      · rw [hQne c' u hu] at hq; exact hq
+    · have hut : u ≠ vTargetTid.val := fun e => by rw [e, hI] at hu; cases hu
+      rw [hQne c' u hut] at hq; exact hq
+    · by_cases hu : u = vTargetTid.val
+      · rw [hu] at hq ⊢
+        rcases hQnew c hq with h0 | ⟨-, h0⟩
+        · exact .inl h0
+        · refine .inr ⟨rfl, (hM _).1 ?_⟩
+          rcases h0 with hq0 | hc0
+          · exact hD.queuedRunnable _ _ hq0
+          · exact hD.runnable hc0
+      · rw [hQne c u hu] at hq; exact .inl hq
+    · intro x' hx'
+      have := TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity) (hNe u hu)
+      rw [hx'] at this
+      cases hx : st.getTcb? u with
+      | none => rw [hx] at this; cases this
+      | some x =>
+        rw [hx] at this
+        simp only [Option.map_some, Option.some.injEq] at this
+        rw [this]; exact hh x hx
+    · rcases hQself c hq with h0 | ⟨hne, hq0⟩
+      · rw [h0]; exact hHomeNew
+      · exact absurd (SeLe4n.Kernel.determineTargetCore_eq_of_homedOn hT
+          (hD.queuedHome c _ hq0)).symm hne
+    · obtain ⟨h1, h2⟩ := hStay c hc
+      rw [h1, h2]; exact hHomeNew
 
 /-- The register save: one TCB rewrite of the register context. -/
 theorem saveOutgoingContextOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId) :
@@ -969,8 +1084,11 @@ theorem dequeueRun_runQueueDispatchStage {st st' : SystemState} {c : Concurrency
       · exact hne ((hD.current c' tid hc').1 c hq1).2.symm
       · subst hI; exact hne (hD.idleHome c c' hc')
     · rcases hSel hRf with hq1 | hI
-      · exact hM.runnable (hD.queuedRunnable c tid hq1)
-      · subst hI; exact hM.runnable (hD.idleRunnable c)
+      · exact ⟨hM.runnable (hD.queuedRunnable c tid hq1),
+          hM.homedOn (hD.queuedRunnable c tid hq1).activeAt (hD.queuedHome c tid hq1)⟩
+      · subst hI
+        exact ⟨hM.runnable (hD.idleRunnable c),
+          hM.homedOn (hD.idleRunnable c).activeAt (hD.idleHomed c)⟩
   · cases h0
     rcases hSel hRf with hq1 | hI
     · rw [hD.idleOff _ (Kernel.isIdleThreadId_idleThreadId c0) c] at hq1; cases hq1
