@@ -7629,7 +7629,7 @@ run_check "INVARIANT" rg -n '^theorem timerTickOnCorePrepared_currentBoundHomedO
 # requeue's leave-both-queues branch is unreachable at the tick, the yield and the
 # drain alike.
 run_check "INVARIANT" rg -n '^theorem currentBoundHomedOnCore_of_placement($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
-run_check "INVARIANT" rg -n -U '^theorem yieldCharge_requeue_releaseFreeFor[^\n]*(\n([ \t][^\n]*)?)*  spendBudget_requeue_releaseFreeFor _ hInv hRef hAff\n    \(currentBoundHomedOnCore_of_placement st c hD hBi\) hc hT hb hSc$' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
+run_check "INVARIANT" rg -n -U '^theorem yieldCharge_requeue_releaseFreeFor[^\n]*(\n([ \t][^\n]*)?)*  spendBudget_requeue_releaseFreeFor _ _ hInv hRef hAff\n    \(currentBoundHomedOnCore_of_placement st c hD hBi\) hc hT hb hSc$' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
 run_check "INVARIANT" rg -n '^theorem chooseBestRunnableEffective_eq_of_views($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
 run_check "INVARIANT" rg -n '^def candidacyNotGained($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
 run_check "INVARIANT" rg -n '^def markCandidacyGainFor($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
@@ -12800,7 +12800,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_schedContextUnbindOnCore \(' SeLe
 # RELATION: each footprint IS `schedFootprintOfCores` of its arm's OWN write set.
 # Mutation: keep every token and inline a write set's body at its footprint.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextConfigureOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextConfigureWriteSet st scObjId\)(\n([ \t][^\n]*)?)*\(schedContextConfigureReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextBindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextBindWriteSet st tid\) \[\]" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextBindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextBindWriteSet st tid\) \(schedContextBindWriteSet st tid\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextUnbindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextUnbindOnCoreWriteSet st scObjId executingCore\)(\n([ \t][^\n]*)?)*\(schedContextUnbindReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # RELATION: the unbind's replenish segment is the purge's own resolver -- the
 # core the context's release link names, or none -- whether or not the bound
@@ -21611,10 +21611,10 @@ run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with a
 run_check "INVARIANT" rg -n '^def bindPlacesParkedThread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.isRunnable" SeLe4n/Kernel/SchedContext/Operations.lean'
 # RELATION: the bind's own body reads that guard, on the state its writes reach.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb sc then" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb scR then" SeLe4n/Kernel/SchedContext/Operations.lean'
 # ...and the placement uses the SAME insert priority as the re-bucket arm, so the
 # two cannot disagree about which bucket a bound thread belongs in.
-run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb sc then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb scR then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The payoff, and the three refusals that keep the guard from admitting anything.
 run_check "INVARIANT" rg -n '^theorem schedContextBind_places_parked_thread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_placed' SeLe4n/Kernel/SchedContext/Operations.lean
@@ -21655,7 +21655,7 @@ run_check "INVARIANT" rg -n '^theorem bindPlacesParkedThread_budget_eq_hasSuffic
 run_check "INVARIANT" rg -n '^theorem schedContextBind_leaves_unplaced_of_exhausted($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 # RELATION: the payoff's premise is the RESERVATION's budget at the pre-state, not
 # a fact about the thread -- which is what makes it a statement about the guard.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBind_leaves_unplaced_of_exhausted[^\n]*(\n([ \t][^\n]*)?)*\(hExhausted : scB.budgetRemaining.isPositive = false\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBind_leaves_unplaced_of_exhausted[^\n]*(\n([ \t][^\n]*)?)*\(hExhausted : \(scB.releaseReadyHead st.machine.timer\).budgetRemaining.isPositive = false\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # Measured on both surfaces, each with the RETIRED three-conjunct guard beside it.
 run_check "INVARIANT" rg -n '§3.26c PR #900 review: a bind does not place a thread on an exhausted reservation' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '\(b\) NEGATIVE: the RETIRED three-conjunct guard admits it' tests/SmpCancellationSuite.lean
@@ -22393,10 +22393,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendReleasePerform \(st : Syst
 # what lets the fault's retirement read back without the store invariant.
 run_check "INVARIANT" rg -n '\(tcb\.pendingFault\.isNone \|\| st\.objects\.findsInPlace tid\.toObjId\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem resumeAdmitted_retirePendingFault \{' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-# A configure writes the context's first refill into its own fields, never a
-# fresh list cell, and clears its release links (the purge took it off every
-# queue): the pin ends at the record's close, so a tail entry fails it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def configuredSchedContext[^\n]*(\n([ \t][^\n]*)?)*    refillHeadPresent := true\n    refillHeadAmount := budget\n    refillHeadEligibleAt := timer \+ period\n    refillTailCount := 0\n    releaseNextCode := 0\n    releaseCoreCode := 0\n    releaseAt := 0 \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+# A configure clears the context's release links (the purge took it off every
+# queue) and then builds its refills as seL4-MCS does: `refill_update` when the
+# context is bound and active, `refill_new` otherwise -- so the budget is held
+# ONCE, never as a full `budgetRemaining` beside a pending refill of the same size.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def configuredSchedContext[^\n]*(\n([ \t][^\n]*)?)*      releaseNextCode := 0\n      releaseCoreCode := 0\n      releaseAt := 0 \}\n  if keep then base\.refillUpdate budget period timer else base\.refillNew budget timer$" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" rg -n '^@\[simp\] theorem SchedContext\.withReplenishments_replenishments' SeLe4n/Kernel/SchedContext/Types.lean
 # The preemption and the queue removal replace their specifications through
 # proven equalities.
