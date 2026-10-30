@@ -183,7 +183,7 @@ inventory was written:
   - `Types.lean` — `SchedContextId`, `Budget`, `Period`, `Bandwidth`, `ReplenishmentEntry`, `SchedContext`, `SchedContextBinding` (unbound/bound/donated), BEq instances.
   - `Budget.lean` — CBS budget operations: `consumeBudget`, `isBudgetExhausted`, replenishment scheduling/processing, `cbsBudgetCheck`, `admissionCheck`.
   - `ReplenishQueue.lean` — sorted replenishment queue: `insert`, `popDue`, `remove`, `peek`, `hasDue` with `pairwiseSortedBy` invariant.
-  - `Operations.lean` — `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`.
+  - `Operations.lean` — `schedContextConfigure` (invoked on a per-core SchedControl capability), `schedContextBind`, `schedContextUnbind`.
   - `PriorityManagement.lean` — D2: `setPriorityOp`, `setMCPriorityOp`, MCP authority validation, run queue migration on priority change.
   - `Invariant/Defs.lean` — `budgetWithinBounds`, `replenishmentListWellFormed`, `schedContextWellFormed`, `replenishmentAmountsBounded`, preservation proofs, bandwidth theorems.
   - `Invariant/Preservation.lean` — operation-level preservation theorems for Z5 operations.

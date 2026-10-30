@@ -16,6 +16,7 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.InvariantChecks
 -- PR #889 review round 20: the declared-core scenario reads the RPi5 and
 -- single-core simulation bindings, so the platform contracts come in here.
 import SeLe4n.Platform.RPi5.Contract
@@ -1315,6 +1316,29 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
       declaredSchedFootprintSyscall sid &&
         (schedLockSetForSyscall sid { caller := tid0 } bootCoreId st).isSome)
 
+/-- WS-ZA ZA6.4: **the no-stranded-refill check bites**.  The check reads the
+links: a bound context with its head used up must be on a core's chain at its
+head's release time.  The witnesses keep the context and its pending refill
+and break the relation — the context off every queue, then queued at a time
+its head no longer holds — and the check refuses both. -/
+private def runRefillStrandedWitness : IO Unit := do
+  IO.println "--- §3.27 a bound context's pending refill is never stranded ---"
+  let strandedOk (st : SystemState) : Bool :=
+    (releaseNoRefillStrandedChecks st.objectIndex st).all (·.2)
+  assertBool "a runnable bound context holds no pending refill: nothing to check"
+    (strandedOk stCbsRunnable)
+  assertBool "a used-up head queued at its release time passes" (strandedOk stCbs)
+  let stOff := stCbsRunnable.updateSchedContext scId0 fun sc =>
+    { sc with budgetRemaining := ⟨0⟩, refillHeadPresent := true,
+              refillHeadAmount := sc.budget.val, refillHeadEligibleAt := 5000 }
+  assertBool "a used-up head on no release queue is refused" (!strandedOk stOff)
+  let stMoved := stCbs.updateSchedContext scId0 fun sc =>
+    { sc with refillHeadEligibleAt := 6000 }
+  assertBool "a context queued at a time its head no longer holds is refused"
+    (!strandedOk stMoved)
+  assertBool "placing it again restores the relation"
+    (strandedOk (stMoved.releasePlace core1 scId0))
+
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
   runReplenishScenarios
@@ -1332,6 +1356,7 @@ def main : IO Unit := do
   runAffinityFootprintScenarios
   runSchedContextFootprintScenarios
   runSyscallSchedResolverScenarios
+  runRefillStrandedWitness
   IO.println "=== SM5.H suite: all assertions passed ==="
 
 end SeLe4n.Testing.SmpCbs

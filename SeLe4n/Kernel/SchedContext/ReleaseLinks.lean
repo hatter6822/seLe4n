@@ -2570,6 +2570,76 @@ theorem releasePlace_not_mem {st : SystemState} (h : st.releaseQueueRefined) {c 
   have hn := (releaseQueuedAnywhere_eq_false_iff _ s).mp (releaseRemoveOn_not_queued_of_free hf) c'
   rw [releaseQueuedOn_eq, hn] at hq; cases hq
 
+/-! ## No refill is stranded -/
+
+/-- A context's place when it is bound: its `releaseKey?` while a thread holds
+it, `none` otherwise. -/
+@[inline] def _root_.SeLe4n.Kernel.SchedContext.boundReleaseKey? (sc : SchedContext) :
+    Option Nat :=
+  if sc.boundThread.isSome then sc.releaseKey? else none
+
+/-- WS-ZA ZA6.4: **no refill is stranded** (seL4-MCS's release-queue rule): every
+bound context whose head refill is used up and pending is on some core's release
+queue, at that refill's release time.  A context left off every queue with a
+pending refill would never be released: the drain reads the queues alone. -/
+def releaseNoRefillStranded (st : SystemState) : Prop :=
+  ∀ s t, (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t →
+    ∃ c, (s, t) ∈ (st.scheduler.replenishQueueOnCore c).entries
+
+/-- **A step that holds every context off its release fields and every queue's
+entries keeps no refill stranded.** -/
+theorem releaseNoRefillStranded_of_frame {st st' : SystemState} (h : st.releaseNoRefillStranded)
+    (hA : objectsAgreeOffReleaseLinks st' st)
+    (hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
+      (st.scheduler.replenishQueueOnCore c).entries) :
+    st'.releaseNoRefillStranded := by
+  intro s t hk
+  have hm := hA.getSchedContext?_map SchedContext.boundReleaseKey? (fun _ => rfl) s
+  have hk' : (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t := by
+    cases e : st.getSchedContext? s <;> cases e' : st'.getSchedContext? s <;>
+      rw [e, e'] at hm <;> rw [e'] at hk <;> simp_all
+  obtain ⟨c, hc⟩ := h s t hk'
+  exact ⟨c, by rw [hQ c]; exact hc⟩
+
+/-- **Placing a context strands no refill**: the placed context is on its core's
+queue at its place when it has one, and every other context's entry stays where
+it was. -/
+theorem releasePlace_noRefillStranded {st : SystemState} (h : st.releaseNoRefillStranded)
+    (c : CoreId) (s : SeLe4n.SchedContextId) : (st.releasePlace c s).releaseNoRefillStranded := by
+  cases hf : st.releaseFreeFor c s with
+  | false => rw [releasePlace_of_not_free hf]; exact h
+  | true =>
+    intro s' t hk
+    have hm := (releasePlace_agree st c s).getSchedContext?_map
+      SchedContext.boundReleaseKey? (fun _ => rfl) s'
+    have hk' : (st.getSchedContext? s').bind SchedContext.boundReleaseKey? = some t := by
+      cases e : st.getSchedContext? s' <;> cases e' : (st.releasePlace c s).getSchedContext? s' <;>
+        rw [e, e'] at hm <;> rw [e'] at hk <;> simp_all
+    by_cases hs : s' = s
+    · subst hs
+      refine ⟨c, releasePlace_mem hf ?_⟩
+      unfold SystemState.releaseKeyOf
+      cases e : st.getSchedContext? s' with
+      | none => rw [e] at hk'; cases hk'
+      | some sc =>
+        rw [e] at hk'
+        simp only [Option.bind_some, SchedContext.boundReleaseKey?] at hk' ⊢
+        split at hk'
+        · exact hk'
+        · cases hk'
+    · obtain ⟨d, hd⟩ := h s' t hk'
+      refine ⟨d, ?_⟩
+      by_cases hdc : d = c
+      · subst hdc
+        have hr : (s', t) ∈ ((st.scheduler.replenishQueueOnCore d).remove s).entries := by
+          simp only [ReplenishQueue.remove]
+          exact List.mem_filter.mpr ⟨hd, by simp [hs]⟩
+        rw [releasePlace_replenishQueueOnCore_self hf]
+        split
+        · exact subset_insertSorted _ _ _ _ hr
+        · exact hr
+      · rw [releasePlace_replenishQueueOnCore_ne st c s d hdc]; exact hd
+
 /-! ## Steps that write no release field -/
 
 /-- A scheduler's release-queue slots: the abstract queues, the heads and the

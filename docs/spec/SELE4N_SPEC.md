@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.166` (`lakefile.toml`) |
+| **Package version** | `0.36.167` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 536,975 across 488 Lean files |
 | **Test LoC** | 87,494 across 70 Lean test suites |
@@ -5928,6 +5928,63 @@ Every kernel object has a decidable well-formedness predicate:
   yield (`refill-yield`, 11 at ZA6.2), the refilling tick
   (`refill-drain-tick`) and three exhausting ticks (`exhaust-tick`,
   `exhaust-wait-tick`, `exhaust-drain-tick`) at 0, first call and steady.
+- **Configure takes seL4's SchedControl authority, and budgets are charged as
+  seL4-MCS charges them** (`v0.36.167`, WS-ZA ZA6.4; a security fix).  Before
+  this cut a configure was an invocation of the scheduling context's own
+  capability, and it set `budgetRemaining` to the full budget while queueing a
+  pending refill of the same budget: a thread holding its own context's
+  capability could reconfigure it every period and run two budgets per period,
+  without bound over time.  Now:
+  - **Authority.**  A configure is invoked on a per-core SchedControl
+    capability (`CapTarget.schedControl core`, `Capability.schedControlOf`), as
+    seL4-MCS's `seL4_SchedControl_ConfigureFlags` is; the context is named by
+    its capability address in MR0 and resolved with the write right
+    (`resolveSchedControlConfigureTarget`, shared by the live arm, the fast path
+    and the lock-operand builder).  A context with a bound thread is configured
+    only through its thread's home core's control (`schedControlCoversContext`;
+    seL4 migrates the context instead, this kernel refuses with
+    `.threadOnDifferentCore`).  A configure through a scheduling-context
+    capability is refused (`.invalidCapability`).  Bind and unbind stay on the
+    context's capability.  Boot installs core `c`'s control in the root task's
+    CNode at slot `base + c` (`schedControlBootSlots`; RPi5 slots 12–15, QEMU
+    `virt` slots 16–19).  ABI: MR0 the context's capability address, MR1
+    budget, MR2 period, MR3 `priority | domain << 8`, MR4 (the IPC buffer's
+    overflow word) deadline.
+  - **Refills.**  The charge is seL4-MCS's: `refillBudgetCheck`
+    (`refill_budget_check`), `scheduleUsed` merging into the tail refill at
+    capacity, so no budget is dropped (`schedule_used`), and
+    `refillUnblockCheck` / `releaseReadyHead` (`refill_unblock_check`).  A
+    configure is head-only: `refillUpdate` for a context in use (configured
+    before, its bound thread runnable, not round robin) and `refillNew` for any
+    other (`refill_update` / `refill_new`, `configureKeepsHead`,
+    `configuredSchedContext`), so the budget is held once.  Admission counts
+    every context in the object store, the reconfigured one at its new
+    parameters (`checkAdmission`).
+  - **No refill is stranded.**  `SystemState.releaseNoRefillStranded`: every
+    bound context whose head refill is used up and pending is on some core's
+    release queue at that refill's time.  Configure places the bound context on
+    its thread's home core, and bind releases a ready head and otherwise
+    postpones the context there (`releasePlace`: seL4's `postpone`).  Resume
+    needs no postpone of its own: suspend unbinds the thread's bound context and
+    purges its entry (`suspendReleasePerform`), so a resumed thread holds no
+    bound context until a bind, which places it.  Placing preserves the
+    invariant (`releasePlace_noRefillStranded`), and so does every step that
+    writes no release field and no queue (`releaseNoRefillStranded_of_frame`);
+    the runtime check (`releaseNoRefillStrandedChecks`) runs in every suite's
+    state-invariant surface.
+  - **Proofs.**  Refill conservation (`refillsConserved`: the refills plus the
+    remaining budget sum to the configured budget) is part of
+    `schedContextWellFormed` and preserved by the charge, the release, the
+    deadline update and both configure forms
+    (`chargeBudget_preserves_schedContextWellFormed`,
+    `releaseReadyHead_preserves_schedContextWellFormed`,
+    `cbsUpdateDeadline_preserves_schedContextWellFormed`,
+    `configuredSchedContext_schedContextWellFormed`).  The window bound: a
+    context runs at most its budget in any window of one period
+    (`refill_window_bound`, `rpi5_cbs_window_budget_bounded`).
+  - **Retired.**  The kernel-internal `schedContextYieldTo` budget transfer
+    (wired to no syscall; it wrote `budgetRemaining` on two contexts outside
+    every refill rule) is deleted with its traces and tests.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
@@ -7412,7 +7469,9 @@ preserved unchanged.
 `schedContextBind` (bidirectional TCB↔SchedContext binding + RunQueue
 re-insertion + domain consistency enforcement: `tcb.domain == sc.domain`
 required), `schedContextUnbind` (unbind + preemption guard + RunQueue
-removal), `schedContextYieldTo` (kernel-internal budget transfer). 7
+removal). Since `v0.36.167` (WS-ZA ZA6.4) the configure is invoked on a
+per-core SchedControl capability, not on the context's own, and the
+kernel-internal `schedContextYieldTo` budget transfer is retired. 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.

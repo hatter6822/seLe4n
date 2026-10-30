@@ -448,7 +448,17 @@ ties the links to it, so a new writer of a context's refills places it again
 has home `c` at every committed state (the placement invariant's
 `currentHome`; an affinity change vacates a running thread), so a new
 per-core requeue may assume the context is linked on `c` or nowhere
-(`currentBoundHomedOnCore_of_placement`).  ZA6.4 changes the charging, ZA6.5
+(`currentBoundHomedOnCore_of_placement`).  Since `v0.36.167` (ZA6.4) a
+configure is invoked on a per-core SchedControl capability
+(`CapTarget.schedControl`, `resolveSchedControlConfigureTarget`), never on the
+context's own, so new code must not route a configure through a
+scheduling-context capability; a charge is seL4-MCS's refill charge
+(`refillBudgetCheck`, `scheduleUsed`, `refillUnblockCheck`), which conserves
+the budget (`refillsConserved`), so a new writer of a context's refills goes
+through those operations, never `budgetRemaining` directly; and a bound context
+holding a pending refill is on a release queue (`releaseNoRefillStranded`), so
+a new writer that leaves a bound context's head used up places it
+(`releasePlace`).  ZA6.5
 puts the per-core tick, drain and yield charge inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:

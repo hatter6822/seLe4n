@@ -1,3 +1,69 @@
+## v0.36.167 — WS-ZA ZA6.4: configure takes SchedControl authority, and budgets are charged as seL4-MCS charges them
+
+A scheduling context is now configured only through a per-core SchedControl
+capability, as seL4-MCS's `seL4_SchedControl_ConfigureFlags` is, and its
+budget is charged with seL4-MCS's refill operations. A bound context holding a
+pending refill is always on a release queue.
+
+- **Security fix: the configure overrun.**
+  - Before: a configure was an invocation of the context's own capability,
+    and it set `budgetRemaining` to the full budget while queueing a pending
+    refill of that budget. A thread holding its own context's capability
+    could reconfigure it every period and run two budgets per period.
+  - Now: the configure needs a SchedControl capability, which only the root
+    task holds at boot. A configure through a scheduling-context capability
+    is refused (`.invalidCapability`). The refills hold the budget once
+    (`refill_new` / `refill_update`).
+- **Authority** (`SeLe4n/Kernel/API.lean`, `SeLe4n/Model/Object/Types.lean`).
+  - `CapTarget.schedControl core` and `Capability.schedControlOf`. Every
+    exhaustive match over capability targets has an arm for it.
+  - `resolveSchedControlConfigureTarget` resolves MR0's context capability
+    with the write right. The live arm, the fast path and the lock-operand
+    builder share it. A context with a bound thread is configured only
+    through its home core's control (`schedControlCoversContext`); a mismatch
+    is refused with `.threadOnDifferentCore`, where seL4 migrates the context.
+  - Boot: core `c`'s control goes in the root task's CNode at `base + c`
+    (`schedControlBootSlots`). RPi5 uses slots 12–15. QEMU `virt` uses slots
+    16–19, in a root CNode grown to 32 slots. The simulation platform has no
+    root CNode and installs none.
+  - ABI: MR0 the context's cptr, MR1 budget, MR2 period, MR3
+    `priority | domain << 8`, MR4 deadline (the overflow word). The Rust ABI,
+    the `sele4n-sys` wrapper (`sched_context_configure(sched_control, …)`),
+    the conformance tests and the exerciser follow.
+- **Refills** (`SeLe4n/Kernel/SchedContext/Budget.lean`).
+  - The charge is `refillBudgetCheck` with `scheduleUsed`, which merges into
+    the tail refill at capacity, so no budget is dropped. It is followed by
+    `refillUnblockCheck` / `releaseReadyHead`.
+  - Conservation (`refillsConserved`, part of `schedContextWellFormed`) is
+    proven for the charge, the release, the deadline move and both configure
+    forms. The window bound is `refill_window_bound`.
+- **No refill stranded** (`SeLe4n/Kernel/SchedContext/ReleaseLinks.lean`).
+  - The predicate is `SystemState.releaseNoRefillStranded`.
+  - Configure and bind place a bound context whose head is not released on
+    its thread's home core's release queue (`releasePlace`, seL4's
+    `postpone`). The bind and configure footprints declare that core's
+    release queue.
+  - Placing preserves the predicate (`releasePlace_noRefillStranded`, plus
+    `releaseNoRefillStranded_of_frame` for steps that write no release
+    field). Every suite's state-invariant surface checks it
+    (`releaseNoRefillStrandedChecks`).
+  - Resume needs no step of its own: suspend unbinds the thread's context
+    and purges its entry.
+- **Retired:** the kernel-internal `schedContextYieldTo` budget transfer. It
+  was wired to no syscall and wrote `budgetRemaining` on two contexts outside
+  every refill rule. Its traces, tests, bridge and census rows go with it. The
+  trace fixture loses those lines, and its checksum is regenerated.
+- **Tests.**
+  - `SyscallDispatchSuite` SD-063 is the regression: configure through the
+    context capability is refused, and through the control it succeeds.
+  - The fixture helper `withReleaseEntryOnCore` queues a context with its
+    head used up, since the queue holds only such contexts.
+- **Not measured:** the QEMU allocation pins. The aarch64 archive build did
+  not fit the build host's disk. The configure and refill pins stay at 0.
+- **Debt:** the `docs/REGISTERED_DEBT.md` bind-postpone row is narrowed.
+  Bind, resume and the refill half of configure are closed. The configure's
+  enqueue of a parked bound thread stays open.
+
 ## v0.36.166 — WS-ZA ZA6.3: the release queue links through the scheduling contexts
 
 Each core's release queue is now singly linked through its scheduling
