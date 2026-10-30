@@ -1770,111 +1770,34 @@ theorem releaseRemoveAnywhere_not_queued (st : SystemState) (s : SeLe4n.SchedCon
     rw [releaseLinkOn_releaseUnlinkOn st d s (releaseQueuedOn_of_releaseCoreOf e)]; simp
   | none => exact releaseLinkOn_of_releaseCoreOf_none e c
 
-/-! ## A context's place: its earliest pending refill -/
+/-! ## A context's place: its pending head refill -/
 
-/-- The earliest release time among `rs`, none when `rs` is empty. -/
-def refillsEarliest : List ReplenishmentEntry → Option Nat
-  | [] => none
-  | e :: rs => some (match refillsEarliest rs with | some m => min e.eligibleAt m | none => e.eligibleAt)
-
-/-- The earliest release time is no later than any refill's. -/
-theorem refillsEarliest_le : ∀ {l : List ReplenishmentEntry} {t : Nat},
-    refillsEarliest l = some t → ∀ r ∈ l, t ≤ r.eligibleAt
-  | [], _, h => by cases h
-  | e :: rs, t, h => by
-    intro r hr
-    unfold refillsEarliest at h
-    cases hm : refillsEarliest rs with
-    | none =>
-      rw [hm] at h; cases h
-      rcases List.mem_cons.mp hr with rfl | hr
-      · exact Nat.le_refl _
-      · cases rs with
-        | nil => cases hr
-        | cons _ _ => simp [refillsEarliest] at hm
-    | some m =>
-      rw [hm] at h; cases h
-      rcases List.mem_cons.mp hr with rfl | hr
-      · exact Nat.min_le_left _ _
-      · exact Nat.le_trans (Nat.min_le_right _ _) (refillsEarliest_le hm r hr)
-
-/-- The earliest release time is some refill's. -/
-theorem refillsEarliest_mem : ∀ {l : List ReplenishmentEntry} {t : Nat},
-    refillsEarliest l = some t → ∃ r ∈ l, r.eligibleAt = t
-  | [], _, h => by cases h
-  | e :: rs, t, h => by
-    unfold refillsEarliest at h
-    cases hm : refillsEarliest rs with
-    | none => rw [hm] at h; cases h; exact ⟨e, List.mem_cons_self .., rfl⟩
-    | some m =>
-      rw [hm] at h; cases h
-      by_cases hle : e.eligibleAt ≤ m
-      · exact ⟨e, List.mem_cons_self .., by dsimp only; rw [Nat.min_eq_left hle]⟩
-      · obtain ⟨r, hr, hrt⟩ := refillsEarliest_mem hm
-        exact ⟨r, List.mem_cons_of_mem _ hr, by dsimp only; rw [hrt, Nat.min_eq_right (by omega)]⟩
-
-/-- A list with a refill has an earliest one. -/
-theorem refillsEarliest_isSome : ∀ {l : List ReplenishmentEntry}, l ≠ [] →
-    ∃ t, refillsEarliest l = some t
-  | [], h => absurd rfl h
-  | _ :: _, _ => ⟨_, rfl⟩
-
-/-- WS-ZA ZA6.3: where a context goes on its release queue — its earliest
-pending refill's release time, as seL4-MCS orders the release queue by the
-head refill's `rTime`; none when it holds no pending refill. -/
-def _root_.SeLe4n.Kernel.SchedContext.releaseKey? (sc : SchedContext) : Option Nat :=
-  refillsEarliest sc.replenishments
-
-/-- The earliest of `acc` and the first `n` tail slots' release times. -/
-def _root_.SeLe4n.Kernel.SchedContext.tailEarliest (sc : SchedContext) : Nat → Nat → Nat
-  | 0, acc => acc
-  | n + 1, acc => min (sc.tailEarliest n acc) (sc.tailSlotEligibleAt n)
-
-/-- WS-ZA ZA6.3: the compiled `releaseKey?`: the head's release time and the
-tail slots' read as fields, with no refill list built. -/
-@[inline] def _root_.SeLe4n.Kernel.SchedContext.releaseKeyImpl (sc : SchedContext) : Option Nat :=
-  if sc.refillHeadPresent then
-    some (sc.tailEarliest (min sc.refillTailCount refillTailCapacity) sc.refillHeadEligibleAt)
+/-- WS-ZA ZA6.4: where a context goes on its release queue: the release time of
+its first pending refill while its head is used up, as seL4-MCS keys the release
+queue by the head refill's `rTime` of a context whose head is not yet ready
+(`refill_ready`); none while its head holds budget or it holds no refill.  The
+context's fields are read directly, so no refill list is built. -/
+@[inline] def _root_.SeLe4n.Kernel.SchedContext.releaseKey? (sc : SchedContext) : Option Nat :=
+  if sc.budgetRemaining.val = 0 ∧ sc.refillHeadPresent = true then some sc.refillHeadEligibleAt
   else none
 
-theorem foldl_min_eligibleAt (l : List ReplenishmentEntry) (a b : Nat) :
-    l.foldl (fun acc x => min acc x.eligibleAt) (min a b) =
-      min a (l.foldl (fun acc x => min acc x.eligibleAt) b) := by
-  induction l generalizing b with
-  | nil => rfl
-  | cons x r ih => simp only [List.foldl_cons]; rw [Nat.min_assoc, ih]
+/-- The place read as seL4-MCS states it: the first pending refill's release
+time, while the head is used up. -/
+theorem _root_.SeLe4n.Kernel.SchedContext.releaseKey?_eq_head (sc : SchedContext) :
+    sc.releaseKey? =
+      if sc.budgetRemaining.val = 0 then sc.replenishments.head?.map (·.eligibleAt) else none := by
+  unfold SchedContext.releaseKey? SchedContext.replenishments
+  by_cases hB : sc.budgetRemaining.val = 0 <;> cases hP : sc.refillHeadPresent <;> simp [hB]
 
-theorem refillsEarliest_cons (e : ReplenishmentEntry) (l : List ReplenishmentEntry) :
-    refillsEarliest (e :: l) = some (l.foldl (fun acc x => min acc x.eligibleAt) e.eligibleAt) := by
-  induction l generalizing e with
-  | nil => rfl
-  | cons x r ih =>
-    have hx : (match refillsEarliest r with | some m => min x.eligibleAt m | none => x.eligibleAt) =
-        r.foldl (fun acc x => min acc x.eligibleAt) x.eligibleAt := Option.some.inj (ih x)
-    show some (min e.eligibleAt
-      (match refillsEarliest r with | some m => min x.eligibleAt m | none => x.eligibleAt)) = _
-    rw [hx, List.foldl_cons, foldl_min_eligibleAt]
-
-theorem tailEarliest_eq (sc : SchedContext) (n acc : Nat) :
-    sc.tailEarliest n acc = ((List.range n).map sc.tailSlot).foldl
-      (fun a x => min a x.eligibleAt) acc := by
-  induction n with
-  | zero => rfl
-  | succ n ih =>
-    rw [List.range_succ, List.map_append, List.foldl_append, ← ih]
-    simp [SchedContext.tailEarliest, SchedContext.tailSlot_eq]
-
-@[csimp] theorem releaseKey?_eq_impl :
-    @SchedContext.releaseKey? = @SchedContext.releaseKeyImpl := by
-  funext sc
-  unfold SchedContext.releaseKey? SchedContext.releaseKeyImpl SchedContext.replenishments
-  split
-  · rw [refillsEarliest_cons, tailEarliest_eq]; rfl
-  · rfl
+theorem _root_.SeLe4n.Kernel.SchedContext.releaseKey?_eq_some {sc : SchedContext} {t : Nat} :
+    sc.releaseKey? = some t ↔
+      sc.budgetRemaining.val = 0 ∧ sc.refillHeadPresent = true ∧ sc.refillHeadEligibleAt = t := by
+  unfold SchedContext.releaseKey?
+  split <;> simp_all
 
 /-- WS-ZA ZA6.3: core `c`'s release queue as the abstract queue reads it holds
 each context at its place: a queued context is held by the store and its
-entry's time is its earliest pending refill's. -/
+entry's time is its place (`releaseKey?`). -/
 def releaseQueueKeyed (st : SystemState) : Prop :=
   ∀ c e, e ∈ (st.scheduler.replenishQueueOnCore c).entries →
     ∃ sc, st.getSchedContext? e.1 = some sc ∧ sc.releaseKey? = some e.2
@@ -1892,8 +1815,8 @@ theorem releaseKeyOf_eq_some {st : SystemState} {s : SeLe4n.SchedContextId} {t :
 theorem objectsAgreeOffReleaseLinks.releaseKeyOf {st st' : SystemState}
     (h : objectsAgreeOffReleaseLinks st' st) (s : SeLe4n.SchedContextId) :
     st'.releaseKeyOf s = st.releaseKeyOf s := by
-  have hr := h.replenishments s
-  unfold SystemState.releaseKeyOf SchedContext.releaseKey?
+  have hr := h.getSchedContext?_map SchedContext.releaseKey? (fun _ => rfl) s
+  unfold SystemState.releaseKeyOf
   cases e : st.getSchedContext? s <;> cases e' : st'.getSchedContext? s <;> rw [e, e'] at hr <;>
     simp_all
 
@@ -2095,8 +2018,9 @@ theorem releaseFreeFor_iff (st : SystemState) (c : CoreId) (s : SeLe4n.SchedCont
   | some d => simp
 
 /-- WS-ZA ZA6.3: put context `s` where its refills say, on core `c`'s release
-queue: off `c`'s queue, then linked in at its earliest pending refill's release
-time — or left off it when it holds none.  seL4-MCS's `postpone` and the release
+queue: off `c`'s queue, then linked in at its place (`releaseKey?`: its first
+pending refill's release time while its head is used up) — or left off it when it
+has none.  seL4-MCS's `postpone` and the release
 queue's re-placement after `awaken` in one write.  It writes core `c`'s queue
 alone, the one whose lock the caller holds; a context linked on another core's
 queue is left as it is (`releaseFreeFor`), and no caller hands it one. -/
@@ -2107,8 +2031,7 @@ def releasePlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) : S
     | none => st.releaseRemoveOn c s
   else st
 
-/-- WS-ZA ZA6.3: `releasePlace`'s writes for a context with a pending refill, its
-earliest at `t`: a call, so the place is read off the context before the
+/-- WS-ZA ZA6.3: `releasePlace`'s writes for a context placed at `t`: a call, so the place is read off the context before the
 context's links are written, and the context's cell is not held across them. -/
 @[noinline] def releaseReplace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
     (t : Nat) : SystemState :=
@@ -2116,7 +2039,7 @@ context's links are written, and the context's cell is not held across them. -/
 
 /-- WS-ZA ZA6.3: the compiled `releasePlace`.  The context is read once: its
 link's core compared as a number and its place read from its refill fields
-(`releaseKeyImpl`), then the writes are one call.  The specification reads the
+(`releaseKey?`), then the writes are one call.  The specification reads the
 core and the place as options (`releaseCoreOf`, `releaseKeyOf`), each built
 when the store shares the context's entry.  Proven equal
 (`releasePlace_eq_impl`). -/
@@ -2125,9 +2048,8 @@ def releasePlaceImpl (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
   | some sc =>
     if sc.releaseCoreCode == 0 || decide (Concurrency.numCores < sc.releaseCoreCode) ||
         sc.releaseCoreCode == c.val + 1 then
-      if sc.refillHeadPresent then
-        st.releaseReplace c s
-          (sc.tailEarliest (min sc.refillTailCount refillTailCapacity) sc.refillHeadEligibleAt)
+      if sc.budgetRemaining.val == 0 && sc.refillHeadPresent then
+        st.releaseReplace c s sc.refillHeadEligibleAt
       else st.releaseRemoveOn c s
     else st
   | none => st.releaseRemoveOn c s
@@ -2161,12 +2083,11 @@ theorem releaseCore?_beq_eq (sc : SchedContext) (c : CoreId) :
   | none => rfl
   | some sc =>
     simp only [Option.bind_some]
-    rw [releaseCore?_beq_eq, releaseKey?_eq_impl]
-    unfold SchedContext.releaseKeyImpl
+    rw [releaseCore?_beq_eq]
+    unfold SchedContext.releaseKey?
     split
-    · by_cases hP : sc.refillHeadPresent = true
-      · simp only [hP, ↓reduceIte]
-      · simp only [hP, Bool.false_eq_true, ↓reduceIte]
+    · by_cases hB : sc.budgetRemaining.val = 0 <;> by_cases hP : sc.refillHeadPresent = true <;>
+        simp [hB, hP]
     · rfl
 
 /-! ## The edits keep the object table's invariant -/
@@ -2498,7 +2419,7 @@ theorem releasePlace_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
   · rfl
 
 /-- **What placing writes to core `c`'s abstract queue**: the context's entry
-dropped and, when it holds a pending refill, placed at its earliest one. -/
+dropped and, when it has a place, placed there. -/
 theorem releasePlace_replenishQueueOnCore_self {st : SystemState} {c : CoreId}
     {s : SeLe4n.SchedContextId} (hf : st.releaseFreeFor c s = true) :
     (st.releasePlace c s).scheduler.replenishQueueOnCore c =
@@ -2574,8 +2495,8 @@ theorem releasePlace_keyed {st : SystemState} (hK : st.releaseQueueKeyed)
   · exact Or.inl m
   · right; rw [(releasePlace_agree st c s).releaseKeyOf, hs]; exact hk
 
-/-- **Placing strands no refill**: on a core free for it, a context holding a
-pending refill is on that core's queue at its earliest one afterwards. -/
+/-- **Placing strands no refill**: on a core free for it, a context with a place
+is on that core's queue at it afterwards. -/
 theorem releasePlace_mem {st : SystemState} {c : CoreId} {s : SeLe4n.SchedContextId} {t : Nat}
     (hf : st.releaseFreeFor c s = true) (hk : st.releaseKeyOf s = some t) :
     (s, t) ∈ ((st.releasePlace c s).scheduler.replenishQueueOnCore c).entries := by
