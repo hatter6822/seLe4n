@@ -369,9 +369,9 @@ theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent
 
 /-- **`v0.35.183`: and so does the arm that migrates its replenishments.**
 
-The migration writes replenish queues and nothing else
-(`migrateSchedContextReplenishment_objects`), so Z4-O crosses it by the
-objects-frame form. -/
+The migration writes the release-queue links and nothing else
+(`migrateSchedContextReplenishment_agree`), so Z4-O crosses it by the
+release-links frame form. -/
 theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt)
@@ -390,8 +390,8 @@ theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent
       rw [hRet] at h
       injection h with h
       subst h
-      exact schedContextBindingConsistent_of_objects_eq
-        (migrateSchedContextReplenishment_objects _ _ _ _)
+      exact schedContextBindingConsistent_of_objectsAgreeOffReleaseLinks
+        (migrateSchedContextReplenishment_agree _ _ _ _)
         (cleanupDonatedSchedContext_preserves_schedContextBindingConsistent st stRet tid
           hInv hCons hRet)
 
@@ -458,14 +458,12 @@ theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent
     (hTcb : st.getTcb? tid = some tcb) :
     ¬ schedContextBindingConsistent (releaseSchedContextBinding st scId sc) := by
   intro hCons
-  -- The release's one object write is the TCB rewrite (the replenish purge, the
-  -- index removal and the reschedule-pending mark write no object), and the
-  -- invariant reads objects alone, so it transfers to the rewrite's state.
+  -- The release's one object write off the release links is the TCB rewrite
+  -- (the replenish purge writes release links alone, the index removal and the
+  -- reschedule-pending mark no object), and the invariant reads no release
+  -- link, so it transfers to the rewrite's state.
   have hObjEq := releaseSchedContextBinding_objects_of_bound st scId sc tid tcb hBound hTcb
-  replace hCons := schedContextBindingConsistent_transfer
-    (st' := st.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
-    (fun _ => by unfold SystemState.getTcb?; rw [hObjEq])
-    (fun _ => by unfold SystemState.getSchedContext?; rw [hObjEq]) hCons
+  replace hCons := schedContextBindingConsistent_of_objectsAgreeOffReleaseLinks hObjEq.symm hCons
   -- The released state still holds `sc` at `scId`: the arm writes a TCB, a
   -- replenish queue and an index entry, none of which is a scheduling context,
   -- and the last two are record updates of fields `getSchedContext?` never reads
@@ -648,9 +646,7 @@ theorem cancelDonatedDonationOnCore_target_unbound
       -- The migration writes replenish queues only, so the reading at `tid` is
       -- the pop's own.
       have hTRet : stRet.getTcb? tid = some t := by
-        unfold SystemState.getTcb? at hT ⊢
-        rw [migrateSchedContextReplenishment_objects] at hT
-        exact hT
+        rw [← (migrateSchedContextReplenishment_agree _ _ _ _).getTcb?]; exact hT
       -- Unfold the arm down to the resolved pop and read its holder clause.
       unfold cleanupDonatedSchedContext at hRet
       rw [hLk] at hRet
@@ -733,8 +729,7 @@ theorem cancelDonationArmOnCore_target_isSome
       subst h
       have hIs := cleanupDonatedSchedContext_getTcb?_isSome st stRet tid tid hInv hRet
         (by rw [getTcb?_of_lookupTcb st tid tcb hLk]; rfl)
-      unfold SystemState.getTcb? at hIs ⊢
-      rw [migrateSchedContextReplenishment_objects]
+      rw [(migrateSchedContextReplenishment_agree _ _ _ _).getTcb?]
       exact hIs
 
 /-- **`v0.35.185` (register row 63): the pre-retype cleanup keeps the object

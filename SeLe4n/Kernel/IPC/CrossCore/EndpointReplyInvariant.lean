@@ -291,7 +291,7 @@ theorem endpointReplyOnCore_donationOwnerFrameExcept
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact donationOwnerFrameExcept.refl st target
   · exact (endpointReply_donationOwnerFrameExcept st r1 expected target msg hObjInv
-      hStep1).trans (donationOwnerFrameExcept.of_objectsAgreeOffRunLinks hAgree.objects)
+      hStep1).trans (donationOwnerFrameExcept.of_objectsAgreeOffSchedulerLinks hAgree.objects)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: the cross-core reply writes no `schedContextBinding` — the
@@ -306,7 +306,7 @@ theorem endpointReplyOnCore_sameSchedContextBindings
   · rw [hPre]; exact sameSchedContextBindings.refl st
   · refine (endpointReply_sameSchedContextBindings st r1 expected target msg hObjInv
       hStep1).trans ?_
-    exact sameSchedContextBindings.of_objectsAgreeOffRunLinks hAgree.objects
+    exact sameSchedContextBindings.of_objectsAgreeOffSchedulerLinks hAgree.objects
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: the cross-core reply establishes the bundle **relaxed at the
@@ -325,7 +325,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
   rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact ipcInvariantFullExceptDonationOwner_of_full target hInv
-  · exact ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks hAgree.objects
+  · exact ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffSchedulerLinks hAgree.objects
       (endpointReply_preserves_ipcInvariantFullExceptDonationOwner st r1 expected target msg
         hInv hObjInv hAllBudgetsNone hStep1)
 
@@ -351,7 +351,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
   rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
+  · exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks hAgree.objects
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
         hAllBudgetsNone hNoDonationOwnedBy hStep1)
 
@@ -632,7 +632,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
   rcases endpointReceiveDualOnCore_post_agrees endpointId receiver replyId executingCore st
     hObjInv with hPre | ⟨sender, r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
+  · exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks hAgree.objects
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
         hInv hObjInv hStackValid
         hAllBudgetsNone

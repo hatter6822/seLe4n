@@ -838,14 +838,14 @@ theorem migrateRunQueueBucketOnCore_preserves_ipcInvariantFull (st : SystemState
 -- exactly this fact for the base-invariant lift and could not see it, which is
 -- how the duplicate was found.  Callers use `(…_runQueue_current_eq …).2`.
 
-/-- The replenishment migration preserves the whole bundle: objects, run
-queues and `current` are all untouched. -/
+/-- The replenishment migration preserves the whole bundle: it writes
+release-queue links alone, which the bundle does not read. -/
 theorem migrateSchedContextReplenishment_preserves_ipcInvariantFull (st : SystemState)
     (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (migrateSchedContextReplenishment st scId fromCore toCore) := by
-  have hObjs := migrateSchedContextReplenishment_objects st scId fromCore toCore
-  exact ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjs]) hInv
+  exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+    (.of_releaseLinks (migrateSchedContextReplenishment_agree st scId fromCore toCore)) hInv
 
 /-- The affinity run-queue migration repoints no core's `current` slot. -/
 theorem migrateRunQueueOnAffinityChange_currentOnCore (st : SystemState)
@@ -1595,13 +1595,13 @@ theorem cspaceCopy_preserves_ipcInvariantFull
 -- §10  Sched-context arm (`.schedContextConfigure`)
 -- ============================================================================
 
-/-- The replenishment purge rewrites one replenish queue: objects, run queues
-and `current` are untouched. -/
-theorem purgeReplenishmentOnCore_preserves_ipcInvariantFull (st : SystemState)
-    (c : CoreId) (scId : SeLe4n.SchedContextId)
-    (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (SchedContextOps.purgeReplenishmentOnCore st c scId) := by
-  exact ipcInvariantFull_of_getElem_eq (s1 := st) (fun oid => rfl) hInv
+/-- The replenishment purge writes release-queue links alone, which the bundle
+does not read (WS-ZA ZA6.3). -/
+theorem purgeReplenishment_preserves_ipcInvariantFull (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (SchedContextOps.purgeReplenishment st scId) :=
+  ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+    (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree st scId)) hInv
 
 /-- `storeObject` form of the SchedContext-content bundle lever. -/
 theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
@@ -1747,16 +1747,24 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
         · rename_i stStored hStore
           have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
             (SchedContextId.ofObjId vScId.val) sc).mp hSc
-          have hInvCleaned := purgeReplenishmentOnCore_preserves_ipcInvariantFull st
-            (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩ hInv
+          -- The purge writes the context's release links alone: the store it
+          -- leaves holds the context off them, with the same bound thread.
+          have hA := SchedContextOps.purgeReplenishment_agree st ⟨vScId.val.toNat⟩
+          have hInvCleaned := purgeReplenishment_preserves_ipcInvariantFull st ⟨vScId.val.toNat⟩ hInv
+          have hObjInvCleaned :=
+            SchedContextOps.purgeReplenishment_objects_invExt st ⟨vScId.val.toNat⟩ hObjInv
+          obtain ⟨scP, hScP, hEP⟩ := hA.symm.getSchedContext?_some' hSc
           have hInvStored := storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
-            (SchedContextOps.purgeReplenishmentOnCore st
-              (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩)
-            stStored vScId.val sc _ hObjInv hInvCleaned hScRaw hStore rfl
+            (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
+            stStored vScId.val scP _ hObjInvCleaned hInvCleaned
+            ((SystemState.getSchedContext?_eq_some_iff _ _ scP).mp hScP) hStore
+            (by
+              have h := SeLe4n.Kernel.SchedContext.proj_eq_of_withoutRelease_eq (sc' := sc)
+                (sc := scP) (fun x : SchedContext => x.boundThread) hEP
+              exact h)
           have hObjInvStored := storeObject_preserves_objects_invExt
-            (SchedContextOps.purgeReplenishmentOnCore st
-              (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩)
-            stStored vScId.val _ hObjInv hStore
+            (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
+            stStored vScId.val _ hObjInvCleaned hStore
           split at hStep
           · cases hStep
             exact hInvStored
@@ -2536,18 +2544,6 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
     exact hInv.donationOwnerUnique t1 t2 tcb1 tcb2 s1 s2 owner
       ((hTcbEq _ _).mp h1) ((hTcbEq _ _).mp h2) hB1 hB2
 
-/-- The all-cores replenishment sweep preserves the whole bundle. -/
-theorem purgeReplenishmentFromAllCores_preserves_ipcInvariantFull (st : SystemState)
-    (scId : SeLe4n.SchedContextId)
-    (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (SchedContextOps.purgeReplenishmentFromAllCores st scId) := by
-  unfold SchedContextOps.purgeReplenishmentFromAllCores
-  generalize SeLe4n.Kernel.Concurrency.allCores = l
-  induction l generalizing st with
-  | nil => exact hInv
-  | cons c cs ih =>
-      exact ih _ (purgeReplenishmentOnCore_preserves_ipcInvariantFull st c scId hInv)
-
 /-- The object-writing tail of the unbind — bidirectional clear, replenish
 purge, index write — over any scheduler-stage state `stA` that still holds
 the pre-state objects.  The binding-rewrite lever carries the clear. -/
@@ -2658,7 +2654,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
           cases hStep
           exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
             (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
-            (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+            (purgeReplenishment_preserves_ipcInvariantFull _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
                   (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
                     _ hObjInv hStage hScRaw hTcbRaw hBound))))
@@ -2668,7 +2664,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
           cases hStep
           exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
             (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
-            (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+            (purgeReplenishment_preserves_ipcInvariantFull _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
                   (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
                     _ hObjInv hInv hScRaw hTcbRaw hBound))))
@@ -2687,7 +2683,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
         have hInv1 := insertObjects_schedContextClear_preserves_ipcInvariantFull st
           vScId.val sc { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
           hObjInv hInv hScRaw hNoRef
-        have hInv2 := purgeReplenishmentFromAllCores_preserves_ipcInvariantFull _ ⟨vScId.val.toNat⟩ hInv1
+        have hInv2 := purgeReplenishment_preserves_ipcInvariantFull _ ⟨vScId.val.toNat⟩ hInv1
         refine ipcInvariantFull_of_objects_eq ?_ hInv2
         · rfl
   · contradiction
@@ -5275,7 +5271,6 @@ theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
       have hScLk : st.getSchedContext? scId = some sc :=
         (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScPre
       rw [SystemState.updateSchedContext_eq_of_some hScLk] at hStep
-      dsimp only [] at hStep
       have hNeTS : tid.toObjId ≠ scId.toObjId := by
         intro hEq
         rw [hEq, hScPre] at hStored
@@ -5283,7 +5278,9 @@ theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
       have hObjInv1 : (st.objects.insert scId.toObjId
           (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).invExt :=
         RHTable_insert_preserves_invExt _ _ _ hObjInv
-      have hT2 : ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).getTcb? tid = some tcb := by
+      -- The purge writes release links alone: the bundle reads the store
+      -- off them, so it is read on the store without the purge.
+      have hT2 : ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).getTcb? tid = some tcb := by
         refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
         show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))[tid.toObjId]? = some (.tcb tcb)
         simp only [RHTable_getElem?_eq_get?]
@@ -5291,10 +5288,13 @@ theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
           (by simp; exact fun h => hNeTS h.symm) hObjInv]
         rw [← RHTable_getElem?_eq_get?]
         exact hStored
-      rw [SystemState.updateTcb_eq_of_some hT2] at hStep
-      dsimp only [] at hStep
       cases hStep
       refine markKeyChangeFrom_preserves_ipcInvariantFull st _ tid ?_
+      refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks (.of_releaseLinks
+        ((SchedContextOps.purgeReplenishment_agree _ scId).updateTcb
+          (SchedContextOps.purgeReplenishment_objects_invExt _ scId hObjInv1) hObjInv1 tid _)) ?_
+      rw [SystemState.updateTcb_eq_of_some hT2]
+      dsimp only []
       refine ipcInvariantFull_of_schedBindingRewrite st _ tid scId tcb
         { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } sc
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none } hInv hStored ?_ hScPre ?_ ?_
@@ -5393,51 +5393,17 @@ private theorem cancelBoundDonationOnCore_victim_shape
   | bound scId =>
       rw [hB] at hStep
       dsimp only [] at hStep
-      cases hScLk : st.getSchedContext? scId with
-      | some sc =>
-          rw [SystemState.updateSchedContext_eq_of_some hScLk] at hStep
-          dsimp only [] at hStep
-          have hScPre := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hScLk
-          have hNeTS : tid.toObjId ≠ scId.toObjId := by
-            intro hEq
-            rw [hEq, hScPre] at hStored
-            cases hStored
-          have hObjInv1 : (st.objects.insert scId.toObjId
-              (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).invExt :=
-            RHTable_insert_preserves_invExt _ _ _ hObjInv
-          have hT2 : ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).getTcb? tid = some tcb := by
-            refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
-            show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))[tid.toObjId]? = some (.tcb tcb)
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
-              (by simp; exact fun h => hNeTS h.symm) hObjInv]
-            rw [← RHTable_getElem?_eq_get?]
-            exact hStored
-          rw [SystemState.updateTcb_eq_of_some hT2] at hStep
-          dsimp only [] at hStep
-          cases hStep
-          simp only [markKeyChangeFrom_getTcb?]
-          intro tcbX hX
-          have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
-          rw [show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[tid.toObjId]? = some (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1] at hXobj
-          obtain rfl : ({ tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } : TCB) = tcbX := by
-            simpa using hXobj
-          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-      | none =>
-          rw [SystemState.updateSchedContext_eq_self_of_none hScLk] at hStep
-          have hT2 : ({ st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).getTcb? tid = some tcb := by
-            refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
-            exact hStored
-          rw [SystemState.updateTcb_eq_of_some hT2] at hStep
-          dsimp only [] at hStep
-          cases hStep
-          simp only [markKeyChangeFrom_getTcb?]
-          intro tcbX hX
-          have hXobj := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
-          rw [show (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[tid.toObjId]? = some (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) from by simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hXobj
-          obtain rfl : ({ tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } : TCB) = tcbX := by
-            simpa using hXobj
-          exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+      cases hStep
+      intro tcbX hX
+      simp only [markKeyChangeFrom_getTcb?] at hX
+      have hI1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hObjInv
+      rw [SystemState.updateTcb_getTcb?_self _ _ _
+          (SchedContextOps.purgeReplenishment_objects_invExt _ scId hI1),
+        SchedContextOps.purgeReplenishment_getTcb?, SystemState.updateSchedContext_getTcb? _ _ _ hObjInv,
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hStored] at hX
+      cases hX
+      exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The donation return churns only bindings — the server's other bundle-read
 fields survive its three stores. -/
@@ -5498,10 +5464,8 @@ private theorem cancelDonatedDonationOnCore_victim_shape
           dsimp only [] at hStep
           cases hStep
           intro tcbX hX
-          have hXobj := (SystemState.getTcb?_eq_some_iff _ tval tcbX).mp hX
-          rw [migrateSchedContextReplenishment_objects] at hXobj
-          have hX1 : st1.getTcb? tval = some tcbX :=
-            (SystemState.getTcb?_eq_some_iff st1 tval tcbX).mpr hXobj
+          have hX1 : st1.getTcb? tval = some tcbX := by
+            rw [← (migrateSchedContextReplenishment_agree _ _ _ _).getTcb?]; exact hX
           unfold cleanupDonatedSchedContext at hCl
           simp only [hLk, hB] at hCl
           obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hCl

@@ -492,8 +492,8 @@ theorem not_footprintCoversWrites_of_replenish_moved (S : LockSet)
 /-- **WS-RR RR8.12 Cut C6b**: `.schedContextConfigure`'s footprint covers its
 writes.
 
-A reconfiguration rewrites the reservation, re-queues its replenishment on the
-bound thread's home and, when that thread is reply-blocked, re-walks the
+A reconfiguration rewrites the reservation, purges its stale replenishment from
+the queue its own release link names and, when that thread is reply-blocked, re-walks the
 inheritance chain its propagated priority feeds, and nothing else — and the
 unresolved arm is not a gap but a
 refusal, since the transition's own branch errors there. -/
@@ -515,13 +515,13 @@ theorem schedLockSet_schedContextConfigureOnCore_coversWrites (st st' : SystemSt
 
 /-- **Cut C6b**: `.schedContextUnbind`'s footprint covers its writes.
 
-Three resolutions, and the third is why the segment can be `allCores`: a
-SchedContext bound to a thread the store no longer holds has no `cpuAffinity`
-left to read, so the unbind sweeps every core's replenishment and the footprint
-declares every core's lock. -/
+On both success arms the purge writes the replenish queue the context's own
+release link names (WS-ZA ZA6.3), which is the one core the footprint declares;
+before that, a SchedContext bound to a thread the store no longer holds swept
+every core and declared them all. -/
 theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi))
     (hS : LockSet.ofList?
       (schedLockSet_schedContextUnbindOnCore st vScId.val executingCore) = some S) :
@@ -532,7 +532,7 @@ theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState
     (LockSet.ofList?_pairs hS)
     (schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi hStep)
     (fun d hd => schedContextUnbindOnCore_replenishQueueOnCore_ne st st' vScId executingCore
-      sgi d hd hStep)
+      sgi d hObjInv hd hStep)
 
 -- ============================================================================
 -- §9  The affinity arm
@@ -584,7 +584,9 @@ theorem yieldChargeOnCore_frame_ne (st st' : SystemState) (e d : CoreId)
     all_goals
       split at h
       · cases h
-        simp [spendBudgetOnCore, replenishOnCore, hne, SystemState.rewriteObject_scheduler,
+        simp [spendBudgetOnCore, replenishOnCore_runQueueOnCore, replenishOnCore_currentOnCore,
+          replenishOnCore_activeDomainOnCore, replenishOnCore_replenishQueueOnCore_ne _ _ _ _ hne, hne,
+          SystemState.rewriteObject_scheduler,
           SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
       · cases h
 

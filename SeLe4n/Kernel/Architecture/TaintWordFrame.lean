@@ -783,6 +783,32 @@ theorem liveMappingsRecorded_of_objectsAgreeOffTaint
   SystemState.liveMappingsRecorded.of_mappingFactsKept
     (SystemState.mappingFactsKept.of_objectsAgreeOffTaint hA) h
 
+/-- WS-ZA ZA6.3: a word write keeps every release link — a context holds no
+taint word, and a thread or a notification holds no release link — and writes
+no scheduler slot. -/
+theorem releaseQueueRefined_of_objectsAgreeOffTaint
+    (hA : st.objectsAgreeOffTaint { st with objects := O }) (h : st.releaseQueueRefined) :
+    SystemState.releaseQueueRefined { st with objects := O } := by
+  refine SystemState.releaseStateAgree.refined (st := st)
+    ⟨.of_objReleaseLinkOn fun k c => ?_, rfl⟩ h
+  show SystemState.objReleaseLinkOn O[k]? c = _
+  have hk := hA k
+  cases h2 : O[k]? with
+  | none =>
+    cases h1 : st.objects[k]? with
+    | none => rfl
+    | some _ => exact absurd hk (by rw [h1]; exact fun e => by simp_all)
+  | some o' =>
+    obtain ⟨o, h1, e⟩ := hA.some_iff _ o' h2
+    rw [h1]
+    cases hH : o'.holdsTaint with
+    | false => rw [KernelObject.eq_of_eraseTaint_eq hH e]
+    | true =>
+      cases o' with
+      | tcb x => obtain ⟨y, rfl, -⟩ := KernelObject.eraseTaint_eq_tcb e; rfl
+      | notification n => obtain ⟨m, rfl, -⟩ := KernelObject.eraseTaint_eq_notification e; rfl
+      | _ => simp [KernelObject.holdsTaint] at hH
+
 /-! ### The whole bundle -/
 
 /-- **WS-ZA ZA5.11: the whole invariant bundle carries across a taint-word
@@ -795,7 +821,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     (h : proofLayerInvariantBundle st) : proofLayerInvariantBundle { st with objects := O } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit, bRun, bMap⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel⟩ := h
   have hI' := hI bCap.2.2.2.2.1
   exact ⟨schedulerInvariantBundleFull_of_objectsAgreeOffTaint hA bSched,
     capabilityInvariantBundle_of_objectsAgreeOffTaint hA hI' bCap,
@@ -811,6 +837,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     tlbInvalidationConsistent_perCore_of_objectsAgreeOffTaint hA bPerCoreTlb,
     icacheCoherent_perCore_of_objectsAgreeOffTaint hA bIcache, bAck, bAudit,
     runQueueRefined_of_objectsAgreeOffTaint hA bRun,
-    liveMappingsRecorded_of_objectsAgreeOffTaint hA bMap⟩
+    liveMappingsRecorded_of_objectsAgreeOffTaint hA bMap,
+    releaseQueueRefined_of_objectsAgreeOffTaint hA bRel⟩
 
 end SeLe4n.Kernel.Architecture

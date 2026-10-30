@@ -74,19 +74,19 @@ def schedContextWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) : List Core
 
 Unlike the three arms above, configure *does* write a replenish queue: it resets
 the reservation to a single fresh replenishment and purges the stale entry first
-(`purgeReplenishmentOnCore st (schedContextReplenishHome st sc) scIdTyped`), on
-the SC's **home** core.  So the segment is that core whenever the capability's
-target resolves to a SchedContext, and empty when it does not — where the
-transition refuses with `.objectNotFound` and writes nothing.
+(`purgeReplenishment st scIdTyped`), on the core the context's own release link
+names (WS-ZA ZA6.3).  So the segment is that core whenever the capability's
+target resolves to a SchedContext linked on a queue, and empty otherwise — an
+unresolved target is refused with `.objectNotFound` and writes nothing, and an
+unlinked context's purge writes no queue.
 
-It is deliberately **not** narrowed to the bound case.  An SC with no bound
-thread has no home, `schedContextReplenishHome` answers `bootCoreId`, and the
-purge still *runs* there: a stale entry left by an earlier binding is exactly
-what it exists to drop, so a footprint omitting that lock would be false. -/
+It is read from the link, not from the bound thread's home: a stale entry left
+on another core by an earlier binding is exactly what the purge exists to drop,
+so a footprint keyed on the home core would be false there. -/
 def schedContextConfigureReplenishCores (st : SystemState) (scObjId : SeLe4n.ObjId) :
     List CoreId :=
   match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
-  | some sc => [SchedContextOps.schedContextReplenishHome st sc]
+  | some _ => SchedContextOps.purgeReplenishCores st (SeLe4n.SchedContextId.ofObjId scObjId)
   | none => []
 
 /-- **The cores a `.schedContextConfigure` may write** — the bound thread's home
@@ -121,30 +121,18 @@ theorem schedLockSet_schedContextConfigureOnCore_contains_home_runQueue_write
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold schedContextConfigureWriteSet schedContextWriteSet; rw [h]; simp)
 
-/-- `v0.35.168`: ...and the SC's home core's replenish-queue write lock, which is
-the purge's. -/
+/-- `v0.35.168`: ...and the replenish-queue write lock of the core the SC's
+release link names, which is the purge's. -/
 theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (sc : SchedContext)
-    (h : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) = some sc) :
-    (LockKey.replenishQueue (SchedContextOps.schedContextReplenishHome st sc),
-      Concurrency.AccessMode.write)
+    (st : SystemState) (scObjId : SeLe4n.ObjId) (d : CoreId)
+    (h : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId scObjId) = some d) :
+    (LockKey.replenishQueue d, Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextConfigureOnCore st scObjId :=
-  (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
-    (by unfold schedContextConfigureReplenishCores; rw [h]; simp)
-
-/-- **`v0.35.168`: and the two are the SAME core whenever the SC is bound** — the
-purge lands where the re-bucket does, which is what makes a one-core footprint
-honest for an operation with two scheduling effects.  They part only for an
-unbound SC, where the run segment is empty and the purge falls back to the boot
-core, and `schedContextReplenishHome`'s own docstring is the reason. -/
-theorem schedContextConfigureReplenishCores_eq_writeSet_of_bound (st : SystemState)
-    (scObjId : SeLe4n.ObjId) (sc : SchedContext) (tid : SeLe4n.ThreadId)
-    (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) = some sc)
-    (hBound : sc.boundThread = some tid) :
-    schedContextConfigureReplenishCores st scObjId = schedContextWriteSet st scObjId := by
-  simp only [schedContextConfigureReplenishCores, schedContextWriteSet,
-    SchedContextOps.schedContextBoundThread?, SchedContextOps.schedContextReplenishHome,
-    hSc, hBound]
+  (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr (by
+    unfold schedContextConfigureReplenishCores SchedContextOps.purgeReplenishCores
+    cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
+    | none => unfold SystemState.releaseCoreOf at h; rw [hSc] at h; cases h
+    | some _ => simp only [h]; exact List.mem_singleton_self d)
 
 /-- **`v0.35.168`: and no replenish lock at all where the capability's target
 resolves to no SchedContext** — the arm refuses `.objectNotFound` there and
@@ -242,26 +230,19 @@ def schedContextUnbindOnCoreWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId)
     (executingCore : CoreId) : List CoreId :=
   schedContextUnbindWriteSet st scObjId ++ [executingCore]
 
-/-- **`v0.35.168`: the cores a `.schedContextUnbind` moves a RESERVATION on, and
-the one place in this family where a segment is EVERY core.**
+/-- **`v0.35.168`: the core a `.schedContextUnbind` moves a RESERVATION on.**
 
-The unbind purges the SC's eligibility entry, and it has two arms.  When the
-bound TCB resolves it purges on that thread's home core alone.  When it does
-**not** — the arm reached after the TCB is already gone from the store — there
-is no `cpuAffinity` left to read and no home core to name, so the transition
-sweeps every core (`purgeReplenishmentFromAllCores`, whose own docstring gives
-that reasoning) and the honest declaration is `allCores`.
-
-Both arms are decided on the pre-state, so this is exact rather than a
-conservative union: a footprint that named only the home core would be *false*
-on the sweep arm, which is the direction that matters. -/
+The unbind purges the SC's eligibility entry on both of its arms — the bound TCB
+resolving or already gone from the store — and since WS-ZA ZA6.3 the purge reads
+the core from the context's own release link, so neither arm needs a home core
+and the segment is that one core (or none, for a context on no queue).  It was
+every core on the gone-TCB arm while the purge had no core to read and swept
+them all.  Read on the pre-state: the stages before the purge move no release
+link (`schedContextUnbind_replenishQueueOnCore_ne_of_tcb`). -/
 def schedContextUnbindReplenishCores (st : SystemState) (scObjId : SeLe4n.ObjId) :
     List CoreId :=
   match SchedContextOps.schedContextBoundThread? st scObjId with
-  | some tid =>
-      match st.getTcb? tid with
-      | some _ => [determineTargetCore st tid]
-      | none => Concurrency.allCores
+  | some _ => SchedContextOps.purgeReplenishCores st (SeLe4n.SchedContextId.ofObjId scObjId)
   | none => []
 
 /-- **`v0.35.168`: the live `.schedContextUnbind` arm's scheduler-domain
@@ -301,32 +282,17 @@ theorem schedLockSet_schedContextUnbindOnCore_contains_executing_runQueue_write
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold schedContextUnbindOnCoreWriteSet; simp)
 
-/-- `v0.35.168`: the footprint holds the demoted thread's home core's
-replenish-queue write lock, which is the purge's, whenever the bound TCB
-resolves. -/
+/-- `v0.35.168`: the footprint holds the replenish-queue write lock of the core
+the SC's release link names, which is the purge's, on either arm. -/
 theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write
     (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId)
-    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (tid : SeLe4n.ThreadId) (d : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
-    (hTcb : st.getTcb? tid = some tcb) :
-    (LockKey.replenishQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
+    (hC : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId scObjId) = some d) :
+    (LockKey.replenishQueue d, Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
-    (by simp [schedContextUnbindReplenishCores, h, hTcb])
-
-/-- **`v0.35.168`: and EVERY core's, on the sweep arm** — the honest declaration
-of `purgeReplenishmentFromAllCores`, which is what the transition runs when the
-bound TCB is already gone from the store. -/
-theorem schedLockSet_schedContextUnbindOnCore_contains_every_replenishQueue_write_of_sweep
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId)
-    (tid : SeLe4n.ThreadId) (c : CoreId)
-    (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
-    (hTcb : st.getTcb? tid = none) :
-    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
-  (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
-    (by simp only [schedContextUnbindReplenishCores, h, hTcb]
-        exact Concurrency.mem_allCores c)
+    (by simp [schedContextUnbindReplenishCores, SchedContextOps.purgeReplenishCores, h, hC])
 
 /-- `v0.35.168`: and no replenish lock where the SC has no bound thread — the
 arm refuses `.illegalState` there and writes nothing. -/
@@ -424,7 +390,7 @@ theorem schedContextConfigureBoundPropagate_replenishQueueOnCore (stStored : Sys
       SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- **`v0.35.168`: a `.schedContextConfigure` writes exactly one replenish
-queue** — the SC's own home core's, where its purge lands.
+queue** — the one the SC's own release link names, where its purge lands.
 
 The exactness half of `schedLockSet_schedContextConfigureOnCore`'s one-core
 segment: every other core's queue is untouched, so the footprint is neither
@@ -433,7 +399,7 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
     (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
     (sc : SchedContext) (c : CoreId)
     (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) = some sc)
-    (hne : c ≠ SchedContextOps.schedContextReplenishHome st sc)
+    (hne : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId vScId.val) ≠ some c)
     (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
       = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
@@ -450,17 +416,17 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
         split at h
         · rw [Except.ok.injEq, Prod.mk.injEq] at h
           rw [← h.2, hSched]
-          exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
+          exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ hne
         · split at h
           · rename_i boundTcb hBound _
             rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2, PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
               markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
               schedContextConfigureBoundPropagate_replenishQueueOnCore, hSched]
-            exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
+            exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ hne
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2, hSched]
-            exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
+            exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ hne
     · exact absurd h (by simp)
 
 /-- **WS-RR RR8.12 Cut C6b: the `.schedContextConfigure` arm's exactness frame.**
@@ -487,53 +453,79 @@ theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
   | some sc =>
       rw [hSc] at hne
       exact schedContextConfigure_replenishQueueOnCore_ne_of_sc st st' vScId budget period
-        priority deadline domain sc c hSc (by simpa using hne) h
+        priority deadline domain sc c hSc (fun e => hne (by
+          unfold SchedContextOps.purgeReplenishCores; rw [e]; exact List.mem_singleton_self c)) h
 
-/-- **`v0.35.168`: a `.schedContextUnbind` whose bound TCB resolves writes
-exactly one replenish queue** — that thread's home core's, where its purge
-lands.
+/-- **`v0.35.168`: a `.schedContextUnbind` writes exactly one replenish queue**
+— the one the SC's own release link names, where its purge lands, on both arms.
 
-The exactness half of `schedLockSet_schedContextUnbindOnCore`'s one-core
-segment.  The **other** arm needs no such statement and can have none: with the
-bound TCB gone from the store the transition sweeps every core, which is exactly
-what `schedContextUnbindReplenishCores` declares there. -/
-theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
-    (vScId : SeLe4n.ValidObjId) (sc : SchedContext) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (c : CoreId)
-    (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) = some sc)
-    (hBound : sc.boundThread = some tid)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hne : c ≠ determineTargetCore st tid)
+The exactness half of `schedLockSet_schedContextUnbindOnCore`'s segment.  The
+stages before the purge (the current-slot clear, the two binding rewrites, the
+run-queue stage) move no context's release link, so the purge reads the
+pre-state's link (WS-ZA ZA6.3). -/
+theorem schedContextUnbind_replenishQueueOnCore_ne_of_link (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (c : CoreId) (hObjInv : st.objects.invExt)
+    (hne : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId vScId.val) ≠ some c)
     (h : SchedContextOps.schedContextUnbind vScId st = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContextOps.schedContextUnbind at h
-  rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at h
-  dsimp only at h
-  simp only [hBound, hTcb] at h
-  split at h
-  · exact absurd h (by simp)
-  · rw [Except.ok.injEq, Prod.mk.injEq] at h
-    rw [← h.2, markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore]
-    rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm,
-      SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
-      SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-    dsimp only
-    repeat' split
-    all_goals
-      simp [
-        SchedulerState.setCurrentOnCore_replenishQueueOnCore]
+  cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at h; cases h
+  | some sc =>
+    rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at h
+    dsimp only at h
+    have hLink : ∀ (S0 : SystemState) (hO : S0.objects = st.objects) (sc' : SchedContext)
+        (hf : sc'.releaseCoreCode = sc.releaseCoreCode) (hA : S0.rewriteAdmissible vScId.val
+          (.schedContext sc')),
+        (S0.rewriteObject vScId.val (.schedContext sc') hA).releaseCoreOf
+          ⟨vScId.val.toNat⟩ ≠ some c := fun S0 hO sc' hf hA => by
+      rw [SystemState.releaseCoreOf_rewrite_of_objects S0 st hO vScId.val ⟨vScId.val.toNat⟩ rfl
+        sc sc' hSc hObjInv hf hA]
+      exact hne
+    have hLink2 : ∀ (S0 : SystemState) (hO : S0.objects = st.objects) (sc' : SchedContext)
+        (hf : sc'.releaseCoreCode = sc.releaseCoreCode) (hA : S0.rewriteAdmissible vScId.val
+          (.schedContext sc')) (t : SeLe4n.ThreadId) (f : TCB → TCB),
+        ((S0.rewriteObject vScId.val (.schedContext sc') hA).updateTcb t f).releaseCoreOf
+          ⟨vScId.val.toNat⟩ ≠ some c := fun S0 hO sc' hf hA t f => by
+      rw [SystemState.releaseCoreOf_updateTcb _ _ _
+        (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ (hO ▸ hObjInv))]
+      exact hLink S0 hO sc' hf hA
+    cases hBound : sc.boundThread with
+    | none => simp only [hBound] at h; cases h
+    | some tid =>
+      simp only [hBound] at h
+      cases hTcb : st.getTcb? tid with
+      | some tcb =>
+        simp only [hTcb] at h
+        split at h
+        · exact absurd h (by simp)
+        · rw [Except.ok.injEq, Prod.mk.injEq] at h
+          rw [← h.2, markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
+            SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ (by
+              rw [SystemState.releaseCoreOf_of_runLinks
+                  (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _),
+]
+              exact hLink2 _ (by rfl) _ (by rfl) _ _ _),
+            SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
+            SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+          dsimp only
+          repeat' split
+          all_goals
+            simp [SchedulerState.setCurrentOnCore_replenishQueueOnCore]
+      | none =>
+        simp only [hTcb] at h
+        rw [Except.ok.injEq, Prod.mk.injEq] at h
+        rw [← h.2, SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _
+          (hLink _ rfl { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+            rfl _), SystemState.rewriteObject_scheduler]
 
 /-- **`v0.35.168`: ...and the live per-core arm writes the same one**, the
 scheduling point it composes moving no replenishment
 (`priorityRescheduleOnCore_replenishQueueOnCore`). -/
-theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
+theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_link (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (sc : SchedContext) (tid : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId)
-    (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) = some sc)
-    (hBound : sc.boundThread = some tid)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hne : c ≠ determineTargetCore st tid)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
+    (hne : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId vScId.val) ≠ some c)
     (h : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi)) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold SchedContextOps.schedContextUnbindOnCore at h
@@ -545,27 +537,28 @@ theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb (st st' : System
       rw [hU] at h
       dsimp only at h
       rw [priorityRescheduleOnCore_replenishQueueOnCore _ _ _ _ _ _ c h]
-      exact schedContextUnbind_replenishQueueOnCore_ne_of_tcb st stU vScId sc tid tcb c
-        hSc hBound hTcb hne (by cases u; exact hU)
-
+      exact schedContextUnbind_replenishQueueOnCore_ne_of_link st stU vScId c hObjInv hne
+        (by cases u; exact hU)
 
 /-- **WS-RR RR8.12 Cut C6b: the `.schedContextUnbind` arm's exactness frame.**
 
-Keyed on the footprint's own replenish segment; `…_ne_of_tcb` above is the
-resolution-keyed form it is built from.  Three resolutions and only one of them
-names a core: a SchedContext that resolves to no bound thread makes the
-transition *fail*, and one bound to a thread the store no longer holds has no
-`cpuAffinity` left to read, so the unbind sweeps every core and the segment is
-`allCores` — where the claim is vacuous, correctly, because there is no core
-outside it. -/
+Keyed on the footprint's own replenish segment; `…_ne_of_link` above is the
+link-keyed form it is built from.  A SchedContext that resolves to no bound
+thread makes the transition *fail*, so the segment being empty there costs the
+claim nothing. -/
 theorem schedContextUnbindOnCore_replenishQueueOnCore_ne (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : c ∉ schedContextUnbindReplenishCores st vScId.val)
     (h : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi)) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold schedContextUnbindReplenishCores at hne
-  cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  cases hBT : SchedContextOps.schedContextBoundThread? st vScId.val with
+  | some _ =>
+      rw [hBT] at hne
+      exact schedContextUnbindOnCore_replenishQueueOnCore_ne_of_link st st' vScId executingCore
+        sgi c hObjInv (fun e => hne (by
+          unfold SchedContextOps.purgeReplenishCores; rw [e]; exact List.mem_singleton_self c)) h
   | none =>
       exfalso
       unfold SchedContextOps.schedContextUnbindOnCore at h
@@ -574,35 +567,14 @@ theorem schedContextUnbindOnCore_replenishQueueOnCore_ne (st st' : SystemState)
       | error e => rw [hU] at h; exact absurd h (by simp)
       | ok r =>
           unfold SchedContextOps.schedContextUnbind at hU
-          rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at hU
-          exact absurd hU (by simp)
-  | some sc =>
-      have hBT : SchedContextOps.schedContextBoundThread? st vScId.val = sc.boundThread := by
-        unfold SchedContextOps.schedContextBoundThread?
-        rw [hSc]
-      rw [hBT] at hne
-      cases hBound : sc.boundThread with
-      | none =>
-          exfalso
-          unfold SchedContextOps.schedContextUnbindOnCore at h
-          dsimp only at h
-          cases hU : SchedContextOps.schedContextUnbind vScId st with
-          | error e => rw [hU] at h; exact absurd h (by simp)
-          | ok r =>
-              unfold SchedContextOps.schedContextUnbind at hU
+          unfold SchedContextOps.schedContextBoundThread? at hBT
+          cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+          | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at hU; cases hU
+          | some sc =>
+              rw [hSc] at hBT
               rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at hU
               dsimp only at hU
-              rw [hBound] at hU
-              exact absurd hU (by simp)
-      | some tid =>
-          rw [hBound] at hne
-          cases hTcb : st.getTcb? tid with
-          | none =>
-              simp only [hTcb] at hne
-              exact absurd (Concurrency.mem_allCores c) hne
-          | some tcb =>
-              simp only [hTcb] at hne
-              exact schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb st st' vScId
-                executingCore sgi sc tid tcb c hSc hBound hTcb (by simpa using hne) h
+              simp only [hBT] at hU
+              cases hU
 
 end SeLe4n.Kernel

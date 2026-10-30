@@ -491,10 +491,12 @@ theorem finaliseReplyStep_keepsLentContextHeads {s : SystemState} {x : SeLe4n.Ob
       (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks s3 c t.blockingServer?)
     exact (((f1.off c).trans (F2.loan.off c)).trans f3).trans (f4.off c)
   have iC := (FinaliseFrameAny.replyCancel s c t hInv hB).invExt
+  have f4 := loanWrite.of_agreeOffReleaseLinks (cancelIpcBlockingMigrated_agree c t s)
   have f5 := loanWrite.of_agreeOffRunLinks (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s)
   have F6 := FinaliseFrame.finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?
     (cancelIpcBlockingReclaimed_objects_invExt c t s iC)
-  exact hW0.of_loanWriteOff hNo ((hCancel.trans (f5.off c)).trans (F6.loan.off c))
+  exact hW0.of_loanWriteOff hNo
+    (((hCancel.trans (f4.off c)).trans (f5.off c)).trans (F6.loan.off c))
 
 /-- **The unstack keeps the fact on a context no thread is bound to**: the head
 reply it clears headed this context, which no thread holds on loan

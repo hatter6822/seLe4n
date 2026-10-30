@@ -17,7 +17,7 @@ import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 -- `v0.35.165`: the destroy path ends the reservation a retyped SchedContext
 -- still holds, and it does so with the unbind's own primitives
--- (`purgeReplenishmentOnCore` / `purgeReplenishmentFromAllCores`) rather than
+-- (`purgeReplenishment`) rather than
 -- a second spelling of the queue write.  Cycle-free: nothing in this module's
 -- closure is reachable from `SchedContext.Operations`.
 import SeLe4n.Kernel.SchedContext.Operations
@@ -606,7 +606,7 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
       -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
       -- `_bootCoreId` bridge is `rfl`, so the two cannot differ by a field.
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
+    let st2 := SchedContextOps.purgeReplenishment st1 scId
     -- The binding write moves `tid`'s key (its deadline is no longer the
     -- context's), so it ends in the key hook (KSC-1), as the donation writers do.
     .ok (markKeyChangeFrom st
@@ -629,7 +629,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
     let e0 := hasSufficientBudget st t0
     let st1 := st.updateSchedContext scId fun sc =>
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-    let st2 := SchedContextOps.purgeReplenishmentOnCore st1 rqCore scId
+    let st2 := SchedContextOps.purgeReplenishment st1 scId
     markKeyChangeParts
       (markCandidacyGainFor
         (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
@@ -638,7 +638,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
   | none =>
     let st1 : SystemState := st.updateSchedContext scId fun sc =>
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
+    let st2 := SchedContextOps.purgeReplenishment st1 scId
     markKeyChangeFrom st
       (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid
 
@@ -653,35 +653,32 @@ theorem cancelBoundDonationOnCore_of_bound (st : SystemState) (tid : SeLe4n.Thre
   | none => rfl
   | some t0 =>
     simp only [markKeyChangeFrom, hT, markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
-    rfl
 
 /-- **`v0.35.183` (register row 63): the unbind's object store, in two writes.**
 
-The arm writes a SchedContext, a replenish queue, an index entry and a TCB; only
-the first and the last are object-store writes, and the two scheduler-side ones
-sit between them.  So the whole of its object picture is
-`updateSchedContext` then `updateTcb`, which is what lets the two projection
-readings below be one application each of the update accessors' own lemmas
-instead of a case analysis over the operation.
-
-Stated over `objects` rather than over the state, because the scheduler and index
-writes are real and this claim is not about them. -/
+The arm writes a SchedContext, a release queue, an index entry and a TCB; off the
+release queue's links (WS-ZA ZA6.3: the purge unlinks the context through its
+neighbours' links) only the first and the last are object-store writes, and the
+scheduler-side ones sit between them.  So the whole of its object picture off
+those links is `updateSchedContext` then `updateTcb`, which is what lets the two
+projection readings below be one application each of the update accessors' own
+lemmas instead of a case analysis over the operation. -/
 theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
+    (hInv : st.objects.invExt)
     (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
-    st'.objects = (((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
-      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).objects) := by
+    st'.objectsAgreeOffReleaseLinks ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })) := by
   simp only [cancelBoundDonationOnCore, hBinding] at h
   injection h with h
   subst h
-  -- The two scheduler-side writes sit between the two object writes, so the
-  -- state the final `updateTcb` runs on is not syntactically the
-  -- `updateSchedContext` — only its object table is.  The key hook writes flags
-  -- alone.
-  rw [markKeyChangeFrom_objects]
-  apply SystemState.updateTcb_objects_congr
-  rfl
+  have hMid := SystemState.updateSchedContext_preserves_objects_invExt st scId
+    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+  -- The key hook writes flags alone; the purge agrees off the release links.
+  exact SystemState.objectsAgreeOffReleaseLinks.congr (markKeyChangeFrom_objects _ _ _)
+    ((SchedContextOps.purgeReplenishment_agree _ scId).updateTcb
+      (SchedContextOps.purgeReplenishment_objects_invExt _ _ hMid) hMid _ _)
 
 /-- **`v0.35.183` (register row 63): what the unbind leaves at every thread key.**
 
@@ -695,13 +692,13 @@ theorem cancelBoundDonationOnCore_getTcb? (st st' : SystemState)
     st'.getTcb? tid
         = (st.getTcb? tid).map (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       ∧ ∀ x : SeLe4n.ThreadId, x.toObjId ≠ tid.toObjId → st'.getTcb? x = st.getTcb? x := by
-  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding h
+  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding hInv h
   have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   have hRead : ∀ x : SeLe4n.ThreadId, st'.getTcb? x
       = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
-          (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? x := by
-    intro x; exact SystemState.getTcb?_frame hObjs x
+          (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? x :=
+    fun x => hObjs.getTcb? x
   refine ⟨?_, fun x hNe => ?_⟩
   · rw [hRead tid, SystemState.updateTcb_getTcb?_self _ _ _ hMid,
       SystemState.updateSchedContext_getTcb? st scId _ hInv tid]
@@ -721,19 +718,17 @@ theorem cancelBoundDonationOnCore_getSchedContext? (st st' : SystemState)
     (st'.getSchedContext? scId).map (·.boundThread)
         = (st.getSchedContext? scId).map (fun _ => none)
       ∧ ∀ s : SeLe4n.SchedContextId, s.toObjId ≠ scId.toObjId →
-          st'.getSchedContext? s = st.getSchedContext? s := by
-  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding h
+          (st'.getSchedContext? s).map SchedContext.withoutRelease =
+            (st.getSchedContext? s).map SchedContext.withoutRelease := by
+  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding hInv h
   have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
-  have hRead : ∀ s : SeLe4n.SchedContextId, st'.getSchedContext? s
-      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
-          (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getSchedContext? s := by
-    intro s; exact SystemState.getSchedContext?_frame hObjs s
   refine ⟨?_, fun s hNe => ?_⟩
-  · rw [hRead scId, SystemState.updateTcb_getSchedContext? _ _ _ hMid,
+  · rw [hObjs.getSchedContext?_map (·.boundThread) (fun _ => rfl) scId,
+      SystemState.updateTcb_getSchedContext? _ _ _ hMid,
       SystemState.updateSchedContext_getSchedContext?_self st scId _ hInv]
     cases st.getSchedContext? scId <;> rfl
-  · rw [hRead s, SystemState.updateTcb_getSchedContext? _ _ _ hMid,
+  · rw [hObjs.getSchedContext? s, SystemState.updateTcb_getSchedContext? _ _ _ hMid,
       SystemState.updateSchedContext_getSchedContext?_ne st scId _ hInv s (Ne.symm hNe)]
 
 /-- **`v0.35.185` (register row 63): the unbind leaves the target `.unbound`.**
@@ -814,8 +809,9 @@ theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent
         rw [hScPre] at hSc0
         rw [← Option.some.inj hSc0, hScBound] at hBound0
         exact absurd (congrArg SeLe4n.ThreadId.toObjId (Option.some.inj hBound0)).symm hXT
-      · refine ⟨sc0, (SystemState.getSchedContext?_eq_some_iff st' s sc0).mp ?_, hBound0⟩
-        rw [hSNe s hSS]; exact hSc0
+      · obtain ⟨sc0', hSc0', e⟩ := SchedContext.map_withoutRelease_some (hSNe s hSS) hSc0
+        exact ⟨sc0', (SystemState.getSchedContext?_eq_some_iff st' s sc0').mp hSc0',
+          by rw [SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) e]; exact hBound0⟩
   · intro s scX hObjS y hBoundY
     have hS : st'.getSchedContext? s = some scX :=
       (SystemState.getSchedContext?_eq_some_iff st' s scX).mpr hObjS
@@ -827,9 +823,10 @@ theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent
       have hNone : scX.boundThread = none := Option.some.inj hSSelf
       rw [hBoundY] at hNone
       exact absurd hNone (by simp)
-    · rw [hSNe s hSS] at hS
-      obtain ⟨tcb0, hT0, hBind0⟩ := hCons.2 s scX
-        ((SystemState.getSchedContext?_eq_some_iff st s scX).mp hS) y hBoundY
+    · obtain ⟨scX0, hS0, e⟩ := SchedContext.map_withoutRelease_some (hSNe s hSS).symm hS
+      obtain ⟨tcb0, hT0, hBind0⟩ := hCons.2 s scX0
+        ((SystemState.getSchedContext?_eq_some_iff st s scX0).mp hS0) y
+        (by rw [SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) e]; exact hBoundY)
       have hT0' : st.getTcb? y = some tcb0 :=
         (SystemState.getTcb?_eq_some_iff st y tcb0).mpr hT0
       by_cases hYT : y.toObjId = tid.toObjId
@@ -948,16 +945,16 @@ capability; this is that, per core.
 **The three writes are `schedContextUnbind`'s own, composed from the same
 primitives in the same order** (`SchedContext/Operations.lean` — this module
 imports it for exactly that reason): the bound thread's binding cleared through
-`updateTcb`, `scId`'s replenishments purged with `purgeReplenishmentOnCore` on
-that thread's home core.  What it does
+`updateTcb`, `scId`'s replenishments purged with `purgeReplenishment` on the
+core its own release link names (WS-ZA ZA6.3).  What it does
 **not** do is rewrite the SchedContext record — the retype replaces the object
 outright — or touch the scheduler's run queues and current slots, which is what
 keeps the arm's write set empty and the destroy path's confinement result
 unchanged.
 
-The TCB-absent arm sweeps **every** core, for the unbind's own stated reason: a
-bound thread already gone from the store has no `cpuAffinity` left to read, so
-there is no home core to name and the only sound answer is all of them.
+The TCB-absent arm purges the same way: the purge reads its core from the
+context's link, so a bound thread already gone from the store, with no
+`cpuAffinity` left to read, costs it nothing.
 
 The binding is cleared whatever it is — `.bound scId` on an owner and `.donated
 scId owner` on a donee are the two bindings a context's `boundThread` can name,
@@ -973,14 +970,14 @@ def releaseSchedContextBinding (st : SystemState) (scId : SeLe4n.SchedContextId)
     | some tcb =>
       let st1 := st.updateTcb tid fun t =>
         { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
-      let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
+      let st2 := SchedContextOps.purgeReplenishment st1 scId
       -- The reschedule-SGI accumulator (KSC-1): the bound thread's deadline
       -- reverts from the destroyed reservation's to its own, so a queued or
       -- current thread's core is flagged exactly when that key changed.
       markKeyChangeFor st2
         tid (effectiveSchedParams st tcb)
     | none =>
-      let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
+      let st1 := SchedContextOps.purgeReplenishment st scId
       st1
 
 /-- `v0.35.165`: a context bound to nothing has no binding to release. -/
@@ -998,7 +995,7 @@ theorem releaseSchedContextBinding_of_bound (st : SystemState)
     releaseSchedContextBinding st scId sc =
       (let st1 := st.updateTcb tid fun t =>
         { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
-       let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
+       let st2 := SchedContextOps.purgeReplenishment st1 scId
        markKeyChangeFor st2
          tid (effectiveSchedParams st tcb)) := by
   simp only [releaseSchedContextBinding, hBound, hTcb]
@@ -1010,7 +1007,7 @@ theorem releaseSchedContextBinding_of_missing_tcb (st : SystemState)
     (tid : SeLe4n.ThreadId)
     (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = none) :
     releaseSchedContextBinding st scId sc =
-      (let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
+      (let st1 := SchedContextOps.purgeReplenishment st scId
        st1) := by
   simp only [releaseSchedContextBinding, hBound, hTcb]
 
@@ -1088,7 +1085,7 @@ each use site, for the reason the purges' own frames give. -/
   split
   · rfl
   · split
-    · simp only [markKeyChangeFor_tlbShootdown, SchedContextOps.purgeReplenishmentOnCore]
+    · simp only [markKeyChangeFor_tlbShootdown, SchedContextOps.purgeReplenishment_tlbShootdown]
       rw [SystemState.updateTcb_eq_objects_update]
     · simp
 
@@ -1102,35 +1099,36 @@ each use site, for the reason the purges' own frames give. -/
 
 /-- **`v0.35.185` (register row 63): what the release writes to the object table.**
 
-Its **one** object write, on the arm that has one: the released thread's binding,
-cleared.  The replenish purge and the index removal are a scheduler write and a
-record field, neither of which the object table sees — so the whole of the
-release's object picture is that `updateTcb`.
+Its **one** object write off the release queue's links, on the arm that has one:
+the released thread's binding, cleared.  The replenish purge writes the release
+queue and the contexts' release links (WS-ZA ZA6.3), and the index removal is a
+record field — so off those links the whole of the release's object picture is
+that `updateTcb`.
 
-Stated as an `objects` equation rather than a state equation, because those two
+Stated as an object agreement rather than a state equation, because those two
 other writes are real and this claim is not about them. -/
 theorem releaseSchedContextBinding_objects_of_bound (st : SystemState)
     (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = some tcb) :
-    (releaseSchedContextBinding st scId sc).objects =
-      (st.updateTcb tid fun t =>
-        { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).objects := by
+    (releaseSchedContextBinding st scId sc).objectsAgreeOffReleaseLinks
+      (st.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) := by
   rw [releaseSchedContextBinding_of_bound st scId sc tid tcb hBound hTcb]
-  simp only [markKeyChangeFor_objects, SchedContextOps.purgeReplenishmentOnCore_objects]
+  exact SystemState.objectsAgreeOffReleaseLinks.congr (markKeyChangeFor_objects _ _ _)
+    (SchedContextOps.purgeReplenishment_agree _ _)
 
-/-- **`v0.35.185`**: and the two arms that write no object at all — a context
-bound to nothing, and one whose bound thread the store has lost, where the whole
-of the release is the replenish sweep and the index removal. -/
+/-- **`v0.35.185`**: and the two arms that write no object off the release links —
+a context bound to nothing, and one whose bound thread the store has lost, where
+the whole of the release is the replenish purge and the index removal. -/
 theorem releaseSchedContextBinding_objects_of_no_tcb (st : SystemState)
     (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
     (h : ∀ tid, sc.boundThread = some tid → st.getTcb? tid = none) :
-    (releaseSchedContextBinding st scId sc).objects = st.objects := by
+    (releaseSchedContextBinding st scId sc).objectsAgreeOffReleaseLinks st := by
   cases hB : sc.boundThread with
-  | none => rw [releaseSchedContextBinding_of_unbound st scId sc hB]
+  | none => rw [releaseSchedContextBinding_of_unbound st scId sc hB]; exact .refl _
   | some tid =>
     rw [releaseSchedContextBinding_of_missing_tcb st scId sc tid hB (h tid hB)]
-    simp only [SchedContextOps.purgeReplenishmentFromAllCores_objects]
+    exact SchedContextOps.purgeReplenishment_agree _ _
 
 /-- `v0.35.165`: the release keeps the object table's extension invariant — its
 one object write is the typed TCB rewrite. -/
@@ -1142,7 +1140,8 @@ theorem releaseSchedContextBinding_preserves_objects_invExt (st : SystemState)
   split
   · exact hInv
   · split
-    · simpa using SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
-    · simpa using hInv
+    · simpa using SchedContextOps.purgeReplenishment_objects_invExt _ _
+        (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv)
+    · exact SchedContextOps.purgeReplenishment_objects_invExt _ _ hInv
 
 end SeLe4n.Kernel

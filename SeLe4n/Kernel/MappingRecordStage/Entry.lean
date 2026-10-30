@@ -386,7 +386,7 @@ theorem syscallDispatchEntryState_preserves_liveMappingsRecorded (ctx : Labeling
   (syscallDispatchEntryState_mappingStage ctx e syscallId trapped frame bytes n st
     (MappingArmPremises.of_proofLayerInvariantBundle hB hA)).preserves
     (objects_invExt_of_capabilityInvariantBundle _ hB.2.1)
-    hB.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    hB.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-! ### The suspend, timer, reschedule, fault and FP/SIMD entries -/
 

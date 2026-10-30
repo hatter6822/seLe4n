@@ -227,7 +227,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
   rcases endpointSendDualOnCore_post_agrees endpointId sender payload executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
+  · exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks hAgree.objects
       (endpointSendDual_preserves_ipcInvariantFull st r1 endpointId sender payload hInv hObjInv
         hAllBudgetsNone
         hFreshSender hSendTailFresh hSenderNotRecv

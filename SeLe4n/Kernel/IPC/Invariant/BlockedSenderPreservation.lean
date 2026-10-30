@@ -89,11 +89,15 @@ theorem ipcStateFrame_of_objects_eq {st st' : SystemState}
 
 /-- WS-ZA ZA4.5: a step that writes only run-queue links frames every
 `ipcState`. -/
-theorem ipcStateFrame_of_objectsAgreeOffRunLinks {st st' : SystemState}
-    (h : st'.objectsAgreeOffRunLinks st) : ipcStateFrame st st' := by
+theorem ipcStateFrame_of_objectsAgreeOffSchedulerLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffSchedulerLinks st) : ipcStateFrame st st' := by
   intro t tcb' hTcb
   obtain ⟨t0, h0, hE⟩ := h.get_tcb' hTcb
   exact ⟨t0, h0, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm⟩
+
+theorem ipcStateFrame_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) : ipcStateFrame st st' :=
+  ipcStateFrame_of_objectsAgreeOffSchedulerLinks (.of_runLinks h)
 
 /-- WS-RR RR8.16: the donation read agreement frames every `ipcState`.
 
@@ -225,7 +229,7 @@ theorem applyCallDonation_ipcStateFrame
     (applyCallDonation_donationReadAgreement st st' callerVtid receiverVtid hObjInv h)
 
 /-- WS-RR RR8.16: and the per-core form adds only the replenishment migration,
-which writes no object. -/
+which writes release-queue links alone (WS-ZA ZA6.3). -/
 theorem applyCallDonationOnCore_ipcStateFrame
     (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (donorHome doneeHome : CoreId)
@@ -238,8 +242,8 @@ theorem applyCallDonationOnCore_ipcStateFrame
     applyCallDonation_ipcStateFrame st st' callerVtid receiverVtid hObjInv hDon
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
   · exact hFrame
-  · exact hFrame.trans
-      (ipcStateFrame_of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _))
+  · exact hFrame.trans (ipcStateFrame_of_objectsAgreeOffSchedulerLinks
+      (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _)))
 
 -- ============================================================================
 -- §2  The `.ready` writers
@@ -880,12 +884,12 @@ theorem applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder
     donationOwnerFlowsToHolder ctx st'' := by
   obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid
     receiverVtid donorHome doneeHome h
-  -- The migration and the deschedule write no object, so the whole question is
-  -- about `applyCallDonation`'s own two stores.
-  have hObjs : ∀ oid : SeLe4n.ObjId, st''.objects[oid]? = st'.objects[oid]? := by
-    rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> rw [hEq] <;> intro oid
+  -- The migration writes release-queue links alone, so every thread reads as
+  -- in `applyCallDonation`'s own store and the whole question is about it.
+  have hTcbs : ∀ t, st''.getTcb? t = st'.getTcb? t := by
+    rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> rw [hEq] <;> intro t
     · rfl
-    · rw [migrateSchedContextReplenishment_objects]
+    · exact (migrateSchedContextReplenishment_agree _ _ _ _).getTcb? t
   have hMid : donationOwnerFlowsToHolder ctx st' := by
     cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
     | none =>
@@ -930,7 +934,7 @@ theorem applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder
   intro holder owner scId' hRet
   refine hMid holder owner scId' ?_
   unfold replyDonationReturn? at hRet ⊢
-  rw [lookupTcb_congr_getElem hObjs holder] at hRet
+  rw [show lookupTcb st'' holder = lookupTcb st' holder by unfold lookupTcb; rw [hTcbs]] at hRet
   exact hRet
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: the rendezvous's two principals are comparable,

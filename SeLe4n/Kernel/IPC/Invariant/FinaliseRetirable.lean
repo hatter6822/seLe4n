@@ -77,7 +77,7 @@ theorem finaliseSchedContextUnbind_keeps {s : SystemState} {x : SeLe4n.ObjId}
     (determineTargetCore s tid) _ hBind
   rw [hOk]
   dsimp only
-  have hObj := cancelBoundDonationOnCore_objects s _ tid _ _ _ hBind hOk
+  have hObj := cancelBoundDonationOnCore_objects s _ tid _ _ _ hBind hInv hOk
   have hNe : tid.toObjId ≠ x := by
     intro e
     have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
@@ -86,21 +86,29 @@ theorem finaliseSchedContextUnbind_keeps {s : SystemState} {x : SeLe4n.ObjId}
     rw [SystemState.getSchedContext?_eq_some_iff]; exact hO
   have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s ⟨x.val⟩
     (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
-  refine ⟨⟨{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }, ?_, rfl⟩,
-    fun k r hk => ?_⟩
-  · rw [hObj, SystemState.updateTcb_objects_ne _ _ _ _ hNe hInv1,
+  have hMidX : ((s.updateSchedContext ⟨x.val⟩
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb
+        tid (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).objects[x]? =
+      some (.schedContext
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
+    rw [SystemState.updateTcb_objects_ne _ _ _ _ hNe hInv1,
       SystemState.updateSchedContext_eq_of_some hG']
     dsimp only
     rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl,
       RHTable_getElem?_eq_get?, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]
-  · have hkx : (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId ≠ k := by
+  obtain ⟨sc', h1, e⟩ := hObj.getSchedContext?_some (s := ⟨x.val⟩)
+    ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hMidX)
+  refine ⟨⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp h1,
+    (congrArg SchedContext.scReply e : _)⟩, fun k r hk => ?_⟩
+  · refine hObj.get_of_not_sc (fun _ e => KernelObject.noConfusion e) ?_
+    have hkx : (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId ≠ k := by
       intro e; rw [← e] at hk; rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl,
         hO] at hk; cases hk
     have hkt : tid.toObjId ≠ k := by
       intro e
       have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
       rw [e, hk] at this; cases this
-    rw [hObj, SystemState.updateTcb_objects_ne _ _ _ _ hkt hInv1,
+    rw [SystemState.updateTcb_objects_ne _ _ _ _ hkt hInv1,
       SystemState.updateSchedContext_objects_ne _ _ _ _ hkx hInv]
     exact hk
 

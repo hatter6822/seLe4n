@@ -501,7 +501,9 @@ theorem finaliseReplyStep_keepsIpcInvariantFull : FinaliseReplyStep finaliseLoan
   have h0 := cancelIpcBlocking_replyArm_preserves_ipcInvariantFull s c t ep rt h.2.1 hLk hB h.1
     hResolves hBud hOff hOwed hHolder hStack
   have h1 := ipcInvariantFull_of_objectsAgreeOffRunLinks
-    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s) h0
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s)
+    (ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+      (.of_releaseLinks (cancelIpcBlockingMigrated_agree c t s)) h0)
   have hI1 := (FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.2.1 hB).invExt
   revert hW'
   cases hSv : t.blockingServer? with
@@ -779,7 +781,7 @@ theorem finalisingDeleteBundle.of_objects_scheduler_eq {s s' : SystemState}
     (hO : s'.objects = s.objects) (hS : s'.scheduler = s.scheduler)
     (h : finalisingDeleteBundle s) : finalisingDeleteBundle s' := by
   refine ⟨⟨ipcInvariantFull_of_objects_eq hO h.1.1, by rw [hO]; exact h.1.2.1, ?_⟩,
-    (SchedLinkFrame.of_objects_eq hO fun _ => by rw [hS]).preserves h.2⟩
+    (SchedLinkFrame.of_objects_eq hO (by rw [hS])).preserves h.2⟩
   have := h.1.2.2
   unfold lentContextHeadsLenderFrame at this ⊢
   rw [hO]; exact this
@@ -804,11 +806,9 @@ theorem revokeService_preserves_finalisingDeleteBundle {sid : ServiceId} {st st'
   have hS := revokeService_preserves_scheduler st st' sid hR
   have hLoan := revokeService_loanWrite hR h.1.2.1
   have hF : SchedLinkFrame st st' := by
-    refine ⟨fun oid => ?_, fun oid => ?_, fun c => by rw [hS]⟩
-    · rcases hL oid with e | ⟨ep, c, h0, h1⟩
-      · rw [e]
-      · rw [h0, h1]; rfl
-    · rcases hL oid with e | ⟨ep, c, h0, h1⟩
+    refine ⟨fun oid => ?_, fun oid => ?_, fun oid => ?_, by rw [hS]⟩
+    all_goals
+      rcases hL oid with e | ⟨ep, c, h0, h1⟩
       · rw [e]
       · rw [h0, h1]; rfl
   exact ⟨⟨revokeService_preserves_ipcInvariantFull st st' sid h.1.2.1 h.1.1 hR,

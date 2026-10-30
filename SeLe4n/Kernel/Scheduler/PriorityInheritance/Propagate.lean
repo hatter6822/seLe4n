@@ -1146,6 +1146,16 @@ theorem updatePipBoostOnCore_replenishQueueOnCore (st : SystemState) (c c' : Cor
   repeat' split
   all_goals simp [SystemState.rewriteObject_scheduler]
 
+/-- A PIP boost writes no release-queue slot. -/
+theorem updatePipBoostOnCore_releaseSlots (st : SystemState) (c : CoreId) (tid : ThreadId) :
+    (updatePipBoostOnCore st c tid).scheduler.releaseSlots = st.scheduler.releaseSlots := by
+  simp only [updatePipBoostOnCore]
+  repeat' split
+  all_goals first
+    | rfl
+    | (rw [markKeyChangeFor_releaseSlots]
+       first | rfl | (rw [SystemState.runRequeueOnCore_scheduler]; rfl))
+
 /-- WS-RR RR2.20 (frame): a PIP boost never changes any SchedContext.  Its only
 object write stores a `.tcb` at the holder's slot — a slot that already held a
 `.tcb`, since the write is guarded on reading one there — so `getSchedContext?`
@@ -1255,6 +1265,21 @@ theorem propagatePipChainCrossCore_replenishQueueOnCore (st : SystemState) (tid 
     | none => exact hHere
     | some nextServer =>
         exact (ih (pipBoostWithWake st tid ec).1 nextServer).trans hHere
+
+/-- The cross-core chain walk writes no release-queue slot. -/
+theorem propagatePipChainCrossCore_releaseSlots (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) :
+    (propagatePipChainCrossCore st tid ec fuel).1.scheduler.releaseSlots
+      = st.scheduler.releaseSlots := by
+  induction fuel generalizing st tid with
+  | zero => rw [propagatePipChainCrossCore_zero]
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hHere : (pipBoostWithWake st tid ec).1.scheduler.releaseSlots
+        = st.scheduler.releaseSlots := updatePipBoostOnCore_releaseSlots st _ tid
+    cases hB : blockingServer st tid with
+    | none => exact hHere
+    | some nextServer => exact (ih (pipBoostWithWake st tid ec).1 nextServer).trans hHere
 
 /-- The waiter-side re-walk moves no reservation either. -/
 theorem repropagateFromWaiter_replenishQueueOnCore (st : SystemState) (tid : ThreadId)

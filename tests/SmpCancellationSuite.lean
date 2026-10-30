@@ -74,7 +74,7 @@ open SeLe4n.Testing
 -- SM6.E.1/.5 cross-core cancellation transitions + reductions:
 #check @cancelIpcBlockingOnCore
 #check @cancelIpcBlockingOnCore_state_eq
-#check @cancelIpcBlockingOnCore_objectsAgreeOffRunLinks
+#check @cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks
 #check @cancelIpcBlockingOnCore_eq_reclaimed_deschedule
 #check @cancelIpcBlockingOnCore_ready_eq_descheduleThread
 

@@ -879,10 +879,7 @@ theorem migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp
     | some tid =>
         rw [hCur] at hCTV
         obtain ⟨tcb, hT⟩ := hCTV
-        exact ⟨tcb, by
-          unfold SystemState.getTcb? at hT ⊢
-          rw [migrateSchedContextReplenishment_objects st scId fromCore toCore]
-          exact hT⟩
+        exact ⟨tcb, by rw [migrateSchedContextReplenishment_getTcb?]; exact hT⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **a placement removal preserves the base SMP
 scheduler invariant.**

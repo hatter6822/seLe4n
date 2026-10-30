@@ -1691,6 +1691,18 @@ theorem endpointQueueRemove_schedContext_forward
     (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
     endpointId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPre
 
+/-- WS-ZA ZA6.3: the queue splice keeps every context and the scheduler, so it
+holds the release queues. -/
+theorem endpointQueueRemove_releaseStateAgree
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    SystemState.releaseStateAgree st' st :=
+  .of_schedContexts
+    (endpointQueueRemove_schedContext_forward endpointId isReceiveQ tid st st' hInv h)
+    (endpointQueueRemove_schedContext_backward endpointId isReceiveQ tid st st' hInv h)
+    (by rw [endpointQueueRemove_scheduler_eq endpointId isReceiveQ tid st st' h])
+
 /-- WS-OD OD1.4: `T` **occupies no key `base` does not**, and is well-formed.
 
     The splice's four inserts are each guarded by a lookup that succeeded, so

@@ -392,10 +392,12 @@ theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfO
     ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
       SystemState.updateSchedContext_objects_ne _ _ _ k
         (fun e => by rw [← e, hSc] at hk; cases hk) hInv⟩
-  refine Eq.trans (hiddenObjectsWrite.updateTcb (ctx := ctx) (observer := observer) _ tid _ ?_
-    hT).projection ?_
-  · exact hI1
-  · exact hA.projection
+  -- The purge writes contexts' release fields alone, which the projection strips.
+  refine Eq.trans (hiddenObjectsWrite.updateTcb (ctx := ctx) (observer := observer) _ tid _
+    (SchedContextOps.purgeReplenishment_objects_invExt _ _ hI1) hT).projection ?_
+  exact (projectState_of_releaseOnlyWrite ctx observer
+    (SchedContextOps.purgeReplenishment_releaseOnlyWrite _ scId)
+    (SchedContextOps.purgeReplenishment_agree _ scId)).trans hA.projection
 
 /-- **A finalised thread's notification unbind is invisible** when the thread
 and its notification are hidden; it keeps the thread's IPC state, its
@@ -620,7 +622,7 @@ theorem finaliseReplyCallerCancel_objectIndexFacts (s : SystemState) (c : SeLe4n
       (Lifecycle.Suspend.cancelIpcBlocking s c t).objectIndexSet := by
     unfold cancelIpcBlockingMigrated
     split
-    · unfold migrateSchedContextReplenishment; dsimp only; split <;> rfl
+    · rw [(migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _).1]
     · rfl
   have h2 := objectIndexFacts_of_writeAny f2.write hM h1.1 h1.2
   have h3 : SeLe4n.Model.objectIndexSetComplete (cancelIpcBlockingReclaimed c t s) ∧
@@ -797,6 +799,12 @@ theorem sameSchedContextBindings_of_objectsAgreeOffRunLinks {a b : SystemState}
   obtain ⟨t, ha, ht⟩ := KernelObject.map_withoutRunLinks_tcb (h tid.toObjId).symm hb
   exact ⟨t, ha, TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding ht⟩
 
+/-- ...and so does a write of contexts' release fields alone (the
+replenishment migration). -/
+theorem sameSchedContextBindings_of_objectsAgreeOffReleaseLinks {a b : SystemState}
+    (h : b.objectsAgreeOffReleaseLinks a) : sameSchedContextBindings a b := fun _ t' hb =>
+  ⟨t', h.symm.get_of_not_sc (fun _ e => KernelObject.noConfusion e) hb, rfl⟩
+
 /-- **...and so does the priority-inheritance walk**, which rewrites boosts and
 run-queue links alone. -/
 theorem propagatePipChainCrossCore_sameSchedContextBindings' (st : SystemState)
@@ -870,8 +878,10 @@ theorem finaliseReplyCallerCancel_binding {s : SystemState} {c : SeLe4n.ThreadId
   have hIc := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t hInv
   have hIR := cancelIpcBlockingReclaimed_objects_invExt c t s hIc
   have hSameR : sameSchedContextBindings s0 (cancelIpcBlockingReclaimed c t s) :=
-    hSame.trans (sameSchedContextBindings_of_objectsAgreeOffRunLinks
-      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s))
+    (hSame.trans (sameSchedContextBindings_of_objectsAgreeOffReleaseLinks
+      (cancelIpcBlockingMigrated_agree c t s))).trans
+      (sameSchedContextBindings_of_objectsAgreeOffRunLinks
+        (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s))
   have hSameV : sameSchedContextBindings s0
       (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
     unfold finaliseReplyRevert
@@ -960,8 +970,10 @@ theorem finaliseReplyCallerCancel_otherBinding {s : SystemState} {c y : SeLe4n.T
   have hIc := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t hInv
   have hIR := cancelIpcBlockingReclaimed_objects_invExt c t s hIc
   have hSameR : sameSchedContextBindings s0 (cancelIpcBlockingReclaimed c t s) :=
-    hSame.trans (sameSchedContextBindings_of_objectsAgreeOffRunLinks
-      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s))
+    (hSame.trans (sameSchedContextBindings_of_objectsAgreeOffReleaseLinks
+      (cancelIpcBlockingMigrated_agree c t s))).trans
+      (sameSchedContextBindings_of_objectsAgreeOffRunLinks
+        (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s))
   have hSameV : sameSchedContextBindings s0
       (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
     unfold finaliseReplyRevert

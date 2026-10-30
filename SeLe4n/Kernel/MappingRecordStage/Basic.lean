@@ -76,6 +76,12 @@ theorem of_objectsAgreeOffRunLinks (hI : st.objects.invExt → st'.objects.invEx
     (hA : objectsAgreeOffRunLinks st' st) : MappingStage st st' :=
   of_kindPreservingWrite hI fun _ => hA.kindPreserving
 
+/-- A step whose objects agree with the pre-state's off the scheduler links —
+the run-queue links and the contexts' release-queue fields. -/
+theorem of_objectsAgreeOffSchedulerLinks (hI : st.objects.invExt → st'.objects.invExt)
+    (hA : objectsAgreeOffSchedulerLinks st' st) : MappingStage st st' :=
+  of_kindPreservingWrite hI fun _ => hA.kindPreserving
+
 /-- A step that keeps the store's table invariant and every object's mapping
 facts (`SystemState.mappingFactsKept`): a write that may also move binding
 codes, untyped records or table back-links. -/

@@ -61,7 +61,9 @@ theorem yieldChargeOnCore_confinedToCores (st st' : SystemState) (c : CoreId)
         refine observableSlotsConfinedToCores_then_flagOnly ?_
           (markKeyChangeFor_confinedToCores _ _ _)
         refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c' hc <;>
-          simp [spendBudgetOnCore, replenishOnCore,
+          simp [spendBudgetOnCore, replenishOnCore_runQueueOnCore, replenishOnCore_currentOnCore,
+            replenishOnCore_activeDomainOnCore, replenishOnCore_domainTimeRemainingOnCore,
+            replenishOnCore_domainScheduleIndexOnCore, replenishOnCore_machine,
             SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine,
             SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ (hne c' hc)]
       · cases h

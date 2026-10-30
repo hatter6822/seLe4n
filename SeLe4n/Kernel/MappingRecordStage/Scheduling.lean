@@ -119,10 +119,15 @@ theorem cancelIpcBlocking_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId
 
 /-- The teardown with its reclaim: the cancel, then run-queue writes alone. -/
 theorem cancelIpcBlockingReclaimed_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : MappingStage st (cancelIpcBlockingReclaimed tid tcb st) :=
-  (cancelIpcBlocking_mappingStage st tid tcb).trans
-    (MappingStage.of_objectsAgreeOffRunLinks (cancelIpcBlockingReclaimed_objects_invExt tid tcb st)
-      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st))
+    (tcb : TCB) : MappingStage st (cancelIpcBlockingReclaimed tid tcb st) := fun hI =>
+  have h1 := cancelIpcBlocking_mappingStage st tid tcb hI
+  have h2 := MappingStage.of_objectsAgreeOffSchedulerLinks
+    (cancelIpcBlockingMigrated_objects_invExt tid tcb st)
+    (.of_releaseLinks (cancelIpcBlockingMigrated_agree tid tcb st)) h1.1
+  have h3 := MappingStage.of_objectsAgreeOffRunLinks
+    (fun _ => cancelIpcBlockingReclaimed_objects_invExt tid tcb st h1.1)
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st) h2.1
+  ⟨h3.1, h3.2 ∘ h2.2 ∘ h1.2⟩
 
 /-- The suspend's donation arm: nothing, the in-place unbind, or the return and
 the replenishment migration. -/
@@ -407,6 +412,13 @@ theorem schedContextConfigureBoundPropagate_mappingStage (stStored : SystemState
     · exact (hP _).trans (MappingStage.rewriteObject_tcb hCur _)
   · exact hP _
 
+/-- The replenishment purge writes the release-queue links alone. -/
+theorem purgeReplenishment_mappingStage (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    MappingStage st (SchedContextOps.purgeReplenishment st scId) :=
+  MappingStage.of_kindPreservingWrite (SchedContextOps.purgeReplenishment_objects_invExt st scId)
+    fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+      (SchedContextOps.purgeReplenishment_agree st scId)).kindPreserving
+
 /-- The configure purges the context's replenishment, stores the reconfigured
 context over the old one, and runs the bound-thread propagation, the key hook
 and the chain re-walk. -/
@@ -432,11 +444,13 @@ theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
       · split at h
         · exact absurd h (by simp)
         · rename_i stStored hStore
+          obtain ⟨scP, hScP, -⟩ := (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+            (SchedContextOps.purgeReplenishment_agree st ⟨vScId.val.toNat⟩)).get_sc
+            (show st.objects[vScId.val]? = _ from hScRaw)
           have hS1 : MappingStage st stStored :=
-            (MappingStage.of_objects_eq (st' := SchedContextOps.purgeReplenishmentOnCore st
-              (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩) rfl).trans
-              (MappingStage.storeObject hStore (pre := .schedContext sc)
-                (show st.objects[vScId.val]? = _ from hScRaw) rfl (by simp [KernelObject.objectType]))
+            (purgeReplenishment_mappingStage st _).trans
+              (MappingStage.storeObject hStore (pre := .schedContext scP) hScP rfl
+                (by simp [KernelObject.objectType]))
           split at h
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2]; exact hS1
@@ -470,7 +484,7 @@ theorem schedContextUnbind_mappingStage {vScId : SeLe4n.ValidObjId} {st st' : Sy
           refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
           refine MappingStage.trans ?_ (markCandidacyGainFor_mappingStage _ _ _)
           refine MappingStage.trans ?_
-            (MappingStage.of_objects_eq (SchedContextOps.purgeReplenishmentOnCore_objects _ _ _))
+            (purgeReplenishment_mappingStage _ _)
           refine MappingStage.trans ?_ (MappingStage.of_objectsAgreeOffRunLinks
             (SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _)
             (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))
@@ -479,7 +493,7 @@ theorem schedContextUnbind_mappingStage {vScId : SeLe4n.ValidObjId} {st st' : Sy
             (SystemState.rewriteAdmissible_schedContext hSc _))
       · cases hStep
         refine MappingStage.trans ?_
-          (MappingStage.of_objects_eq (SchedContextOps.purgeReplenishmentFromAllCores_objects _ _))
+          (purgeReplenishment_mappingStage _ _)
         exact MappingStage.rewriteObject_schedContext hSc _ _
   · cases hStep
 
@@ -699,6 +713,13 @@ theorem timeoutBlockedThreads_mappingStage (st : SystemState) (scId : SeLe4n.Sch
       · exact h
     · exact h
 
+/-- The release queue's re-placement writes contexts' release fields alone. -/
+theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
+    MappingStage st (st.releasePlace c scId) :=
+  MappingStage.of_objectsAgreeOffSchedulerLinks
+    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
+    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
+
 theorem sliceExpireOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
     MappingStage st (sliceExpireOnCore st c tid tcb hTcb) :=
@@ -710,7 +731,7 @@ theorem spendBudgetOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : Se
   unfold spendBudgetOnCore
   refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
   exact (MappingStage.rewriteObject_schedContext hSc _
-    (SystemState.rewriteAdmissible_schedContext hSc _)).trans (MappingStage.of_objects_eq rfl)
+    (SystemState.rewriteAdmissible_schedContext hSc _)).trans (releasePlace_mappingStage _ c scId)
 
 theorem budgetExhaustOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
@@ -815,18 +836,9 @@ theorem processOneReplenishmentOnCore_mappingStage (st : SystemState) (c : CoreI
 theorem processReplenishmentsDueOnCore_mappingStage (st : SystemState) (c : CoreId) (now : Nat) :
     MappingStage st (processReplenishmentsDueOnCore st c now) := by
   unfold processReplenishmentsDueOnCore
-  dsimp only
-  suffices H : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState),
-      MappingStage st acc → MappingStage st (l.foldl (fun acc scId =>
-        processOneReplenishmentOnCore acc c scId now) acc) from
-    H _ _ (MappingStage.of_objects_eq rfl)
-  intro l
-  induction l with
-  | nil => intro acc h; exact h
-  | cons x xs ih =>
-    intro acc h
-    simp only [List.foldl_cons]
-    exact ih _ (h.trans (processOneReplenishmentOnCore_mappingStage _ c x now))
+  exact drainDueOnCore_induction (MappingStage st) c now
+    (fun s scId h => h.trans (processOneReplenishmentOnCore_mappingStage s c scId now))
+    (fun s scId h => h.trans (releasePlace_mappingStage s c scId)) _ st (.refl st)
 
 /-- **The timer tick keeps the mappings recorded**: the diagnostic clear, the
 replenishment drain, the charge, and the reschedule or the scheduling point. -/

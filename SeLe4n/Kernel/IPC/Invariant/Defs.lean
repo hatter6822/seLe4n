@@ -5625,7 +5625,9 @@ SchedContext `scId` (clause 1's existence + `boundThread`) and the `owner`'s TCB
 (clause 2's `.unbound` binding + `.blockedOnReply` state).  Both are read on the
 **owner/SchedContext** side, so they must be carried **forward** (`st → st'`):
 
-* `scForward` — every donated SchedContext object survives the step; and
+* `scForward` — every donated SchedContext object survives the step, bound to
+  the thread it was bound to (its other fields, the release-queue links among
+  them, are the step's to rewrite: WS-ZA ZA6.3); and
 * `ownerForward` — every thread that is `.unbound` and `.blockedOnReply` in the
   pre-state stays `.unbound` and `.blockedOnReply` in the post-state (so it is still a
   valid donation owner).
@@ -5635,7 +5637,8 @@ the two together feed `donationOwnerValid_of_frames`. -/
 structure donationOwnerFrame (st st' : SystemState) : Prop where
   scForward : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
     st.objects[scId.toObjId]? = some (.schedContext sc) →
-    st'.objects[scId.toObjId]? = some (.schedContext sc)
+    ∃ sc' : SchedContext, st'.objects[scId.toObjId]? = some (.schedContext sc') ∧
+      sc'.boundThread = sc.boundThread
   ownerForward : ∀ (owner : SeLe4n.ThreadId) (ownerTcb : TCB),
     st.objects[owner.toObjId]? = some (.tcb ownerTcb) →
     ownerTcb.schedContextBinding = .unbound →
@@ -5648,13 +5651,16 @@ namespace donationOwnerFrame
 
 /-- Reflexivity: a state frames onto itself. -/
 theorem refl (st : SystemState) : donationOwnerFrame st st :=
-  ⟨fun _ _ h => h, fun _ ownerTcb h hU hR => ⟨ownerTcb, h, hU, hR⟩⟩
+  ⟨fun _ sc h => ⟨sc, h, rfl⟩, fun _ ownerTcb h hU hR => ⟨ownerTcb, h, hU, hR⟩⟩
 
 /-- Transitivity: chain two donation-owner frames. -/
 theorem trans {st st' st'' : SystemState}
     (h1 : donationOwnerFrame st st') (h2 : donationOwnerFrame st' st'') :
     donationOwnerFrame st st'' :=
-  ⟨fun scId sc h => h2.scForward scId sc (h1.scForward scId sc h),
+  ⟨fun scId sc h => by
+     obtain ⟨sc1, h1', hb1⟩ := h1.scForward scId sc h
+     obtain ⟨sc2, h2', hb2⟩ := h2.scForward scId sc1 h1'
+     exact ⟨sc2, h2', hb2.trans hb1⟩,
    fun owner ownerTcb h hU hR => by
      obtain ⟨t', h', hU', hR'⟩ := h1.ownerForward owner ownerTcb h hU hR
      exact h2.ownerForward owner t' h' hU' hR'⟩
@@ -5663,19 +5669,19 @@ theorem trans {st st' st'' : SystemState}
 ops: `removeRunnable`, `ensureRunnable`, `removeRunnableOnCore`, …). -/
 theorem of_objects_eq {st st' : SystemState}
     (hEq : st'.objects = st.objects) : donationOwnerFrame st st' :=
-  ⟨fun scId sc h => by rw [hEq]; exact h,
+  ⟨fun _ sc h => ⟨sc, by rw [hEq]; exact h, rfl⟩,
    fun owner ownerTcb h hU hR => ⟨ownerTcb, by rw [hEq]; exact h, hU, hR⟩⟩
 
 /-- WS-ZA ZA4.5: a step writing only run-queue links frames every owner. -/
 theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
     donationOwnerFrame st st' := by
-  refine ⟨fun scId sc hSc => h.get_schedContext_iff.mpr hSc, fun owner ownerTcb hT hU hR => ?_⟩
+  refine ⟨fun _ sc hSc => ⟨sc, h.get_schedContext_iff.mpr hSc, rfl⟩, fun owner ownerTcb hT hU hR => ?_⟩
   run_links_fwd h at ownerTcb hT
   exact ⟨_, hT, hU, hR⟩
 
 theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :
     donationOwnerFrame st st' := by
-  refine ⟨fun scId sc hSc => h.schedContext_iff.mpr hSc, fun owner ownerTcb hT hU hR => ?_⟩
+  refine ⟨fun _ sc hSc => ⟨sc, h.schedContext_iff.mpr hSc, rfl⟩, fun owner ownerTcb hT hU hR => ?_⟩
   ntfn_links_fwd h at ownerTcb hT
   exact ⟨_, hT, hU, hR⟩
 
@@ -5707,7 +5713,8 @@ theorem donationOwnerValid_of_frames
   rw [hBinding] at hBindEq
   obtain ⟨⟨sc, hScSt, hBound⟩, ⟨ownerTcb, hOwnerSt, hUnbound, ep, rt, hReply⟩⟩ :=
     hInv tid tcbSt scId owner hTcbSt hBindEq
-  exact ⟨⟨sc, hFrame.scForward scId sc hScSt, hBound⟩,
+  obtain ⟨sc', hSc', hBound'⟩ := hFrame.scForward scId sc hScSt
+  exact ⟨⟨sc', hSc', hBound'.trans hBound⟩,
     hFrame.ownerForward owner ownerTcb hOwnerSt hUnbound ⟨ep, rt, hReply⟩⟩
 
 -- ============================================================================
@@ -5989,7 +5996,8 @@ structure donationOwnerFrameExcept (st st' : SystemState) (woken : SeLe4n.Thread
     Prop where
   scForward : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
     st.objects[scId.toObjId]? = some (.schedContext sc) →
-    st'.objects[scId.toObjId]? = some (.schedContext sc)
+    ∃ sc' : SchedContext, st'.objects[scId.toObjId]? = some (.schedContext sc') ∧
+      sc'.boundThread = sc.boundThread
   tcbForward : ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[t.toObjId]? = some (.tcb tcb) →
     ∃ tcb', st'.objects[t.toObjId]? = some (.tcb tcb') ∧
@@ -6001,14 +6009,17 @@ namespace donationOwnerFrameExcept
 /-- Reflexivity: a state frames onto itself. -/
 theorem refl (st : SystemState) (woken : SeLe4n.ThreadId) :
     donationOwnerFrameExcept st st woken :=
-  ⟨fun _ _ h => h, fun _ tcb h => ⟨tcb, h, rfl, Or.inr rfl⟩⟩
+  ⟨fun _ sc h => ⟨sc, h, rfl⟩, fun _ tcb h => ⟨tcb, h, rfl, Or.inr rfl⟩⟩
 
 /-- Transitivity: chain two relaxed frames sharing the same relaxed thread. -/
 theorem trans {st st' st'' : SystemState} {woken : SeLe4n.ThreadId}
     (h1 : donationOwnerFrameExcept st st' woken)
     (h2 : donationOwnerFrameExcept st' st'' woken) :
     donationOwnerFrameExcept st st'' woken :=
-  ⟨fun scId sc h => h2.scForward scId sc (h1.scForward scId sc h),
+  ⟨fun scId sc h => by
+     obtain ⟨sc1, h1', hb1⟩ := h1.scForward scId sc h
+     obtain ⟨sc2, h2', hb2⟩ := h2.scForward scId sc1 h1'
+     exact ⟨sc2, h2', hb2.trans hb1⟩,
    fun t tcb h => by
      obtain ⟨tcb1, h1', hB1, hI1⟩ := h1.tcbForward t tcb h
      obtain ⟨tcb2, h2', hB2, hI2⟩ := h2.tcbForward t tcb1 h1'
@@ -6023,13 +6034,13 @@ theorem trans {st st' st'' : SystemState} {woken : SeLe4n.ThreadId}
 ops: `removeRunnable`, `ensureRunnable`, `removeRunnableOnCore`, …). -/
 theorem of_objects_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
     (hEq : st'.objects = st.objects) : donationOwnerFrameExcept st st' woken :=
-  ⟨fun _ _ h => by rw [hEq]; exact h,
+  ⟨fun _ sc h => ⟨sc, by rw [hEq]; exact h, rfl⟩,
    fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
 
 /-- WS-ZA ZA4.5: a step writing only run-queue links frames every owner. -/
 theorem of_objectsAgreeOffRunLinks {st st' : SystemState} {woken : SeLe4n.ThreadId}
     (h : st'.objectsAgreeOffRunLinks st) : donationOwnerFrameExcept st st' woken := by
-  refine ⟨fun _ _ hSc => h.get_schedContext_iff.mpr hSc, fun _ tcb hT => ?_⟩
+  refine ⟨fun _ sc hSc => ⟨sc, h.get_schedContext_iff.mpr hSc, rfl⟩, fun _ tcb hT => ?_⟩
   run_links_fwd h at tcb hT
   exact ⟨_, hT, rfl, Or.inr rfl⟩
 
@@ -6038,7 +6049,7 @@ is the shape a cross-core transition's `OffSchedulerAgrees` supplies. -/
 theorem of_getElem_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
     (hEq : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
     donationOwnerFrameExcept st st' woken :=
-  ⟨fun _ _ h => by rw [hEq]; exact h,
+  ⟨fun _ sc h => ⟨sc, by rw [hEq]; exact h, rfl⟩,
    fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
 
 /-- Every plain donation-owner frame whose TCB side is a pointwise forward map is
@@ -6054,7 +6065,7 @@ theorem of_tcbForward {st st' : SystemState} {woken : SeLe4n.ThreadId}
         tcb'.schedContextBinding = tcb.schedContextBinding ∧
         tcb'.ipcState = tcb.ipcState) :
     donationOwnerFrameExcept st st' woken :=
-  ⟨hSc, fun t tcb h => by
+  ⟨fun s sc h => ⟨sc, hSc s sc h, rfl⟩, fun t tcb h => by
     obtain ⟨tcb', h', hB, hI⟩ := hTcb t tcb h
     exact ⟨tcb', h', hB, Or.inr hI⟩⟩
 
@@ -6075,7 +6086,8 @@ theorem donationOwnerValidExcept_of_frames
   obtain ⟨⟨sc, hScSt, hBound⟩, ⟨ownerTcb, hOwnerSt, hUnbound, ep, rt, hReply⟩⟩ :=
     hInv tid tcbSt scId owner hTcbSt hBindEq
   obtain ⟨ownerTcb', hOwner', hBind', hCase⟩ := hFrame.tcbForward owner ownerTcb hOwnerSt
-  refine ⟨⟨sc, hFrame.scForward scId sc hScSt, hBound⟩,
+  obtain ⟨sc', hSc', hBound'⟩ := hFrame.scForward scId sc hScSt
+  refine ⟨⟨sc', hSc', hBound'.trans hBound⟩,
     ⟨ownerTcb', hOwner', hBind'.trans hUnbound, ?_⟩⟩
   cases hCase with
   | inl hw => exact Or.inl hw

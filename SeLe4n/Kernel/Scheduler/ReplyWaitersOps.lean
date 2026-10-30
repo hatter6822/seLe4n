@@ -887,7 +887,9 @@ theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
   have hM : StateMono st st' :=
     StateMono.of_stateFields (fun t => hA.getTcb?_map _ (t := t))
   exact ⟨.of_tableFrame (fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩)
-      (fun _ => .of_map (g := KernelObject.withoutReplyLinks) (fun o => by cases o <;> rfl) hT hA),
+      (fun _ => .of_map (g := KernelObject.withoutReplyLinks) (fun o => by cases o <;> rfl) hT hA)
+      (fun _ => ⟨.of_map KernelObject.withoutReplyLinks (fun o _ => by cases o <;> rfl) hA,
+        by rw [hS]⟩),
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
 
 theorem linkReplyWaiter_runQueueStage (st : SystemState) (w s : ThreadId) :

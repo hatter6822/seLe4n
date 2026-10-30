@@ -113,31 +113,10 @@ theorem migrateSchedContextReplenishment_preserves_projectionOnCore
   refine projectStateOnCore_congr ctx observer
     (migrateSchedContextReplenishment_preserves_projection ctx observer st scId
       fromCore toCore)
-    ?_ ?_ ?_ ?_ ?_ ?_
-  · unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore]
-  · unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore]
-  · unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · simp only [SchedulerState.setReplenishQueueOnCore_activeDomainOnCore]
-  · unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · simp only [SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore]
-  · unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · simp only [SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore]
-  · unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · rfl
+    ?_ ?_ ?_ ?_ ?_ ?_ <;>
+    first
+      | rw [migrateSchedContextReplenishment_machine]
+      | (rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).2]; rfl)
 
 -- ============================================================================
 -- §2  The placement deschedule of a high victim is invisible

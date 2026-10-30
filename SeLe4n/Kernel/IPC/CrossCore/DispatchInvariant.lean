@@ -467,15 +467,9 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 have hDonFull : ipcInvariantFull stDon :=
                   applyCallDonationOnCore_preserves_ipcInvariantFull stWc stDon callerV receiverV
                     _ _ hWithCapsInv hWithCaps hDon1 hDon2 hDon
-                have hDonInv : stDon.objects.invExt := by
-                  obtain ⟨stMid, hMid, _⟩ := applyCallDonationOnCore_ok_decompose stWc stDon
-                    callerV receiverV _ _ hDon
-                  have hMidInv := applyCallDonation_preserves_objects_invExt stWc stMid callerV
-                    receiverV hWithCapsInv hMid
-                  rw [show stDon.objects = stMid.objects from
-                    applyCallDonationOnCore_objects_eq stWc stMid stDon callerV receiverV _ _
-                      hMid hDon]
-                  exact hMidInv
+                have hDonInv : stDon.objects.invExt :=
+                  applyCallDonationOnCore_preserves_objects_invExt stWc stDon callerV receiverV
+                    _ _ hWithCapsInv hDon
                 exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiverTid
                   executingCore _ hDonInv hDonFull
 

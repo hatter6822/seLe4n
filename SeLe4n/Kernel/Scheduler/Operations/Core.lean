@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.IPC.Operations.Timeout
 import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
+import SeLe4n.Kernel.SchedContext.ReleaseLinks
 
 /-!
 # Scheduler Core Operations — AK2 closure status
@@ -81,6 +82,23 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
+
+/-- WS-ZA ZA6.3: **a release-queue edit is a run-queue stage** — it writes
+contexts' release fields and the release queues alone, so every thread's TCB,
+every slot's back-links, the run queues, their ends and every current slot are
+kept; the release queues stay refined by `hR`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
+    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+    (hA : st'.objectsAgreeOffReleaseLinks st) (hI : st.objects.invExt → st'.objects.invExt)
+    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined) :
+    SystemState.RunQueueStage st st' := by
+  have hS := hW.2
+  refine SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
+    ?_ ?_ ?_ ?_ hR
+  · rw [hS]
+  · rw [hS]
+  · rw [hS]
+  · rw [hW.1]; rfl
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 
@@ -486,7 +504,7 @@ noncomputable def timerTick : Kernel Unit :=
 /-- Z4-G1: Pop all due replenishment entries from the system replenish queue.
 Returns the list of SchedContextIds that are due for replenishment and the
 remaining queue. Wraps `ReplenishQueue.popDue` at the system level. -/
-def popDueReplenishments (st : SystemState) (now : Nat)
+noncomputable def popDueReplenishments (st : SystemState) (now : Nat)
     : ReplenishQueue × List SeLe4n.SchedContextId :=
   (st.scheduler.replenishQueueOnCore bootCoreId).popDue now
 
@@ -683,7 +701,7 @@ in-place table insert whose admissibility proof is erased — and the preconditi
 the raw insert used to trust silently (a caller passing the stored TCB) is the
 signature's.  A caller supplies it from `getTcbWitnessed?`.  The SchedContext
 writes are the rewrite under the witnessed lookup of the binding's context. -/
-def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
     : Except KernelError (SystemState × Bool) :=
   match tcb.schedContextBinding with
@@ -1769,22 +1787,108 @@ theorem processOneReplenishmentOnCore_of_refillWake (P : SystemState → Prop)
     P (processOneReplenishmentOnCore st execCore scId now) :=
   (markRefillKeyChange_extract_frame P st _ scId hFlag).mpr h
 
-/-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
-`now`.
+/-- WS-ZA ZA6.3: the drain's loop: while core `c`'s release queue has a head
+released by `now`, take it, refill it (`processOneReplenishmentOnCore`) and put
+it back where its refills now say (`SystemState.releasePlace`: off every queue
+when it holds no pending refill, otherwise at its earliest), as seL4-MCS's
+`awaken` loop takes the release queue's head while its refill is ready.  At
+most `fuel` heads are taken. -/
+def drainDueOnCore (c : CoreId) (now : Nat) : Nat → SystemState → SystemState
+  | 0, st => st
+  | f + 1, st =>
+    let h := st.scheduler.releaseHeadOnCore c
+    if h = 0 then st
+    else if st.releaseAtOn c (ReleaseChain.decode h) ≤ now then
+      drainDueOnCore c now f
+        ((processOneReplenishmentOnCore st c (ReleaseChain.decode h) now).releasePlace c
+          (ReleaseChain.decode h))
+    else st
 
-Pops the due entries from core `c`'s replenish queue
-(`replenishQueueOnCore c |>.popDue now`) — writing back the remaining queue —
-then folds `processOneReplenishmentOnCore` over them.  The per-core analogue of
-`processReplenishmentsDue`, reading / writing core `c`'s replenish-queue slot
-(plus, via the wakes, the target cores' run queues, their reschedule flags and
-the object store).  Pure; deterministic.  What the wakes owe — a `.reschedule`
-SGI to each remote core whose flag went up, and the local decision when the
-executing core's did — is read off the reschedule flags (WS-ZA ZA6.2). -/
+/-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
+`now`: core `c`'s release queue is drained from its head (`drainDueOnCore`),
+each due context refilled and placed again by its remaining refills, with the
+queue's count as the bound (every context is taken at most once: one put back
+holds only refills released after `now`, so it goes behind every due one).
+The per-core analogue of `processReplenishmentsDue`, reading / writing core
+`c`'s release queue (plus, via the wakes, the target cores' run queues, their
+reschedule flags and the object store).  Pure; deterministic; no list is built
+(WS-ZA ZA6.3).  What the wakes owe — a `.reschedule` SGI to each remote core
+whose flag went up, and the local decision when the executing core's did — is
+read off the reschedule flags (WS-ZA ZA6.2). -/
 def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
     SystemState :=
-  let (remainingQueue, dueIds) := (st.scheduler.replenishQueueOnCore c).popDue now
-  let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore c remainingQueue }
-  dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) st'
+  drainDueOnCore c now (st.scheduler.releaseCountOnCore c) st
+
+/-- WS-ZA ZA6.3: **a property every refill keeps and every re-placement keeps
+holds after the drain** — the induction the drain's preservation proofs share,
+whatever heads the loop takes and however many. -/
+theorem drainDueOnCore_induction (P : SystemState → Prop) (c : CoreId) (now : Nat)
+    (hStep : ∀ s scId, P s → P (processOneReplenishmentOnCore s c scId now))
+    (hPlace : ∀ s scId, P s → P (s.releasePlace c scId)) :
+    ∀ f st, P st → P (drainDueOnCore c now f st)
+  | 0, _, h => h
+  | f + 1, st, h => by
+    unfold drainDueOnCore
+    dsimp only
+    split
+    · exact h
+    · split
+      · exact drainDueOnCore_induction P c now hStep hPlace f _ (hPlace _ _ (hStep _ _ h))
+      · exact h
+
+/-- The re-placement writes the release queues and the contexts' release
+fields alone: every other scheduler slot and every thread read the same. -/
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_runQueueOnCore (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.runQueueOnCore c' = s.scheduler.runQueueOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_currentOnCore (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.currentOnCore c' = s.scheduler.currentOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_reschedulePendingOnCore
+    (s : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.reschedulePendingOnCore c' =
+      s.scheduler.reschedulePendingOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_lastTimeoutErrorsOnCore
+    (s : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.lastTimeoutErrorsOnCore c' =
+      s.scheduler.lastTimeoutErrorsOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_machine (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) :
+    (s.releasePlace c scId).machine = s.machine :=
+  (SystemState.releasePlace_releaseOnlyWrite s c scId).machine
+
+theorem _root_.SeLe4n.Model.SystemState.releasePlace_getTcb? (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    (s.releasePlace c scId).getTcb? t = s.getTcb? t :=
+  (SystemState.releasePlace_agree s c scId).getTcb? t
+
+/-- ...stated over the drain of all of core `c`'s due refills. -/
+theorem processReplenishmentsDueOnCore_induction (P : SystemState → Prop) (st : SystemState)
+    (c : CoreId) (now : Nat)
+    (hStep : ∀ s scId, P s → P (processOneReplenishmentOnCore s c scId now))
+    (hPlace : ∀ s scId, P s → P (s.releasePlace c scId)) (h : P st) :
+    P (processReplenishmentsDueOnCore st c now) :=
+  drainDueOnCore_induction P c now hStep hPlace _ st h
+
+/-- A reading of the state each refill and each re-placement leaves alone is
+one the drain leaves alone. -/
+theorem processReplenishmentsDueOnCore_frame {α : Type} (f : SystemState → α)
+    (st : SystemState) (c : CoreId) (now : Nat)
+    (hStep : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId),
+      f (processOneReplenishmentOnCore s c scId now) = f s)
+    (hPlace : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId),
+      f (s.releasePlace c scId) = f s) :
+    f (processReplenishmentsDueOnCore st c now) = f st :=
+  processReplenishmentsDueOnCore_induction (fun s => f s = f st) st c now
+    (fun s scId h => (hStep s scId).trans h) (fun s scId h => (hPlace s scId).trans h) rfl
 
 /-- WS-ZA ZA6.2: the compiled `refillWakeOnCore`.  The facts the wake reads off
 the refilled state — the target core and whether the store holds the thread —
@@ -1860,86 +1964,15 @@ pre-state after the refill. -/
     · rfl
   · rfl
 
-/-- WS-ZA ZA6.2: the due replenishments of `entries` processed in order, read
-off the queue's own list: the fold `processReplenishmentsDueOnCore` runs over
-the due prefix, without building the list of due ids
-(`foldl_splitDue_eq_foldDueReplenishmentsOnCore`). -/
-def foldDueReplenishmentsOnCore (c : CoreId) (now : Nat) :
-    List (SchedContextId × Nat) → SystemState → SystemState
-  | [], st => st
-  | (scId, eligibleAt) :: tail, st =>
-    if eligibleAt ≤ now then
-      foldDueReplenishmentsOnCore c now tail (processOneReplenishmentOnCore st c scId now)
-    else st
-
-theorem foldl_splitDue_eq_foldDueReplenishmentsOnCore (c : CoreId) (now : Nat)
-    (entries : List (SchedContextId × Nat)) (st : SystemState) :
-    (ReplenishQueue.splitDue entries now).1.foldl
-        (fun acc scId => processOneReplenishmentOnCore acc c scId now) st =
-      foldDueReplenishmentsOnCore c now entries st := by
-  induction entries generalizing st with
-  | nil => rfl
-  | cons e tail ih =>
-    obtain ⟨scId, t⟩ := e
-    simp only [ReplenishQueue.splitDue, foldDueReplenishmentsOnCore]
-    split
-    · rw [List.foldl_cons]; exact ih _
-    · rfl
-
-/-- WS-ZA ZA6.2: the compiled `processReplenishmentsDueOnCore`.  The queue's
-head is read first, and a queue whose head is not due is left as it is, with
-no write, as seL4's `awaken` loop stops at the first entry not ready.
-Otherwise the queue keeps its suffix past the due prefix, written in its slot
-(`modifyReplenishQueueOnCore`), and the due replenishments are processed off
-the prefix of the queue's own list; the specification builds the due ids and
-the remaining queue as a pair.  A call, so the state it receives is a value:
-inlined after the tick's diagnostic clear, the branch that keeps the state made
-the compiler build that state ahead of the test, and the due branch then
-rebuilt it. -/
-@[noinline] def processReplenishmentsDueOnCoreImpl (st : SystemState) (c : CoreId) (now : Nat) :
-    SystemState :=
-  let entries := (st.scheduler.replenishQueueOnCore c).entries
-  if ReplenishQueue.headDue entries now then
-    let st' := { st with scheduler := st.scheduler.modifyReplenishQueueOnCore c fun rq =>
-      ReplenishQueue.dropDueQueue rq now }
-    foldDueReplenishmentsOnCore c now entries st'
-  else st
-
-@[csimp] theorem processReplenishmentsDueOnCore_eq_impl :
-    @processReplenishmentsDueOnCore = @processReplenishmentsDueOnCoreImpl := by
-  funext st c now
-  unfold processReplenishmentsDueOnCoreImpl
-  by_cases h : ReplenishQueue.headDue (st.scheduler.replenishQueueOnCore c).entries now = true
-  · rw [if_pos h]
-    unfold processReplenishmentsDueOnCore ReplenishQueue.dropDueQueue
-    rw [ReplenishQueue.popDue_eq, SchedulerState.modifyReplenishQueueOnCore_eq]
-    exact foldl_splitDue_eq_foldDueReplenishmentsOnCore c now _ _
-  · rw [if_neg h]
-    unfold processReplenishmentsDueOnCore
-    rw [ReplenishQueue.popDue_of_not_headDue _ now (by simpa using h)]
-    have hs : st.scheduler.setReplenishQueueOnCore c (st.scheduler.replenishQueueOnCore c) =
-        st.scheduler := by
-      have hv : st.scheduler.replenishQueue.set c.val (st.scheduler.replenishQueue.get c) c.isLt =
-          st.scheduler.replenishQueue := by
-        apply Vector.ext
-        intro i hi
-        rw [Vector.getElem_set]
-        split
-        · rename_i hc; subst hc; rfl
-        · rfl
-      simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore, hv]
-    simp only [List.foldl_nil, hs]
-
-/-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
-`scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
-`c`'s replenish queue.  The named CBS-replenishment-scheduling primitive that the
-live per-core budget tick (`timerTickBudgetOnCore`, below) **calls** for its
-replenishment write, so it is genuinely load-bearing (not merely proven-equal).
-Defined here, before the tick, to satisfy the forward reference. -/
-def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
-    (eligibleAt : Nat) : SystemState :=
-  let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
-  { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
+/-- WS-SM SM5.H.2 (plan §3.8): schedule SchedContext `scId`'s CBS
+replenishment on core `c` — put it on core `c`'s release queue at its earliest
+pending refill (`SystemState.releasePlace`, WS-ZA ZA6.3), off whichever queue
+held it before, as seL4-MCS's `postpone` re-places a context whose budget ran
+out.  The named CBS-replenishment-scheduling primitive that the live per-core
+budget tick (`timerTickBudgetOnCore`, below) **calls** for its replenishment
+write.  Defined here, before the tick, to satisfy the forward reference. -/
+def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId) : SystemState :=
+  st.releasePlace c scId
 
 /-- WS-ZA ZA4.3: an unbound thread's time slice ends on core `c`: the slice is
 reset to `configDefaultTimeSlice` and `tid` goes to the back of its priority
@@ -1973,10 +2006,9 @@ out the SchedContext's IPC-blocked threads (`budgetExhaustOnCore`). -/
   let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
     (SystemState.rewriteAdmissible_schedContext hSc sc''')
   -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
-  -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
-  -- equal); `stReplenished` is defeq to the prior open-coded
-  -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
-  let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+  -- `replenishOnCore`: the context goes on core `c`'s release queue at its
+  -- earliest pending refill, the one just scheduled among them (WS-ZA ZA6.3).
+  let stReplenished := replenishOnCore st' c scId
   stReplenished.runEnqueueOnCore c tid (resolveInsertPriority st' tid sc)
 
 /-- WS-ZA ZA4.3: the compiled `sliceExpireOnCore`.  The TCB is written in its
@@ -2010,7 +2042,7 @@ is queued on it, so no state is read after a later one is built from it
   let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
     cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
   let prio := resolveInsertPriority st' tid sc
-  let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+  let stReplenished := replenishOnCore st' c scId
   stReplenished.runEnqueueOnCore c tid prio
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
@@ -2040,8 +2072,9 @@ theorem spendBudgetOnCore_objects_invExt (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt) :
     (spendBudgetOnCore st c tid scId sc hSc ticks).objects.invExt :=
   SystemState.runEnqueueOnCore_objects_invExt _ c tid _
-    (SystemState.rewriteObject_preserves_objects_invExt st _ _
-      (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv)
+    (SystemState.releasePlace_objects_invExt _ c scId
+      (SystemState.rewriteObject_preserves_objects_invExt st _ _
+        (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv))
 
 /-- Mark the reschedule flag of every core an SGI list names: the cores a
 step's wakes owe a scheduling point, recorded where the step's seam reads them
@@ -3726,31 +3759,31 @@ theorem threadPlacedOnSomeCore_eq_isSome_placedCoreOf? (st : SystemState)
 -- for its CBS replenishment write (so the primitive is genuinely load-bearing,
 -- not merely proven-equal); see its def site for the docstring.
 
-/-- WS-SM SM5.H.2 (faithful plan signature `replenishOnCore (s, c, sc)`): schedule
-a CBS replenishment for SchedContext `sc` on core `c`, computing the eligibility
-tick internally as `now + sc.period.val` (the CBS-engine rule).  Because
-`sc.wellFormed` carries `period > 0`, this form makes the SM5.H.6 pipeline-order
-preservation **unconditional** (the new entry is eligible strictly in the future
-without a caller-supplied `eligibleAt > now` hypothesis). -/
-def replenishScOnCore (st : SystemState) (c : CoreId) (sc : SchedContext)
-    (now : Nat) : SystemState :=
-  replenishOnCore st c sc.scId (now + sc.period.val)
-
-/-- WS-SM SM5.H.4 (plan §3.8): migrate SchedContext `scId`'s pending replenishments
-from core `fromCore`'s replenish queue to core `toCore`'s — `remove` from the
-source, fold-of-`insert`s into the destination (each at its original eligibility
-time), no-op on self-migration.  Writes only the two replenish-queue slots. -/
+/-- WS-SM SM5.H.4 (plan §3.8): migrate SchedContext `scId`'s pending
+replenishment from core `fromCore`'s release queue to core `toCore`'s, and a
+no-op on self-migration.  WS-ZA ZA6.3: the run-time write is the context's own
+link — unlinked from the source and linked into the destination at its sorted
+place, at the release time the link holds, when the source's links queue it;
+the abstract queues move with it (ghost, read off the pre-state's, no run-time
+write): `scId`'s entries leave the source's and join the destination's at their
+own times.  The two agree on every state whose release queues agree with the
+contexts (`releaseQueueRefined`); stating the abstract move by the abstract
+queues is what lets each abstract-queue fact about the migration (the moved
+entries existed, the source keeps none) hold with no such hypothesis. -/
 def migrateSchedContextReplenishment (st : SystemState) (scId : SchedContextId)
     (fromCore toCore : CoreId) : SystemState :=
   if fromCore = toCore then st
   else
+    let st₁ := if st.releaseQueuedOn fromCore scId then
+        (st.releaseRemoveOn fromCore scId).releaseInsertOn toCore scId (st.releaseAtOn fromCore scId)
+      else st
     let fromQ := st.scheduler.replenishQueueOnCore fromCore
     let toQ := st.scheduler.replenishQueueOnCore toCore
     let moved := fromQ.entries.filter (fun e => e.1 == scId)
-    let fromQ' := fromQ.remove scId
     let toQ' := moved.foldl (fun q e => q.insert scId e.2) toQ
-    let sched' := (st.scheduler.setReplenishQueueOnCore fromCore fromQ').setReplenishQueueOnCore toCore toQ'
-    { st with scheduler := sched' }
+    let sched := (st₁.scheduler.setReplenishQueueOnCore fromCore (fromQ.remove scId)).setReplenishQueueOnCore
+      toCore toQ'
+    { st₁ with scheduler := sched }
 
 /-- WS-ZA ZA4.5: moving a thread between two cores' queues through its TCB
 links writes the two queues as the abstract remove and insert, and each core's

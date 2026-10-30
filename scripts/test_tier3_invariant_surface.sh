@@ -16350,7 +16350,7 @@ open SeLe4n.Kernel
 -- SM5.H.4 the migration operation + frames + structural + validity/pipeline.
 #check @migrateSchedContextReplenishment
 #check @migrateSchedContextReplenishment_noop
-#check @migrateSchedContextReplenishment_objects
+#check @migrateSchedContextReplenishment_agree
 #check @migrateSchedContextReplenishment_machine
 #check @migrateSchedContextReplenishment_getSchedContext?
 #check @migrateSchedContextReplenishment_determineTargetCore

@@ -168,7 +168,16 @@ capability, which removes the page that capability records, leave no mapping of
 the frame it retires.  Since part 39 it also says no thread's space slot holds
 a capability recording a mapping (`SystemState.threadSlotsRecordNoMapping`),
 which keeps the records through the thread-space set.  It reads `objects`
-alone, so every transition that writes no object frames it. -/
+alone, so every transition that writes no object frames it.
+
+WS-ZA ZA6.3: `releaseQueueRefined` added as the 19th component — every core's
+release queue agrees with the release links its scheduling contexts hold
+(`SchedContext.releaseNextCode`/`releaseCoreCode`/`releaseAt`) and with the
+core's head and count (`SchedulerState.releaseHeadCode`/`releaseCount`), the
+same terms on which the 17th relates the run queues.  It is what lets the
+executed tick, yield and drain read the links in place of the abstract queue.
+It reads the contexts' release fields and the scheduler's release slots, so the
+adapter transitions frame it as they frame the 17th. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -187,7 +196,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     ackBounded st.tlbShootdown ∧
     auditLogBounded st.declassificationAuditLog ∧
     st.runQueueRefined ∧
-    st.liveMappingsRecorded
+    st.liveMappingsRecorded ∧
+    st.releaseQueueRefined
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -674,7 +684,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -736,6 +746,8 @@ theorem default_system_state_proofLayerInvariantBundle :
   · exact SystemState.default_runQueueRefined
   -- 18. liveMappingsRecorded (WS-ZA ZA5.4 part 37: no root, so no mapping)
   · exact SystemState.default_liveMappingsRecorded
+  -- 19. releaseQueueRefined (WS-ZA ZA6.3: no context, every queue empty)
+  · exact SystemState.default_releaseQueueRefined
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems

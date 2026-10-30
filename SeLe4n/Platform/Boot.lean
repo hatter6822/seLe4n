@@ -5939,7 +5939,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hReplenish : replenishQueueValid ist.state)
     (hEffective : effectiveParamsMatchRunQueue ist.state)
     (hRun : ist.state.runQueueRefined)
-    (hBindings : notificationBindingReciprocal ist.state) :
+    (hBindings : notificationBindingReciprocal ist.state)
+    (hRel : ist.state.releaseQueueRefined) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape⟩ := hTree
@@ -6411,11 +6412,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       (fun rid root hObj => ((hBS rid _ hObj).2.2.2.2.1 root rfl).2.2.2)
       fun tid t s cap hObj hc =>
         ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 s cap hc
-  -- Compose all 18 components
+  -- 19. releaseQueueRefined (WS-ZA ZA6.3): the caller's hypothesis.
+  -- Compose all 19 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings⟩
+         hAuditBounded, hRun, hMappings, hRel⟩
 
 -- ============================================================================
 -- WS-RR RR5.13 / PR #889 review: results that read the object store through
@@ -8643,9 +8645,30 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
       have hDS : ist.state.scheduler.domainSchedule = [] := by rw [hSch]; rfl
       rw [hDS] at hMem
       simp at hMem
+  -- WS-ZA ZA6.3: the default release slots queue nothing, and no boot context
+  -- is linked into a release queue (`bootObjectShapeOffLinks`).
+  have hRel : ist.state.releaseQueueRefined := SystemState.releaseQueueRefined_of_empty
+    (fun c => by
+      rw [hSch]
+      show ((default : SchedulerState).replenishQueueOnCore c).entries = []
+      rw [(default_state_perCoreInitialized c).2.2.1]; rfl)
+    (fun c => by rw [hSch]; exact PerCoreVector.replicate_get _ _ c)
+    (fun c => by rw [hSch]; exact PerCoreVector.replicate_get _ _ c)
+    (fun c s => by
+      unfold SystemState.releaseQueuedOn SystemState.getSchedContext?
+      cases hO : ist.state.objects[s.toObjId]? with
+      | none => rfl
+      | some o =>
+        cases o with
+        | schedContext sc =>
+          have h0 := ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2
+          simp [h0]
+        | _ => rfl)
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
-    ?_ ?_ hRun hBindings
-  · simp only [replenishQueueValid, hSch]
+    ?_ ?_ hRun hBindings hRel
+  · have hE : ist.state.scheduler.replenishQueueOnCore bootCoreId = ReplenishQueue.empty := by
+      rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).2.2.1
+    simp only [replenishQueueValid, hE]
     exact ⟨empty_sorted, empty_sizeConsistent⟩
   · intro tid hMem
     obtain ⟨t, hObj, _, _, hPrio⟩ := hQueue tid hMem

@@ -74,13 +74,14 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId SgiKind bootCoreId)
 -- ============================================================================
 
 /-- WS-SM SM5.I (keystone): replenish-queue affinity-consistency transfers across a
-state change `st ↝ base` that only *shrinks* core `c`'s replenish queue (`hSub`),
+state change `st ↝ base` whose core-`c` queue holds only contexts `st`'s held
+(`hSub`, at any release time: affinity reads the context, not its place),
 preserves every thread's home core (`hTgt`), and preserves every SchedContext's
-`boundThread` projection (`hBound`).  Every carried-over entry's bound thread is
-still homed on `c`. -/
-theorem affinityConsistent_transfer (st base : SystemState) (c : CoreId)
+`boundThread` projection (`hBound`).  Every carried-over context's bound thread
+is still homed on `c`. -/
+theorem affinityConsistent_transfer_ids (st base : SystemState) (c : CoreId)
     (hSub : ∀ e, e ∈ (base.scheduler.replenishQueueOnCore c).entries →
-                 e ∈ (st.scheduler.replenishQueueOnCore c).entries)
+                 ∃ t', (e.1, t') ∈ (st.scheduler.replenishQueueOnCore c).entries)
     (hTgt : ∀ tid, determineTargetCore base tid = determineTargetCore st tid)
     (hBound : ∀ scId, (base.getSchedContext? scId).map (·.boundThread)
                     = (st.getSchedContext? scId).map (·.boundThread))
@@ -90,16 +91,27 @@ theorem affinityConsistent_transfer (st base : SystemState) (c : CoreId)
   rw [hTgt tid]
   have hMapEq := hBound scId
   rw [hScBase] at hMapEq
-  -- `(some sc).map boundThread = some sc.boundThread`
   cases hSt : st.getSchedContext? scId with
   | none => rw [hSt] at hMapEq; simp at hMapEq
   | some sc0 =>
     rw [hSt] at hMapEq
     simp only [Option.map_some] at hMapEq
-    -- `hMapEq : some sc.boundThread = some sc0.boundThread`
     have hbeq : sc.boundThread = sc0.boundThread := Option.some.inj hMapEq
     have hb0 : sc0.boundThread = some tid := hbeq ▸ hBoundEq
-    exact hCons scId t (hSub _ hMem) sc0 hSt tid hb0
+    obtain ⟨t', ht'⟩ := hSub _ hMem
+    exact hCons scId t' ht' sc0 hSt tid hb0
+
+/-- `affinityConsistent_transfer_ids` for a step that only *shrinks* core `c`'s
+queue. -/
+theorem affinityConsistent_transfer (st base : SystemState) (c : CoreId)
+    (hSub : ∀ e, e ∈ (base.scheduler.replenishQueueOnCore c).entries →
+                 e ∈ (st.scheduler.replenishQueueOnCore c).entries)
+    (hTgt : ∀ tid, determineTargetCore base tid = determineTargetCore st tid)
+    (hBound : ∀ scId, (base.getSchedContext? scId).map (·.boundThread)
+                    = (st.getSchedContext? scId).map (·.boundThread))
+    (hCons : replenishQueueAffinityConsistentOnCore st c) :
+    replenishQueueAffinityConsistentOnCore base c :=
+  affinityConsistent_transfer_ids st base c (fun e h => ⟨e.2, hSub e h⟩) hTgt hBound hCons
 
 -- (WS-RR bind/unbind affinity closure: the four insert atoms and the
 -- preempt/switch `determineTargetCore` / `boundThread` frames moved to the
@@ -116,20 +128,7 @@ theorem enqueueRunnableOnCore_boundThread (st : SystemState) (c : CoreId)
     (tid0 : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((enqueueRunnableOnCore st c tid0).getSchedContext? scId).map (·.boundThread)
       = (st.getSchedContext? scId).map (·.boundThread) := by
-  cases hTcb : st.getTcb? tid0 with
-  | none =>
-    unfold enqueueRunnableOnCore
-    rw [SystemState.getTcbWitnessed?_eq_none hTcb]
-  | some tcb =>
-    cases hR : wakeDeclines st c tid0 with
-    | true => rw [enqueueRunnableOnCore_eq_self_of_declines st c tid0 hR]
-    | false =>
-      -- The enqueue agrees off run-queue fields with the `.ready` mark, a TCB
-      -- write no SchedContext lookup sees.
-      have hRaw := (SystemState.getTcb?_eq_some_iff st tid0 tcb).mp hTcb
-      rw [(enqueueRunnableOnCore_objectsAgree_marked st c tid0 tcb hTcb hR).getSchedContext? scId,
-        getSchedContext?_insert_tcb_eq st _ tid0 tcb (tcb.setIpcState .ready)
-          hInv hRaw rfl scId]
+  rw [enqueueRunnableOnCore_getSchedContext? st c tid0 hInv]
 
 /-- WS-SM SM5.I: `refillSchedContext` (a budget/replenishment SchedContext write)
 preserves every thread's home core. -/
@@ -272,83 +271,87 @@ theorem processOneReplenishmentOnCore_boundThread (st : SystemState) (ec : CoreI
       exact hRefillBt
   · exact hRefillBt
 
-/-- WS-SM SM5.I: the wake fold preserves every thread's home core. -/
-theorem foldl_processOne_determineTargetCore (c : CoreId) (now : Nat) (t : SeLe4n.ThreadId)
-    (dueIds : List SeLe4n.SchedContextId) (acc : SystemState)
-    (hInv : acc.objects.invExt) :
-    determineTargetCore (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) t
-      = determineTargetCore acc t := by
-  induction dueIds generalizing acc with
-  | nil => rfl
-  | cons hd tl ih =>
-    rw [List.foldl_cons, ih _
-      (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)]
-    exact processOneReplenishmentOnCore_determineTargetCore acc c hd now hInv t
-
-/-- WS-SM SM5.I: the wake fold preserves every SchedContext's `boundThread`. -/
-theorem foldl_processOne_boundThread (c : CoreId) (now : Nat) (scId : SeLe4n.SchedContextId)
-    (dueIds : List SeLe4n.SchedContextId) (acc : SystemState)
-    (hInv : acc.objects.invExt) :
-    ((dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).getSchedContext? scId).map (·.boundThread)
-      = (acc.getSchedContext? scId).map (·.boundThread) := by
-  induction dueIds generalizing acc with
-  | nil => rfl
-  | cons hd tl ih =>
-    rw [List.foldl_cons, ih _
-      (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)]
-    exact processOneReplenishmentOnCore_boundThread acc c hd now hInv scId
-
 /-- WS-SM SM5.I: `processReplenishmentsDueOnCore` preserves every thread's home core
-(the `setReplenishQueueOnCore` seed is object-neutral; the wake fold preserves it). -/
+(each refill and wake preserves it; each placement writes release fields alone). -/
 theorem processReplenishmentsDueOnCore_determineTargetCore (st : SystemState) (c : CoreId)
     (now : Nat) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
     determineTargetCore (processReplenishmentsDueOnCore st c now) t
-      = determineTargetCore st t := by
-  simp only [processReplenishmentsDueOnCore]
-  exact foldl_processOne_determineTargetCore c now t _ _ hInv
+      = determineTargetCore st t :=
+  (processReplenishmentsDueOnCore_induction
+    (fun s => s.objects.invExt ∧ determineTargetCore s t = determineTargetCore st t) st c now
+    (fun s scId ⟨hI, h⟩ => ⟨processOneReplenishmentOnCore_preserves_objects_invExt s c scId now hI,
+      (processOneReplenishmentOnCore_determineTargetCore s c scId now hI t).trans h⟩)
+    (fun s scId ⟨hI, h⟩ => ⟨SystemState.releasePlace_objects_invExt s c scId hI,
+      (replenishOnCore_determineTargetCore s c scId t).trans h⟩) ⟨hInv, rfl⟩).2
 
 /-- WS-SM SM5.I: `processReplenishmentsDueOnCore` preserves every SchedContext's
 `boundThread`. -/
 theorem processReplenishmentsDueOnCore_boundThread (st : SystemState) (c : CoreId)
     (now : Nat) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((processReplenishmentsDueOnCore st c now).getSchedContext? scId).map (·.boundThread)
-      = (st.getSchedContext? scId).map (·.boundThread) := by
-  simp only [processReplenishmentsDueOnCore]
-  exact foldl_processOne_boundThread c now scId _ _ hInv
+      = (st.getSchedContext? scId).map (·.boundThread) :=
+  (processReplenishmentsDueOnCore_induction
+    (fun s => s.objects.invExt ∧ (s.getSchedContext? scId).map (·.boundThread) =
+      (st.getSchedContext? scId).map (·.boundThread)) st c now
+    (fun s x ⟨hI, h⟩ => ⟨processOneReplenishmentOnCore_preserves_objects_invExt s c x now hI,
+      (processOneReplenishmentOnCore_boundThread s c x now hI scId).trans h⟩)
+    (fun s x ⟨hI, h⟩ => ⟨SystemState.releasePlace_objects_invExt s c x hI,
+      (replenishOnCore_boundThread s c x scId).trans h⟩) ⟨hInv, rfl⟩).2
 
 -- ============================================================================
 -- §4  Per-phase affinity-consistency + the headline + the aggregate
 -- ============================================================================
 
-/-- WS-SM SM5.I: `processReplenishmentsDueOnCore` preserves replenish-queue
-affinity-consistency — it only `popDue`-shrinks core `c`'s queue (every other core's
-unchanged) and preserves `determineTargetCore` / `boundThread`. -/
+/-- WS-SM SM5.I / WS-ZA ZA6.3: `processReplenishmentsDueOnCore` preserves
+replenish-queue affinity-consistency on every core — a pass places again only
+the context at core `c`'s head, which core `c`'s queue already held, and the
+refills and wakes preserve `determineTargetCore` / `boundThread`. -/
 theorem processReplenishmentsDueOnCore_preserves_replenishQueueAffinityConsistentOnCore
-    (st : SystemState) (c : CoreId) (now : Nat) (c' : CoreId) (hInv : st.objects.invExt)
-    (hCons : replenishQueueAffinityConsistentOnCore st c') :
-    replenishQueueAffinityConsistentOnCore (processReplenishmentsDueOnCore st c now) c' := by
-  apply affinityConsistent_transfer st (processReplenishmentsDueOnCore st c now) c'
-  · intro e hMem
-    by_cases h : c = c'
-    · subst h
-      rw [processReplenishmentsDueOnCore_replenishQueueOnCore_self] at hMem
-      exact popDue_remaining_subset _ now e hMem
-    · rw [processReplenishmentsDueOnCore_replenishQueueOnCore_ne _ _ _ _ h] at hMem
-      exact hMem
-  · intro t; exact processReplenishmentsDueOnCore_determineTargetCore st c now hInv t
-  · intro scId; exact processReplenishmentsDueOnCore_boundThread st c now hInv scId
-  · exact hCons
+    (st : SystemState) (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
+    (hRef : st.releaseQueueRefined)
+    (hCons : ∀ c', replenishQueueAffinityConsistentOnCore st c') :
+    ∀ c', replenishQueueAffinityConsistentOnCore (processReplenishmentsDueOnCore st c now) c' := by
+  refine (drainDueOnCore_induction_pass (fun s => s.objects.invExt ∧ s.releaseQueueRefined ∧
+      ∀ c', replenishQueueAffinityConsistentOnCore s c') c now ?_ _ st ⟨hInv, hRef, hCons⟩).2.2
+  rintro s scId ⟨hI, hR, hC⟩ h0 hId
+  have hA := processOneReplenishmentOnCore_releaseStateAgree s c scId now hI
+  have hI1 := processOneReplenishmentOnCore_preserves_objects_invExt s c scId now hI
+  have hC1 : ∀ c', replenishQueueAffinityConsistentOnCore (processOneReplenishmentOnCore s c scId now) c' :=
+    fun c' => affinityConsistent_transfer s _ c' (fun e he => by rwa [hA.replenishQueueOnCore] at he)
+      (processOneReplenishmentOnCore_determineTargetCore s c scId now hI)
+      (processOneReplenishmentOnCore_boundThread s c scId now hI) (hC c')
+  refine ⟨SystemState.releasePlace_objects_invExt _ c scId hI1,
+    SystemState.releasePlace_refined (hA.refined hR) c scId, fun c' => ?_⟩
+  refine affinityConsistent_transfer_ids _ _ c' ?_ (replenishOnCore_determineTargetCore _ c scId)
+    (replenishOnCore_boundThread _ c scId) (hC1 c')
+  intro e he
+  by_cases hcc : c' = c
+  · subst hcc
+    rcases SystemState.releasePlace_entries_provenance _ c' scId c' e he with hm | hs
+    · exact ⟨e.2, hm⟩
+    · have hmem := releaseHead_mem (hR c') h0
+      rw [hId, ← hs] at hmem
+      obtain ⟨p, hp, hpe⟩ := List.mem_map.mp hmem
+      refine ⟨p.2, ?_⟩
+      rw [hA.replenishQueueOnCore, ← hpe]
+      exact hp
+  · rw [SystemState.releasePlace_replenishQueueOnCore_ne _ c scId c' hcc] at he
+    exact ⟨e.2, he⟩
 
 /-- WS-SM SM5.I: the prepared (clear + replenishment) phase preserves affinity. -/
 theorem timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore
-    (st : SystemState) (c c' : CoreId) (hInv : st.objects.invExt)
-    (hCons : replenishQueueAffinityConsistentOnCore st c') :
-    replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c) c' := by
+    (st : SystemState) (c : CoreId) (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (hCons : ∀ c', replenishQueueAffinityConsistentOnCore st c') :
+    ∀ c', replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c) c' := by
   simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_replenishQueueAffinityConsistentOnCore
   · exact hInv
-  · unfold replenishQueueAffinityConsistentOnCore at hCons ⊢
-    simpa only [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore] using hCons
+  · exact SystemState.releaseStateAgree.refined
+      (SystemState.releaseStateAgree.of_objects_eq (st := st) (by rfl) (by rfl)) hRef
+  · intro c'
+    have := hCons c'
+    unfold replenishQueueAffinityConsistentOnCore at this ⊢
+    simpa only [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore] using this
 
 /-- WS-SM SM5.I: a successful `scheduleEffectiveOnCore` preserves affinity (it frames
 every replenish queue and preserves `determineTargetCore` / `boundThread`). -/
@@ -435,7 +438,7 @@ arm runs the IPC `timeoutBlockedThreads`, whose object-frame is the tracked-debt
 residual). -/
 theorem timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : SystemState)
     (c : CoreId) (c' : CoreId)
-    (hInv : st.objects.invExt)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hCons : ∀ c'', replenishQueueAffinityConsistentOnCore st c'')
     (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool),
       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
@@ -447,7 +450,7 @@ theorem timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : S
   have hPrepInv : (timerTickOnCorePrepared st c).objects.invExt :=
     timerTickOnCorePrepared_preserves_objects_invExt st c hInv
   have hPrep : replenishQueueAffinityConsistentOnCore (timerTickOnCorePrepared st c) c' :=
-    timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore st c c' hInv (hCons c')
+    timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore st c hInv hRef hCons c'
   rcases timerTickOnCore_cases st c with ⟨_, h⟩ | ⟨_, _, _, h⟩ | ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ |
       ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ <;> rw [h]
   rotate_left 2
@@ -481,9 +484,10 @@ the single tracked-debt residual — see the headline). -/
 theorem timerTickOnCore_preserves_perCoreCbsInvariant_discharged (st : SystemState)
     (c : CoreId) (c' : CoreId)
     (hInv : ∀ c'', perCoreCbsInvariant st c'')
-    (hInvObj : st.objects.invExt)
+    (hInvObj : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
       0 < sc.period.val)
+    (hFuture : currentRefillsFutureOnCore (timerTickOnCorePrepared st c) c)
     (hBudgetAffinity : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState) (b : Bool),
       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
@@ -493,9 +497,9 @@ theorem timerTickOnCore_preserves_perCoreCbsInvariant_discharged (st : SystemSta
     perCoreCbsInvariant (timerTickOnCore st c) c' :=
   ⟨timerTickOnCore_preserves_replenishQueueValidOnCore st c c'
       (fun c'' => (hInv c'').1),
-   timerTickOnCore_preserves_replenishmentPipelineOrderOnCore st c c'
-      (fun c'' => (hInv c'').2.1) hPeriod,
+   timerTickOnCore_preserves_replenishmentPipelineOrderOnCore st c c' hInvObj
+      (fun c'' => (hInv c'').2.1) hPeriod hFuture,
    timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore st c c'
-      hInvObj (fun c'' => (hInv c'').2.2) hBudgetAffinity⟩
+      hInvObj hRef (fun c'' => (hInv c'').2.2) hBudgetAffinity⟩
 
 end SeLe4n.Kernel

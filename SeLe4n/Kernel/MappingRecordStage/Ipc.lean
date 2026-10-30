@@ -32,7 +32,7 @@ open SeLe4n.Model
 open SeLe4n.Model.SystemState (MappingStage)
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
-/-- A per-core leg that agrees off the run-queue links with a kind-preserving
+/-- A per-core leg that agrees off the scheduler links with a kind-preserving
 single-core leg keeps the mappings recorded. -/
 theorem MappingStage.of_postAgrees {st r1 st' : SystemState}
     (hI : st.objects.invExt → st'.objects.invExt)
@@ -326,7 +326,10 @@ theorem descheduleAtPlacement_mappingStage (st : SystemState) (tid : SeLe4n.Thre
 theorem migrateSchedContextReplenishment_mappingStage (st : SystemState)
     (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
     MappingStage st (migrateSchedContextReplenishment st scId fromCore toCore) :=
-  MappingStage.of_objects_eq (migrateSchedContextReplenishment_objects st scId fromCore toCore)
+  MappingStage.of_kindPreservingWrite
+    (migrateSchedContextReplenishment_preserves_objects_invExt st scId fromCore toCore)
+    fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+      (migrateSchedContextReplenishment_agree st scId fromCore toCore)).kindPreserving
 
 theorem returnDonatedSchedContext_mappingStage {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
     {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}

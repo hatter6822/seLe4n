@@ -55,6 +55,8 @@ structure schedContextLinkInvariant (st : SystemState) : Prop where
   binding : schedContextBindingConsistent st
   replenishBound : replenishQueueEntriesBound_smp st
   replenishAffinity : replenishQueueAffinityConsistent_smp st
+  /-- WS-ZA ZA6.3: every core's release queue agrees with the contexts' links. -/
+  refined : st.releaseQueueRefined
 
 /-- **What the budget and affinity invariants read of an object**: a thread's
 timeout budget and core affinity; nothing of any other kind. -/
@@ -69,25 +71,58 @@ def schedBindingLinksOf : Option KernelObject → Option ((Nat × Nat) ⊕ Nat)
   | some (.schedContext sc) => some (.inr sc.boundThreadCode)
   | _ => none
 
+/-- **What the release-queue agreement reads of an object**: a context's three
+release fields; nothing of any other kind. -/
+def schedReleaseOf : Option KernelObject → Option (Nat × Nat × Nat)
+  | some (.schedContext sc) => some (sc.releaseNextCode, sc.releaseCoreCode, sc.releaseAt)
+  | _ => none
+
+/-- An object's release links, read off its release fields. -/
+theorem objReleaseLinkOn_eq_schedReleaseOf (o : Option KernelObject) (c : CoreId) :
+    SystemState.objReleaseLinkOn o c =
+      match schedReleaseOf o with
+      | some (n, cc, a) => if cc = c.val + 1 then some (n, a) else none
+      | none => none := by
+  cases o with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- An object's release links are read off its release fields. -/
+theorem objReleaseLinkOn_of_schedReleaseOf {a b : Option KernelObject}
+    (h : schedReleaseOf a = schedReleaseOf b) (c : CoreId) :
+    SystemState.objReleaseLinkOn a c = SystemState.objReleaseLinkOn b c := by
+  rw [objReleaseLinkOn_eq_schedReleaseOf, objReleaseLinkOn_eq_schedReleaseOf, h]
+
 /-- **A step that writes nothing the scheduling-link invariants read**: every
 key keeps its thread's budget, affinity and binding codes and its context's
-bound-thread code, and every core keeps its replenishment queue. -/
+bound-thread code and release fields, and the scheduler keeps every
+release-queue slot. -/
 structure SchedLinkFrame (st st' : SystemState) : Prop where
   aux : ∀ oid : SeLe4n.ObjId, tcbSchedAuxOf st'.objects[oid]? = tcbSchedAuxOf st.objects[oid]?
   binding : ∀ oid : SeLe4n.ObjId,
     schedBindingLinksOf st'.objects[oid]? = schedBindingLinksOf st.objects[oid]?
-  replenish : ∀ c : CoreId,
-    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
+  release : ∀ oid : SeLe4n.ObjId, schedReleaseOf st'.objects[oid]? = schedReleaseOf st.objects[oid]?
+  slots : st'.scheduler.releaseSlots = st.scheduler.releaseSlots
 
 namespace SchedLinkFrame
 
 theorem refl (st : SystemState) : SchedLinkFrame st st :=
-  ⟨fun _ => rfl, fun _ => rfl, fun _ => rfl⟩
+  ⟨fun _ => rfl, fun _ => rfl, fun _ => rfl, rfl⟩
 
 theorem trans {a b c : SystemState} (h₁ : SchedLinkFrame a b) (h₂ : SchedLinkFrame b c) :
     SchedLinkFrame a c :=
   ⟨fun o => (h₂.aux o).trans (h₁.aux o), fun o => (h₂.binding o).trans (h₁.binding o),
-    fun c => (h₂.replenish c).trans (h₁.replenish c)⟩
+    fun o => (h₂.release o).trans (h₁.release o), h₂.slots.trans h₁.slots⟩
+
+/-- A frame step holds the release queues. -/
+theorem releaseState {st st' : SystemState} (h : SchedLinkFrame st st') :
+    SystemState.releaseStateAgree st' st :=
+  ⟨.of_objReleaseLinkOn fun k c => objReleaseLinkOn_of_schedReleaseOf (h.release k) c, h.slots⟩
+
+/-- ...so every core keeps its abstract release queue. -/
+theorem replenish {st st' : SystemState} (h : SchedLinkFrame st st') (c : CoreId) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
+  h.releaseState.replenishQueueOnCore c
 
 end SchedLinkFrame
 
@@ -306,7 +341,8 @@ theorem preserves {st st' : SystemState} (h : SchedLinkFrame st st')
   ⟨allTimeoutBudgetsNone_of_aux h.aux hI.budgets,
     schedContextBindingConsistent_of_binding h.binding hI.binding,
     replenishQueueEntriesBound_smp_of_frame h.binding h.replenish hI.replenishBound,
-    replenishQueueAffinityConsistent_smp_of_frame h.binding h.aux h.replenish hI.replenishAffinity⟩
+    replenishQueueAffinityConsistent_smp_of_frame h.binding h.aux h.replenish hI.replenishAffinity,
+    h.releaseState.refined hI.refined⟩
 
 end SchedLinkFrame
 
@@ -337,6 +373,14 @@ theorem schedBindingLinksOf_withoutRunLinks (o : KernelObject) :
     schedBindingLinksOf (some o.withoutRunLinks) = schedBindingLinksOf (some o) := by
   cases o <;> rfl
 
+theorem schedReleaseOf_withoutRunLinks (o : KernelObject) :
+    schedReleaseOf (some o.withoutRunLinks) = schedReleaseOf (some o) := by
+  cases o <;> rfl
+
+theorem schedReleaseOf_withoutLinks (o : KernelObject) :
+    schedReleaseOf (some o.withoutLinks) = schedReleaseOf (some o) := by
+  cases o <;> rfl
+
 theorem tcbSchedAuxOf_withoutLinks (o : KernelObject) :
     tcbSchedAuxOf (some o.withoutLinks) = tcbSchedAuxOf (some o) := by
   cases o <;> rfl
@@ -363,41 +407,45 @@ theorem proj_insert_eq {α : Sort _} (f : Option KernelObject → α) {st : Syst
 
 namespace SchedLinkFrame
 
-/-- A step that writes no object and no replenishment queue. -/
+/-- A step that writes no object and no release-queue slot. -/
 theorem of_objects_eq {st st' : SystemState} (hO : st'.objects = st.objects)
-    (hR : ∀ c : CoreId, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) :
+    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots) :
     SchedLinkFrame st st' :=
-  ⟨fun _ => by rw [hO], fun _ => by rw [hO], hR⟩
+  ⟨fun _ => by rw [hO], fun _ => by rw [hO], fun _ => by rw [hO], hS⟩
 
-/-- A step that writes run-queue links alone, and no replenishment queue. -/
+/-- A step that writes run-queue links alone, and no release-queue slot. -/
 theorem of_agreeOffRunLinks {st st' : SystemState} (hA : st'.objectsAgreeOffRunLinks st)
-    (hR : ∀ c : CoreId, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) :
+    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots) :
     SchedLinkFrame st st' :=
   ⟨fun o => proj_eq_of_map_eq _ _ tcbSchedAuxOf_withoutRunLinks (hA o),
-    fun o => proj_eq_of_map_eq _ _ schedBindingLinksOf_withoutRunLinks (hA o), hR⟩
+    fun o => proj_eq_of_map_eq _ _ schedBindingLinksOf_withoutRunLinks (hA o),
+    fun o => proj_eq_of_map_eq _ _ schedReleaseOf_withoutRunLinks (hA o), hS⟩
 
-/-- A step that writes derivation links alone, and no replenishment queue. -/
+/-- A step that writes derivation links alone, and no release-queue slot. -/
 theorem of_agreeOffDerivationLinks {st st' : SystemState}
     (hA : SystemState.objectsAgreeOffDerivationLinks st' st)
-    (hR : ∀ c : CoreId, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) :
+    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots) :
     SchedLinkFrame st st' :=
   ⟨fun o => proj_eq_of_map_eq _ _ tcbSchedAuxOf_withoutLinks (hA o).map_withoutLinks,
-    fun o => proj_eq_of_map_eq _ _ schedBindingLinksOf_withoutLinks (hA o).map_withoutLinks, hR⟩
+    fun o => proj_eq_of_map_eq _ _ schedBindingLinksOf_withoutLinks (hA o).map_withoutLinks,
+    fun o => proj_eq_of_map_eq _ _ schedReleaseOf_withoutLinks (hA o).map_withoutLinks, hS⟩
 
 /-- An insert that keeps its key's projections, the scheduler untouched. -/
 theorem of_insert {st : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (hA : tcbSchedAuxOf (some o) = tcbSchedAuxOf st.objects[k]?)
-    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?) :
+    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?)
+    (hR : schedReleaseOf (some o) = schedReleaseOf st.objects[k]?) :
     SchedLinkFrame st { st with objects := st.objects.insert k o } :=
-  ⟨proj_insert_eq _ hInv hA, proj_insert_eq _ hInv hB, fun _ => rfl⟩
+  ⟨proj_insert_eq _ hInv hA, proj_insert_eq _ hInv hB, proj_insert_eq _ hInv hR, rfl⟩
 
 /-- A store that keeps its key's projections. -/
 theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (hS : SeLe4n.Model.storeObject k o st = .ok ((), st'))
     (hA : tcbSchedAuxOf (some o) = tcbSchedAuxOf st.objects[k]?)
-    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?) :
+    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?)
+    (hR : schedReleaseOf (some o) = schedReleaseOf st.objects[k]?) :
     SchedLinkFrame st st' := by
-  refine ⟨fun oid => ?_, fun oid => ?_, fun c => by
+  refine ⟨fun oid => ?_, fun oid => ?_, fun oid => ?_, by
     rw [storeObject_scheduler_eq st st' k o hS]⟩
   · by_cases h : oid = k
     · subst h; rw [storeObject_objects_eq st st' oid o hInv hS]; exact hA
@@ -405,13 +453,17 @@ theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
   · by_cases h : oid = k
     · subst h; rw [storeObject_objects_eq st st' oid o hInv hS]; exact hB
     · rw [storeObject_objects_ne st st' k oid o h hInv hS]
+  · by_cases h : oid = k
+    · subst h; rw [storeObject_objects_eq st st' oid o hInv hS]; exact hR
+    · rw [storeObject_objects_ne st st' k oid o h hInv hS]
 
 /-- A stored object that keeps its key's projections. -/
 theorem withObjectStored (st : SystemState) (k : SeLe4n.ObjId) (o : KernelObject)
     (hInv : st.objects.invExt) (hA : tcbSchedAuxOf (some o) = tcbSchedAuxOf st.objects[k]?)
-    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?) :
+    (hB : schedBindingLinksOf (some o) = schedBindingLinksOf st.objects[k]?)
+    (hR : schedReleaseOf (some o) = schedReleaseOf st.objects[k]?) :
     SchedLinkFrame st (st.withObjectStored k o) :=
-  storeObject hInv (SystemState.storeObject_eq_withObjectStored st k o) hA hB
+  storeObject hInv (SystemState.storeObject_eq_withObjectStored st k o) hA hB hR
 
 /-- A thread rewritten in its slot keeping its binding codes, budget and
 affinity. -/
@@ -428,36 +480,43 @@ theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
     have hPre := (SystemState.getTcb?_eq_some_iff st t x).mp hG
     obtain ⟨h1, h2, h3, h4⟩ := hf x
     exact of_insert hInv (by rw [hPre]; simp [tcbSchedAuxOf, h3, h4])
-      (by rw [hPre]; simp [schedBindingLinksOf, h1, h2])
+      (by rw [hPre]; simp [schedBindingLinksOf, h1, h2]) (by rw [hPre]; rfl)
 
-/-- A scheduling context rewritten in its slot keeping its bound thread. -/
+/-- A scheduling context rewritten in its slot keeping its bound thread and
+its release fields. -/
 theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SchedContext → SchedContext) (hInv : st.objects.invExt)
-    (hf : ∀ x, (f x).boundThreadCode = x.boundThreadCode) :
+    (hf : ∀ x, (f x).boundThreadCode = x.boundThreadCode)
+    (hr : ∀ x, (f x).releaseNextCode = x.releaseNextCode ∧ (f x).releaseCoreCode = x.releaseCoreCode ∧
+      (f x).releaseAt = x.releaseAt := by intro _; exact ⟨rfl, rfl, rfl⟩) :
     SchedLinkFrame st (st.updateSchedContext scId f) := by
   cases hG : st.getSchedContext? scId with
   | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact .refl st
   | some x =>
     rw [SystemState.updateSchedContext_eq_of_some hG]
     have hPre := (SystemState.getSchedContext?_eq_some_iff st scId x).mp hG
+    obtain ⟨r1, r2, r3⟩ := hr x
     exact of_insert hInv (by rw [hPre]; rfl) (by rw [hPre]; simp [schedBindingLinksOf, hf x])
+      (by rw [hPre]; simp [schedReleaseOf, r1, r2, r3])
 
 /-- An object rewritten in its slot by an update that keeps both projections of
 every object. -/
 theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject → KernelObject)
     (hInv : st.objects.invExt)
     (hf : ∀ o, tcbSchedAuxOf (some (f o)) = tcbSchedAuxOf (some o) ∧
-      schedBindingLinksOf (some (f o)) = schedBindingLinksOf (some o)) :
+      schedBindingLinksOf (some (f o)) = schedBindingLinksOf (some o) ∧
+      schedReleaseOf (some (f o)) = schedReleaseOf (some o)) :
     SchedLinkFrame st (st.modifyObject k f) := by
   unfold SystemState.modifyObject
   cases hG : st.objects[k]? with
   | none =>
     have e : st.objects.modify k f = st.objects := by
       unfold RobinHood.RHTable.modify; rw [← RHTable_getElem?_eq_get?, hG]
-    exact of_objects_eq (by rw [e]) (fun _ => rfl)
+    exact of_objects_eq (by rw [e]) rfl
   | some o =>
     rw [RobinHood.RHTable.modify_of_get? hG]
-    exact of_insert hInv (by rw [hG]; exact (hf o).1) (by rw [hG]; exact (hf o).2)
+    exact of_insert hInv (by rw [hG]; exact (hf o).1) (by rw [hG]; exact (hf o).2.1)
+      (by rw [hG]; exact (hf o).2.2)
 
 end SchedLinkFrame
 
@@ -474,21 +533,21 @@ theorem descheduleAt (st : SystemState) (t : SeLe4n.ThreadId) (p : Option CoreId
   | none => exact .refl st
   | some c =>
     exact of_agreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st t c)
-      (removeRunnableOnCore_replenishQueueOnCore st t c)
+      (removeRunnableOnCore_releaseSlots st t c)
 
 theorem descheduleAtPlacement (st : SystemState) (t : SeLe4n.ThreadId) :
     SchedLinkFrame st (SeLe4n.Kernel.descheduleAtPlacement st t) :=
   of_agreeOffRunLinks (descheduleAtPlacement_objectsAgreeOffRunLinks st t)
-    (descheduleAtPlacement_replenishQueueOnCore st t)
+    (descheduleAtPlacement_releaseSlots st t)
 
 theorem markKeyChangeFrom (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     SchedLinkFrame st (SeLe4n.Kernel.markKeyChangeFrom pre st tid) :=
-  of_objects_eq (markKeyChangeFrom_objects pre st tid) (markKeyChangeFrom_replenishQueueOnCore pre st tid)
+  of_objects_eq (markKeyChangeFrom_objects pre st tid) (markKeyChangeFrom_releaseSlots pre st tid)
 
 theorem releaseCores (st : SystemState) (t : SeLe4n.ThreadId) :
     SchedLinkFrame st (finaliseThreadReleaseCores st t) :=
   of_objects_eq (finaliseThreadReleaseCores_objects st t)
-    (fun _ => by rw [finaliseThreadReleaseCores_scheduler])
+    (by rw [finaliseThreadReleaseCores_scheduler])
 
 /-- The wake: a run-queue insert and the `.ready` mark. -/
 theorem enqueueRunnableOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
@@ -506,9 +565,9 @@ theorem enqueueRunnableOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.Thread
     | false =>
       have hPre := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
       have h1 := of_insert (st := st) (k := t.toObjId) (o := .tcb (tcb.setIpcState .ready)) hInv
-        (by rw [hPre]; rfl) (by rw [hPre]; rfl)
+        (by rw [hPre]; rfl) (by rw [hPre]; rfl) (by rw [hPre]; rfl)
       exact h1.trans (of_agreeOffRunLinks (enqueueRunnableOnCore_objectsAgree_marked st c t tcb hT hD)
-        (fun c' => enqueueRunnableOnCore_replenishQueueOnCore st c t c'))
+        (enqueueRunnableOnCore_releaseSlots st c t))
 
 theorem suspend (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     SchedLinkFrame st ((SeLe4n.Kernel.descheduleAtPlacement st t).updateTcb t finalisedSuspendMark) :=
@@ -555,20 +614,23 @@ theorem modifyObject_inert (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObje
     SchedLinkFrame st (st.modifyObject k f) := by
   refine modifyObject st k f hInv (fun o => ?_)
   by_cases h1 : ∃ t, o = .tcb t
-  · obtain ⟨t, rfl⟩ := h1; rw [hT]; exact ⟨rfl, rfl⟩
+  · obtain ⟨t, rfl⟩ := h1; rw [hT]; exact ⟨rfl, rfl, rfl⟩
   by_cases h2 : ∃ sc, o = .schedContext sc
-  · obtain ⟨sc, rfl⟩ := h2; rw [hS]; exact ⟨rfl, rfl⟩
+  · obtain ⟨sc, rfl⟩ := h2; rw [hS]; exact ⟨rfl, rfl, rfl⟩
   have n1 : ∀ t, o ≠ .tcb t := fun t e => h1 ⟨t, e⟩
   have n2 : ∀ sc, o ≠ .schedContext sc := fun sc e => h2 ⟨sc, e⟩
   obtain ⟨m1, m2⟩ := hO o n1 n2
   have a : ∀ x : KernelObject, (∀ t, x ≠ .tcb t) → (∀ sc, x ≠ .schedContext sc) →
-      tcbSchedAuxOf (some x) = none ∧ schedBindingLinksOf (some x) = none := by
+      tcbSchedAuxOf (some x) = none ∧ schedBindingLinksOf (some x) = none ∧
+        schedReleaseOf (some x) = none := by
     intro x h h'
     cases x with
     | tcb t => exact absurd rfl (h t)
     | schedContext sc => exact absurd rfl (h' sc)
-    | _ => exact ⟨rfl, rfl⟩
-  rw [(a _ m1 m2).1, (a _ m1 m2).2, (a _ n1 n2).1, (a _ n1 n2).2]; exact ⟨rfl, rfl⟩
+    | _ => exact ⟨rfl, rfl, rfl⟩
+  rw [(a _ m1 m2).1, (a _ m1 m2).2.1, (a _ m1 m2).2.2, (a _ n1 n2).1, (a _ n1 n2).2.1,
+    (a _ n1 n2).2.2]
+  exact ⟨rfl, rfl, rfl⟩
 
 /-- An endpoint update: endpoints to endpoints, every other object kept. -/
 theorem modifyObject_endpoint (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject → KernelObject)
@@ -710,16 +772,17 @@ theorem storeEndpointBlockedCancelled (st : SystemState) (endpointId : SeLe4n.Ob
 /-- The unlink of a thread from its notification's queue writes notifications
 and the threads' notification links alone. -/
 theorem of_ntfnUnlinkReach {st s : SystemState} (h : ntfnUnlinkReach st s)
-    (hR : ∀ c : CoreId, s.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) :
+    (hS : s.scheduler.releaseSlots = st.scheduler.releaseSlots) :
     SchedLinkFrame st s := by
   have hP : ∀ (oid : SeLe4n.ObjId), tcbSchedAuxOf s.objects[oid]? = tcbSchedAuxOf st.objects[oid]? ∧
-      schedBindingLinksOf s.objects[oid]? = schedBindingLinksOf st.objects[oid]? := by
+      schedBindingLinksOf s.objects[oid]? = schedBindingLinksOf st.objects[oid]? ∧
+      schedReleaseOf s.objects[oid]? = schedReleaseOf st.objects[oid]? := by
     intro oid
     rcases h.2 oid with e | ⟨n, n', h0, h1, -⟩ | ⟨t, t', h0, h1, np, nn, e⟩
-    · rw [e]; exact ⟨rfl, rfl⟩
-    · rw [h0, h1]; exact ⟨rfl, rfl⟩
-    · rw [h0, h1, e]; exact ⟨rfl, rfl⟩
-  exact ⟨fun oid => (hP oid).1, fun oid => (hP oid).2, hR⟩
+    · rw [e]; exact ⟨rfl, rfl, rfl⟩
+    · rw [h0, h1]; exact ⟨rfl, rfl, rfl⟩
+    · rw [h0, h1, e]; exact ⟨rfl, rfl, rfl⟩
+  exact ⟨fun oid => (hP oid).1, fun oid => (hP oid).2.1, fun oid => (hP oid).2.2, hS⟩
 
 /-- A notification waiter's cancel: it leaves the notification's queue and is
 restored. -/
@@ -734,7 +797,7 @@ theorem notificationCancel (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
   have hR := removeFromNotificationWaitQueue_reach st t hInv
   obtain ⟨objs, e⟩ := removeFromNotificationWaitQueue_eq_objects st t
   have h1 : SchedLinkFrame st (removeFromNotificationWaitQueue st t) :=
-    of_ntfnUnlinkReach hR (fun _ => by rw [e])
+    of_ntfnUnlinkReach hR (by rw [e])
   unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
   exact h1.trans (updateTcb _ _ _ hR.1)
 
@@ -753,7 +816,7 @@ theorem unstack {s s1 : SystemState} {x : SeLe4n.ObjId} {rid : SeLe4n.ReplyId} {
     (hS : SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1)) :
     SchedLinkFrame s (s1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }) := by
   have hPre := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
-  exact (storeObject hInv hS (by rw [hPre]; rfl) (by rw [hPre]; rfl)).trans
+  exact (storeObject hInv hS (by rw [hPre]; rfl) (by rw [hPre]; rfl) (by rw [hPre]; rfl)).trans
     (updateSchedContext _ _ _ (storeObject_preserves_objects_invExt s s1 _ _ hInv hS) (fun _ => rfl))
 
 /-- **The priority-inheritance walk**: boosts and run-queue moves, threads
@@ -765,11 +828,13 @@ theorem propagatePip (st : SystemState) (s : SeLe4n.ThreadId) (ec : CoreId)
       tcbSchedAuxOf (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1.objects[oid]? =
         tcbSchedAuxOf st.objects[oid]? ∧
       schedBindingLinksOf (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1.objects[oid]? =
-        schedBindingLinksOf st.objects[oid]? := by
+        schedBindingLinksOf st.objects[oid]? ∧
+      schedReleaseOf (PriorityInheritance.propagatePipChainCrossCore st s ec fuel).1.objects[oid]? =
+        schedReleaseOf st.objects[oid]? := by
     intro oid
     rcases PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st s ec hInv oid with
       e | ⟨pre, post, hp, hq, -⟩
-    · rw [e]; exact ⟨rfl, rfl⟩
+    · rw [e]; exact ⟨rfl, rfl, rfl⟩
     · obtain ⟨ty, p, hy, hE⟩ := PriorityInheritance.propagatePipChainCrossCore_tcb_backward st s ec
         fuel hInv ⟨oid.val⟩ post hq
       rw [show (⟨oid.val⟩ : SeLe4n.ThreadId).toObjId = oid from rfl, hp] at hy
@@ -780,9 +845,9 @@ theorem propagatePip (st : SystemState) (s : SeLe4n.ThreadId) (ec : CoreId)
       have p3 := TCB.proj_eq_of_withoutRunLinks_eq (·.scBindingScCode) hE
       have p4 := TCB.proj_eq_of_withoutRunLinks_eq (·.scBindingOwnerCode) hE
       simp only at p1 p2 p3 p4
-      simp only [tcbSchedAuxOf, schedBindingLinksOf, p1, p2, p3, p4, and_self]
-  exact ⟨fun oid => (hP oid).1, fun oid => (hP oid).2,
-    PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore st s ec fuel⟩
+      simp only [tcbSchedAuxOf, schedBindingLinksOf, schedReleaseOf, p1, p2, p3, p4, and_self]
+  exact ⟨fun oid => (hP oid).1, fun oid => (hP oid).2.1, fun oid => (hP oid).2.2,
+    PriorityInheritance.propagatePipChainCrossCore_releaseSlots st s ec fuel⟩
 
 /-- The revert of a finalised reply's caller's boost. -/
 theorem finaliseReplyRevert (st : SystemState) (server? : Option SeLe4n.ThreadId)
@@ -804,6 +869,11 @@ theorem trans {a b c : SystemState} (h₁ : schedAuxAgree a b) (h₂ : schedAuxA
 
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) : schedAuxAgree st st' :=
   fun _ => by rw [h]
+
+/-- A step writing contexts' release fields alone keeps every budget and affinity. -/
+theorem of_objectsAgreeOffReleaseLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) : schedAuxAgree st st' :=
+  fun o => proj_eq_of_map_eq _ _ (fun x => by cases x <;> rfl) (h o)
 
 /-- A thread rewritten in its slot keeping its budget and affinity. -/
 theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
@@ -849,7 +919,7 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
   generalize hId : (⟨x.val⟩ : SeLe4n.SchedContextId) = scId at hBind hSc
   obtain ⟨hTSelf, hTNe⟩ := cancelBoundDonationOnCore_getTcb? s s' t _ _ scId hBind hInv hOk
   obtain ⟨hSSelf, hSNe⟩ := cancelBoundDonationOnCore_getSchedContext? s s' t _ _ scId hBind hInv hOk
-  have hObjs := cancelBoundDonationOnCore_objects s s' t _ _ scId hBind hOk
+  have hObjs := cancelBoundDonationOnCore_objects s s' t _ _ scId hBind hInv hOk
   have hBt : sc.boundThread = some t := by
     simp only [SchedContext.boundThread, hB]; rfl
   have hScId : (TCB.schedContextBinding tcb).scId? = some scId := by
@@ -863,14 +933,25 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) t
       (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => ⟨rfl, rfl⟩)
-    exact (h1.trans h2).trans (schedAuxAgree.of_objects_eq hObjs)
+    exact (h1.trans h2).trans (schedAuxAgree.of_objectsAgreeOffReleaseLinks hObjs)
   have hTPost : s'.getTcb? t = some { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } := by
     rw [hTSelf, hT]; rfl
   have hTNe' : ∀ u : SeLe4n.ThreadId, u ≠ t → s'.getTcb? u = s.getTcb? u := fun u hu =>
     hTNe u (fun e => hu (SeLe4n.ThreadId.toObjId_injective _ _ e))
   have hSNe' : ∀ s0 : SeLe4n.SchedContextId, s0 ≠ scId →
-      s'.getSchedContext? s0 = s.getSchedContext? s0 := fun s0 hs =>
+      (s'.getSchedContext? s0).map SchedContext.withoutRelease =
+        (s.getSchedContext? s0).map SchedContext.withoutRelease := fun s0 hs =>
     hSNe s0 (fun e => hs (SeLe4n.SchedContextId.toObjId_injective _ _ e))
+  have hSFwd : ∀ s0 : SeLe4n.SchedContextId, s0 ≠ scId → ∀ sc1, s.getSchedContext? s0 = some sc1 →
+      ∃ sc1', s'.getSchedContext? s0 = some sc1' ∧ sc1'.boundThread = sc1.boundThread :=
+    fun s0 hs sc1 h1 =>
+      let ⟨sc1', h, hw⟩ := SchedContext.map_withoutRelease_some (hSNe' s0 hs) h1
+      ⟨sc1', h, SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) hw⟩
+  have hSBack : ∀ s0 : SeLe4n.SchedContextId, s0 ≠ scId → ∀ sc0, s'.getSchedContext? s0 = some sc0 →
+      ∃ sc0', s.getSchedContext? s0 = some sc0' ∧ sc0'.boundThread = sc0.boundThread :=
+    fun s0 hs sc0 h0 =>
+      let ⟨sc0', h, hw⟩ := SchedContext.map_withoutRelease_some (hSNe' s0 hs).symm h0
+      ⟨sc0', h, SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) hw⟩
   have hSPost : ∀ sc', s'.getSchedContext? scId = some sc' → sc'.boundThread = none := by
     intro sc' h; rw [h, hSc] at hSSelf; exact Option.some.inj hSSelf
   have tcbIff := fun (u : SeLe4n.ThreadId) (st : SystemState) (v : TCB) =>
@@ -890,13 +971,14 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
         · subst hs
           rw [(scIff _ s sc).mp hSc] at hsc1; cases hsc1
           rw [hBt] at hbt1; exact absurd (Option.some.inj hbt1).symm hu
-        · refine ⟨sc1, (scIff s0 s' sc1).mp ?_, hbt1⟩
-          rw [hSNe' s0 hs]; exact (scIff s0 s sc1).mpr hsc1
+        · obtain ⟨sc1', h1', hbt⟩ := hSFwd s0 hs sc1 ((scIff s0 s sc1).mpr hsc1)
+          exact ⟨sc1', (scIff s0 s' sc1').mp h1', hbt.trans hbt1⟩
     · have hS0' := (scIff s0 s' sc0).mpr hS0
       by_cases hs : s0 = scId
       · subst hs; rw [hSPost sc0 hS0'] at hy; cases hy
-      · rw [hSNe' s0 hs] at hS0'
-        obtain ⟨ty, hty, hbb⟩ := hI.binding.2 s0 sc0 ((scIff s0 s sc0).mp hS0') y hy
+      · obtain ⟨sc0', hS0'', hbt⟩ := hSBack s0 hs sc0 hS0'
+        obtain ⟨ty, hty, hbb⟩ := hI.binding.2 s0 sc0' ((scIff s0 s sc0').mp hS0'') y
+          (hbt.trans hy)
         by_cases hyt : y = t
         · subst hyt
           rw [(tcbIff y s tcb).mp hT] at hty; cases hty
@@ -906,28 +988,17 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
           rw [hScId] at this; exact (Option.some.inj this).symm
         · refine ⟨ty, (tcbIff y s' ty).mp ?_, hbb⟩
           rw [hTNe' y hyt]; exact (tcbIff y s ty).mpr hty
-  -- The replenishment pair.
-  have hRq : ∀ c : CoreId, c ≠ determineTargetCore s t →
-      s'.scheduler.replenishQueueOnCore c = s.scheduler.replenishQueueOnCore c := fun c hc =>
-    cancelBoundDonationOnCore_replenishQueue_ne s s' t _ _ c (Ne.symm hc) hOk
-  have hRqSelf := cancelBoundDonationOnCore_replenishQueue_purged s s' t _ _ scId hBind hOk
+  -- The replenishment pair: the purge leaves no entry naming the context.
   have hBound : replenishQueueEntriesBound_smp s' := by
     intro c s0 n hMem
-    have hPre : (s0, n) ∈ (s.scheduler.replenishQueueOnCore c).entries ∧
-        (c = determineTargetCore s t → s0 ≠ scId) := by
-      by_cases hc : c = determineTargetCore s t
-      · subst hc; rw [hRqSelf] at hMem
-        exact ⟨(mem_remove_entries hMem).1, fun _ => (mem_remove_entries hMem).2⟩
-      · rw [hRq c hc] at hMem; exact ⟨hMem, fun e => absurd e hc⟩
-    by_cases hs : s0 = scId
-    · subst hs
-      have hc := hI.replenishAffinity c s0 n hPre.1 sc hSc t hBt
-      exact absurd rfl (hPre.2 hc.symm)
-    · obtain ⟨sc1, h1, tid, hb⟩ := hI.replenishBound c s0 n hPre.1
-      exact ⟨sc1, by rw [hSNe' s0 hs]; exact h1, tid, hb⟩
+    obtain ⟨hm, hs⟩ := cancelBoundDonationOnCore_replenishQueue_purged_of_refined s s' t _ _ scId
+      hBind hInv hI.refined hOk c (s0, n) hMem
+    obtain ⟨sc1, h1, tid, hb⟩ := hI.replenishBound c s0 n hm
+    obtain ⟨sc1', h1', hbt⟩ := hSFwd s0 hs sc1 h1
+    exact ⟨sc1', h1', tid, hbt.trans hb⟩
   exact ⟨allTimeoutBudgetsNone_of_aux hAux hI.budgets, hCons, hBound,
     cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp s s' t _ _ hInv
-      hI.replenishAffinity hOk⟩
+      hI.replenishAffinity hOk, cancelBoundDonationOnCore_refined hInv hI.refined hOk⟩
 
 -- ============================================================================
 -- §7  A reply's caller cancel, its loan handed back
@@ -985,7 +1056,7 @@ namespace SchedLinkFrame
 theorem storeReplyOver {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : Reply}
     (hInv : st.objects.invExt) (hPre : st.objects[k]? = some (.reply o))
     (hS : SeLe4n.Model.storeObject k (.reply o') st = .ok ((), st')) : SchedLinkFrame st st' :=
-  storeObject hInv hS (by rw [hPre]; rfl) (by rw [hPre]; rfl)
+  storeObject hInv hS (by rw [hPre]; rfl) (by rw [hPre]; rfl) (by rw [hPre]; rfl)
 
 /-- The splice of a reply off its stack: at most three replies rewritten. -/
 theorem spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
@@ -1036,7 +1107,8 @@ theorem consumeCallerReply {st st' : SystemState} {c : SeLe4n.ThreadId} {rid : S
     | some tcb =>
       rw [hT] at h
       have hPre := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-      exact f1.2.trans (storeObject f1.1 h (by rw [hPre]; rfl) (by rw [hPre]; rfl))
+      exact f1.2.trans (storeObject f1.1 h (by rw [hPre]; rfl) (by rw [hPre]; rfl)
+        (by rw [hPre]; rfl))
 
 theorem consumeReplyLink (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : st.objects.invExt) :
@@ -1069,7 +1141,7 @@ theorem replyCancelTail (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     exact SystemState.updateTcb_preserves_objects_invExt _ _ _ g1.invExt
   have f3 := f2.trans (consumeReplyLink _ c t g2)
   refine f3.trans (of_agreeOffRunLinks
-    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ c _) (fun c' => ?_))
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ c _) ?_)
   rw [SystemState.unlinkReplyWaiterOpt_eq_objects]
 
 end SchedLinkFrame
@@ -1096,14 +1168,23 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
   rw [← hEq] at F
   have hInvC : (Lifecycle.Suspend.cancelIpcBlocking s c t).objects.invExt :=
     (FinaliseFrameAny.replyCancel s c t hInv hB).invExt
-  -- The migration: objects kept, the replenishments moved.
-  have hObjM := cancelIpcBlockingMigrated_objects c t s
+  -- The migration: objects kept off the release links, the replenishments moved.
+  have hObjM := cancelIpcBlockingMigrated_agree c t s
   have bM : allTimeoutBudgetsNone (cancelIpcBlockingMigrated c t s) :=
-    allTimeoutBudgetsNone_of_aux (schedAuxAgree.of_objects_eq hObjM)
+    allTimeoutBudgetsNone_of_aux (schedAuxAgree.of_objectsAgreeOffReleaseLinks hObjM)
       (allTimeoutBudgetsNone_of_aux F.aux bR)
   have cM : schedContextBindingConsistent (cancelIpcBlockingMigrated c t s) :=
-    schedContextBindingConsistent_of_binding (fun o => by rw [hObjM])
+    schedContextBindingConsistent_of_binding
+      (fun o => proj_eq_of_map_eq _ _ (fun x => by cases x <;> rfl) (hObjM o))
       (schedContextBindingConsistent_of_binding F.binding cR)
+  have rC : (Lifecycle.Suspend.cancelIpcBlocking s c t).releaseQueueRefined :=
+    F.releaseState.refined
+      ((returnDonationToCancelledCaller_releaseStateAgree s c t hInv).refined hI.refined)
+  have rM : (cancelIpcBlockingMigrated c t s).releaseQueueRefined := by
+    unfold cancelIpcBlockingMigrated
+    split
+    · exact migrateSchedContextReplenishment_refined rC _ _ _
+    · exact rC
   have qC := replenishQueueEntriesBound_smp_of_frame F.binding F.replenish qR
   have qM : replenishQueueEntriesBound_smp (cancelIpcBlockingMigrated c t s) := by
     unfold cancelIpcBlockingMigrated
@@ -1112,12 +1193,14 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
     · exact qC
   have hM : schedContextLinkInvariant (cancelIpcBlockingMigrated c t s) :=
     ⟨bM, cM, qM, cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp c t s
-      hInv hI.replenishAffinity⟩
+      hInv hI.replenishAffinity, rM⟩
   -- The holder's deschedule and the revert.
   have FD : SchedLinkFrame (cancelIpcBlockingMigrated c t s) (cancelIpcBlockingReclaimed c t s) :=
     SchedLinkFrame.of_agreeOffRunLinks
       (descheduleUnboundHolder_objectsAgreeOffRunLinks s (cancelIpcBlockingMigrated c t s) c t)
-      (descheduleUnboundHolder_replenishQueueOnCore s (cancelIpcBlockingMigrated c t s) c t)
+      (by unfold cancelIpcBlockingReclaimed descheduleUnboundHolder; split
+          · rfl
+          · exact descheduleAtPlacement_releaseSlots _ _)
   exact (SchedLinkFrame.finaliseReplyRevert _ t.blockingServer?
     (cancelIpcBlockingReclaimed_objects_invExt c t s hInvC)).preserves (FD.preserves hM)
 
@@ -1243,7 +1326,8 @@ theorem retireFinalObject_preserves_schedContextLinkInvariant (ec : CoreId)
       rcases hbb with e | ⟨_, e⟩ <;> rw [e] <;> rfl
   refine ⟨fun tid tcb hT => h.budgets tid tcb (hBack hT), hCons,
     retireFinalObject_preserves_replenishQueueEntriesBound_smp ec target recorder st hInv
-      h.replenishBound, fun c s0 n hMem sc hS tid hb => ?_⟩
+      h.replenishBound, fun c s0 n hMem sc hS tid hb => ?_,
+    (retireFinalObject_releaseStateAgree ec target recorder st hInv).refined h.refined⟩
   rw [hSch] at hMem
   have hS' := retireFinalObject_schedContext_back ec target recorder st hInv
     ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS)
@@ -1265,19 +1349,19 @@ namespace SchedLinkFrame
 /-- A run of slot-link writes: links alone, the scheduler untouched. -/
 theorem linkReach {st₀ st : SystemState} (h : SystemState.linkReach st₀ st)
     (hInv : st₀.objects.invExt) : SchedLinkFrame st₀ st :=
-  of_agreeOffDerivationLinks (h.agree hInv) (fun _ => by rw [h.fields])
+  of_agreeOffDerivationLinks (h.agree hInv) (by rw [h.fields])
 
 /-- A derivation edge: the tree and the links alone. -/
 theorem cdtAddChild (st : SystemState) (p c : SlotRef) (op : DerivationOp)
     (hInv : st.objects.invExt) : SchedLinkFrame st (st.cdtAddChild p c op) :=
-  (of_objects_eq (st := st) (st' := { st with cdt := st.cdt.addEdge p c op }) rfl fun _ => rfl).trans
+  (of_objects_eq (st := st) (st' := { st with cdt := st.cdt.addEdge p c op }) rfl rfl).trans
     (linkReach (SystemState.cdtAddChild_reach st p c op) hInv)
 
 /-- The splice of a deleted slot out of the derivation tree. -/
 theorem spliceDeletedCdtNode (st : SystemState) (ref : SlotRef) (hInv : st.objects.invExt) :
     SchedLinkFrame st (SeLe4n.Kernel.spliceDeletedCdtNode st ref) :=
   of_agreeOffDerivationLinks (spliceDeletedCdtNode_agree hInv ref).1
-    (fun _ => by rw [spliceDeletedCdtNode_scheduler])
+    (by rw [spliceDeletedCdtNode_scheduler])
 
 /-- `.cspaceDelete`: the core delete empties one slot of a CNode or a thread,
 which keeps every projection, and the splice writes links alone. -/
@@ -1286,17 +1370,15 @@ theorem cspaceDeleteSlot {st st' : SystemState} {addr : CSpaceAddr} (hInv : st.o
   obtain ⟨stC, hCore, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' hStep
   refine trans ?_ (spliceDeletedCdtNode stC addr (cspaceDeleteSlotCore_invExt _ _ _ hInv hCore))
   rcases cspaceDeleteSlotCore_ok_cases hCore with ⟨cn, hO, hS⟩ | ⟨t, hO, hS⟩
-  · exact storeObject hInv hS (by rw [hO]; rfl) (by rw [hO]; rfl)
-  · exact storeObject hInv hS (by rw [hO]; rfl) (by rw [hO]; rfl)
+  · exact storeObject hInv hS (by rw [hO]; rfl) (by rw [hO]; rfl) (by rw [hO]; rfl)
+  · exact storeObject hInv hS (by rw [hO]; rfl) (by rw [hO]; rfl) (by rw [hO]; rfl)
 
 /-- A write of VSpace roots alone, the scheduler untouched. -/
 theorem of_vspaceRootOnlyWrite {st st' : SystemState} (hW : vspaceRootOnlyWrite st st')
     (hS : st'.scheduler = st.scheduler) : SchedLinkFrame st st' := by
-  refine ⟨fun oid => ?_, fun oid => ?_, fun _ => by rw [hS]⟩
-  · rcases hW oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
-    · rw [e]
-    · rw [hr, hr']; rfl
-  · rcases hW oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
+  refine ⟨fun oid => ?_, fun oid => ?_, fun oid => ?_, by rw [hS]⟩
+  all_goals
+    rcases hW oid with e | ⟨⟨r, hr⟩, ⟨r', hr'⟩⟩
     · rw [e]
     · rw [hr, hr']; rfl
 

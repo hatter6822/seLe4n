@@ -13,6 +13,7 @@ import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.Scheduler.SchedulerLinkFrame
 
 /-!
 # WS-SM SM6.D — Pointwise-lookup congruence for the IPC invariant surface
@@ -161,9 +162,10 @@ proof discharges per field; if `SystemState` gains a field, this structure
 must gain the matching clause — the §4 step congruences will fail to
 elaborate otherwise, which is the intended tripwire. -/
 structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
-  /-- WS-ZA ZA4.5: objects agree **off the run-queue links**, which are scheduler
-      state that lives in the TCB. -/
-  objects : s2.objectsAgreeOffRunLinks s1
+  /-- WS-ZA ZA4.5 / ZA6.3: objects agree **off the scheduler links** — the
+      run-queue links, scheduler state that lives in the TCB, and the release-queue
+      links, scheduler state that lives in the scheduling context. -/
+  objects : s2.objectsAgreeOffSchedulerLinks s1
   machine : s2.machine = s1.machine
   objectIndex : s2.objectIndex = s1.objectIndex
   objectIndexSet : s2.objectIndexSet = s1.objectIndexSet
@@ -264,7 +266,18 @@ theorem OffSchedulerAgrees.of_runLinkStep {st st' : SystemState}
     OffSchedulerAgrees st st' := by
   have hD' := hD
   unfold SystemState.onlyObjectsSchedulerDiffer at hD'
-  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rw [hD']; try rfl)
+  refine ⟨.of_runLinks hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    (rw [hD']; try rfl)
+
+/-- WS-ZA ZA6.3: a step that writes only the release queues — the object store
+off the release-queue links and the scheduler's release slots — agrees with its
+input off-scheduler. -/
+theorem OffSchedulerAgrees.of_releaseStep {st st' : SystemState}
+    (hW : st'.releaseOnlyWrite st) (hA : st'.objectsAgreeOffReleaseLinks st) :
+    OffSchedulerAgrees st st' := by
+  have hD' := hW.1
+  refine ⟨.of_releaseLinks hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    (rw [hD']; try rfl)
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler — it writes the scheduler and the woken thread's run-queue
@@ -316,14 +329,13 @@ theorem removeRunnableOnCore_offSchedulerAgrees (st : SystemState)
 
 /-- **`v0.35.161`**: a replenishment migration is a scheduler-only update, or the
 identity — it moves a SchedContext's CBS replenishments between two cores'
-replenish queues and touches nothing else. -/
+release queues, writing the release-queue links and touching nothing else
+(WS-ZA ZA6.3). -/
 theorem migrateSchedContextReplenishment_offSchedulerAgrees (st : SystemState)
     (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
-    OffSchedulerAgrees st (migrateSchedContextReplenishment st scId fromCore toCore) := by
-  unfold migrateSchedContextReplenishment
-  split
-  · exact OffSchedulerAgrees.refl _
-  · exact offSchedulerAgrees_scheduler_update _ _
+    OffSchedulerAgrees st (migrateSchedContextReplenishment st scId fromCore toCore) :=
+  .of_releaseStep (migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore)
+    (migrateSchedContextReplenishment_agree st scId fromCore toCore)
 
 /-- SM6.D: `enqueueRunnableOnCore` of an already-`.ready` thread agrees with
 its input off-scheduler — the only object it writes is the woken TCB: its
@@ -364,12 +376,13 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
     (h1 : storeObject id o1 s1 = .ok ((), r1))
     (h2 : storeObject id o2 s2 = .ok ((), r2)) :
     OffSchedulerAgrees r1 r2 := by
-  have hObjEq : r2.objectsAgreeOffRunLinks r1 := by
+  have hObjEq : r2.objectsAgreeOffSchedulerLinks r1 := by
     intro oid
     by_cases hEq : oid = id
     · rw [hEq, storeObject_objects_eq s2 r2 id o2 hInv2 h2,
           storeObject_objects_eq s1 r1 id o1 hInv1 h1]
-      exact congrArg some ho
+      show some o2.withoutRunLinks.withoutRelease = some o1.withoutRunLinks.withoutRelease
+      rw [ho]
     · rw [storeObject_objects_ne s2 r2 id oid o2 hEq hInv2 h2,
           storeObject_objects_ne s1 r1 id oid o1 hEq hInv1 h1]
       exact hRel.objects oid
@@ -391,8 +404,10 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
       -- `id` and one ASID table, or a TCB, which never keeps it
       first
         | (rw [storeKeepsAsid_congr hRel.asidTable (fun _ =>
-              ⟨hRel.objects.get_of_not_tcb' (fun _ e => KernelObject.noConfusion e),
-               hRel.objects.get_of_not_tcb (fun _ e => KernelObject.noConfusion e)⟩),
+              ⟨hRel.objects.get_of_plain' (fun _ e => KernelObject.noConfusion e)
+                 (fun _ e => KernelObject.noConfusion e),
+               hRel.objects.get_of_plain (fun _ e => KernelObject.noConfusion e)
+                 (fun _ e => KernelObject.noConfusion e)⟩),
             hRel.asidTable]
            split
            · rfl)
@@ -402,7 +417,9 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
       | none => rw [hRel.objects.get_none_iff.mpr e]
       | some o => cases o with
         | tcb t => obtain ⟨t', h', _⟩ := hRel.objects.get_tcb e; rw [h']
-        | _ => rw [hRel.objects.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+        | schedContext sc => obtain ⟨sc', h', _⟩ := hRel.objects.get_sc e; rw [h']
+        | _ => rw [hRel.objects.get_of_plain (fun _ e => KernelObject.noConfusion e)
+            (fun _ e => KernelObject.noConfusion e) e]
 
 
 /-- Recording a Reply's stasher keeps two states that agree off the scheduler in
@@ -416,14 +433,14 @@ theorem recordReplyStasher_offSchedulerAgrees {s1 s2 : SystemState} (code : Nat)
   · exact hRel
   · by_cases hR : ∃ r, s1.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? = some (.reply r)
     · obtain ⟨r, e1⟩ := hR
-      have e2 := hRel.objects.get_of_not_tcb (fun _ h => by cases h) e1
+      have e2 := hRel.objects.get_of_plain (fun _ h => by cases h) (fun _ h => by cases h) e1
       exact storeObject_offSchedulerAgrees_of_agree _ rfl hRel hInv1 hInv2
         (SystemState.recordReplyStasher_of_reply s1 ⟨k⟩ recv e1)
         (SystemState.recordReplyStasher_of_reply s2 ⟨k⟩ recv e2)
     · have h1 : ∀ r, s1.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r) :=
         fun r e => hR ⟨r, e⟩
       have h2 : ∀ r, s2.objects[(⟨k⟩ : SeLe4n.ReplyId).toObjId]? ≠ some (.reply r) :=
-        fun r e => h1 r (hRel.objects.get_of_not_tcb' (fun _ h => by cases h) e)
+        fun r e => h1 r (hRel.objects.get_of_plain' (fun _ h => by cases h) (fun _ h => by cases h) e)
       rw [SystemState.recordReplyStasher_of_not_reply _ _ _ h1,
         SystemState.recordReplyStasher_of_not_reply _ _ _ h2]
       exact hRel
@@ -438,10 +455,10 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     OffSchedulerAgrees r1 r2 :=
   storeObject_offSchedulerAgrees_of_agree id rfl hRel hInv1 hInv2 h1 h2
 
-/-- WS-ZA ZA4.5: a TCB found in a store that agrees off the run-queue links is
-the TCB of the other store with its run-queue fields rewritten. -/
-theorem lookupTcb_back_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
-    (h : s2.objectsAgreeOffRunLinks s1) {tid : SeLe4n.ThreadId} {t' : TCB}
+/-- WS-ZA ZA4.5 / ZA6.3: a TCB found in a store that agrees off the scheduler links
+is the TCB of the other store with its run-queue fields rewritten. -/
+theorem lookupTcb_back_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffSchedulerLinks s1) {tid : SeLe4n.ThreadId} {t' : TCB}
     (hL : lookupTcb s2 tid = some t') :
     ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
       lookupTcb s1 tid = some t ∧
@@ -457,6 +474,19 @@ theorem lookupTcb_back_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
       h.get_tcb_back ((SystemState.getTcb?_eq_some_iff s2 tid t').mp hL)
     exact ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, ifs, (SystemState.getTcb?_eq_some_iff s1 tid t).mpr ht, e⟩
   · simp only [hr, ↓reduceIte] at hL; cases hL
+
+/-- The same across a run-link step. -/
+theorem lookupTcb_back_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) {tid : SeLe4n.ThreadId} {t' : TCB}
+    (hL : lookupTcb s2 tid = some t') :
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
+      lookupTcb s1 tid = some t ∧
+      t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
+                    runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
+                    replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
+                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } :=
+  lookupTcb_back_of_objectsAgreeOffSchedulerLinks (.of_runLinks h) hL
 
 open SeLe4n.Model.SystemState in
 /-- WS-ZA ZA4.4 step congruence: a `modifyTcb` whose rewrite reads no
@@ -474,7 +504,7 @@ theorem modifyTcb_offSchedulerAgrees {s1 s2 r2 : SystemState}
   | none => simp only [hL2] at h2; cases h2
   | some tcb2 =>
     obtain ⟨tcb, rc, rp, rpv, rnx, rbpv, rbnx, rwp, rwn, rwh, rwc, ib, ibd, icg, ifs, hL, hTcbEq⟩ :=
-      lookupTcb_back_of_objectsAgreeOffRunLinks hRel.objects hL2
+      lookupTcb_back_of_objectsAgreeOffSchedulerLinks hRel.objects hL2
     simp only [hL2] at h2
     simp only [hL]
     cases hSO2 : storeObject tid.toObjId (.tcb (f tcb2)) s2 with
@@ -567,7 +597,7 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
       | none => simp
       | some tcb2 =>
         obtain ⟨tcb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hL, rfl⟩ :=
-          lookupTcb_back_of_objectsAgreeOffRunLinks hRel.objects hL2
+          lookupTcb_back_of_objectsAgreeOffSchedulerLinks hRel.objects hL2
         rw [hL]
         simp only []
         split
@@ -607,7 +637,7 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
               | none => simp
               | some tailTcb2 =>
                 obtain ⟨tailTcb, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hLT, hTailEq⟩ :=
-                  lookupTcb_back_of_objectsAgreeOffRunLinks hRel.objects hLT2
+                  lookupTcb_back_of_objectsAgreeOffSchedulerLinks hRel.objects hLT2
                 have hQP : tailTcb2.queuePrev = tailTcb.queuePrev := by subst hTailEq; rfl
                 have hQPP : tailTcb2.queuePPrev = tailTcb.queuePPrev := by subst hTailEq; rfl
                 rw [hLT]
@@ -881,6 +911,14 @@ theorem notificationBindingCodes_map_withoutRunLinks (o : Option KernelObject) :
   | none => rfl
   | some o => cases o <;> rfl
 
+/-- A scheduler-link clearing keeps a slot's binding view. -/
+theorem notificationBindingCodes_map_withoutSchedulerLinks (o : Option KernelObject) :
+    notificationBindingCodes (o.map KernelObject.withoutSchedulerLinks) =
+      notificationBindingCodes o := by
+  cases o with
+  | none => rfl
+  | some o => cases o <;> rfl
+
 /-- A derivation-link clearing keeps a slot's binding view. -/
 theorem notificationBindingCodes_map_withoutLinks (o : Option KernelObject) :
     notificationBindingCodes (o.map KernelObject.withoutLinks) =
@@ -997,11 +1035,16 @@ theorem of_objectsAgreeOffTaint {s1 s2 : SystemState}
   cases h2 : s2.objects[x]? <;> cases h1 : s1.objects[x]? <;> rw [h1, h2] at e <;>
     first | rfl | cases e | exact Option.some.inj e
 
+/-- Stores that agree off the scheduler links hold the same binding codes. -/
+theorem of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffSchedulerLinks s1) : sameNotificationBindings s1 s2 := fun x => by
+  rw [← notificationBindingCodes_map_withoutSchedulerLinks, h x,
+    notificationBindingCodes_map_withoutSchedulerLinks]
+
 /-- Stores that agree off the run-queue links hold the same binding codes. -/
 theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
-    (h : s2.objectsAgreeOffRunLinks s1) : sameNotificationBindings s1 s2 := fun x => by
-  rw [← notificationBindingCodes_map_withoutRunLinks, h x,
-    notificationBindingCodes_map_withoutRunLinks]
+    (h : s2.objectsAgreeOffRunLinks s1) : sameNotificationBindings s1 s2 :=
+  of_objectsAgreeOffSchedulerLinks (.of_runLinks h)
 
 /-- Stores that agree off the derivation links hold the same binding codes. -/
 theorem of_objectsAgreeOffDerivationLinks {s1 s2 : SystemState}
@@ -1089,10 +1132,11 @@ theorem endpointFwd_of_iff {s1 s2 : SystemState}
 
 namespace ipcReadViewAgreement
 
-/-- **WS-ZA ZA4.5**: object stores that agree off the run-queue links are
-read-view agreement — the relation a run-queue write induces. -/
-theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
-    (h : s2.objectsAgreeOffRunLinks s1) : ipcReadViewAgreement s1 s2 :=
+/-- **WS-ZA ZA4.5 / ZA6.3**: object stores that agree off the scheduler links are
+read-view agreement — the relation a run-queue or release-queue write induces: a
+context's release fields are outside its bound thread. -/
+theorem of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffSchedulerLinks s1) : ipcReadViewAgreement s1 s2 :=
   ⟨fun _ _ hx => (h.get_tcb' hx).elim fun t ht =>
      ⟨t, ht.1, congrArg (fun u : TCB => TCB.withoutLinks { u with
        boundNotificationCode := 0, taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0, taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0, taintCount := 0, taintSaturated := false }) ht.2⟩,
@@ -1103,7 +1147,14 @@ theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
    endpointFwd_of_iff fun _ _ => h.get_endpoint_iff,
    fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
    fun _ _ => h.get_reply_iff,
-   fun _ sc hSc => ⟨sc, h.get_schedContext_iff.mpr hSc, rfl⟩⟩
+   fun _ _ hSc => (h.get_sc hSc).elim fun sc' hs =>
+     ⟨sc', hs.1, SeLe4n.Kernel.SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) hs.2⟩⟩
+
+/-- **WS-ZA ZA4.5**: object stores that agree off the run-queue links are
+read-view agreement — the relation a run-queue write induces. -/
+theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) : ipcReadViewAgreement s1 s2 :=
+  of_objectsAgreeOffSchedulerLinks (.of_runLinks h)
 
 /-- Object stores that agree off the derivation links are read-view agreement:
 a CNode is outside the view, and a thread differs only in its space-slot links. -/
@@ -1853,6 +1904,20 @@ theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemSta
   capabilityBadgesWellFormed_of_slotCap_back h fun _ _ hO =>
     let ⟨o, ho, hs, _⟩ := hA.slots_back hO; ⟨o, ho, hs⟩
 
+/-- WS-ZA ZA6.3: the same off every scheduler link — no release-queue field is a
+capability slot. -/
+theorem capabilityBadgesWellFormed_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffSchedulerLinks s1) (h : capabilityBadgesWellFormed s1) :
+    capabilityBadgesWellFormed s2 :=
+  capabilityBadgesWellFormed_of_slotCap_back h fun _ _ hO =>
+    let ⟨o, ho, hs, _⟩ := hA.slots_back hO; ⟨o, ho, hs⟩
+
+/-- WS-ZA ZA6.3: `badgeWellFormed` carries off every scheduler link. -/
+theorem badgeWellFormed_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffSchedulerLinks s1) (h : badgeWellFormed s1) : badgeWellFormed s2 :=
+  ⟨fun oid n b hO hb => h.1 oid n b (hA.get_notification_iff.mp hO) hb,
+   capabilityBadgesWellFormed_of_objectsAgreeOffSchedulerLinks hA h.2⟩
+
 
 /-- WS-ZA ZA5.11: the capability half of `badgeWellFormed` carries across a
 word write: no word is a capability slot. -/
@@ -1873,6 +1938,42 @@ theorem ipcInvariantFull_of_objectsAgreeOffTaint {s1 s2 : SystemState}
     (.of_objectsAgreeOffTaint hA)
     (capabilityBadgesWellFormed_of_objectsAgreeOffTaint hA h.badgeWellFormed.2) h
 
+/-- WS-ZA ZA6.3: `ipcInvariant` reads the notifications alone, which hold no
+scheduler link. -/
+theorem ipcInvariant_of_objectsAgreeOffSchedulerLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffSchedulerLinks st) (h : ipcInvariant st) : ipcInvariant st' :=
+  fun oid ntfn hL => h oid ntfn (hA.get_notification_iff.mp hL)
+
+/-- WS-ZA ZA6.3: a step writing only scheduler links — run-queue or
+release-queue — preserves every thread's binding. -/
+theorem sameSchedContextBindings.of_objectsAgreeOffSchedulerLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffSchedulerLinks st) : sameSchedContextBindings st st' := by
+  intro tid tcb' hObj
+  run_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
+
+/-- WS-ZA ZA6.3: a step writing only scheduler links frames every owner: a
+context's release fields are outside its bound thread. -/
+theorem donationOwnerFrameExcept.of_objectsAgreeOffSchedulerLinks {st st' : SystemState}
+    {woken : SeLe4n.ThreadId} (h : st'.objectsAgreeOffSchedulerLinks st) :
+    donationOwnerFrameExcept st st' woken := by
+  refine ⟨fun _ _ hSc => (h.get_sc hSc).elim fun sc' hs =>
+    ⟨sc', hs.1, SeLe4n.Kernel.SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) hs.2⟩,
+    fun _ tcb hT => ?_⟩
+  run_links_fwd h at tcb hT
+  exact ⟨_, hT, rfl, Or.inr rfl⟩
+
+/-- WS-ZA ZA6.3: **the whole-bundle transport off every scheduler link** — two
+states whose object stores agree off the run-queue and release-queue links
+satisfy `ipcInvariantFull` interchangeably: no conjunct reads either queue's
+links. -/
+theorem ipcInvariantFull_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffSchedulerLinks s1)
+    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffSchedulerLinks hA)
+    (.of_objectsAgreeOffSchedulerLinks hA)
+    (capabilityBadgesWellFormed_of_objectsAgreeOffSchedulerLinks hA h.badgeWellFormed.2) h
+
 /-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
 two states whose object stores agree off the run-queue links satisfy the
 twenty-one conjuncts of `ipcInvariantFull` interchangeably.  This is the lever that carries the single-core whole-bundle
@@ -1880,8 +1981,24 @@ theorems across the cross-core wake, whose run-queue placement differs. -/
 theorem ipcInvariantFull_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
     (hA : s2.objectsAgreeOffRunLinks s1)
     (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
-  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA)
-    (.of_objectsAgreeOffRunLinks hA) (capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.badgeWellFormed.2) h
+  ipcInvariantFull_of_objectsAgreeOffSchedulerLinks (.of_runLinks hA) h
+
+/-- WS-ZA ZA6.3: a step writing only scheduler links (run-queue links on
+threads, release-queue links on contexts) frames the donation chain: no Reply
+changes, and a context's stack head lies off its release fields. -/
+theorem donationChainFrame.of_objectsAgreeOffSchedulerLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffSchedulerLinks st) : donationChainFrame st st' := by
+  refine ⟨fun oid => ?_, fun oid => ?_, fun oid r' hR hC => ⟨r', h.get_reply_iff.mp hR, hC⟩⟩
+  · rcases h.pointwise oid with e | ⟨_, _, ht, ht', _⟩ | ⟨_, _, hs, hs', _⟩
+    · rw [e]
+    · rw [ht, ht']; rfl
+    · rw [hs, hs']; rfl
+  · rcases h.pointwise oid with e | ⟨_, _, ht, ht', _⟩ | ⟨sc, sc', hs, hs', e⟩
+    · rw [e]
+    · rw [ht, ht']; rfl
+    · rw [hs, hs']
+      have hr := congrArg SchedContext.scReply e
+      exact congrArg some hr
 
 /-- The same for pointwise-equal lookups. -/
 theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
@@ -1903,18 +2020,18 @@ theorem donationOwnerValidExcept_of_readViewAgreement {s1 s2 : SystemState}
   exact ⟨⟨sc', hSc', hBT.trans hBound⟩, ⟨_, hOwner, hUnbound, hCase⟩⟩
 
 /-- WS-RR RR3.12: the relaxed bundle transports across stores that agree off
-the run-queue links, exactly as `ipcInvariantFull_of_objectsAgreeOffRunLinks`
-does for the full one. -/
-theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+the scheduler links (WS-ZA ZA4.5 / ZA6.3), exactly as
+`ipcInvariantFull_of_objectsAgreeOffSchedulerLinks` does for the full one. -/
+theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffSchedulerLinks {s1 s2 : SystemState}
     {woken : SeLe4n.ThreadId}
-    (hA : s2.objectsAgreeOffRunLinks s1)
+    (hA : s2.objectsAgreeOffSchedulerLinks s1)
     (h : ipcInvariantFullExceptDonationOwner s1 woken) :
     ipcInvariantFullExceptDonationOwner s2 woken := by
-  have hView : ipcReadViewAgreement s1 s2 := .of_objectsAgreeOffRunLinks hA
+  have hView : ipcReadViewAgreement s1 s2 := .of_objectsAgreeOffSchedulerLinks hA
   exact ⟨ipcInvariant_of_readViewAgreement hView h.1,
    dualQueueSystemInvariant_of_readViewAgreement hView h.2.1,
    allPendingMessagesBounded_of_readViewAgreement hView h.2.2.1,
-   badgeWellFormed_of_objectsAgreeOffRunLinks hA h.2.2.2.1,
+   badgeWellFormed_of_objectsAgreeOffSchedulerLinks hA h.2.2.2.1,
    blockedThreadsPendingMessageConsistent_of_readViewAgreement hView h.2.2.2.2.1,
    endpointQueueNoDup_of_readViewAgreement hView h.2.2.2.2.2.1,
    ipcStateQueueMembershipConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.1,
@@ -1932,8 +2049,16 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : 
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
-   .of_codes (.of_objectsAgreeOffRunLinks hA) h.notificationBindingReciprocal,
+   .of_codes (.of_objectsAgreeOffSchedulerLinks hA) h.notificationBindingReciprocal,
    endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩
+
+/-- The relaxed bundle across a run-link step. -/
+theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hA : s2.objectsAgreeOffRunLinks s1)
+    (h : ipcInvariantFullExceptDonationOwner s1 woken) :
+    ipcInvariantFullExceptDonationOwner s2 woken :=
+  ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffSchedulerLinks (.of_runLinks hA) h
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
 objects untouched.  `ipcInvariantFull` reads nothing else, so it transports

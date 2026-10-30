@@ -1364,7 +1364,7 @@ theorem schedContextRetirable.namedByNone {st : SystemState} (h : ipcReachable s
     (hR : schedContextRetirable st x = true)
     {k : SeLe4n.ObjId} {o : KernelObject} (hK : st.objects[k]? = some o) :
     objectNamesSchedContext o (x.val + 1) = false := by
-  obtain ⟨sc, hS, -, -, hRep⟩ := schedContextRetirable_parts hR
+  obtain ⟨sc, hS, -, -, hRep, -⟩ := schedContextRetirable_parts hR
   cases o with
   | tcb t =>
     exact schedContextRetirable.tcbNamesNone hR hBind h.ipcInvariantFull.donationOwnerValid

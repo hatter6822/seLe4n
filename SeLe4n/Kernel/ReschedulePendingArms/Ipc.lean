@@ -935,7 +935,7 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
           (descheduleAt_stepCovers e _ _ _), ?_⟩
         unfold descheduleAtPlacement
         exact descheduleAt_objects_invExt _ _ _
-          (by rw [migrateSchedContextReplenishment_objects]; exact h1Inv)
+          (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ h1Inv)
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
@@ -1403,7 +1403,7 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
         cases h
         obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
         exact ⟨stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _),
-          by rw [migrateSchedContextReplenishment_objects]; exact h1Inv⟩
+          migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ h1Inv⟩
     · cases h
   · cases h; exact ⟨stepCovers_refl e st, hInv⟩
 

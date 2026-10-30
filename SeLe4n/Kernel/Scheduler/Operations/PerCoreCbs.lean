@@ -35,9 +35,9 @@ open-coded plus the genuinely-new **migration** operation:
   `replenishmentPipelineOrderOnCore`) and introduces the plan §3.8 affinity-
   consistency invariant `replenishQueueAffinityConsistentOnCore`.
 * **SM5.H.2** — `replenishOnCore`: the per-core "schedule a CBS replenishment"
-  primitive (insert `(scId, eligibleAt)` into `replenishQueueOnCore c`) — the
-  clean named extraction of the queue insert `timerTickBudgetOnCore` /
-  `handleYieldWithBudget` open-code — plus its frame lemmas.
+  primitive (place `scId` on core `c`'s release queue at its earliest pending
+  refill, off whichever queue held it — WS-ZA ZA6.3) — the named primitive the
+  budget-exhausted tick calls — plus its frame lemmas.
 * **SM5.H.3** — `replenishOnCore` / the migration preserve
   `replenishQueueValidOnCore` (sorted + size-consistent) on every core.
 * **SM5.H.4** — `migrateSchedContextReplenishment` (move a SchedContext's pending
@@ -110,100 +110,131 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId SgiKind
 -- §2  SM5.H.2 — `replenishOnCore`: per-core CBS replenishment scheduling
 -- ============================================================================
 
-/- WS-SM SM5.H.2 (plan §3.8): `replenishOnCore st c scId eligibleAt` schedules a CBS
-replenishment for SchedContext `scId` on core `c` — inserts `(scId, eligibleAt)`
-into core `c`'s replenish queue (`replenishQueueOnCore c`, SM4.B per-core field),
-leaving every other scheduler slot, every *other* core's replenish queue, and the
-object store untouched.  The clean named extraction of the queue insert
-`timerTickBudgetOnCore` / `handleYieldWithBudget` open-code.  The plan signature
-`replenishOnCore (s, c, sc)` realises `sc` as `(scId, eligibleAt)`; the faithful
-`replenishScOnCore (s, c, sc, now)` form computes `now + sc.period.val` internally,
-discharging the SM5.H.6 pipeline-order future-ness from `sc.period > 0`.
+/- WS-SM SM5.H.2 (plan §3.8) / WS-ZA ZA6.3: `replenishOnCore st c scId` schedules
+a CBS replenishment for SchedContext `scId` on core `c` — places it on core `c`'s
+release queue (`SystemState.releasePlace`) at its earliest pending refill, the
+queue key being a fact derived from the context itself (`releaseKeyOf`), and
+takes it off whichever queue held it before.  It writes the contexts' release
+fields and the release-queue slots and nothing else: every other scheduler slot
+and every non-release object field is framed.  The plan signature
+`replenishOnCore (s, c, sc)` realises `sc` as `scId`; the eligibility the
+pipeline order needs is the context's own earliest refill.
 
-`replenishOnCore`, `replenishScOnCore`, the migration, and the composite are
+`replenishOnCore`, the migration, and the composite are
 **production** defs in `Scheduler/Operations/Core.lean` (reached via the SM5.H.4
 `tcbSetAffinity` syscall); this module collects their theorem surface. -/
 
-/-- WS-SM SM5.H.2: scheduling a replenishment never touches the object store. -/
-@[simp] theorem replenishOnCore_objects (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (replenishOnCore st c scId eligibleAt).objects = st.objects := rfl
+/-- WS-SM SM5.H.2 / WS-ZA ZA6.3: scheduling a replenishment writes the objects
+only in the contexts' release-queue fields. -/
+theorem replenishOnCore_agree (st : SystemState) (c : CoreId) (scId : SchedContextId) :
+    (replenishOnCore st c scId).objectsAgreeOffReleaseLinks st :=
+  SystemState.releasePlace_agree st c scId
+
+/-- ...and the scheduler only in the release-queue slots. -/
+theorem replenishOnCore_releaseOnlyWrite (st : SystemState) (c : CoreId) (scId : SchedContextId) :
+    (replenishOnCore st c scId).releaseOnlyWrite st :=
+  SystemState.releasePlace_releaseOnlyWrite st c scId
 
 /-- WS-SM SM5.H.2: scheduling a replenishment never advances the machine timer. -/
 @[simp] theorem replenishOnCore_machine (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (replenishOnCore st c scId eligibleAt).machine = st.machine := rfl
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).machine = st.machine :=
+  (replenishOnCore_releaseOnlyWrite st c scId).machine
 
-/-- WS-SM SM5.H.2: it frames every thread's TCB resolution (object store unchanged). -/
+/-- WS-SM SM5.H.2: it frames every thread's TCB resolution. -/
 theorem replenishOnCore_getTcb? (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) (tid : SeLe4n.ThreadId) :
-    (replenishOnCore st c scId eligibleAt).getTcb? tid = st.getTcb? tid := by
-  unfold SystemState.getTcb?; rw [replenishOnCore_objects]
+    (scId : SchedContextId) (tid : SeLe4n.ThreadId) :
+    (replenishOnCore st c scId).getTcb? tid = st.getTcb? tid :=
+  (replenishOnCore_agree st c scId).getTcb? tid
 
-/-- WS-SM SM5.H.2: it frames every SchedContext resolution (object store unchanged). -/
-theorem replenishOnCore_getSchedContext? (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) (scId' : SchedContextId) :
-    (replenishOnCore st c scId eligibleAt).getSchedContext? scId' = st.getSchedContext? scId' := by
-  unfold SystemState.getSchedContext?; rw [replenishOnCore_objects]
+/-- WS-SM SM5.H.2: it frames every context's bound thread. -/
+theorem replenishOnCore_boundThread (st : SystemState) (c : CoreId)
+    (scId : SchedContextId) (scId' : SchedContextId) :
+    ((replenishOnCore st c scId).getSchedContext? scId').map (·.boundThread)
+      = (st.getSchedContext? scId').map (·.boundThread) :=
+  (replenishOnCore_agree st c scId).getSchedContext?_map _ (fun _ => rfl) scId'
 
 /-- WS-SM SM5.H.2: it frames every thread's home core (`determineTargetCore`
-reads only the object store). -/
+reads only TCBs). -/
 theorem replenishOnCore_determineTargetCore (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) (tid : SeLe4n.ThreadId) :
-    determineTargetCore (replenishOnCore st c scId eligibleAt) tid = determineTargetCore st tid := by
-  unfold determineTargetCore SystemState.getTcb?; rw [replenishOnCore_objects]
+    (scId : SchedContextId) (tid : SeLe4n.ThreadId) :
+    determineTargetCore (replenishOnCore st c scId) tid = determineTargetCore st tid := by
+  unfold determineTargetCore; rw [replenishOnCore_getTcb?]
 
-/-- WS-SM SM5.H.2: core `c`'s replenish queue after scheduling is the old queue
-with `(scId, eligibleAt)` inserted.  (`(replenishOnCore …).scheduler` is
-definitionally `st.scheduler.setReplenishQueueOnCore c …`, so each frame is the
-corresponding SM4.B setter lemma.) -/
-@[simp] theorem replenishOnCore_replenishQueueOnCore_self (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (replenishOnCore st c scId eligibleAt).scheduler.replenishQueueOnCore c
-      = (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt := by
-  unfold replenishOnCore
-  exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self _ _ _
+/-- WS-SM SM5.H.2 / WS-ZA ZA6.3: core `c`'s replenish queue after scheduling
+is the old queue with the context's entry replaced by one at its earliest
+pending refill (`releaseKeyOf`), or dropped when it holds none — on a core free
+for the context (`releaseFreeFor`: its own link names `c` or no core). -/
+theorem replenishOnCore_replenishQueueOnCore_self {st : SystemState} {c : CoreId}
+    {scId : SchedContextId} (hf : st.releaseFreeFor c scId = true) :
+    (replenishOnCore st c scId).scheduler.replenishQueueOnCore c
+      = match st.releaseKeyOf scId with
+        | some t => ((st.scheduler.replenishQueueOnCore c).remove scId).insert scId t
+        | none => (st.scheduler.replenishQueueOnCore c).remove scId :=
+  SystemState.releasePlace_replenishQueueOnCore_self hf
 
-/-- WS-SM SM5.H.2: scheduling on core `c` frames a *different* core `c'`'s
-replenish queue. -/
+/-- ...and on a core not free for it, nothing is written. -/
+theorem replenishOnCore_of_not_free {st : SystemState} {c : CoreId} {scId : SchedContextId}
+    (hf : st.releaseFreeFor c scId = false) : replenishOnCore st c scId = st :=
+  SystemState.releasePlace_of_not_free hf
+
+/-- WS-SM SM5.H.2 / WS-ZA ZA6.3: scheduling on core `c` writes core `c`'s
+queue alone — the queue whose lock the caller holds. -/
 theorem replenishOnCore_replenishQueueOnCore_ne (st : SystemState) (c c' : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) (h : c ≠ c') :
-    (replenishOnCore st c scId eligibleAt).scheduler.replenishQueueOnCore c'
-      = st.scheduler.replenishQueueOnCore c' := by
-  unfold replenishOnCore
-  exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ h
+    (scId : SchedContextId) (h : c ≠ c') :
+    (replenishOnCore st c scId).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' :=
+  SystemState.releasePlace_replenishQueueOnCore_ne st c scId c' (Ne.symm h)
 
 /-- WS-SM SM5.H.2: scheduling a replenishment frames every core's run queue. -/
 @[simp] theorem replenishOnCore_runQueueOnCore (st : SystemState) (c c' : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (replenishOnCore st c scId eligibleAt).scheduler.runQueueOnCore c'
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' := by
-  unfold replenishOnCore
-  exact SchedulerState.setReplenishQueueOnCore_runQueueOnCore _ _ _ _
+  rw [(replenishOnCore_releaseOnlyWrite st c scId).2]; rfl
 
 /-- WS-SM SM5.H.2: scheduling a replenishment frames every core's current thread. -/
 @[simp] theorem replenishOnCore_currentOnCore (st : SystemState) (c c' : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (replenishOnCore st c scId eligibleAt).scheduler.currentOnCore c'
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' := by
-  unfold replenishOnCore
-  exact SchedulerState.setReplenishQueueOnCore_currentOnCore _ _ _ _
+  rw [(replenishOnCore_releaseOnlyWrite st c scId).2]; rfl
 
 /-- WS-SM SM5.H.2: scheduling a replenishment frames every core's active domain. -/
 @[simp] theorem replenishOnCore_activeDomainOnCore (st : SystemState) (c c' : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (replenishOnCore st c scId eligibleAt).scheduler.activeDomainOnCore c'
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).scheduler.activeDomainOnCore c'
       = st.scheduler.activeDomainOnCore c' := by
-  unfold replenishOnCore
-  exact SchedulerState.setReplenishQueueOnCore_activeDomainOnCore _ _ _ _
+  rw [(replenishOnCore_releaseOnlyWrite st c scId).2]; rfl
 
-/-- WS-SM SM5.H.2: the scheduled entry is a genuine member of core `c`'s
-post-state replenish queue (it was not dropped). -/
-theorem replenishOnCore_mem (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) :
-    (scId, eligibleAt) ∈ ((replenishOnCore st c scId eligibleAt).scheduler.replenishQueueOnCore c).entries := by
-  rw [replenishOnCore_replenishQueueOnCore_self]
-  exact mem_insertSorted _ scId eligibleAt
+/-- ...every core's domain time remaining... -/
+@[simp] theorem replenishOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' : CoreId)
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' := by
+  rw [(replenishOnCore_releaseOnlyWrite st c scId).2]; rfl
+
+/-- ...every core's domain-schedule index... -/
+@[simp] theorem replenishOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' : CoreId)
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).scheduler.domainScheduleIndexOnCore c'
+      = st.scheduler.domainScheduleIndexOnCore c' := by
+  rw [(replenishOnCore_releaseOnlyWrite st c scId).2]; rfl
+
+/-- ...and every core's reschedule-pending flag. -/
+@[simp] theorem replenishOnCore_reschedulePendingOnCore (st : SystemState) (c c' : CoreId)
+    (scId : SchedContextId) :
+    (replenishOnCore st c scId).scheduler.reschedulePendingOnCore c'
+      = st.scheduler.reschedulePendingOnCore c' := by
+  rw [(replenishOnCore_releaseOnlyWrite st c scId).2]; rfl
+
+/-- WS-SM SM5.H.2: a context holding a pending refill is a genuine member of
+core `c`'s post-state queue at its earliest one (it was not dropped). -/
+theorem replenishOnCore_mem {st : SystemState} {c : CoreId}
+    {scId : SchedContextId} {t : Nat} (hf : st.releaseFreeFor c scId = true)
+    (hk : st.releaseKeyOf scId = some t) :
+    (scId, t) ∈ ((replenishOnCore st c scId).scheduler.replenishQueueOnCore c).entries :=
+  SystemState.releasePlace_mem hf hk
 
 -- ============================================================================
 -- §3  SM5.H.3 — `replenishOnCore` preserves replenish-queue validity
@@ -211,103 +242,136 @@ theorem replenishOnCore_mem (st : SystemState) (c : CoreId)
 
 /-- WS-SM SM5.H.3 (plan §6.1 `replenishQueueOnCore_wellFormed`): scheduling a
 replenishment on core `c` preserves core `c`'s replenish-queue validity
-(`replenishQueueValidOnCore` = sorted-by-eligibility ∧ size-consistent).  The
-queue insert preserves both via `ReplenishQueue.insert_preserves_sorted` /
-`insert_sizeConsistent`. -/
+(`replenishQueueValidOnCore` = sorted-by-eligibility ∧ size-consistent): the
+removal and the insert each preserve both. -/
 theorem replenishOnCore_preserves_replenishQueueValidOnCore (st : SystemState)
-    (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (c : CoreId) (scId : SchedContextId)
     (hValid : replenishQueueValidOnCore st c) :
-    replenishQueueValidOnCore (replenishOnCore st c scId eligibleAt) c := by
+    replenishQueueValidOnCore (replenishOnCore st c scId) c := by
+  cases hf : st.releaseFreeFor c scId with
+  | false => rw [replenishOnCore_of_not_free hf]; exact hValid
+  | true =>
   unfold replenishQueueValidOnCore
-  rw [replenishOnCore_replenishQueueOnCore_self]
-  exact ⟨insert_preserves_sorted hValid.1, insert_sizeConsistent hValid.2⟩
+  rw [replenishOnCore_replenishQueueOnCore_self hf]
+  cases st.releaseKeyOf scId with
+  | some t =>
+    exact ⟨insert_preserves_sorted (remove_preserves_sorted hValid.1),
+      insert_sizeConsistent remove_sizeConsistent⟩
+  | none => exact ⟨remove_preserves_sorted hValid.1, remove_sizeConsistent⟩
 
 /-- WS-SM SM5.H.3: scheduling on core `c` preserves a *different* core `c'`'s
-replenish-queue validity (its queue is untouched). -/
+replenish-queue validity (its queue at most loses the context's entry). -/
 theorem replenishOnCore_preserves_replenishQueueValidOnCore_ne (st : SystemState)
-    (c c' : CoreId) (scId : SchedContextId) (eligibleAt : Nat) (h : c ≠ c')
+    (c c' : CoreId) (scId : SchedContextId) (h : c ≠ c')
     (hValid : replenishQueueValidOnCore st c') :
-    replenishQueueValidOnCore (replenishOnCore st c scId eligibleAt) c' :=
-  (replenishQueueValidOnCore_frame (replenishOnCore_replenishQueueOnCore_ne st c c' scId eligibleAt h)).mpr hValid
+    replenishQueueValidOnCore (replenishOnCore st c scId) c' := by
+  unfold replenishQueueValidOnCore
+  rw [replenishOnCore_replenishQueueOnCore_ne st c c' scId h]
+  exact hValid
 
 /-- WS-SM SM5.H.3 (SMP form): scheduling a replenishment preserves
 replenish-queue validity on **every** core. -/
 theorem replenishOnCore_preserves_replenishQueueValid_smp (st : SystemState)
-    (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (c : CoreId) (scId : SchedContextId)
     (hValid : ∀ c', replenishQueueValidOnCore st c') :
-    ∀ c', replenishQueueValidOnCore (replenishOnCore st c scId eligibleAt) c' := by
+    ∀ c', replenishQueueValidOnCore (replenishOnCore st c scId) c' := by
   intro c'
   by_cases h : c = c'
-  · subst h; exact replenishOnCore_preserves_replenishQueueValidOnCore st c scId eligibleAt (hValid c)
-  · exact replenishOnCore_preserves_replenishQueueValidOnCore_ne st c c' scId eligibleAt h (hValid c')
+  · subst h; exact replenishOnCore_preserves_replenishQueueValidOnCore st c scId (hValid c)
+  · exact replenishOnCore_preserves_replenishQueueValidOnCore_ne st c c' scId h (hValid c')
 
 -- ============================================================================
 -- §4  SM5.H.6 — `replenishOnCore` preserves replenishment-pipeline order
 -- ============================================================================
 
 /-- WS-SM SM5.H.6 (plan §6.1 `replenishmentPipelineOrder_perCore`): scheduling a
-replenishment on core `c` at a **future** eligibility tick (`eligibleAt >
-machine.timer`) preserves core `c`'s replenishment-pipeline order (every queued
-replenishment is eligible strictly after the current tick).
+replenishment on core `c` preserves core `c`'s replenishment-pipeline order
+(every queued replenishment is eligible strictly after the current tick), given
+the context's earliest pending refill is in the future (`hFuture`).
 
-The CBS engine always schedules at `now + period.val` with `period.val > 0`, so
-`eligibleAt > machine.timer` holds at every real call site (this is the SM5.H.6
-discharge obligation, exposed as a hypothesis so `replenishOnCore` itself stays
-agnostic to the eligibility computation).  `replenishOnCore` does not advance the
-machine timer, so the existing entries' future-ness is inherited and the new
-entry's is `hFuture`. -/
+The queue key is a derived fact — the context's own earliest refill
+(`releaseKeyOf`) — so the obligation is stated on it; the CBS engine schedules
+each refill at `now + period.val` with `period.val > 0`.  `replenishOnCore`
+does not advance the machine timer, so the existing entries' future-ness is
+inherited. -/
 theorem replenishOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemState)
-    (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (c : CoreId) (scId : SchedContextId)
     (hPipeline : replenishmentPipelineOrderOnCore st c)
-    (hFuture : eligibleAt > st.machine.timer) :
-    replenishmentPipelineOrderOnCore (replenishOnCore st c scId eligibleAt) c := by
+    (hFuture : ∀ t, st.releaseKeyOf scId = some t → t > st.machine.timer) :
+    replenishmentPipelineOrderOnCore (replenishOnCore st c scId) c := by
   intro pair hMem
   rw [replenishOnCore_machine]
-  rw [replenishOnCore_replenishQueueOnCore_self] at hMem
-  rcases (mem_insertSorted_iff _ scId eligibleAt pair).mp hMem with hEq | hOld
-  · rw [hEq]; exact hFuture
-  · exact hPipeline pair hOld
+  cases hf : st.releaseFreeFor c scId with
+  | false => rw [replenishOnCore_of_not_free hf] at hMem; exact hPipeline pair hMem
+  | true =>
+  rw [replenishOnCore_replenishQueueOnCore_self hf] at hMem
+  cases hk : st.releaseKeyOf scId with
+  | some t =>
+    rw [hk] at hMem
+    rcases (mem_insertSorted_iff _ scId t pair).mp hMem with hEq | hOld
+    · rw [hEq]; exact hFuture t hk
+    · exact hPipeline pair (mem_remove_entries hOld).1
+  | none => rw [hk] at hMem; exact hPipeline pair (mem_remove_entries hMem).1
 
 /-- WS-SM SM5.H.6: scheduling on core `c` preserves a *different* core `c'`'s
-pipeline order (its queue and the machine timer are untouched). -/
+pipeline order (its queue at most loses an entry; the timer is untouched). -/
 theorem replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne (st : SystemState)
-    (c c' : CoreId) (scId : SchedContextId) (eligibleAt : Nat) (h : c ≠ c')
+    (c c' : CoreId) (scId : SchedContextId) (h : c ≠ c')
     (hPipeline : replenishmentPipelineOrderOnCore st c') :
-    replenishmentPipelineOrderOnCore (replenishOnCore st c scId eligibleAt) c' := by
+    replenishmentPipelineOrderOnCore (replenishOnCore st c scId) c' := by
   intro pair hMem
   rw [replenishOnCore_machine]
-  rw [replenishOnCore_replenishQueueOnCore_ne st c c' scId eligibleAt h] at hMem
+  rw [replenishOnCore_replenishQueueOnCore_ne st c c' scId h] at hMem
   exact hPipeline pair hMem
 
 -- ============================================================================
 -- §5  SM5.H.5 — `replenishOnCore` preserves affinity consistency
 -- ============================================================================
 
+/-- A post-state context of `replenishOnCore` read back to the pre-state with
+its bound thread. -/
+private theorem replenishOnCore_sc_back {st : SystemState} {c : CoreId} {scId s : SchedContextId}
+    {sc : SchedContext} (hSc : (replenishOnCore st c scId).getSchedContext? s = some sc) :
+    ∃ sc₁, st.getSchedContext? s = some sc₁ ∧ sc₁.boundThread = sc.boundThread := by
+  obtain ⟨sc₁, hSc₁, hW⟩ := (replenishOnCore_agree st c scId).getSchedContext?_some' hSc
+  exact ⟨sc₁, hSc₁, (SchedContext.proj_eq_of_withoutRelease_eq (·.boundThread) hW).symm⟩
+
 /-- WS-SM SM5.H.5: scheduling a replenishment for `scId` on core `c` preserves
 core `c`'s affinity consistency, provided the scheduled SchedContext is itself
 homed on `c` (`hTarget`: its bound thread's `determineTargetCore` is `c`).  This
 is the obligation the live CBS path discharges — `timerTickBudgetOnCore` schedules
 `scId` on the core running the tick, which under the invariant is `scId`'s home
-core.  `replenishOnCore` frames `getSchedContext?` / `determineTargetCore` (object
-store untouched), so the only new queue entry is `(scId, eligibleAt)`, covered by
+core.  `replenishOnCore` frames every bound thread and home core, and the only
+entry it can add is `scId`'s own (`releasePlace_entries_provenance`), covered by
 `hTarget`. -/
 theorem replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore (st : SystemState)
-    (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (c : CoreId) (scId : SchedContextId)
     (hCons : replenishQueueAffinityConsistentOnCore st c)
     (hTarget : ∀ sc, st.getSchedContext? scId = some sc →
       ∀ tid, sc.boundThread = some tid → determineTargetCore st tid = c) :
-    replenishQueueAffinityConsistentOnCore (replenishOnCore st c scId eligibleAt) c := by
+    replenishQueueAffinityConsistentOnCore (replenishOnCore st c scId) c := by
   intro scId₀ t hMem sc hSc tid hBound
-  rw [replenishOnCore_getSchedContext?] at hSc
   rw [replenishOnCore_determineTargetCore]
-  rw [replenishOnCore_replenishQueueOnCore_self] at hMem
-  rcases (mem_insertSorted_iff _ scId eligibleAt (scId₀, t)).mp hMem with hEq | hOld
-  · -- the freshly scheduled entry: `scId₀ = scId`, covered by `hTarget`.
-    have hScEq : scId₀ = scId := (Prod.mk.injEq .. ▸ hEq).1
-    subst hScEq
-    exact hTarget sc hSc tid hBound
-  · -- a pre-existing entry: covered by the pre-state consistency.
-    exact hCons scId₀ t hOld sc hSc tid hBound
+  obtain ⟨sc₁, hSc₁, hB⟩ := replenishOnCore_sc_back hSc
+  rw [hBound] at hB
+  rcases SystemState.releasePlace_entries_provenance st c scId c _ hMem with hOld | hEq
+  · exact hCons scId₀ t hOld sc₁ hSc₁ tid hB
+  · have hS : scId₀ = scId := hEq
+    subst hS
+    exact hTarget sc₁ hSc₁ tid hB
+
+/-- WS-SM SM5.H.5: scheduling on core `c` preserves a *different* core `c'`'s
+affinity consistency unconditionally (its queue at most loses an entry). -/
+theorem replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore_ne (st : SystemState)
+    (c c' : CoreId) (scId : SchedContextId) (h : c ≠ c')
+    (hCons : replenishQueueAffinityConsistentOnCore st c') :
+    replenishQueueAffinityConsistentOnCore (replenishOnCore st c scId) c' := by
+  intro scId₀ t hMem sc hSc tid hBound
+  rw [replenishOnCore_determineTargetCore]
+  obtain ⟨sc₁, hSc₁, hB⟩ := replenishOnCore_sc_back hSc
+  rw [hBound] at hB
+  rw [replenishOnCore_replenishQueueOnCore_ne st c c' scId h] at hMem
+  exact hCons scId₀ t hMem sc₁ hSc₁ tid hB
 
 -- ============================================================================
 -- §6  SM5.H.4 — SchedContext replenishment migration on affinity change
@@ -787,21 +851,21 @@ theorem default_perCoreCbsInvariant (c : CoreId) :
 
 /-- WS-SM SM5.H.7 (CBS scheduling maintains the per-core CBS invariant):
 `replenishOnCore` preserves the aggregate per-core CBS invariant on core `c`,
-provided the scheduled replenishment is eligible in the future (`hFuture`, which
+provided the context's earliest pending refill is in the future (`hFuture`, which
 the CBS engine guarantees via `now + period`, `period > 0`) and the scheduled
 SchedContext is homed on `c` (`hTarget`, the invariant the live tick maintains).
 Composes the SM5.H.3 validity, SM5.H.6 pipeline-order, and SM5.H.5 affinity
 preservation. -/
 theorem replenishOnCore_preserves_perCoreCbsInvariant (st : SystemState)
-    (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (c : CoreId) (scId : SchedContextId)
     (hInv : perCoreCbsInvariant st c)
-    (hFuture : eligibleAt > st.machine.timer)
+    (hFuture : ∀ t, st.releaseKeyOf scId = some t → t > st.machine.timer)
     (hTarget : ∀ sc, st.getSchedContext? scId = some sc →
       ∀ tid, sc.boundThread = some tid → determineTargetCore st tid = c) :
-    perCoreCbsInvariant (replenishOnCore st c scId eligibleAt) c :=
-  ⟨replenishOnCore_preserves_replenishQueueValidOnCore st c scId eligibleAt hInv.1,
-   replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId eligibleAt hInv.2.1 hFuture,
-   replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore st c scId eligibleAt hInv.2.2 hTarget⟩
+    perCoreCbsInvariant (replenishOnCore st c scId) c :=
+  ⟨replenishOnCore_preserves_replenishQueueValidOnCore st c scId hInv.1,
+   replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId hInv.2.1 hFuture,
+   replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore st c scId hInv.2.2 hTarget⟩
 
 -- §7  SM5.H.7 — the CBS budget-bound (bandwidth) accounting.
 
@@ -838,60 +902,15 @@ theorem scheduleReplenishment_replenishments_bounded (sc : SchedContext)
   exact SchedContext.replenishments_length_le _
 
 -- ============================================================================
--- §8  SM5.H.2 (B8) — `replenishScOnCore`: faithful `sc`-based scheduling
---     + SM5.H.6 UNCONDITIONAL pipeline-order preservation (from `period > 0`)
--- ============================================================================
-
-/-- WS-SM SM5.H.2: the faithful `sc`-based scheduling primitive is the `scId`-keyed
-`replenishOnCore` at the CBS-computed eligibility `now + sc.period.val`. -/
-theorem replenishScOnCore_eq (st : SystemState) (c : CoreId) (sc : SchedContext) (now : Nat) :
-    replenishScOnCore st c sc now = replenishOnCore st c sc.scId (now + sc.period.val) := rfl
-
-/-- WS-SM SM5.H.2: `replenishScOnCore` frames the object store. -/
-@[simp] theorem replenishScOnCore_objects (st : SystemState) (c : CoreId)
-    (sc : SchedContext) (now : Nat) :
-    (replenishScOnCore st c sc now).objects = st.objects := rfl
-
-/-- WS-SM SM5.H.6 (the unconditional pipeline-order preservation): scheduling
-`sc`'s replenishment at `now = machine.timer` preserves the replenishment-pipeline
-order **without** a caller-supplied future-ness hypothesis — the eligibility
-`machine.timer + sc.period.val` is strictly future because `sc.period > 0`
-(`sc.wellFormed`'s first conjunct).  This is the SM5.H.6 obligation the faithful
-`sc`-form discharges internally. -/
-theorem replenishScOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemState)
-    (c : CoreId) (sc : SchedContext)
-    (hPipeline : replenishmentPipelineOrderOnCore st c) (hPos : 0 < sc.period.val) :
-    replenishmentPipelineOrderOnCore (replenishScOnCore st c sc st.machine.timer) c := by
-  rw [replenishScOnCore_eq]
-  apply replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c sc.scId _ hPipeline
-  omega
-
-/-- WS-SM SM5.H.6: the `0 < period` obligation is exactly `sc.wellFormed`'s first
-conjunct, so a well-formed SchedContext's scheduling is unconditionally
-pipeline-preserving. -/
-theorem replenishScOnCore_preserves_replenishmentPipelineOrderOnCore_of_wf (st : SystemState)
-    (c : CoreId) (sc : SchedContext)
-    (hPipeline : replenishmentPipelineOrderOnCore st c) (hWf : sc.wellFormed) :
-    replenishmentPipelineOrderOnCore (replenishScOnCore st c sc st.machine.timer) c :=
-  replenishScOnCore_preserves_replenishmentPipelineOrderOnCore st c sc hPipeline
-    (by have := hWf.1; simpa [Period.isPositive] using this)
-
--- ============================================================================
 -- §9  SM5.H (C9) — object-store invariant (`invExt`) preservation
 -- ============================================================================
 
 /-- WS-SM SM5.H.2: `replenishOnCore` preserves the RobinHood object-store invariant
-(it never touches the object store). -/
+(its object writes are in-place rewrites of contexts' release fields). -/
 theorem replenishOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
-    (scId : SchedContextId) (eligibleAt : Nat) (h : st.objects.invExt) :
-    (replenishOnCore st c scId eligibleAt).objects.invExt := by
-  rw [replenishOnCore_objects]; exact h
-
-/-- WS-SM SM5.H.4: `migrateSchedContextReplenishment` preserves `invExt`. -/
-theorem migrateSchedContextReplenishment_preserves_objects_invExt (st : SystemState)
-    (scId : SchedContextId) (fromCore toCore : CoreId) (h : st.objects.invExt) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).objects.invExt := by
-  rw [migrateSchedContextReplenishment_objects]; exact h
+    (scId : SchedContextId) (h : st.objects.invExt) :
+    (replenishOnCore st c scId).objects.invExt :=
+  SystemState.releasePlace_objects_invExt st c scId h
 
 /-- WS-SM SM5.H.4: the full affinity-change composite preserves `invExt` — the
 affinity write preserves it (the only object write is the target TCB's affinity
@@ -915,7 +934,7 @@ theorem setThreadCpuAffinityWithMigration_preserves_objects_invExt (st : SystemS
           rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
                 tcb scId hTcb hBind stSet hSet st' hStep]
           exact migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _
-            (by rw [migrateSchedContextReplenishment_objects]; exact hStInv)
+            (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hStInv)
       | none =>
           rw [setThreadCpuAffinityWithMigration_unbound_state_eq st targetTid affinity executingCore
                 tcb hTcb hBind stSet hSet st' hStep]
@@ -1250,8 +1269,8 @@ theorem setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp
 --      tick's replenish write IS `replenishOnCore`, and the tick preserves
 --      replenish-queue validity on every core.
 --
--- `replenishOnCore` / `replenishScOnCore` are the named SM5.H.2 CBS-replenishment
--- primitives.  `timerTickBudgetOnCore`'s bound-budget-exhausted branch open-codes
+-- `replenishOnCore` is the named SM5.H.2 CBS-replenishment
+-- primitive.  `timerTickBudgetOnCore`'s bound-budget-exhausted branch open-codes
 -- the *same* insert; this section proves they coincide, making the abstract
 -- primitives the verified characterisation of the live CBS engine.  The bridge
 -- rests on a small replenish-queue frame chain: the budget-exhausted branch's
@@ -1386,9 +1405,63 @@ theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
       · rfl
     · rfl
 
+/-- WS-ZA ZA6.3: the context a budget-exhausting tick writes back — charged,
+its consumed budget scheduled as a refill at `now + period`, and its deadline
+moved on. -/
+abbrev spentSchedContext (sc : SchedContext) (now : Nat) : SchedContext :=
+  cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) now ⟨sc.budgetRemaining.val⟩) now true
+
+/-- **The spent context's place is in the future** when its pending refills were:
+its refills are the old ones and the new one a period on. -/
+theorem spentSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) (hP : 0 < sc.period.val)
+    (hOld : ∀ t, sc.releaseKey? = some t → t > now) :
+    ∀ t, (spentSchedContext sc now).releaseKey? = some t → t > now := by
+  intro t ht
+  unfold SchedContext.releaseKey? at ht hOld
+  have e1 : (spentSchedContext sc now).replenishments =
+      (scheduleReplenishment (consumeBudget sc 1) now ⟨sc.budgetRemaining.val⟩).replenishments := by
+    show (cbsUpdateDeadline _ now true).replenishments = _
+    unfold cbsUpdateDeadline; split <;> rfl
+  rw [e1] at ht
+  unfold scheduleReplenishment at ht
+  dsimp only at ht
+  rw [SchedContext.withReplenishments_replenishments _ _ (truncateReplenishments_length_le _)] at ht
+  obtain ⟨r, hr, rfl⟩ := SystemState.refillsEarliest_mem ht
+  unfold truncateReplenishments at hr
+  rcases List.mem_append.mp ((List.drop_sublist _ _).subset hr) with hm | hm
+  · have hm' : r ∈ sc.replenishments := hm
+    obtain ⟨t0, ht0⟩ := SystemState.refillsEarliest_isSome (List.ne_nil_of_mem hm')
+    exact Nat.lt_of_lt_of_le (hOld t0 ht0) (SystemState.refillsEarliest_le ht0 r hm')
+  · rw [List.mem_singleton] at hm; subst hm
+    show now < now + sc.period.val; omega
+
+/-- **A refilled context's place is in the future**: the refill at `now` keeps
+only the refills released after `now`. -/
+theorem refilledSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) :
+    ∀ t, (cbsUpdateDeadline (processReplenishments sc now) now true).releaseKey? = some t →
+      t > now := by
+  intro t ht
+  unfold SchedContext.releaseKey? at ht
+  have e1 : (cbsUpdateDeadline (processReplenishments sc now) now true).replenishments =
+      (processReplenishments sc now).replenishments := by
+    unfold cbsUpdateDeadline; split <;> rfl
+  rw [e1] at ht
+  unfold processReplenishments partitionEligible at ht
+  dsimp only at ht
+  rw [List.partition_eq_filter_filter] at ht
+  dsimp only at ht
+  rw [SchedContext.withReplenishments_replenishments _ _
+    (Nat.le_trans (List.length_filter_le _ _) (SchedContext.replenishments_length_le sc))] at ht
+  obtain ⟨r, hr, rfl⟩ := SystemState.refillsEarliest_mem ht
+  have := (List.mem_filter.mp hr).2
+  simp only [Function.comp_apply, Bool.not_eq_true', ReplenishmentEntry.isEligible,
+    decide_eq_false_iff_not] at this
+  omega
+
 /-- WS-SM SM5.H.2 (A2, the production bridge): in the budget-**exhausted** branch the
 live per-core timer tick's replenish-queue write on **every** core is exactly the
-abstract `replenishOnCore` primitive's (scheduling `scId` at `now + sc.period`).
+abstract `replenishOnCore` primitive's, over the store holding the charged
+context (`spentSchedContext`), placing `scId` at its earliest pending refill.
 The post-insert `timeoutBlockedThreads` + `setLastTimeoutErrors` steps frame every
 replenish queue, so the abstract primitive is the verified characterisation of the
 live CBS engine. -/
@@ -1401,12 +1474,14 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
-      = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
-  simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hBound, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget,
-    Prod.mk.injEq] at hStep
+      = (replenishOnCore (st.rewriteObject scId.toObjId (.schedContext (spentSchedContext sc
+          st.machine.timer)) (SystemState.rewriteAdmissible_schedContext hSc _)) c scId
+          ).scheduler.replenishQueueOnCore c' := by
+  simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, hBound,
+    SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget, Prod.mk.injEq] at hStep
   obtain ⟨hst, _⟩ := hStep
   subst hst
-  simp only [replenishOnCore,
+  simp only [
     markRescheduleTargets_replenishQueueOnCore,
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore, markKeyChangeFor_replenishQueueOnCore,
@@ -1453,7 +1528,7 @@ theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : Co
            SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
            timeoutBlockedThreads_replenishQueueOnCore, markKeyChangeFor_replenishQueueOnCore,
     SeLe4n.Model.SystemState.runEnqueueOnCore_replenishQueueOnCore]
-         exact replenishOnCore_replenishQueueOnCore_ne _ c c' _ _ hne
+         exact replenishOnCore_replenishQueueOnCore_ne _ c c' _ hne
        · -- not exhausted: an object write only
          simp only [Prod.mk.injEq] at hStep
          obtain ⟨hst, _⟩ := hStep
@@ -1479,12 +1554,14 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
-      = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
-  simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hDonated, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget,
-    Prod.mk.injEq] at hStep
+      = (replenishOnCore (st.rewriteObject scId.toObjId (.schedContext (spentSchedContext sc
+          st.machine.timer)) (SystemState.rewriteAdmissible_schedContext hSc _)) c scId
+          ).scheduler.replenishQueueOnCore c' := by
+  simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, hDonated,
+    SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget, Prod.mk.injEq] at hStep
   obtain ⟨hst, _⟩ := hStep
   subst hst
-  simp only [replenishOnCore,
+  simp only [
     markRescheduleTargets_replenishQueueOnCore,
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore, markKeyChangeFor_replenishQueueOnCore,
@@ -1510,7 +1587,8 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           by_cases hBud : sc.budgetRemaining.val ≤ 1
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_bound_exhausted_replenish_eq
               st c tid tcb scId sc st' b hB hSc hBud hStep c'))]
-            exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
+            refine replenishOnCore_preserves_replenishQueueValid_smp _ c scId ?_ c'
+            intro c''; refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c''); rfl
           · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
@@ -1526,7 +1604,8 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           by_cases hBud : sc.budgetRemaining.val ≤ 1
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_donated_exhausted_replenish_eq
               st c tid tcb scId owner sc st' b hB hSc hBud hStep c'))]
-            exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
+            refine replenishOnCore_preserves_replenishQueueValid_smp _ c scId ?_ c'
+            intro c''; refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c''); rfl
           · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
@@ -1730,9 +1809,19 @@ theorem setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
     obtain ⟨sc, hsc, hbud⟩ := hCons x hxMem tcb' hTcb' scId hBind
     exact ⟨sc, by rw [hScFrame]; exact hsc, hbud⟩
 
+/-- WS-ZA ZA6.3: a release-queue edit keeps the run queues' agreement with the
+threads — it keeps every TCB, every run queue and every queue's ends. -/
+private theorem runQueueRefined_of_releaseOnlyWrite {st st' : SystemState}
+    (hW : st'.releaseOnlyWrite st) (hA : st'.objectsAgreeOffReleaseLinks st)
+    (h : st.runQueueRefined) : st'.runQueueRefined :=
+  SystemState.runQueueRefined_of_frame
+    (fun c t => by unfold SystemState.runLinkOn; rw [hA.getTcb? t])
+    (by rw [hW.2]) (by rw [hW.2]) h
+
 /-- WS-SM SM5.H.4 (D15 helper): the SchedContext-replenishment migration preserves
-the SM4.C per-core run-queue↔budget consistency.  It writes only replenish queues,
-so every run queue, every TCB, and every SchedContext is framed. -/
+the SM4.C per-core run-queue↔budget consistency.  It writes only release-queue
+links and slots, so every run queue, every TCB, and every SchedContext's budget
+is framed. -/
 theorem migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
     (st : SystemState) (scId : SchedContextId) (fromCore toCore c' : CoreId)
     (hCons : schedContextRunQueueConsistent_perCore st c') :
@@ -1740,12 +1829,12 @@ theorem migrateSchedContextReplenishment_preserves_schedContextRunQueueConsisten
       (migrateSchedContextReplenishment st scId fromCore toCore) c' := by
   intro x hxMem tcb hTcb scId' hBind
   rw [migrateSchedContextReplenishment_runQueueOnCore] at hxMem
-  have hTcbFrame : (migrateSchedContextReplenishment st scId fromCore toCore).getTcb? x
-      = st.getTcb? x := by
-    unfold SystemState.getTcb?; rw [migrateSchedContextReplenishment_objects]
-  rw [hTcbFrame] at hTcb
+  have hA := migrateSchedContextReplenishment_agree st scId fromCore toCore
+  rw [hA.getTcb?] at hTcb
   obtain ⟨sc, hsc, hbud⟩ := hCons x hxMem tcb hTcb scId' hBind
-  exact ⟨sc, by rw [migrateSchedContextReplenishment_getSchedContext?]; exact hsc, hbud⟩
+  obtain ⟨sc', hsc', hW⟩ := hA.getSchedContext?_some hsc
+  exact ⟨sc', hsc', by
+    rw [SchedContext.proj_eq_of_withoutRelease_eq (·.budgetRemaining) hW]; exact hbud⟩
 
 /-- WS-SM SM5.H.4 (D15, composite — the whole-transition obligation): the full
 affinity-change composite preserves the SM4.C per-core run-queue↔budget
@@ -1795,11 +1884,9 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
                 exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
                   stSet scId _ _ c (hConsSet c)
           · split
-            · exact SystemState.runQueueRefined_of_frame
-                (fun c t => SystemState.runLinkOn_of_objects
-                  (migrateSchedContextReplenishment_objects _ _ _ _) c t)
-                (by unfold migrateSchedContextReplenishment; split <;> rfl)
-                (by unfold migrateSchedContextReplenishment; split <;> rfl) hRSet
+            · exact runQueueRefined_of_releaseOnlyWrite
+                (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _)
+                (migrateSchedContextReplenishment_agree _ _ _ _) hRSet
             · exact hRSet
 
 -- ============================================================================

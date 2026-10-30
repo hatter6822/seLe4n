@@ -263,7 +263,10 @@ theorem cancelBoundDonation_scheduler_runQueue_eq
     -- hook writes flags alone).
     rw [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore]
     constructor <;>
-      (rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]; try rfl)
+      (rw [SystemState.updateTcb_scheduler]
+       simp only [SchedContextOps.purgeReplenishment_runQueueOnCore,
+         SchedContextOps.purgeReplenishment_currentOnCore]
+       rw [SystemState.updateSchedContext_scheduler])
   · -- wrong variant: `.error .illegalState ≠ .ok st'` — contradiction
     cases h
 
@@ -1360,7 +1363,8 @@ theorem cancelBoundDonation_preserves_objects_invExt
     subst h
     rw [markKeyChangeFrom_objects]
     exact SystemState.updateTcb_preserves_objects_invExt _ _ _
-      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+      (SchedContextOps.purgeReplenishment_objects_invExt _ _
+        (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv))
   · -- `.donated` / `.unbound`: rejected with `.illegalState`.
     cases h
 
@@ -1515,12 +1519,18 @@ theorem cancelBoundDonation_preserves_ipcInvariant
         exact hIpc oid ntfn (notification_lookup_of_insert_no_notification
           _ scId.toObjId _ hInv (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
       · exact hIpc
+    -- The purge writes release links alone.
+    have hInv2 := SchedContextOps.purgeReplenishment_objects_invExt _ scId hInv1
+    have hIpc2 : ipcInvariant (SchedContextOps.purgeReplenishment _ scId) :=
+      fun oid ntfn hL => hIpc1 oid ntfn
+        ((SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+          (SchedContextOps.purgeReplenishment_agree _ scId)).get_notification_iff.mp hL)
     unfold SystemState.updateTcb
     split
     · intro oid ntfn hL
-      exact hIpc1 oid ntfn (notification_lookup_of_insert_no_notification
-        _ tid.toObjId _ hInv1 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
-    · exact ipcInvariant_of_objects_eq rfl hIpc1
+      exact hIpc2 oid ntfn (notification_lookup_of_insert_no_notification
+        _ tid.toObjId _ hInv2 (fun _ hEq => KernelObject.noConfusion hEq) oid ntfn hL)
+    · exact ipcInvariant_of_objects_eq rfl hIpc2
   | unbound =>
     simp only [cancelBoundDonation, hB] at h
     cases h

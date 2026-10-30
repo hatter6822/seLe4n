@@ -923,7 +923,8 @@ theorem endpointQueueRemoveDual_preserves_blockedThreadTimeoutConsistent
     rw [hI] at hB; exact KernelObject.tcb.inj (Option.some.inj hB)
   subst hSame
   obtain ⟨⟨sc, hScPre⟩, hBlk⟩ := hInv t tcbI scId hI (by rw [hBEq]; exact hBudget')
-  exact ⟨⟨sc, hSc scId sc hScPre⟩, by rw [← hIEq]; exact hBlk⟩
+  obtain ⟨sc', hSc', -⟩ := hSc scId sc hScPre
+  exact ⟨⟨sc', hSc'⟩, by rw [← hIEq]; exact hBlk⟩
 
 /-- WS-RR RR7.22: the donation trio.  `donationOwnerValid` needs both
 donation relations; the other two fall out of it and of the bindings. -/

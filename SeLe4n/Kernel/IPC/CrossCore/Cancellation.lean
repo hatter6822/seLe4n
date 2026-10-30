@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.IPC.Invariant.CancellationPlacementFrame
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 
 /-!
 # WS-SM SM6.E — Cancellation across cores
@@ -570,15 +571,18 @@ theorem cancelIpcBlockingOnCore_state_eq_of_no_donation (victim : SeLe4n.ThreadI
   rw [cancelIpcBlockingOnCore_state_eq, cancelIpcBlockingReclaimed_of_no_donation victim tcb st h]
 
 /-- WS-SM SM6.E: the cross-core cancellation's **object-level** effect is the
-single-core `cancelIpcBlocking`'s off the run-queue links — the deschedules
-write only the scheduler and those links (WS-ZA ZA4.5). -/
-theorem cancelIpcBlockingOnCore_objectsAgreeOffRunLinks (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (executingCore : CoreId) (st : SystemState) :
-    (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffRunLinks
+single-core `cancelIpcBlocking`'s off the scheduler links — the deschedules
+write only the scheduler and the run-queue links (WS-ZA ZA4.5), and the
+replenishment migration only the release-queue links (WS-ZA ZA6.3). -/
+theorem cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (executingCore : CoreId) (st : SystemState) :
+    (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffSchedulerLinks
       (cancelIpcBlocking st victim tcb) := by
   rw [cancelIpcBlockingOnCore_state_eq]
-  exact (descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
-    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st)
+  exact (SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+    ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
+      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st))).trans
+    (.of_releaseLinks (cancelIpcBlockingMigrated_agree victim tcb st))
 
 -- `v0.35.158`: `cancelIpcBlockingOnCore_eq_descheduleThread` — the composite
 -- **is** `descheduleThread` on the reclaim's post-state, stated over the
@@ -641,7 +645,7 @@ theorem cancelIpcBlockingMigrated_placedCoreOf? (victim : SeLe4n.ThreadId) (tcb 
     placedCoreOf? (cancelIpcBlockingMigrated victim tcb st) x = placedCoreOf? st x := by
   apply placedCoreOf?_congr_of_runCores_current_eq
   · exact SystemState.RunCoresAgree.trans
-      (SystemState.RunCoresAgree.of_objects (cancelIpcBlockingMigrated_objects victim tcb st))
+      (fun y => by rw [cancelIpcBlockingMigrated_getTcb?])
       (cancelIpcBlocking_runCoresAgree st victim tcb hInv)
   · intro c
     rw [cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]; rfl
@@ -3109,12 +3113,12 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariant
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (st : SystemState) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (cancelIpcBlockingOnCore victim tcb executingCore st).1 :=
-  ipcInvariant_of_objectsAgreeOffRunLinks
-    (cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st)
+  ipcInvariant_of_objectsAgreeOffSchedulerLinks
+    (cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st)
     (cancelIpcBlocking_preserves_ipcInvariant st victim tcb hInv hIpc)
 
 /-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` preserves `ipcInvariant` — the
-per-core replenish-queue purge does not touch `objects`; the object writes
+release-queue purge writes only release-queue links; the other object writes
 are the SchedContext deactivation and TCB unbind inserts, both
 non-notification. -/
 theorem cancelBoundDonationOnCore_preserves_ipcInvariant
@@ -3124,12 +3128,11 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     ipcInvariant st' := by
   cases hB : tcb.schedContextBinding with
   | bound scId =>
-    simp only [cancelBoundDonationOnCore, hB] at h
-    injection h with h
-    subst h
-    refine ipcInvariant_of_objects_eq (markKeyChangeFrom_objects _ _ _) ?_
-    -- Two in-place rewrites, a SchedContext then a TCB — neither is a
+    -- Off the release-queue links the purge leaves (WS-ZA ZA6.3) the store is
+    -- two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
+    refine ipcInvariant_of_objectsAgreeOffSchedulerLinks
+      (.of_releaseLinks (cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hB hInv h)) ?_
     have hInv1 : (st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
@@ -3156,7 +3159,7 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
 
 /-- WS-SM SM6.E.3: the per-core donated arm preserves `ipcInvariant` — the
 return writes SchedContext/TCB objects only and the replenishment migration
-never touches `objects`. -/
+only release-queue links. -/
 theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
@@ -3168,8 +3171,8 @@ theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     · cases h
     · injection h with h
       subst h
-      exact ipcInvariant_of_objects_eq
-        (migrateSchedContextReplenishment_objects _ _ _ _)
+      exact ipcInvariant_of_objectsAgreeOffSchedulerLinks
+        (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))
         (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
           (by assumption))
   · cases h
@@ -3305,7 +3308,7 @@ theorem cancellation_cross_core_correct
             ≠ some c' →
           (cancelIpcBlockingOnCore victim tcb executingCore st).1.scheduler.currentOnCore c'
             = st.scheduler.currentOnCore c')
-    ∧ (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffRunLinks
+    ∧ (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffSchedulerLinks
         (cancelIpcBlocking st victim tcb) := by
   have hPost := cancelIpcBlockingOnCore_placedCoreOf?_of_some victim tcb st hInv c hPlaced
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -3348,7 +3351,7 @@ theorem cancellation_cross_core_correct
     rw [descheduleUnboundHolder_currentOnCore_ne _ _ victim tcb c' hPark,
         cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]; rfl
   · -- (4) object-level fidelity
-    exact cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st
+    exact cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st
 
 -- ============================================================================
 -- §12  SM6.E — Scheduler-domain (`LockKey`) lock footprints
@@ -4332,32 +4335,24 @@ is released, which never refuses.  When they pass the operation's state is
       && (match tcb.schedContextBinding with | .donated _ _ => false | _ => true)
   | none => false
 
-/-- WS-ZA ZA5.2: drop a context's entry from core `c`'s replenish queue, the
-queue rewritten in its slot.  Kept out of line so the state reaches the
-scheduler update whole: inlined, the branches around it hand the state's
-fields to a join point and the scheduler and the state are rebuilt. -/
-@[noinline] def suspendDropReplenishment (st : SystemState) (c : CoreId)
-    (scId : SeLe4n.SchedContextId) : SystemState :=
-  let sched := st.scheduler.modifyReplenishQueueOnCore c (ReplenishQueue.remove · scId)
-  { st with scheduler := sched }
-
 /-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
-(`cancelBoundDonationOnCore` at the victim's home core), the home core and the
-victim's entry-time scheduling key and budget eligibility read before anything is written; the
-identity on a victim holding no bound context. -/
+(`cancelBoundDonationOnCore`), the victim's entry-time scheduling key and budget
+eligibility read before anything is written; the identity on a victim holding no
+bound context.  WS-ZA ZA6.3: the context leaves the release queue it is on, read
+off its own core code (`SchedContextOps.purgeReplenishment`), so no home core is
+resolved. -/
 def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
     match tcb.schedContextBinding with
     | .bound scId =>
-      let home := determineTargetCore st tid
       let p0 := tcb.boostedPriority
       let d0 := effectiveDeadline st tcb
       let dom0 := tcb.domain
       let e0 := hasSufficientBudget st tcb
       let st1 : SystemState := st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      let st2 := suspendDropReplenishment st1 home scId
+      let st2 := SchedContextOps.purgeReplenishment st1 scId
       markKeyChangeParts
         (markCandidacyGainFor
           (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
@@ -4371,10 +4366,10 @@ theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.Th
     (hB : tcb.schedContextBinding = .bound scId) :
     cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) =
       .ok (suspendReleasePerform st tid) := by
-  unfold cancelBoundDonationOnCore suspendReleasePerform suspendDropReplenishment
+  unfold cancelBoundDonationOnCore suspendReleasePerform
   simp only [hT, hB]
   unfold markKeyChangeFrom
-  simp only [hT, SchedulerState.modifyReplenishQueueOnCore_eq]
+  simp only [hT]
   rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
 
 /-- WS-ZA ZA5.2: the quiescent suspend once admitted.  The placement, the core
@@ -4751,35 +4746,23 @@ theorem descheduleThread_fully_descheduled
       | false => rfl
       | true => exact absurd (hUnique c p (Or.inl hq) hPlacedP) hc
 
-/-- WS-SM SM6.E (affinity corollary, the SM5.H purge-completeness): under the
-replenishment-affinity discipline — the SchedContext's pending replenishments
-live only on the purge core's queue — the per-core bound arm removes **all**
-of them system-wide: the purge core's by the `remove`, every other core's
-vacuously by the pre-state affinity plus the per-core frames. -/
+/-- WS-SM SM6.E (the SM5.H purge-completeness): the per-core bound arm removes
+**all** of the context's pending replenishments system-wide.  WS-ZA ZA6.3: with
+no hypothesis — the context leaves the release queue it is on through its own
+core code, and every core's abstract queue drops it
+(`cancelBoundDonationOnCore_replenishQueue_purged_of_refined`: on refined
+queues the core its link names is the one core whose queue holds it), so no
+affinity premise places its entries on one core first. -/
 theorem cancelBoundDonationOnCore_replenishments_purged
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
     (scId : SeLe4n.SchedContextId)
     (hB : tcb.schedContextBinding = .bound scId)
-    (hOnlyHome : ∀ c : CoreId, c ≠ rqCore →
-        ∀ e ∈ (st.scheduler.replenishQueueOnCore c).entries, e.1 ≠ scId)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
     ∀ c : CoreId, ∀ e ∈ (st'.scheduler.replenishQueueOnCore c).entries,
-      e.1 ≠ scId := by
-  simp only [cancelBoundDonationOnCore, hB] at h
-  injection h with h
-  subst h
-  intro c e hMem
-  rw [markKeyChangeFrom_replenishQueueOnCore, SystemState.updateTcb_scheduler,
-    SystemState.updateSchedContext_scheduler] at hMem
-  by_cases hc : c = rqCore
-  · subst hc
-    simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self] at hMem
-    intro hEq
-    have hf := (List.mem_filter.mp hMem).2
-    simp [hEq] at hf
-  · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
-        _ _ _ _ (fun hEq => hc hEq.symm)] at hMem
-    exact hOnlyHome c hc e hMem
+      e.1 ≠ scId := fun c e hMem =>
+  (cancelBoundDonationOnCore_replenishQueue_purged_of_refined st st' tid tcb rqCore scId hB
+    hInv hRef h c e hMem).2
 
 /-- WS-SM SM6.E: at a bootCore-homed victim with a shared-home donated owner
 (in particular every single-core configuration), the per-core donation
@@ -4888,16 +4871,16 @@ theorem cancelIpcBlocking_ipcInvariantStage (st : SystemState) (tid : SeLe4n.Thr
    fun hInv hIpc => cancelIpcBlocking_preserves_ipcInvariant st tid tcb hInv hIpc⟩
 
 /-- **WS-RR RR8.12**: and so is the teardown with its reclaim completed — the
-reclaim's migration and holder deschedule write only scheduler state
-(`cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks`), so the stage is the bare teardown's
-followed by an object-store-preserving one. -/
+reclaim's migration and holder deschedule write only scheduler state and the
+scheduler links (`cancelIpcBlockingReclaimed_objectsAgreeOffSchedulerLinks`), so the
+stage is the bare teardown's followed by one that keeps every notification. -/
 theorem cancelIpcBlockingReclaimed_ipcInvariantStage (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     IpcInvariantStage st (cancelIpcBlockingReclaimed tid tcb st) :=
   IpcInvariantStage.trans (cancelIpcBlocking_ipcInvariantStage st tid tcb)
     ⟨cancelIpcBlockingReclaimed_objects_invExt tid tcb st,
-     fun _ h => ipcInvariant_of_objectsAgreeOffRunLinks
-      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st) h⟩
+     fun _ h => ipcInvariant_of_objectsAgreeOffSchedulerLinks
+      (cancelIpcBlockingReclaimed_objectsAgreeOffSchedulerLinks tid tcb st) h⟩
 
 /-- WS-RR RR2.17: the cross-core priority-inheritance revert is a stage — it
 writes `pipBoost` and run-queue buckets, never a notification. -/

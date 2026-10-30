@@ -523,21 +523,38 @@ theorem applyCallDonationOnCore_runQueue_current_eq
       migrateSchedContextReplenishment_runQueue_current_eq st' scId donorHome doneeHome c
     exact ⟨by rw [hRQ, hS]; rfl, by rw [hCur, hS]; rfl⟩
 
-/-- WS-RR RR2.1 (frame): the cross-core call donation commits exactly the
-single-core donation's object store — the migration writes no object. -/
-theorem applyCallDonationOnCore_objects_eq
+/-- WS-RR RR2.1 / WS-ZA ZA6.3 (frame): the cross-core call donation commits the
+single-core donation's object store off the contexts' release fields — the
+migration writes those fields (the release-queue links) and no other. -/
+theorem applyCallDonationOnCore_agree
     (st st' st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (donorHome doneeHome : CoreId)
     (hDon : applyCallDonation st callerVtid receiverVtid = .ok st')
     (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
-    st''.objects = st'.objects := by
+    st''.objectsAgreeOffReleaseLinks st' := by
   obtain ⟨st1, hDon1, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
     donorHome doneeHome h
   have hSame : st1 = st' := Except.ok.inj (hDon1.symm.trans hDon)
   subst hSame
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
-  · rfl
-  · exact migrateSchedContextReplenishment_objects _ _ _ _
+  · exact .refl _
+  · exact migrateSchedContextReplenishment_agree _ _ _ _
+
+/-- ...so its object store keeps the extension invariant whenever the
+single-core donation's does. -/
+theorem applyCallDonationOnCore_objects_invExt
+    (st st' st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hDon : applyCallDonation st callerVtid receiverVtid = .ok st')
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'')
+    (hInv : st'.objects.invExt) : st''.objects.invExt := by
+  obtain ⟨st1, hDon1, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have hSame : st1 = st' := Except.ok.inj (hDon1.symm.trans hDon)
+  subst hSame
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact hInv
+  · exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv
 
 -- ============================================================================
 -- WS-RR RR2.3 — the call path preserves the SM5.H affinity invariant

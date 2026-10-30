@@ -4260,28 +4260,23 @@ theorem repropagateFromWaiter_preserves_projection
 -- preservation theorem. These three lemmas close that gap.
 -- ============================================================================
 
-/-- WS-SM SM5.H.4 (NI): the per-core SchedContext **replenishment** migration
-preserves the projection **unconditionally** — `projectState` never reads any
-replenish queue (the projected scheduler view is the boot-core run queue /
-current / domain), and the migration writes only replenish-queue slots. -/
+/-- WS-SM SM5.H.4 / WS-ZA ZA6.3 (NI): the per-core SchedContext
+**replenishment** migration preserves the projection **unconditionally** — it
+unlinks the context from one core's release queue and links it into another's,
+writing the contexts' release-queue fields (the moved context's and its old and
+new neighbours', of whatever domain), which the projection strips, and the
+scheduler's release-queue slots, which no projection reads
+(`projectState_of_releaseOnlyWrite`).  No hypothesis on the moved context or its
+neighbours' domains. -/
 theorem migrateSchedContextReplenishment_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (scId : SeLe4n.SchedContextId)
     (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId) :
     projectState ctx observer (migrateSchedContextReplenishment st scId fromCore toCore)
-      = projectState ctx observer st := by
-  unfold migrateSchedContextReplenishment
-  split
-  · rfl
-  · simp only [projectState, projectRunnable, projectCurrent, projectActiveDomain,
-      projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
-      SchedulerState.runnable,
-      SchedulerState.setReplenishQueueOnCore_runQueueOnCore,
-      SchedulerState.setReplenishQueueOnCore_currentOnCore,
-      SchedulerState.setReplenishQueueOnCore_activeDomainOnCore,
-      SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore,
-      SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore]
-    congr 1
+      = projectState ctx observer st :=
+  projectState_of_releaseOnlyWrite ctx observer
+    (migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore)
+    (migrateSchedContextReplenishment_agree st scId fromCore toCore)
 
 /-- WS-SM SM5.H.4 (NI): the full-thread-migration **run-queue** move preserves the
 projection when the migrated thread is **non-observable** (high). The op rewrites

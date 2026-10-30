@@ -1499,12 +1499,14 @@ theorem finaliseReplyCallerCancel_pop (st : SystemState) (hInv : st.objects.invE
   have FD : SchedLinkFrame (cancelIpcBlockingMigrated c t st) (cancelIpcBlockingReclaimed c t st) :=
     SchedLinkFrame.of_agreeOffRunLinks
       (descheduleUnboundHolder_objectsAgreeOffRunLinks st (cancelIpcBlockingMigrated c t st) c t)
-      (descheduleUnboundHolder_replenishQueueOnCore st (cancelIpcBlockingMigrated c t st) c t)
+      (by unfold cancelIpcBlockingReclaimed descheduleUnboundHolder; split; rfl
+          exact descheduleAtPlacement_releaseSlots _ _)
   have FR := SchedLinkFrame.finaliseReplyRevert _ t.blockingServer?
     (cancelIpcBlockingReclaimed_objects_invExt c t st hInvC)
   rw [hRet] at F
-  exact ((bindingLinksAgree.trans F.binding (bindingLinksAgree.of_objects_eq
-    (cancelIpcBlockingMigrated_objects c t st))).trans FD.binding).trans FR.binding
+  exact ((bindingLinksAgree.trans F.binding (fun o => proj_eq_of_map_eq _ _
+    (fun x => by cases x <;> rfl) (cancelIpcBlockingMigrated_agree c t st o))).trans
+    FD.binding).trans FR.binding
 
 /-- **The replies a cancel of `c`'s reply keeps for a lender**: every reply but
 `c`'s own (at `rid`) and a frame linking up to it. -/

@@ -370,6 +370,39 @@ def cbsUpdateDeadline (sc : SchedContext) (currentTime : Nat)
   else
     sc
 
+/-- WS-ZA ZA6.3: the deadline rule writes none of the context's release-queue
+fields. -/
+theorem cbsUpdateDeadline_release (sc : SchedContext) (currentTime : Nat) (wasExhausted : Bool) :
+    (cbsUpdateDeadline sc currentTime wasExhausted).releaseNextCode = sc.releaseNextCode ∧
+      (cbsUpdateDeadline sc currentTime wasExhausted).releaseCoreCode = sc.releaseCoreCode ∧
+      (cbsUpdateDeadline sc currentTime wasExhausted).releaseAt = sc.releaseAt := by
+  unfold cbsUpdateDeadline; split <;> exact ⟨rfl, rfl, rfl⟩
+
+/-- WS-ZA ZA6.3: the budget spend's record (charge, refill scheduled, deadline
+rule) writes none of the context's release-queue fields. -/
+theorem spendRecord_release (sc : SchedContext) (ticks now : Nat) :
+    (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks) now ⟨sc.budgetRemaining.val⟩)
+        now true).releaseNextCode = sc.releaseNextCode ∧
+      (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks) now
+        ⟨sc.budgetRemaining.val⟩) now true).releaseCoreCode = sc.releaseCoreCode ∧
+      (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks) now
+        ⟨sc.budgetRemaining.val⟩) now true).releaseAt = sc.releaseAt := by
+  obtain ⟨h1, h2, h3⟩ := cbsUpdateDeadline_release
+    (scheduleReplenishment (consumeBudget sc ticks) now ⟨sc.budgetRemaining.val⟩) now true
+  rw [h1, h2, h3]
+  simp [scheduleReplenishment, consumeBudget]
+
+/-- WS-ZA ZA6.3: the drain's refill record writes none of the context's
+release-queue fields. -/
+theorem refillRecord_release (sc : SchedContext) (now : Nat) :
+    (cbsUpdateDeadline (processReplenishments sc now) now true).releaseNextCode = sc.releaseNextCode ∧
+      (cbsUpdateDeadline (processReplenishments sc now) now true).releaseCoreCode =
+        sc.releaseCoreCode ∧
+      (cbsUpdateDeadline (processReplenishments sc now) now true).releaseAt = sc.releaseAt := by
+  obtain ⟨h1, h2, h3⟩ := cbsUpdateDeadline_release (processReplenishments sc now) now true
+  rw [h1, h2, h3]
+  simp [processReplenishments, applyRefill]
+
 /-- WS-ZA ZA6.2: whether the drain's refill of `sc` (`processReplenishments`,
 then `cbsUpdateDeadline` as an exhausted context) is the one record update
 `refillRecord`: no pending refill, or every pending refill due. -/

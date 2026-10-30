@@ -273,7 +273,7 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     have hCores : descheduleAtPlacementCores stMig holderVtid.val
         = descheduleAtPlacementCores st holderVtid.val := by
       rw [descheduleAtPlacementCores_congr_of_runCores_current_eq _
-        (SystemState.RunCoresAgree.of_objects (migrateSchedContextReplenishment_objects _ _ _ _))
+        (fun y => by rw [(migrateSchedContextReplenishment_agree _ _ _ _).getTcb? y])
         (fun c => (hMig c).2)]
       unfold descheduleAtPlacementCores
       rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched

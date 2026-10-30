@@ -115,8 +115,8 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
         subst hs
-        exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
-               fun _ _ => rfl, fun _ _ => rfl⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _ <;>
+          simp [SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine]
   · exact absurd hStep (by simp)
 
 
@@ -585,6 +585,11 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
           have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
             simpa using (SystemState.getSchedContext?_eq_some_iff st
               (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
+          obtain ⟨scP, hScP, -⟩ := (SchedContextOps.purgeReplenishment_agree st
+            ⟨vScId.val.toNat⟩).getSchedContext?_some hSc
+          have hScPRaw := (SystemState.getSchedContext?_eq_some_iff _
+            (SeLe4n.SchedContextId.ofObjId vScId.val) scP).mp hScP
+          have hInvP := SchedContextOps.purgeReplenishment_objects_invExt st ⟨vScId.val.toNat⟩ hObjInv
           split at hStep
           · -- no bound thread: no scheduling effect at all
             next hNone =>
@@ -593,7 +598,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
             obtain ⟨-, hs⟩ := hStep
             subst hs
             exact observableSlotsConfinedToCores_trans
-              (purgeReplenishmentOnCore_confinedToCores st _ _)
+              (purgeReplenishment_confinedToCores st _)
               (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                 (storeObject_scheduler_eq _ _ _ _ hStore)
                 (storeObject_machine_eq _ _ _ _ hStore))
@@ -605,7 +610,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- `by exact` postpones these until `hStore` has fixed the
               -- pre-state; passed directly they pin it to `st` first.
               storeObject_preserves_objects_invExt (st' := stStored) (hStore := hStore)
-                (hObjInv := by exact hObjInv)
+                (hObjInv := by exact hInvP)
             -- The SchedContext store is not a migration, and the replenish write
             -- leaves `objects` alone, so the home core is already the pre-state's.
             have hHomeStored : ∀ x : SeLe4n.ThreadId,
@@ -616,9 +621,10 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- is elaborated unascribed and closed by defeq: the replenish
               -- write leaves `objects`, and `determineTargetCore` reads nothing
               -- else.
-              have h := storeObject_schedContext_determineTargetCore_eq (x := x) (sc := sc)
-                (hStore := hStore) (hPre := by exact hScRaw) (hObjInv := by exact hObjInv)
-              exact h
+              have h := storeObject_schedContext_determineTargetCore_eq (x := x) (sc := scP)
+                (hStore := hStore) (hPre := by exact hScPRaw) (hObjInv := by exact hInvP)
+              exact h.trans (determineTargetCore_congr _ _ x
+                (by rw [SchedContextOps.purgeReplenishment_getTcb?]))
             split at hStep
             · next boundTcb hTcbStored _ =>
               have hTcbStoredRaw :
@@ -642,11 +648,11 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- because the store and the propagation move no home core and no
               -- blocking edge.
               have hGetSt : ∀ t, stStored.getTcb? t = st.getTcb? t := fun t =>
-                storeObject_schedContextAt_getTcb?_eq
-                  (SchedContextOps.purgeReplenishmentOnCore st
-                    (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩)
-                  stStored (SeLe4n.SchedContextId.ofObjId vScId.val) sc _ (by exact hSc)
-                  (by exact hObjInv) (by exact hStore) t
+                (storeObject_schedContextAt_getTcb?_eq
+                  (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
+                  stStored (SeLe4n.SchedContextId.ofObjId vScId.val) scP _ (by exact hScP)
+                  (by exact hInvP) (by exact hStore) t).trans
+                  (SchedContextOps.purgeReplenishment_getTcb? st _ t)
               refine observableSlotsConfinedToCores_repropagate ?_
                 (waiterChainWriteSet_configurePropagate st stStored _ boundTid boundTcb _ priority
                   domain _ _ _ _ hObjInv hInvStored hGetSt)
@@ -655,7 +661,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- store, neither of which is confined-relevant.
               have hStoredConf : observableSlotsConfinedToCores st stStored [] :=
                 observableSlotsConfinedToCores_trans
-                  (purgeReplenishmentOnCore_confinedToCores st _ _)
+                  (purgeReplenishment_confinedToCores st _)
                   (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                     (storeObject_scheduler_eq _ _ _ _ hStore)
                     (storeObject_machine_eq _ _ _ _ hStore))
@@ -730,7 +736,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               subst hs
               refine observableSlotsConfinedToCores_widen_any ?_
               exact observableSlotsConfinedToCores_trans
-                (purgeReplenishmentOnCore_confinedToCores st _ _)
+                (purgeReplenishment_confinedToCores st _)
                 (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                   (storeObject_scheduler_eq _ _ _ _ hStore)
                   (storeObject_machine_eq _ _ _ _ hStore))

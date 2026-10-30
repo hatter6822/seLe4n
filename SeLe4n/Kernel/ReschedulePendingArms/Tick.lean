@@ -258,6 +258,20 @@ theorem processOneReplenishmentOnCore_preserves_bidirectional (st : SystemState)
   rw [processOneReplenishmentOnCore, markRefillKeyChange_getSchedContext?, hBt s,
     refillSchedContext_boundThread st scId now hInv s]
 
+/-- A release-queue edit keeps the binding pair: it writes no TCB and no
+context's bound thread. -/
+theorem schedContextBindingBidirectional_of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) (hB : schedContextBindingBidirectional st) :
+    schedContextBindingBidirectional st' := by
+  intro t tcb scId hT hS
+  have hT' : st.getTcb? t = some tcb := by
+    rw [← h.getTcb? t]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨sc, hsc, hb⟩ := hB t tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hS
+  obtain ⟨sc', hsc', e⟩ :=
+    h.getSchedContext?_some ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hsc)
+  exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hsc',
+    (congrArg SchedContext.boundThread e).trans hb⟩
+
 /-- **The drain covers**: the replenish-queue write-back moves no view, queue,
 current slot or flag, and each due replenishment covers under the store
 invariant and the binding pair, which each one keeps. -/
@@ -265,29 +279,16 @@ theorem processReplenishmentsDueOnCore_stepCovers (st : SystemState) (c : CoreId
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
     stepCovers c st (processReplenishmentsDueOnCore st c now) := by
   simp only [processReplenishmentsDueOnCore]
-  generalize ((st.scheduler.replenishQueueOnCore c).popDue now) = pd
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only
-  have hQ : stepCovers c st { st with scheduler := st.scheduler.setReplenishQueueOnCore c q } :=
-    stepCovers_of_frame (fun _ => rfl) (fun _ => rfl) (fun _ _ _ ht => ht)
-      (fun c' _ => SchedulerState.setReplenishQueueOnCore_currentOnCore _ _ _ _)
-      (fun c' _ hF => by
-        show (st.scheduler.setReplenishQueueOnCore c q).reschedulePendingOnCore c' = true
-        rw [SchedulerState.setReplenishQueueOnCore_reschedulePendingOnCore]; exact hF)
-  refine stepCovers_trans hQ ?_
-  have key : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState), acc.objects.invExt →
-      schedContextBindingBidirectional acc →
-      stepCovers c acc (l.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) := by
-    intro l
-    induction l with
-    | nil => intro acc _ _; exact stepCovers_refl c acc
-    | cons hd tl ih =>
-      intro acc hA hB
-      rw [List.foldl_cons]
-      exact stepCovers_trans (processOneReplenishmentOnCore_stepCovers acc c hd now hA hB)
-        (ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hA)
-          (processOneReplenishmentOnCore_preserves_bidirectional acc c hd now hA hB))
-  exact key dueIds _ hInv hBi
+  refine (drainDueOnCore_induction
+    (fun s => s.objects.invExt ∧ schedContextBindingBidirectional s ∧ stepCovers c st s) c now
+    (fun s scId h => ⟨processOneReplenishmentOnCore_preserves_objects_invExt s c scId now h.1,
+      processOneReplenishmentOnCore_preserves_bidirectional s c scId now h.1 h.2.1,
+      stepCovers_trans h.2.2 (processOneReplenishmentOnCore_stepCovers s c scId now h.1 h.2.1)⟩)
+    (fun s scId h => ⟨SystemState.releasePlace_objects_invExt s c scId h.1,
+      schedContextBindingBidirectional_of_agreeOffReleaseLinks
+        (SystemState.releasePlace_agree s c scId) h.2.1,
+      stepCovers_trans h.2.2 (releasePlace_stepCovers c s c scId)⟩)
+    _ st ⟨hInv, hBi, stepCovers_refl c st⟩).2.2
 
 /-! ### The charge's timeout pass -/
 
@@ -416,22 +417,14 @@ theorem processReplenishmentsDueOnCore_preserves_bidirectional (st : SystemState
     (now : Nat) (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
     schedContextBindingBidirectional (processReplenishmentsDueOnCore st c now) := by
   simp only [processReplenishmentsDueOnCore]
-  generalize ((st.scheduler.replenishQueueOnCore c).popDue now) = pd
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only
-  have key : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState), acc.objects.invExt →
-      schedContextBindingBidirectional acc →
-      schedContextBindingBidirectional
-        (l.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) := by
-    intro l
-    induction l with
-    | nil => intro acc _ h; exact h
-    | cons hd tl ih =>
-      intro acc hA hB
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hA)
-        (processOneReplenishmentOnCore_preserves_bidirectional acc c hd now hA hB)
-  exact key dueIds _ hInv hBi
+  exact (drainDueOnCore_induction
+    (fun s => s.objects.invExt ∧ schedContextBindingBidirectional s) c now
+    (fun s scId h => ⟨processOneReplenishmentOnCore_preserves_objects_invExt s c scId now h.1,
+      processOneReplenishmentOnCore_preserves_bidirectional s c scId now h.1 h.2⟩)
+    (fun s scId h => ⟨SystemState.releasePlace_objects_invExt s c scId h.1,
+      schedContextBindingBidirectional_of_agreeOffReleaseLinks
+        (SystemState.releasePlace_agree s c scId) h.2⟩)
+    _ st ⟨hInv, hBi⟩).2
 
 /-- **The prepared state covers**: the diagnostic clear frames every view, slot
 and flag, and the drain covers; the binding pair survives both. -/

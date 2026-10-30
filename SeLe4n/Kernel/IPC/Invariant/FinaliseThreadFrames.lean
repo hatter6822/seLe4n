@@ -217,6 +217,11 @@ theorem of_agreeOffRunLinks {s s' : SystemState} (h : SystemState.objectsAgreeOf
       exact ⟨t', h', by rw [← hg t', e, hg]⟩)
     (fun _ _ hk => by obtain ⟨t0, h0, -⟩ := h.get_tcb' hk; exact ⟨t0, h0⟩)
 
+/-- ...and one agreeing off the release-queue links keeps every thread. -/
+theorem of_agreeOffReleaseLinks {s s' : SystemState}
+    (h : SystemState.objectsAgreeOffReleaseLinks s' s) : tcbProjKept g s' s :=
+  fun y => by rw [h.getTcb? y]
+
 /-- ...and one agreeing off the reply-waiter links. -/
 theorem of_agreeOffReplyLinks {s s' : SystemState}
     (h : SystemState.objectsAgreeOffReplyLinks s' s) (hg : ∀ u, g u.withoutReplyLinks = g u) :
@@ -541,11 +546,11 @@ theorem replyStep : FinaliseReplyStep (finaliseCarried st y) := by
     FinaliseFrameAny.replyStep st s x r c t hF hX hC hT hG, ?_⟩
   have hM : runCodeBounded (cancelIpcBlockingMigrated c t s) y :=
     runCodeBounded.of_runCoresAgree (SystemState.RunCoresAgree.trans
-      (SystemState.RunCoresAgree.of_objects (cancelIpcBlockingMigrated_objects c t s))
+      (fun y => by rw [(cancelIpcBlockingMigrated_agree c t s).getTcb? y])
       (cancelIpcBlocking_runCoresAgree s c t hI.2.1)) hB
   have hMI : (cancelIpcBlockingMigrated c t s).objects.invExt := by
-    rw [cancelIpcBlockingMigrated_objects]
-    exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t hI.2.1
+    exact cancelIpcBlockingMigrated_objects_invExt c t s
+      (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t hI.2.1)
   have hD : runCodeBounded (cancelIpcBlockingReclaimed c t s) y ∧
       (cancelIpcBlockingReclaimed c t s).objects.invExt := by
     unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
@@ -751,10 +756,11 @@ theorem finaliseReplyCallerCancel_quiets {s : SystemState} {x : SeLe4n.ThreadId}
         (finaliseReplyCancel s r x t1).objects.invExt := by
       unfold finaliseReplyCancel
       split
-      · refine ⟨tcbProjKept.of_agreeOffRunLinks
-          (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks x t1 s) (fun _ => rfl), ?_⟩
+      · refine ⟨(tcbProjKept.of_agreeOffRunLinks
+          (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks x t1 s) (fun _ => rfl)).trans
+          (tcbProjKept.of_agreeOffReleaseLinks (cancelIpcBlockingMigrated_agree x t1 s)), ?_⟩
         have hMI : (cancelIpcBlockingMigrated x t1 s).objects.invExt := by
-          rw [cancelIpcBlockingMigrated_objects]; exact hCI
+          exact cancelIpcBlockingMigrated_objects_invExt x t1 s hCI
         unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
         split
         · exact hMI

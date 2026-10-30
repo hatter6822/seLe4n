@@ -228,6 +228,14 @@ theorem of_objects_eq {a b : SystemState} (E : SeLe4n.ThreadId → Prop)
   refine ⟨fun v t _ ht => ⟨t, (hT v).trans ht, .refl t, id⟩,
     fun v t _ ht => ⟨t, (hT v).symm.trans ht, .refl t⟩, fun k r hk _ _ => (hO k).trans hk⟩
 
+/-- **A step writing contexts' release fields alone keeps every thread and every
+reply** (the replenishment migration). -/
+theorem of_agreeOffReleaseLinks {a b : SystemState} (E : SeLe4n.ThreadId → Prop)
+    (h : SystemState.objectsAgreeOffReleaseLinks b a) : WaiterFrame a b E :=
+  ⟨fun v t _ ht => ⟨t, (h.getTcb? v).trans ht, .refl t, id⟩,
+    fun v t _ ht => ⟨t, (h.getTcb? v).symm.trans ht, .refl t⟩,
+    fun _ _ hk _ _ => h.get_of_not_sc (fun _ e => KernelObject.noConfusion e) hk⟩
+
 /-- **A step agreeing off the reply-waiter links keeps every thread** (a
 reply-waiter unlink). -/
 theorem of_agreeOffReplyLinks {a b : SystemState} (E : SeLe4n.ThreadId → Prop)
@@ -1169,8 +1177,8 @@ theorem finaliseReplyCallerCancel_unframed (st : SystemState) (hInv : st.objects
     · refine ⟨?_, cancelIpcBlockingReclaimed_objects_invExt w t st hI0, fun t' ht' => ?_⟩
       · unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
         split
-        · exact FU.trans (.of_objects_eq _ (cancelIpcBlockingMigrated_objects _ _ _))
-        · exact (FU.trans (.of_objects_eq _ (cancelIpcBlockingMigrated_objects _ _ _))).trans
+        · exact FU.trans (.of_agreeOffReleaseLinks _ (cancelIpcBlockingMigrated_agree _ _ _))
+        · exact (FU.trans (.of_agreeOffReleaseLinks _ (cancelIpcBlockingMigrated_agree _ _ _))).trans
             (WaiterFrame.descheduleAtPlacement _ _ _)
       · have hM := cancelIpcBlockingReclaimed_getTcb? w t st w
         rw [ht'] at hM

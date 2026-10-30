@@ -51,8 +51,11 @@ theorem _root_.SeLe4n.Model.ReplyViews.serverFree_setServer_none (V : ReplyViews
 
 theorem migrateSchedContextReplenishment_replyViews_eq (st : SystemState)
     (scId : SeLe4n.SchedContextId) (a b : CoreId) :
-    (migrateSchedContextReplenishment st scId a b).replyViews = st.replyViews := by
-  unfold migrateSchedContextReplenishment; split <;> rfl
+    (migrateSchedContextReplenishment st scId a b).replyViews = st.replyViews :=
+  have hA := migrateSchedContextReplenishment_agree st scId a b
+  replyViews_eq_of_tcbs
+    (fun _ t0 hk => ⟨t0, hA.get_of_not_sc (fun _ h => KernelObject.noConfusion h) hk, rfl⟩)
+    (fun _ t' hk => ⟨t', hA.symm.get_of_not_sc (fun _ h => KernelObject.noConfusion h) hk⟩)
 
 theorem cleanupPreReceiveDonationMigrated_replyViews_eq {st st' : SystemState}
     {r : SeLe4n.ThreadId} (hInv : st.objects.invExt)

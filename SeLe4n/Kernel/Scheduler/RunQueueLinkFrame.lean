@@ -491,6 +491,13 @@ theorem kindPreserving : SeLe4n.Model.kindPreservingWrite st st' := by
 
 end objectsAgreeOffRunLinks
 
+/-- A run-links-only rewrite that writes no release-queue slot holds the
+release queues. -/
+theorem releaseStateAgree.of_agreeOffRunLinks {st st' : SystemState}
+    (h : objectsAgreeOffRunLinks st' st)
+    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots) : releaseStateAgree st' st :=
+  ⟨.of_map KernelObject.withoutRunLinks (fun o _ => by cases o <;> rfl) h, hS⟩
+
 /-- A TCB rewrite that changes only run-queue fields. -/
 def RunLinksOnly (g : TCB → TCB) : Prop := ∀ tcb, (g tcb).withoutRunLinks = tcb.withoutRunLinks
 
@@ -697,21 +704,6 @@ theorem runRemoveOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreI
     (st.runEnqueueOnCore c t p).referenceTables = st.referenceTables :=
   (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
 
-theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
-    RunQueueStage st (st.runRemoveOnCore c t) :=
-  RunQueueStage.of_link (.of_tableFrame
-      (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
-      fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
-        (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).referenceTables)
-    (fun c' y h' => by
-      rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
-      exact h')
-    (fun c' y h' => by
-      rw [runRemoveOnCore_queuedOn] at h'; split at h'
-      · cases h'
-      · exact h')
-    (StateMono.of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
-
 /-- A run-queue write leaves the machine where it was. -/
 @[simp] theorem runEnqueueAdmitted_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runEnqueueAdmitted c t p).machine = st.machine := by
@@ -788,6 +780,23 @@ theorem runEnqueueOnCore_scheduler_of_admits {st : SystemState} {c : CoreId}
   · simp only [hq, if_false, Bool.false_eq_true,
       SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_get]
 
+theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    RunQueueStage st (st.runRemoveOnCore c t) :=
+  RunQueueStage.of_link (.of_tableFrame
+      (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
+      (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+        (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).referenceTables)
+      fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+        (by rw [runRemoveOnCore_scheduler]; rfl))
+    (fun c' y h' => by
+      rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
+      exact h')
+    (fun c' y h' => by
+      rw [runRemoveOnCore_queuedOn] at h'; split at h'
+      · cases h'
+      · exact h')
+    (StateMono.of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
+
 -- ============================================================================
 -- Deschedule: dequeue plus the `current` slot
 -- ============================================================================
@@ -808,6 +817,12 @@ def runDescheduleOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : 
           (if st.scheduler.currentOnCore c = some t then none
             else st.scheduler.currentOnCore c))
         c (st.scheduler.currentOnCore c == some t) }
+
+/-- The dequeue writes no release-queue slot. -/
+@[simp] theorem runDescheduleOnCore_releaseSlots (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (st.runDescheduleOnCore c t).scheduler.releaseSlots = st.scheduler.releaseSlots := by
+  show (st.runRemoveOnCore c t).scheduler.releaseSlots = _
+  rw [runRemoveOnCore_scheduler]; rfl
 
 /-- WS-ZA ZA4.7: the compiled `runDescheduleOnCore`.  The core's `current`
 slot is compared as its code before the dequeue, so no `some` cell is built
@@ -1223,9 +1238,11 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
       rwa [runRequeueOnCore_queuedOn_of_queued p
         ((queuedOn_eq_runLinkOn st c t).trans hq)] at h')
     (StateMono.of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
-  refine .of_tableFrame ?_ fun _ => .of_agreeOffRunLinks
+  refine .of_tableFrame ?_ (fun _ => .of_agreeOffRunLinks
     (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
-    (runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
+    (runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
+    fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
+      (by rw [runRequeueOnCore_scheduler]; rfl)
   intro hInv hR
   refine ⟨runRequeueOnCore_objects_invExt st c t p hInv, ?_⟩
   obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
@@ -1271,8 +1288,10 @@ theorem runEnqueueOnCore_current (st : SystemState) (c : CoreId) (t : SeLe4n.Thr
 theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : RunQueueLinkStage st (st.runEnqueueOnCore c t p) :=
   .of_tableFrame (fun h r => ⟨runEnqueueOnCore_objects_invExt st c t p h, runEnqueueOnCore_refined r⟩)
+    (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
+      (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
     fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
-      (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
+      (by rw [runEnqueueOnCore_scheduler]; split <;> rfl)
 
 /-- The guarded enqueue of a runnable thread current on no core is a stage:
 every current thread stays off the queues, and every queued one is runnable. -/

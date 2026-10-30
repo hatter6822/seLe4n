@@ -2186,6 +2186,35 @@ theorem enqueueRunnableOnCore_replenishQueueOnCore (st : SystemState) (c : CoreI
     SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
     SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
+@[simp] theorem enqueueRunnableOnCore_releaseSlots (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (enqueueRunnableOnCore st c tid).scheduler.releaseSlots = st.scheduler.releaseSlots := by
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h] <;> rfl
+
+/-- WS-ZA ZA6.3: the wake holds the release queues — it marks a thread ready
+and links it into a run queue. -/
+theorem enqueueRunnableOnCore_releaseStateAgree (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SystemState.releaseStateAgree (enqueueRunnableOnCore st c tid) st := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hT]
+    exact .refl st
+  | some tcb =>
+    cases hD : wakeDeclines st c tid with
+    | true =>
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hT, hD, if_true]
+      exact .refl st
+    | false =>
+      have hPre := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
+      let st1 : SystemState :=
+        { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready)) }
+      have a1 : SystemState.releaseStateAgree st1 st :=
+        ⟨.insert hInv rfl (fun _ => by rw [hPre]; rfl), rfl⟩
+      refine (SystemState.releaseStateAgree.of_agreeOffRunLinks (st := st1)
+        (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hT hD) ?_).trans a1
+      rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h] <;> rfl
+
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
 
 A thread bound to `some c'` (`cpuAffinity = some c'`) wakes onto `c'`; an
@@ -2503,6 +2532,11 @@ survive it. -/
       = st.scheduler.replenishQueueOnCore c' := by
   simp [removeRunnableOnCore]
 
+@[simp] theorem removeRunnableOnCore_releaseSlots (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler.releaseSlots = st.scheduler.releaseSlots :=
+  SystemState.runDescheduleOnCore_releaseSlots st c tid
+
 
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and not the derivation tree, for the same
@@ -2663,6 +2697,13 @@ after the transition stopped using it. -/
   unfold descheduleAtPlacement descheduleAt
   split
   · exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
+  · rfl
+
+@[simp] theorem descheduleAtPlacement_releaseSlots (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).scheduler.releaseSlots = st.scheduler.releaseSlots := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_releaseSlots _ _ _
   · rfl
 
 /-- `removeRunnableOnCore` preserves every `getTcb?` lookup off the run-queue
