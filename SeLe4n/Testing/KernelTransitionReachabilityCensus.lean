@@ -1180,7 +1180,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.registerInterface
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
-  , `SeLe4n.Kernel.replenishScOnCore
   , `SeLe4n.Kernel.replyRecvPostPopState
   , `SeLe4n.Kernel.replyTransferOnCore
   , `SeLe4n.Kernel.restoreIncomingContext

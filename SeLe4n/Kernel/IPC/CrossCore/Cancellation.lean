@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.IPC.Invariant.CancellationPlacementFrame
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 
 /-!
 # WS-SM SM6.E — Cancellation across cores
@@ -182,9 +183,10 @@ discipline, mirrored.
 
 Two things this resolver deliberately does NOT read.  Not `determineTargetCore`:
 that is the thread's *home* (its affinity, `bootCoreId` when unpinned), which is
-where a wake places it and not where a removal finds it — `preemptCurrentOnCore`
-re-enqueues a preempted thread on the core that ran it, and an unpinned thread
-may run on any core, so its queue can sit on a core its home never names.  And
+where a wake places it and not, by itself, where a removal finds it: the two
+agree only through the placement invariant (`currentDequeuedUnique`'s
+`currentHome` / `queuedHome`, WS-ZA ZA6.3), and the removal reads the placement
+itself so its write is right on whatever state it is handed.  And
 not the object store: `wakeThread`'s ghost-guard (`getTcb? = none` ⇒ no SGI) is
 *consistency with the state effect* there, because a wake of a thread with no
 TCB inserts nothing; a removal takes a placed thread off its core whether or not
@@ -452,11 +454,12 @@ def cancelIpcBlockingOnCore (victim : SeLe4n.ThreadId) (tcb : TCB)
 -- `CleanupPreservation.lean`).  The single-core bridge below stays here, where
 -- both spellings are visible.
 
-/-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` at the boot core is exactly the
-single-core `cancelBoundDonation` — the SM5.A backward-compatibility bridge. -/
-@[simp] theorem cancelBoundDonationOnCore_bootCoreId (st : SystemState)
+/-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` is exactly the single-core
+`cancelBoundDonation` — the SM5.A backward-compatibility bridge.  (WS-ZA ZA6.3:
+the purge is exact, so the arm takes no core and the bridge holds at every one.) -/
+@[simp] theorem cancelBoundDonationOnCore_eq_cancelBoundDonation (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    cancelBoundDonationOnCore st tid tcb bootCoreId
+    cancelBoundDonationOnCore st tid tcb
       = cancelBoundDonation st tid tcb := rfl
 
 -- ----------------------------------------------------------------------------
@@ -521,8 +524,8 @@ dispatcher, per-core.
 
 Dispatches on the victim's `schedContextBinding` exactly as the single-core
 `cancelDonation`: `.unbound` is a no-op, `.bound` routes to the per-core
-unbind arm (replenish-queue purge on the victim's *home* core,
-`determineTargetCore`), `.donated` routes to the per-core donated arm
+unbind arm (the exact replenish-queue purge, off the release queue the
+context's own link names), `.donated` routes to the per-core donated arm
 `cancelDonatedDonationOnCore` (the R5.A return **plus** the replenishment
 migration to the original owner's home core — see §2b).
 
@@ -570,15 +573,18 @@ theorem cancelIpcBlockingOnCore_state_eq_of_no_donation (victim : SeLe4n.ThreadI
   rw [cancelIpcBlockingOnCore_state_eq, cancelIpcBlockingReclaimed_of_no_donation victim tcb st h]
 
 /-- WS-SM SM6.E: the cross-core cancellation's **object-level** effect is the
-single-core `cancelIpcBlocking`'s off the run-queue links — the deschedules
-write only the scheduler and those links (WS-ZA ZA4.5). -/
-theorem cancelIpcBlockingOnCore_objectsAgreeOffRunLinks (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (executingCore : CoreId) (st : SystemState) :
-    (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffRunLinks
+single-core `cancelIpcBlocking`'s off the scheduler links — the deschedules
+write only the scheduler and the run-queue links (WS-ZA ZA4.5), and the
+replenishment migration only the release-queue links (WS-ZA ZA6.3). -/
+theorem cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (executingCore : CoreId) (st : SystemState) :
+    (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffSchedulerLinks
       (cancelIpcBlocking st victim tcb) := by
   rw [cancelIpcBlockingOnCore_state_eq]
-  exact (descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
-    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st)
+  exact (SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+    ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
+      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st))).trans
+    (.of_releaseLinks (cancelIpcBlockingMigrated_agree victim tcb st))
 
 -- `v0.35.158`: `cancelIpcBlockingOnCore_eq_descheduleThread` — the composite
 -- **is** `descheduleThread` on the reclaim's post-state, stated over the
@@ -641,7 +647,7 @@ theorem cancelIpcBlockingMigrated_placedCoreOf? (victim : SeLe4n.ThreadId) (tcb 
     placedCoreOf? (cancelIpcBlockingMigrated victim tcb st) x = placedCoreOf? st x := by
   apply placedCoreOf?_congr_of_runCores_current_eq
   · exact SystemState.RunCoresAgree.trans
-      (SystemState.RunCoresAgree.of_objects (cancelIpcBlockingMigrated_objects victim tcb st))
+      (fun y => by rw [cancelIpcBlockingMigrated_getTcb?])
       (cancelIpcBlocking_runCoresAgree st victim tcb hInv)
   · intro c
     rw [cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]; rfl
@@ -3082,9 +3088,9 @@ theorem cancelDonationOnCore_preserves_objects_invExt
   cases hB : tcb.schedContextBinding with
   | unbound => exact hInv
   | bound scId =>
-      cases hE : cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) with
+      cases hE : cancelBoundDonationOnCore st tid tcb with
       | ok st' =>
-          exact cancelBoundDonationOnCore_preserves_objects_invExt _ _ _ _ _ hInv hE
+          exact cancelBoundDonationOnCore_preserves_objects_invExt _ _ _ _ hInv hE
       | error e => exact hInv
   | donated scId owner =>
       cases hE : cancelDonatedDonationOnCore st tid tcb with
@@ -3109,27 +3115,26 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariant
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (st : SystemState) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (cancelIpcBlockingOnCore victim tcb executingCore st).1 :=
-  ipcInvariant_of_objectsAgreeOffRunLinks
-    (cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st)
+  ipcInvariant_of_objectsAgreeOffSchedulerLinks
+    (cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st)
     (cancelIpcBlocking_preserves_ipcInvariant st victim tcb hInv hIpc)
 
 /-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` preserves `ipcInvariant` — the
-per-core replenish-queue purge does not touch `objects`; the object writes
+release-queue purge writes only release-queue links; the other object writes
 are the SchedContext deactivation and TCB unbind inserts, both
 non-notification. -/
 theorem cancelBoundDonationOnCore_preserves_ipcInvariant
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     ipcInvariant st' := by
   cases hB : tcb.schedContextBinding with
   | bound scId =>
-    simp only [cancelBoundDonationOnCore, hB] at h
-    injection h with h
-    subst h
-    refine ipcInvariant_of_objects_eq (markKeyChangeFrom_objects _ _ _) ?_
-    -- Two in-place rewrites, a SchedContext then a TCB — neither is a
+    -- Off the release-queue links the purge leaves (WS-ZA ZA6.3) the store is
+    -- two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
+    refine ipcInvariant_of_objectsAgreeOffSchedulerLinks
+      (.of_releaseLinks (cancelBoundDonationOnCore_objects st st' tid tcb scId hB hInv h)) ?_
     have hInv1 : (st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
@@ -3156,7 +3161,7 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
 
 /-- WS-SM SM6.E.3: the per-core donated arm preserves `ipcInvariant` — the
 return writes SchedContext/TCB objects only and the replenishment migration
-never touches `objects`. -/
+only release-queue links. -/
 theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
@@ -3168,8 +3173,8 @@ theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     · cases h
     · injection h with h
       subst h
-      exact ipcInvariant_of_objects_eq
-        (migrateSchedContextReplenishment_objects _ _ _ _)
+      exact ipcInvariant_of_objectsAgreeOffSchedulerLinks
+        (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))
         (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
           (by assumption))
   · cases h
@@ -3185,9 +3190,9 @@ theorem cancelDonationOnCore_preserves_ipcInvariant
   cases hB : tcb.schedContextBinding with
   | unbound => exact hIpc
   | bound scId =>
-      cases hE : cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) with
+      cases hE : cancelBoundDonationOnCore st tid tcb with
       | ok st' =>
-          exact cancelBoundDonationOnCore_preserves_ipcInvariant _ _ _ _ _ hInv hIpc hE
+          exact cancelBoundDonationOnCore_preserves_ipcInvariant _ _ _ _ hInv hIpc hE
       | error e => exact hIpc
   | donated scId owner =>
       cases hE : cancelDonatedDonationOnCore st tid tcb with
@@ -3226,8 +3231,8 @@ theorem cancelDonationOnCore_runQueue_current_eq
   cases hB : tcb.schedContextBinding with
   | unbound => exact ⟨rfl, rfl⟩
   | bound scId =>
-      cases hE : cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) with
-      | ok st' => exact cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb _ c hE
+      cases hE : cancelBoundDonationOnCore st tid tcb with
+      | ok st' => exact cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb c hE
       | error e => exact ⟨rfl, rfl⟩
   | donated scId owner =>
       cases hE : cancelDonatedDonationOnCore st tid tcb with
@@ -3305,7 +3310,7 @@ theorem cancellation_cross_core_correct
             ≠ some c' →
           (cancelIpcBlockingOnCore victim tcb executingCore st).1.scheduler.currentOnCore c'
             = st.scheduler.currentOnCore c')
-    ∧ (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffRunLinks
+    ∧ (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffSchedulerLinks
         (cancelIpcBlocking st victim tcb) := by
   have hPost := cancelIpcBlockingOnCore_placedCoreOf?_of_some victim tcb st hInv c hPlaced
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -3348,7 +3353,7 @@ theorem cancellation_cross_core_correct
     rw [descheduleUnboundHolder_currentOnCore_ne _ _ victim tcb c' hPark,
         cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]; rfl
   · -- (4) object-level fidelity
-    exact cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st
+    exact cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st
 
 -- ============================================================================
 -- §12  SM6.E — Scheduler-domain (`LockKey`) lock footprints
@@ -3650,20 +3655,22 @@ theorem cancelIpcBlockingOnCoreLockSet_covers_migration
 
 /-- WS-SM SM6.E: the scheduler-domain footprint of `cancelBoundDonationOnCore`
 — the object-store table write lock (the SC + TCB rebinding rides the table
-discipline) and the purge core's replenish-queue **write** lock. -/
-def cancelBoundDonationOnCoreLockSet (rqCore : CoreId) :
+discipline) and the purge core's replenish-queue **write** lock: the core the
+context's own release link names (`SchedContextOps.purgeReplenishCores`), which
+the purge edits and no other. -/
+def cancelBoundDonationOnCoreLockSet (purgeCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
   [ (LockKey.objStore, .write)
-  , (LockKey.replenishQueue rqCore, .write) ]
+  , (LockKey.replenishQueue purgeCore, .write) ]
 
 /-- SM6.E: the bound-arm footprint is the two-lock set. -/
-@[simp] theorem cancelBoundDonationOnCoreLockSet_length (rqCore : CoreId) :
-    (cancelBoundDonationOnCoreLockSet rqCore).length = 2 := rfl
+@[simp] theorem cancelBoundDonationOnCoreLockSet_length (purgeCore : CoreId) :
+    (cancelBoundDonationOnCoreLockSet purgeCore).length = 2 := rfl
 
 /-- SM6.E: every lock in the bound-arm footprint is acquired in **write**
 mode. -/
-theorem cancelBoundDonationOnCoreLockSet_write_only (rqCore : CoreId) :
-    ∀ p ∈ cancelBoundDonationOnCoreLockSet rqCore,
+theorem cancelBoundDonationOnCoreLockSet_write_only (purgeCore : CoreId) :
+    ∀ p ∈ cancelBoundDonationOnCoreLockSet purgeCore,
       p.2 = Concurrency.AccessMode.write := by
   intro p hp
   simp only [cancelBoundDonationOnCoreLockSet, List.mem_cons,
@@ -3672,30 +3679,30 @@ theorem cancelBoundDonationOnCoreLockSet_write_only (rqCore : CoreId) :
 
 /-- SM6.E: the object-store write lock is in the bound-arm footprint. -/
 theorem cancelBoundDonationOnCoreLockSet_contains_objStore_write
-    (rqCore : CoreId) :
+    (purgeCore : CoreId) :
     (LockKey.objStore, Concurrency.AccessMode.write)
-      ∈ cancelBoundDonationOnCoreLockSet rqCore := by
+      ∈ cancelBoundDonationOnCoreLockSet purgeCore := by
   simp [cancelBoundDonationOnCoreLockSet]
 
 /-- SM6.E: the purge core's replenish-queue write lock is in the bound-arm
 footprint — it guards the SC-entry removal. -/
 theorem cancelBoundDonationOnCoreLockSet_contains_replenishQueue_write
-    (rqCore : CoreId) :
-    (LockKey.replenishQueue rqCore, Concurrency.AccessMode.write)
-      ∈ cancelBoundDonationOnCoreLockSet rqCore := by
+    (purgeCore : CoreId) :
+    (LockKey.replenishQueue purgeCore, Concurrency.AccessMode.write)
+      ∈ cancelBoundDonationOnCoreLockSet purgeCore := by
   simp [cancelBoundDonationOnCoreLockSet]
 
 /-- SM6.E: the bound-arm footprint's projected keys are duplicate-free. -/
-theorem cancelBoundDonationOnCoreLockSet_keys_nodup (rqCore : CoreId) :
-    ((cancelBoundDonationOnCoreLockSet rqCore).map (·.1)).Nodup := by
+theorem cancelBoundDonationOnCoreLockSet_keys_nodup (purgeCore : CoreId) :
+    ((cancelBoundDonationOnCoreLockSet purgeCore).map (·.1)).Nodup := by
   simp [cancelBoundDonationOnCoreLockSet]
 
 /-- SM6.E: the bound-arm footprint's keys form a `LockKey`-ascending
 acquisition sequence (object < replenishQueue, plan §4.4). -/
-theorem cancelBoundDonationOnCoreLockSet_pairwise_le (rqCore : CoreId) :
-    ((cancelBoundDonationOnCoreLockSet rqCore).map (·.1)).Pairwise (· ≤ ·) := by
+theorem cancelBoundDonationOnCoreLockSet_pairwise_le (purgeCore : CoreId) :
+    ((cancelBoundDonationOnCoreLockSet purgeCore).map (·.1)).Pairwise (· ≤ ·) := by
   have hle : LockKey.objStore
-      ≤ LockKey.replenishQueue rqCore :=
+      ≤ LockKey.replenishQueue purgeCore :=
     (LockKey.objStore_lt_replenishQueue _).1
   simp only [cancelBoundDonationOnCoreLockSet, List.map_cons, List.map_nil]
   exact List.Pairwise.cons
@@ -3789,7 +3796,7 @@ theorem suspendDonationArm_eq_cancelDonationArmOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (match tcb.schedContextBinding with
      | .unbound => (Except.ok st : Except KernelError SystemState)
-     | .bound _ => cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid)
+     | .bound _ => cancelBoundDonationOnCore st tid tcb
      | .donated _ _ => cancelDonatedDonationOnCore st tid tcb)
       = cancelDonationArmOnCore st tid tcb := rfl
 
@@ -3797,7 +3804,7 @@ theorem suspendDonationArm_eq_cancelDonationOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (match tcb.schedContextBinding with
      | .unbound => (Except.ok st : Except KernelError SystemState)
-     | .bound _ => cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid)
+     | .bound _ => cancelBoundDonationOnCore st tid tcb
      | .donated _ _ => cancelDonatedDonationOnCore st tid tcb)
       = (match (cancelDonationOnCore tid tcb st).2 with
          | .ok () => .ok (cancelDonationOnCore tid tcb st).1
@@ -3806,7 +3813,7 @@ theorem suspendDonationArm_eq_cancelDonationOnCore (st : SystemState)
   cases tcb.schedContextBinding with
   | unbound => rfl
   | bound scId =>
-      cases cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) <;> rfl
+      cases cancelBoundDonationOnCore st tid tcb <;> rfl
   | donated scId owner => cases cancelDonatedDonationOnCore st tid tcb <;> rfl
 
 -- WS-RR RR2.4 / RR2.10, superseded at WS-RR RR8.12: the sorted same-kind
@@ -4122,8 +4129,9 @@ The single-core G1–G7 pipeline generalised across cores:
   re-derived by the diff seam (`computeCrossCoreSgis`, fired by both
   `.tcbSuspend` entry paths).
 * **G3 (donation)** — dispatches to the **per-core** arms:
-  `cancelBoundDonationOnCore` purges the replenish queue of the victim's
-  *home* core (the SM5.H affinity discipline) and
+  `cancelBoundDonationOnCore` purges the context off the release queue its
+  own link names (exact, WS-ZA ZA6.3; the victim's home core under the SM5.H
+  affinity discipline) and
   `cancelDonatedDonationOnCore` migrates the returned SchedContext's
   replenishments to the original owner's home core (§2b).
 * **G4** — `descheduleAt` at the pre-captured placement: the victim leaves
@@ -4179,12 +4187,6 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
   | some tcb =>
     if tcb.threadState == .Inactive then .error .illegalState
     else
-      -- home core of the victim: the `.bound` arm's replenish purge core
-      -- (SM5.H: a bound thread's replenishments live on its home core),
-      -- pre-state resolution; the teardown never moves it
-      -- (`cancelIpcBlocking_determineTargetCore_eq`).  NOT where the victim
-      -- is descheduled — that is its placement, next.
-      let home := determineTargetCore st tid
       -- G4-precapture (WS-RR RR8.6): the core the state PLACES the victim on,
       -- queued or current — resolved on the pre-state, where
       -- `suspendThreadOnCoreLockSet` declares it, and removed at below.
@@ -4198,9 +4200,9 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- move one, just not this one.
       let placed := placedCoreOf? st tid
       -- G7-precapture (PR #831 review 4, P1): the core ACTUALLY running the
-      -- victim (`runningCoreOf?`) — an unbound victim can be current on a
-      -- secondary core while its home is boot (see `runningCoreOf?`), and the
-      -- poke must target the running core.  Under single placement it is the
+      -- victim (`runningCoreOf?`) — its home on every committed state (the
+      -- placement invariant, WS-ZA ZA6.3), read from the slot itself so the
+      -- poke targets the core whose slot G4 clears.  Under single placement it is the
       -- placed core whenever the victim is current anywhere; it is a separate
       -- read because G7 asks a different question of it (which core must
       -- choose a successor) than G4 does (where the thread is).
@@ -4236,7 +4238,7 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let tcb' := (st.getTcb? tid).getD tcb
       match (match tcb'.schedContextBinding with
              | .unbound => (Except.ok st : Except KernelError SystemState)
-             | .bound _ => cancelBoundDonationOnCore st tid tcb' home
+             | .bound _ => cancelBoundDonationOnCore st tid tcb'
              | .donated _ _ => cancelDonatedDonationOnCore st tid tcb') with
       | .error e => .error e
       | .ok st =>
@@ -4332,32 +4334,24 @@ is released, which never refuses.  When they pass the operation's state is
       && (match tcb.schedContextBinding with | .donated _ _ => false | _ => true)
   | none => false
 
-/-- WS-ZA ZA5.2: drop a context's entry from core `c`'s replenish queue, the
-queue rewritten in its slot.  Kept out of line so the state reaches the
-scheduler update whole: inlined, the branches around it hand the state's
-fields to a join point and the scheduler and the state are rebuilt. -/
-@[noinline] def suspendDropReplenishment (st : SystemState) (c : CoreId)
-    (scId : SeLe4n.SchedContextId) : SystemState :=
-  let sched := st.scheduler.modifyReplenishQueueOnCore c (ReplenishQueue.remove · scId)
-  { st with scheduler := sched }
-
 /-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
-(`cancelBoundDonationOnCore` at the victim's home core), the home core and the
-victim's entry-time scheduling key and budget eligibility read before anything is written; the
-identity on a victim holding no bound context. -/
+(`cancelBoundDonationOnCore`), the victim's entry-time scheduling key and budget
+eligibility read before anything is written; the identity on a victim holding no
+bound context.  WS-ZA ZA6.3: the context leaves the release queue it is on, read
+off its own core code (`SchedContextOps.purgeReplenishment`), so no home core is
+resolved. -/
 def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
     match tcb.schedContextBinding with
     | .bound scId =>
-      let home := determineTargetCore st tid
       let p0 := tcb.boostedPriority
       let d0 := effectiveDeadline st tcb
       let dom0 := tcb.domain
       let e0 := hasSufficientBudget st tcb
       let st1 : SystemState := st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      let st2 := suspendDropReplenishment st1 home scId
+      let st2 := SchedContextOps.purgeReplenishment st1 scId
       markKeyChangeParts
         (markCandidacyGainFor
           (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
@@ -4369,12 +4363,12 @@ def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
 theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.ThreadId}
     {tcb : TCB} {scId : SeLe4n.SchedContextId} (hT : st.getTcb? tid = some tcb)
     (hB : tcb.schedContextBinding = .bound scId) :
-    cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) =
+    cancelBoundDonationOnCore st tid tcb =
       .ok (suspendReleasePerform st tid) := by
-  unfold cancelBoundDonationOnCore suspendReleasePerform suspendDropReplenishment
+  unfold cancelBoundDonationOnCore suspendReleasePerform
   simp only [hT, hB]
   unfold markKeyChangeFrom
-  simp only [hT, SchedulerState.modifyReplenishQueueOnCore_eq]
+  simp only [hT]
   rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
 
 /-- WS-ZA ZA5.2: the quiescent suspend once admitted.  The placement, the core
@@ -4751,35 +4745,23 @@ theorem descheduleThread_fully_descheduled
       | false => rfl
       | true => exact absurd (hUnique c p (Or.inl hq) hPlacedP) hc
 
-/-- WS-SM SM6.E (affinity corollary, the SM5.H purge-completeness): under the
-replenishment-affinity discipline — the SchedContext's pending replenishments
-live only on the purge core's queue — the per-core bound arm removes **all**
-of them system-wide: the purge core's by the `remove`, every other core's
-vacuously by the pre-state affinity plus the per-core frames. -/
+/-- WS-SM SM6.E (the SM5.H purge-completeness): the per-core bound arm removes
+**all** of the context's pending replenishments system-wide.  WS-ZA ZA6.3: with
+no hypothesis — the context leaves the release queue it is on through its own
+core code, and every core's abstract queue drops it
+(`cancelBoundDonationOnCore_replenishQueue_purged_of_refined`: on refined
+queues the core its link names is the one core whose queue holds it), so no
+affinity premise places its entries on one core first. -/
 theorem cancelBoundDonationOnCore_replenishments_purged
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId)
     (hB : tcb.schedContextBinding = .bound scId)
-    (hOnlyHome : ∀ c : CoreId, c ≠ rqCore →
-        ∀ e ∈ (st.scheduler.replenishQueueOnCore c).entries, e.1 ≠ scId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     ∀ c : CoreId, ∀ e ∈ (st'.scheduler.replenishQueueOnCore c).entries,
-      e.1 ≠ scId := by
-  simp only [cancelBoundDonationOnCore, hB] at h
-  injection h with h
-  subst h
-  intro c e hMem
-  rw [markKeyChangeFrom_replenishQueueOnCore, SystemState.updateTcb_scheduler,
-    SystemState.updateSchedContext_scheduler] at hMem
-  by_cases hc : c = rqCore
-  · subst hc
-    simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self] at hMem
-    intro hEq
-    have hf := (List.mem_filter.mp hMem).2
-    simp [hEq] at hf
-  · simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
-        _ _ _ _ (fun hEq => hc hEq.symm)] at hMem
-    exact hOnlyHome c hc e hMem
+      e.1 ≠ scId := fun c e hMem =>
+  (cancelBoundDonationOnCore_replenishQueue_purged_of_refined st st' tid tcb scId hB
+    hInv hRef h c e hMem).2
 
 /-- WS-SM SM6.E: at a bootCore-homed victim with a shared-home donated owner
 (in particular every single-core configuration), the per-core donation
@@ -4800,7 +4782,7 @@ theorem cancelDonationOnCore_bootHome_ok
     simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB]
   | bound scId =>
     simp only [cancelDonation, hB] at hOk
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_eq_cancelBoundDonation,
       hOk]
   | donated scId owner =>
     simp only [cancelDonation, hB] at hOk
@@ -4825,7 +4807,7 @@ theorem cancelDonationOnCore_bootHome_error
     cases hErr
   | bound scId =>
     simp only [cancelDonation, hB] at hErr
-    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_eq_cancelBoundDonation,
       hErr]
   | donated scId owner =>
     simp only [cancelDonation, hB] at hErr
@@ -4888,16 +4870,16 @@ theorem cancelIpcBlocking_ipcInvariantStage (st : SystemState) (tid : SeLe4n.Thr
    fun hInv hIpc => cancelIpcBlocking_preserves_ipcInvariant st tid tcb hInv hIpc⟩
 
 /-- **WS-RR RR8.12**: and so is the teardown with its reclaim completed — the
-reclaim's migration and holder deschedule write only scheduler state
-(`cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks`), so the stage is the bare teardown's
-followed by an object-store-preserving one. -/
+reclaim's migration and holder deschedule write only scheduler state and the
+scheduler links (`cancelIpcBlockingReclaimed_objectsAgreeOffSchedulerLinks`), so the
+stage is the bare teardown's followed by one that keeps every notification. -/
 theorem cancelIpcBlockingReclaimed_ipcInvariantStage (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     IpcInvariantStage st (cancelIpcBlockingReclaimed tid tcb st) :=
   IpcInvariantStage.trans (cancelIpcBlocking_ipcInvariantStage st tid tcb)
     ⟨cancelIpcBlockingReclaimed_objects_invExt tid tcb st,
-     fun _ h => ipcInvariant_of_objectsAgreeOffRunLinks
-      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st) h⟩
+     fun _ h => ipcInvariant_of_objectsAgreeOffSchedulerLinks
+      (cancelIpcBlockingReclaimed_objectsAgreeOffSchedulerLinks tid tcb st) h⟩
 
 /-- WS-RR RR2.17: the cross-core priority-inheritance revert is a stage — it
 writes `pipBoost` and run-queue buckets, never a notification. -/
@@ -4914,10 +4896,10 @@ theorem propagatePipChainCrossCore_ipcInvariantStage (st : SystemState)
 /-- WS-RR RR2.17: the donation-cancellation dispatcher is a stage on the arm that
 succeeds; on an error arm the composite never reaches the next stage. -/
 theorem cancelSuspendDonation_ipcInvariantStage (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hStep : (match tcb.schedContextBinding with
               | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .bound _ => cancelBoundDonationOnCore st tid tcb
               | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     IpcInvariantStage st st' := by
   revert hStep
@@ -4927,14 +4909,14 @@ theorem cancelSuspendDonation_ipcInvariantStage (st st' : SystemState)
       simp only [Except.ok.injEq] at hStep
       exact hStep ▸ IpcInvariantStage.refl st
   | bound scId =>
-      cases hE : cancelBoundDonationOnCore st tid tcb home with
+      cases hE : cancelBoundDonationOnCore st tid tcb with
       | error e => intro hStep; cases hStep
       | ok stB =>
         intro hStep
         simp only [Except.ok.injEq] at hStep
         exact hStep ▸ ⟨fun h => cancelBoundDonationOnCore_preserves_objects_invExt st stB tid
-            tcb home h hE,
-          fun hInv hIpc => cancelBoundDonationOnCore_preserves_ipcInvariant st stB tid tcb home
+            tcb h hE,
+          fun hInv hIpc => cancelBoundDonationOnCore_preserves_ipcInvariant st stB tid tcb
             hInv hIpc hE⟩
   | donated scId owner =>
       cases hE : cancelDonatedDonationOnCore st tid tcb with
@@ -5058,8 +5040,7 @@ theorem suspendThreadOnCore_ipcInvariantStage
           · next s3 hDon =>
             intro hStep
             refine IpcInvariantStage.trans
-              (cancelSuspendDonation_ipcInvariantStage _ s3 vtid.val _
-                (determineTargetCore st vtid.val) hDon) ?_
+              (cancelSuspendDonation_ipcInvariantStage _ s3 vtid.val _ hDon) ?_
             refine IpcInvariantStage.trans ?_
               (suspendRescheduleOnCore_ipcInvariantStage _ st' _ executingCore _ _ sgi? hStep)
             refine IpcInvariantStage.trans
@@ -5272,11 +5253,11 @@ every thread's placement, on both arms.  Donation cancellation wakes nothing and
 deschedules nothing, which is the SM6.E.3 reading; this is that reading in the
 vocabulary the payoff composes. -/
 theorem cancelSuspendDonation_threadPlacedOnSomeCore (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId) (u : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (u : SeLe4n.ThreadId)
     (hInv : st.objects.invExt)
     (hStep : (match tcb.schedContextBinding with
               | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .bound _ => cancelBoundDonationOnCore st tid tcb
               | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     threadPlacedOnSomeCore st' u = threadPlacedOnSomeCore st u := by
   revert hStep
@@ -5285,13 +5266,13 @@ theorem cancelSuspendDonation_threadPlacedOnSomeCore (st st' : SystemState)
       intro hStep
       rw [← Except.ok.inj hStep]
   | bound scId =>
-      cases hE : cancelBoundDonationOnCore st tid tcb home with
+      cases hE : cancelBoundDonationOnCore st tid tcb with
       | error e => intro hStep; exact absurd hStep (by simp)
       | ok stB =>
         intro hStep
         rw [← Except.ok.inj hStep]
         exact threadPlacedOnSomeCore_congr st stB u
-          (fun c => (cancelBoundDonationOnCore_runQueue_current_eq st stB tid tcb home c hE).2)
+          (fun c => (cancelBoundDonationOnCore_runQueue_current_eq st stB tid tcb c hE).2)
           (fun c => (cancelBoundDonationOnCore_runCoresAgree hInv hE).queuedOn c u)
   | donated scId owner =>
       cases hE : cancelDonatedDonationOnCore st tid tcb with

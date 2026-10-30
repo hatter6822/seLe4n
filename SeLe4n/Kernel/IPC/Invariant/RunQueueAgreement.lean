@@ -71,6 +71,7 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     SystemState.StateMono.of_stateFields (hG _ (fun _ => rfl))
   exact ⟨.of_tableFrame (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
       (st' := recordSendCap st tid badge grant) rfl hL hM d, fun _ _ => hM⟩
@@ -80,11 +81,12 @@ theorem modifyTcb_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.Thread
     {f : TCB → TCB} {c : Concurrency.CoreId} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl) :
     SystemState.RunQueueWindowStage (.block c) st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact SystemState.RunQueueWindowStage.storeObject_block hS (getTcb?_of_lookupTcb st tid tcb hL)
-    (hf tcb) (hT tcb) hCur hNI (hW tcb)
+    (hf tcb) (hT tcb) hCur hNI (hW tcb) (hAf tcb)
 
 theorem storeTcbIpcState_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {s : ThreadIpcState} {c : Concurrency.CoreId} (h : storeTcbIpcState st tid s = .ok st')
@@ -106,11 +108,12 @@ theorem modifyTcb_blockedRunQueueStage {st st' : SystemState} {tid : SeLe4n.Thre
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
     (hB : ∀ x, lookupTcb st tid = some x → x.ipcState ≠ .ready)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) : RunQueueStage st st' := by
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl) : RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
     (SystemState.objStateMono_tcb ⟨fun hr => absurd hr (hB tcb hL),
-      fun ha => by unfold TCB.Active; rw [hT]; exact ha⟩) (hW tcb)
+      fun ha => by unfold TCB.Active; rw [hT]; exact ha, hAf tcb⟩) (hW tcb)
 
 theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage}
@@ -137,7 +140,7 @@ theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.T
     {t old : TCB} (hOld : st.getTcb? tid = some old)
     (hS : storeObject tid.toObjId (.tcb t) st = .ok ((), st'))
     (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
-    (hm : TCB.StepMono old t := by exact ⟨id, id⟩)
+    (hm : TCB.StepMono old t := by exact ⟨id, id, by first | rfl | simp_all⟩)
     (hW : t.taintWords = old.taintWords := by taint_words_kept) : RunQueueStage st st' :=
   RunQueueStage.storeObject_tcb hS ((SystemState.getTcb?_eq_some_iff st tid old).mp hOld) h
     (SystemState.objStateMono_tcb hm) hW
@@ -301,8 +304,9 @@ theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurre
     (tid : SeLe4n.ThreadId) : SystemState.RunQueueLinkStage st (enqueueRunnableOnCore st c tid) :=
   .of_tableFrame (fun h r => ⟨enqueueRunnableOnCore_preserves_objects_invExt st c tid h,
     enqueueRunnableOnCore_runQueueRefined c tid h r⟩)
-    fun h => .of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite st c tid h)
-      (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables
+    (fun h => .of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite st c tid h)
+      (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables)
+    fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h
 
 /-- The wake marks one thread ready and moves run-queue links: every runnable
 thread stays runnable. -/
@@ -320,7 +324,7 @@ theorem enqueueRunnableOnCore_stateMono (st : SystemState) (c : Concurrency.Core
       have h1 : SystemState.StateMono st { st with objects := (st.objects.insert
           tid.toObjId (.tcb (tcb.setIpcState .ready))) } :=
         SystemState.StateMono.insert hInv rfl
-          (by rw [hRaw]; exact SystemState.objStateMono_tcb ⟨fun _ => rfl, id⟩)
+          (by rw [hRaw]; exact SystemState.objStateMono_tcb ⟨fun _ => rfl, id, rfl⟩)
       exact h1.trans (SystemState.StateMono.of_agreeOffRunLinks
         (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hT hD))
     · have : enqueueRunnableOnCore st c tid = st := by
@@ -350,11 +354,13 @@ theorem currentNowhere_of_runningOnSomeCore_false {st : SystemState}
   rw [hc] at hcc
   simp at hcc
 
-/-- The wake of an active thread current on no core: the `.ready` mark and the
-link-writing enqueue keep every current thread off the queues, queue only the
-now-runnable thread, and the enqueue guard admits no idle thread. -/
+/-- The wake of an active thread current on no core, on its home core: the
+`.ready` mark and the link-writing enqueue keep every current thread off the
+queues, queue only the now-runnable thread, on its home, and the enqueue guard
+admits no idle thread. -/
 theorem enqueueRunnableOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (hNC : st.currentNowhere tid) (hA : st.activeAt tid) :
+    (tid : SeLe4n.ThreadId) (hNC : st.currentNowhere tid) (hA : st.activeAt tid)
+    (hHome : st.homedOn tid c) :
     RunQueueStage st (enqueueRunnableOnCore st c tid) :=
   RunQueueStage.of_invExt fun hInv =>
     RunQueueStage.of_link' (enqueueRunnableOnCore_runQueueLinkStage st c tid)
@@ -375,14 +381,15 @@ theorem enqueueRunnableOnCore_runQueueStage (st : SystemState) (c : Concurrency.
         rw [enqueueRunnableOnCore_queuedOn st c tid hInv] at h'
         split at h'
         · rename_i h; obtain ⟨rfl, -, hD⟩ := h
-          exact .inr (enqueueRunnableOnCore_runnable st c y hInv hA hD)
+          exact .inr ⟨enqueueRunnableOnCore_runnable st c y hInv hA hD,
+            (of_decide_eq_true h') ▸ (enqueueRunnableOnCore_stateMono st c y hInv).homedOn hA hHome⟩
         · exact .inl h')
       (enqueueRunnableOnCore_stateMono st c tid hInv)
 
 theorem wakeThread_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : Concurrency.CoreId) (hNC : st.currentNowhere tid) (hA : st.activeAt tid) :
     RunQueueStage st (wakeThread st tid c).1 :=
-  enqueueRunnableOnCore_runQueueStage st _ tid hNC hA
+  enqueueRunnableOnCore_runQueueStage st _ tid hNC hA (homedOn_determineTargetCore st tid)
 
 /-- `t`'s TCB is blocked in IPC (not `.ready`): a thread a wake may target. -/
 def blockedAt (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
@@ -859,6 +866,38 @@ theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {root : SeL
     · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
         k hk hObjInv h).tableBackLinks
 
+/-- The objects at a key agreeing up to derivation metadata hold the same
+release links: a CNode and a thread hold none. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.releaseLinkOn
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) (c : Concurrency.CoreId) :
+    SystemState.objReleaseLinkOn st'.objects[oid]? c =
+      SystemState.objReleaseLinkOn st.objects[oid]? c := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]; rfl
+
+/-- **The capability transfer holds the release queues**: it writes no
+scheduler slot, and every object it writes is a CNode or a thread's links. -/
+theorem ipcUnwrapCaps_releaseStateAgree {caps : Array TransferCap} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    SystemState.releaseStateAgree st' st := by
+  refine ⟨.of_objReleaseLinkOn fun k c => ?_,
+    by rw [ipcUnwrapCaps_preserves_scheduler caps root base grant st st' summary h]⟩
+  by_cases hk : k = root
+  · subst hk
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
+      hObjInv h with e | ⟨cn', hc⟩
+    · rw [e]
+    · cases hC : st.getCNode? k with
+      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
+      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
+  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
+      k hk hObjInv h).releaseLinkOn c
+
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
 theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.ObjId}
@@ -871,9 +910,10 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
     (fun hInv x => TCB.map_proj_of_map_withoutLinks_eq TCB.placement
       (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
     (fun hInv => SystemState.StateMono.of_stateFields fun x =>
-      TCB.map_proj_of_map_withoutLinks_eq (fun t => (t.ipcState, t.threadState))
+      TCB.map_proj_of_map_withoutLinks_eq (fun t => (t.ipcState, t.threadState, t.cpuAffinity))
         (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
     (fun hInv => ipcUnwrapCaps_tableReferenceFrame hInv h)
+    (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
@@ -909,6 +949,7 @@ theorem donateSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv => .of_kindPreservingWrite
       (donateSchedContext_kindPreservingWrite st st' client server scId hInv h)
       (donateSchedContext_referenceTables h))
+    (fun hInv => donateSchedContext_releaseStateAgree st st' client server scId hInv h)
     (by rw [hS])
 
 theorem applyCallDonation_runQueueStage {st st' : SystemState}

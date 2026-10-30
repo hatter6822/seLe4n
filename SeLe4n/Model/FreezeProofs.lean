@@ -1374,7 +1374,8 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     (sst.scheduler.domainScheduleIndexOnCore bootCoreId) = fst.scheduler.domainScheduleIndex ∧
     sst.scheduler.configDefaultTimeSlice = fst.scheduler.configDefaultTimeSlice ∧
     (sst.scheduler.replenishQueueOnCore bootCoreId).entries = fst.scheduler.replenishQueue.entries ∧
-    (sst.scheduler.replenishQueueOnCore bootCoreId).size = fst.scheduler.replenishQueue.size ∧
+    -- WS-ZA ZA6.3: the frozen queue's size is the boot core's release count.
+    sst.scheduler.releaseCountOnCore bootCoreId = fst.scheduler.replenishQueue.size ∧
     -- WS-SM SM7.C.1: the per-core TLB views are carried through freeze
     -- bitwise (the SMP generalisation of `sst.tlb = fst.tlb` above).
     sst.perCoreTlb = fst.perCoreTlb ∧
@@ -1402,6 +1403,19 @@ theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
     apiInvariantBundle_frozenDirectObjectsOnly fst := by
   obtain ⟨sst, hInv, hObj, _⟩ := h
   exact ⟨sst, hInv, hObj⟩
+
+/-- AG1-E: Freezing the scheduler preserves replenish queue entries.
+The frozen `replenishQueue` contains exactly the runtime queue's entries, read
+along the release links (WS-ZA ZA6.3), and counts them. -/
+theorem freezeScheduler_replenishQueue_entries {st : SystemState} (h : st.releaseQueueRefined) :
+    (freezeScheduler st).replenishQueue.entries = (st.scheduler.replenishQueueOnCore bootCoreId).entries :=
+  SystemState.releaseEntriesOn_eq h bootCoreId
+
+theorem freezeScheduler_replenishQueue_size {st : SystemState} (h : st.releaseQueueRefined) :
+    (freezeScheduler st).replenishQueue.size =
+      (st.scheduler.replenishQueueOnCore bootCoreId).entries.length := by
+  show (st.releaseEntriesOn bootCoreId).length = _
+  rw [SystemState.releaseEntriesOn_eq h bootCoreId]
 
 /-- AK7-B (F-H02): At freeze time, the full frozen invariant holds whenever
 the source intermediate state's `apiInvariantBundle` holds. This is the
@@ -1436,8 +1450,10 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_domainSchedule ist).symm
   · rfl
   · exact (freeze_preserves_configDefaultTimeSlice ist).symm
-  · rfl
-  · rfl
+  -- WS-ZA ZA6.3: the release queue is read along the links the agreement holds.
+  · exact (freezeScheduler_replenishQueue_entries hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2).symm
+  · rw [(hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId).count]
+    exact (freezeScheduler_replenishQueue_size hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2).symm
   -- WS-SM SM7.C.1: perCoreTlb carried bitwise through freeze
   · exact (freeze_preserves_perCoreTlb ist).symm
   -- WS-SM SM7.D.1: perCoreICache carried bitwise through freeze
@@ -1671,16 +1687,5 @@ theorem freezeMap_insert_step [BEq κ] [Hashable κ] [LawfulBEq κ]
       if (q == k) = true then some v else (freezeMap rt).get? q :=
   ⟨rt.insert_preserves_invExt k v hExt,
    fun q => freezeMap_store_commutes_all rt k q v hExt hExists⟩
-
-/-- AG1-E: Freezing the scheduler preserves replenish queue entries.
-The frozen `replenishQueue` contains exactly the same entries and size
-as the runtime `ReplenishQueue`. -/
-theorem freezeScheduler_replenishQueue_entries (st : SystemState) :
-    (freezeScheduler st).replenishQueue.entries = (st.scheduler.replenishQueueOnCore bootCoreId).entries :=
-  rfl
-
-theorem freezeScheduler_replenishQueue_size (st : SystemState) :
-    (freezeScheduler st).replenishQueue.size = (st.scheduler.replenishQueueOnCore bootCoreId).size :=
-  rfl
 
 end SeLe4n.Model

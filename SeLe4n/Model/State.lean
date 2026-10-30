@@ -152,11 +152,20 @@ structure SchedulerState where
       `timerTick` to reset time-slices on preemption. Thread-level time
       slices are deferred to a future MCS scheduling extension. -/
   configDefaultTimeSlice : Nat := 5
-  /-- Z4-A: System-wide CBS replenishment queue. Tracks when each active
-      SchedContext's budget becomes eligible for refill. Sorted by eligibility
-      time for O(1) peek and O(k) prefix split on timer tick. -/
-  replenishQueue : Vector SeLe4n.Kernel.ReplenishQueue numCores :=
-    Vector.replicate numCores SeLe4n.Kernel.ReplenishQueue.empty
+  /-- Z4-A: each core's CBS release queue, as a sorted list of the contexts
+      whose refill is pending and when each is released.  WS-ZA ZA6.3: ghost
+      state, read by proofs only; the kernel reads the contexts' release links
+      (`SchedContext.releaseNextCode`, `releaseCoreCode`, `releaseAt`) from the
+      core's head (`releaseHeadCode`), and the two agree
+      (`SystemState.releaseQueueRefined`). -/
+  replenishQueue : SeLe4n.Erased (Vector SeLe4n.Kernel.ReplenishQueue numCores) :=
+    SeLe4n.Erased.mk (Vector.replicate numCores SeLe4n.Kernel.ReplenishQueue.empty)
+  /-- WS-ZA ZA6.3: each core's release-queue head as a context code
+      (`0` for an empty queue, `s.val + 1` for `s`). -/
+  releaseHeadCode : Vector Nat numCores := Vector.replicate numCores 0
+  /-- WS-ZA ZA6.3: how many contexts each core's release queue holds: the
+      bound of every walk along its links. -/
+  releaseCount : Vector Nat numCores := Vector.replicate numCores 0
   /-- AK2-D (S-M02): Diagnostic-only record of per-thread timeout errors
       collected during the most recent `timeoutBlockedThreads` run. A non-empty
       list indicates an invariant violation was observed (e.g., a TCB in the
@@ -224,9 +233,22 @@ noncomputable def runQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kern
 /-- WS-ZA ZA4.5: core `c`'s run-queue ends. -/
 def runQueueEndsOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueueEnds :=
   s.runQueueEnds.get c
-/-- Per-core CBS replenishment queue of `s` on core `c`. -/
-def replenishQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
-  s.replenishQueue.get c
+/-- Per-core CBS release queue of `s` on core `c`: ghost state (WS-ZA ZA6.3),
+read by proofs only; the kernel reads the contexts' release links from the
+core's head. -/
+noncomputable def replenishQueueOnCore (s : SchedulerState) (c : CoreId) :
+    SeLe4n.Kernel.ReplenishQueue :=
+  s.replenishQueue.out.get c
+/-- A scheduler built with the default queues holds every core's queue empty. -/
+@[simp] theorem default_replenishQueueOnCore (c : CoreId) :
+    ({} : SchedulerState).replenishQueueOnCore c = SeLe4n.Kernel.ReplenishQueue.empty := by
+  simp [replenishQueueOnCore, Vector.get]
+/-- WS-ZA ZA6.3: core `c`'s release-queue head code. -/
+def releaseHeadOnCore (s : SchedulerState) (c : CoreId) : Nat :=
+  s.releaseHeadCode.get c
+/-- WS-ZA ZA6.3: how many contexts core `c`'s release queue holds. -/
+def releaseCountOnCore (s : SchedulerState) (c : CoreId) : Nat :=
+  s.releaseCount.get c
 /-- Per-core active scheduling domain of `s` on core `c`. -/
 def activeDomainOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.DomainId :=
   s.activeDomain.get c
@@ -285,14 +307,13 @@ theorem modifyRunQueueEndsOnCore_eq (s : SchedulerState) (c : CoreId)
   simp only [Vector.set_set]
 /-- Write core `c`'s CBS replenishment-queue slot. -/
 def setReplenishQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
-    SchedulerState := { s with replenishQueue := s.replenishQueue.set c.val v c.isLt }
-/-- WS-ZA ZA5.2: core `c`'s replenish queue rewritten by `f` in its slot; the
-array takes the queue out of the slot before `f` runs (`Array.modify`), so on
-an exclusively held state `f` receives its only reference
-(`modifyReplenishQueueOnCore_eq`). -/
-@[inline] def modifyReplenishQueueOnCore (s : SchedulerState) (c : CoreId)
-    (f : SeLe4n.Kernel.ReplenishQueue → SeLe4n.Kernel.ReplenishQueue) : SchedulerState :=
-  { s with replenishQueue := ⟨s.replenishQueue.toArray.modify c.val f, by simp⟩ }
+    SchedulerState := { s with replenishQueue := s.replenishQueue.map (·.set c.val v c.isLt) }
+/-- WS-ZA ZA6.3: write core `c`'s release-queue head code. -/
+def setReleaseHeadOnCore (s : SchedulerState) (c : CoreId) (v : Nat) : SchedulerState :=
+  { s with releaseHeadCode := s.releaseHeadCode.set c.val v c.isLt }
+/-- WS-ZA ZA6.3: write core `c`'s release-queue count. -/
+def setReleaseCountOnCore (s : SchedulerState) (c : CoreId) (v : Nat) : SchedulerState :=
+  { s with releaseCount := s.releaseCount.set c.val v c.isLt }
 /-- Write core `c`'s active-domain slot. -/
 def setActiveDomainOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
     SchedulerState := { s with activeDomain := s.activeDomain.set c.val v c.isLt }
@@ -349,21 +370,26 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
     (hRP   : ∀ c : CoreId, s₁.reschedulePendingOnCore c = s₂.reschedulePendingOnCore c)
     (hSched : s₁.domainSchedule = s₂.domainSchedule)
     (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice)
-    (hRQE  : ∀ c : CoreId, s₁.runQueueEndsOnCore c = s₂.runQueueEndsOnCore c) :
+    (hRQE  : ∀ c : CoreId, s₁.runQueueEndsOnCore c = s₂.runQueueEndsOnCore c)
+    (hRH   : ∀ c : CoreId, s₁.releaseHeadOnCore c = s₂.releaseHeadOnCore c)
+    (hRC   : ∀ c : CoreId, s₁.releaseCountOnCore c = s₂.releaseCountOnCore c) :
     s₁ = s₂ := by
   have h1 : s₁.currentCode = s₂.currentCode := PerCoreVector.ext fun c => by
     have h := congrArg SeLe4n.ThreadId.optCode (hCur c)
     simpa only [currentOnCore, SeLe4n.ThreadId.optCode_ofOptCode] using h
   have h2 : s₁.runQueue = s₂.runQueue := SeLe4n.Erased.ext (PerCoreVector.ext fun c => hRQ c)
-  have h3 : s₁.replenishQueue = s₂.replenishQueue := PerCoreVector.ext fun c => hRepl c
+  have h3 : s₁.replenishQueue = s₂.replenishQueue :=
+    SeLe4n.Erased.ext (PerCoreVector.ext fun c => hRepl c)
+  have hHeads : s₁.releaseHeadCode = s₂.releaseHeadCode := PerCoreVector.ext fun c => hRH c
+  have hCounts : s₁.releaseCount = s₂.releaseCount := PerCoreVector.ext fun c => hRC c
   have h4 : s₁.activeDomain = s₂.activeDomain := PerCoreVector.ext fun c => hAD c
   have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := PerCoreVector.ext fun c => hDTR c
   have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := PerCoreVector.ext fun c => hDSI c
   have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := PerCoreVector.ext fun c => hLTE c
   have h8 : s₁.reschedulePending = s₂.reschedulePending := PerCoreFlags.ext fun c => hRP c
   have h9 : s₁.runQueueEnds = s₂.runQueueEnds := PerCoreVector.ext fun c => hRQE c
-  obtain ⟨rq1, rqe1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1, rp1⟩ := s₁
-  obtain ⟨rq2, rqe2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2, rp2⟩ := s₂
+  obtain ⟨rq1, rqe1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, rh1, cnt1, lte1, rp1⟩ := s₁
+  obtain ⟨rq2, rqe2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, rh2, cnt2, lte2, rp2⟩ := s₂
   simp_all
 
 
@@ -383,26 +409,8 @@ every pair of cores (the fields are independent `Vector`s). -/
   simp [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore, SeLe4n.Erased.out_map]
 @[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     (s.setReplenishQueueOnCore c v).replenishQueueOnCore c = v := by
-  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
-/-- WS-ZA ZA5.2: the in-slot rewrite is the write of `f` of the read. -/
-theorem modifyReplenishQueueOnCore_eq (s : SchedulerState) (c : CoreId)
-    (f : SeLe4n.Kernel.ReplenishQueue → SeLe4n.Kernel.ReplenishQueue) :
-    s.modifyReplenishQueueOnCore c f = s.setReplenishQueueOnCore c (f (s.replenishQueueOnCore c)) := by
-  simp only [SchedulerState.modifyReplenishQueueOnCore, SchedulerState.setReplenishQueueOnCore,
-    SchedulerState.replenishQueueOnCore]
-  congr 1
-  apply Vector.ext
-  intro j hj
-  show (s.replenishQueue.toArray.modify c.val f)[j]'(by simpa using hj) = _
-  rw [Vector.getElem_set]
-  by_cases h : c.val = j
-  · subst h
-    simp only [if_pos rfl]
-    rw [Array.getElem_modify_self]
-    rfl
-  · simp only [if_neg h]
-    rw [Array.getElem_modify_of_ne h]
-    rfl
+  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore,
+    SeLe4n.Erased.out_map]
 @[simp] theorem setActiveDomainOnCore_activeDomainOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
     (s.setActiveDomainOnCore c v).activeDomainOnCore c = v := by
   simp [SchedulerState.setActiveDomainOnCore, SchedulerState.activeDomainOnCore]
@@ -433,8 +441,9 @@ runtime suite exercises and that SM5's genuine cross-core writes consume. -/
   exact SeLe4n.PerCoreVector.get_set_ne s.runQueue.out c c' v h
 @[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) (h : c ≠ c') :
     (s.setReplenishQueueOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
-  simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne s.replenishQueue c c' v h
+  simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore,
+    SeLe4n.Erased.out_map]
+  exact SeLe4n.PerCoreVector.get_set_ne s.replenishQueue.out c c' v h
 @[simp] theorem setActiveDomainOnCore_activeDomainOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) (h : c ≠ c') :
     (s.setActiveDomainOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
   simp only [SchedulerState.setActiveDomainOnCore, SchedulerState.activeDomainOnCore]
@@ -907,6 +916,163 @@ theorem setRunQueueOnCore_setRunQueueEndsOnCore (s : SchedulerState) (c c' : Cor
   simp [SchedulerState.markReschedulePendingOnCoreIf, SchedulerState.setReschedulePendingOnCore, SchedulerState.runQueueEndsOnCore]
 @[simp] theorem withReschedulePending_runQueueEndsOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).runQueueEndsOnCore c = s.runQueueEndsOnCore c := rfl
+
+/-! WS-ZA ZA6.3: the release-queue head and count slots against every other
+per-core slot, and their own store-load algebra. -/
+@[simp] theorem setReleaseHeadOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).currentOnCore c' = s.currentOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := rfl
+@[simp] theorem setReleaseHeadOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).domainSchedule = s.domainSchedule := rfl
+@[simp] theorem setReleaseHeadOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := rfl
+@[simp] theorem setReleaseCountOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).currentOnCore c' = s.currentOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).domainSchedule = s.domainSchedule := rfl
+@[simp] theorem setReleaseCountOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := rfl
+@[simp] theorem setCurrentOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
+    (s.setCurrentOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setCurrentOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setRunQueueOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setRunQueueOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setRunQueueEndsOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setReplenishQueueOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
+    (s.setReplenishQueueOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setActiveDomainOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
+    (s.setActiveDomainOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setDomainTimeRemainingOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainTimeRemainingOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setDomainScheduleIndexOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainScheduleIndexOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setLastTimeoutErrorsOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
+    (s.setLastTimeoutErrorsOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setReschedulePendingOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId)  :
+    (s.markReschedulePendingOnCore c).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId)  :
+    (s.clearReschedulePendingOnCore c).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCoreIf_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf, SchedulerState.releaseHeadOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem modifyRunQueueEndsOnCore_releaseHeadOnCore (s : SchedulerState) (c c' : CoreId)
+    (f : SeLe4n.Kernel.RunQueueEnds → SeLe4n.Kernel.RunQueueEnds) :
+    (s.modifyRunQueueEndsOnCore c f).releaseHeadOnCore c' = s.releaseHeadOnCore c' := rfl
+@[simp] theorem withReschedulePending_releaseHeadOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).releaseHeadOnCore c = s.releaseHeadOnCore c := rfl
+@[simp] theorem setCurrentOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
+    (s.setCurrentOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setCurrentOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setRunQueueOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setRunQueueOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setRunQueueEndsOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setReplenishQueueOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
+    (s.setReplenishQueueOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setActiveDomainOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
+    (s.setActiveDomainOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setDomainTimeRemainingOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainTimeRemainingOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setDomainScheduleIndexOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainScheduleIndexOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setLastTimeoutErrorsOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
+    (s.setLastTimeoutErrorsOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem setReschedulePendingOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId)  :
+    (s.markReschedulePendingOnCore c).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem clearReschedulePendingOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId)  :
+    (s.clearReschedulePendingOnCore c).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem markReschedulePendingOnCoreIf_releaseCountOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf, SchedulerState.releaseCountOnCore, SchedulerState.setReschedulePendingOnCore]
+@[simp] theorem modifyRunQueueEndsOnCore_releaseCountOnCore (s : SchedulerState) (c c' : CoreId)
+    (f : SeLe4n.Kernel.RunQueueEnds → SeLe4n.Kernel.RunQueueEnds) :
+    (s.modifyRunQueueEndsOnCore c f).releaseCountOnCore c' = s.releaseCountOnCore c' := rfl
+@[simp] theorem withReschedulePending_releaseCountOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).releaseCountOnCore c = s.releaseCountOnCore c := rfl
+@[simp] theorem setReleaseHeadOnCore_releaseHeadOnCore_self (s : SchedulerState) (c : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).releaseHeadOnCore c = v := by
+  simp [SchedulerState.setReleaseHeadOnCore, SchedulerState.releaseHeadOnCore]
+@[simp] theorem setReleaseHeadOnCore_releaseHeadOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Nat) (h : c ≠ c') :
+    (s.setReleaseHeadOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := by
+  simp only [SchedulerState.setReleaseHeadOnCore, SchedulerState.releaseHeadOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne _ c c' v h
+/-- Writing a core's slot back unchanged is the identity. -/
+@[simp] theorem setReleaseHeadOnCore_releaseHeadOnCore_get (s : SchedulerState) (c : CoreId) :
+    s.setReleaseHeadOnCore c (s.releaseHeadOnCore c) = s := by
+  unfold SchedulerState.setReleaseHeadOnCore SchedulerState.releaseHeadOnCore
+  cases s; simp [Vector.get]
+@[simp] theorem setReleaseCountOnCore_releaseCountOnCore_self (s : SchedulerState) (c : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).releaseCountOnCore c = v := by
+  simp [SchedulerState.setReleaseCountOnCore, SchedulerState.releaseCountOnCore]
+@[simp] theorem setReleaseCountOnCore_releaseCountOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Nat) (h : c ≠ c') :
+    (s.setReleaseCountOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := by
+  simp only [SchedulerState.setReleaseCountOnCore, SchedulerState.releaseCountOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne _ c c' v h
+/-- Writing a core's slot back unchanged is the identity. -/
+@[simp] theorem setReleaseCountOnCore_releaseCountOnCore_get (s : SchedulerState) (c : CoreId) :
+    s.setReleaseCountOnCore c (s.releaseCountOnCore c) = s := by
+  unfold SchedulerState.setReleaseCountOnCore SchedulerState.releaseCountOnCore
+  cases s; simp [Vector.get]
+@[simp] theorem setReleaseHeadOnCore_releaseCountOnCore' (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseHeadOnCore c v).releaseCountOnCore c' = s.releaseCountOnCore c' := rfl
+@[simp] theorem setReleaseCountOnCore_releaseHeadOnCore' (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setReleaseCountOnCore c v).releaseHeadOnCore c' = s.releaseHeadOnCore c' := rfl
 
 end SchedulerState
 
@@ -1559,11 +1725,6 @@ theorem SystemState.withFreshAuditRing_eq (st : SystemState) : st.withFreshAudit
     SeLe4n.Kernel.RunQueueEnds :=
   { e with buckets := e.buckets.unshare, head := opaqueId e.head }
 
-/-- A replenish queue rebuilt: its own cell. -/
-@[inline] def _root_.SeLe4n.Kernel.ReplenishQueue.fresh (q : SeLe4n.Kernel.ReplenishQueue) :
-    SeLe4n.Kernel.ReplenishQueue :=
-  { q with size := opaqueId q.size }
-
 /-- WS-ZA ZA6.1: **the per-core slots prepared at boot.**  The boot state's
 per-core vectors (each core's register bank and its scheduler slots) are built
 from the defaults' constants, `Vector.replicate` of one value, which the
@@ -1585,20 +1746,20 @@ def SystemState.withFreshPerCoreSlots (st : SystemState) : SystemState :=
       activeDomain := st.scheduler.activeDomain.map opaqueId
       domainTimeRemaining := st.scheduler.domainTimeRemaining.map opaqueId
       domainScheduleIndex := st.scheduler.domainScheduleIndex.map opaqueId
-      replenishQueue := st.scheduler.replenishQueue.map SeLe4n.Kernel.ReplenishQueue.fresh
+      releaseHeadCode := st.scheduler.releaseHeadCode.map opaqueId
+      releaseCount := st.scheduler.releaseCount.map opaqueId
       lastTimeoutErrors := st.scheduler.lastTimeoutErrors.map opaqueId } }
 
 theorem SystemState.withFreshPerCoreSlots_eq (st : SystemState) :
     st.withFreshPerCoreSlots = st := by
   have hR : RegisterFile.fresh = id := rfl
   have hE : SeLe4n.Kernel.RunQueueEnds.fresh = id := rfl
-  have hQ : SeLe4n.Kernel.ReplenishQueue.fresh = id := rfl
   have hN : (opaqueId : Nat → Nat) = id := rfl
   have hD : (opaqueId : SeLe4n.DomainId → SeLe4n.DomainId) = id := rfl
   have hO : (opaqueId : Option SeLe4n.ThreadId → Option SeLe4n.ThreadId) = id := rfl
   have hL : (opaqueId : List (SeLe4n.ThreadId × KernelError) → List (SeLe4n.ThreadId × KernelError))
       = id := rfl
-  simp only [SystemState.withFreshPerCoreSlots, hR, hE, hQ, hN, hD, hO, hL, Vector.map_id]
+  simp only [SystemState.withFreshPerCoreSlots, hR, hE, hN, hD, hO, hL, Vector.map_id]
 
 /-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
 order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
@@ -1680,6 +1841,9 @@ theorem default_state_perCoreInitialized (c : CoreId) :
        rw [PerCoreVector.replicate_get]; rfl)
     | (simp only [SchedulerState.runQueueOnCore]
        show (SeLe4n.Erased.mk (Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty)).out.get c = _
+       rw [SeLe4n.Erased.out_mk]; exact PerCoreVector.replicate_get _ _ c)
+    | (simp only [SchedulerState.replenishQueueOnCore]
+       show (SeLe4n.Erased.mk (Vector.replicate numCores SeLe4n.Kernel.ReplenishQueue.empty)).out.get c = _
        rw [SeLe4n.Erased.out_mk]; exact PerCoreVector.replicate_get _ _ c)
 
 /-- The default scheduler state's run queue is empty on every core. -/
@@ -6868,28 +7032,6 @@ part 5 the tree's edges are a ghost and its one stored part is the edge bound
 
 theorem modifyCdt_eq (st : SystemState) (f : CapDerivationTree → CapDerivationTree) :
     st.modifyCdt f = { st with cdt := f st.cdt } := rfl
-
-/-- **`v0.35.183` (register row 63)**: `updateTcb` reads and writes the object
-table and nothing else, so two states that agree on it agree after the update.
-
-The bridge a *composite* needs when its TCB write is not the outermost one: an
-operation that writes the scheduler between its object writes leaves a state
-whose `objects` field is the earlier one's but whose other fields are not, and
-`rfl` will not see through the dependent `getTcbWitnessed?` match at two
-different states.  Proved through the update's own two equations rather than by
-unfolding it, which is what makes it independent of how the witness is spelled. -/
-theorem updateTcb_objects_congr {A B : SystemState} (hObj : A.objects = B.objects)
-    (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
-    (A.updateTcb tid f).objects = (B.updateTcb tid f).objects := by
-  have hGet : A.getTcb? tid = B.getTcb? tid := getTcb?_frame hObj tid
-  cases hA : A.getTcb? tid with
-  | none =>
-    rw [updateTcb_eq_self_of_none hA, updateTcb_eq_self_of_none (hGet ▸ hA)]
-    exact hObj
-  | some t =>
-    rw [updateTcb_eq_of_some hA, updateTcb_eq_of_some (hGet ▸ hA)]
-    simp only []
-    rw [hObj]
 
 /-- `updateTcb` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/

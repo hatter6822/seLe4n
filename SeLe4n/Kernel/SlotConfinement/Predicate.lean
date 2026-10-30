@@ -192,6 +192,34 @@ theorem observableSlotsConfinedToCores_refl (st : SystemState) (cs : List CoreId
   ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
    fun _ _ => rfl⟩
 
+/-- A confinement to a set is one to every larger set. -/
+theorem observableSlotsConfinedToCores.mono {st st' : SystemState} {cs ds : List CoreId}
+    (h : observableSlotsConfinedToCores st st' cs) (hsub : ∀ c, c ∈ cs → c ∈ ds) :
+    observableSlotsConfinedToCores st st' ds :=
+  ⟨fun c hc => h.runQueue c (fun m => hc (hsub c m)),
+   fun c hc => h.current c (fun m => hc (hsub c m)),
+   fun c hc => h.activeDomain c (fun m => hc (hsub c m)),
+   fun c hc => h.domainTimeRemaining c (fun m => hc (hsub c m)),
+   fun c hc => h.domainScheduleIndex c (fun m => hc (hsub c m)),
+   fun c hc => h.regs c (fun m => hc (hsub c m))⟩
+
+/-- Two confined steps are confined to the union of their sets. -/
+theorem observableSlotsConfinedToCores.append {st s st' : SystemState} {cs ds : List CoreId}
+    (h1 : observableSlotsConfinedToCores st s cs) (h2 : observableSlotsConfinedToCores s st' ds) :
+    observableSlotsConfinedToCores st st' (cs ++ ds) :=
+  ⟨fun c hc => (h2.runQueue c (fun m => hc (List.mem_append_right _ m))).trans
+      (h1.runQueue c (fun m => hc (List.mem_append_left _ m))),
+   fun c hc => (h2.current c (fun m => hc (List.mem_append_right _ m))).trans
+      (h1.current c (fun m => hc (List.mem_append_left _ m))),
+   fun c hc => (h2.activeDomain c (fun m => hc (List.mem_append_right _ m))).trans
+      (h1.activeDomain c (fun m => hc (List.mem_append_left _ m))),
+   fun c hc => (h2.domainTimeRemaining c (fun m => hc (List.mem_append_right _ m))).trans
+      (h1.domainTimeRemaining c (fun m => hc (List.mem_append_left _ m))),
+   fun c hc => (h2.domainScheduleIndex c (fun m => hc (List.mem_append_right _ m))).trans
+      (h1.domainScheduleIndex c (fun m => hc (List.mem_append_left _ m))),
+   fun c hc => (h2.regs c (fun m => hc (List.mem_append_right _ m))).trans
+      (h1.regs c (fun m => hc (List.mem_append_left _ m)))⟩
+
 /-- SM8.B.2: the one-core instance is exactly `observableSlotsConfinedToCore`. -/
 theorem observableSlotsConfinedToCores_singleton_iff {st st' : SystemState} {c₀ : CoreId} :
     observableSlotsConfinedToCores st st' [c₀] ↔ observableSlotsConfinedToCore st st' c₀ := by

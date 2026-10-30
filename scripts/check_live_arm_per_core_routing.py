@@ -1091,7 +1091,8 @@ def main() -> int:
         # already demonstrated, so the count is pinned rather than trusted.
         want_fields = {"runQueue", "currentCode", "activeDomain", "domainTimeRemaining",
                        "domainScheduleIndex", "replenishQueue", "lastTimeoutErrors",
-                       "reschedulePending", "runQueueEnds"}
+                       "reschedulePending", "runQueueEnds", "releaseHeadCode",
+                       "releaseCount"}
         if set(PER_CORE_FIELDS) != want_fields:
             print(f"[per-core-routing] SELF-TEST FAIL: per-core field derivation gives "
                   f"{sorted(PER_CORE_FIELDS)}, expected {sorted(want_fields)}.  If a field "

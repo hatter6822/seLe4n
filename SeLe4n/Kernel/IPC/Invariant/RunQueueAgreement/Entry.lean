@@ -367,7 +367,8 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry
+        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
+        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq]))).entry
   · rename_i hE
     cases h
     exact hW.entry.trans (syscallEntryChecked_runQueueEntryStage E1
@@ -426,7 +427,8 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl))
+      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
+      (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler]))
   have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
     (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       fun _ => by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])

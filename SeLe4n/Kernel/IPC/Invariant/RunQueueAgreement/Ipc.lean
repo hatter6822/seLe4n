@@ -62,6 +62,7 @@ theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : S
       (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl) rfl)
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]
         simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hI, hNW])
+    (fun c => by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
@@ -83,14 +84,17 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
     have hM : SystemState.StateMono st s := SystemState.StateMono.of_slots fun oid => by
       rcases hD.2.2 oid with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
       · exact SystemState.slotStateMono.of_eq e
-      · rw [h0]; exact SystemState.slotStateMono.of_obj h1 (SystemState.objStateMono_tcb ⟨id, id⟩)
+      · rw [h0]; exact SystemState.slotStateMono.of_obj h1 (SystemState.objStateMono_tcb ⟨id, id, rfl⟩)
     have hF : SystemState.TableReferenceFrame st s := ⟨by rw [hD.1]; rfl, fun k => by
       rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
       · rw [e]
       · rw [h0, h1]; rfl⟩
     exact ⟨.of_tableFrame (fun _ hR => ⟨hD.2.1, SystemState.runQueueRefined_of_frame
         (fun c t => hL c t) (by rw [hD.scheduler_eq]) (by rw [hD.scheduler_eq]) hR⟩)
-        (fun _ => hF),
+        (fun _ => hF) (fun _ => ⟨.of_objReleaseLinkOn fun k c => by
+          rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+          · rw [e]
+          · rw [h0, h1]; rfl, by rw [hD.scheduler_eq]⟩),
       fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq
         (by rw [hD.scheduler_eq]) hL hM d, fun _ _ => hM⟩
 
@@ -165,7 +169,7 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
       ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
         rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
-        · rw [h1, h2]; rfl⟩)
+        · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_)
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -173,6 +177,9 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
       · exact SystemState.slotStateMono.of_eq e
       · exact SystemState.slotStateMono.of_obj h2
           (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl)
+    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+      · rw [e]
+      · rw [h1, h2]; rfl
 
 theorem removeCallerReplyFrame_runQueueStage {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     {st st' : SystemState} (h : removeCallerReplyFrame caller rid st = .ok ((), st')) :
@@ -571,7 +578,8 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
   rename_i st1 hRet
   cases h
   refine ⟨fun oid ep hE => ?_, fun c' => ?_, fun t tcb' hT => ?_⟩
-  · rw [migrateSchedContextReplenishment_objects] at hE
+  · replace hE := (migrateSchedContextReplenishment_agree _ _ _ _).symm.get_of_not_sc
+      (fun _ e => KernelObject.noConfusion e) hE
     exact returnDonatedSchedContextResolved_lift (P := fun s =>
       s.objects[oid]? = some (.endpoint ep) → st.objects[oid]? = some (.endpoint ep)) hRet
       (fun n s hS => returnDonatedSchedContext_endpoint_backward st s _ _ _ hInv n hS oid ep) hE
@@ -581,7 +589,8 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
       (fun n s hS => by
         show s.scheduler.currentOnCore c' = _
         rw [returnDonatedSchedContext_scheduler_eq st s _ _ _ n hS]; rfl)
-  · rw [migrateSchedContextReplenishment_objects] at hT
+  · replace hT := (migrateSchedContextReplenishment_agree _ _ _ _).symm.get_of_not_sc
+      (fun _ e => KernelObject.noConfusion e) hT
     exact returnDonatedSchedContextResolved_lift (P := fun s =>
       s.objects[t.toObjId]? = some (.tcb tcb') →
         ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)

@@ -62,64 +62,64 @@ def threadOccupiedCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId
 on**, keyed on the doomed thread's own binding — `cancelDonationArmOnCore`'s
 three arms, read as cores.
 
-`.unbound` moves nothing; `.bound` purges on the thread's home core; `.donated`
-returns the context and migrates its replenishments from the holder's home to the
-recorded owner's, the destination read at the **post-return** state exactly as
+`.unbound` moves nothing; `.bound` purges on the core the context's own release
+link names (WS-ZA ZA6.3), read at the state the purge runs on — the context's
+binding cleared, which moves no link; `.donated` returns the context and
+migrates its replenishments from the holder's home to the recorded owner's, the
+destination read at the **post-return** state exactly as
 `cancelDonatedDonationOnCore` reads it.  A refused return migrates nothing, and
-the empty list there is the transition's own behaviour rather than a narrowing. -/
-def cancelDonationArmReplenishCoresAt (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (home : CoreId) : List CoreId :=
+the empty list there is the transition's own behaviour rather than a narrowing.
+The suspend pipeline's G3 reads it at its post-revert state. -/
+def cancelDonationArmReplenishCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : List CoreId :=
   match tcb.schedContextBinding with
   | .unbound => []
-  | .bound _ => [home]
+  | .bound scId =>
+      SchedContextOps.purgeReplenishCores (st.updateSchedContext scId fun sc =>
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) scId
   | .donated _ owner =>
       match cleanupDonatedSchedContext st tid with
       | .error _ => []
       | .ok st' => [determineTargetCore st tid, determineTargetCore st' owner]
 
-/-- The same, at the purge core `cancelDonationArmOnCore` itself computes — the
-destroy path's instance.  The suspend pipeline's G3 passes the home it captured
-**before** the teardown, which is why the general form exists at all. -/
-def cancelDonationArmReplenishCores (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : List CoreId :=
-  cancelDonationArmReplenishCoresAt st tid tcb (determineTargetCore st tid)
+/-- **`v0.35.169`: the core a binding release moves a RESERVATION on.**
 
-/-- **`v0.35.169`: the cores a binding release moves a RESERVATION on**, and the
-second place in this module where a segment is EVERY core.
-
-`releaseSchedContextBinding` purges on the bound thread's home core when that
-thread resolves, and sweeps every core when it does not — with the TCB gone from
-the store there is no `cpuAffinity` left to read and no home to name, which is
-`schedContextUnbindReplenishCores`' reasoning on the same shape one operation
-over.  A context bound to nothing has no binding to release, hence the empty
+`releaseSchedContextBinding` purges the context on the core its own release link
+names (WS-ZA ZA6.3), read at the state the purge runs on: after the bound
+thread's binding is cleared when that thread resolves, at the pre-state when it
+does not.  It swept every core on the second arm while the purge had no core to
+read.  A context bound to nothing has no binding to release, hence the empty
 list. -/
-def releaseSchedContextBindingReplenishCores (st : SystemState)
+def releaseSchedContextBindingReplenishCores (st : SystemState) (scId : SeLe4n.SchedContextId)
     (sc : SchedContext) : List CoreId :=
   match sc.boundThread with
   | none => []
   | some tid =>
       match st.getTcb? tid with
-      | some _ => [determineTargetCore st tid]
-      | none => Concurrency.allCores
+      | some _ => SchedContextOps.purgeReplenishCores (st.updateTcb tid fun t =>
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) scId
+      | none => SchedContextOps.purgeReplenishCores st scId
 
 -- ============================================================================
 -- §2  The exactness halves — what the destroy path writes
 -- ============================================================================
 
-/-- **`v0.35.169`: the `.bound` unbind writes exactly the core it is handed.** -/
+/-- **`v0.35.169`: the `.bound` unbind writes exactly the core the context's own
+release link names** (WS-ZA ZA6.3). -/
 theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore c : CoreId)
-    (hne : rqCore ≠ c)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId) (scId : SeLe4n.SchedContextId)
+    (hBind : tcb.schedContextBinding = .bound scId)
+    (hne : c ∉ SchedContextOps.purgeReplenishCores (st.updateSchedContext scId fun sc =>
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) scId)
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold cancelBoundDonationOnCore at h
-  split at h
-  · rw [Except.ok.injEq] at h
-    rw [← h, markKeyChangeFrom_replenishQueueOnCore]
-    simp only [SystemState.updateTcb_scheduler]
-    rw [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hne,
-      SystemState.updateSchedContext_scheduler]
-  · exact absurd h (by simp)
+  rw [hBind] at h
+  rw [Except.ok.injEq] at h
+  rw [← h, markKeyChangeFrom_replenishQueueOnCore]
+  simp only [SystemState.updateTcb_scheduler]
+  rw [SchedContextOps.purgeReplenishment_replenishQueueOnCore_of_not_mem _ _ _ hne,
+    SystemState.updateSchedContext_scheduler]
 
 /-- **`v0.35.169`: the `.donated` return writes exactly its migration's two
 endpoints.** -/
@@ -142,31 +142,28 @@ theorem cancelDonatedDonationOnCore_replenishQueueOnCore_ne (st st' stRet : Syst
 /-- **`v0.35.170`: the donation arm writes exactly the cores its own resolver
 names, at whatever purge core it is handed.**
 
-Stated over the three-way match at an **explicit** `home` because that is the
-question both askers ask, and they hand it different cores:
-`cancelDonationArmOnCore` — the destroy path's arm — reads it off the state it
-runs on, while `suspendThreadOnCore`'s G3 was handed it from the **pre**-G2
-state, captured before the teardown for the reason that transition records.  A
-frame stated at `determineTargetCore st tid` covers the first and not the
-second, so it is the *parameter* that is general here and both consumers below
-are instances of one proof. -/
+Stated over the three-way match at an **explicit** `home`, because the
+operation's `.bound` arm is handed one: `cancelDonationArmOnCore` — the destroy
+path's arm — reads it off the state it runs on, while `suspendThreadOnCore`'s G3
+was handed it from the **pre**-G2 state.  The purge reads its core from the
+context's own release link (WS-ZA ZA6.3), so the resolver names no home and the
+frame holds at every one. -/
 theorem donationArmAt_replenishQueueOnCore_ne (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (home c : CoreId)
-    (hne : c ∉ cancelDonationArmReplenishCoresAt st tid tcb home)
+    (hne : c ∉ cancelDonationArmReplenishCores st tid tcb)
     (h : (match tcb.schedContextBinding with
           | .unbound => (Except.ok st : Except KernelError SystemState)
-          | .bound _ => cancelBoundDonationOnCore st tid tcb home
+          | .bound _ => cancelBoundDonationOnCore st tid tcb
           | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold cancelDonationArmReplenishCoresAt at hne
+  unfold cancelDonationArmReplenishCores at hne
   cases hBind : tcb.schedContextBinding with
   | unbound =>
       rw [hBind] at h
       rw [Except.ok.injEq] at h; rw [← h]
   | bound scId =>
       rw [hBind] at h hne
-      exact cancelBoundDonationOnCore_replenishQueueOnCore_ne st st' tid tcb _ c
-        (by simp only [List.mem_singleton] at hne; exact fun hc => hne hc.symm) h
+      exact cancelBoundDonationOnCore_replenishQueueOnCore_ne st st' tid tcb c scId hBind hne h
   | donated scId owner =>
       rw [hBind] at h hne
       cases hRet : cleanupDonatedSchedContext st tid with
@@ -194,11 +191,10 @@ theorem cancelDonationArmOnCore_replenishQueueOnCore_ne (st st' : SystemState)
 
 /-- **`v0.35.169`: the binding release writes exactly the cores its own resolver
 names** — the exactness half of the retype footprint's `.schedContext` replenish
-segment.  The sweep arm names every core, so the hypothesis is unsatisfiable
-there and the statement is about the bound arm. -/
+segment, on both of its arms. -/
 theorem releaseSchedContextBinding_replenishQueueOnCore_ne (st : SystemState)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (c : CoreId)
-    (hne : c ∉ releaseSchedContextBindingReplenishCores st sc) :
+    (hne : c ∉ releaseSchedContextBindingReplenishCores st scId sc) :
     (releaseSchedContextBinding st scId sc).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold releaseSchedContextBinding
@@ -209,14 +205,15 @@ theorem releaseSchedContextBinding_replenishQueueOnCore_ne (st : SystemState)
       rw [hBound] at hne
       dsimp only at hne ⊢
       cases hTcb : st.getTcb? tid with
-      | none => rw [hTcb] at hne; exact absurd (Concurrency.mem_allCores c) hne
+      | none =>
+          rw [hTcb] at hne
+          exact SchedContextOps.purgeReplenishment_replenishQueueOnCore_of_not_mem _ _ _ hne
       | some tcb =>
           rw [hTcb] at hne
           dsimp only
-          simp only [List.mem_singleton] at hne
-          rw [markKeyChangeFor_replenishQueueOnCore]
-          rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _
-            (fun hc => hne hc.symm), SystemState.updateTcb_scheduler]
+          rw [markKeyChangeFor_replenishQueueOnCore,
+            SchedContextOps.purgeReplenishment_replenishQueueOnCore_of_not_mem _ _ _ hne,
+            SystemState.updateTcb_scheduler]
 
 /-- **Where the pre-retype cleanup writes a RUN QUEUE**, as a function of the
 object being destroyed.
@@ -240,7 +237,8 @@ def preRetypeCleanupReplenishCoresOf (st : SystemState) (target : SeLe4n.ObjId)
     (currentObj : KernelObject) : List CoreId :=
   match currentObj with
   | .tcb tcb => cancelDonationArmReplenishCores st tcb.tid tcb
-  | .schedContext sc => releaseSchedContextBindingReplenishCores st sc
+  | .schedContext sc =>
+      releaseSchedContextBindingReplenishCores st (SeLe4n.SchedContextId.ofObjId target) sc
   | _ => (fun _ => []) target
 
 /-- **`v0.35.169`: and the whole pre-retype cleanup writes exactly the cores

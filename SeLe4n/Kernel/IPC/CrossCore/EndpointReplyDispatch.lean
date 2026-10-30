@@ -540,8 +540,9 @@ theorem applyReplyDonationOnCore_machine_eq
       (replyDonationRecipient st scId targetVtid.val) n hRet
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return commits the
-single-core return's object store off the run-queue links — the migration
-writes no object and the deschedule writes only run-queue links (WS-ZA ZA4.5).
+single-core return's object store off the scheduler links — the migration
+writes only release-queue links (WS-ZA ZA6.3) and the deschedule only run-queue
+links (WS-ZA ZA4.5).
 
 **WS-HP HP4.3**: the `none` arm names the head-driven trigger
 (`answeredFrameHeadContext?`) rather than the binding-driven resolver it
@@ -556,13 +557,14 @@ theorem applyReplyDonationOnCore_objects_frame
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
         returnDonatedSchedContext st holder scId
           (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
-        st''.objectsAgreeOffRunLinks st' := by
+        st''.objectsAgreeOffSchedulerLinks st' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
   · exact Or.inl ⟨hNone, by rw [hEq]⟩
   · refine Or.inr ⟨scId, holderVtid.val, n, st', hRet, ?_⟩
     rw [hEq]
-    exact (descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
-      (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _))
+    exact SystemState.objectsAgreeOffSchedulerLinks.trans
+      (.of_runLinks (descheduleAtPlacement_objectsAgreeOffRunLinks _ _))
+      (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))
 
 -- ============================================================================
 -- §1b  WS-RR RR2.9 — the reply path preserves the SM5.H affinity invariant

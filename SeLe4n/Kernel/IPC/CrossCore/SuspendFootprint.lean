@@ -169,10 +169,9 @@ destination is the outer caller's home, a core the pre-state cannot name because
 at the pre-state the victim holds no binding at all.
 
 So the segment re-runs the spine to each step's own state, exactly as
-`endpointReplyRecvWriteSet` does — and the one core that *is* read from the pre-state
-is G3's purge core, because the pipeline itself reads it there (`home`, captured
-before G2 for the reason `suspendThreadOnCore` records: the teardown never moves
-it). -/
+`endpointReplyRecvWriteSet` does — G3's purge core among them, read from the
+context's own release link at the post-revert state (WS-ZA ZA6.3) rather than
+from the `home` the pipeline captured before G2. -/
 def suspendThreadReplenishCores (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId) : List CoreId :=
   match st.getTcb? vtid.val with
@@ -186,8 +185,8 @@ def suspendThreadReplenishCores (st : SystemState) (vtid : SeLe4n.ValidThreadId)
             | some serverId =>
                 (PriorityInheritance.propagatePipChainCrossCore stG2 serverId executingCore).1
             | none => stG2
-          cancelDonationArmReplenishCoresAt stG2b vtid.val
-            ((stG2b.getTcb? vtid.val).getD tcb) (determineTargetCore st vtid.val))
+          cancelDonationArmReplenishCores stG2b vtid.val
+            ((stG2b.getTcb? vtid.val).getD tcb))
 
 /-- **`v0.35.170`: the live `.tcbSuspend` arm's scheduler-domain footprint** —
 the last of the declared arms, and the one that retires a six-parameter

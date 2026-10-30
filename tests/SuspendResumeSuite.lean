@@ -363,7 +363,7 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
     { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (some tid),
       budget := ⟨1000⟩, period := ⟨1000⟩,
       priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-      budgetRemaining := ⟨1000⟩, isActive := true, refillTail := [] }
+      budgetRemaining := ⟨1000⟩, isActive := true, refillTailCount := 0 }
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
   match cancelBoundDonation st tid tcb with
@@ -835,8 +835,8 @@ private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
       ((st'.queuedOn core1 bTid))
     expect "SR-035 ...and writes no replenish queue on any core -- the empty segment's exact half"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-        (st'.scheduler.replenishQueueOnCore c).entries
-          == (st.scheduler.replenishQueueOnCore c).entries))
+        (st'.releaseEntriesOn c)
+          == (st.releaseEntriesOn c)))
   | .error e => throw <| IO.userError s!"SR-035 live resume should succeed, got {repr e}"
 
 end SeLe4n.Testing.SuspendResumeSuite

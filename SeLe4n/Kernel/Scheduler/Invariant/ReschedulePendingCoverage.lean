@@ -984,6 +984,16 @@ theorem keyInputsEq_of_objectsAgreeOffReplyLinks {pre post : SystemState}
     · cases o <;> rfl
   rw [← hv post.objects[oid]?, h oid, hv]
 
+/-- WS-ZA ZA6.3: the release-queue links are no key input either. -/
+theorem keyInputsEq_of_objectsAgreeOffReleaseLinks {pre post : SystemState}
+    (h : post.objectsAgreeOffReleaseLinks pre) : keyInputsEq pre post := fun oid => by
+  have hv : ∀ x : Option KernelObject,
+      keyInputsOf (x.map KernelObject.withoutRelease) = keyInputsOf x := by
+    intro x; rcases x with _ | o
+    · rfl
+    · cases o <;> rfl
+  rw [← hv post.objects[oid]?, h oid, hv]
+
 /-- WS-ZA ZA5.11: the taint words are no key input either. -/
 theorem keyInputsEq_of_objectsAgreeOffTaint {pre post : SystemState}
     (h : pre.objectsAgreeOffTaint post) : keyInputsEq pre post := fun oid => by

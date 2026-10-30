@@ -87,7 +87,7 @@ three lock domains on core `c`:
   table-lock rationale (RHTable structural safety is table-granularity);
 * core `c`'s **run-queue** slot (write): re-enqueue on preemption + dispatch
   dequeue; and
-* core `c`'s **replenish-queue** slot (write): `popDue` + the exhausted-budget
+* core `c`'s **replenish-queue** slot (write): the head drain + the exhausted-budget
   replenishment insert.
 
 So the static footprint is the three-lock set in plan §4.4 ascending order
@@ -636,50 +636,26 @@ theorem processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed (st : 
     · exact wakeThread_preserves_runQueueOnCore_wellFormed_anyCore _ _ execCore c' hRef
   · exact hRef
 
-/-- WS-SM SM5.D.4 (fold preservation helper): the replenishment fold preserves the
-object-store invariant — each `processOneReplenishmentOnCore` step does, so the
-`List.foldl` does. -/
-private theorem foldl_processOneReplenishment_preserves_objects_invExt
-    (dueIds : List SeLe4n.SchedContextId) (c : CoreId) (now : Nat)
-    (acc : SystemState) (hInv : acc.objects.invExt) :
-    (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).objects.invExt := by
-  induction dueIds generalizing acc with
-  | nil => exact hInv
-  | cons hd tl ih =>
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)
-
-/-- WS-SM SM5.D.4 (fold preservation helper): the replenishment fold preserves
-run-queue well-formedness on **every** core `c'`. -/
-private theorem foldl_processOneReplenishment_preserves_runQueueOnCore_wellFormed
-    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
-    (acc : SystemState)
-    (hwf : (acc.scheduler.runQueueOnCore c').wellFormed) :
-    ((dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).scheduler.runQueueOnCore c').wellFormed := by
-  induction dueIds generalizing acc with
-  | nil => exact hwf
-  | cons hd tl ih =>
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed acc c c' hd now hwf)
-
 /-- WS-SM SM5.D.4 (preservation): `processReplenishmentsDueOnCore` preserves the
-object-store invariant — the `popDue` writes only the replenish-queue slot
-(objects unchanged), and the fold preserves `invExt`. -/
+object-store invariant — each refill does, and each re-placement does. -/
 theorem processReplenishmentsDueOnCore_preserves_objects_invExt (st : SystemState)
     (c : CoreId) (now : Nat) (hInv : st.objects.invExt) :
-    (processReplenishmentsDueOnCore st c now).objects.invExt := by
-  simp only [processReplenishmentsDueOnCore]
-  exact foldl_processOneReplenishment_preserves_objects_invExt _ c now _ hInv
+    (processReplenishmentsDueOnCore st c now).objects.invExt :=
+  processReplenishmentsDueOnCore_induction (fun s => s.objects.invExt) st c now
+    (fun s scId h => processOneReplenishmentOnCore_preserves_objects_invExt s c scId now h)
+    (fun s scId h => SystemState.releasePlace_objects_invExt s c scId h) hInv
 
 /-- WS-SM SM5.D.4 (preservation): `processReplenishmentsDueOnCore` preserves
 run-queue well-formedness on **every** core `c'`. -/
 theorem processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
     (c c' : CoreId) (now : Nat)
     (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((processReplenishmentsDueOnCore st c now).scheduler.runQueueOnCore c').wellFormed := by
-  simp only [processReplenishmentsDueOnCore]
-  apply foldl_processOneReplenishment_preserves_runQueueOnCore_wellFormed _ c c' now
-  simpa using hwf
+    ((processReplenishmentsDueOnCore st c now).scheduler.runQueueOnCore c').wellFormed :=
+  processReplenishmentsDueOnCore_induction (fun s => (s.scheduler.runQueueOnCore c').wellFormed)
+    st c now
+    (fun s scId h => processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed s c c' scId
+      now h)
+    (fun s scId h => by simpa only [SystemState.releasePlace_runQueueOnCore] using h) hwf
 
 /-- WS-SM SM5.D.4: a replenishment that transitions no thread to runnable is the
 refill alone — it wakes nobody and raises no reschedule flag. -/
@@ -1263,27 +1239,6 @@ theorem enqueueRunnableOnCore_lastTimeoutErrorsOnCore (st : SystemState) (c : Co
     SchedulerState.setRunQueueOnCore_lastTimeoutErrorsOnCore,
     SchedulerState.setRunQueueEndsOnCore_lastTimeoutErrorsOnCore]
 
-/-- WS-ZA ZA6.2: a reading of the state the drain's steps leave alone is one the
-drain leaves alone — the queue write-back and every replenishment frame it. -/
-theorem processReplenishmentsDueOnCore_frame {α : Type} (f : SystemState → α)
-    (st : SystemState) (c : CoreId) (now : Nat)
-    (hQ : ∀ (s : SystemState) (q : ReplenishQueue),
-      f { s with scheduler := s.scheduler.setReplenishQueueOnCore c q } = f s)
-    (hStep : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId),
-      f (processOneReplenishmentOnCore s c scId now) = f s) :
-    f (processReplenishmentsDueOnCore st c now) = f st := by
-  simp only [processReplenishmentsDueOnCore]
-  generalize ((st.scheduler.replenishQueueOnCore c).popDue now) = pd
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only
-  have key : ∀ acc : SystemState,
-      f (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) = f acc := by
-    intro acc
-    induction dueIds generalizing acc with
-    | nil => rfl
-    | cons hd tl ih => rw [List.foldl_cons, ih]; exact hStep acc hd
-  rw [key, hQ]
-
 /-- WS-SM SM5.D.4: `processOneReplenishmentOnCore` leaves the machine unchanged. -/
 theorem processOneReplenishmentOnCore_machine_eq (st : SystemState) (ec : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
@@ -1319,19 +1274,20 @@ the per-core CBS replenishment reads `now := machine.timer` but never advances t
 global timer. -/
 theorem processReplenishmentsDueOnCore_machine_eq (st : SystemState) (c : CoreId) (now : Nat) :
     (processReplenishmentsDueOnCore st c now).machine = st.machine :=
-  processReplenishmentsDueOnCore_frame (·.machine) st c now (fun _ _ => rfl)
+  processReplenishmentsDueOnCore_frame (·.machine) st c now
     (fun s scId => processOneReplenishmentOnCore_machine_eq s c scId now)
+    (fun s scId => SystemState.releasePlace_machine s c scId)
 
 /-- WS-SM SM5.D.4: `processReplenishmentsDueOnCore` leaves every core's
-`lastTimeoutErrors` slot unchanged (the `popDue` writes only the replenish-queue
-slot; the wakes write run queues / objects / flags). -/
+`lastTimeoutErrors` slot unchanged (the re-placements write only the release
+queues; the wakes write run queues / objects / flags). -/
 theorem processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq (st : SystemState)
     (c : CoreId) (now : Nat) (c' : CoreId) :
     (processReplenishmentsDueOnCore st c now).scheduler.lastTimeoutErrorsOnCore c'
       = st.scheduler.lastTimeoutErrorsOnCore c' :=
   processReplenishmentsDueOnCore_frame (·.scheduler.lastTimeoutErrorsOnCore c') st c now
-    (fun s q => by simp [SchedulerState.setReplenishQueueOnCore_lastTimeoutErrorsOnCore])
     (fun s scId => processOneReplenishmentOnCore_lastTimeoutErrorsOnCore_eq s c scId now c')
+    (fun s scId => SystemState.releasePlace_lastTimeoutErrorsOnCore s c scId c')
 
 /-- WS-SM SM5.D.4: `processOneReplenishmentOnCore` leaves every core's `current`
 slot unchanged — it refills a SchedContext and may *enqueue* a woken thread, but
@@ -1361,74 +1317,73 @@ theorem processReplenishmentsDueOnCore_currentOnCore_eq (st : SystemState)
     (processReplenishmentsDueOnCore st c now).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' :=
   processReplenishmentsDueOnCore_frame (·.scheduler.currentOnCore c') st c now
-    (fun s q => by simp [SchedulerState.setReplenishQueueOnCore_currentOnCore])
     (fun s scId => processOneReplenishmentOnCore_currentOnCore_eq s c scId now c')
+    (fun s scId => SystemState.releasePlace_currentOnCore s c scId c')
 
 /-- WS-ZA ZA6.2: the drain lowers no reschedule flag. -/
 theorem processReplenishmentsDueOnCore_reschedulePendingOnCore_mono (st : SystemState)
     (c : CoreId) (now : Nat) (d : CoreId) (h : st.scheduler.reschedulePendingOnCore d = true) :
-    (processReplenishmentsDueOnCore st c now).scheduler.reschedulePendingOnCore d = true := by
-  simp only [processReplenishmentsDueOnCore]
-  generalize ((st.scheduler.replenishQueueOnCore c).popDue now) = pd
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only
-  have key : ∀ acc : SystemState, acc.scheduler.reschedulePendingOnCore d = true →
-      (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now)
-        acc).scheduler.reschedulePendingOnCore d = true := by
-    intro acc hA
-    induction dueIds generalizing acc with
-    | nil => exact hA
-    | cons hd tl ih =>
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_reschedulePendingOnCore_mono _ c hd now d hA)
-  exact key _ (by simpa using h)
+    (processReplenishmentsDueOnCore st c now).scheduler.reschedulePendingOnCore d = true :=
+  processReplenishmentsDueOnCore_induction (fun s => s.scheduler.reschedulePendingOnCore d = true)
+    st c now
+    (fun s scId hA => processOneReplenishmentOnCore_reschedulePendingOnCore_mono _ c scId now d hA)
+    (fun s scId hA => by simpa only [SystemState.releasePlace_reschedulePendingOnCore] using hA) h
 
-/-- WS-ZA ZA6.2 (the drain's completeness over the flags): every replenishment the
-drain processes that wakes a thread the store holds — whether the wake placed it
-or found it already queued — leaves the thread's target core flagged at the end
-of the drain.  `pre` is the drain's state when it reaches that replenishment
-(the queue write-back followed by the earlier due entries), and the flag survives
-the rest of the drain (`processOneReplenishmentOnCore_reschedulePendingOnCore_mono`). -/
+/-- WS-ZA ZA6.3: the states the drain reaches from `st` with `f` heads still to
+take, each with the fuel it has left — the loop's trace, as the drain's
+statements about a step part way through it read it. -/
+inductive DrainReaches (c : CoreId) (now : Nat) (f₀ : Nat) (st : SystemState) :
+    Nat → SystemState → Prop
+  | start : DrainReaches c now f₀ st f₀ st
+  | step {g : Nat} {pre : SystemState} :
+      DrainReaches c now f₀ st (g + 1) pre →
+      pre.scheduler.releaseHeadOnCore c ≠ 0 →
+      pre.releaseAtOn c (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) ≤ now →
+      DrainReaches c now f₀ st g
+        ((processOneReplenishmentOnCore pre c
+          (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) now).releasePlace c
+          (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)))
+
+/-- The drain from `st` is the drain from any state it reaches, with the fuel
+left there. -/
+theorem DrainReaches.drain_eq {c : CoreId} {now f₀ : Nat} {st : SystemState} {g : Nat}
+    {pre : SystemState} (h : DrainReaches c now f₀ st g pre) :
+    drainDueOnCore c now f₀ st = drainDueOnCore c now g pre := by
+  induction h with
+  | start => rfl
+  | step _ hH hD ih =>
+    rw [ih, drainDueOnCore.eq_2, if_neg hH, if_pos hD]
+
+/-- WS-ZA ZA6.2 / ZA6.3 (the drain's completeness over the flags): every head the
+drain takes whose refill wakes a thread the store holds — whether the wake placed
+it or found it already queued — leaves the thread's target core flagged at the
+end of the drain.  `pre` is the drain's state when it takes that head, a state
+it reaches (`DrainReaches`), and the flag survives the head's re-placement and
+the rest of the drain (`processReplenishmentsDueOnCore_reschedulePendingOnCore_mono`). -/
 theorem processReplenishmentsDueOnCore_flags_wake_target (st : SystemState) (c : CoreId)
-    (now : Nat) (k : Nat) (hk : k < ((st.scheduler.replenishQueueOnCore c).popDue now).2.length)
+    (now : Nat) (g : Nat) (pre : SystemState)
+    (hReach : DrainReaches c now (st.scheduler.releaseCountOnCore c) st (g + 1) pre)
+    (hHead : pre.scheduler.releaseHeadOnCore c ≠ 0)
+    (hDue : pre.releaseAtOn c (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) ≤ now)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (pre : SystemState)
-    (hPre : pre = ((((st.scheduler.replenishQueueOnCore c).popDue now).2.take k).foldl
-        (fun acc scId => processOneReplenishmentOnCore acc c scId now)
-        { st with scheduler := (st.scheduler.setReplenishQueueOnCore c
-            ((st.scheduler.replenishQueueOnCore c).popDue now).1) }))
     (hTarget : replenishWakeTarget pre
-      (refillSchedContext pre (((st.scheduler.replenishQueueOnCore c).popDue now).2[k]) now)
-      (((st.scheduler.replenishQueueOnCore c).popDue now).2[k]) = some tid)
+      (refillSchedContext pre (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) now)
+      (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) = some tid)
     (hTcb : (refillSchedContext pre
-      (((st.scheduler.replenishQueueOnCore c).popDue now).2[k]) now).getTcb? tid = some tcb)
+      (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) now).getTcb? tid = some tcb)
     (hNotRunning : runningOnSomeCore (refillSchedContext pre
-      (((st.scheduler.replenishQueueOnCore c).popDue now).2[k]) now) tid = false) :
+      (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) now) tid = false) :
     (processReplenishmentsDueOnCore st c now).scheduler.reschedulePendingOnCore
       (determineTargetCore (refillSchedContext pre
-        (((st.scheduler.replenishQueueOnCore c).popDue now).2[k]) now) tid) = true := by
-  simp only [processReplenishmentsDueOnCore]
-  generalize hL : ((st.scheduler.replenishQueueOnCore c).popDue now) = pd at hk hPre hTarget hTcb hNotRunning ⊢
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only at hk hPre hTarget hTcb hNotRunning ⊢
-  have hSplit : ∀ (init : SystemState),
-      dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) init =
-        (dueIds.drop (k + 1)).foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now)
-          (processOneReplenishmentOnCore ((dueIds.take k).foldl
-            (fun acc scId => processOneReplenishmentOnCore acc c scId now) init) c dueIds[k] now) := by
-    intro init
-    conv => lhs; rw [← List.take_append_drop k dueIds]
-    rw [List.foldl_append, List.drop_eq_getElem_cons hk, List.foldl_cons]
-  rw [hSplit, ← hPre]
-  have hMark := cbsReplenish_can_wake_remote_core pre c (dueIds[k]) now tid tcb hTarget hTcb hNotRunning
-  generalize processOneReplenishmentOnCore pre c (dueIds[k]) now = s at hMark ⊢
+        (ReleaseChain.decode (pre.scheduler.releaseHeadOnCore c)) now) tid) = true := by
+  unfold processReplenishmentsDueOnCore
+  rw [(hReach.step hHead hDue).drain_eq]
+  have hMark := cbsReplenish_can_wake_remote_core pre c _ now tid tcb hTarget hTcb hNotRunning
   generalize determineTargetCore _ tid = d at hMark ⊢
-  generalize dueIds.drop (k + 1) = rest
-  induction rest generalizing s with
-  | nil => exact hMark
-  | cons hd tl ih =>
-    rw [List.foldl_cons]
-    exact ih _ (processOneReplenishmentOnCore_reschedulePendingOnCore_mono _ c hd now d hMark)
+  refine drainDueOnCore_induction (fun s => s.scheduler.reschedulePendingOnCore d = true) c now
+    (fun s scId hA => processOneReplenishmentOnCore_reschedulePendingOnCore_mono _ c scId now d hA)
+    (fun s scId hA => by simpa only [SystemState.releasePlace_reschedulePendingOnCore] using hA) g _ ?_
+  simpa only [SystemState.releasePlace_reschedulePendingOnCore] using hMark
 
 /-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` leaves every core's
 `lastTimeoutErrors` slot unchanged (it writes only domain slots). -/
@@ -2307,28 +2262,18 @@ theorem processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore (st
         SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore] using hW
   next _heq => exact hRef
 
-private theorem foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore
-    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
-    (acc : SystemState)
-    (hcons : queueCurrentConsistentOnCore acc.scheduler c') :
-    queueCurrentConsistentOnCore
-      (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).scheduler c' := by
-  induction dueIds generalizing acc with
-  | nil => exact hcons
-  | cons hd tl ih =>
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore
-        acc c c' hd now hcons)
-
 /-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
 dequeue-on-dispatch consistency on core `c`. -/
 theorem processReplenishmentsDueOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
     (c : CoreId) (now : Nat) (hcons : queueCurrentConsistentOnCore st.scheduler c) :
-    queueCurrentConsistentOnCore (processReplenishmentsDueOnCore st c now).scheduler c := by
-  simp only [processReplenishmentsDueOnCore]
-  apply foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore
-  simpa only [queueCurrentConsistentOnCore, SchedulerState.setReplenishQueueOnCore_currentOnCore,
-    SchedulerState.setReplenishQueueOnCore_runQueueOnCore] using hcons
+    queueCurrentConsistentOnCore (processReplenishmentsDueOnCore st c now).scheduler c :=
+  processReplenishmentsDueOnCore_induction (fun s => queueCurrentConsistentOnCore s.scheduler c)
+    st c now
+    (fun s scId h => processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore
+      s c c scId now h)
+    (fun s scId h => by
+      simpa only [queueCurrentConsistentOnCore, SystemState.releasePlace_currentOnCore,
+        SystemState.releasePlace_runQueueOnCore] using h) hcons
 
 /-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves
 `queueCurrentConsistentOnCore` — discharges the capstone's `hPrepQcc`. -/
@@ -2362,25 +2307,15 @@ theorem processOneReplenishmentOnCore_preserves_runQueueUnique (st : SystemState
           tid execCore c' hRef
   next _heq => exact hRef
 
-private theorem foldl_processOneReplenishment_preserves_runQueueUnique
-    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
-    (acc : SystemState)
-    (hnd : (acc.scheduler.runQueueOnCore c').toList.Nodup) :
-    ((dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).scheduler.runQueueOnCore c').toList.Nodup := by
-  induction dueIds generalizing acc with
-  | nil => exact hnd
-  | cons hd tl ih =>
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_runQueueUnique acc c c' hd now hnd)
-
 /-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
 run-queue `Nodup` on core `c`. -/
 theorem processReplenishmentsDueOnCore_preserves_runQueueUnique (st : SystemState)
     (c : CoreId) (now : Nat) (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
-    ((processReplenishmentsDueOnCore st c now).scheduler.runQueueOnCore c).toList.Nodup := by
-  simp only [processReplenishmentsDueOnCore]
-  apply foldl_processOneReplenishment_preserves_runQueueUnique
-  simpa only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore] using hnd
+    ((processReplenishmentsDueOnCore st c now).scheduler.runQueueOnCore c).toList.Nodup :=
+  processReplenishmentsDueOnCore_induction (fun s => (s.scheduler.runQueueOnCore c).toList.Nodup)
+    st c now
+    (fun s scId h => processOneReplenishmentOnCore_preserves_runQueueUnique s c c scId now h)
+    (fun s scId h => by simpa only [SystemState.releasePlace_runQueueOnCore] using h) hnd
 
 /-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves run-queue
 `Nodup` — discharges the capstone's `hPrepNd`. -/

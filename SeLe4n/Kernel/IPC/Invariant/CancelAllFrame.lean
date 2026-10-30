@@ -185,7 +185,7 @@ def FinaliseScReleaseStep (P : SystemState → Prop) : Prop :=
     s.getTcb? t = some tcb → tcb.scBindingScCode = x.val + 1 →
     s.getSchedContext? ⟨x.val⟩ = some sc → sc.boundThreadCode = t.val + 1 →
     cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
-      (determineTargetCore s t) = .ok s' → P s'
+      = .ok s' → P s'
 
 /-- **The unstack step a scheduling context's finalisation takes**: the head of
 the reply stack the context heads loses its upward link, then the context its
@@ -644,13 +644,16 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
   dsimp only at hSc
   rw [if_pos (show (t'.scBindingScCode == x.val + 1) = true by simp [hS'])] at hSc
   have hBind := schedContextBinding_ownerCleared (t := t') hS'
-  rw [cancelBoundDonationOnCore_of_bound _ _ _ _ _ hBind] at hSc
+  rw [cancelBoundDonationOnCore_of_bound _ _ _ _ hBind] at hSc
   dsimp only at hSc
   have hOk := cancelBoundDonationOnCore_of_bound s1 tid { t' with scBindingOwnerCode := 0 }
-    (determineTargetCore s1 tid) _ hBind
-  have hObj := cancelBoundDonationOnCore_objects s1 _ tid _ _ _ hBind hOk
+    _ hBind
+  have hObj := cancelBoundDonationOnCore_objects s1 _ tid _ _ hBind hInv1 hOk
+  -- The purge writes the context's release fields alone, which neither read
+  -- below is about.
+  obtain ⟨sc₁, hSc₁, hE⟩ := hObj.getSchedContext?_some' hSc
   rw [SystemState.getSchedContext?_eq_some_iff, show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x
-    from rfl, hObj] at hSc
+    from rfl] at hSc₁
   have hNe : tid.toObjId ≠ x := by
     intro e
     have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT1'
@@ -659,11 +662,13 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
     rw [SystemState.getSchedContext?_eq_some_iff]; exact hO1
   rw [SystemState.updateTcb_objects_ne _ _ _ _ hNe
     (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv1),
-    SystemState.updateSchedContext_eq_of_some hG] at hSc
-  dsimp only at hSc
+    SystemState.updateSchedContext_eq_of_some hG] at hSc₁
+  dsimp only at hSc₁
   rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl,
-    RHTable_getElem?_eq_get?, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1] at hSc
-  cases hSc; exact ⟨rfl, rfl⟩
+    RHTable_getElem?_eq_get?, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1] at hSc₁
+  cases hSc₁
+  exact ⟨SchedContext.proj_eq_of_withoutRelease_eq (·.boundThreadCode) hE,
+    SchedContext.proj_eq_of_withoutRelease_eq (·.donationOrigin) hE⟩
 
 /-- **An admitted context is bound to no thread once its holder is unbound**
 (`finaliseSchedContextUnbind_released`). -/
@@ -1424,6 +1429,35 @@ theorem FinaliseFrame.any {st st' : SystemState} (h : FinaliseFrame st st') :
     FinaliseFrameAny st st' :=
   ⟨h.cdt, h.asidTable, h.invExt, .of_write h.write⟩
 
+/-- WS-ZA ZA6.3: a write of the contexts' release-queue fields alone is a
+finalisation write — a context stays a context with its reply-stack head. -/
+theorem finaliseWrite.of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) : finaliseWrite st st' := by
+  intro oid
+  rcases h.pointwise oid with e | ⟨sc, sc', hp, hq, hE⟩
+  · exact Or.inl e
+  · exact Or.inr ⟨.schedContext sc, .schedContext sc', hp, hq, rfl, rfl,
+      congrArg some (SchedContext.proj_eq_of_withoutRelease_eq (·.scReply) hE),
+      Or.inr (Or.inr (Or.inr rfl))⟩
+
+/-- ...and lends no context and lets go of no reply link. -/
+theorem loanWrite.of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) : loanWrite st st' := by
+  intro oid
+  rcases h.pointwise oid with e | ⟨sc, sc', hp, hq, -⟩
+  · exact Or.inl e
+  · refine Or.inr ⟨.schedContext sc, .schedContext sc', hp, hq, ?_, ?_⟩
+    · intro _ hx; cases hx
+    · intro _ _ hr; cases hr
+
+/-- WS-ZA ZA6.3: a release-queue edit (`SystemState.releaseOnlyWrite`, the
+objects agreeing off the release fields) is a finalisation step. -/
+theorem FinaliseFrame.of_releaseOnlyWrite {st st' : SystemState}
+    (hW : st'.releaseOnlyWrite st) (hA : st'.objectsAgreeOffReleaseLinks st)
+    (hI : st'.objects.invExt) : FinaliseFrame st st' :=
+  ⟨.of_onlyObjectsSchedulerDiffer hW.1, hI, .of_agreeOffReleaseLinks hA,
+    .of_agreeOffReleaseLinks hA⟩
+
 namespace FinaliseFrameAny
 
 theorem refl {st : SystemState} (hInv : st.objects.invExt) : FinaliseFrameAny st st :=
@@ -1712,8 +1746,8 @@ theorem markKeyChangeFrom (pre st : SystemState) (tid : SeLe4n.ThreadId)
 /-- **The reservation unbind**: the context's binding cleared, its replenishment
 purged, the thread's binding cleared, the key hook. -/
 theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
-    {c : Concurrency.CoreId} (hInv : st.objects.invExt)
-    (h : SeLe4n.Kernel.cancelBoundDonationOnCore st t tcb c = .ok st') : FinaliseFrame st st' := by
+    (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.cancelBoundDonationOnCore st t tcb = .ok st') : FinaliseFrame st st' := by
   unfold SeLe4n.Kernel.cancelBoundDonationOnCore at h
   split at h
   · rename_i scId _
@@ -1722,9 +1756,10 @@ theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
       hInv (fun _ => rfl)
     generalize st.updateSchedContext scId _ = st1 at h1 ⊢
-    let sch := st1.scheduler.setReplenishQueueOnCore c
-      (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore c) scId)
-    have h2 := h1.trans (of_objects_eq (st' := { st1 with scheduler := sch }) rfl rfl h1.invExt)
+    have h2 := h1.trans (FinaliseFrame.of_releaseOnlyWrite
+      (SchedContextOps.purgeReplenishment_releaseOnlyWrite st1 scId)
+      (SchedContextOps.purgeReplenishment_agree st1 scId)
+      (SchedContextOps.purgeReplenishment_objects_invExt st1 scId h1.invExt))
     have h3 := h2.trans (updateTcb _ t
       (fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) h2.invExt
       (hL := fun _ => TCB.loanKept_of_bindingCleared rfl rfl))
@@ -1941,21 +1976,18 @@ theorem replyCancel (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) {ep : SeL
   exact f3.trans (unlinkReplyWaiterOpt _ c _ f3.invExt)
 
 /-- **The migration of a returned context's replenishments** writes only the
-scheduler's replenish queues. -/
+release queues and the contexts' release fields. -/
 theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt) :
     FinaliseFrameAny (Lifecycle.Suspend.cancelIpcBlocking st c t)
       (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st) := by
-  have hE := cancelIpcBlockingMigrated_objects c t st
-  have hR : (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st).cdt =
-        (Lifecycle.Suspend.cancelIpcBlocking st c t).cdt ∧
-      (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st).asidTable =
-        (Lifecycle.Suspend.cancelIpcBlocking st c t).asidTable := by
-    unfold SeLe4n.Kernel.cancelIpcBlockingMigrated
-    split
-    · unfold migrateSchedContextReplenishment; dsimp only; split <;> exact ⟨rfl, rfl⟩
-    · exact ⟨rfl, rfl⟩
-  exact ⟨hR.1, hR.2, by rw [hE]; exact hInv, fun _ => Or.inl (by rw [hE])⟩
+  unfold SeLe4n.Kernel.cancelIpcBlockingMigrated
+  split
+  · exact (FinaliseFrame.of_releaseOnlyWrite
+      (migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _)
+      (migrateSchedContextReplenishment_agree _ _ _ _)
+      (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv)).any
+  · exact .refl hInv
 
 /-- **A reply-blocked caller's cancel with its reservation handed back**: the
 cancel, the replenishment migration, and the holder taken off its core. -/
@@ -2175,12 +2207,10 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       have h1 := hS s scId
         (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
       generalize s.updateSchedContext scId _ = s1 at h1 ⊢
-      let c := determineTargetCore s t
-      let sch := s1.scheduler.setReplenishQueueOnCore c
-        (ReplenishQueue.remove (s1.scheduler.replenishQueueOnCore c) scId)
-      have h2 : SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } s :=
+      have h2 : SystemState.onlyObjectsSchedulerDiffer
+          (SchedContextOps.purgeReplenishment s1 scId) s :=
         SystemState.onlyObjectsSchedulerDiffer.trans
-          (show SystemState.onlyObjectsSchedulerDiffer { s1 with scheduler := sch } s1 from rfl) h1
+          (SchedContextOps.purgeReplenishment_releaseOnlyWrite s1 scId).1 h1
       exact (hC ((hK _ _ _).trans ((hU _ _ _).trans h2))).trans h
     · cases hOk
   · exact (hC (hS s1 _ _)).trans ((hSt hSt1).trans h)
@@ -2196,7 +2226,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       refine (hC (descheduleUnboundHolder_onlyObjectsSchedulerDiffer _ _ _ _)).trans ?_
       unfold cancelIpcBlockingMigrated
       split
-      · unfold migrateSchedContextReplenishment; dsimp only; split <;> rfl
+      · exact migrateSchedContextReplenishment_cdt _ _ _ _
       · rfl
     have hRet : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = s.cdt := by
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller

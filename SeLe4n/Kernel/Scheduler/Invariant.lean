@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.SchedContext.Invariant
+import SeLe4n.Kernel.SchedContext.ReleaseLinks
 
 /-!
 # Scheduler Invariant Definitions
@@ -205,7 +206,8 @@ theorem default_replenishmentPipelineOrder :
   intro pair hMem
   -- Default ReplenishQueue has empty entries list
   have : ((default : SystemState).scheduler.replenishQueueOnCore bootCoreId).entries = [] := by
-    rfl
+    rw [show (default : SystemState).scheduler = ({} : SchedulerState) from rfl,
+      SchedulerState.default_replenishQueueOnCore]; rfl
   rw [this] at hMem
   exact absurd hMem (by simp)
 
@@ -681,9 +683,9 @@ def replenishQueueValid (st : SystemState) : Prop :=
 /-- Z4-N: Default state has empty replenish queue — trivially valid. -/
 theorem default_replenishQueueValid :
     replenishQueueValid (default : SystemState) := by
-  constructor
-  · exact empty_sorted
-  · exact empty_sizeConsistent
+  rw [replenishQueueValid, show (default : SystemState).scheduler = ({} : SchedulerState) from rfl,
+    SchedulerState.default_replenishQueueOnCore]
+  exact ⟨empty_sorted, empty_sizeConsistent⟩
 
 -- ============================================================================
 -- Z4-O: schedContextBindingConsistent invariant
@@ -789,6 +791,14 @@ theorem schedContextBindingConsistent_of_objects_eq {st st' : SystemState}
   schedContextBindingConsistent_transfer
     (fun tid => by rw [SystemState.getTcb?_frame hObj tid])
     (fun scId => by rw [SystemState.getSchedContext?_frame hObj scId]) h
+
+/-- WS-ZA ZA6.3: a step writing release-queue links alone keeps every binding. -/
+theorem schedContextBindingConsistent_of_objectsAgreeOffReleaseLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffReleaseLinks st) (h : schedContextBindingConsistent st) :
+    schedContextBindingConsistent st' :=
+  schedContextBindingConsistent_transfer
+    (fun tid => by rw [hA.getTcb? tid])
+    (fun scId => hA.getSchedContext?_map _ (fun _ => rfl) scId) h
 
 /-- **`v0.35.185` (register row 63): Z4-O with the retype's target carved out of
 BOTH sides.**

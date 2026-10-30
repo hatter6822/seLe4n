@@ -1020,6 +1020,17 @@ theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLi
   · obtain ⟨ty, hy, e⟩ := KernelObject.map_withoutRunLinks_tcb (h k).symm hx
     exact ⟨ty, hy, hKept tx ty e.symm (hView k tx ty hx hy)⟩
 
+/-- **A step that writes contexts' release fields alone** keeps what the
+reachable parts read: those fields are no thread's and no notification's. -/
+theorem of_agreeOffReleaseLinks {st st' : SystemState} (h : st'.objectsAgreeOffReleaseLinks st) :
+    ReachFieldFrame st st' :=
+  ⟨fun _ _ => ⟨fun hk => h.symm.get_of_not_sc (fun _ e => KernelObject.noConfusion e) hk,
+      fun hk => h.get_of_not_sc (fun _ e => KernelObject.noConfusion e) hk⟩,
+    fun _ ty hy => ⟨ty, h.get_of_not_sc (fun _ e => KernelObject.noConfusion e) hy,
+      rfl, rfl, rfl, rfl, rfl⟩,
+    fun _ tx hx => ⟨tx, h.symm.get_of_not_sc (fun _ e => KernelObject.noConfusion e) hx,
+      rfl, rfl, rfl, rfl, rfl⟩⟩
+
 /-- The deschedule at a thread's placement: it rewrites run-queue links alone. -/
 theorem descheduleAtPlacement (st : SystemState) (t : SeLe4n.ThreadId) :
     ReachFieldFrame st (SeLe4n.Kernel.descheduleAtPlacement st t) := by
@@ -1034,26 +1045,21 @@ end ReachFieldFrame
 /-- **The reservation unbind keeps the reachable parts' fields**: a context
 rewritten, the scheduler, the thread's binding codes, the key hook. -/
 theorem cancelBoundDonationOnCore_reachFieldFrame {st st' : SystemState} {t : SeLe4n.ThreadId}
-    {tcb : TCB} {c : Concurrency.CoreId} (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st t tcb c = .ok st') : ReachFieldFrame st st' := by
-  unfold cancelBoundDonationOnCore at h
-  split at h
-  · rename_i scId _
-    injection h with h; subst h
+    {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelBoundDonationOnCore st t tcb = .ok st') : ReachFieldFrame st st' := by
+  cases hBind : tcb.schedContextBinding with
+  | bound scId =>
     let g : SchedContext → SchedContext := fun sc =>
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     have h1 := ReachFieldFrame.updateSchedContext st scId g hInv
     have hI1 : (st.updateSchedContext scId g).objects.invExt :=
       (FinaliseFrame.updateSchedContext st scId g hInv (fun _ => rfl)).invExt
-    generalize st.updateSchedContext scId _ = st1 at h1 hI1 ⊢
-    let sch := st1.scheduler.setReplenishQueueOnCore c
-      (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore c) scId)
-    have h2 := (h1.trans (ReachFieldFrame.of_objects_eq (st' := { st1 with scheduler := sch })
-      rfl)).trans (ReachFieldFrame.updateTcb { st1 with scheduler := sch } t
+    have h2 := h1.trans (ReachFieldFrame.updateTcb (st.updateSchedContext scId g) t
       (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) hI1
       (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩))
-    exact h2.trans (ReachFieldFrame.of_objects_eq (markKeyChangeFrom_objects _ _ _))
-  · cases h
+    exact h2.trans (ReachFieldFrame.of_agreeOffReleaseLinks
+      (cancelBoundDonationOnCore_objects st st' t tcb scId hBind hInv h))
+  | _ => unfold cancelBoundDonationOnCore at h; rw [hBind] at h; cases h
 
 -- ============================================================================
 -- §4b  A step that keeps what the notification queues and the budgets read
@@ -1638,7 +1644,7 @@ theorem release {s s' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB} {sc : Sch
     (hS : tcb.scBindingScCode = x.val + 1)
     (hSc : s.getSchedContext? ⟨x.val⟩ = some sc) (hB : sc.boundThreadCode = t.val + 1)
     (hOk : cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
-      (determineTargetCore s t) = .ok s') :
+      = .ok s') :
     finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=
   have hI := finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS
     hSc hB hOk
@@ -1800,11 +1806,13 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
     rw [hEq]; exact g4.invExt
   have nC : NtfnFrame s (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
     rw [hEq]; exact n0.trans (n1.trans (n2.trans (n3.trans n4)))
-  -- The replenishment migration and the holder's deschedule write run links alone.
+  -- The replenishment migration writes release fields alone, and the holder's
+  -- deschedule run links alone.
   have hAgM := cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks c t s
   have hInvM : (cancelIpcBlockingReclaimed c t s).objects.invExt :=
     cancelIpcBlockingReclaimed_objects_invExt c t s hInvC
-  have nAll := (nC.trans (NtfnFrame.of_agreeOffRunLinks hAgM)).trans
+  have nAll := ((nC.trans (NtfnFrame.of_reach (ReachFieldFrame.of_agreeOffReleaseLinks
+    (cancelIpcBlockingMigrated_agree c t s)))).trans (NtfnFrame.of_agreeOffRunLinks hAgM)).trans
     (NtfnFrame.finaliseReplyRevert _ t.blockingServer? hInvM)
   have q := nAll.parts h.2.2.1
   -- The reply-waiter queues.
@@ -1886,7 +1894,8 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
       (.of_agreeOffRunLinks (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ c _))) hC3
   have hCM : donationChainWellFormed (cancelIpcBlockingReclaimed c t s) :=
     donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame (.of_agreeOffRunLinks hAgM))
-      hC4
+      (donationChainWellFormed_of_frame (finaliseWrite.donationChainFrame
+        (.of_agreeOffReleaseLinks (cancelIpcBlockingMigrated_agree c t s))) hC4)
   have hC5 : donationChainWellFormed
       (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
     unfold finaliseReplyRevert

@@ -216,6 +216,37 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
 
+/-- WS-ZA ZA6.3: the projection strips every release-queue field from a
+context, so two stores agreeing off those fields project equally — whichever
+contexts, of whichever domains, the links name. -/
+theorem projectObjects_of_objectsAgreeOffReleaseLinks
+    (ctx : LabelingContext) (observer : IfObserver) {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext oid
+  unfold projectObjects SystemState.getObject?
+  split
+  · rcases h.pointwise oid with e | ⟨sc, sc', hp, hq, hE⟩
+    · rw [e]
+    · rw [hp, hq]
+      have hP : ∀ u : SchedContext, projectKernelObject ctx observer (.schedContext u) =
+          projectKernelObject ctx observer (.schedContext u.withoutRelease) := fun _ => rfl
+      simp only [Option.map_some, hP sc, hP sc', hE]
+  · rfl
+
+/-- WS-ZA ZA6.3: **a release-queue edit is invisible to every observer** — it
+writes the contexts' release fields, which the projection strips, and the
+release-queue slots of the scheduler, which no projection reads. -/
+theorem projectState_of_releaseOnlyWrite (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+    (hA : st'.objectsAgreeOffReleaseLinks st) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  have hO := projectObjects_of_objectsAgreeOffReleaseLinks ctx observer hA
+  obtain ⟨h1, h2⟩ := hW
+  unfold projectState
+  rw [hO, h1, h2]
+  rfl
+
 /-- A step that changes nothing outside the object table, and nothing the
 observer projects inside it, preserves the projection. -/
 theorem projectState_of_objects_only (ctx : LabelingContext) (observer : IfObserver)

@@ -270,8 +270,19 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- ends, so an un-erased origin would make a high client's Call visible
       -- through a low-visible scheduling context for as long as the loan lasts —
       -- strictly longer than the `scReply` head, which moves with every push.
+      --
+      -- **WS-ZA ZA6.3**: strip the release-queue links — `releaseNextCode`
+      -- (seL4-MCS's intrusive release-queue successor), `releaseCoreCode` (the
+      -- core whose queue holds the context) and `releaseAt` (its place in that
+      -- queue).  One core's release queue interleaves contexts of every domain,
+      -- so a low context's successor link can name a high context, and its
+      -- place moves when a high context is inserted ahead of it or drained.
+      -- Erased as the run-queue links are on the TCB arm (WS-ZA ZA4.5), and in
+      -- the cut that adds them: the queue is the scheduler's, and an observer
+      -- sees of it only what the scheduler's own projection carries.
       .schedContext { sc with boundThreadCode := 0, scReply := none,
-                              donationOrigin := none }
+                              donationOrigin := none,
+                              releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0 }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
       -- cross-domain linkage — `caller` (the back-link to the blocked caller

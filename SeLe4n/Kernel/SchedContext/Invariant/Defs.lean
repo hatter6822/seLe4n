@@ -146,13 +146,14 @@ theorem scheduleReplenishment_preserves_replenishmentListWellFormed
     (sc : SchedContext) (currentTime : Nat) (consumed : Budget)
     (hsc : replenishmentListWellFormed sc) (hpos : consumed.val > 0) :
     replenishmentListWellFormed (scheduleReplenishment sc currentTime consumed) := by
-  simp [replenishmentListWellFormed, scheduleReplenishment]
+  unfold replenishmentListWellFormed scheduleReplenishment
+  rw [SchedContext.withReplenishments_replenishments _ _ (truncateReplenishments_length_le _)]
   constructor
   · -- Length bounded by truncation
     exact truncateReplenishments_length_le _
   · -- All entries have positive amount
     intro r hr
-    simp [truncateReplenishments] at hr
+    unfold truncateReplenishments at hr
     have hmem : r ∈ sc.replenishments ++ [mkReplenishmentEntry consumed currentTime sc.period] := by
       exact List.mem_of_mem_drop hr
     simp [List.mem_append] at hmem
@@ -189,11 +190,9 @@ theorem consumeBudget_preserves_replenishmentListWellFormed (sc : SchedContext)
 theorem processReplenishments_preserves_wellFormed (sc : SchedContext)
     (currentTime : Nat) (h : sc.wellFormed) :
     (processReplenishments sc currentTime).wellFormed := by
-  simp [SchedContext.wellFormed, processReplenishments, applyRefill, partitionEligible]
-  obtain ⟨hp, hbp, hrb, hrl⟩ := h
-  refine ⟨hp, hbp, ?_, ?_⟩
-  · omega
-  · exact Nat.le_trans (List.length_filter_le _ _) hrl
+  obtain ⟨hp, hbp, hrb, _⟩ := h
+  refine ⟨?_, ?_, ?_, SchedContext.replenishments_length_le _⟩ <;>
+    simp [processReplenishments, applyRefill, partitionEligible] <;> omega
 
 /-- `processReplenishments` preserves `replenishmentListWellFormed` when
 the source has well-formed replenishments (remaining entries are a sublist). -/
@@ -216,9 +215,8 @@ theorem processReplenishments_preserves_replenishmentListWellFormed
     (h : replenishmentListWellFormed sc) :
     replenishmentListWellFormed (processReplenishments sc currentTime) := by
   constructor
-  · -- Length: filter result ≤ original ≤ maxReplenishments
-    simp [processReplenishments, partitionEligible]
-    exact Nat.le_trans (List.length_filter_le _ _) h.1
+  · -- Length: the context's storage bounds it
+    exact SchedContext.replenishments_length_le _
   · -- All entries have positive amount
     simp [processReplenishments, partitionEligible]
     intro r hr _
@@ -258,9 +256,9 @@ theorem cbsUpdateDeadline_preserves_replenishmentListWellFormed (sc : SchedConte
 theorem scheduleReplenishment_preserves_wellFormed (sc : SchedContext)
     (currentTime : Nat) (consumed : Budget) (h : sc.wellFormed) :
     (scheduleReplenishment sc currentTime consumed).wellFormed := by
-  simp [SchedContext.wellFormed, scheduleReplenishment]
   obtain ⟨hp, hbp, hrb, _⟩ := h
-  exact ⟨hp, hbp, hrb, truncateReplenishments_length_le _⟩
+  exact ⟨by simpa [scheduleReplenishment] using hp, by simpa [scheduleReplenishment] using hbp,
+    by simpa [scheduleReplenishment] using hrb, SchedContext.replenishments_length_le _⟩
 
 /-- `scheduleReplenishment` preserves `budgetWithinBounds` (only changes replenishments). -/
 theorem scheduleReplenishment_preserves_budgetWithinBounds (sc : SchedContext)
@@ -298,8 +296,11 @@ theorem scheduleReplenishment_preserves_replenishmentAmountsBounded
     (sc : SchedContext) (currentTime : Nat) (consumed : Budget)
     (h : replenishmentAmountsBounded sc) (hle : consumed.val ≤ sc.budget.val) :
     replenishmentAmountsBounded (scheduleReplenishment sc currentTime consumed) := by
-  simp [replenishmentAmountsBounded, scheduleReplenishment, truncateReplenishments]
+  unfold replenishmentAmountsBounded scheduleReplenishment
+  rw [SchedContext.withReplenishments_replenishments _ _ (truncateReplenishments_length_le _),
+    SchedContext.withReplenishments_budget]
   intro r hr
+  unfold truncateReplenishments at hr
   have hmem : r ∈ sc.replenishments ++ [mkReplenishmentEntry consumed currentTime sc.period] :=
     List.mem_of_mem_drop hr
   simp [List.mem_append] at hmem

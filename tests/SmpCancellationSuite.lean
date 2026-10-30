@@ -74,13 +74,13 @@ open SeLe4n.Testing
 -- SM6.E.1/.5 cross-core cancellation transitions + reductions:
 #check @cancelIpcBlockingOnCore
 #check @cancelIpcBlockingOnCore_state_eq
-#check @cancelIpcBlockingOnCore_objectsAgreeOffRunLinks
+#check @cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks
 #check @cancelIpcBlockingOnCore_eq_reclaimed_deschedule
 #check @cancelIpcBlockingOnCore_ready_eq_descheduleThread
 
 -- SM6.E.3 per-core donation cancellation + the bootCore bridge:
 #check @cancelBoundDonationOnCore
-#check @cancelBoundDonationOnCore_bootCoreId
+#check @cancelBoundDonationOnCore_eq_cancelBoundDonation
 #check @cancelDonationOnCore
 
 -- SM6.E.5 SGI emission of the composite:
@@ -165,7 +165,6 @@ open SeLe4n.Testing
 #check @cancelDonatedDonation_scheduler_eq
 #check @cancelBoundDonationOnCore_runQueue_current_eq
 #check @cancelBoundDonationOnCore_replenishQueue_purged
-#check @cancelBoundDonationOnCore_replenishQueue_ne
 #check @cancelDonationOnCore_runQueue_current_eq
 
 -- SM6.E cleanup-primitive invExt lemmas (CleanupPreservation):
@@ -413,7 +412,6 @@ open SeLe4n.Testing
 #check @tcbBindingRewrite
 #check @cancelIpcBlockingMigrated
 #check @cancelIpcBlockingMigrated_of_no_donation
-#check @cancelIpcBlockingMigrated_objects
 #check @lockSet_cancelIpcBlocking_returned_donation_sc_write_mem
 #check @lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem
 #check @lockSet_cancelIpcBlockingOnCore_size_le
@@ -501,7 +499,7 @@ example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = 
 example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) :
-    (cancelIpcBlockingOnCore victim tcb ec st).1.objectsAgreeOffRunLinks
+    (cancelIpcBlockingOnCore victim tcb ec st).1.objectsAgreeOffSchedulerLinks
       (cancelIpcBlocking st victim tcb) :=
   -- WS-OD OD1.7, re-keyed at `v0.35.158`: one projection deeper — the per-core
   -- locality conjunct split into a run-queue half and a current-slot half, both
@@ -1009,7 +1007,7 @@ private def mkSc (bound : Option SeLe4n.ThreadId) (active : Bool) : SchedContext
   { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (bound),
     budget := ⟨1000⟩, period := ⟨1000⟩,
     priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨1000⟩, isActive := active, refillTail := [] }
+    budgetRemaining := ⟨1000⟩, isActive := active, refillTailCount := 0 }
 
 private def stBoundDonation : SystemState :=
   let base :=
@@ -1020,8 +1018,7 @@ private def stBoundDonation : SystemState :=
       |>.build)
   -- Seed a pending replenishment for the SC on the victim's home core (core 1),
   -- per the SM5.H affinity discipline.
-  let rq1 := (base.scheduler.replenishQueueOnCore core1).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core1 rq1 }
+  withReleaseEntryOnCore base core1 scId 42
 
 private def runBoundDonationCancelChecks : IO Unit := do
   IO.println "--- §3.6 SM6.E.3 bound-donation cancel (home-core replenish purge) ---"
@@ -1029,7 +1026,7 @@ private def runBoundDonationCancelChecks : IO Unit := do
   assertBool "cancelBindingSc? resolves the bound SC"
     (decide (cancelBindingSc? tcb = some scId ∧ cancelDonatedOwner? tcb = none))
   assertBool "setup: core 1's replenish queue holds the SC's entry"
-    ((stBoundDonation.scheduler.replenishQueueOnCore core1).entries.any
+    ((stBoundDonation.releaseEntriesOn core1).any
       (fun e => e.1 == scId))
   let (st', res) := cancelDonationOnCore victimTid tcb stBoundDonation
   assertBool "bound-donation cancel succeeds"
@@ -1045,10 +1042,10 @@ private def runBoundDonationCancelChecks : IO Unit := do
   -- The per-core purge: the entry is removed from the HOME core's queue
   -- (the single-core arm would have purged bootCore's queue and left this).
   assertBool "the SC's replenishment is purged from core 1's queue (home core)"
-    (!(st'.scheduler.replenishQueueOnCore core1).entries.any (fun e => e.1 == scId))
+    (!(st'.releaseEntriesOn core1).any (fun e => e.1 == scId))
   assertBool "boot core's replenish queue is untouched"
-    (decide ((st'.scheduler.replenishQueueOnCore bootCoreId).entries
-      = (stBoundDonation.scheduler.replenishQueueOnCore bootCoreId).entries))
+    (decide ((st'.releaseEntriesOn bootCoreId)
+      = (stBoundDonation.releaseEntriesOn bootCoreId)))
   -- No scheduler run-queue/current disturbance on any core.
   assertBool "run queues and current slots are untouched on both cores"
     (decide (st'.scheduler.currentOnCore bootCoreId
@@ -1078,8 +1075,7 @@ private def stDonated : SystemState :=
   -- Seed the SC's pending replenishment on the VICTIM's home core (core 1),
   -- per the SM5.H affinity discipline (per-core ticks enqueue there while the
   -- donated server runs).
-  let rq1 := (base.scheduler.replenishQueueOnCore core1).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core1 rq1 }
+  withReleaseEntryOnCore base core1 scId 42
 
 private def runDonatedDonationCancelChecks : IO Unit := do
   IO.println "--- §3.7 SM6.E.3 donated-donation cancel (return to owner) ---"
@@ -1105,9 +1101,9 @@ private def runDonatedDonationCancelChecks : IO Unit := do
   -- the victim's home core (core 1) to the owner's home core (boot) at its
   -- original eligibility time.
   assertBool "SC replenishment is migrated off the victim's home core"
-    (!(st'.scheduler.replenishQueueOnCore core1).entries.any (fun e => e.1 == scId))
+    (!(st'.releaseEntriesOn core1).any (fun e => e.1 == scId))
   assertBool "SC replenishment lands on the owner's home core at its original time"
-    ((st'.scheduler.replenishQueueOnCore bootCoreId).entries.any
+    ((st'.releaseEntriesOn bootCoreId).any
       (fun e => e.1 == scId && e.2 == 42))
   -- Owner TCB write lock in the footprint (the plan row's "receiver TCB").
   let ls := lockSet_cancelDonationOnCore stDonated victimTid
@@ -2072,8 +2068,7 @@ private def stFrameHeadReclaim : SystemState :=
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
-  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+  withReleaseEntryOnCore base core2 scId 42
 
 /-- **The shape on which the two triggers disagree** — and the reason HP5 has to
 land before HP6.
@@ -2115,8 +2110,7 @@ private def stOrphanHeadReclaim : SystemState :=
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some runnerTid) (some rId)))
       |>.build)
-  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+  withReleaseEntryOnCore base core2 scId 42
 
 /-- **WS-HP HP5: the reclaim's trigger, measured on both shapes.**
 
@@ -2178,9 +2172,9 @@ private def runFrameHeadReclaimChecks : IO Unit := do
      | some r => decide (r.next = none ∧ r.caller = none)
      | none => false)
   assertBool "the replenishment migrates off the server's home core"
-    (!(st'.scheduler.replenishQueueOnCore core2).entries.any (fun e => e.1 == scId))
+    (!(st'.releaseEntriesOn core2).any (fun e => e.1 == scId))
   assertBool "...and lands on the victim's home core at its original time"
-    ((st'.scheduler.replenishQueueOnCore core1).entries.any
+    ((st'.releaseEntriesOn core1).any
       (fun e => e.1 == scId && e.2 == 42))
   -- (iv) **The decisive case**: on the orphan-head shape the two triggers answer
   -- differently, and only the head-driven one reclaims.  The mutation keeps every
@@ -2265,12 +2259,11 @@ private def stRefusedReclaimRemoteHolder : SystemState :=
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
-  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+  withReleaseEntryOnCore base core2 scId 42
 
 /-- Does core `c`'s replenish queue hold an entry for `sc`? -/
 private def replenishHolds (st : SystemState) (c : CoreId) (sc : SeLe4n.SchedContextId) : Bool :=
-  (st.scheduler.replenishQueueOnCore c).entries.any (fun e => e.1 == sc)
+  (st.releaseEntriesOn c).any (fun e => e.1 == sc)
 
 /-- **WS-RR RR8.11: the migration's destination is the bound thread's home, not the
 victim's.**
@@ -2410,8 +2403,7 @@ private def stStrandedHolderReclaim : SystemState :=
           queuePPrevCode := 1 } (.blockedOnCall epId)))
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
-  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+  withReleaseEntryOnCore base core2 scId 42
 
 /-- **The shape the wake never touched, and the one that ran unbudgeted**: the
 seL4-MCS steady state of `stFrameHeadReclaim`, with the thread states the live
@@ -2438,8 +2430,7 @@ private def stReadyHolderReclaim : SystemState :=
           scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
-  let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core2 rq2 }
+  withReleaseEntryOnCore base core2 scId 42
 
 /-- ...queued on its home core. -/
 private def stQueuedHolderReclaim : SystemState :=
@@ -2932,8 +2923,8 @@ private def runReclaimMigrationFootprintChecks : IO Unit := do
       match suspendThreadOnCore stQ vtid bootCoreId with
       | .ok (stS, _) =>
           assertBool "the live suspend writes no replenish queue on core 3"
-            ((stS.scheduler.replenishQueueOnCore core3).entries
-              == (stQ.scheduler.replenishQueueOnCore core3).entries)
+            ((stS.releaseEntriesOn core3)
+              == (stQ.releaseEntriesOn core3))
           -- Both of the segment's cores are written, and by different steps:
           -- G2's reclaim moves the entry off core 2 and onto core 1, and G3's
           -- `.bound` arm then purges core 1 — the victim is `.bound scId` by

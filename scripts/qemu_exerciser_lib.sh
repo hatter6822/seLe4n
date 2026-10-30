@@ -342,7 +342,11 @@ for driver in drivers:
             # tick that drains the yield's refill and switches back to the root
             # task, and the unbind.
             "refill-configure", "refill-bind-root", "refill-wait-tick",
-            "refill-drain-tick", "refill-unbind-root")}
+            "refill-drain-tick", "refill-unbind-root",
+            # WS-ZA ZA6.3: the bound yield's forfeit and an exhausting tick
+            # link the context into the release queue in place and write its
+            # refill in its own fields; the tick after waits, the next drains.
+            "refill-yield", "exhaust-tick", "exhaust-wait-tick", "exhaust-drain-tick")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.
@@ -442,12 +446,6 @@ for driver in drivers:
             # (`registerServiceWordsPerform`), and its compiled arm builds no
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
-            # WS-ZA ZA6.2: the bound yield, the refill scenario's setup, forfeits
-            # its budget through the exhausting charge's own step
-            # (`spendBudgetOnCore`): the refill it queues is inserted into the
-            # core's list queue and appended to the context's refill list, the
-            # cells ZA6.3's linked release queue retires.
-            "refill-yield": (11, 11),
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

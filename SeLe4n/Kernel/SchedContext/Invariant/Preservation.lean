@@ -98,7 +98,7 @@ def applyConfigureParamsFull (sc : SchedContext)
     refillHeadPresent := true
     refillHeadAmount := budget
     refillHeadEligibleAt := timer + period
-    refillTail := [] }
+    refillTailCount := 0 }
 
 /-- Z5-M: When parameters pass validation and the original SchedContext has
 bounded replenishments, the configured SchedContext is well-formed. -/

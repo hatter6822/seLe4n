@@ -444,7 +444,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
   rcases notificationSignalOnCore_post_agrees notificationId badge executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
+  · exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks hAgree.objects
       (notificationSignal_preserves_ipcInvariantFull st r1 notificationId badge hInv hObjInv
         hNWC hAllBudgetsNone hStep1)
 
@@ -470,7 +470,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
   rcases notificationWaitOnCore_post_agrees notificationId waiter executingCore st hObjInv with
     hPre | ⟨r1, result, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects
+  · exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks hAgree.objects
       (notificationWait_preserves_ipcInvariantFull st r1 notificationId waiter result hInv hObjInv
         hWaiterNotRecv
         (fun tcb hRaw => hWaiterNotReply tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))

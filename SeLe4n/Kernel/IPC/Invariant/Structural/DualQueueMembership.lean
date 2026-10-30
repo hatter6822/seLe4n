@@ -239,8 +239,8 @@ theorem spliceReplyFrameOutOrSelf_donationOwnerFrameExcept
     (woken : SeLe4n.ThreadId) :
     donationOwnerFrameExcept st (spliceReplyFrameOutOrSelf st rid) woken where
   scForward := fun scId sc h =>
-    (spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv scId.toObjId
-      (.schedContext sc) (fun rr => by exact KernelObject.noConfusion)).mpr h
+    ⟨sc, (spliceReplyFrameOutOrSelf_non_reply_agree st rid hObjInv scId.toObjId
+      (.schedContext sc) (fun rr => by exact KernelObject.noConfusion)).mpr h, rfl⟩
   tcbForward := fun t tcb h =>
     ⟨tcb, spliceReplyFrameOutOrSelf_tcb_eq st rid hObjInv _ tcb h, rfl, Or.inr rfl⟩
 
@@ -7531,7 +7531,7 @@ theorem storeObject_oldNonScNonTcb_donationOwnerFrame
   · intro scId sc hSc
     by_cases h : scId.toObjId = id
     · exact absurd (h ▸ hSc) (hOldNonSc sc)
-    · rw [storeObject_objects_ne st st' id scId.toObjId obj h hObjInv hStore]; exact hSc
+    · rw [storeObject_objects_ne st st' id scId.toObjId obj h hObjInv hStore]; exact ⟨sc, hSc, rfl⟩
   · intro owner ownerTcb hOwner hU hR
     by_cases h : owner.toObjId = id
     · exact absurd (h ▸ hOwner) (hOldNonTcb ownerTcb)
@@ -7556,7 +7556,7 @@ theorem storeObject_modifiedTcb_donationOwnerFrame
   · intro scId sc hSc
     by_cases h : scId.toObjId = id
     · rw [h, hOrig] at hSc; simp at hSc
-    · rw [storeObject_objects_ne st st' id scId.toObjId _ h hObjInv hStore]; exact hSc
+    · rw [storeObject_objects_ne st st' id scId.toObjId _ h hObjInv hStore]; exact ⟨sc, hSc, rfl⟩
   · intro owner ownerTcb hOwner hU hR
     obtain ⟨ep, rt, hRR⟩ := hR
     by_cases h : owner.toObjId = id
@@ -7701,7 +7701,7 @@ theorem storeObject_modifiedTcbPreservingOwner_donationOwnerFrame
   · intro scId sc hSc
     by_cases h : scId.toObjId = id
     · rw [h, hOrig] at hSc; simp at hSc
-    · rw [storeObject_objects_ne st st' id scId.toObjId _ h hObjInv hStore]; exact hSc
+    · rw [storeObject_objects_ne st st' id scId.toObjId _ h hObjInv hStore]; exact ⟨sc, hSc, rfl⟩
   · intro owner ownerTcb hOwner hU hR
     by_cases h : owner.toObjId = id
     · rw [h, hOrig] at hOwner
@@ -8912,8 +8912,8 @@ theorem ipcUnwrapCaps_donationOwnerFrame
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps caps receiverRoot slotBase grantRight st = .ok (summary, st')) :
     donationOwnerFrame st st' :=
-  ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot
-     slotBase grantRight st st' summary scId.toObjId sc hSc hObjInv hStep,
+  ⟨fun scId sc hSc => ⟨sc, ipcUnwrapCaps_preserves_schedContext_objects caps receiverRoot
+     slotBase grantRight st st' summary scId.toObjId sc hSc hObjInv hStep, rfl⟩,
    fun owner ownerTcb hOwner hU hR =>
      let ⟨t1, h1, hw⟩ := ipcUnwrapCaps_preserves_tcb_objects caps receiverRoot slotBase grantRight
        st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep
@@ -12506,7 +12506,7 @@ theorem storeObject_wokenTcb_donationOwnerFrameExcept
   · intro scId sc hSc
     by_cases h : scId.toObjId = woken.toObjId
     · rw [h, hOrig] at hSc; simp at hSc
-    · rw [storeObject_objects_ne st st' woken.toObjId scId.toObjId _ h hObjInv hStore]; exact hSc
+    · rw [storeObject_objects_ne st st' woken.toObjId scId.toObjId _ h hObjInv hStore]; exact ⟨sc, hSc, rfl⟩
   · intro t tcb hTcb
     by_cases h : t.toObjId = woken.toObjId
     · rw [h, hOrig] at hTcb

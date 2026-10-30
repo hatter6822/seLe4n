@@ -170,13 +170,32 @@ structure SchedContext where
       `SchedContext.replenishments` and written through
       `SchedContext.withReplenishments`.  The first entry is held in the
       context's own fields (`refillHeadPresent`, `refillHeadAmount`,
-      `refillHeadEligibleAt`) and the rest in `refillTail`, so the refill a
-      configure installs is written in the context's slot; a list held whole
-      was two fresh cells on a context with no refill yet. -/
+      `refillHeadEligibleAt`), so the refill a configure installs is written
+      in the context's slot; a list held whole was two fresh cells on a
+      context with no refill yet. -/
   refillHeadPresent : Bool := false
   refillHeadAmount : Nat := 0
   refillHeadEligibleAt : Nat := 0
-  refillTail : List ReplenishmentEntry := []
+  /-- WS-ZA ZA6.3: the replenishments after the first, as seL4-MCS keeps its
+      refills in the scheduling context's own storage (`sc_refills`): a count
+      and `maxReplenishments - 1` slots of the context's own fields, read
+      through `SchedContext.refillTail`.  A refill scheduled behind the first
+      writes a slot in place; a list was a fresh cell and a fresh entry. -/
+  refillTailCount : Nat := 0
+  refillSlot1Amount : Nat := 0
+  refillSlot1EligibleAt : Nat := 0
+  refillSlot2Amount : Nat := 0
+  refillSlot2EligibleAt : Nat := 0
+  refillSlot3Amount : Nat := 0
+  refillSlot3EligibleAt : Nat := 0
+  refillSlot4Amount : Nat := 0
+  refillSlot4EligibleAt : Nat := 0
+  refillSlot5Amount : Nat := 0
+  refillSlot5EligibleAt : Nat := 0
+  refillSlot6Amount : Nat := 0
+  refillSlot6EligibleAt : Nat := 0
+  refillSlot7Amount : Nat := 0
+  refillSlot7EligibleAt : Nat := 0
   /-- WS-ZA ZA5.2: the thread this context is bound to, as its code
       (`SeLe4n.ThreadId.optCode`; `0` is none), read through
       `SchedContext.boundThread`.  A bound thread written as `some t` was a heap
@@ -241,6 +260,19 @@ structure SchedContext where
       a loan no boot state has made. -/
   donationOrigin : Option SeLe4n.ThreadId := none
   isActive : Bool := false
+  /-- WS-ZA ZA6.3: the context's place in a core's release queue, which links
+      through the scheduling contexts as seL4-MCS's links through the TCBs
+      (`tcbSchedNext` in the release queue): the next context as a code
+      (`SeLe4n.SchedContextId.optCode`; `0` is none), the core whose queue
+      holds it as a code (`0` is none, `c + 1` is core `c`), and the time its
+      queued refill is released.  The queue is singly linked: an insert walks
+      from the head to its sorted place anyway, and a removal walks the same
+      way to the predecessor.  The queue's head is the core's
+      (`SchedulerState.releaseHeadCode`); the links agree with the abstract
+      queue (`SystemState.releaseQueueRefined`). -/
+  releaseNextCode : Nat := 0
+  releaseCoreCode : Nat := 0
+  releaseAt : Nat := 0
 deriving Repr
 
 /-- WS-ZA ZA5.2: the thread this context is bound to, read from its code.
@@ -250,9 +282,43 @@ Reducible, so a record update that leaves the code alone reads the old value by
     Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
 
+/-- WS-ZA ZA6.3: how many replenishments the context holds after its first. -/
+def refillTailCapacity : Nat := maxReplenishments - 1
+
+/-- WS-ZA ZA6.3: the `i`-th replenishment after the first (`0`-based), read
+from its slot; past the last slot, an empty entry. -/
+@[inline] def SchedContext.tailSlot (sc : SchedContext) : Nat → ReplenishmentEntry
+  | 0 => { amount := ⟨sc.refillSlot1Amount⟩, eligibleAt := sc.refillSlot1EligibleAt }
+  | 1 => { amount := ⟨sc.refillSlot2Amount⟩, eligibleAt := sc.refillSlot2EligibleAt }
+  | 2 => { amount := ⟨sc.refillSlot3Amount⟩, eligibleAt := sc.refillSlot3EligibleAt }
+  | 3 => { amount := ⟨sc.refillSlot4Amount⟩, eligibleAt := sc.refillSlot4EligibleAt }
+  | 4 => { amount := ⟨sc.refillSlot5Amount⟩, eligibleAt := sc.refillSlot5EligibleAt }
+  | 5 => { amount := ⟨sc.refillSlot6Amount⟩, eligibleAt := sc.refillSlot6EligibleAt }
+  | 6 => { amount := ⟨sc.refillSlot7Amount⟩, eligibleAt := sc.refillSlot7EligibleAt }
+  | _ => { amount := ⟨0⟩, eligibleAt := 0 }
+
+/-- WS-ZA ZA6.3: the context with its `i`-th replenishment after the first
+written into its slot; past the last slot, the context as it is.  Each arm is
+one record update, so a context held once is written in place. -/
+@[inline] def SchedContext.setTailSlot (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    SchedContext :=
+  match i with
+  | 0 => { sc with refillSlot1Amount := e.amount.val, refillSlot1EligibleAt := e.eligibleAt }
+  | 1 => { sc with refillSlot2Amount := e.amount.val, refillSlot2EligibleAt := e.eligibleAt }
+  | 2 => { sc with refillSlot3Amount := e.amount.val, refillSlot3EligibleAt := e.eligibleAt }
+  | 3 => { sc with refillSlot4Amount := e.amount.val, refillSlot4EligibleAt := e.eligibleAt }
+  | 4 => { sc with refillSlot5Amount := e.amount.val, refillSlot5EligibleAt := e.eligibleAt }
+  | 5 => { sc with refillSlot6Amount := e.amount.val, refillSlot6EligibleAt := e.eligibleAt }
+  | 6 => { sc with refillSlot7Amount := e.amount.val, refillSlot7EligibleAt := e.eligibleAt }
+  | _ => sc
+
+/-- WS-ZA ZA6.3: the replenishments after the first, read from the slots. -/
+def SchedContext.refillTail (sc : SchedContext) : List ReplenishmentEntry :=
+  (List.range (min sc.refillTailCount refillTailCapacity)).map sc.tailSlot
+
 /-- WS-ZA ZA5.2: the context's pending replenishments, its first entry read
-from its fields.  A record update that leaves the refill fields alone reads
-the old list by `rfl`. -/
+from its fields and the rest from its slots (ZA6.3).  A record update that
+leaves the refill fields alone reads the old list (`replenishments_mk_self`). -/
 @[inline] def SchedContext.replenishments (sc : SchedContext) :
     List ReplenishmentEntry :=
   if sc.refillHeadPresent then
@@ -264,101 +330,436 @@ list. -/
 @[simp] theorem SchedContext.replenishments_mk_self (sc : SchedContext)
     (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
     (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
-    (budgetRemaining : Budget) (periodStart boundThreadCode : Nat)
+    (budgetRemaining : Budget) (periodStart : Nat) (boundThreadCode : Nat)
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
-    (isActive : Bool) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
-      sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTail
-      boundThreadCode scReply donationOrigin isActive).replenishments = sc.replenishments := rfl
+    (isActive : Bool) (releaseNextCode : Nat)
+    (releaseCoreCode : Nat) (releaseAt : Nat) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt).replenishments = sc.replenishments := rfl
 
-/-- WS-ZA ZA5.2: a context whose first entry is present reads it first. -/
-@[simp] theorem SchedContext.replenishments_mk_true
-    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
-    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
-    (budgetRemaining : Budget) (periodStart amount eligibleAt boundThreadCode : Nat)
-    (tail : List ReplenishmentEntry)
-    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
-    (isActive : Bool) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
-      true amount eligibleAt tail boundThreadCode scReply donationOrigin isActive).replenishments =
-      { amount := ⟨amount⟩, eligibleAt := eligibleAt } :: tail := rfl
+/-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
+@[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}
+    (h : sc.refillHeadPresent = true) :
+    sc.replenishments =
+      { amount := ⟨sc.refillHeadAmount⟩, eligibleAt := sc.refillHeadEligibleAt } :: sc.refillTail := by
+  simp [SchedContext.replenishments, h]
 
-/-- WS-ZA ZA5.2: a context with no first entry holds none. -/
-@[simp] theorem SchedContext.replenishments_mk_false
-    (scId : SeLe4n.SchedContextId) (budget : Budget) (period : Period)
-    (priority : SeLe4n.Priority) (deadline : SeLe4n.Deadline) (domain : SeLe4n.DomainId)
-    (budgetRemaining : Budget) (periodStart amount eligibleAt boundThreadCode : Nat)
-    (tail : List ReplenishmentEntry)
-    (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
-    (isActive : Bool) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart
-      false amount eligibleAt tail boundThreadCode scReply donationOrigin isActive).replenishments =
-      [] := rfl
+/-- WS-ZA ZA6.3: a context with no first entry holds none. -/
+@[simp] theorem SchedContext.replenishments_of_not_present {sc : SchedContext}
+    (h : sc.refillHeadPresent = false) : sc.replenishments = [] := by
+  simp [SchedContext.replenishments, h]
+
+/-- WS-ZA ZA6.3: a context with no replenishment after its first holds none. -/
+@[simp] theorem SchedContext.refillTail_of_count_zero {sc : SchedContext}
+    (h : sc.refillTailCount = 0) : sc.refillTail = [] := by
+  simp [SchedContext.refillTail, h]
+
+/-- WS-ZA ZA6.3: the slots from `i` on written with `l`, one slot each. -/
+def SchedContext.writeTail (sc : SchedContext) : Nat → List ReplenishmentEntry → SchedContext
+  | _, [] => sc
+  | i, e :: l => (sc.setTailSlot i e).writeTail (i + 1) l
 
 /-- WS-ZA ZA5.2: the context with `rs` as its pending replenishments, the first
-entry written into its fields. -/
+entry written into its fields and the rest into its slots (ZA6.3). -/
 @[inline] def SchedContext.withReplenishments (sc : SchedContext)
     (rs : List ReplenishmentEntry) : SchedContext :=
-  { sc with
+  { sc.writeTail 0 rs.tail with
     refillHeadPresent := !rs.isEmpty
     refillHeadAmount := match rs with | e :: _ => e.amount.val | [] => sc.refillHeadAmount
     refillHeadEligibleAt := match rs with | e :: _ => e.eligibleAt | [] => sc.refillHeadEligibleAt
-    refillTail := rs.tail }
+    refillTailCount := rs.tail.length }
 
-@[simp] theorem SchedContext.withReplenishments_replenishments (sc : SchedContext)
-    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).replenishments = rs := by
-  cases rs with
+@[simp] theorem SchedContext.setTailSlot_scId (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).scId = sc.scId := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_budget (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).budget = sc.budget := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_period (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).period = sc.period := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_priority (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).priority = sc.priority := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_deadline (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).deadline = sc.deadline := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_domain (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).domain = sc.domain := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_budgetRemaining (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).budgetRemaining = sc.budgetRemaining := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_periodStart (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).periodStart = sc.periodStart := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_boundThreadCode (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).boundThreadCode = sc.boundThreadCode := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_scReply (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).scReply = sc.scReply := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_donationOrigin (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).donationOrigin = sc.donationOrigin := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_isActive (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).isActive = sc.isActive := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_releaseNextCode (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).releaseNextCode = sc.releaseNextCode := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_releaseCoreCode (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).releaseCoreCode = sc.releaseCoreCode := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_releaseAt (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).releaseAt = sc.releaseAt := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_refillHeadPresent (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).refillHeadPresent = sc.refillHeadPresent := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_refillHeadAmount (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).refillHeadAmount = sc.refillHeadAmount := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_refillHeadEligibleAt (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).refillHeadEligibleAt = sc.refillHeadEligibleAt := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.setTailSlot_refillTailCount (sc : SchedContext) (i : Nat) (e : ReplenishmentEntry) :
+    (sc.setTailSlot i e).refillTailCount = sc.refillTailCount := by
+  unfold SchedContext.setTailSlot; split <;> rfl
+
+@[simp] theorem SchedContext.writeTail_scId (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).scId = sc.scId := by
+  induction l generalizing sc i with
   | nil => rfl
-  | cons e rest => rcases e with ⟨⟨a⟩, t⟩; rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_scId]
 
-/-- WS-ZA ZA5.2: writing the replenishments leaves every other field. -/
+@[simp] theorem SchedContext.writeTail_budget (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).budget = sc.budget := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_budget]
+
+@[simp] theorem SchedContext.writeTail_period (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).period = sc.period := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_period]
+
+@[simp] theorem SchedContext.writeTail_priority (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).priority = sc.priority := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_priority]
+
+@[simp] theorem SchedContext.writeTail_deadline (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).deadline = sc.deadline := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_deadline]
+
+@[simp] theorem SchedContext.writeTail_domain (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).domain = sc.domain := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_domain]
+
+@[simp] theorem SchedContext.writeTail_budgetRemaining (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).budgetRemaining = sc.budgetRemaining := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_budgetRemaining]
+
+@[simp] theorem SchedContext.writeTail_periodStart (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).periodStart = sc.periodStart := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_periodStart]
+
+@[simp] theorem SchedContext.writeTail_boundThreadCode (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).boundThreadCode = sc.boundThreadCode := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_boundThreadCode]
+
+@[simp] theorem SchedContext.writeTail_scReply (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).scReply = sc.scReply := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_scReply]
+
+@[simp] theorem SchedContext.writeTail_donationOrigin (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).donationOrigin = sc.donationOrigin := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_donationOrigin]
+
+@[simp] theorem SchedContext.writeTail_isActive (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).isActive = sc.isActive := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_isActive]
+
+@[simp] theorem SchedContext.writeTail_releaseNextCode (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).releaseNextCode = sc.releaseNextCode := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_releaseNextCode]
+
+@[simp] theorem SchedContext.writeTail_releaseCoreCode (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).releaseCoreCode = sc.releaseCoreCode := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_releaseCoreCode]
+
+@[simp] theorem SchedContext.writeTail_releaseAt (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).releaseAt = sc.releaseAt := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_releaseAt]
+
+@[simp] theorem SchedContext.writeTail_refillHeadPresent (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).refillHeadPresent = sc.refillHeadPresent := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_refillHeadPresent]
+
+@[simp] theorem SchedContext.writeTail_refillHeadAmount (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).refillHeadAmount = sc.refillHeadAmount := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_refillHeadAmount]
+
+@[simp] theorem SchedContext.writeTail_refillHeadEligibleAt (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).refillHeadEligibleAt = sc.refillHeadEligibleAt := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_refillHeadEligibleAt]
+
+@[simp] theorem SchedContext.writeTail_refillTailCount (sc : SchedContext) (i : Nat) (l : List ReplenishmentEntry) :
+    (sc.writeTail i l).refillTailCount = sc.refillTailCount := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih => simp only [SchedContext.writeTail, ih, SchedContext.setTailSlot_refillTailCount]
+
 @[simp] theorem SchedContext.withReplenishments_scId (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).scId = sc.scId := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_budget (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).budget = sc.budget := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_period (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).period = sc.period := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_priority (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).priority = sc.priority := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_deadline (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).deadline = sc.deadline := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_domain (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).domain = sc.domain := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_budgetRemaining (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).budgetRemaining = sc.budgetRemaining := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_periodStart (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).periodStart = sc.periodStart := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_boundThreadCode (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).boundThreadCode = sc.boundThreadCode := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_scReply (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).scReply = sc.scReply := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_donationOrigin (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).donationOrigin = sc.donationOrigin := by
-  rfl
+  simp [SchedContext.withReplenishments]
 
 @[simp] theorem SchedContext.withReplenishments_isActive (sc : SchedContext)
     (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).isActive = sc.isActive := by
-  rfl
+  simp [SchedContext.withReplenishments]
+
+@[simp] theorem SchedContext.withReplenishments_releaseNextCode (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).releaseNextCode = sc.releaseNextCode := by
+  simp [SchedContext.withReplenishments]
+
+@[simp] theorem SchedContext.withReplenishments_releaseCoreCode (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).releaseCoreCode = sc.releaseCoreCode := by
+  simp [SchedContext.withReplenishments]
+
+@[simp] theorem SchedContext.withReplenishments_releaseAt (sc : SchedContext)
+    (rs : List ReplenishmentEntry) : (sc.withReplenishments rs).releaseAt = sc.releaseAt := by
+  simp [SchedContext.withReplenishments]
+
+/-- WS-ZA ZA6.3: a slot written reads back; every other slot reads as before. -/
+theorem SchedContext.tailSlot_setTailSlot (sc : SchedContext) (i j : Nat) (e : ReplenishmentEntry)
+    (hi : i < refillTailCapacity) :
+    (sc.setTailSlot i e).tailSlot j = if j = i then e else sc.tailSlot j := by
+  rcases e with ⟨⟨a⟩, t⟩
+  have hi' : i < 7 := hi
+  match i, hi' with
+  | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ =>
+    match j with
+    | 0 | 1 | 2 | 3 | 4 | 5 | 6 => simp [SchedContext.setTailSlot, SchedContext.tailSlot]
+    | _ + 7 => simp [SchedContext.setTailSlot, SchedContext.tailSlot]
+
+/-- WS-ZA ZA6.3: writing the slots from `i` on leaves the slots before `i`. -/
+theorem SchedContext.writeTail_tailSlot_lt (sc : SchedContext) (i j : Nat)
+    (l : List ReplenishmentEntry) (hj : j < i) (hl : i + l.length ≤ refillTailCapacity) :
+    (sc.writeTail i l).tailSlot j = sc.tailSlot j := by
+  induction l generalizing sc i with
+  | nil => rfl
+  | cons e l ih =>
+    simp only [List.length_cons] at hl
+    simp only [SchedContext.writeTail]
+    rw [ih _ (i + 1) (by omega) (by omega),
+      SchedContext.tailSlot_setTailSlot _ _ _ _ (by omega), if_neg (by omega)]
+
+/-- WS-ZA ZA6.3: writing the slots from `i` on with `l` puts `l`'s `k`-th entry
+in slot `i + k`. -/
+theorem SchedContext.writeTail_tailSlot (sc : SchedContext) (i : Nat)
+    (l : List ReplenishmentEntry) (hl : i + l.length ≤ refillTailCapacity) (k : Nat)
+    (hk : k < l.length) :
+    (sc.writeTail i l).tailSlot (i + k) = l[k] := by
+  induction l generalizing sc i k with
+  | nil => simp at hk
+  | cons e l ih =>
+    simp only [List.length_cons] at hl hk
+    simp only [SchedContext.writeTail]
+    cases k with
+    | zero =>
+      rw [SchedContext.writeTail_tailSlot_lt _ _ _ _ (by omega) (by omega),
+        SchedContext.tailSlot_setTailSlot _ _ _ _ (by omega), if_pos (by omega)]
+      rfl
+    | succ k =>
+      rw [show i + (k + 1) = (i + 1) + k by omega, ih _ (i + 1) (by omega) k (by omega)]
+      rfl
+
+/-- WS-ZA ZA6.3: the slots read through a record update of the other fields. -/
+theorem SchedContext.tailSlot_of_slots_eq {sc sc' : SchedContext}
+    (h1 : sc'.refillSlot1Amount = sc.refillSlot1Amount ∧ sc'.refillSlot1EligibleAt = sc.refillSlot1EligibleAt)
+    (h2 : sc'.refillSlot2Amount = sc.refillSlot2Amount ∧ sc'.refillSlot2EligibleAt = sc.refillSlot2EligibleAt)
+    (h3 : sc'.refillSlot3Amount = sc.refillSlot3Amount ∧ sc'.refillSlot3EligibleAt = sc.refillSlot3EligibleAt)
+    (h4 : sc'.refillSlot4Amount = sc.refillSlot4Amount ∧ sc'.refillSlot4EligibleAt = sc.refillSlot4EligibleAt)
+    (h5 : sc'.refillSlot5Amount = sc.refillSlot5Amount ∧ sc'.refillSlot5EligibleAt = sc.refillSlot5EligibleAt)
+    (h6 : sc'.refillSlot6Amount = sc.refillSlot6Amount ∧ sc'.refillSlot6EligibleAt = sc.refillSlot6EligibleAt)
+    (h7 : sc'.refillSlot7Amount = sc.refillSlot7Amount ∧ sc'.refillSlot7EligibleAt = sc.refillSlot7EligibleAt)
+    (j : Nat) : sc'.tailSlot j = sc.tailSlot j := by
+  match j with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 | _ + 7 =>
+    simp only [SchedContext.tailSlot, h1.1, h1.2, h2.1, h2.2, h3.1, h3.2, h4.1, h4.2, h5.1, h5.2,
+      h6.1, h6.2, h7.1, h7.2]
+
+/-- WS-ZA ZA6.3: a slot rewritten with what it holds is the context. -/
+theorem SchedContext.setTailSlot_self (sc : SchedContext) (i : Nat) (hi : i < refillTailCapacity) :
+    sc.setTailSlot i (sc.tailSlot i) = sc := by
+  have hi' : i < 7 := hi
+  match i, hi' with
+  | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ => rfl
+
+/-- WS-ZA ZA6.3: writing two lists is writing their join. -/
+theorem SchedContext.writeTail_append (sc : SchedContext) (i : Nat)
+    (l₁ l₂ : List ReplenishmentEntry) :
+    sc.writeTail i (l₁ ++ l₂) = (sc.writeTail i l₁).writeTail (i + l₁.length) l₂ := by
+  induction l₁ generalizing sc i with
+  | nil => rfl
+  | cons e l ih =>
+    simp only [List.cons_append, SchedContext.writeTail, List.length_cons, ih]
+    rw [Nat.add_assoc, Nat.add_comm 1]
+
+/-- WS-ZA ZA6.3: the slots rewritten with what they hold are the context. -/
+theorem SchedContext.writeTail_range'_self (sc : SchedContext) (i k : Nat)
+    (h : i + k ≤ refillTailCapacity) :
+    sc.writeTail i ((List.range' i k).map sc.tailSlot) = sc := by
+  induction k generalizing i with
+  | zero => rfl
+  | succ k ih =>
+    simp only [List.range'_succ, List.map_cons, SchedContext.writeTail]
+    rw [SchedContext.setTailSlot_self _ _ (by omega)]
+    exact ih (i + 1) (by omega)
+
+/-- WS-ZA ZA6.3: the replenishments after the first, rewritten into the slots,
+are the context, when they fit. -/
+theorem SchedContext.writeTail_refillTail (sc : SchedContext) :
+    sc.writeTail 0 sc.refillTail = sc := by
+  unfold SchedContext.refillTail
+  rw [List.range_eq_range']
+  exact SchedContext.writeTail_range'_self sc 0 _ (by omega)
+
+/-- WS-ZA ZA5.2: the replenishments written read back, when they fit the
+context's storage (ZA6.3: the first entry and `refillTailCapacity` slots), as
+every writer's do (`truncateReplenishments_length_le`). -/
+@[simp] theorem SchedContext.withReplenishments_replenishments (sc : SchedContext)
+    (rs : List ReplenishmentEntry) (h : rs.length ≤ maxReplenishments) :
+    (sc.withReplenishments rs).replenishments = rs := by
+  cases rs with
+  | nil => rfl
+  | cons e rest =>
+    rcases e with ⟨⟨a⟩, t⟩
+    have hl : rest.length ≤ refillTailCapacity := by
+      simp only [List.length_cons] at h; unfold refillTailCapacity; omega
+    simp only [SchedContext.replenishments, SchedContext.withReplenishments, List.isEmpty_cons,
+      Bool.not_false, if_true, List.cons.injEq, true_and, List.tail_cons]
+    unfold SchedContext.refillTail
+    apply List.ext_getElem
+    · simp only [List.length_map, List.length_range]; omega
+    · intro k hk _
+      simp only [List.getElem_map, List.getElem_range]
+      have hk' : k < rest.length := by
+        simp only [List.length_map, List.length_range] at hk; omega
+      have := SchedContext.writeTail_tailSlot sc 0 rest (by omega) k hk'
+      rw [Nat.zero_add] at this
+      rw [← this]
+      exact SchedContext.tailSlot_of_slots_eq ⟨rfl, rfl⟩ ⟨rfl, rfl⟩ ⟨rfl, rfl⟩ ⟨rfl, rfl⟩
+        ⟨rfl, rfl⟩ ⟨rfl, rfl⟩ ⟨rfl, rfl⟩ k
+
+/-- WS-ZA ZA6.3: the context's replenishments never exceed its storage. -/
+theorem SchedContext.replenishments_length_le (sc : SchedContext) :
+    sc.replenishments.length ≤ maxReplenishments := by
+  unfold SchedContext.replenishments SchedContext.refillTail
+  split
+  · simp only [List.length_cons, List.length_map, List.length_range]
+    unfold refillTailCapacity maxReplenishments; omega
+  · simp
+
+/-- WS-ZA ZA6.3: a filter of the context's replenishments fits its storage. -/
+@[simp] theorem SchedContext.length_filter_replenishments_le (sc : SchedContext)
+    (p : ReplenishmentEntry → Bool) :
+    (sc.replenishments.filter p).length ≤ maxReplenishments :=
+  Nat.le_trans (List.length_filter_le _ _) sc.replenishments_length_le
+
+/-- WS-ZA ZA6.3: the replenishments after the first number `refillTailCount`,
+up to the slots. -/
+theorem SchedContext.refillTail_length (sc : SchedContext) :
+    sc.refillTail.length = min sc.refillTailCount refillTailCapacity := by
+  simp [SchedContext.refillTail]
 
 -- ============================================================================
 -- Z1-G: SchedContext.wellFormed predicate
@@ -620,6 +1021,10 @@ instance : BEq SchedContext where
     -- write that records or clears the loan's owner is visible to every caller
     -- that compares with `==`, including the frozen surface's differential.
     a.donationOrigin == b.donationOrigin &&
-    a.isActive == b.isActive
+    a.isActive == b.isActive &&
+    -- WS-ZA ZA6.3: and the context's release-queue place, as a thread's
+    -- run-queue links take part in its own.
+    a.releaseNextCode == b.releaseNextCode && a.releaseCoreCode == b.releaseCoreCode &&
+    a.releaseAt == b.releaseAt
 
 end SeLe4n.Kernel

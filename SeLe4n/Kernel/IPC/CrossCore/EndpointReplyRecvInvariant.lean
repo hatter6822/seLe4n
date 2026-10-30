@@ -279,8 +279,9 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
               (determineTargetCore st holder)
                 (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
             (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
-          rw [← hEq, migrateSchedContextReplenishment_objects]
-          exact returnDonatedSchedContext_preserves_objects_invExt st st1' _ _ _ hObjInv n hPopN
+          rw [← hEq]
+          exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _
+            (returnDonatedSchedContext_preserves_objects_invExt st st1' _ _ _ hObjInv n hPopN)
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the pop restores replenish-queue affinity
 consistency on every core.**
@@ -653,15 +654,11 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                     (donationReturnOuterValid_of_stackValid
                       (hStackValid oldScId holderV.val o) hResN) hRetV
             -- The migration is invisible to every bundle reading.
-            have hObjsM : (migrateSchedContextReplenishment st1' oldScId
-                (determineTargetCore st holder)
-                (determineTargetCore st (replyDonationRecipient st oldScId target))).objects
-                  = st1'.objects :=
-              migrateSchedContextReplenishment_objects st1' oldScId _ _
             have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
                 (determineTargetCore st holder)
                 (determineTargetCore st (replyDonationRecipient st oldScId target))) :=
-              ipcInvariantFull_of_objects_eq hObjsM hInv1'
+              ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+                (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _)) hInv1'
             exact h.2 ▸ hInvM
 
 @[simp] theorem replyRecvPostPopState_eq_of_ok (rid : SeLe4n.ReplyId)

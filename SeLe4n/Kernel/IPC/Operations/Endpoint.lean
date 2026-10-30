@@ -9524,6 +9524,32 @@ theorem returnDonatedSchedContext_tableReferenceFrame
   rw [storeObject_referenceTables h4, storeObject_referenceTables h3,
     storeDonationHeadPop_referenceTables hClear, storeObject_referenceTables h1]
 
+/-- WS-ZA ZA6.3: the donation hand-back holds the release queues — its context
+store keeps the release fields, and its other stores are a reply's and two
+threads'. -/
+theorem returnDonatedSchedContext_releaseStateAgree
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.releaseStateAgree st' st := by
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, hSc, _, _, _, h1, hClear, hL3, h3, hL4, h4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have i3 := storeObject_preserves_objects_invExt s2 s3 _ _ i2 h3
+  have a1 := SystemState.releaseStateAgree.storeObject hObjInv h1 fun _ => by rw [hSc]; rfl
+  have a2 : SystemState.releaseStateAgree s2 s1 :=
+    .of_getSchedContext? (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+      (by rw [storeDonationHeadPop_scheduler_eq hClear])
+  have a3 := SystemState.releaseStateAgree.storeObject_tcb i2 h3
+    (lookupTcb_some_objects _ _ _ hL3)
+  have a4 := SystemState.releaseStateAgree.storeObject_tcb i3 h4
+    (lookupTcb_some_objects _ _ _ hL4)
+  have a5 : SystemState.releaseStateAgree st' s4 :=
+    .of_objects_eq (by rw [hEq]) (by rw [hEq]; rfl)
+  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+
 /-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and the
 reschedule flags — the TLB-shootdown state is framed.  Mirrors the proof
 structure of `returnDonatedSchedContext_scheduler_eq` (Z7-C); a link of

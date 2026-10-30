@@ -79,9 +79,10 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
         (hChainHead scId holderVtid.val · · · hHead) hRet
     rw [hEq]
     refine donationChainWellFormed_of_frame ?_ hChain'
-    exact donationChainFrame.of_objectsAgreeOffRunLinks
-      ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
-        (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _)))
+    exact donationChainFrame.of_objectsAgreeOffSchedulerLinks
+      ((SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+          (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).trans
+          (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _)))
 
 /-- **WS-RM (`v0.35.6`)**: what the cross-core reply leg leaves of the donation
 chain.
@@ -248,14 +249,13 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
               (donationOriginRecipient?_rebindable st hOrigin))
             n
             (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
-    -- The migration writes only per-core replenish queues; the deschedule
+    -- The migration writes only release-queue links; the deschedule
     -- writes only run-queue links.
-    let stM : SystemState := migrateSchedContextReplenishment st' scId holderHome ownerHome
-    have hMObjs : stM.objects = st'.objects := migrateSchedContextReplenishment_objects _ _ _ _
     rw [hEq]
-    exact ipcInvariantFull_of_objectsAgreeOffRunLinks
-      (descheduleAtPlacement_objectsAgreeOffRunLinks stM holderVtid.val)
-      (ipcInvariantFull_of_objects_eq hMObjs hFull')
+    exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+      ((SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+        (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).trans
+        (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))) hFull'
 
 /-- WS-RR RR3.12: `applyReplyDonationOnCore` **establishes** the full bundle from the
 form relaxed at the thread the reply woke — the cross-core counterpart of
@@ -334,14 +334,13 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
                 (donationOriginRecipient?_rebindable st hOrigin))
               n
               (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
-      -- The migration writes only per-core replenish queues; the deschedule
+      -- The migration writes only release-queue links; the deschedule
       -- writes only run-queue links.
-      let stM : SystemState := migrateSchedContextReplenishment st' scId holderHome ownerHome
-      have hMObjs : stM.objects = st'.objects := migrateSchedContextReplenishment_objects _ _ _ _
       rw [hEq]
-      exact ipcInvariantFull_of_objectsAgreeOffRunLinks
-        (descheduleAtPlacement_objectsAgreeOffRunLinks stM holderVtid.val)
-        (ipcInvariantFull_of_objects_eq hMObjs hFull')
+      exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+        ((SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+          (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).trans
+          (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))) hFull'
   · exact applyReplyDonationOnCore_preserves_ipcInvariantFull st st'' rid targetVtid
       holderHome ownerHome hObjInv
       (ipcInvariantFull_of_exceptDonationOwner hInv
@@ -368,7 +367,7 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
       (replyDonationRecipient st scId targetVtid.val) hObjInv n hR
     rw [hEq]
     exact descheduleAtPlacement_preserves_objects_invExt _ _
-      (by rw [migrateSchedContextReplenishment_objects]; exact hInv')
+      (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv')
 
 /-- **WS-RR RR8.16 (`v0.35.195`)**: the cross-core donation return preserves every
 thread's `ipcState` backward.
@@ -1004,9 +1003,10 @@ theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
     refine capabilityInvariantBundle_of_kindPreserving hRetB ?_ ?_ ?_
     · rw [descheduleAtPlacement_cdt, migrateSchedContextReplenishment_cdt]
     · exact descheduleAtPlacement_preserves_objects_invExt _ _
-        (by rw [migrateSchedContextReplenishment_objects]; exact hRetB.objectsInvExt)
-    · exact ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
-        (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _))).kindPreserving
+        (migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hRetB.objectsInvExt)
+    · exact ((SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+        (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).trans
+        (.of_releaseLinks (migrateSchedContextReplenishment_agree _ _ _ _))).kindPreserving
 
 -- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
 -- `IPC/Invariant/FaultPreservation.lean`, so the production fault-path bundle

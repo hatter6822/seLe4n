@@ -83,26 +83,16 @@ theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context
     (hNo : (st.getTcb? tid).bind (fun tcb => tcb.schedContextBinding.scId?) = none)
     (h : setThreadCpuAffinityWithMigration st tid affinity executingCore = .ok (st', sgi)) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold setThreadCpuAffinityWithMigration at h
-  split at h
-  · rename_i tcb hTcb
-    split at h
-    · exact absurd h (by simp)
-    · split at h
-      · exact absurd h (by simp)
-      · cases hSet : setThreadCpuAffinity st tid affinity with
-        | error e => rw [hSet] at h; exact absurd h (by simp)
-        | ok stSet =>
-          rw [hSet] at h
-          dsimp only at h
-          have hBind : tcb.schedContextBinding.scId? = none := by
-            rw [hTcb] at hNo; simpa using hNo
-          rw [hBind] at h
-          dsimp only at h
-          rw [Except.ok.injEq, Prod.mk.injEq] at h
-          rw [← h.1, migrateRunQueueOnAffinityChange_replenishQueueOnCore,
-            setThreadCpuAffinity_scheduler_eq st stSet tid affinity hSet]
-  · exact absurd h (by simp)
+  obtain ⟨tcb, stSet, hTcb, -, -, -, hSet, rfl, -⟩ :=
+    setThreadCpuAffinityWithMigration_ok_shape h
+  have hBind : tcb.schedContextBinding.scId? = none := by
+    rw [hTcb] at hNo; simpa using hNo
+  rw [hBind]
+  dsimp only
+  rw [requeueVacatedOnNewHome_replenishQueueOnCore,
+    migrateRunQueueOnAffinityChange_replenishQueueOnCore,
+    setThreadCpuAffinity_scheduler_eq _ stSet tid affinity hSet,
+    vacateForAffinityChange_replenishQueueOnCore]
 
 /-- **WS-RR RR8.12 Cut C6b: the `.tcbSetAffinity` arm's exactness frame.**
 
@@ -129,31 +119,19 @@ theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne (st st' : Syst
   | some scId =>
       rw [hBind] at hne
       simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
-      unfold setThreadCpuAffinityWithMigration at h
-      split at h
-      · rename_i tcb hTcb
-        split at h
-        · exact absurd h (by simp)
-        · split at h
-          · exact absurd h (by simp)
-          · cases hSet : setThreadCpuAffinity st tid affinity with
-            | error e => rw [hSet] at h; exact absurd h (by simp)
-            | ok stSet =>
-              rw [hSet] at h
-              dsimp only at h
-              have hScId : tcb.schedContextBinding.scId? = some scId := by
-                rw [hTcb] at hBind; simpa using hBind
-              rw [hScId] at h
-              dsimp only at h
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
-              have hNew := setThreadCpuAffinity_determineTargetCore_eq st stSet tid affinity
-                hInv hSet
-              rw [← h.1, migrateRunQueueOnAffinityChange_replenishQueueOnCore, hNew,
-                migrateSchedContextReplenishment_replenishQueueOnCore_other stSet scId
-                  (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId) c
-                  (fun hEq => hne.1 hEq.symm) (fun hEq => hne.2 hEq.symm),
-                setThreadCpuAffinity_scheduler_eq st stSet tid affinity hSet]
-      · exact absurd h (by simp)
+      obtain ⟨tcb, stSet, hTcb, -, -, -, hSet, rfl, -⟩ :=
+        setThreadCpuAffinityWithMigration_ok_shape h
+      have hScId : tcb.schedContextBinding.scId? = some scId := by
+        rw [hTcb] at hBind; simpa using hBind
+      rw [hScId]
+      dsimp only
+      rw [requeueVacatedOnNewHome_replenishQueueOnCore,
+        migrateRunQueueOnAffinityChange_replenishQueueOnCore,
+        migrateSchedContextReplenishment_replenishQueueOnCore_other stSet scId
+          (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId) c
+          (fun hEq => hne.1 hEq.symm) (fun hEq => hne.2 hEq.symm),
+        setThreadCpuAffinity_scheduler_eq _ stSet tid affinity hSet,
+        vacateForAffinityChange_replenishQueueOnCore]
 
 /-- **`v0.35.167`: the live `.tcbSetAffinity` arm's scheduler-domain footprint.** -/
 def schedLockSet_setThreadCpuAffinityOnCore (st : SystemState) (tid : SeLe4n.ThreadId)

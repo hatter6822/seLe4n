@@ -598,6 +598,27 @@ theorem toObjId_injective (a b : SchedContextId) (h : a.toObjId = b.toObjId) : a
   simp [toObjId, toNat, ObjId.ofNat] at h
   subst h; rfl
 
+
+/-- WS-ZA ZA6.3: an optional scheduling context as one scalar: `0` for
+`none`, `s + 1` for `some s`, as `ThreadId.optCode` (the release queue's links
+are stored this way, so writing a present link allocates nothing). -/
+@[inline] def optCode : Option SchedContextId → Nat
+  | none => 0
+  | some s => s.val + 1
+
+/-- The optional scheduling context a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option SchedContextId
+  | 0 => none
+  | k + 1 => some ⟨k⟩
+
+@[simp] theorem ofOptCode_optCode (o : Option SchedContextId) : ofOptCode (optCode o) = o := by
+  cases o <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  cases n <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
 end SchedContextId
 
 /-- Reply object identifier. WS-SM SM6.D: Reply objects are first-class kernel

@@ -1934,7 +1934,9 @@ private theorem witnessSt3_links : schedContextLinkInvariant witnessSt3 := by
   have hQ : ∀ c, witnessSt3.scheduler.replenishQueueOnCore c = SeLe4n.Kernel.ReplenishQueue.empty :=
     fun c => (default_state_perCoreInitialized c).2.2.1
   refine ⟨witnessReachable3.allTimeoutBudgetsNone, ⟨?_, ?_⟩, fun c s t hMem => ?_,
-    fun c s t hMem => ?_⟩
+    fun c s t hMem => ?_, SystemState.releaseQueueRefined_of_empty
+      (fun c => by rw [hQ c]; rfl) (fun c => PerCoreVector.replicate_get _ _ c)
+      (fun c => PerCoreVector.replicate_get _ _ c) (fun c s => ?_)⟩
   · intro tid tcb hLk scId hB
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -1966,6 +1968,16 @@ private theorem witnessSt3_links : schedContextLinkInvariant witnessSt3 := by
     · split at hLk <;> cases hLk
   · rw [hQ] at hMem; simp [SeLe4n.Kernel.ReplenishQueue.empty] at hMem
   · rw [hQ] at hMem; simp [SeLe4n.Kernel.ReplenishQueue.empty] at hMem
+  · unfold SystemState.releaseQueuedOn SystemState.getSchedContext?
+    rw [witnessSt3_lookup]
+    by_cases h1 : (witnessScId.toObjId == s.toObjId) = true
+    · rw [if_pos h1]
+      show (0 == c.val + 1) = false
+      simp
+    · rw [if_neg h1]
+      by_cases h2 : (witnessTid.toObjId == s.toObjId) = true
+      · rw [if_pos h2]
+      · rw [if_neg h2]
 
 private theorem witnessCapOnly :
     capabilityDispatchQuiescence witnessDecoded witnessCap witnessSt3 := by
@@ -2711,7 +2723,7 @@ private theorem witnessSt4_links : schedContextLinkInvariant witnessSt4 := by
     simp [show (witnessScId.toObjId == SeLe4n.ObjId.ofNat 3) = false from by decide,
       show (witnessTid.toObjId == SeLe4n.ObjId.ofNat 3) = false from by decide]
   exact (SchedLinkFrame.withObjectStored _ _ _ witnessObjInv3 (by rw [hK3]; rfl)
-    (by rw [hK3]; rfl)).preserves witnessSt3_links
+    (by rw [hK3]; rfl) (by rw [hK3]; rfl)).preserves witnessSt3_links
 
 private theorem witnessCapOnlyReply :
     capabilityDispatchQuiescence witnessDecodedReply witnessCapReply

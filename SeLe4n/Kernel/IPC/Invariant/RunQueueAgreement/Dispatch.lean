@@ -910,7 +910,7 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
       (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
       (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
       (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-      (by rw [applySyscallTaint_scheduler])).entry
+      (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry
   · unfold syscallInvoke at hD
     split at hD
     · cases hD
@@ -1059,7 +1059,7 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
     (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
     (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-    (by rw [applySyscallTaint_scheduler])).entry
+    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry
   unfold syscallInvoke at hD
   split at hD
   · cases hD

@@ -115,8 +115,8 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
         subst hs
-        exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
-               fun _ _ => rfl, fun _ _ => rfl⟩
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _ <;>
+          simp [SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine]
   · exact absurd hStep (by simp)
 
 
@@ -286,6 +286,37 @@ theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)
 -- finding as `v0.35.166`'s five relocations and this cut's
 -- `enqueueRunnableOnCore_replenishQueueOnCore`.
 
+/-- WS-ZA ZA6.3: the vacate writes the old home's `current` slot alone. -/
+theorem vacateForAffinityChange_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : CoreId) :
+    observableSlotsConfinedToCores st (vacateForAffinityChange st tid oldCore newCore)
+      [oldCore] := by
+  refine ⟨fun c _ => vacateForAffinityChange_runQueueOnCore _ _ _ _ c, fun c hc => ?_,
+    fun c _ => ?_, fun c _ => ?_, fun c _ => ?_, fun c _ => by rw [vacateForAffinityChange_machine]⟩
+  · have hne : c ≠ oldCore := fun h => hc (by simp [h])
+    rw [vacateForAffinityChange_currentOnCore, if_neg (fun h => hne h.1)]
+  all_goals (unfold vacateForAffinityChange; split <;> simp)
+
+/-- WS-ZA ZA6.3: the requeue writes the new home's run queue alone. -/
+theorem requeueVacatedOnNewHome_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newCore : CoreId) (vacated : Bool) :
+    observableSlotsConfinedToCores st (requeueVacatedOnNewHome st tid newCore vacated)
+      [newCore] := by
+  refine ⟨fun c hc => ?_, fun c _ => requeueVacatedOnNewHome_currentOnCore _ _ _ _ c,
+    fun c _ => ?_, fun c _ => ?_, fun c _ => ?_, fun c _ => by rw [requeueVacatedOnNewHome_machine]⟩
+  · have hne : newCore ≠ c := fun h => hc (by simp [h])
+    unfold requeueVacatedOnNewHome
+    split
+    · split
+      · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SystemState.runEnqueueOnCore_scheduler]
+        split
+        · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+        · rfl
+      · rfl
+    · rfl
+  all_goals (unfold requeueVacatedOnNewHome; split; (split <;> simp); rfl)
+
 /-- SM8.B.2 (**the live `.tcbSetAffinity` bound**): a migration writes no core
 outside the pair it moves the thread between.
 
@@ -310,64 +341,32 @@ theorem setThreadCpuAffinityWithMigration_confinedToCores
       = .ok (st', sgi)) :
     observableSlotsConfinedToCores st st'
       (setThreadCpuAffinityWriteSet st targetTid affinity) := by
-  unfold setThreadCpuAffinityWithMigration at hStep
-  split at hStep
-  · next tcb hTcb =>
-    -- PR #889 review round 20: the declared-core refusal is a new leading
-    -- branch, ahead of the running-on-a-forbidden-core guard below.
-    split at hStep
-    · exact absurd hStep (by simp)
-    · split at hStep
-      · exact absurd hStep (by simp)
-      · split at hStep
-        · next stSet hSet =>
-          rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hs, -⟩ := hStep
-          subst hs
-          obtain ⟨hSched, hMach⟩ :=
-            setThreadCpuAffinity_scheduler_machine_eq st stSet targetTid affinity hSet
-          have hNew := setThreadCpuAffinity_determineTargetCore_eq st stSet targetTid affinity
-            hInv hSet
-          -- The mid-state after the (optional) replenishment migration. Written
-          -- out rather than named: `set` cannot bind a `match` body here.
-          have hRepl : observableSlotsConfinedToCores stSet
-              (match tcb.schedContextBinding.scId? with
-                | some scId => migrateSchedContextReplenishment stSet scId
-                    (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
-                | none => stSet) [] := by
-            cases tcb.schedContextBinding.scId? with
-            | none => exact ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl,
-                             fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl⟩
-            | some scId => exact migrateSchedContextReplenishment_confinedToCores _ _ _ _
-          have hRun := migrateRunQueueOnAffinityChange_confinedToCores
-            (match tcb.schedContextBinding.scId? with
-              | some scId => migrateSchedContextReplenishment stSet scId
-                  (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
-              | none => stSet) targetTid
-            (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)
-          have key : ∀ c, c ∉ setThreadCpuAffinityWriteSet st targetTid affinity →
-              c ∉ [determineTargetCore st targetTid, determineTargetCore stSet targetTid] := by
-            intro c hc
-            simp only [setThreadCpuAffinityWriteSet, List.mem_cons, List.not_mem_nil,
-              or_false, not_or] at hc ⊢
-            rw [hNew]
-            exact hc
-          refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-          all_goals intro c hc
-          all_goals have hcPair := key c hc
-          · exact ((hRun.runQueue c hcPair).trans (hRepl.runQueue c (by simp))).trans
-              (by rw [hSched])
-          · exact ((hRun.current c hcPair).trans (hRepl.current c (by simp))).trans
-              (by rw [hSched])
-          · exact ((hRun.activeDomain c hcPair).trans (hRepl.activeDomain c (by simp))).trans
-              (by rw [hSched])
-          · exact ((hRun.domainTimeRemaining c hcPair).trans
-              (hRepl.domainTimeRemaining c (by simp))).trans (by rw [hSched])
-          · exact ((hRun.domainScheduleIndex c hcPair).trans
-              (hRepl.domainScheduleIndex c (by simp))).trans (by rw [hSched])
-          · exact ((hRun.regs c hcPair).trans (hRepl.regs c (by simp))).trans (by rw [hMach])
-        · exact absurd hStep (by simp)
-  · exact absurd hStep (by simp)
+  obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ :=
+    setThreadCpuAffinityWithMigration_ok_shape hStep
+  obtain ⟨hSched, hMach⟩ := setThreadCpuAffinity_scheduler_machine_eq _ stSet targetTid affinity hSet
+  have hSetC : observableSlotsConfinedToCores (vacateForAffinityChange st targetTid
+      (determineTargetCore st targetTid) (affinity.getD Concurrency.bootCoreId)) stSet [] :=
+    ⟨fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun _ _ => by rw [hSched],
+     fun _ _ => by rw [hSched], fun _ _ => by rw [hSched], fun _ _ => by rw [hMach]⟩
+  -- The mid-state after the (optional) replenishment migration. Written
+  -- out rather than named: `set` cannot bind a `match` body here.
+  have hRepl : observableSlotsConfinedToCores stSet
+      (match tcb.schedContextBinding.scId? with
+        | some scId => migrateSchedContextReplenishment stSet scId
+            (determineTargetCore st targetTid) (affinity.getD Concurrency.bootCoreId)
+        | none => stSet) [] := by
+    cases tcb.schedContextBinding.scId? with
+    | none => exact observableSlotsConfinedToCores_refl _ _
+    | some scId => exact migrateSchedContextReplenishment_confinedToCores _ _ _ _
+  refine ((((vacateForAffinityChange_confinedToCores _ _ _ _).append hSetC).append hRepl).append
+    ((migrateRunQueueOnAffinityChange_confinedToCores _ _ _ _).append
+      (requeueVacatedOnNewHome_confinedToCores _ _ _ _))).mono ?_
+  intro c hc
+  simp only [setThreadCpuAffinityWriteSet, List.mem_append, List.mem_cons, List.not_mem_nil,
+    or_false] at hc ⊢
+  by_cases h1 : c = determineTargetCore st targetTid
+  · exact .inl h1
+  · right; simp only [h1, false_or, or_false, or_self] at hc; exact hc
 
 /-- The waiter-side chain re-walk writes only the cores its write set names. -/
 theorem repropagateFromWaiter_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -585,6 +584,11 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
           have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
             simpa using (SystemState.getSchedContext?_eq_some_iff st
               (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
+          obtain ⟨scP, hScP, -⟩ := (SchedContextOps.purgeReplenishment_agree st
+            ⟨vScId.val.toNat⟩).getSchedContext?_some hSc
+          have hScPRaw := (SystemState.getSchedContext?_eq_some_iff _
+            (SeLe4n.SchedContextId.ofObjId vScId.val) scP).mp hScP
+          have hInvP := SchedContextOps.purgeReplenishment_objects_invExt st ⟨vScId.val.toNat⟩ hObjInv
           split at hStep
           · -- no bound thread: no scheduling effect at all
             next hNone =>
@@ -593,7 +597,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
             obtain ⟨-, hs⟩ := hStep
             subst hs
             exact observableSlotsConfinedToCores_trans
-              (purgeReplenishmentOnCore_confinedToCores st _ _)
+              (purgeReplenishment_confinedToCores st _)
               (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                 (storeObject_scheduler_eq _ _ _ _ hStore)
                 (storeObject_machine_eq _ _ _ _ hStore))
@@ -605,7 +609,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- `by exact` postpones these until `hStore` has fixed the
               -- pre-state; passed directly they pin it to `st` first.
               storeObject_preserves_objects_invExt (st' := stStored) (hStore := hStore)
-                (hObjInv := by exact hObjInv)
+                (hObjInv := by exact hInvP)
             -- The SchedContext store is not a migration, and the replenish write
             -- leaves `objects` alone, so the home core is already the pre-state's.
             have hHomeStored : ∀ x : SeLe4n.ThreadId,
@@ -616,9 +620,10 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- is elaborated unascribed and closed by defeq: the replenish
               -- write leaves `objects`, and `determineTargetCore` reads nothing
               -- else.
-              have h := storeObject_schedContext_determineTargetCore_eq (x := x) (sc := sc)
-                (hStore := hStore) (hPre := by exact hScRaw) (hObjInv := by exact hObjInv)
-              exact h
+              have h := storeObject_schedContext_determineTargetCore_eq (x := x) (sc := scP)
+                (hStore := hStore) (hPre := by exact hScPRaw) (hObjInv := by exact hInvP)
+              exact h.trans (determineTargetCore_congr _ _ x
+                (by rw [SchedContextOps.purgeReplenishment_getTcb?]))
             split at hStep
             · next boundTcb hTcbStored _ =>
               have hTcbStoredRaw :
@@ -642,11 +647,11 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- because the store and the propagation move no home core and no
               -- blocking edge.
               have hGetSt : ∀ t, stStored.getTcb? t = st.getTcb? t := fun t =>
-                storeObject_schedContextAt_getTcb?_eq
-                  (SchedContextOps.purgeReplenishmentOnCore st
-                    (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩)
-                  stStored (SeLe4n.SchedContextId.ofObjId vScId.val) sc _ (by exact hSc)
-                  (by exact hObjInv) (by exact hStore) t
+                (storeObject_schedContextAt_getTcb?_eq
+                  (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
+                  stStored (SeLe4n.SchedContextId.ofObjId vScId.val) scP _ (by exact hScP)
+                  (by exact hInvP) (by exact hStore) t).trans
+                  (SchedContextOps.purgeReplenishment_getTcb? st _ t)
               refine observableSlotsConfinedToCores_repropagate ?_
                 (waiterChainWriteSet_configurePropagate st stStored _ boundTid boundTcb _ priority
                   domain _ _ _ _ hObjInv hInvStored hGetSt)
@@ -655,7 +660,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- store, neither of which is confined-relevant.
               have hStoredConf : observableSlotsConfinedToCores st stStored [] :=
                 observableSlotsConfinedToCores_trans
-                  (purgeReplenishmentOnCore_confinedToCores st _ _)
+                  (purgeReplenishment_confinedToCores st _)
                   (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                     (storeObject_scheduler_eq _ _ _ _ hStore)
                     (storeObject_machine_eq _ _ _ _ hStore))
@@ -730,7 +735,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               subst hs
               refine observableSlotsConfinedToCores_widen_any ?_
               exact observableSlotsConfinedToCores_trans
-                (purgeReplenishmentOnCore_confinedToCores st _ _)
+                (purgeReplenishment_confinedToCores st _)
                 (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
                   (storeObject_scheduler_eq _ _ _ _ hStore)
                   (storeObject_machine_eq _ _ _ _ hStore))

@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
+import SeLe4n.Kernel.Scheduler.SchedulerLinkFrame
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -817,8 +818,10 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
       -- The suspend path reaches it for a `.bound` victim, so a context whose
       -- origin survived a suspend would carry it into whatever binds it next.
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-    -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
-    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
+    -- AE3-C/SC-07: Remove SchedContext from the release queue (consistent with
+    -- schedContextUnbind).  WS-ZA ZA6.3: from the queue it is on, through its own
+    -- core code, so the links stay a chain and no core is assumed.
+    let st2 := SchedContextOps.purgeReplenishment st1 scId
     -- Clear TCB binding
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  The binding
     -- write moves `tid`'s key, so it ends in the key hook (KSC-1), exactly as the
@@ -1034,16 +1037,27 @@ is every arm but a reply arm whose caller had donated. -/
   unfold cancelIpcBlockingMigrated
   rw [h]
 
-/-- The migration writes no object, so the migrated teardown's object store is
-the plain teardown's. -/
-@[simp] theorem cancelIpcBlockingMigrated_objects (victim : SeLe4n.ThreadId)
+/-- The migration writes the contexts' release fields alone, so the migrated
+teardown's object store is the plain teardown's off them. -/
+theorem cancelIpcBlockingMigrated_agree (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) :
-    (cancelIpcBlockingMigrated victim tcb st).objects = (cancelIpcBlocking st victim tcb).objects := by
+    (cancelIpcBlockingMigrated victim tcb st).objectsAgreeOffReleaseLinks
+      (cancelIpcBlocking st victim tcb) := by
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    exact migrateSchedContextReplenishment_objects _ scId _ _
-  · rfl
+    exact migrateSchedContextReplenishment_agree _ scId _ _
+  · exact .refl _
+
+/-- ...and keeps the extension invariant. -/
+theorem cancelIpcBlockingMigrated_objects_invExt (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (st : SystemState) (hInv : (cancelIpcBlocking st victim tcb).objects.invExt) :
+    (cancelIpcBlockingMigrated victim tcb st).objects.invExt := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · rename_i scId holder _
+    exact migrateSchedContextReplenishment_preserves_objects_invExt _ scId _ _ hInv
+  · exact hInv
 
 /-- The migration touches only replenish queues, so every core's run queue is the
 plain teardown's. -/
@@ -1057,13 +1071,12 @@ plain teardown's. -/
     exact migrateSchedContextReplenishment_runQueueOnCore _ scId _ _ c
   · rfl
 
-/-- The migration writes no object, so every TCB lookup is the plain teardown's. -/
+/-- The migration writes no TCB, so every TCB lookup is the plain teardown's. -/
 @[simp] theorem cancelIpcBlockingMigrated_getTcb? (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) (x : SeLe4n.ThreadId) :
     (cancelIpcBlockingMigrated victim tcb st).getTcb? x
-      = (cancelIpcBlocking st victim tcb).getTcb? x := by
-  unfold SystemState.getTcb?
-  rw [cancelIpcBlockingMigrated_objects]
+      = (cancelIpcBlocking st victim tcb).getTcb? x :=
+  (cancelIpcBlockingMigrated_agree victim tcb st).getTcb? x
 
 /-- ...and hence every home-core resolution. -/
 @[simp] theorem cancelIpcBlockingMigrated_determineTargetCore (victim : SeLe4n.ThreadId)
@@ -1455,33 +1468,46 @@ donated takes, so the live path is unchanged there. -/
   rw [descheduleUnboundHolder_of_no_donation _ _ _ _ h,
     cancelIpcBlockingMigrated_of_no_donation _ _ _ h]
 
-/-- **WS-RR RR8.12**: the reclaim's two extra steps are scheduler writes (and,
-WS-ZA ZA4.5, run-queue link writes), so the reclaim-complete teardown's object
-store is the bare teardown's off the run-queue links — which is what lets every
-object-level and information-flow result about the bare teardown reach the live
-path. -/
+/-- **WS-RR RR8.12 / WS-ZA ZA6.3**: the reclaim's two extra steps are the
+replenishment migration, which writes the contexts' release fields alone
+(`cancelIpcBlockingMigrated_agree`), and the holder's deschedule, which writes
+scheduler slots and run-queue links alone — so the reclaim-complete teardown's
+object store is the migrated teardown's off the run-queue links, and that the
+bare teardown's off the release links: what lets every object-level and
+information-flow result about the bare teardown reach the live path. -/
 theorem cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) :
     (cancelIpcBlockingReclaimed victim tcb st).objectsAgreeOffRunLinks
-      (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) := by
+      (cancelIpcBlockingMigrated victim tcb st) := by
   unfold cancelIpcBlockingReclaimed
-  exact (descheduleUnboundHolder_objectsAgreeOffRunLinks _ _ _ _).trans
-    (.of_objects_eq (cancelIpcBlockingMigrated_objects _ _ _))
+  exact descheduleUnboundHolder_objectsAgreeOffRunLinks _ _ _ _
+
+/-- WS-ZA ZA6.3: the reclaim-complete teardown is the bare teardown off the
+scheduler links — the migration writes release-queue links, the holder's
+deschedule run-queue links. -/
+theorem cancelIpcBlockingReclaimed_objectsAgreeOffSchedulerLinks (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (st : SystemState) :
+    (cancelIpcBlockingReclaimed victim tcb st).objectsAgreeOffSchedulerLinks
+      (cancelIpcBlocking st victim tcb) :=
+  (SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st)).trans
+    (.of_releaseLinks (cancelIpcBlockingMigrated_agree victim tcb st))
 
 theorem cancelIpcBlockingReclaimed_objects_invExt (victim : SeLe4n.ThreadId) (tcb : TCB)
     (st : SystemState) (hInv : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects.invExt) :
     (cancelIpcBlockingReclaimed victim tcb st).objects.invExt := by
   unfold cancelIpcBlockingReclaimed
   exact descheduleUnboundHolder_objects_invExt _ _ _ _
-    (by rw [cancelIpcBlockingMigrated_objects]; exact hInv)
+    (cancelIpcBlockingMigrated_objects_invExt _ _ _ hInv)
 
 /-- **WS-RR RR8.12**: ...hence every TCB lookup is the bare teardown's off the
-run-queue links. -/
+run-queue links (the migration writes no TCB). -/
 theorem cancelIpcBlockingReclaimed_getTcb? (victim : SeLe4n.ThreadId) (tcb : TCB)
     (st : SystemState) (x : SeLe4n.ThreadId) :
     ((cancelIpcBlockingReclaimed victim tcb st).getTcb? x).map TCB.withoutRunLinks
-      = ((Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getTcb? x).map TCB.withoutRunLinks :=
-  (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st).getTcb? x
+      = ((Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getTcb? x).map TCB.withoutRunLinks := by
+  rw [(cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st).getTcb? x,
+    cancelIpcBlockingMigrated_getTcb?]
 
 /-- **WS-RR RR8.12 (Cut 4)**: the reclaim's trigger fires only on a victim
 blocked **on its reply** — the arm gate of `cancelledCallerDonation?`, as a

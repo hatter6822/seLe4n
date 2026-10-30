@@ -258,6 +258,20 @@ theorem processOneReplenishmentOnCore_preserves_bidirectional (st : SystemState)
   rw [processOneReplenishmentOnCore, markRefillKeyChange_getSchedContext?, hBt s,
     refillSchedContext_boundThread st scId now hInv s]
 
+/-- A release-queue edit keeps the binding pair: it writes no TCB and no
+context's bound thread. -/
+theorem schedContextBindingBidirectional_of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) (hB : schedContextBindingBidirectional st) :
+    schedContextBindingBidirectional st' := by
+  intro t tcb scId hT hS
+  have hT' : st.getTcb? t = some tcb := by
+    rw [← h.getTcb? t]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨sc, hsc, hb⟩ := hB t tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hS
+  obtain ⟨sc', hsc', e⟩ :=
+    h.getSchedContext?_some ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hsc)
+  exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hsc',
+    (congrArg SchedContext.boundThread e).trans hb⟩
+
 /-- **The drain covers**: the replenish-queue write-back moves no view, queue,
 current slot or flag, and each due replenishment covers under the store
 invariant and the binding pair, which each one keeps. -/
@@ -265,29 +279,16 @@ theorem processReplenishmentsDueOnCore_stepCovers (st : SystemState) (c : CoreId
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
     stepCovers c st (processReplenishmentsDueOnCore st c now) := by
   simp only [processReplenishmentsDueOnCore]
-  generalize ((st.scheduler.replenishQueueOnCore c).popDue now) = pd
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only
-  have hQ : stepCovers c st { st with scheduler := st.scheduler.setReplenishQueueOnCore c q } :=
-    stepCovers_of_frame (fun _ => rfl) (fun _ => rfl) (fun _ _ _ ht => ht)
-      (fun c' _ => SchedulerState.setReplenishQueueOnCore_currentOnCore _ _ _ _)
-      (fun c' _ hF => by
-        show (st.scheduler.setReplenishQueueOnCore c q).reschedulePendingOnCore c' = true
-        rw [SchedulerState.setReplenishQueueOnCore_reschedulePendingOnCore]; exact hF)
-  refine stepCovers_trans hQ ?_
-  have key : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState), acc.objects.invExt →
-      schedContextBindingBidirectional acc →
-      stepCovers c acc (l.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) := by
-    intro l
-    induction l with
-    | nil => intro acc _ _; exact stepCovers_refl c acc
-    | cons hd tl ih =>
-      intro acc hA hB
-      rw [List.foldl_cons]
-      exact stepCovers_trans (processOneReplenishmentOnCore_stepCovers acc c hd now hA hB)
-        (ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hA)
-          (processOneReplenishmentOnCore_preserves_bidirectional acc c hd now hA hB))
-  exact key dueIds _ hInv hBi
+  refine (drainDueOnCore_induction
+    (fun s => s.objects.invExt ∧ schedContextBindingBidirectional s ∧ stepCovers c st s) c now
+    (fun s scId h => ⟨processOneReplenishmentOnCore_preserves_objects_invExt s c scId now h.1,
+      processOneReplenishmentOnCore_preserves_bidirectional s c scId now h.1 h.2.1,
+      stepCovers_trans h.2.2 (processOneReplenishmentOnCore_stepCovers s c scId now h.1 h.2.1)⟩)
+    (fun s scId h => ⟨SystemState.releasePlace_objects_invExt s c scId h.1,
+      schedContextBindingBidirectional_of_agreeOffReleaseLinks
+        (SystemState.releasePlace_agree s c scId) h.2.1,
+      stepCovers_trans h.2.2 (releasePlace_stepCovers c s c scId)⟩)
+    _ st ⟨hInv, hBi, stepCovers_refl c st⟩).2.2
 
 /-! ### The charge's timeout pass -/
 
@@ -416,22 +417,14 @@ theorem processReplenishmentsDueOnCore_preserves_bidirectional (st : SystemState
     (now : Nat) (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
     schedContextBindingBidirectional (processReplenishmentsDueOnCore st c now) := by
   simp only [processReplenishmentsDueOnCore]
-  generalize ((st.scheduler.replenishQueueOnCore c).popDue now) = pd
-  obtain ⟨q, dueIds⟩ := pd
-  dsimp only
-  have key : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState), acc.objects.invExt →
-      schedContextBindingBidirectional acc →
-      schedContextBindingBidirectional
-        (l.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) := by
-    intro l
-    induction l with
-    | nil => intro acc _ h; exact h
-    | cons hd tl ih =>
-      intro acc hA hB
-      rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hA)
-        (processOneReplenishmentOnCore_preserves_bidirectional acc c hd now hA hB)
-  exact key dueIds _ hInv hBi
+  exact (drainDueOnCore_induction
+    (fun s => s.objects.invExt ∧ schedContextBindingBidirectional s) c now
+    (fun s scId h => ⟨processOneReplenishmentOnCore_preserves_objects_invExt s c scId now h.1,
+      processOneReplenishmentOnCore_preserves_bidirectional s c scId now h.1 h.2⟩)
+    (fun s scId h => ⟨SystemState.releasePlace_objects_invExt s c scId h.1,
+      schedContextBindingBidirectional_of_agreeOffReleaseLinks
+        (SystemState.releasePlace_agree s c scId) h.2⟩)
+    _ st ⟨hInv, hBi⟩).2
 
 /-- **The prepared state covers**: the diagnostic clear frames every view, slot
 and flag, and the drain covers; the binding pair survives both. -/
@@ -443,6 +436,69 @@ theorem timerTickOnCorePrepared_stepCovers (st : SystemState) (c : CoreId)
   exact ⟨stepCovers_trans (setLastTimeoutErrorsOnCore_stepCovers c st c [])
       (processReplenishmentsDueOnCore_stepCovers _ c _ hInv hBi),
     processReplenishmentsDueOnCore_preserves_bidirectional _ c _ hInv hBi⟩
+
+/-- **The prepared tick state carries `currentBoundHomedOnCore`** (WS-ZA ZA6.3):
+the diagnostic clear and the drain keep core `c`'s current thread, every thread's
+home and the binding pair, so the thread current on `c` before the tick, homed on
+`c` by the placement invariant (`currentHome`), is homed on `c` after it, and the
+context its binding names names it.  The budget phase's affinity precondition,
+discharged from the two invariants the per-core bundle carries. -/
+theorem timerTickOnCorePrepared_currentBoundHomedOnCore (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
+    (hBi : schedContextBindingBidirectional st) :
+    currentBoundHomedOnCore (timerTickOnCorePrepared st c) c := by
+  intro tid tcb hCur hTcb
+  have hInv0 : ({ st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] } :
+      SystemState).objects.invExt := hInv
+  have hCur0 : st.scheduler.currentOnCore c = some tid := by
+    unfold timerTickOnCorePrepared at hCur
+    rw [processReplenishmentsDueOnCore_currentOnCore_eq] at hCur
+    simpa using hCur
+  obtain ⟨x, hx, -⟩ := hD.currentActive c tid hCur0
+  refine ⟨?_, fun scId sc hb hSc => ?_⟩
+  · unfold timerTickOnCorePrepared
+    rw [processReplenishmentsDueOnCore_determineTargetCore _ c _ hInv0]
+    exact determineTargetCore_eq_of_homedOn hx (hD.currentHome c tid hCur0)
+  · obtain ⟨sc0, hS0, hB0⟩ := (timerTickOnCorePrepared_stepCovers st c hInv hBi).2 tid tcb scId
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb) hb
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hS0] at hSc
+    cases hSc
+    exact hB0
+
+/-- **Every committed state carries `currentBoundHomedOnCore` at every core**
+(WS-ZA ZA6.3): the placement invariant homes each current thread on its core
+(`currentHome`), and the binding pair has its context name it — the state a
+syscall on core `c` (the bound yield's charge among them) starts from. -/
+theorem currentBoundHomedOnCore_of_placement (st : SystemState) (c : CoreId)
+    (hD : st.currentDequeuedUnique) (hBi : schedContextBindingBidirectional st) :
+    currentBoundHomedOnCore st c := by
+  intro tid tcb hCur hTcb
+  obtain ⟨x, hx, -⟩ := hD.currentActive c tid hCur
+  refine ⟨determineTargetCore_eq_of_homedOn hx (hD.currentHome c tid hCur),
+    fun scId sc hb hSc => ?_⟩
+  obtain ⟨sc0, hS0, hB0⟩ := hBi tid tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb) hb
+  rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hS0] at hSc
+  cases hSc
+  exact hB0
+
+/-- **The bound yield's requeue is on the context's own core** (WS-ZA ZA6.3):
+the yielding thread is current on `c`, so its context, charged its whole
+remaining budget, is free on `c`, and the requeue's branch that leaves both
+queues as they are is unreachable (`spendBudget_requeue_releaseFreeFor`). -/
+theorem yieldCharge_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {scId : SchedContextId} {sc : SchedContext}
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d)
+    (hD : st.currentDequeuedUnique) (hBi : schedContextBindingBidirectional st)
+    (hc : st.scheduler.currentOnCore c = some tid)
+    (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc) :
+    (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
+        (scheduleReplenishment (consumeBudget sc sc.budgetRemaining.val) st.machine.timer
+          ⟨sc.budgetRemaining.val⟩) st.machine.timer true))
+      (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true :=
+  spendBudget_requeue_releaseFreeFor _ hInv hRef hAff
+    (currentBoundHomedOnCore_of_placement st c hD hBi) hc hT hb hSc
 
 /-- **The exhausting charge covers**: the spend and its key hook cover, the
 timeout pass covers, and the diagnostic write and the timeout wakes' flags

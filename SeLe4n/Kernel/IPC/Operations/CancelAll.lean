@@ -1276,7 +1276,7 @@ its writes. -/
         (match st.getSchedContext? ⟨scCode - 1⟩ with
           | some sc => sc.boundThreadCode == tid.val + 1
           | none => false) then
-      cancelBoundDonationPerform st tid ⟨scCode - 1⟩ (determineTargetCore st tid)
+      cancelBoundDonationPerform st tid ⟨scCode - 1⟩
     else st
   | none => st
 
@@ -1291,7 +1291,7 @@ its writes. -/
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hG
     rw [cancelDonationArmOnCore_of_bound st tid t _
       (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2),
-      cancelBoundDonationOnCore_of_bound st tid t _ _
+      cancelBoundDonationOnCore_of_bound st tid t _
       (schedContextBinding_of_codes' hG.1.1.1.1 hG.1.1.1.2)]
 
 /-- **Whether a reply stack's head link names the context at `x`.** -/
@@ -1370,7 +1370,7 @@ def finaliseSchedContextUnbind (st : SystemState) (x : SeLe4n.ObjId) : SystemSta
       | some t =>
         if t.scBindingScCode == x.val + 1 then
           match cancelBoundDonationOnCore st tid { t with scBindingOwnerCode := 0 }
-              (determineTargetCore st tid) with
+              with
           | .ok st' => st'
           | .error _ => st
         else st
@@ -1399,7 +1399,7 @@ context, so the reservation arm is the in-place unbind
       match st.getTcb? tid with
       | some t =>
         if t.scBindingScCode == x.val + 1 then
-          cancelBoundDonationPerform st tid ⟨x.val⟩ (determineTargetCore st tid)
+          cancelBoundDonationPerform st tid ⟨x.val⟩
         else st
       | none => st
   | _ => st
@@ -1420,7 +1420,7 @@ context, so the reservation arm is the in-place unbind
         split
         · next hG =>
           simp only [beq_iff_eq] at hG
-          rw [cancelBoundDonationOnCore_of_bound st _ _ _ _
+          rw [cancelBoundDonationOnCore_of_bound st _ _ _
             (schedContextBinding_ownerCleared hG)]
         · rfl
   · rfl
@@ -1567,7 +1567,7 @@ home core. -/
 theorem cancelDonationArmOnCore_of_codes (st : SystemState) (tid : SeLe4n.ThreadId) {tcb : TCB}
     (hS : tcb.scBindingScCode ≠ 0) (hO : tcb.scBindingOwnerCode = 0) :
     cancelDonationArmOnCore st tid tcb =
-      cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) :=
+      cancelBoundDonationOnCore st tid tcb :=
   cancelDonationArmOnCore_of_bound st tid tcb _ (schedContextBinding_of_codes hS hO)
 
 -- ============================================================================

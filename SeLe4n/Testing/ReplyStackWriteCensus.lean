@@ -334,6 +334,19 @@ def chainNeutralConstructors : List (Name × String) :=
       "an inventory of non-interference theorem statements; performs no store")
   , (`SeLe4n.Kernel.perCoreInvariantSuiteTheorems,
       "an inventory of per-core invariant theorem statements; performs no store")
+  , (`SeLe4n.Kernel.perCoreCbsTheorems,
+      "an inventory of per-core CBS theorem statements; performs no store")
+    -- ---------------------------------------------------------------------
+    -- WS-ZA ZA6.3: reached through the release queue's link edits, which build
+    -- `{ sc with releaseNextCode := _, releaseCoreCode := _, releaseAt := _ }`
+    -- (`SchedContext.joinRelease`, `leaveRelease`, `withReleaseNext`).  The
+    -- release links are not chain data: `scReply` is in no assignment list.
+  , (`SeLe4n.Kernel.setAffinityPerform,
+      "the TCB's `cpuAffinity`, the vacate and requeue (scheduler slots), and the replenishment migration's release-link writes; `scReply` is untouched")
+  , (`SeLe4n.Kernel.releaseSchedContextBinding,
+      "the TCB's binding codes and the purge's release-link writes (`purgeReplenishment`); `scReply` is untouched")
+  , (`SeLe4n.Kernel.cancelDonationArmReplenishCores,
+      "a footprint: reads the cores a purge would move at `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and returns them; stores nothing")
     -- ---------------------------------------------------------------------
     -- Reached through the RAW table write, which the frontier started seeing at
     -- `v0.35.20`.  `objectStoreSpellings` named four helpers and the FROZEN

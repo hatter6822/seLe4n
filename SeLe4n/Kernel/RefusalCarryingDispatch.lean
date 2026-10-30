@@ -828,7 +828,10 @@ def scheduleEffectiveOnCoreTotalImpl (st : SystemState) (c : Concurrency.CoreId)
 writes (no caller, no TCB, no SchedContext), and the scheduling point after the
 charge cannot refuse, so the state goes to the charge and nothing keeps it.
 The bound arm reads the caller's scheduling parameters before the charge
-consumes the state (D1). -/
+consumes the state (D1), as their three parts (WS-ZA ZA6.3): the key as a
+triple (`effectiveSchedParams`) has its arms joined by the compiler into a
+built pair of pairs, so the parts go to the key hook's parts form
+(`markKeyChangeParts`, `markKeyChangeFor_eq_parts`). -/
 @[inline] def yieldOnCoreR (st : SystemState) (c : Concurrency.CoreId) :
     Except (KernelError × SystemState) SystemState :=
   match st.scheduler.currentOnCore c with
@@ -842,9 +845,10 @@ consumes the state (D1). -/
       | .bound scId | .donated scId _ =>
         match st.getSchedContextWitnessed? scId with
         | some ⟨sc, hSc⟩ =>
-          let params := effectiveSchedParams st tcb
-          .ok (scheduleEffectiveOnCoreTotal (markKeyChangeFor
-            (spendBudgetOnCore st c tid scId sc hSc sc.budgetRemaining.val) tid params) c)
+          let d := effectiveDeadline st tcb
+          .ok (scheduleEffectiveOnCoreTotal (markKeyChangeParts
+            (spendBudgetOnCore st c tid scId sc hSc sc.budgetRemaining.val) tid
+            tcb.boostedPriority d tcb.domain) c)
         | none => .error (.missingSchedContext, st)
 
 theorem yieldOnCoreR_eq (st : SystemState) (c : Concurrency.CoreId) :
@@ -868,11 +872,17 @@ theorem yieldOnCoreR_eq (st : SystemState) (c : Concurrency.CoreId) :
         simp only []
         cases st.getSchedContextWitnessed? scId with
         | none => rfl
-        | some q => obtain ⟨sc, hSc⟩ := q; simp only [scheduleEffectiveOnCoreTotal_eq]
+        | some q =>
+          obtain ⟨sc, hSc⟩ := q
+          simp only [scheduleEffectiveOnCoreTotal_eq, markKeyChangeFor_eq_parts,
+            effectiveSchedParams_eq_parts]
       | donated scId _ =>
         simp only []
         cases st.getSchedContextWitnessed? scId with
         | none => rfl
-        | some q => obtain ⟨sc, hSc⟩ := q; simp only [scheduleEffectiveOnCoreTotal_eq]
+        | some q =>
+          obtain ⟨sc, hSc⟩ := q
+          simp only [scheduleEffectiveOnCoreTotal_eq, markKeyChangeFor_eq_parts,
+            effectiveSchedParams_eq_parts]
 
 end SeLe4n.Kernel

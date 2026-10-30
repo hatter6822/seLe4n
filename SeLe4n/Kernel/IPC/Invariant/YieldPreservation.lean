@@ -66,12 +66,12 @@ theorem spendBudgetOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
       hObjInv hInv hPre (by
         unfold cbsUpdateDeadline scheduleReplenishment consumeBudget
         repeat' split
-        all_goals rfl)
+        all_goals simp [SchedContext.boundThread])
   unfold spendBudgetOnCore
   dsimp only
-  have h2 : ipcInvariantFull (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) c scId
-      (st.machine.timer + sc.period.val)) :=
-    ipcInvariantFull_of_objects_eq (st := st.rewriteObject scId.toObjId _ hAdm) rfl h1
+  have h2 : ipcInvariantFull (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) c scId) :=
+    ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+      (.of_releaseLinks (SystemState.releasePlace_agree _ c scId)) h1
   exact ipcInvariantFull_runEnqueueOnCore _ c tid _ h2
 
 /-- Saving the outgoing thread's registers preserves the bundle: it rewrites

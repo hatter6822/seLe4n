@@ -680,27 +680,34 @@ queues (each core drains its own queue on its own PPI). -/
 private def runClockAdvanceReplenishChecks : IO Unit := do
   IO.println "--- §3.12 clock-advance replenish window ---"
   let scId : SeLe4n.SchedContextId := ⟨77⟩
-  -- Seed core 1's queue with an entry due one tick in the future: the strict
-  -- form holds at the current clock.
-  let stSeeded := replenishOnCore stIdle core1 scId (stIdle.machine.timer + 1)
+  -- Seed core 1's queue with a context whose refill is due one tick in the
+  -- future: the queue's key is the context's earliest pending refill
+  -- (`releaseKey?`), so the strict form holds at the current clock.
+  let scSeed : SchedContext :=
+    { (default : SchedContext) with
+        budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
+        refillHeadPresent := true, refillHeadAmount := 5,
+        refillHeadEligibleAt := stIdle.machine.timer + 1 }
+  let stSeeded := replenishOnCore
+    ((BootstrapBuilder.empty.withObject scId.toObjId (.schedContext scSeed)).build) core1 scId
   assertBool "seeded: core 1 holds one future replenishment (strict form)"
-    (((stSeeded.scheduler.replenishQueueOnCore core1).entries.length == 1)
-      && decide (∀ p ∈ (stSeeded.scheduler.replenishQueueOnCore core1).entries,
+    (((stSeeded.releaseEntriesOn core1).length == 1)
+      && decide (∀ p ∈ (stSeeded.releaseEntriesOn core1),
             p.2 > stSeeded.machine.timer))
   -- Boot core ticks: the shared clock advances; core 1's entry is untouched
   -- and now due at exactly the new clock — the documented window.
   let stAfterBoot := (perCoreTimerTickStep stSeeded 0).1
   assertBool "boot step advances the clock and leaves the remote entry queued"
     (stAfterBoot.machine.timer == stSeeded.machine.timer + 1
-      && ((stAfterBoot.scheduler.replenishQueueOnCore core1).entries.length == 1))
+      && ((stAfterBoot.releaseEntriesOn core1).length == 1))
   assertBool "remote entry is due-now, never strictly overdue (weak form holds)"
-    (decide (∀ p ∈ (stAfterBoot.scheduler.replenishQueueOnCore core1).entries,
+    (decide (∀ p ∈ (stAfterBoot.releaseEntriesOn core1),
         p.2 ≥ stAfterBoot.machine.timer))
   -- Core 1's own committed step drains the due entry: the strict form is
   -- restored on its queue at the current clock.
   let stAfterOwn := (perCoreTimerTickStep stAfterBoot 1).1
   assertBool "the owner's next step drains the due entry (strict form restored)"
-    ((stAfterOwn.scheduler.replenishQueueOnCore core1).entries.isEmpty)
+    ((stAfterOwn.releaseEntriesOn core1).isEmpty)
   assertBool "the owner's step reads the shared clock without advancing it"
     (stAfterOwn.machine.timer == stAfterBoot.machine.timer)
 
@@ -736,7 +743,7 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
         tidHi.toObjId (.tcb tcbHi)).withObject
         scHi.toObjId (.schedContext scObj)).withRunnable [tidHi]).build
   let stBusy := { stBase with scheduler := stBase.scheduler.setCurrentOnCore bootCoreId (some tidLo) }
-  let stDue := replenishOnCore stBusy bootCoreId scHi stBusy.machine.timer
+  let stDue := replenishOnCore stBusy bootCoreId scHi
   -- The drain raises the executing core's own flag: the wake resolved and
   -- targeted the executing core, where no SGI can poke.
   assertBool "the drain raises the executing core's reschedule flag"
@@ -753,7 +760,7 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
     ((timerTickOnCore stDue bootCoreId).queuedOn bootCoreId tidLo)
   -- Idle-slot arm (the round-17 carve-out): a vacated core whose queued thread
   -- was ineligible at vacate time is dispatched the moment its refill lands.
-  let stVacantDue := replenishOnCore stBase bootCoreId scHi stBase.machine.timer
+  let stVacantDue := replenishOnCore stBase bootCoreId scHi
   assertBool "a vacated core dispatches its refilled thread in the same tick"
     ((timerTickOnCore stVacantDue bootCoreId).scheduler.currentOnCore bootCoreId == some tidHi)
   -- Quiet tick: with no due replenishment the flag stays down and the tick is
@@ -787,7 +794,7 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
      ("suspended", { base with threadState := .Inactive })]
   for (label, tcb) in cases do
     let st := mkState tcb
-    let stDue := replenishOnCore st bootCoreId scB st.machine.timer
+    let stDue := replenishOnCore st bootCoreId scB
     assertBool s!"{label}: the refill names no wake target"
       (replenishWakeTarget st (refillSchedContext st scB st.machine.timer) scB == none)
     assertBool s!"{label}: the drain raises no flag on the executing core"

@@ -273,7 +273,7 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     have hCores : descheduleAtPlacementCores stMig holderVtid.val
         = descheduleAtPlacementCores st holderVtid.val := by
       rw [descheduleAtPlacementCores_congr_of_runCores_current_eq _
-        (SystemState.RunCoresAgree.of_objects (migrateSchedContextReplenishment_objects _ _ _ _))
+        (fun y => by rw [(migrateSchedContextReplenishment_agree _ _ _ _).getTcb? y])
         (fun c => (hMig c).2)]
       unfold descheduleAtPlacementCores
       rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched
@@ -1163,11 +1163,11 @@ unbinds the SC, purges the victim's replenishments from its home core's
 `onCore_perCore_independence` puts the replenishment queue outside the
 observer's read set entirely, so none of that is observable anywhere. -/
 theorem cancelBoundDonationOnCore_confinedToCores (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
-  refine ⟨fun c _ => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb rqCore c h).1,
-          fun c _ => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb rqCore c h).2,
+  refine ⟨fun c _ => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb c h).1,
+          fun c _ => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb c h).2,
           ?_, ?_, ?_, ?_⟩
   all_goals intro c _
   all_goals (
@@ -1258,26 +1258,26 @@ theorem suspendInactiveStore_confinedToCores (s : SystemState) (tid : SeLe4n.Thr
 /-- SM8.B.2: whichever donation-cancellation arm the victim's binding selects,
 the step is per-core silent. -/
 theorem suspendDonationArms_confinedToCores (s sD : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb' : TCB) (home : CoreId)
+    (tcb' : TCB)
     (h : (match tcb'.schedContextBinding with
           | .unbound => (Except.ok s : Except KernelError SystemState)
-          | .bound _ => cancelBoundDonationOnCore s tid tcb' home
+          | .bound _ => cancelBoundDonationOnCore s tid tcb'
           | .donated _ _ => cancelDonatedDonationOnCore s tid tcb') = .ok sD) :
     observableSlotsConfinedToCores s sD [] := by
   split at h
   · rw [Except.ok.injEq] at h; subst h; exact observableSlotsConfinedToCores_refl _ _
-  · exact cancelBoundDonationOnCore_confinedToCores s sD tid tcb' home h
+  · exact cancelBoundDonationOnCore_confinedToCores s sD tid tcb' h
   · exact cancelDonatedDonationOnCore_confinedToCores s sD tid tcb' h
 
 /-- `v0.35.164`: the destroy path's reservation arm is per-core silent — it is the
 suspend's G3 match, named (`cancelDonationArmOnCore`), so this is
-`suspendDonationArms_confinedToCores` at the thread's home core. -/
+`suspendDonationArms_confinedToCores`. -/
 theorem cancelDonationArmOnCore_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonationArmOnCore st tid tcb = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
   unfold cancelDonationArmOnCore at h
-  exact suspendDonationArms_confinedToCores st st' tid tcb (determineTargetCore st tid) h
+  exact suspendDonationArms_confinedToCores st st' tid tcb h
 
 /-- `v0.35.165`: the destroy path's **SchedContext** release is per-core silent.
 
@@ -1358,7 +1358,7 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
               (observableSlotsConfinedToCores_trans
                 (observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans hPre
-                    (suspendDonationArms_confinedToCores _ stD vtid.val _ _ hDonArm))
+                    (suspendDonationArms_confinedToCores _ stD vtid.val _ hDonArm))
                   (descheduleAtPlacementCores_eq_toList st vtid.val ▸
                     descheduleAt_confinedToCores stD vtid.val (placedCoreOf? st vtid.val)))
                 (clearPendingState_confinedToCores _ vtid.val))

@@ -17,7 +17,7 @@ Aggregates the SM5.H per-core CBS substantive theorems into a single typed
 inventory with size and per-category witnesses.  Mirrors the SM5.G
 `PerCoreDomainInventory.lean` and SM5.E `PerCoreIdleInventory.lean` patterns.
 
-Ten categories matching the plan §3.8 / §5 sub-tasks (119 entries — the original
+Ten categories matching the plan §3.8 / §5 sub-tasks (116 entries — the original
 seven plus `.lockSet` (§10 cross-domain footprints), `.liveTick` (§14 A2/A4
 live-tick CBS bridge), and `.memoryModel` (§15 C10 cross-core happens-before);
 audit-pass-2 added the §17 D15 composite + §18 SGI characterisation + tightened
@@ -143,20 +143,24 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
     -- ── SM5.H.2 the replenishOnCore primitive (.replenish) ──
     pccbst! "replenishOnCore: the per-core CBS replenishment-scheduling primitive (SM5.H.2)"
       replenishOnCore .replenish,
-    pccbst! "replenishOnCore_objects: scheduling never touches the object store"
-      replenishOnCore_objects .replenish,
+    pccbst! "replenishOnCore_agree: scheduling writes the object store only in the contexts' release links"
+      replenishOnCore_agree .replenish,
+    pccbst! "replenishOnCore_releaseOnlyWrite: scheduling writes the scheduler only in the release-queue slots"
+      replenishOnCore_releaseOnlyWrite .replenish,
     pccbst! "replenishOnCore_machine: scheduling never advances the machine timer"
       replenishOnCore_machine .replenish,
     pccbst! "replenishOnCore_getTcb?: scheduling frames every TCB resolution"
       replenishOnCore_getTcb? .replenish,
-    pccbst! "replenishOnCore_getSchedContext?: scheduling frames every SchedContext resolution"
-      replenishOnCore_getSchedContext? .replenish,
+    pccbst! "replenishOnCore_boundThread: scheduling frames every SchedContext's bound thread"
+      replenishOnCore_boundThread .replenish,
     pccbst! "replenishOnCore_determineTargetCore: scheduling frames every thread's home core"
       replenishOnCore_determineTargetCore .replenish,
     pccbst! "replenishOnCore_replenishQueueOnCore_self: core c's queue is the old queue + the insert"
       replenishOnCore_replenishQueueOnCore_self .replenish,
     pccbst! "replenishOnCore_replenishQueueOnCore_ne: scheduling frames a different core's queue"
       replenishOnCore_replenishQueueOnCore_ne .replenish,
+    pccbst! "replenishOnCore_of_not_free: scheduling on a core the context's link does not name writes nothing"
+      replenishOnCore_of_not_free .replenish,
     pccbst! "replenishOnCore_runQueueOnCore: scheduling frames every run queue"
       replenishOnCore_runQueueOnCore .replenish,
     pccbst! "replenishOnCore_currentOnCore: scheduling frames every current thread"
@@ -183,8 +187,8 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
       migrateSchedContextReplenishment .migration,
     pccbst! "migrateSchedContextReplenishment_noop: a self-migration is the identity"
       migrateSchedContextReplenishment_noop .migration,
-    pccbst! "migrateSchedContextReplenishment_objects: the migration never touches the object store"
-      migrateSchedContextReplenishment_objects .migration,
+    pccbst! "migrateSchedContextReplenishment_agree: the migration writes the object store only in release links"
+      migrateSchedContextReplenishment_agree .migration,
     pccbst! "migrateSchedContextReplenishment_machine: the migration never advances the timer"
       migrateSchedContextReplenishment_machine .migration,
     pccbst! "migrateSchedContextReplenishment_getSchedContext?: the migration frames SchedContext resolution"
@@ -242,17 +246,6 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
       applyRefill_preserves_le_budget .budget,
     pccbst! "scheduleReplenishment_replenishments_bounded: the replenishment schedule stays within maxReplenishments (SM5.H.7)"
       scheduleReplenishment_replenishments_bounded .budget,
-    -- ── SM5.H.2 (B8) the faithful sc-based scheduling primitive (.replenish) ──
-    pccbst! "replenishScOnCore: the faithful sc-based CBS scheduling primitive (SM5.H.2)"
-      replenishScOnCore .replenish,
-    pccbst! "replenishScOnCore_eq: the sc-based primitive is the scId-keyed replenishOnCore at now + sc.period"
-      replenishScOnCore_eq .replenish,
-    pccbst! "replenishScOnCore_objects: the sc-based primitive never touches the object store"
-      replenishScOnCore_objects .replenish,
-    pccbst! "replenishScOnCore_preserves_replenishmentPipelineOrderOnCore: UNCONDITIONAL pipeline-order preservation (from period > 0)"
-      replenishScOnCore_preserves_replenishmentPipelineOrderOnCore .replenish,
-    pccbst! "replenishScOnCore_preserves_replenishmentPipelineOrderOnCore_of_wf: wf-keyed pipeline-order preservation variant"
-      replenishScOnCore_preserves_replenishmentPipelineOrderOnCore_of_wf .replenish,
     -- ── SM5.H.4 (§9) object-store invariant preservation (.preservation) ──
     pccbst! "replenishOnCore_preserves_objects_invExt: scheduling preserves the object-store invariant"
       replenishOnCore_preserves_objects_invExt .preservation,
@@ -384,33 +377,33 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
     pccbst! "setThreadCpuAffinityWithMigration_sgi_happensBefore: the composite's emitted SGI targets the new home, is a .reschedule, and the state write happens-before the new home observes it"
       setThreadCpuAffinityWithMigration_sgi_happensBefore .memoryModel]
 
-/-- WS-SM SM5.H: the inventory has 119 substantive entries (audit-pass-2: +8 for
+/-- WS-SM SM5.H: the inventory has 116 substantive entries (audit-pass-2: +8 for
 the SM5.H.4 D15 composite + the §18 SGI characterisation + the tightened C10 HB).
 A regression that adds a new SM5.H theorem without registering it fails this count
 witness at the Tier-3 surface check. -/
-theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 119 := by decide
+theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 116 := by decide
 
 /-- WS-SM SM5.H: 6 entries in the `predicate` category. -/
 theorem perCoreCbsTheorems_predicate_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6 := by decide
 
-/-- WS-SM SM5.H: 17 entries in the `replenish` category. -/
+/-- WS-SM SM5.H: 14 entries in the `replenish` category. -/
 theorem perCoreCbsTheorems_replenish_count :
-    (perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 17 := by decide
+    (perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 14 := by decide
 
 /-- WS-SM SM5.H: 8 entries in the `preservation` category. -/
 theorem perCoreCbsTheorems_preservation_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 8 := by decide
 
-/-- WS-SM SM5.H: 22 entries in the `migration` category. -/
+/-- WS-SM SM5.H: 25 entries in the `migration` category. -/
 theorem perCoreCbsTheorems_migration_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 25 := by decide
 
-/-- WS-SM SM5.H: 3 entries in the `affinityWrite` category. -/
+/-- WS-SM SM5.H: 4 entries in the `affinityWrite` category. -/
 theorem perCoreCbsTheorems_affinityWrite_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4 := by decide
 
-/-- WS-SM SM5.H: 19 entries in the `consistency` category. -/
+/-- WS-SM SM5.H: 22 entries in the `consistency` category. -/
 theorem perCoreCbsTheorems_consistency_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22 := by decide
 
@@ -426,7 +419,7 @@ theorem perCoreCbsTheorems_lockSet_count :
 theorem perCoreCbsTheorems_liveTick_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .liveTick)).length = 8 := by decide
 
-/-- WS-SM SM5.H: 2 entries in the `memoryModel` category. -/
+/-- WS-SM SM5.H: 3 entries in the `memoryModel` category. -/
 theorem perCoreCbsTheorems_memoryModel_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 3 := by decide
 

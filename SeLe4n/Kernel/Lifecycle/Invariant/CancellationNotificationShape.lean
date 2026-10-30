@@ -461,8 +461,8 @@ theorem purgedAndRestored_donationOwnerFrame
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   refine ⟨?_, ?_⟩
   · intro scId sc hsc
-    exact (purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
-      scId.toObjId (.schedContext sc) (by simp) (by simp)).mpr hsc
+    exact ⟨sc, (purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
+      scId.toObjId (.schedContext sc) (by simp) (by simp)).mpr hsc, rfl⟩
   · intro owner ownerTcb hOwner hUnbound hBlocked
     have hne : owner.toObjId ≠ v.toObjId := by
       intro hEq

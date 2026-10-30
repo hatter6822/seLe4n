@@ -305,11 +305,23 @@ theorem preReceiveReturnMigration_of_donation (st stClean : SystemState)
           (replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)) := by
   unfold preReceiveReturnMigration; rw [h]
 
-/-- The migration writes no object. -/
-@[simp] theorem preReceiveReturnMigration_objects (st stClean : SystemState)
+/-- The migration writes the contexts' release-queue fields alone. -/
+theorem preReceiveReturnMigration_agree (st stClean : SystemState)
     (receiver : SeLe4n.ThreadId) :
-    (preReceiveReturnMigration st stClean receiver).objects = stClean.objects := by
-  unfold preReceiveReturnMigration; split <;> simp
+    (preReceiveReturnMigration st stClean receiver).objectsAgreeOffReleaseLinks stClean := by
+  unfold preReceiveReturnMigration
+  split
+  · exact migrateSchedContextReplenishment_agree _ _ _ _
+  · exact .refl _
+
+/-- ...and the scheduler's release-queue slots. -/
+theorem preReceiveReturnMigration_releaseOnlyWrite (st stClean : SystemState)
+    (receiver : SeLe4n.ThreadId) :
+    (preReceiveReturnMigration st stClean receiver).releaseOnlyWrite stClean := by
+  unfold preReceiveReturnMigration
+  split
+  · exact migrateSchedContextReplenishment_releaseOnlyWrite _ _ _ _
+  · exact .refl _
 
 /-- The migration never advances the machine timer. -/
 @[simp] theorem preReceiveReturnMigration_machine (st stClean : SystemState)
@@ -337,15 +349,16 @@ theorem preReceiveReturnMigration_of_donation (st stClean : SystemState)
 /-- The migration frames every TCB resolution. -/
 theorem preReceiveReturnMigration_getTcb? (st stClean : SystemState)
     (receiver x : SeLe4n.ThreadId) :
-    (preReceiveReturnMigration st stClean receiver).getTcb? x = stClean.getTcb? x := by
-  unfold SystemState.getTcb?; rw [preReceiveReturnMigration_objects]
+    (preReceiveReturnMigration st stClean receiver).getTcb? x = stClean.getTcb? x :=
+  (preReceiveReturnMigration_agree st stClean receiver).getTcb? x
 
-/-- ...every SchedContext resolution... -/
+/-- ...every SchedContext resolution off its release fields... -/
 theorem preReceiveReturnMigration_getSchedContext? (st stClean : SystemState)
     (receiver : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) :
-    (preReceiveReturnMigration st stClean receiver).getSchedContext? scId
-      = stClean.getSchedContext? scId := by
-  unfold SystemState.getSchedContext?; rw [preReceiveReturnMigration_objects]
+    ((preReceiveReturnMigration st stClean receiver).getSchedContext? scId).map
+        SchedContext.withoutRelease
+      = (stClean.getSchedContext? scId).map SchedContext.withoutRelease :=
+  (preReceiveReturnMigration_agree st stClean receiver).getSchedContext? scId
 
 /-- ...and every thread's home core. -/
 theorem preReceiveReturnMigration_determineTargetCore (st stClean : SystemState)
@@ -354,11 +367,14 @@ theorem preReceiveReturnMigration_determineTargetCore (st stClean : SystemState)
       = determineTargetCore stClean x := by
   unfold determineTargetCore; rw [preReceiveReturnMigration_getTcb?]
 
-/-- The migration keeps the object store well-formed, since it does not touch it. -/
+/-- The migration keeps the object store well-formed. -/
 theorem preReceiveReturnMigration_preserves_objects_invExt (st stClean : SystemState)
     (receiver : SeLe4n.ThreadId) (h : stClean.objects.invExt) :
     (preReceiveReturnMigration st stClean receiver).objects.invExt := by
-  rw [preReceiveReturnMigration_objects]; exact h
+  unfold preReceiveReturnMigration
+  split
+  · exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ h
+  · exact h
 
 /-- **`v0.35.161`: the pre-receive donation return the cross-core receive leg runs —
 the pop, then the migration it owes.**

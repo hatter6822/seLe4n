@@ -39,20 +39,19 @@ This module states that discipline as an invariant and closes the gap:
   freshness (`retypeFromUntyped`'s occupied-slot guard, AJ2-D/M-09) means a
   SchedContext is never created at an ObjId a stale entry could already name.
 
-* §2 — the queue primitives preserve orphan-freedom: both purges
-  (unconditionally — the all-cores purge's theorem sits in §3, after the
-  queue characterisation its proof reads), the migration (unconditionally —
-  moved entries existed before), and `replenishOnCore` (given the scheduled
+* §2 — the queue primitives preserve orphan-freedom: the purge
+  (unconditionally — it only removes entries), the migration (unconditionally
+  — moved entries existed before), and `replenishOnCore` (given the placed
   SchedContext is bound, the same shape as its affinity obligation
   `hTarget`).
 
 * §3/§4 — the characterisations of `schedContextUnbind` / `schedContextBind`,
   and the four preservation theorems: unbind preserves affinity with **no**
   orphan-freedom hypothesis, and re-establishes orphan-freedom for its
-  SchedContext because the purge provably removes *every* entry the invariant
-  admits (under affinity, all of them sit on the bound thread's home core —
-  the core the purge targets); bind preserves both, with orphan-freedom
-  supplying the no-entries fact its affinity proof turns on.
+  SchedContext with **no** affinity hypothesis, because the purge removes the
+  context's entry from whichever core holds it, read from the context's own
+  link (WS-ZA ZA6.3); bind preserves both, with orphan-freedom supplying the
+  no-entries fact its affinity proof turns on.
 
 * §5 — `schedContextUnbindOnCore`, the live dispatch arm: the wrapper's
   scheduling point (`priorityRescheduleOnCore`) either changes nothing or runs
@@ -128,189 +127,83 @@ theorem replenishQueueEntriesBoundOnCore_transfer (st base : SystemState) (c : C
 -- §2  The queue primitives preserve orphan-freedom
 -- ============================================================================
 
-/-- A purge preserves orphan-freedom on every core: it removes entries and
-touches no object. -/
-theorem purgeReplenishmentOnCore_preserves_replenishQueueEntriesBoundOnCore
-    (st : SystemState) (c c' : CoreId) (scId : SchedContextId)
-    (hCons : replenishQueueEntriesBoundOnCore st c') :
-    replenishQueueEntriesBoundOnCore (purgeReplenishmentOnCore st c scId) c' := by
-  intro scId₀ t hMem
-  have hObjs : (purgeReplenishmentOnCore st c scId).objects = st.objects := rfl
-  have hSc : ∀ s, (purgeReplenishmentOnCore st c scId).getSchedContext? s
-      = st.getSchedContext? s := by
-    intro s; unfold SystemState.getSchedContext?; rw [hObjs]
-  simp only [hSc]
-  by_cases hc : c = c'
-  · subst hc
-    have hQ : (purgeReplenishmentOnCore st c scId).scheduler.replenishQueueOnCore c
-        = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId := by
-      simp [purgeReplenishmentOnCore]
-    rw [hQ] at hMem
-    exact hCons scId₀ t (mem_remove_entries hMem).1
-  · have hQ : (purgeReplenishmentOnCore st c scId).scheduler.replenishQueueOnCore c'
-        = st.scheduler.replenishQueueOnCore c' := by
-      simp only [purgeReplenishmentOnCore]
-      exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ c c' _ hc
-    rw [hQ] at hMem
-    exact hCons scId₀ t hMem
+/-- Orphan-freedom's per-entry reading transfers along a `boundThread`
+projection agreement. -/
+private theorem bound_transfer {a b : Option SchedContext}
+    (hM : a.map (·.boundThread) = b.map (·.boundThread))
+    (hb : ∃ sc, b = some sc ∧ ∃ tid, sc.boundThread = some tid) :
+    ∃ sc, a = some sc ∧ ∃ tid, sc.boundThread = some tid := by
+  obtain ⟨sc, rfl, tid, ht⟩ := hb
+  cases a with
+  | none => simp at hM
+  | some sc' =>
+    simp only [Option.map_some, Option.some.injEq] at hM
+    exact ⟨sc', rfl, tid, hM.trans ht⟩
 
-/-- The scheduling insert preserves orphan-freedom, given the SchedContext being
-scheduled exists and is bound — the orphan-freedom face of the same obligation
-its affinity preservation carries as `hTarget`, and one the live CBS enqueue
-sites satisfy by construction (they read `scId` off a binding). -/
+/-- The purge preserves orphan-freedom on every core, unconditionally: it only
+removes entries, and it writes no context's bound thread. -/
+theorem purgeReplenishment_preserves_replenishQueueEntriesBoundOnCore
+    (st : SystemState) (scId : SchedContextId) (c : CoreId)
+    (hCons : replenishQueueEntriesBoundOnCore st c) :
+    replenishQueueEntriesBoundOnCore (purgeReplenishment st scId) c :=
+  replenishQueueEntriesBoundOnCore_transfer st _ c
+    (purgeReplenishment_entries_subset st scId c)
+    ((purgeReplenishment_agree st scId).getSchedContext?_map (·.boundThread) (fun _ => rfl))
+    hCons
+
+/-- The scheduling insert preserves orphan-freedom on every core, given the
+SchedContext being placed exists and is bound — the orphan-freedom face of the
+same obligation its affinity preservation carries as `hTarget`, and one the
+live CBS enqueue sites satisfy by construction (they read `scId` off a
+binding).  Placing adds no entry but the placed context's own
+(`releasePlace_entries_provenance`). -/
 theorem replenishOnCore_preserves_replenishQueueEntriesBoundOnCore
-    (st : SystemState) (c c' : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (st : SystemState) (c c' : CoreId) (scId : SchedContextId)
     (hCons : replenishQueueEntriesBoundOnCore st c')
     (hBound : ∃ sc, st.getSchedContext? scId = some sc ∧ ∃ tid, sc.boundThread = some tid) :
-    replenishQueueEntriesBoundOnCore (replenishOnCore st c scId eligibleAt) c' := by
+    replenishQueueEntriesBoundOnCore (replenishOnCore st c scId) c' := by
   intro scId₀ t hMem
-  have hObjs : (replenishOnCore st c scId eligibleAt).objects = st.objects := rfl
-  have hSc : ∀ s, (replenishOnCore st c scId eligibleAt).getSchedContext? s
-      = st.getSchedContext? s := by
-    intro s; unfold SystemState.getSchedContext?; rw [hObjs]
-  simp only [hSc]
-  by_cases hc : c = c'
-  · subst hc
-    have hQ : (replenishOnCore st c scId eligibleAt).scheduler.replenishQueueOnCore c
-        = (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt := by
-      simp [replenishOnCore]
-    rw [hQ] at hMem
-    rcases (mem_insertSorted_iff _ scId eligibleAt (scId₀, t)).mp hMem with hEq | hOld
-    · have hScEq : scId₀ = scId := (Prod.mk.injEq .. ▸ hEq).1
-      subst hScEq
-      exact hBound
-    · exact hCons scId₀ t hOld
-  · have hQ : (replenishOnCore st c scId eligibleAt).scheduler.replenishQueueOnCore c'
-        = st.scheduler.replenishQueueOnCore c' := by
-      simp only [replenishOnCore]
-      exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ c c' _ hc
-    rw [hQ] at hMem
-    exact hCons scId₀ t hMem
+  have hBt := (SystemState.releasePlace_agree st c scId).getSchedContext?_map
+    (·.boundThread) (fun _ => rfl)
+  rcases SystemState.releasePlace_entries_provenance st c scId c' _ hMem with hOld | hEq
+  · exact bound_transfer (hBt scId₀) (hCons scId₀ t hOld)
+  · have hS : scId₀ = scId := hEq
+    subst hS
+    exact bound_transfer (hBt scId₀) hBound
 
 /-- The SM5.H.4 migration preserves orphan-freedom on every core,
 unconditionally: it moves entries that already existed (the provenance
-decomposition) and touches no object. -/
+decomposition) and writes no context's bound thread. -/
 theorem migrateSchedContextReplenishment_preserves_replenishQueueEntriesBound_smp
     (st : SystemState) (scId : SchedContextId) (fromCore toCore : CoreId)
     (hCons : replenishQueueEntriesBound_smp st) :
     replenishQueueEntriesBound_smp
       (migrateSchedContextReplenishment st scId fromCore toCore) := by
   intro c scId₀ t hMem
-  have hObjs := migrateSchedContextReplenishment_objects st scId fromCore toCore
-  have hSc : ∀ s, (migrateSchedContextReplenishment st scId fromCore toCore).getSchedContext? s
-      = st.getSchedContext? s := by
-    intro s; unfold SystemState.getSchedContext?; rw [hObjs]
-  simp only [hSc]
+  have hBt := migrateSchedContextReplenishment_boundThread st scId fromCore toCore
   by_cases hSelf : fromCore = toCore
-  · rw [hSelf, migrateSchedContextReplenishment_noop] at hMem
+  · subst hSelf
+    rw [migrateSchedContextReplenishment_noop] at hMem ⊢
     exact hCons c scId₀ t hMem
-  · by_cases hTo : c = toCore
+  · refine bound_transfer (hBt scId₀) ?_
+    by_cases hTo : c = toCore
     · subst hTo
-      rw [migrateSchedContextReplenishment_replenishQueueOnCore_to st scId fromCore c hSelf]
-        at hMem
-      rcases mem_foldl_insert_provenance _ scId _ _ hMem with hOld | ⟨x, hx, hEq⟩
+      rcases migrateSchedContextReplenishment_mem_toCore st scId fromCore c hSelf _ hMem with
+        hOld | ⟨_, hFrom⟩
       · exact hCons c scId₀ t hOld
-      · -- a moved entry: it was in `fromCore`'s pre-state queue.
-        have hScEq : scId₀ = scId := by
-          have := congrArg Prod.fst hEq; simpa using this
-        subst hScEq
-        obtain ⟨hxMem, _⟩ := List.mem_filter.mp hx
-        exact hCons fromCore scId₀ x.2 (by
-          have hFst : x.1 = scId₀ := by
-            have := (List.mem_filter.mp hx).2; simpa [beq_iff_eq] using this
-          rw [← hFst]
-          exact hxMem)
+      · exact hCons fromCore scId₀ t hFrom
     · by_cases hFrom : c = fromCore
       · subst hFrom
-        rw [migrateSchedContextReplenishment_replenishQueueOnCore_from st scId c toCore
-          (by intro hEq; exact hSelf hEq)] at hMem
+        rw [migrateSchedContextReplenishment_replenishQueueOnCore_from st scId c toCore hSelf]
+          at hMem
         exact hCons c scId₀ t (mem_remove_entries hMem).1
-      · rw [show (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.replenishQueueOnCore c
-              = st.scheduler.replenishQueueOnCore c from by
-            unfold migrateSchedContextReplenishment
-            rw [if_neg hSelf]
-            simp only []
-            rw [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ toCore c _
-                (fun hEq => hTo hEq.symm),
-              SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ fromCore c _
-                (fun hEq => hFrom hEq.symm)]] at hMem
+      · rw [migrateSchedContextReplenishment_replenishQueueOnCore_other st scId fromCore toCore c
+          (Ne.symm hFrom) (Ne.symm hTo)] at hMem
         exact hCons c scId₀ t hMem
 
 -- ============================================================================
 -- §3  `schedContextUnbind` — the revocation side of the binding lifecycle
 -- ============================================================================
-
-/-- A fold of per-core purges reads, at any core in the (duplicate-free) list,
-as one purge of that core's queue — and as the identity elsewhere.  The
-`purgeReplenishmentFromAllCores` characterisation, stated over a generic list
-so the induction goes through. -/
-private theorem foldl_purge_replenishQueueOnCore (scId : SchedContextId) (c : CoreId) :
-    ∀ (l : List CoreId), l.Nodup → ∀ (st : SystemState),
-    (l.foldl (fun s cc => purgeReplenishmentOnCore s cc scId) st).scheduler.replenishQueueOnCore c
-      = if c ∈ l then ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId
-        else st.scheduler.replenishQueueOnCore c := by
-  intro l
-  induction l with
-  | nil => intro _ st; simp
-  | cons x xs ih =>
-    intro hND st
-    have hxNotIn : x ∉ xs := (List.nodup_cons.mp hND).1
-    have hNDxs : xs.Nodup := (List.nodup_cons.mp hND).2
-    rw [List.foldl_cons, ih hNDxs]
-    by_cases hcx : c = x
-    · subst hcx
-      have hNotXs : c ∉ xs := hxNotIn
-      rw [if_neg hNotXs, if_pos (List.mem_cons_self ..)]
-      simp [purgeReplenishmentOnCore]
-    · have hPurgeNe : (purgeReplenishmentOnCore st x scId).scheduler.replenishQueueOnCore c
-          = st.scheduler.replenishQueueOnCore c := by
-        simp only [purgeReplenishmentOnCore]
-        exact SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ x c _
-          (fun hEq => hcx hEq.symm)
-      by_cases hcxs : c ∈ xs
-      · rw [if_pos hcxs, if_pos (List.mem_cons_of_mem x hcxs), hPurgeNe]
-      · rw [if_neg hcxs, hPurgeNe,
-          if_neg (by intro hMem; rcases List.mem_cons.mp hMem with hEq | hIn
-                     · exact hcx hEq
-                     · exact hcxs hIn)]
-
-/-- The all-cores purge removes `scId`'s entries from **every** core's queue —
-`allCores` is complete and duplicate-free. -/
-theorem purgeReplenishmentFromAllCores_replenishQueueOnCore
-    (st : SystemState) (scId : SchedContextId) (c : CoreId) :
-    (purgeReplenishmentFromAllCores st scId).scheduler.replenishQueueOnCore c
-      = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId := by
-  unfold purgeReplenishmentFromAllCores
-  rw [foldl_purge_replenishQueueOnCore scId c allCores
-    SeLe4n.Kernel.Concurrency.allCores_nodup st]
-  rw [if_pos (SeLe4n.Kernel.Concurrency.mem_allCores c)]
-
-/-- The all-cores purge writes no object (each per-core purge is
-scheduler-only). -/
-theorem purgeReplenishmentFromAllCores_objects (st : SystemState) (scId : SchedContextId) :
-    (purgeReplenishmentFromAllCores st scId).objects = st.objects := by
-  unfold purgeReplenishmentFromAllCores
-  generalize SeLe4n.Kernel.Concurrency.allCores = cores
-  induction cores generalizing st with
-  | nil => rfl
-  | cons x xs ih => rw [List.foldl_cons, ih]; rfl
-
-/-- The all-cores purge preserves orphan-freedom on every core,
-unconditionally — completing §2's primitive family (it sits here because its
-proof reads the two characterisations above). -/
-theorem purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp
-    (st : SystemState) (scId : SchedContextId)
-    (hCons : replenishQueueEntriesBound_smp st) :
-    replenishQueueEntriesBound_smp (purgeReplenishmentFromAllCores st scId) := by
-  intro c scId₀ t hMem
-  have hObjs := purgeReplenishmentFromAllCores_objects st scId
-  have hSc : ∀ s, (purgeReplenishmentFromAllCores st scId).getSchedContext? s
-      = st.getSchedContext? s := by
-    intro s; unfold SystemState.getSchedContext?; rw [hObjs]
-  simp only [hSc]
-  rw [purgeReplenishmentFromAllCores_replenishQueueOnCore st scId c] at hMem
-  exact hCons c scId₀ t (mem_remove_entries hMem).1
-
 -- **WS-RR RR7.39**: `SystemState` gained the `schedulerLocks` field (the state
 -- representation of `LockKey.runQueue` / `.replenishQueue`), so every
 -- structural `isDefEq` over a `SystemState` record update compares one more
@@ -330,39 +223,52 @@ private theorem rewrite_updateTcb_objects_invExt (st0 : SystemState) (id : SeLe4
   exact (st0.objects.insert _ _).insert_preserves_invExt _ _
     (st0.objects.insert_preserves_invExt _ _ hInv)
 
+private theorem purge_insert_entries (st : SystemState) (x : SeLe4n.ObjId) (k : SchedContextId)
+    (hk : k.toObjId = x) (sc sc' : SchedContext) (hSc : st.getSchedContext? k = some sc)
+    (hInv : st.objects.invExt) (hf : sc'.releaseCoreCode = sc.releaseCoreCode)
+    (c : CoreId) (e : SchedContextId × Nat)
+    (he : e ∈ ((purgeReplenishment { st with objects := st.objects.insert x (.schedContext sc') } k
+      ).scheduler.replenishQueueOnCore c).entries) :
+    e ∈ (st.scheduler.replenishQueueOnCore c).entries ∧
+      (e.1 = k → st.releaseCoreOf k ≠ some c) := by
+  subst hk
+  have h1 := purgeReplenishment_entries_subset _ _ c e he
+  have h2 := fun hs => purgeReplenishment_entries_self _ _ c e he hs
+  refine ⟨h1, fun hs hc => h2 hs ?_⟩
+  rw [← hc]
+  exact SystemState.releaseCoreOf_insert_schedContext st k sc sc' hSc hInv hf k
+
 set_option maxHeartbeats 800000 in
 /-- **The `schedContextUnbind` characterisation**: a successful unbind read a
 SchedContext bound to `tid` and produced exactly one of two shapes — the main
-arm (the bound TCB exists: both binding sides cleared, the home-core purge) or
-the sweep arm (the TCB is gone: the SC side cleared, every core purged).
+arm (the bound TCB exists: both binding sides cleared) or the sweep arm (the
+TCB is gone: the SC side cleared).  On both, every core's queue loses exactly
+the context's entries: the purge is read from the context's own link, so no
+home core is computed and no other core is swept.
 
-The scheduler writes the two invariant proofs below do *not* need to see — the
-current-clear, the home-queue rebucket — are already erased here: only the
-replenish-queue reading survives, and it is stated per core. -/
+The scheduler writes the invariant proofs below do *not* need to see — the
+current-clear, the home-queue rebucket, the release-link rewrites — are already
+erased here: only the replenish-queue reading survives, stated per core. -/
 private theorem schedContextUnbind_ok_char
     (vScId : ValidObjId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     ∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
     ∃ tid, sc.boundThread = some tid ∧
+    (∀ c e, e ∈ (st'.scheduler.replenishQueueOnCore c).entries →
+      e ∈ (st.scheduler.replenishQueueOnCore c).entries ∧
+      (e.1 = (⟨vScId.val.toNat⟩ : SchedContextId) →
+        st.releaseCoreOf ⟨vScId.val.toNat⟩ ≠ some c)) ∧
+    st'.objects.invExt ∧
     ((∃ tcb, st.getTcb? tid = some tcb ∧
-        st'.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId.val
+        st'.objectsAgreeOffSchedulerLinks { st with objects := ((st.objects.insert vScId.val
             (.schedContext { sc with boundThreadCode := 0, isActive := false,
                                      donationOrigin := none })).insert
-            tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) } ∧
-        st'.objects.invExt ∧
-        (∀ c, st'.scheduler.replenishQueueOnCore c
-          = if determineTargetCore st tid = c
-            then ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c)
-                   ⟨vScId.val.toNat⟩
-            else st.scheduler.replenishQueueOnCore c))
+            tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) })
      ∨ (st.getTcb? tid = none ∧
-        st'.objects = st.objects.insert vScId.val
+        st'.objectsAgreeOffReleaseLinks { st with objects := (st.objects.insert vScId.val
             (.schedContext { sc with boundThreadCode := 0, isActive := false,
-                                     donationOrigin := none }) ∧
-        (∀ c, st'.scheduler.replenishQueueOnCore c
-          = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c)
-              ⟨vScId.val.toNat⟩))) := by
+                                     donationOrigin := none })) })) := by
   simp only [schedContextUnbind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at h; cases h
@@ -384,50 +290,58 @@ private theorem schedContextUnbind_ok_char
           | true => rw [hD] at h; simp at h
         simp only [hNotDon, Bool.false_eq_true, if_false] at h
         cases h
-        refine Or.inl ⟨tcb, rfl, ?_, ?_, ?_⟩
-        · -- objects: the current-slot stage is a scheduler-only update of the
-          -- pre-state, so the two typed writes over it reduce to the double
-          -- insert whatever the stage's scheduler is -- no split needed; the
-          -- run-queue stage writes only run-queue links (WS-ZA ZA4.5), and the
-          -- purge's object component is definitionally the identity.
-          intro x
-          simp only [markKeyChangeFor_objects, markCandidacyGainFor_objects,
-            purgeReplenishmentOnCore_objects]
-          rw [schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _ x]
-          exact congrArg (fun o => (o[x]?).map KernelObject.withoutRunLinks)
+        refine ⟨?_, ?_, Or.inl ⟨tcb, rfl, ?_⟩⟩
+        · -- the replenish queues: only the purge touches them, on the core
+          -- the context's own link names.
+          intro c e he
+          simp only [markKeyChangeFor_replenishQueueOnCore,
+            markCandidacyGainFor_replenishQueueOnCore] at he
+          have hm := purgeReplenishment_entries_subset _ _ c e he
+          rw [schedContextUnbindQueueStage_replenishQueueOnCore] at hm
+          refine ⟨by
+            revert hm
+            cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;> intro hm <;>
+              simpa [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] using hm,
+            fun hs hc => purgeReplenishment_entries_self _ _ c e he hs ?_⟩
+          rw [← hc]
+          refine (SystemState.releaseCoreOf_of_runLinks
+            (schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _) _).trans ?_
+          refine (SystemState.releaseCoreOf_updateTcb _ _ _ ?_ _).trans ?_
+          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv
+          · apply SystemState.releaseCoreOf_rewrite_of_objects (st := st) (sc := sc) (k := ⟨vScId.val.toNat⟩)
+            · rfl
+            · rfl
+            · exact hSc
+            · exact hObjInv
+            · rfl
+        · rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
+          refine purgeReplenishment_objects_invExt _ _
+            (schedContextUnbindQueueStage_objects_invExt _ _ _ _ _ ?_)
+          exact rewrite_updateTcb_objects_invExt _ _ _ _ tid tcb _ hObjInv hTcb
+        · -- objects: the purge writes release links, the run-queue stage
+          -- run-queue links (WS-ZA ZA4.5), and the current-slot stage is a
+          -- scheduler-only update of the pre-state, so the two typed writes over
+          -- it reduce to the double insert whatever the stage's scheduler is.
+          refine SystemState.objectsAgreeOffSchedulerLinks.trans (st' := purgeReplenishment _ _)
+            (.of_objects_eq (by rw [markKeyChangeFor_objects, markCandidacyGainFor_objects])) ?_
+          refine (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+            (purgeReplenishment_agree _ _)).trans ?_
+          refine (SystemState.objectsAgreeOffSchedulerLinks.of_runLinks
+            (schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _)).trans ?_
+          exact SystemState.objectsAgreeOffSchedulerLinks.of_objects_eq
             (SystemState.updateTcb_after_rewriteObject_schedContext_objects
               _ vScId.val _ _ tid tcb _ hObjInv hTcb)
-        · rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
-          refine schedContextUnbindQueueStage_objects_invExt _ _ _ _ _ ?_
-          exact rewrite_updateTcb_objects_invExt _ _ _ _ tid tcb _ hObjInv hTcb
-        · -- the replenish queue: only the final home-core purge touches it.
-          intro c
-          by_cases hHome : determineTargetCore st tid = c
-          · rw [if_pos hHome]
-            cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
-              (simp only []; repeat' split) <;>
-              simp [purgeReplenishmentOnCore, hHome, SystemState.updateTcb_scheduler,
-                SystemState.rewriteObject_scheduler, markCandidacyGainFor_replenishQueueOnCore]
-          · rw [if_neg hHome]
-            cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
-              (simp only []; repeat' split) <;>
-              simp [purgeReplenishmentOnCore, SystemState.updateTcb_scheduler,
-                SystemState.rewriteObject_scheduler, markCandidacyGainFor_replenishQueueOnCore,
-                SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hHome]
       | none =>
         rw [hTcb] at h; simp only [] at h
         have hSt' : _ = st' := congrArg Prod.snd (Except.ok.inj h)
         dsimp only [SystemState.rewriteObject] at hSt'
         subst hSt'
-        refine Or.inr ⟨by first | exact hTcb | exact rfl, ?_, ?_⟩
-        · exact purgeReplenishmentFromAllCores_objects
-            ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
-                { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) })
-            ⟨vScId.val.toNat⟩
-        · intro c
-          exact purgeReplenishmentFromAllCores_replenishQueueOnCore
-            ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false }) })
-            ⟨vScId.val.toNat⟩ c
+        refine ⟨?_, ?_, Or.inr ⟨by first | exact hTcb | exact rfl, ?_⟩⟩
+        · intro c e he
+          apply purge_insert_entries (st := st) (sc := sc) (k := ⟨vScId.val.toNat⟩)
+            (x := vScId.val) (hk := by rfl) (hSc := hSc) (hInv := hObjInv) (hf := by rfl) (he := he)
+        · exact purgeReplenishment_objects_invExt _ _ (st.objects.insert_preserves_invExt _ _ hObjInv)
+        · exact purgeReplenishment_agree _ _
 
 -- ============================================================================
 -- §4  The four preservation theorems (and the object-store invariant carriers)
@@ -523,31 +437,83 @@ private theorem sc_insert_read_frame
     getTcb?_insert_schedContext_eq st st' scId0 sc0 sc' hInv hScOld hObj t
   exact determineTargetCore_congr st st' t (by rw [hgt])
 
-/-- The unbind main arm's read frame: the double insert's, carried across the
-run-queue link writes (WS-ZA ZA4.5). -/
-private theorem unbind_main_read_frame (st st' : SystemState) {vScId : SeLe4n.ObjId}
-    (sc : SchedContext) (tid : ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
-    (hScOld : st.objects.get? vScId = some (KernelObject.schedContext sc))
-    (hTcbOld : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb))
-    (hA : st'.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId
-            (.schedContext { sc with boundThreadCode := 0, isActive := false,
-                                     donationOrigin := none })).insert
-            tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) }) :
-    (∀ scId, scId ≠ SchedContextId.ofObjId vScId → st'.getSchedContext? scId = st.getSchedContext? scId) ∧
-    (st'.getSchedContext? (SchedContextId.ofObjId vScId) =
-      some { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) ∧
-    (∀ t, determineTargetCore st' t = determineTargetCore st t) := by
-  obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
-    ({ st with objects := st.objects.insert vScId (KernelObject.schedContext
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) })
-    (SchedContextId.ofObjId vScId) sc
-    { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-    tid tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
-    hInv hScOld hTcbOld rfl rfl (st' := { st with objects := ((st.objects.insert vScId (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) }) rfl
-  exact ⟨fun scId hNe => (hA.getSchedContext? scId).trans (hOff scId hNe),
-    (hA.getSchedContext? _).trans hSelf,
-    fun t => (determineTargetCore_of_objectsAgreeOffRunLinks hA t).trans (hTgt t)⟩
+/-- A scheduler-link step moves no context's bound thread. -/
+private theorem boundThread_of_schedulerLinks {st' D : SystemState}
+    (hA : st'.objectsAgreeOffSchedulerLinks D) (s : SchedContextId) :
+    (st'.getSchedContext? s).map (·.boundThread) = (D.getSchedContext? s).map (·.boundThread) := by
+  have e := congrArg (Option.map (·.boundThread)) (hA.getSchedContext? s)
+  simp only [Option.map_map] at e
+  exact e
 
+/-- ...and no thread's home core: `determineTargetCore` reads `cpuAffinity`. -/
+private theorem determineTargetCore_of_schedulerLinks {st' D : SystemState}
+    (hA : st'.objectsAgreeOffSchedulerLinks D) (t : ThreadId) :
+    determineTargetCore st' t = determineTargetCore D t :=
+  determineTargetCore_congr D st' t
+    (TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity) (hA.getTcb? t))
+
+/-- A post-state context read back to the pre-state along a `boundThread`
+projection agreement. -/
+private theorem boundThread_pull {a b : Option SchedContext} {sc₀ : SchedContext}
+    (hM : a.map (·.boundThread) = b.map (·.boundThread)) (ha : a = some sc₀) :
+    ∃ sc, b = some sc ∧ sc.boundThread = sc₀.boundThread := by
+  subst ha
+  cases b with
+  | none => simp at hM
+  | some sc =>
+    simp only [Option.map_some, Option.some.injEq] at hM
+    exact ⟨sc, rfl, hM.symm⟩
+
+/-- **The unbind's read frame**, one shape for both arms: every queue loses
+exactly the context's entries; every other context keeps its bound thread; the
+unbound context binds none; every thread keeps its home core.  The run-queue
+and release-link writes are invisible to every reading here (WS-ZA ZA4.5,
+ZA6.3). -/
+private theorem unbind_read_frame (vScId : ValidObjId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (h : schedContextUnbind vScId st = .ok ((), st')) :
+    (∀ c e, e ∈ (st'.scheduler.replenishQueueOnCore c).entries →
+      e ∈ (st.scheduler.replenishQueueOnCore c).entries ∧
+      (e.1 = (⟨vScId.val.toNat⟩ : SchedContextId) →
+        st.releaseCoreOf ⟨vScId.val.toNat⟩ ≠ some c)) ∧
+    (∀ scId, scId ≠ SchedContextId.ofObjId vScId.val →
+      (st'.getSchedContext? scId).map (·.boundThread)
+        = (st.getSchedContext? scId).map (·.boundThread)) ∧
+    ((st'.getSchedContext? (SchedContextId.ofObjId vScId.val)).map (·.boundThread) = some none) ∧
+    (∀ t, determineTargetCore st' t = determineTargetCore st t) ∧
+    st'.objects.invExt := by
+  obtain ⟨sc, hSc, tid, _, hQ, hInv', hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
+  have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
+    (getSchedContext?_eq_some_iff st _ sc).mp hSc
+  have key : ∃ D : SystemState, st'.objectsAgreeOffSchedulerLinks D ∧
+      (∀ scId, scId ≠ SchedContextId.ofObjId vScId.val →
+        D.getSchedContext? scId = st.getSchedContext? scId) ∧
+      D.getSchedContext? (SchedContextId.ofObjId vScId.val) =
+        some { sc with boundThreadCode := 0, isActive := false, donationOrigin := none } ∧
+      (∀ t, determineTargetCore D t = determineTargetCore st t) := by
+    rcases hArm with ⟨tcb, hTcb, hA⟩ | ⟨_, hA⟩
+    · have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
+        (getTcb?_eq_some_iff st _ tcb).mp hTcb
+      obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
+        ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
+            { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) })
+        (SchedContextId.ofObjId vScId.val) sc
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+        tid tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
+        hObjInv hScRaw hTcbRaw rfl rfl (st' := { st with objects := ((st.objects.insert vScId.val (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) }) rfl
+      exact ⟨_, hA, hOff, hSelf, hTgt⟩
+    · obtain ⟨hOff, hSelf, hTgt⟩ := sc_insert_read_frame st
+        { st with objects := (st.objects.insert vScId.val (.schedContext
+            { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) }
+        (SchedContextId.ofObjId vScId.val) sc
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+        hObjInv hScRaw rfl
+      exact ⟨_, .of_releaseLinks hA, hOff, hSelf, hTgt⟩
+  obtain ⟨D, hA, hOff, hSelf, hTgt⟩ := key
+  refine ⟨hQ, fun scId hNe => ?_, ?_, fun t => ?_, hInv'⟩
+  · rw [boundThread_of_schedulerLinks hA, hOff scId hNe]
+  · rw [boundThread_of_schedulerLinks hA, hSelf]; rfl
+  · rw [determineTargetCore_of_schedulerLinks hA, hTgt]
 /-- **The `schedContextBind` characterisation**: a successful bind read an
 *unbound* SchedContext and an existing TCB, and produced exactly the two-insert
 object write — the SchedContext bound to the thread, the TCB bound to the
@@ -742,113 +708,56 @@ theorem schedContextBind_preserves_objects_invExt
   exact hInv'
 
 /-- `schedContextUnbind` preserves the object store's extended invariant — two
-plain inserts and the run-queue link writes on the main arm, one insert on the
-sweep arm (the purges are scheduler-only writes, already erased by the
-characterisation). -/
+plain inserts, the run-queue link writes and the release-link purge on the main
+arm, one insert and the purge on the sweep arm. -/
 theorem schedContextUnbind_preserves_objects_invExt
     (vScId : ValidObjId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
-    st'.objects.invExt := by
-  obtain ⟨sc, _, tid, _, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
-  rcases hArm with ⟨tcb, _, _, hInv', _⟩ | ⟨_, hObjEq, _⟩
-  · exact hInv'
-  · rw [hObjEq]; exact st.objects.insert_preserves_invExt _ _ hObjInv
+    st'.objects.invExt :=
+  (unbind_read_frame vScId st st' hObjInv h).2.2.2.2
 
 /-- **`schedContextUnbind` preserves affinity-consistency** — with *no*
-orphan-freedom hypothesis: the entry class whose obligation the unbind changes
-is its own SchedContext's, and post-state that SchedContext is unbound, so
-those entries' obligations are vacuous wherever they survive; every other
-entry's readings are framed, and its membership descends through the purge. -/
+orphan-freedom hypothesis: the purge removes every one of its own context's
+entries, whichever core holds them, so every survivor is another context's,
+whose readings are framed. -/
 theorem schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp
     (vScId : ValidObjId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
-  have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
-    (getSchedContext?_eq_some_iff st _ sc).mp hSc
-  rcases hArm with ⟨tcb, hTcb, hA, _, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
-  · -- main arm: double insert + home-core purge.
-    have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
-      (getTcb?_eq_some_iff st _ tcb).mp hTcb
-    -- The frame is the double insert's; the unbind's run-queue link writes are
-    -- invisible to every reading below (WS-ZA ZA4.5).
-    obtain ⟨hOff, hSelf, hTgt⟩ := unbind_main_read_frame st st' sc tid tcb hObjInv hScRaw hTcbRaw hA
-    intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
-    rw [hQEq c] at hMem
-    by_cases hEqK : scId₀ = SchedContextId.ofObjId vScId.val
-    · -- the unbound SchedContext: its post-state `boundThread` is `none`.
-      subst hEqK
-      rw [hSelf] at hSc₀
-      cases hSc₀
-      cases hTid₀
-    · have hMemPre : (scId₀, t) ∈ (st.scheduler.replenishQueueOnCore c).entries := by
-        by_cases hHome : determineTargetCore st tid = c
-        · rw [if_pos hHome] at hMem; exact (mem_remove_entries hMem).1
-        · rw [if_neg hHome] at hMem; exact hMem
-      rw [hTgt tid₀]
-      exact hCons c scId₀ t hMemPre sc₀ (by rw [← hOff scId₀ hEqK]; exact hSc₀) tid₀ hTid₀
-  · -- sweep arm: single insert + all-cores purge.
-    obtain ⟨hOff, hSelf, hTgt⟩ := sc_insert_read_frame st st'
-      (SchedContextId.ofObjId vScId.val) sc
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      hObjInv hScRaw hObjEq
-    intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
-    rw [hQEq c] at hMem
-    obtain ⟨hMemPre, hNeK⟩ := mem_remove_entries hMem
-    rw [hTgt tid₀]
-    exact hCons c scId₀ t hMemPre sc₀ (by rw [← hOff scId₀ hNeK]; exact hSc₀) tid₀ hTid₀
+  obtain ⟨hQ, hOff, hSelf, hTgt, -⟩ := unbind_read_frame vScId st st' hObjInv h
+  intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
+  obtain ⟨hMemPre, -⟩ := hQ c _ hMem
+  by_cases hK : scId₀ = SchedContextId.ofObjId vScId.val
+  · subst hK
+    rw [hSc₀] at hSelf
+    simp only [Option.map_some, Option.some.injEq] at hSelf
+    rw [hSelf] at hTid₀; cases hTid₀
+  have hNeK := hK
+  obtain ⟨sc₁, hSc₁, hBt₁⟩ := boundThread_pull (hOff scId₀ hNeK) hSc₀
+  rw [hTgt tid₀]
+  exact hCons c scId₀ t hMemPre sc₁ hSc₁ tid₀ (hBt₁.trans hTid₀)
 
 /-- **`schedContextUnbind` re-establishes orphan-freedom** for its SchedContext
-and preserves it for every other: on the home core the purge removes the
-SchedContext's entries outright; on every other core, pre-state
-affinity-consistency proves it never had one there (all its entries sat on the
-bound thread's home core — the core the purge targets).  This is the
-mutual-dependence direction: unbind's orphan-freedom *needs* affinity, exactly
-as bind's affinity needs orphan-freedom. -/
+and preserves it for every other: the purge removes the SchedContext's entries
+from whichever core holds them, read from its own link — so, unlike the
+home-core purge it replaced, it needs no affinity hypothesis to rule out an
+entry on another core. -/
 theorem schedContextUnbind_preserves_replenishQueueEntriesBound_smp
     (vScId : ValidObjId) (st st' : SystemState)
-    (hObjInv : st.objects.invExt)
-    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hObjInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     replenishQueueEntriesBound_smp st' := by
-  obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
-  have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
-    (getSchedContext?_eq_some_iff st _ sc).mp hSc
-  rcases hArm with ⟨tcb, hTcb, hA, _, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
-  · -- main arm.
-    have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
-      (getTcb?_eq_some_iff st _ tcb).mp hTcb
-    obtain ⟨hOff, _, _⟩ := unbind_main_read_frame st st' sc tid tcb hObjInv hScRaw hTcbRaw hA
-    intro c scId₀ t hMem
-    rw [hQEq c] at hMem
-    by_cases hHome : determineTargetCore st tid = c
-    · -- home core: the purge removed the SchedContext's entries.
-      rw [if_pos hHome] at hMem
-      obtain ⟨hMemPre, hNeK⟩ := mem_remove_entries hMem
-      obtain ⟨sc₀, hSc₀, tid₀, hTid₀⟩ := hOrphan c scId₀ t hMemPre
-      exact ⟨sc₀, by rw [hOff scId₀ hNeK]; exact hSc₀, tid₀, hTid₀⟩
-    · -- non-home core: pre-affinity proves the SchedContext never had an
-      -- entry here, and every other entry is framed.
-      rw [if_neg hHome] at hMem
-      by_cases hEqK : scId₀ = SchedContextId.ofObjId vScId.val
-      · subst hEqK
-        exact absurd (hCons c _ t hMem sc hSc tid hBT) hHome
-      · obtain ⟨sc₀, hSc₀, tid₀, hTid₀⟩ := hOrphan c scId₀ t hMem
-        exact ⟨sc₀, by rw [hOff scId₀ hEqK]; exact hSc₀, tid₀, hTid₀⟩
-  · -- sweep arm: every core purged, so every survivor is off-key.
-    obtain ⟨hOff, _, _⟩ := sc_insert_read_frame st st'
-      (SchedContextId.ofObjId vScId.val) sc
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-      hObjInv hScRaw hObjEq
-    intro c scId₀ t hMem
-    rw [hQEq c] at hMem
-    obtain ⟨hMemPre, hNeK⟩ := mem_remove_entries hMem
-    obtain ⟨sc₀, hSc₀, tid₀, hTid₀⟩ := hOrphan c scId₀ t hMemPre
-    exact ⟨sc₀, by rw [hOff scId₀ hNeK]; exact hSc₀, tid₀, hTid₀⟩
+  obtain ⟨hQ, hOff, -, -, -⟩ := unbind_read_frame vScId st st' hObjInv h
+  intro c scId₀ t hMem
+  obtain ⟨hMemPre, hSelfC⟩ := hQ c _ hMem
+  have hNeK : scId₀ ≠ SchedContextId.ofObjId vScId.val := fun hEq =>
+    hSelfC hEq (SystemState.releaseCoreOf_of_queuedOn
+      (((hRef c).queued _).mpr (List.mem_map.mpr ⟨_, hMemPre, hEq⟩)))
+  exact bound_transfer (hOff scId₀ hNeK) (hOrphan c scId₀ t hMemPre)
 
 -- ============================================================================
 -- §5  `schedContextUnbindOnCore` — the live `.schedContextUnbind` dispatch arm
@@ -894,8 +803,7 @@ same decomposition, through the orphan-freedom transfer. -/
 theorem schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp
     (vScId : ValidObjId) (executingCore : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
-    (hObjInv : st.objects.invExt)
-    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hObjInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi?)) :
     replenishQueueEntriesBound_smp st' := by
@@ -906,7 +814,7 @@ theorem schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp
   · next u stU hUnbind =>
     have hOU : replenishQueueEntriesBound_smp stU :=
       schedContextUnbind_preserves_replenishQueueEntriesBound_smp vScId st stU
-        hObjInv hCons hOrphan hUnbind
+        hObjInv hRef hOrphan hUnbind
     have hInvU : stU.objects.invExt :=
       schedContextUnbind_preserves_objects_invExt vScId st stU hObjInv hUnbind
     rcases SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases stU st'

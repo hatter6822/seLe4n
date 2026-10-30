@@ -513,8 +513,8 @@ theorem budgetEligibleView_updateTcb_ne (s : SystemState) (tid : SeLe4n.ThreadId
 /-- **The bound unbind covers**: the context write keeps its deadline, the purge
 writes a replenish queue, and the victim's rebind ends in its hook. -/
 theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : CoreId} (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold cancelBoundDonationOnCore at h
   split at h
@@ -528,24 +528,28 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
       (fun _ => rfl)
     have hS1 := SystemState.updateSchedContext_scheduler st scId
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+    have hInvP := SchedContextOps.purgeReplenishment_objects_invExt _ scId hInv1
+    have k := keyInputsEq_trans k1 (keyInputsEq_of_objectsAgreeOffReleaseLinks
+      (SchedContextOps.purgeReplenishment_agree (st.updateSchedContext scId
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) scId))
     refine ⟨stepCovers_markKeyChangeFrom (fun t ht => ?_)
       ((SystemState.RunCoresAgree.updateTcb (tid := tid)
-        (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (by exact hInv1) (fun _ => rfl)).trans
-        ((SystemState.RunCoresAgree.of_objects rfl).trans k1.runCoresAgree))
+        (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (by exact hInvP)
+          (fun _ => rfl)).trans k.runCoresAgree)
       (fun c => ?_) (fun c hc => ?_), ?_⟩
     · refine ⟨?_, ?_⟩
       · rw [schedKeyView_updateTcb_ne _ tid _ ?_ ht]
-        · exact (schedKeyView_eq_of_keyInputsEq (keyInputsEq_of_objects_eq rfl) t).trans
-            (schedKeyView_eq_of_keyInputsEq k1 t)
-        · exact hInv1
+        · exact schedKeyView_eq_of_keyInputsEq k t
+        · exact hInvP
       · rw [budgetEligibleView_updateTcb_ne _ tid _ ?_ ht]
-        · exact (budgetEligibleView_eq_of_keyInputsEq (keyInputsEq_of_objects_eq rfl) t).trans
-            (budgetEligibleView_eq_of_keyInputsEq k1 t)
-        · exact hInv1
-    · rw [SystemState.updateTcb_scheduler]; simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore]; rw [hS1]
-    · rw [SystemState.updateTcb_scheduler]; simp only [SchedulerState.setReplenishQueueOnCore_reschedulePendingOnCore]; rw [hS1]; exact hc
+        · exact budgetEligibleView_eq_of_keyInputsEq k t
+        · exact hInvP
+    · rw [SystemState.updateTcb_scheduler, SchedContextOps.purgeReplenishment_currentOnCore, hS1]
+    · rw [SystemState.updateTcb_scheduler, SchedContextOps.purgeReplenishment_reschedulePendingOnCore,
+        hS1]
+      exact hc
     · simp only [markKeyChangeFrom_objects]
-      exact SystemState.updateTcb_preserves_objects_invExt _ tid _ hInv1
+      exact SystemState.updateTcb_preserves_objects_invExt _ tid _ hInvP
   · cases h
 
 /-- The donated cleanup is the return or the identity. -/
@@ -574,7 +578,7 @@ theorem cancelDonatedDonationOnCore_stepCovers (e : CoreId) {st st' : SystemStat
       cases h
       obtain ⟨h1, hI⟩ := cleanupDonatedSchedContext_stepCovers e hInv hC
       exact ⟨stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _),
-        by rw [migrateSchedContextReplenishment_objects]; exact hI⟩
+        migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hI⟩
   · cases h
 
 end SeLe4n.Kernel

@@ -595,7 +595,11 @@ theorem stateMono_of_agree {st st' : SystemState}
         | none => rw [hy] at e; cases e
         | some y => rw [hy] at e; exact ⟨y, rfl, Option.some.inj e⟩
       exact (TCB.proj_eq_of_withoutLinks_eq (fun c => c.Coherent) hw).mpr (h y hy),
-    (exists_getTcb?_of_agree hA _ (fun _ => Iff.rfl) t).mpr⟩
+    (exists_getTcb?_of_agree hA _ (fun _ => Iff.rfl) t).mpr,
+    fun _ y x hy hx => by
+      have e := hA.getTcb? t
+      rw [hx, hy] at e
+      exact TCB.proj_eq_of_withoutLinks_eq TCB.cpuAffinity (Option.some.inj e)⟩
 
 /-- The linking keeps every thread, so the labeling's witnesses. -/
 theorem linkBootCapabilities_declaredWitnessesInstalled (config : PlatformConfig)

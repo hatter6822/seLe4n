@@ -10,6 +10,7 @@
 import SeLe4n.Model.IntermediateState
 import SeLe4n.Kernel.RadixTree.Bridge
 import SeLe4n.Kernel.Scheduler.RunQueueThreadLinks
+import SeLe4n.Kernel.SchedContext.ReleaseLinks
 
 /-!
 # Q5: FrozenSystemState + Freeze
@@ -598,8 +599,10 @@ def freezeScheduler (st : SystemState) : FrozenSchedulerState :=
     domainSchedule := sched.domainSchedule
     domainScheduleIndex := sched.domainScheduleIndexOnCore bootCoreId
     configDefaultTimeSlice := sched.configDefaultTimeSlice
-    replenishQueue := { entries := (sched.replenishQueueOnCore bootCoreId).entries
-                        size := (sched.replenishQueueOnCore bootCoreId).size } }
+    -- WS-ZA ZA6.3: read along the release links; under the agreement, the
+    -- abstract queue's entries (`freezeScheduler_replenishQueue_entries`).
+    replenishQueue := { entries := st.releaseEntriesOn bootCoreId
+                        size := (st.releaseEntriesOn bootCoreId).length } }
 
 /-- Under the link agreement the walk is the abstract queue's list and each
 member's recorded priority is the queue's. -/

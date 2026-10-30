@@ -1071,21 +1071,20 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
         simp only [hChecked]
         -- **`v0.35.161`**: the cross-core return is the pop followed by the
         -- replenishment migration it owes.  The pop's object store is the bare
-        -- cleanup's, and the migration writes no object at all, so every
-        -- object-level fact about `stClean'` is the bare cleanup's transported
-        -- through pointwise lookup agreement.
+        -- cleanup's, and the migration writes release-queue links alone, so
+        -- every object-level fact about `stClean'` is the bare cleanup's
+        -- transported through agreement off the scheduler links.
         obtain ⟨stClean, hCheckedC, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hChecked
         have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
           (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hCheckedC).symm
         subst hBridge
-        have hObjEq : ∀ oid : SeLe4n.ObjId,
-            stClean'.objects[oid]? = (cleanupPreReceiveDonation st receiver).objects[oid]? := by
-          intro oid; rw [hMig, preReceiveReturnMigration_objects]
+        have hAgree : stClean'.objectsAgreeOffSchedulerLinks (cleanupPreReceiveDonation st receiver) :=
+          .of_releaseLinks (by rw [hMig]; exact preReceiveReturnMigration_agree _ _ _)
         have hObjInvClean : stClean'.objects.invExt :=
           cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
             hObjInv hChecked
         have hInvClean : dualQueueSystemInvariant stClean' :=
-          dualQueueSystemInvariant_of_readViewAgreement (.of_getElem_eq hObjEq)
+          dualQueueSystemInvariant_of_readViewAgreement (.of_objectsAgreeOffSchedulerLinks hAgree)
             (cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hInv)
         have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
             stClean'.objects[epId]? = some (.endpoint ep) →
@@ -1093,7 +1092,7 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
             ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
           fun epId ep hEp =>
             hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv
-              epId ep (by rwa [hObjEq epId] at hEp))
+              epId ep (hAgree.get_endpoint_iff.mp hEp))
         have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
             stClean'.objects[endpointId]? = some (.endpoint ep) →
             ep.receiveQ.tail = some tailTid →
@@ -1106,10 +1105,10 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
           fun ep tailTid hEp hTail epId' ep' hEp' =>
             hRecvTailFresh ep tailTid
               (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep
-                (by rwa [hObjEq endpointId] at hEp)) hTail
+                (hAgree.get_endpoint_iff.mp hEp)) hTail
               epId' ep'
               (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep'
-                (by rwa [hObjEq epId'] at hEp'))
+                (hAgree.get_endpoint_iff.mp hEp'))
         cases hEnq : endpointQueueEnqueue endpointId true receiver stClean' with
         | error e => simp only [hEnq]; exact hInv
         | ok st1 =>

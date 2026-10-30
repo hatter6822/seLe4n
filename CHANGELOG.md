@@ -1,3 +1,120 @@
+## v0.36.166 — WS-ZA ZA6.3: the release queue links through the scheduling contexts
+
+Each core's release queue is now singly linked through its scheduling
+contexts, one entry per context keyed by its earliest pending refill, as
+seL4-MCS keys its release queue. The bound yield and the exhausting tick
+allocate nothing. An affinity change now vacates a thread running on its old
+home, so a thread current on a core always has that core as its home, which
+discharges the tick's `hBudgetAffinity` hypothesis.
+
+- **The linked queue** (`SeLe4n/Kernel/SchedContext/ReleaseLinks.lean`).
+  - A context carries its next link, its core and its key
+    (`releaseNextCode`, `releaseCoreCode`, `releaseAt`). Each core's slots
+    hold the head and the count (`releaseHeadOnCore`, `releaseCountOnCore`).
+  - The sorted `List` stays as the ghost abstract queue
+    (`replenishQueueOnCore`). `releaseQueueRefined` ties the links to it and
+    joins `proofLayerInvariantBundle` as its 19th conjunct. It is carried
+    through `RunQueueLinkStage`, `schedContextLinkInvariant` and
+    `SchedLinkFrame`.
+  - The kernel's operations are the link forms: `releaseInsertOn`,
+    `releaseRemoveOn`, `releasePlace`, `releaseRemoveAnywhere` and the drain
+    `drainDueOnCore`. A configure resets the context's links with its refill
+    (`configuredSchedContext`).
+- **One entry per context.**
+  - The key is `SchedContext.releaseKey?`, the context's earliest pending
+    refill. The charge and the drain place a context again by that key
+    (`releasePlace`, `replenishOnCore`), as seL4's `postpone` does. A second
+    charge of a queued context moves its entry instead of adding one.
+  - **Fix: spurious deadline moves.** Before, a queue entry whose refill had
+    already been dropped (drop-oldest at 8), or a second entry for a context
+    already processed, still ran `cbsUpdateDeadline` when the drain reached
+    it. That moved the bound thread's EDF deadline with no refill landing.
+    Now there is no such entry, so nothing runs.
+  - The refill list keeps drop-oldest at 8. Merge-at-capacity (seL4's
+    `schedule_used`) is ZA6.4's.
+- **Fix: exact removal.** Every removal (configure, unbind, suspend,
+  destroy) unlinks the context from the core its own link names
+  (`purgeReplenishment` = `releaseRemoveAnywhere`), not from a computed home
+  core.
+  - Each footprint declares that core (`purgeReplenishCores`). The unbind's
+    and the release's every-core sweep arms are retired
+    (`schedContextUnbindReplenishCores`,
+    `releaseSchedContextBindingReplenishCores`).
+  - Retired: `purgeReplenishmentOnCore`, `purgeReplenishmentFromAllCores`,
+    `schedContextReplenishHome`, `suspendDropReplenishment` and
+    `cancelDonationArmReplenishCoresAt`.
+- **The requeue is local.** The requeue edits only the requeuing core's
+  queue. Its branch for a context linked on another core leaves both queues
+  as they are, and it is unreachable at the tick, the yield and the drain
+  (`spendBudget_requeue_releaseFreeFor`,
+  `yieldCharge_requeue_releaseFreeFor`). Every frame stays unconditional.
+- **Affinity change vacates a running thread**
+  (`setThreadCpuAffinityWithMigration`: `vacateForAffinityChange`,
+  `requeueVacatedOnNewHome`). These follow seL4's `remoteTCBStall` and
+  `SCHED_APPEND`.
+  - The placement invariant gains `currentHome`, `queuedHome` and
+    `idleHomed`. `TCB.StepMono` keeps `cpuAffinity`.
+  - `currentBoundHomedOnCore` follows at every committed state
+    (`currentBoundHomedOnCore_of_placement`), and on the tick's prepared state
+    (`timerTickOnCorePrepared_currentBoundHomedOnCore`). It discharges
+    `hBudgetAffinity`.
+  - The transition reads no register bank. The HAL's stall
+    (`remote_stall.rs`, `Concurrency.stallChangedCores`) waits until the old
+    home leaves EL0, and that core saves the frame at its next kernel entry
+    (`Architecture.saveVacatedFrameOnCore`). Until then no other core resumes
+    the thread (`PriorityInheritance.deferResidentElsewhere`).
+  - New test: `tests/FaultHandlingSuite.lean`
+    (`runAffinityRehomeResidencyChecks`) has the new home pick the thread up
+    before the old core saves, and shows the deferral holding it until the
+    save.
+- **Non-interference.**
+  - The projection erases the three link fields (`projectKernelObject`).
+  - Every release-queue edit leaves every observer's projection unchanged,
+    with no domain hypothesis (`projectState_of_releaseOnlyWrite`;
+    `releaseInsertOn_preserves_projection`,
+    `releaseRemoveOn_preserves_projection`,
+    `releasePlace_preserves_projection`,
+    `purgeReplenishment_preserves_projection`,
+    `replenishOnCore_preserves_projection`).
+  - The per-core tick, the drain and the yield's charge are outside the
+    per-core NI step relation, as before this cut. This is registered in
+    `docs/REGISTERED_DEBT.md` and closed by the new plan row ZA6.5. The rows
+    after it are renumbered ZA6.6 to ZA6.12.
+- **Exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`,
+  `scripts/qemu_exerciser_lib.sh`). It adds `exhaust-tick`,
+  `exhaust-wait-tick` and `exhaust-drain-tick`. These, together with
+  `refill-yield` (11 at ZA6.2) and `refill-drain-tick`, read 0 for both the
+  first call and the steady state.
+- **Compiled forms.** Each reads what it needs before it writes, and writes
+  through one call:
+  - The link edits are one record update whose fields are calls
+    (`releaseUnlinkWrite`, `releaseLinkWrite`).
+  - The re-placement reads the context's core and place as numbers, not
+    options (`releasePlaceImpl`).
+  - The charge is one write handed the numbers it reads off the context
+    (`spendBudgetWrite`, `chargeSchedContext`, `insertPriorityOf`), so the
+    context the caller looked up is released before its slot is rewritten.
+  - A refill behind the first is one straight-line record
+    (`SchedContext.appendTailRecord`).
+  - The yield hands its key to the hook as parts (`yieldOnCoreR`).
+  - The refill's compiled form now precedes the drain's loop. A `csimp`
+    reaches only code compiled after it, and the loop had compiled the
+    specification (13 allocations per drain on the first measurement).
+- **Retired code.**
+  - The ZA6.2 list-drain helpers: `dropDueQueue`, `headDue`, `dropDue`,
+    `countDue`, `popDue_eq` and the `splitDue` length lemmas.
+  - The unused `rqCore` binders.
+  - The run-link-only bundle transports that the scheduler-link forms
+    replace.
+- `docs/smp_theorem_manifest.json`: 957 entries, 781 theorems. The
+  generator's note no longer quotes a stale count.
+- **Censuses.** The reply-stack write census exempts the four definitions
+  the release-link edits now reach, each with its reason
+  (`setAffinityPerform`, `releaseSchedContextBinding`,
+  `cancelDonationArmReplenishCores`, the `perCoreCbsTheorems` inventory). The
+  reachability census drops the retired `replenishScOnCore`. The per-core
+  routing gate's field pin gains `releaseHeadCode` and `releaseCount`.
+
 ## v0.36.165 — WS-ZA ZA6.2: the tick is total, reports through the reschedule flags, and drains a refill in place
 
 The timer tick never refuses, as seL4's `timerTick` does not. Its wakes raise

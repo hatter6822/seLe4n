@@ -636,7 +636,8 @@ on the states the delete chain carries, no object names an admitted context
 /-- **Whether a final delete retires the scheduling context at `x`**, on the
 context's own links — the links seL4's `finaliseCap` clears a scheduling
 context through (`scTCB`, `scReply`): bound to no thread, lent from none and
-heading no reply stack.  Nothing outside the context is walked.  What makes these the whole
+heading no reply stack — and (WS-ZA ZA6.3) linked into no core's release queue,
+so the erase never cuts a queue's chain.  Nothing outside the context is walked.  What makes these the whole
 truth is the scheduling links the delete chain carries
 (`schedContextLinkInvariant`): a thread bound to a context, as its own or on
 loan, is named by it back, no thread holds a timeout budget, and every context a
@@ -646,7 +647,8 @@ replenishment queue holds is bound — so no object names an admitted context
 @[inline] def schedContextRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
-    sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone
+    sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone &&
+      sc.releaseCoreCode == 0
   | _ => false
 
 /-- **Whether a final delete retires the thread or the scheduling context at
@@ -1781,7 +1783,7 @@ theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
 theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :
     ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
-      sc.donationOrigin = none ∧ sc.scReply = none := by
+      sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.releaseCoreCode = 0 := by
   unfold schedContextRetirable SystemState.getObject? at h
   cases hO : st.objects[x]? with
   | none => rw [hO] at h; cases h
@@ -1790,7 +1792,7 @@ theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     cases o with
     | schedContext sc =>
       simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
-      exact ⟨sc, rfl, h.1.1, h.1.2, h.2⟩
+      exact ⟨sc, rfl, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
     | _ => cases h
 
 /-- A thread the scan admits is the one `threadRetirable` reads. -/
@@ -2638,6 +2640,44 @@ theorem retireFinalObject_back (ec : Concurrency.CoreId) (target recorder : Nat)
   · rw [hn] at h; cases h
   · rw [hU] at h; cases h; exact absurd rfl (hNU U)
 
+/-- WS-ZA ZA6.3: **the retire holds every release queue.**  It writes no
+scheduler field, keeps every context the guard refuses, and erases only one the
+guard admits — linked into no core's release queue (`schedContextRetirable`) —
+so every key reads the same release link on every core. -/
+theorem retireFinalObject_releaseStateAgree (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    SystemState.releaseStateAgree (retireFinalObject ec target recorder st) st := by
+  refine ⟨.of_objReleaseLinkOn fun k c => ?_,
+    by rw [(retireFinalObject_fields ec target recorder st).2.1]⟩
+  have hNoSc : (∀ sc, st.objects[k]? ≠ some (.schedContext sc)) →
+      SystemState.objReleaseLinkOn (retireFinalObject ec target recorder st).objects[k]? c =
+        SystemState.objReleaseLinkOn st.objects[k]? c := by
+    intro hN
+    have hPre : SystemState.objReleaseLinkOn st.objects[k]? c = none := by
+      cases hP : st.objects[k]? with
+      | none => rfl
+      | some o => cases o <;> first | rfl | exact absurd hP (hN _)
+    rw [hPre]
+    cases hQ : (retireFinalObject ec target recorder st).objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o <;> first | rfl | skip
+      rename_i sc
+      exact absurd (retireFinalObject_back ec target recorder st hInv hQ
+        (fun _ h => KernelObject.noConfusion h)) (hN sc)
+  cases hP : st.objects[k]? with
+  | none => rw [← hP]; exact hNoSc (fun _ h => by rw [hP] at h; cases h)
+  | some o =>
+    cases o with
+    | schedContext sc =>
+      rcases retireFinalObject_schedContext_cases ec target recorder st hInv hP with e | ⟨e, hR⟩
+      · rw [e]
+      · obtain ⟨sc', hS', -, -, -, h0⟩ := schedContextRetirable_parts hR
+        rw [hP] at hS'; cases hS'
+        rw [e]
+        simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, h0]
+    | _ => rw [← hP]; exact hNoSc (fun _ h => by rw [hP] at h; cases h)
+
 /-- A reply linked upward is not quiescent. -/
 theorem passiveObjectQuiescent_of_next {st : SystemState} {o : SeLe4n.ObjId} {r : Reply}
     (hR : st.objects[o]? = some (.reply r)) (hN : r.next.isSome = true) :
@@ -2748,7 +2788,7 @@ theorem retireFinalObject_stateMono (ec : Concurrency.CoreId) (target recorder :
   · have hk := (SystemState.getTcb?_eq_some_iff st t x).mp hx
     rcases retireFinalObject_tcb_kept_or_quiescent ec target recorder st hObjInv hk with
       e | ⟨hn, -, -, hQ, -⟩
-    · exact .inl ⟨x, (SystemState.getTcb?_eq_some_iff _ t x).mpr (e.trans hk), ⟨id, id⟩⟩
+    · exact .inl ⟨x, (SystemState.getTcb?_eq_some_iff _ t x).mpr (e.trans hk), ⟨id, id, rfl⟩⟩
     · refine .inr ⟨?_, fun hA => hA (threadQuiescent_codes hQ).1⟩
       unfold SystemState.getTcb?; rw [hn]
   · have hp := (SystemState.getTcb?_eq_some_iff _ t x').mp hx'

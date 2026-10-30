@@ -174,9 +174,9 @@ example (c : CoreId) :
 
 /-- Non-vacuity: the CBS replenishment preserves the structural SMP invariant on
 the default state. -/
-example (c : CoreId) (scId : SchedContextId) (t : Nat) :
-    schedulerInvariantStructural_smp (replenishOnCore (default : SystemState) c scId t) :=
-  replenishOnCore_preserves_schedulerInvariantStructural_smp default c scId t
+example (c : CoreId) (scId : SchedContextId) :
+    schedulerInvariantStructural_smp (replenishOnCore (default : SystemState) c scId) :=
+  replenishOnCore_preserves_schedulerInvariantStructural_smp default c scId
     default_schedulerInvariantStructural_smp
 
 /-- Non-vacuity: the non-boundary domain decrement preserves the structural SMP

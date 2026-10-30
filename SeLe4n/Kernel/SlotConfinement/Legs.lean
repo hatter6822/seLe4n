@@ -91,21 +91,13 @@ theorem setReplenishQueueOnCore_confinedToCores (st : SystemState) (cc : CoreId)
 /-- SM8.B.2 (PR #861 review round 17): a replenish-queue **purge** writes no
 confined slot, at any core.
 
-The named form of the lemma above, for the SchedContext operations' per-core
-purges. The replenish queue is not one of the six confined slots, so the
-purge's *target core* does not enter the write set — which is what lets the
-round-17 fix reroute all three purge sites without widening any bound. -/
-theorem purgeReplenishmentOnCore_confinedToCores (st : SystemState) (cc : CoreId)
+The named form of the lemma above, for the SchedContext operations' purges.
+The replenish queue is not one of the six confined slots, so the core the purge
+writes (the one the context's own release link names, WS-ZA ZA6.3) does not
+enter the write set. -/
+theorem purgeReplenishment_confinedToCores (st : SystemState)
     (scId : SeLe4n.SchedContextId) :
-    observableSlotsConfinedToCores st
-      (SchedContextOps.purgeReplenishmentOnCore st cc scId) [] := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _ <;> simp
-
-/-- SM8.B.2: and so does the all-cores sweep — every fold step is the above. -/
-theorem purgeReplenishmentFromAllCores_confinedToCores (st : SystemState)
-    (scId : SeLe4n.SchedContextId) :
-    observableSlotsConfinedToCores st
-      (SchedContextOps.purgeReplenishmentFromAllCores st scId) [] := by
+    observableSlotsConfinedToCores st (SchedContextOps.purgeReplenishment st scId) [] := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c _ <;> simp
 
 /-- SM8.B.2: `enqueueRunnableOnCore` writes core `cc`'s run-queue slot and the
@@ -338,7 +330,10 @@ theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
           fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
             toCore c).2, ?_, ?_, ?_, ?_⟩
   all_goals intro c _
-  all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
+  all_goals first
+    | (rw [(migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore).2]; rfl)
+    | exact congrArg _ (migrateSchedContextReplenishment_machine st scId fromCore toCore)
+    | simp [migrateSchedContextReplenishment_machine]
 
 theorem cleanupPreReceiveDonationChecked_confinedToCores (st st' : SystemState)
     (receiver : SeLe4n.ThreadId)

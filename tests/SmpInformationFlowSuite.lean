@@ -735,11 +735,9 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 -- live arms run the transitions themselves.
 #check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThreadOnCore
 #check @SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCore
-#check @SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
-#check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
-#check @SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
-#check @SeLe4n.Kernel.purgeReplenishmentOnCore_confinedToCores
-#check @SeLe4n.Kernel.purgeReplenishmentFromAllCores_confinedToCores
+#check @SeLe4n.Kernel.SchedContextOps.purgeReplenishment
+#check @SeLe4n.Kernel.SchedContextOps.purgeReplenishCores
+#check @SeLe4n.Kernel.purgeReplenishment_confinedToCores
 -- Round 16: the send bridge that actually mentions the single-core transition.
 #check @SeLe4n.Kernel.endpointSendDualOnCore_absent_endpoint
 #check @SeLe4n.Kernel.endpointSendDualOnCore_bootCore_block_eq_single
@@ -4929,10 +4927,7 @@ private def replenishState : SystemState :=
   let withTcb := withSc.insert remoteHomedThread.toObjId
     (.tcb { mkTcb 1018 40 (some c2) with
               scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound replenishScId), scBindingOwnerCode := 0 })
-  { crossCoreState with
-      objects := withTcb
-      scheduler := crossCoreState.scheduler.setReplenishQueueOnCore c2
-        (ReplenishQueue.empty.insert replenishScId 500) }
+  withReleaseEntryOnCore { crossCoreState with objects := withTcb } c2 replenishScId 500
 
 private def replenishScValidId : SeLe4n.ValidObjId :=
   ⟨replenishSc, by decide⟩
@@ -4969,42 +4964,43 @@ private def unboundDivergentPost : Option SystemState :=
 
 Replenishments are enqueued per core and drained by that core's tick, so a
 purge keyed on `bootCoreId` never touched the entry that actually exists.  The
-negative here is the shape of the defect: purging the boot core leaves core 2's
-entry exactly where it was. -/
+negative here is the shape of the defect: a removal keyed on the boot core
+leaves core 2's entry exactly where it was.  Since WS-ZA ZA6.3 the purge reads
+the core from the context's own link (`purgeReplenishCores`), so it needs no
+home core and no sweep. -/
 private def runReplenishHomeCoreChecks : IO Unit := do
-  IO.println "--- §5.6 the replenish queue purges on the SC's home core ---"
+  IO.println "--- §5.6 the replenish queue purges on the core the SC is linked on ---"
   -- The fixture puts the entry where the CBS machinery would.
   assertBool "the SC's replenishment is queued on core 2, not the boot core"
-    (decide ((replenishState.scheduler.replenishQueueOnCore c2).entries.length = 1) &&
-     decide ((replenishState.scheduler.replenishQueueOnCore c0).entries.length = 0))
+    (decide ((replenishState.releaseEntriesOn c2).length = 1) &&
+     decide ((replenishState.releaseEntriesOn c0).length = 0))
   assertBool "the SC is bound to a thread homed on core 2"
     (decide (SeLe4n.Kernel.determineTargetCore replenishState remoteHomedThread = c2))
-  assertBool "…so the home-core helper resolves to core 2"
-    (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
-      replenishState replenishScValue = c2))
-  -- NEGATIVE — the defect.  A boot-core purge is a no-op against this state.
-  assertBool "NEGATIVE: purging the BOOT core leaves core 2's entry in place"
-    (decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishmentOnCore
-        replenishState c0 replenishScId).scheduler.replenishQueueOnCore c2).entries.length = 1))
+  assertBool "…so the purge resolves to core 2, the core the context is linked on"
+    (decide (SeLe4n.Kernel.SchedContextOps.purgeReplenishCores
+      replenishState replenishScId = [c2]))
+  -- NEGATIVE — the defect.  A boot-core removal is a no-op against this state.
+  assertBool "NEGATIVE: removing from the BOOT core leaves core 2's entry in place"
+    (decide (((replenishState.releaseRemoveOn c0 replenishScId).releaseEntriesOn c2).length = 1))
   -- The fix: the live unbind purges the entry that exists.
   assertBool "the live unbind succeeds"
     (decide (unboundState.isSome = true))
   assertBool "…and core 2's replenish queue is empty afterwards"
     (match unboundState with
      | none => false
-     | some post => decide ((post.scheduler.replenishQueueOnCore c2).entries.length = 0))
-  -- The all-cores sweep, for the arm whose TCB is already gone.
-  assertBool "the all-cores sweep clears the entry wherever it sits"
-    (decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
-        replenishState replenishScId).scheduler.replenishQueueOnCore c2).entries.length = 0))
+     | some post => decide ((post.releaseEntriesOn c2).length = 0))
+  -- The purge, for the arm whose TCB is already gone: it reads the link alone.
+  assertBool "the purge clears the entry wherever it sits"
+    (decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishment
+        replenishState replenishScId).releaseEntriesOn c2).length = 0))
   assertBool "…and is inert on cores that never held one"
     (allCores.all (fun c =>
-      decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishmentFromAllCores
-        replenishState replenishScId).scheduler.replenishQueueOnCore c).entries.length = 0)))
-  -- An unbound SC has no home and no entry to strand: the boot-core default.
-  assertBool "NEGATIVE: an unbound SC resolves to the boot core, not core 2"
-    (decide (SeLe4n.Kernel.SchedContextOps.schedContextReplenishHome
-      replenishState { replenishScValue with boundThreadCode := 0 } = c0))
+      decide (((SeLe4n.Kernel.SchedContextOps.purgeReplenishment
+        replenishState replenishScId).releaseEntriesOn c).length = 0)))
+  -- A context on no queue names no core to purge.
+  assertBool "NEGATIVE: a context on no release queue names no purge core"
+    (decide (SeLe4n.Kernel.SchedContextOps.purgeReplenishCores
+      crossCoreState replenishScId = []))
 
 /-- §5.8  The unbind guard and its scheduling point read the SAME core
 (rounds 39/40).

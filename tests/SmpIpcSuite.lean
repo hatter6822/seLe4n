@@ -914,18 +914,23 @@ private def stDonRunning : SystemState :=
       ((stDonBase.objects.insert donClient.toObjId (.tcb donClientTcbRunning)).insert
         donServer.toObjId (.tcb donServerTcbReady)) }
 
-/-- `stDonBase` with two pending replenishments for the client's SchedContext
-already on the client's home core (the boot core), and one unrelated
-SchedContext's entry on the *server's* home core — the bystander that must not
-move. Two entries rather than one so a migration that moves only the first is
-visible. -/
+/-- `stDonBase` with the client's SchedContext queued on the client's home core
+(the boot core), and one unrelated SchedContext's entry on the *server's* home
+core — the bystander that must not move.  A context is on a release queue once,
+keyed by its earliest pending refill, and its refills live in its own fields, so
+a migration moves the one entry, and every refill with it (WS-ZA ZA6.3). -/
 private def scBystander : SeLe4n.SchedContextId := SchedContextId.ofNat 845
 
+private def bystanderSchedContext : SchedContext :=
+  { scId := scBystander, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨10⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩ }
+
 private def stDonWithReplenishments : SystemState :=
-  { stDonRunning with scheduler :=
-      ((stDonRunning.scheduler.setReplenishQueueOnCore c0
-          (((ReplenishQueue.empty.insert scClient 100).insert scClient 200))).setReplenishQueueOnCore
-        c1 (ReplenishQueue.empty.insert scBystander 300)) }
+  let withBystander : SystemState :=
+    { stDonRunning with
+        objects := (stDonRunning.objects.insert scBystander.toObjId
+          (.schedContext bystanderSchedContext)) }
+  withReleaseEntryOnCore (withReleaseEntryOnCore withBystander c0 scClient 100) c1 scBystander 300
 
 /-- The delegated receiver of the RR2.20 `.replyRecv` rendezvous check: a passive
 thread homed on a **third** core, so the return hop (core 1 → core 0) and the
@@ -997,18 +1002,14 @@ private def runReplyRecvDonationSteps (tid : SeLe4n.ThreadId) (rid : SeLe4n.Repl
       | .error e => .error e
       | .ok ((), st2) => .ok st2
 
-private def replenishEntriesOn (st : SystemState) (c : CoreId) :
-    List (SeLe4n.SchedContextId × Nat) :=
-  (st.scheduler.replenishQueueOnCore c).entries
-
 private def replenishCountFor (st : SystemState) (c : CoreId)
     (scId : SeLe4n.SchedContextId) : Nat :=
-  ((replenishEntriesOn st c).filter (fun e => e.1 == scId)).length
+  (((st.releaseEntriesOn c)).filter (fun e => e.1 == scId)).length
 
 private def runDonationMigrationChecks : IO Unit := do
   IO.println "--- §3.9b WS-RR RR2.19 / RR2.20: the donation migrates the CBS replenish queue ---"
   assertBool "pre: both of the client SC's replenishments sit on its home core 0"
-    (decide (replenishCountFor stDonWithReplenishments c0 scClient = 2))
+    (decide (replenishCountFor stDonWithReplenishments c0 scClient = 1))
   assertBool "pre: the server's home core 1 holds only the bystander SC's entry"
     (decide (replenishCountFor stDonWithReplenishments c1 scClient = 0)
       && decide (replenishCountFor stDonWithReplenishments c1 scBystander = 1))
@@ -1017,7 +1018,7 @@ private def runDonationMigrationChecks : IO Unit := do
   | none => assertBool "migration setup (server recv) succeeded" false
   | some (stRecv, _) =>
     assertBool "the receive leaves the replenish queues alone"
-      (decide (replenishCountFor stRecv c0 scClient = 2)
+      (decide (replenishCountFor stRecv c0 scClient = 1)
         && decide (replenishCountFor stRecv c1 scClient = 0))
     let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
       (SeLe4n.Slot.ofNat 0) c0 stRecv
@@ -1027,12 +1028,12 @@ private def runDonationMigrationChecks : IO Unit := do
     assertBool "the call drains the donated SC's replenishments off the donor's core 0"
       (decide (replenishCountFor stCall c0 scClient = 0))
     assertBool "the call lands BOTH replenishments on the donee's home core 1"
-      (decide (replenishCountFor stCall c1 scClient = 2))
+      (decide (replenishCountFor stCall c1 scClient = 1))
     assertBool "the migration leaves the bystander SchedContext's entry where it was"
       (decide (replenishCountFor stCall c1 scBystander = 1))
-    assertBool "the migration preserves each replenishment's eligibility time"
-      (decide (((replenishEntriesOn stCall c1).filter (fun e => e.1 == scClient)).map (·.2)
-        = [100, 200]))
+    assertBool "the migration preserves the context's release time (its earliest refill)"
+      (decide ((((stCall.releaseEntriesOn c1)).filter (fun e => e.1 == scClient)).map (·.2)
+        = [100]))
     match okExcept (handleRescheduleSgiOnCore stCall c1) with
     | none => assertBool "migration: core 1 handles the call wake SGI" false
     | some stDispatched =>
@@ -1043,13 +1044,13 @@ private def runDonationMigrationChecks : IO Unit := do
       -- RR2.8: the mirror — replier home (core 1) → original-owner home (core 0).
       assertBool "the reply drains the returned SC's replenishments off the server's core 1"
         (decide (replenishCountFor stReply c1 scClient = 0))
-      assertBool "the reply lands both replenishments back on the owner's home core 0"
-        (decide (replenishCountFor stReply c0 scClient = 2))
+      assertBool "the reply lands the context's entry back on the owner's home core 0"
+        (decide (replenishCountFor stReply c0 scClient = 1))
       assertBool "the round trip leaves the bystander entry untouched throughout"
         (decide (replenishCountFor stReply c1 scBystander = 1))
       assertBool "the round trip restores the original eligibility times"
-        (decide (((replenishEntriesOn stReply c0).filter (fun e => e.1 == scClient)).map (·.2)
-          = [100, 200]))
+        (decide ((((stReply.releaseEntriesOn c0)).filter (fun e => e.1 == scClient)).map (·.2)
+          = [100]))
     -- RR2.20: the THIRD live donation path. `.replyRecv` returns the recorded
     -- server's donated context and, when the receive rendezvoused with a queued
     -- `Call`, immediately re-donates the next caller's — two hand-offs, neither
@@ -1075,12 +1076,12 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "the .replyRecv return drains the SC's replenishments off the server's core 1"
         (decide (replenishCountFor stRet c1 scClient = 0))
       assertBool "the .replyRecv return lands them on the original owner's home core 0"
-        (decide (replenishCountFor stRet c0 scClient = 2))
+        (decide (replenishCountFor stRet c0 scClient = 1))
       assertBool "the .replyRecv return leaves the bystander SchedContext alone"
         (decide (replenishCountFor stRet c1 scBystander = 1))
       assertBool "the .replyRecv return preserves each replenishment's eligibility time"
-        (decide (((replenishEntriesOn stRet c0).filter (fun e => e.1 == scClient)).map (·.2)
-          = [100, 200]))
+        (decide ((((stRet.releaseEntriesOn c0)).filter (fun e => e.1 == scClient)).map (·.2)
+          = [100]))
     -- The rendezvous arm: a *delegated* reply cap, so the next caller's context
     -- is re-donated to a receiver on a third core. Two migrations in one
     -- transition — core 1 → core 0 on the return, core 0 → core 2 on the
@@ -1097,12 +1098,12 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "they do not stay parked on the original owner's core 0 either"
         (decide (replenishCountFor stRr c0 scClient = 0))
       assertBool "they land on the delegated receiver's home core 2"
-        (decide (replenishCountFor stRr c2 scClient = 2))
+        (decide (replenishCountFor stRr c2 scClient = 1))
       assertBool "the two-hop migration leaves the bystander SchedContext alone"
         (decide (replenishCountFor stRr c1 scBystander = 1))
       assertBool "the two-hop migration preserves each replenishment's eligibility time"
-        (decide (((replenishEntriesOn stRr c2).filter (fun e => e.1 == scClient)).map (·.2)
-          = [100, 200]))
+        (decide ((((stRr.releaseEntriesOn c2)).filter (fun e => e.1 == scClient)).map (·.2)
+          = [100]))
     -- RR2.20 (PR #885 review round 1): the same rendezvous with a **distinct**
     -- queued caller. The arm above re-donates the replied-to thread's own
     -- context, so it cannot tell "the re-donation branch fired because a new
@@ -1111,16 +1112,15 @@ private def runDonationMigrationChecks : IO Unit := do
     -- (`scClient`) and the re-donated one (`scCaller2`) are different
     -- SchedContexts homed on different cores, so each hop is pinned
     -- independently and neither can stand in for the other.
-    let stCallQ : SystemState :=
+    let stCallQ : SystemState := withReleaseEntryOnCore
       { stCall with
           objects := (((stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb)).insert
             donCaller2.toObjId (.tcb donCaller2Tcb)).insert scCaller2.toObjId
               (.schedContext donCaller2Sc)).insert donCaller2Reply.toObjId
-              (.reply { replyId := donCaller2Reply, callerCode := SeLe4n.ThreadId.optCode (some donCaller2) })
-          scheduler := stCall.scheduler.setReplenishQueueOnCore c3
-            ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
-    assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
-      (decide (replenishCountFor stCallQ c3 scCaller2 = 2))
+              (.reply { replyId := donCaller2Reply, callerCode := SeLe4n.ThreadId.optCode (some donCaller2) }) }
+      c3 scCaller2 400
+    assertBool "pre: the queued caller's SC is queued once on its home core 3"
+      (decide (replenishCountFor stCallQ c3 scCaller2 = 1))
     match runReplyRecvDonationSteps donDelegate donReply donClient donServer donCaller2 c1
         stCallQ with
     | .error _ => assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" false
@@ -1130,13 +1130,13 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "return hop: the returned SC leaves the server's core 1"
         (decide (replenishCountFor stQ c1 scClient = 0))
       assertBool "return hop: the returned SC lands on its owner's home core 0"
-        (decide (replenishCountFor stQ c0 scClient = 2))
+        (decide (replenishCountFor stQ c0 scClient = 1))
       -- The re-donation hop, on the *queued caller's* context — a SchedContext
       -- that took no part in the return.
       assertBool "re-donation hop: the queued caller's SC leaves its home core 3"
         (decide (replenishCountFor stQ c3 scCaller2 = 0))
       assertBool "re-donation hop: it lands on the delegated receiver's home core 2"
-        (decide (replenishCountFor stQ c2 scCaller2 = 2))
+        (decide (replenishCountFor stQ c2 scCaller2 = 1))
       assertBool "the delegate holds the QUEUED CALLER's context, owner recorded"
         (match stQ.getTcb? donDelegate with
          | some t => decide (t.schedContextBinding = .donated scCaller2 donCaller2)
@@ -1146,8 +1146,8 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "the distinct-caller hops leave the bystander SchedContext alone"
         (decide (replenishCountFor stQ c1 scBystander = 1))
       assertBool "the distinct-caller hops preserve each replenishment's eligibility time"
-        (decide (((replenishEntriesOn stQ c2).filter (fun e => e.1 == scCaller2)).map (·.2)
-          = [400, 500]))
+        (decide ((((stQ.releaseEntriesOn c2)).filter (fun e => e.1 == scCaller2)).map (·.2)
+          = [400]))
       -- **PR #895 review round 8**: the recorded server is DESCHEDULED here.
       -- `tid` is the delegate, so the queued caller's context went to *it* and
       -- the recorded server received nothing — while the pop had already made
@@ -1581,7 +1581,7 @@ private def runSuspendArmChecks : IO Unit := do
           -- scheduler slots only, so no notification object moves. The donated
           -- SC's replenishments follow the binding home, exactly as on the reply.
           assertBool "the suspend migrates the returned SC's replenishments back to core 0"
-            (decide (replenishCountFor stSusp c0 scClient = 2)
+            (decide (replenishCountFor stSusp c0 scClient = 1)
               && decide (replenishCountFor stSusp c1 scClient = 0))
           assertBool "the suspend leaves the bystander SchedContext's entry alone"
             (decide (replenishCountFor stSusp c1 scBystander = 1))
@@ -1589,8 +1589,8 @@ private def runSuspendArmChecks : IO Unit := do
     -- single-core configuration) must leave both replenish queues untouched.
     let stSelf := migrateSchedContextReplenishment stCall scClient c1 c1
     assertBool "a same-core migration leaves every replenish queue exactly as it was"
-      (decide (replenishEntriesOn stSelf c0 = replenishEntriesOn stCall c0)
-        && decide (replenishEntriesOn stSelf c1 = replenishEntriesOn stCall c1))
+      (decide ((stSelf.releaseEntriesOn c0) = (stCall.releaseEntriesOn c0))
+        && decide ((stSelf.releaseEntriesOn c1) = (stCall.releaseEntriesOn c1)))
 
 -- ============================================================================
 -- §3.14 Scheduler contention on the handler path (no wrongful preemption)
@@ -3971,7 +3971,7 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
         let recvSeg := endpointReceiveHandoffReplenishCores stCall donEp donServer
         assertBool "C6f: EVERY core outside the `.receive` segment keeps its replenish queue across leg+donation"
           (Concurrency.allCores.all (fun d =>
-            recvSeg.contains d || replenishEntriesOn stDon d == replenishEntriesOn stCall d))
+            recvSeg.contains d || (stDon.releaseEntriesOn d) == (stCall.releaseEntriesOn d)))
         assertBool "C6f: ...and the segment is a strict subset here, so the claim is not vacuous"
           (decide (recvSeg = [c0, c1]) && !recvSeg.contains c2 && !recvSeg.contains c3)
   -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
@@ -4011,10 +4011,10 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
       assertBool "...and the donation step moves NO replenishment on either core"
         (match applyReceiveRendezvousDonation stRecv donServer donClient with
          | .ok stDon =>
-             (replenishEntriesOn stDon (determineTargetCore stRecv donClient)
-                == replenishEntriesOn stRecv (determineTargetCore stRecv donClient))
-             && (replenishEntriesOn stDon (determineTargetCore stRecv donServer)
-                == replenishEntriesOn stRecv (determineTargetCore stRecv donServer))
+             ((stDon.releaseEntriesOn (determineTargetCore stRecv donClient))
+                == (stRecv.releaseEntriesOn (determineTargetCore stRecv donClient)))
+             && ((stDon.releaseEntriesOn (determineTargetCore stRecv donServer))
+                == (stRecv.releaseEntriesOn (determineTargetCore stRecv donServer)))
          | .error _ => false)
   -- (c) a `Call` rendezvous the resolver DECLINES: the receiver already holds a context
   --     of its own (`stHandoffActiveBase`'s active server), so the donation is the
@@ -4048,10 +4048,10 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
       assertBool "...so the donation step moves NO replenishment on either core"
         (match applyReceiveRendezvousDonation stRecvActive donServer donClient with
          | .ok stDon =>
-             (replenishEntriesOn stDon (determineTargetCore stRecvActive donClient)
-                == replenishEntriesOn stRecvActive (determineTargetCore stRecvActive donClient))
-             && (replenishEntriesOn stDon (determineTargetCore stRecvActive donServer)
-                == replenishEntriesOn stRecvActive (determineTargetCore stRecvActive donServer))
+             ((stDon.releaseEntriesOn (determineTargetCore stRecvActive donClient))
+                == (stRecvActive.releaseEntriesOn (determineTargetCore stRecvActive donClient)))
+             && ((stDon.releaseEntriesOn (determineTargetCore stRecvActive donServer))
+                == (stRecvActive.releaseEntriesOn (determineTargetCore stRecvActive donServer)))
          | .error _ => false)
       assertBool "...and hands no context over: the server keeps its own reservation"
         (match applyReceiveRendezvousDonation stRecvActive donServer donClient with
@@ -4228,7 +4228,7 @@ clause: every entry of every core's replenish queue names a context that is eith
 unresolvable, unbound, or bound to a thread homed on that core. -/
 private def replenishAffinityConsistentB (st : SystemState) : Bool :=
   Concurrency.allCores.all fun c =>
-    (replenishEntriesOn st c).all fun e =>
+    ((st.releaseEntriesOn c)).all fun e =>
       match st.getSchedContext? e.1 with
       | some sc =>
           match sc.boundThread with
@@ -4240,17 +4240,15 @@ private def replenishAffinityConsistentB (st : SystemState) : Bool :=
 home core — the shape the invariant is about, since a queue holding no entry for the
 context satisfies it vacuously and could witness no migration. -/
 private def stPreReturnBase : SystemState :=
-  { stDonBase with scheduler :=
-      stDonBase.scheduler.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100) }
+  withReleaseEntryOnCore stDonBase c0 scClient 100
 
 /-- The same-core CONTROL: the client pinned to the server's own core, its
 replenishment there too, so the return's migration is the identity. -/
 private def stPreReturnSameCore : SystemState :=
-  { stDonBase with
+  withReleaseEntryOnCore { stDonBase with
       objects := stDonBase.objects.insert donClient.toObjId
-        (.tcb { mkTcb 841 60 (some c1) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scClient), scBindingOwnerCode := 0 }),
-      scheduler :=
-        stDonBase.scheduler.setReplenishQueueOnCore c1 (ReplenishQueue.empty.insert scClient 100) }
+        (.tcb { mkTcb 841 60 (some c1) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scClient), scBindingOwnerCode := 0 }) }
+    c1 scClient 100
 
 /-- The three-operation prefix the defect needs: the client `Call`s with nobody
 waiting and parks; the passive server takes it with a `Recv`, whose hand-off donates
@@ -4345,7 +4343,7 @@ private def runPreReceiveReturnMigrationChecks : IO Unit := do
     (match okExcept (cleanupPreReceiveDonationMigrated stDonBase donServer) with
      | some stOut =>
          Concurrency.allCores.all fun c =>
-           replenishEntriesOn stOut c == replenishEntriesOn stDonBase c
+           (stOut.releaseEntriesOn c) == (stDonBase.releaseEntriesOn c)
      | none => false)
   assertBool "CONTROL: ...and a block there declares no replenish-queue lock"
     (decide (endpointReceiveHandoffReplenishCores stDonBase donEp donServer = []))
@@ -4362,7 +4360,7 @@ private def runPreReceiveReturnMigrationChecks : IO Unit := do
     | some stMigSame, some stBareSame =>
       assertBool "CONTROL: the migrated and the bare return leave the same replenish queues"
         (Concurrency.allCores.all fun c =>
-          replenishEntriesOn stMigSame c == replenishEntriesOn stBareSame c)
+          (stMigSame.releaseEntriesOn c) == (stBareSame.releaseEntriesOn c))
       assertBool "CONTROL: ...both on core 1, and both affinity-consistent"
         (replenishCountFor stMigSame c1 scClient == 1 && replenishAffinityConsistentB stMigSame
           && replenishAffinityConsistentB stBareSame)
@@ -4431,10 +4429,7 @@ private def stFpPassiveBase : SystemState :=
     |>.insert fpClient2.toObjId
         (.tcb { mkTcb 871 55 (some c2) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound fpClient2Sc), scBindingOwnerCode := 0 })
   let base : SystemState := { stDonBase with objects := objs }
-  let sched := base.scheduler
-    |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
-    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
-  { base with scheduler := sched }
+  withReleaseEntryOnCore (withReleaseEntryOnCore base c0 scClient 100) c2 fpClient2Sc 100
 
 /-- The same, with the FIRST client a legacy `.unbound` thread — its `Call` donates
 nothing, so the server's reply hands nothing back. -/
@@ -4446,9 +4441,7 @@ private def stFpLegacyBase : SystemState :=
     |>.insert donClient.toObjId
         (.tcb { mkTcb 841 60 none with scBindingScCode := 0, scBindingOwnerCode := 0 })
   let base : SystemState := { stDonBase with objects := objs }
-  let sched := base.scheduler
-    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
-  { base with scheduler := sched }
+  withReleaseEntryOnCore base c2 fpClient2Sc 100
 
 /-- `stDonBase` plus the second endpoint's pair: a passive delegate homed on core 3
 and a bound client on core 2, each context's replenishment on its holder's home. -/
@@ -4462,10 +4455,7 @@ private def stFpDelegatedBase : SystemState :=
         (.tcb { mkTcb 875 20 (some c3) with scBindingScCode := 0, scBindingOwnerCode := 0 })
     |>.insert fpReplyX.toObjId (.reply { replyId := fpReplyX })
   let base : SystemState := { stDonBase with objects := objs }
-  let sched := base.scheduler
-    |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
-    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClientXSc 100)
-  { base with scheduler := sched }
+  withReleaseEntryOnCore (withReleaseEntryOnCore base c0 scClient 100) c2 fpClientXSc 100
 
 /-- The MCS steady state, built the way a real one arrives at it: the server blocks
 on `Recv`, the first client `Call`s, the server's home core dispatches it, and the
@@ -4565,7 +4555,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       -- is it measured on the shape where the segment is at its widest, so the one
       -- core outside it is the only place a stray write could hide.
       assertBool "(a) C6e: core 3 is outside the segment, and the arm leaves its replenish queue alone"
-        (replenishEntriesOn stOut c3 == replenishEntriesOn stQ c3)
+        ((stOut.releaseEntriesOn c3) == (stQ.releaseEntriesOn c3))
     -- CONTROL: on THIS shape the `.receive` arm's pre-state reading of the receive
     -- leg, taken at the pop's post-state, agrees with the re-donation pair -- so an
     -- implementation that read the `.receive` segment there would pass (a) and be
@@ -4610,7 +4600,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(b) C6e: with an empty segment the arm leaves EVERY core's replenish queue alone"
-        (Concurrency.allCores.all (fun d => replenishEntriesOn stOut d == replenishEntriesOn stQ d))
+        (Concurrency.allCores.all (fun d => (stOut.releaseEntriesOn d) == (stQ.releaseEntriesOn d)))
     assertBool "(b) ...while it still names the answered client's run queue"
       (hasRunQueueWrite fp c0)
     let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
@@ -4643,7 +4633,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
     | .ok (_, stOut) =>
       assertBool "(b) PAYOFF: the live `.replyRecv` moves NO replenishment on any core"
-        (Concurrency.allCores.all fun c => replenishEntriesOn stOut c == replenishEntriesOn stQ c)
+        (Concurrency.allCores.all fun c => (stOut.releaseEntriesOn c) == (stQ.releaseEntriesOn c))
       assertBool "(b) MEASURED (register, WS-CB): the `.replyRecv` never-donated arm hands NO context to the passive receiver"
         (match stOut.getTcb? donServer, stOut.getTcb? fpClient2 with
          | some s, some b =>
@@ -5034,7 +5024,7 @@ private def runRetypeReservationChecks : IO Unit := do
     match retiredRetypeTcbCleanup stCtl serverTcb, liveRetypeTcb stCtl donServer with
     | some stOld, some stNew =>
       assertBool "(c) CONTROL: on an unbound target the two readings agree on every replenish queue"
-        (allCores.all (fun c => replenishEntriesOn stNew c == replenishEntriesOn stOld c))
+        (allCores.all (fun c => (stNew.releaseEntriesOn c) == (stOld.releaseEntriesOn c)))
       assertBool "(c) CONTROL: ...and both invariants hold after the retype"
         (schedContextBindingConsistentB stNew && replenishAffinityConsistentB stNew)
     | _, _ => assertBool "(c) CONTROL: both retypes of an unbound target succeed" false
@@ -5130,7 +5120,7 @@ private def runRetypeSchedContextChecks : IO Unit := do
             liveRetypeObj stCtl scClient.toObjId with
       | some stOldCtl, some stNewCtl =>
         assertBool "(d) CONTROL: on a context bound to nothing the two readings agree on every replenish queue"
-          (allCores.all (fun c => replenishEntriesOn stNewCtl c == replenishEntriesOn stOldCtl c))
+          (allCores.all (fun c => (stNewCtl.releaseEntriesOn c) == (stOldCtl.releaseEntriesOn c)))
         assertBool "(d) CONTROL: ...and neither touches the client's own binding"
           ((match stNewCtl.getTcb? donClient, stOldCtl.getTcb? donClient with
             | some a, some b => a.schedContextBinding == b.schedContextBinding

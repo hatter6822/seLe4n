@@ -1675,9 +1675,10 @@ OBJECTS_FIELD_OWNERS = {
     "SharedObservableFragment": ("SeLe4n.ObjId", False),
     # A `Prop`-valued structure whose `objects` field is an equation.
     "sharedViewUnchanged": ("projectObjects", False),
-    # A `Prop`-valued structure whose `objects` field is the off-run-link
-    # agreement of two stores (WS-ZA ZA4.5); it indexes nothing.
-    "OffSchedulerAgrees": ("s2.objectsAgreeOffRunLinks", False),
+    # A `Prop`-valued structure whose `objects` field is the agreement of two
+    # stores off every scheduler link (WS-ZA ZA4.5's run-queue links, and
+    # ZA6.3's release-queue links); it indexes nothing.
+    "OffSchedulerAgrees": ("s2.objectsAgreeOffSchedulerLinks", False),
     # **A live ambiguity, not a hypothetical one.**  `List` has a `GetElem?`
     # instance, so `builder.objects[0]?` in the test state builder would be
     # counted as a kernel-state read and refused by the enforced zero.  There

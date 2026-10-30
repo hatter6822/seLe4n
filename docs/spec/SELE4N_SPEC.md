@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.165` (`lakefile.toml`) |
+| **Package version** | `0.36.166` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 530,284 across 485 Lean files |
-| **Test LoC** | 87,418 across 70 Lean test suites |
-| **Proved declarations** | 19,686 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 536,975 across 488 Lean files |
+| **Test LoC** | 87,494 across 70 Lean test suites |
+| **Proved declarations** | 20,211 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5880,12 +5880,54 @@ Every kernel object has a decidable well-formedness predicate:
   eligibility included (`keyInputsOf`, `candidacyNotGained`), and the
   chooser's result depends only on those views
   (`chooseBestRunnableEffective_eq_of_views`).  The drain, the refill and the
-  exhausting charge write in place (`ReplenishQueue.headDue`,
-  `ReplenishQueue.dropDueQueue`, `refillSchedContextImpl`, `refillRecord_eq`,
-  `budgetExhaustOnCoreImpl`), and boot gives each idle TCB its own cells
-  (`storeIdleThreadOnCoreImpl`).  The exerciser reads a tick that drains a
-  refill at 0; the bound yield that sets it up reads 11 until the release
-  queue links through the scheduling contexts (ZA6.3).
+  exhausting charge write in place (`refillSchedContextImpl`,
+  `refillRecord_eq`, `budgetExhaustOnCoreImpl`; since ZA6.3 the drain walks
+  the linked release queue, `drainDueOnCore`), and boot gives each idle TCB its
+  own cells (`storeIdleThreadOnCoreImpl`).  The exerciser reads a tick that
+  drains a refill at 0.
+- **The release queue links through the scheduling contexts** (`v0.36.166`,
+  WS-ZA ZA6.3).  Each core's release queue is singly linked through its
+  contexts (`SchedContext.releaseNextCode`, `releaseCoreCode`, `releaseAt`),
+  with the head and the count in the core's slots (`releaseHeadOnCore`,
+  `releaseCountOnCore`); the sorted `List` stays as the ghost abstract queue
+  (`replenishQueueOnCore`), and `releaseQueueRefined`, the proof-layer
+  bundle's 19th conjunct, ties the links to it: each core's chain is its
+  queue's ids, without duplicates, every link names its own core, each link
+  holds its entry's release time, and the count is the length.  A context
+  holds at most one entry, keyed by its earliest pending refill
+  (`SchedContext.releaseKey?`), as seL4-MCS keys its release queue by the head
+  refill's release time.  The charge and the drain place a context again by
+  that key (`releasePlace`, `replenishOnCore`: seL4's `postpone`), so a
+  second charge of a queued context moves its entry instead of adding one.
+  The removals (configure, unbind, suspend, destroy) unlink the context from
+  the core its own link names (`purgeReplenishment`, `releaseRemoveAnywhere`),
+  never a computed home, and their footprints declare that core
+  (`purgeReplenishCores`).  The requeue edits only the requeuing core's queue;
+  its branch that leaves both queues as they are, a context linked on another
+  core, is unreachable at the tick, the yield and the drain
+  (`spendBudget_requeue_releaseFreeFor`, `yieldCharge_requeue_releaseFreeFor`),
+  from the placement invariant's clause that a thread current on core `c` has
+  home `c` (`currentBoundHomedOnCore_of_placement`).  That clause holds at
+  every committed state because an affinity change vacates a thread running on
+  its old home and queues it on the new one (`vacateForAffinityChange`,
+  `requeueVacatedOnNewHome`: seL4's `remoteTCBStall` and `SCHED_APPEND`); the
+  old home's frame is saved by that core at its next kernel entry
+  (`Architecture.saveVacatedFrameOnCore`, after the HAL's stall,
+  `Concurrency.stallChangedCores`), and until then no other core resumes the
+  thread (`PriorityInheritance.deferResidentElsewhere`).  The projection
+  erases the link fields, and every release-queue edit leaves every
+  observer's projection unchanged with no domain hypothesis
+  (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`);
+  the per-core tick, the drain and the yield's charge are outside the per-core
+  non-interference step relation, as before this cut (`docs/REGISTERED_DEBT.md`,
+  ZA6.5).  The compiled link edits, the re-placement and the charge each read
+  what they need before they write and write through one call
+  (`releaseUnlinkWrite`, `releaseLinkWrite`, `releasePlaceImpl`,
+  `spendBudgetWrite`), and a refill behind the first is one straight-line
+  record (`SchedContext.appendTailRecord`).  The exerciser reads the bound
+  yield (`refill-yield`, 11 at ZA6.2), the refilling tick
+  (`refill-drain-tick`) and three exhausting ticks (`exhaust-tick`,
+  `exhaust-wait-tick`, `exhaust-drain-tick`) at 0, first call and steady.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
@@ -5910,7 +5952,7 @@ Every kernel object has a decidable well-formedness predicate:
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
   five scheduling-context scenarios reads 0 allocations.  The suspend of a
   thread blocked in IPC or holding a donated context keeps the general path
-  (`docs/REGISTERED_DEBT.md`, ZA6.6).
+  (`docs/REGISTERED_DEBT.md`, ZA6.8).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
@@ -7332,6 +7374,14 @@ tracks when each SchedContext's budget becomes eligible for refill. The queue
 is a sorted list of `(SchedContextId, eligibleAt)` pairs with a cached `size`
 field, enabling O(1) `peek`/`hasDue` and O(k) `popDue` (prefix split).
 
+Since `v0.36.166` (WS-ZA ZA6.3) this list is the ghost abstract queue: the
+executable queue is singly linked through the scheduling contexts, one entry
+per context keyed by its earliest pending refill, and `releaseQueueRefined`
+ties the links to the list (§ the ZA6.3 entry above).  The kernel's insert,
+removal, requeue and drain write the links (`releaseInsertOn`,
+`releaseRemoveOn`, `releasePlace`, `drainDueOnCore`); the list operations
+below are the specification they are proven against.
+
 Operations: `insert` (sorted O(n)), `popDue` (prefix split O(k)), `remove`
 (filter O(n)). Invariants: `pairwiseSortedBy` (recursive adjacency predicate),
 `replenishQueueSorted`, `replenishQueueSizeConsistent`, `replenishQueueConsistent`
@@ -8084,7 +8134,11 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   (`schedContextBind_replenishQueueOnCore`,
   `schedContextConfigure_replenishQueueOnCore_ne`,
   `schedContextUnbind_replenishQueueOnCore_ne_of_tcb` and its per-core lift),
-  except the sweep arm, which needs none and can have none.
+  except the sweep arm, which needs none and can have none.  (WS-ZA ZA6.3,
+  `v0.36.166`, retired the sweep arm: a context sits on at most one core's
+  release queue and its own link names that core, so every purge removes it
+  there and every segment above is the purge's own resolver,
+  `purgeReplenishCores`.)
 
   Declaring them found a duplicate:
   `SchedContextOps.schedContextBoundThread?`'s docstring has said since SM8.B

@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.IPC.Operations.Timeout
 import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
+import SeLe4n.Kernel.SchedContext.ReleaseLinks
 
 /-!
 # Scheduler Core Operations — AK2 closure status
@@ -81,6 +82,23 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
+
+/-- WS-ZA ZA6.3: **a release-queue edit is a run-queue stage** — it writes
+contexts' release fields and the release queues alone, so every thread's TCB,
+every slot's back-links, the run queues, their ends and every current slot are
+kept; the release queues stay refined by `hR`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
+    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+    (hA : st'.objectsAgreeOffReleaseLinks st) (hI : st.objects.invExt → st'.objects.invExt)
+    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined) :
+    SystemState.RunQueueStage st st' := by
+  have hS := hW.2
+  refine SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
+    ?_ ?_ ?_ ?_ hR
+  · rw [hS]
+  · rw [hS]
+  · rw [hS]
+  · rw [hW.1]; rfl
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 
@@ -486,7 +504,7 @@ noncomputable def timerTick : Kernel Unit :=
 /-- Z4-G1: Pop all due replenishment entries from the system replenish queue.
 Returns the list of SchedContextIds that are due for replenishment and the
 remaining queue. Wraps `ReplenishQueue.popDue` at the system level. -/
-def popDueReplenishments (st : SystemState) (now : Nat)
+noncomputable def popDueReplenishments (st : SystemState) (now : Nat)
     : ReplenishQueue × List SeLe4n.SchedContextId :=
   (st.scheduler.replenishQueueOnCore bootCoreId).popDue now
 
@@ -683,7 +701,7 @@ in-place table insert whose admissibility proof is erased — and the preconditi
 the raw insert used to trust silently (a caller passing the stored TCB) is the
 signature's.  A caller supplies it from `getTcbWitnessed?`.  The SchedContext
 writes are the rewrite under the witnessed lookup of the binding's context. -/
-def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
     : Except KernelError (SystemState × Bool) :=
   match tcb.schedContextBinding with
@@ -1769,23 +1787,6 @@ theorem processOneReplenishmentOnCore_of_refillWake (P : SystemState → Prop)
     P (processOneReplenishmentOnCore st execCore scId now) :=
   (markRefillKeyChange_extract_frame P st _ scId hFlag).mpr h
 
-/-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
-`now`.
-
-Pops the due entries from core `c`'s replenish queue
-(`replenishQueueOnCore c |>.popDue now`) — writing back the remaining queue —
-then folds `processOneReplenishmentOnCore` over them.  The per-core analogue of
-`processReplenishmentsDue`, reading / writing core `c`'s replenish-queue slot
-(plus, via the wakes, the target cores' run queues, their reschedule flags and
-the object store).  Pure; deterministic.  What the wakes owe — a `.reschedule`
-SGI to each remote core whose flag went up, and the local decision when the
-executing core's did — is read off the reschedule flags (WS-ZA ZA6.2). -/
-def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
-    SystemState :=
-  let (remainingQueue, dueIds) := (st.scheduler.replenishQueueOnCore c).popDue now
-  let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore c remainingQueue }
-  dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) st'
-
 /-- WS-ZA ZA6.2: the compiled `refillWakeOnCore`.  The facts the wake reads off
 the refilled state — the target core and whether the store holds the thread —
 are read before the wake writes, and the wake is the run-queue placement
@@ -1860,86 +1861,118 @@ pre-state after the refill. -/
     · rfl
   · rfl
 
-/-- WS-ZA ZA6.2: the due replenishments of `entries` processed in order, read
-off the queue's own list: the fold `processReplenishmentsDueOnCore` runs over
-the due prefix, without building the list of due ids
-(`foldl_splitDue_eq_foldDueReplenishmentsOnCore`). -/
-def foldDueReplenishmentsOnCore (c : CoreId) (now : Nat) :
-    List (SchedContextId × Nat) → SystemState → SystemState
-  | [], st => st
-  | (scId, eligibleAt) :: tail, st =>
-    if eligibleAt ≤ now then
-      foldDueReplenishmentsOnCore c now tail (processOneReplenishmentOnCore st c scId now)
+/-- WS-ZA ZA6.3: the drain's loop: while core `c`'s release queue has a head
+released by `now`, take it, refill it (`processOneReplenishmentOnCore`) and put
+it back where its refills now say (`SystemState.releasePlace`: off every queue
+when it holds no pending refill, otherwise at its earliest), as seL4-MCS's
+`awaken` loop takes the release queue's head while its refill is ready.  At
+most `fuel` heads are taken. -/
+def drainDueOnCore (c : CoreId) (now : Nat) : Nat → SystemState → SystemState
+  | 0, st => st
+  | f + 1, st =>
+    let h := st.scheduler.releaseHeadOnCore c
+    if h = 0 then st
+    else if st.releaseAtOn c (ReleaseChain.decode h) ≤ now then
+      drainDueOnCore c now f
+        ((processOneReplenishmentOnCore st c (ReleaseChain.decode h) now).releasePlace c
+          (ReleaseChain.decode h))
     else st
 
-theorem foldl_splitDue_eq_foldDueReplenishmentsOnCore (c : CoreId) (now : Nat)
-    (entries : List (SchedContextId × Nat)) (st : SystemState) :
-    (ReplenishQueue.splitDue entries now).1.foldl
-        (fun acc scId => processOneReplenishmentOnCore acc c scId now) st =
-      foldDueReplenishmentsOnCore c now entries st := by
-  induction entries generalizing st with
-  | nil => rfl
-  | cons e tail ih =>
-    obtain ⟨scId, t⟩ := e
-    simp only [ReplenishQueue.splitDue, foldDueReplenishmentsOnCore]
-    split
-    · rw [List.foldl_cons]; exact ih _
-    · rfl
-
-/-- WS-ZA ZA6.2: the compiled `processReplenishmentsDueOnCore`.  The queue's
-head is read first, and a queue whose head is not due is left as it is, with
-no write, as seL4's `awaken` loop stops at the first entry not ready.
-Otherwise the queue keeps its suffix past the due prefix, written in its slot
-(`modifyReplenishQueueOnCore`), and the due replenishments are processed off
-the prefix of the queue's own list; the specification builds the due ids and
-the remaining queue as a pair.  A call, so the state it receives is a value:
-inlined after the tick's diagnostic clear, the branch that keeps the state made
-the compiler build that state ahead of the test, and the due branch then
-rebuilt it. -/
-@[noinline] def processReplenishmentsDueOnCoreImpl (st : SystemState) (c : CoreId) (now : Nat) :
+/-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
+`now`: core `c`'s release queue is drained from its head (`drainDueOnCore`),
+each due context refilled and placed again by its remaining refills, with the
+queue's count as the bound (every context is taken at most once: one put back
+holds only refills released after `now`, so it goes behind every due one).
+The per-core analogue of `processReplenishmentsDue`, reading / writing core
+`c`'s release queue (plus, via the wakes, the target cores' run queues, their
+reschedule flags and the object store).  Pure; deterministic; no list is built
+(WS-ZA ZA6.3).  What the wakes owe — a `.reschedule` SGI to each remote core
+whose flag went up, and the local decision when the executing core's did — is
+read off the reschedule flags (WS-ZA ZA6.2). -/
+def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
     SystemState :=
-  let entries := (st.scheduler.replenishQueueOnCore c).entries
-  if ReplenishQueue.headDue entries now then
-    let st' := { st with scheduler := st.scheduler.modifyReplenishQueueOnCore c fun rq =>
-      ReplenishQueue.dropDueQueue rq now }
-    foldDueReplenishmentsOnCore c now entries st'
-  else st
+  drainDueOnCore c now (st.scheduler.releaseCountOnCore c) st
 
-@[csimp] theorem processReplenishmentsDueOnCore_eq_impl :
-    @processReplenishmentsDueOnCore = @processReplenishmentsDueOnCoreImpl := by
-  funext st c now
-  unfold processReplenishmentsDueOnCoreImpl
-  by_cases h : ReplenishQueue.headDue (st.scheduler.replenishQueueOnCore c).entries now = true
-  · rw [if_pos h]
-    unfold processReplenishmentsDueOnCore ReplenishQueue.dropDueQueue
-    rw [ReplenishQueue.popDue_eq, SchedulerState.modifyReplenishQueueOnCore_eq]
-    exact foldl_splitDue_eq_foldDueReplenishmentsOnCore c now _ _
-  · rw [if_neg h]
-    unfold processReplenishmentsDueOnCore
-    rw [ReplenishQueue.popDue_of_not_headDue _ now (by simpa using h)]
-    have hs : st.scheduler.setReplenishQueueOnCore c (st.scheduler.replenishQueueOnCore c) =
-        st.scheduler := by
-      have hv : st.scheduler.replenishQueue.set c.val (st.scheduler.replenishQueue.get c) c.isLt =
-          st.scheduler.replenishQueue := by
-        apply Vector.ext
-        intro i hi
-        rw [Vector.getElem_set]
-        split
-        · rename_i hc; subst hc; rfl
-        · rfl
-      simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore, hv]
-    simp only [List.foldl_nil, hs]
+/-- WS-ZA ZA6.3: **a property every refill keeps and every re-placement keeps
+holds after the drain** — the induction the drain's preservation proofs share,
+whatever heads the loop takes and however many. -/
+theorem drainDueOnCore_induction (P : SystemState → Prop) (c : CoreId) (now : Nat)
+    (hStep : ∀ s scId, P s → P (processOneReplenishmentOnCore s c scId now))
+    (hPlace : ∀ s scId, P s → P (s.releasePlace c scId)) :
+    ∀ f st, P st → P (drainDueOnCore c now f st)
+  | 0, _, h => h
+  | f + 1, st, h => by
+    unfold drainDueOnCore
+    dsimp only
+    split
+    · exact h
+    · split
+      · exact drainDueOnCore_induction P c now hStep hPlace f _ (hPlace _ _ (hStep _ _ h))
+      · exact h
 
-/-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
-`scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
-`c`'s replenish queue.  The named CBS-replenishment-scheduling primitive that the
-live per-core budget tick (`timerTickBudgetOnCore`, below) **calls** for its
-replenishment write, so it is genuinely load-bearing (not merely proven-equal).
-Defined here, before the tick, to satisfy the forward reference. -/
-def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
-    (eligibleAt : Nat) : SystemState :=
-  let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
-  { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
+/-- The re-placement writes the release queues and the contexts' release
+fields alone: every other scheduler slot and every thread read the same. -/
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_runQueueOnCore (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.runQueueOnCore c' = s.scheduler.runQueueOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_currentOnCore (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.currentOnCore c' = s.scheduler.currentOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_reschedulePendingOnCore
+    (s : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.reschedulePendingOnCore c' =
+      s.scheduler.reschedulePendingOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_lastTimeoutErrorsOnCore
+    (s : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) :
+    (s.releasePlace c scId).scheduler.lastTimeoutErrorsOnCore c' =
+      s.scheduler.lastTimeoutErrorsOnCore c' := by
+  rw [(SystemState.releasePlace_releaseOnlyWrite s c scId).2]; rfl
+
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_machine (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) :
+    (s.releasePlace c scId).machine = s.machine :=
+  (SystemState.releasePlace_releaseOnlyWrite s c scId).machine
+
+theorem _root_.SeLe4n.Model.SystemState.releasePlace_getTcb? (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    (s.releasePlace c scId).getTcb? t = s.getTcb? t :=
+  (SystemState.releasePlace_agree s c scId).getTcb? t
+
+/-- ...stated over the drain of all of core `c`'s due refills. -/
+theorem processReplenishmentsDueOnCore_induction (P : SystemState → Prop) (st : SystemState)
+    (c : CoreId) (now : Nat)
+    (hStep : ∀ s scId, P s → P (processOneReplenishmentOnCore s c scId now))
+    (hPlace : ∀ s scId, P s → P (s.releasePlace c scId)) (h : P st) :
+    P (processReplenishmentsDueOnCore st c now) :=
+  drainDueOnCore_induction P c now hStep hPlace _ st h
+
+/-- A reading of the state each refill and each re-placement leaves alone is
+one the drain leaves alone. -/
+theorem processReplenishmentsDueOnCore_frame {α : Type} (f : SystemState → α)
+    (st : SystemState) (c : CoreId) (now : Nat)
+    (hStep : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId),
+      f (processOneReplenishmentOnCore s c scId now) = f s)
+    (hPlace : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId),
+      f (s.releasePlace c scId) = f s) :
+    f (processReplenishmentsDueOnCore st c now) = f st :=
+  processReplenishmentsDueOnCore_induction (fun s => f s = f st) st c now
+    (fun s scId h => (hStep s scId).trans h) (fun s scId h => (hPlace s scId).trans h) rfl
+
+/-- WS-SM SM5.H.2 (plan §3.8): schedule SchedContext `scId`'s CBS
+replenishment on core `c` — put it on core `c`'s release queue at its earliest
+pending refill (`SystemState.releasePlace`, WS-ZA ZA6.3), off whichever queue
+held it before, as seL4-MCS's `postpone` re-places a context whose budget ran
+out.  The named CBS-replenishment-scheduling primitive that the live per-core
+budget tick (`timerTickBudgetOnCore`, below) **calls** for its replenishment
+write.  Defined here, before the tick, to satisfy the forward reference. -/
+def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId) : SystemState :=
+  st.releasePlace c scId
 
 /-- WS-ZA ZA4.3: an unbound thread's time slice ends on core `c`: the slice is
 reset to `configDefaultTimeSlice` and `tid` goes to the back of its priority
@@ -1973,10 +2006,9 @@ out the SchedContext's IPC-blocked threads (`budgetExhaustOnCore`). -/
   let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
     (SystemState.rewriteAdmissible_schedContext hSc sc''')
   -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
-  -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
-  -- equal); `stReplenished` is defeq to the prior open-coded
-  -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
-  let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+  -- `replenishOnCore`: the context goes on core `c`'s release queue at its
+  -- earliest pending refill, the one just scheduled among them (WS-ZA ZA6.3).
+  let stReplenished := replenishOnCore st' c scId
   stReplenished.runEnqueueOnCore c tid (resolveInsertPriority st' tid sc)
 
 /-- WS-ZA ZA4.3: the compiled `sliceExpireOnCore`.  The TCB is written in its
@@ -1997,28 +2029,62 @@ object table rebuilt; proven equal to the specification
   simp only [RobinHood.RHTable.modify_of_get? hx]
   rfl
 
+/-- WS-ZA ZA6.3: the context a charge writes back: `ticks` consumed, the
+`consumed` budget scheduled as a refill, the deadline rule applied.  A call, so
+the slot's rewrite is one straight-line write of the object it holds and reuses
+that object's cell. -/
+@[noinline] def chargeSchedContext (s : SchedContext) (now ticks consumed : Nat) : SchedContext :=
+  cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now ⟨consumed⟩) now true
+
+/-- WS-ZA ZA6.3: the priority a thread is re-enqueued at: its boosted priority
+(`resolveEffectivePrioDeadline_fst_eq_boostedPriority`), or `fallback` when the
+store holds no thread under `tid`.  Read as one number, with no pair built for
+the deadline the insert does not read. -/
+@[noinline] def insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (fallback : SeLe4n.Priority) : SeLe4n.Priority :=
+  match st.getTcb? tid with
+  | some tcb => tcb.boostedPriority
+  | none => fallback
+
+theorem resolveInsertPriority_eq_insertPriorityOf (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sc : SchedContext) : resolveInsertPriority st tid sc = insertPriorityOf st tid sc.priority := by
+  unfold resolveInsertPriority insertPriorityOf
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb => exact resolveEffectivePrioDeadline_fst_eq_boostedPriority st tcb
+
+/-- WS-ZA ZA6.3: the budget spend's writes, handed the charge (`ticks`), the
+consumed budget and the fallback priority read off the context: the context
+rewritten in its slot (`chargeSchedContext`), placed on core `c`'s release queue
+(`replenishOnCore`) and `tid` re-enqueued.  A call, so the caller's context is
+not held across the rewrite of its slot. -/
+@[noinline] def spendBudgetWrite (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (scId : SchedContextId) (ticks consumed : Nat) (fallback : SeLe4n.Priority) : SystemState :=
+  let now := st.machine.timer
+  let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
+    chargeSchedContext s now ticks consumed)
+  let prio := insertPriorityOf st' tid fallback
+  (replenishOnCore st' c scId).runEnqueueOnCore c tid prio
+
 /-- WS-ZA ZA4.3: the compiled `spendBudgetOnCore`.  The SchedContext is written
 in its slot, and the insert priority is read off the state before the refill
 is queued on it, so no state is read after a later one is built from it
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1); proven equal to the specification
-(`spendBudgetOnCore_eq_impl`). -/
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  WS-ZA ZA6.3: the writes are one call
+(`spendBudgetWrite`) handed the numbers they read off the context, so the
+context the caller looked up is released before its slot is rewritten.
+Proven equal to the specification (`spendBudgetOnCore_eq_impl`). -/
 @[inline] def spendBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SchedContextId) (sc : SchedContext)
     (_hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
-  let now := st.machine.timer
-  let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-  let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
-    cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
-  let prio := resolveInsertPriority st' tid sc
-  let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
-  stReplenished.runEnqueueOnCore c tid prio
+  spendBudgetWrite st c tid scId ticks sc.budgetRemaining.val sc.priority
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
   funext st c tid scId sc hSc ticks
   have hx := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
-  unfold spendBudgetOnCore spendBudgetOnCoreImpl SystemState.modifyObject
-    SystemState.rewriteObject
+  unfold spendBudgetOnCore spendBudgetOnCoreImpl spendBudgetWrite chargeSchedContext
+    SystemState.modifyObject SystemState.rewriteObject
   simp only [RobinHood.RHTable.modify_of_get? hx]
+  rw [resolveInsertPriority_eq_insertPriorityOf]
   rfl
 
 /-- The slice expiry keeps the object table's invariant: the slice reset is an
@@ -2040,8 +2106,9 @@ theorem spendBudgetOnCore_objects_invExt (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt) :
     (spendBudgetOnCore st c tid scId sc hSc ticks).objects.invExt :=
   SystemState.runEnqueueOnCore_objects_invExt _ c tid _
-    (SystemState.rewriteObject_preserves_objects_invExt st _ _
-      (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv)
+    (SystemState.releasePlace_objects_invExt _ c scId
+      (SystemState.rewriteObject_preserves_objects_invExt st _ _
+        (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv))
 
 /-- Mark the reschedule flag of every core an SGI list names: the cores a
 step's wakes owe a scheduling point, recorded where the step's seam reads them
@@ -3726,31 +3793,31 @@ theorem threadPlacedOnSomeCore_eq_isSome_placedCoreOf? (st : SystemState)
 -- for its CBS replenishment write (so the primitive is genuinely load-bearing,
 -- not merely proven-equal); see its def site for the docstring.
 
-/-- WS-SM SM5.H.2 (faithful plan signature `replenishOnCore (s, c, sc)`): schedule
-a CBS replenishment for SchedContext `sc` on core `c`, computing the eligibility
-tick internally as `now + sc.period.val` (the CBS-engine rule).  Because
-`sc.wellFormed` carries `period > 0`, this form makes the SM5.H.6 pipeline-order
-preservation **unconditional** (the new entry is eligible strictly in the future
-without a caller-supplied `eligibleAt > now` hypothesis). -/
-def replenishScOnCore (st : SystemState) (c : CoreId) (sc : SchedContext)
-    (now : Nat) : SystemState :=
-  replenishOnCore st c sc.scId (now + sc.period.val)
-
-/-- WS-SM SM5.H.4 (plan §3.8): migrate SchedContext `scId`'s pending replenishments
-from core `fromCore`'s replenish queue to core `toCore`'s — `remove` from the
-source, fold-of-`insert`s into the destination (each at its original eligibility
-time), no-op on self-migration.  Writes only the two replenish-queue slots. -/
+/-- WS-SM SM5.H.4 (plan §3.8): migrate SchedContext `scId`'s pending
+replenishment from core `fromCore`'s release queue to core `toCore`'s, and a
+no-op on self-migration.  WS-ZA ZA6.3: the run-time write is the context's own
+link — unlinked from the source and linked into the destination at its sorted
+place, at the release time the link holds, when the source's links queue it;
+the abstract queues move with it (ghost, read off the pre-state's, no run-time
+write): `scId`'s entries leave the source's and join the destination's at their
+own times.  The two agree on every state whose release queues agree with the
+contexts (`releaseQueueRefined`); stating the abstract move by the abstract
+queues is what lets each abstract-queue fact about the migration (the moved
+entries existed, the source keeps none) hold with no such hypothesis. -/
 def migrateSchedContextReplenishment (st : SystemState) (scId : SchedContextId)
     (fromCore toCore : CoreId) : SystemState :=
   if fromCore = toCore then st
   else
+    let st₁ := if st.releaseQueuedOn fromCore scId then
+        (st.releaseRemoveOn fromCore scId).releaseInsertOn toCore scId (st.releaseAtOn fromCore scId)
+      else st
     let fromQ := st.scheduler.replenishQueueOnCore fromCore
     let toQ := st.scheduler.replenishQueueOnCore toCore
     let moved := fromQ.entries.filter (fun e => e.1 == scId)
-    let fromQ' := fromQ.remove scId
     let toQ' := moved.foldl (fun q e => q.insert scId e.2) toQ
-    let sched' := (st.scheduler.setReplenishQueueOnCore fromCore fromQ').setReplenishQueueOnCore toCore toQ'
-    { st with scheduler := sched' }
+    let sched := (st₁.scheduler.setReplenishQueueOnCore fromCore (fromQ.remove scId)).setReplenishQueueOnCore
+      toCore toQ'
+    { st₁ with scheduler := sched }
 
 /-- WS-ZA ZA4.5: moving a thread between two cores' queues through its TCB
 links writes the two queues as the abstract remove and insert, and each core's
@@ -3872,6 +3939,68 @@ no reservation moves no replenish entry. -/
 -- (`IPC/Operations/Timeout` → `PriorityInheritance/Propagate`) sits above.
 -- Its qualified name is unchanged.
 
+/-- WS-ZA ZA6.3 (the affinity stall, seL4's `remoteTCBStall`): an affinity change
+that moves a thread **running** on its old home takes it off that core in the
+same transition — the core's `current` slot is emptied and the core is flagged
+to choose again (the diff's slot rule).  No register is read: on the executing
+core the trap entry saved the caller's frame into its TCB
+(`Architecture.saveCapturedSyscallFrame`), and a remote core saves its own frame
+at its next entry (`Architecture.saveVacatedFrameOnCore`), which the HAL forces
+before the change returns (`Concurrency.stallChangedCores`, the HAL's
+`remote_stall`) and before which no other core resumes the thread
+(`deferResidentElsewhere`).  The identity when the home does not move or the
+thread is not running there. -/
+def vacateForAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : CoreId) : SystemState :=
+  if oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid then
+    { st with scheduler :=
+        (st.scheduler.setCurrentOnCore oldCore none).markReschedulePendingOnCore oldCore }
+  else st
+
+/-- WS-ZA ZA6.3: ...and the thread it took off its old home joins its new home's
+run queue through its TCB links, a wake there (the diff's queue rule) — seL4's
+`SCHED_APPEND` on the new affinity.  The guarded enqueue: a running thread is on
+no queue, so its links admit it.  The identity when nothing was vacated. -/
+def requeueVacatedOnNewHome (st : SystemState) (tid : SeLe4n.ThreadId) (newCore : CoreId)
+    (vacated : Bool) : SystemState :=
+  if vacated then
+    match st.getTcb? tid with
+    | some tcb =>
+      let s := st.runEnqueueOnCore newCore tid tcb.boostedPriority
+      { s with scheduler := s.scheduler.markReschedulePendingOnCore newCore }
+    | none => st
+  else st
+
+/-- WS-ZA ZA6.3: does a core other than `home` run the thread?  The refusal the
+affinity change keeps for a placement the kernel invariants rule out (every
+running thread runs on its home, `currentDequeuedUniqueExcept.currentHome`), so
+that a state outside them is left as it was rather than written through. -/
+def affinityRunningElsewhere (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId) :
+    List CoreId → Bool
+  | [] => false
+  | c :: cs =>
+    (st.scheduler.currentCode.get c == tid.val + 1 && c != home)
+    || affinityRunningElsewhere st tid home cs
+
+theorem affinityRunningElsewhere_eq (st : SystemState) (tid : SeLe4n.ThreadId) (home : CoreId)
+    (cs : List CoreId) :
+    cs.any (fun c => st.scheduler.currentOnCore c == some tid && c != home) =
+      affinityRunningElsewhere st tid home cs := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [affinityRunningElsewhere]
+    rw [List.any_cons, ← ih, currentOnCore_beq_some]
+
+/-- A thread the search clears runs on no core but `home`. -/
+theorem affinityRunningElsewhere_false {st : SystemState} {tid : SeLe4n.ThreadId}
+    {home : CoreId} (h : affinityRunningElsewhere st tid home SeLe4n.Kernel.Concurrency.allCores = false)
+    (c : CoreId) (hc : st.scheduler.currentOnCore c = some tid) : c = home := by
+  rw [← affinityRunningElsewhere_eq, List.any_eq_false] at h
+  have := h c (List.mem_finRange c)
+  simp only [hc, beq_self_eq_true, Bool.true_and, bne_iff_ne, ne_eq, Decidable.not_not] at this
+  exact this
+
 /-- WS-SM SM5.H.4 (plan §3.8, full thread migration): set a thread's CPU affinity
 **and** migrate everything that follows the thread to its new home core — its
 bound SchedContext's pending replenishments (`migrateSchedContextReplenishment`)
@@ -3880,21 +4009,28 @@ cross-core `.reschedule` SGI when the new home is remote from the executing core
 and the thread is now runnable there (mirroring SM5.C's `wakeThread` cross-core
 protocol).
 
-**Reject (#2, Codex P1):** rebinding a thread currently *running*
-(`currentOnCore c`) on a core `c` its new affinity would forbid is rejected
-fail-closed with `.threadOnDifferentCore`.  Such a target is, by dequeue-on-dispatch,
-in no run queue, so the run-queue migration could not move it off `c`; rejecting
-guarantees a *successful* migration never leaves the target executing on a core
-`affinityAdmitsCore` / `switchToThreadOnCore` reject
-(`setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core`).
+**A running thread is moved too (WS-ZA ZA6.3, seL4's `remoteTCBStall`).**  A
+thread current on its old home whose home moves is taken off that core in the
+same transition (`vacateForAffinityChange`) and queued on its new home
+(`requeueVacatedOnNewHome`), so at every committed state a thread current on
+core `c` or queued on `c` is homed on `c`
+(`currentDequeuedUniqueExcept.currentHome` / `queuedHome`).  This replaced the
+`.threadOnDifferentCore` refusal of a running thread whose new affinity forbade
+its core, and closed the case that refusal let through: unpinning a thread
+running on a secondary core, which left it running there homed on the boot core
+— so its exhausted budget was queued on a core its home did not name.  The
+refusal kept is for a thread running on a core other than its old home, which
+the invariant rules out (`affinityRunningElsewhere`).
+
+Each core's idle thread is refused (`.invalidArgument`): it is pinned to its
+core, never queued, and no affinity of another core is one it can take.
 
 `oldCore` / `newCore` are the thread's home core before / after the affinity
-write (`determineTargetCore`).  Unbound threads (`schedContextBinding.scId? =
-none`) have no replenishments to migrate, so only the affinity write + run-queue
-migration apply.  Fail-closed (`.invalidArgument`) on a non-TCB target.  Returns
-the post-migration state paired with the optional SGI; the syscall path
-(`setThreadCpuAffinityOp`) commits the state (the SGI firing is the SM5.I FFI
-seam, exactly as SM5.C/D/F).
+write.  Unbound threads (`schedContextBinding.scId? = none`) have no
+replenishments to migrate.  Fail-closed (`.invalidArgument`) on a non-TCB
+target.  Returns the post-migration state paired with the optional SGI; the
+syscall path (`setThreadCpuAffinityOp`) commits the state (the SGI firing is the
+SM5.I FFI seam, exactly as SM5.C/D/F).
 
 **Authority (security contract).**  The op performs **no** in-op capability check;
 authority is the dispatch-layer write-capability gate on the target TCB
@@ -3907,46 +4043,37 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
   match st.getTcb? targetTid with
   | some tcb =>
       -- PR #889 review round 20: a core the platform does not have is not a
-      -- home.  The model is `numCores` wide and a binding may declare fewer
-      -- (`SimSingleCorePlatform` declares one); RR5's `bootAffinitiesDeclared`
-      -- refuses a *configured* TCB pinned outside that set, and this is the
-      -- same relation on the live path — without it a thread migrates onto an
-      -- absent PE, is queued where nothing runs it, and the reschedule SGI
-      -- goes to a core that cannot take it.  Inert on a full-width machine,
-      -- since `declaredCoreCount` defaults to `numCores`.
+      -- home (RR5's `bootAffinitiesDeclared` relation on the live path).
       if affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount) then
         .error .invalidArgument
+      else if isIdleThreadId targetTid then .error .invalidArgument
       else
-      -- #2 (Codex P1 review): reject rebinding a thread currently RUNNING on a core
-      -- its new affinity would forbid.  Dequeue-on-dispatch means such a target is in
-      -- no run queue, so `migrateRunQueueOnAffinityChange` cannot move it off the old
-      -- core; fail-closed (`.threadOnDifferentCore`) rather than leave it executing on
-      -- a core `affinityAdmitsCore` / `switchToThreadOnCore` rejects.  A caller holding
-      -- `.write` suspends the thread first if it must be rebound while running.
-      if (SeLe4n.Kernel.Concurrency.allCores).any (fun c =>
-            st.scheduler.currentOnCore c == some targetTid
-            && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c) then
+      let oldCore := determineTargetCore st targetTid
+      if affinityRunningElsewhere st targetTid oldCore SeLe4n.Kernel.Concurrency.allCores then
         .error .threadOnDifferentCore
-      else match setThreadCpuAffinity st targetTid affinity with
+      else
+      let newCore := affinity.getD bootCoreId
+      let vacated := decide (oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some targetTid)
+      match setThreadCpuAffinity (vacateForAffinityChange st targetTid oldCore newCore)
+          targetTid affinity with
       | .ok stSet =>
-          let oldCore := determineTargetCore st targetTid
-          let newCore := determineTargetCore stSet targetTid
           let st1 := match tcb.schedContextBinding.scId? with
             | some scId => migrateSchedContextReplenishment stSet scId oldCore newCore
             | none => stSet
           let st2 := migrateRunQueueOnAffinityChange st1 targetTid oldCore newCore
+          let st3 := requeueVacatedOnNewHome st2 targetTid newCore vacated
           let sgi : Option (CoreId × SgiKind) :=
             if newCore == executingCore then none
-            else if st2.queuedOn newCore targetTid then
+            else if st3.queuedOn newCore targetTid then
               some (newCore, SgiKind.reschedule)
             else none
-          .ok (st2, sgi)
+          .ok (st3, sgi)
       | .error e => .error e
   | none => .error .invalidArgument
 
 /-- WS-SM SM5.H.4: decode a `tcbSetAffinity` argument register into a target
 affinity.  Values `0 .. numCores-1` bind the thread to that core; the dedicated
-marker `numCores` (= `affinityUnbindMarker`) unbinds it (runs on any core); any
+marker `numCores` (= `affinityUnbindMarker`) unbinds it (homed on the boot core); any
 larger value is rejected with `.invalidArgument`.  The validated decode the
 syscall dispatch uses. -/
 def affinityUnbindMarker : Nat := SeLe4n.Kernel.Concurrency.numCores
@@ -4005,13 +4132,8 @@ theorem setThreadCpuAffinityOnCore_state_core_independent (st : SystemState)
     (setThreadCpuAffinityOnCore st vTargetTid affinity c₁).map Prod.fst
       = (setThreadCpuAffinityOnCore st vTargetTid affinity c₂).map Prod.fst := by
   unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration
-  split
-  · split
-    · rfl
-    · split
-      · rfl
-      · split <;> rfl
-  · rfl
+  dsimp only
+  repeat' (first | rfl | split)
 
 /-- WS-SM SM8.B: and hence the retained boot-core op agrees with the per-core
 form on the state, at **every** executing core. -/
@@ -4067,34 +4189,10 @@ theorem decodeAffinityK_eq {α : Type} (v : Nat) (k : Option CoreId → α)
   · simp only [h, dif_neg, if_neg, not_false_eq_true]
     split <;> rfl
 
-/-- WS-ZA ZA5.2: is the thread running on a core its new affinity forbids?
-The rejection `setThreadCpuAffinityWithMigration` asks, over each core's
-current-thread code and with the affinity read directly, so no predicate
-closure, `some` cell or TCB copy is built (`affinityRunningForbidden_eq`). -/
-def affinityRunningForbidden (st : SystemState) (tid : SeLe4n.ThreadId)
-    (affinity : Option CoreId) : List CoreId → Bool
-  | [] => false
-  | c :: cs =>
-    (st.scheduler.currentCode.get c == tid.val + 1
-      && !(match affinity with | none => true | some c' => c' == c))
-    || affinityRunningForbidden st tid affinity cs
-
-theorem affinityRunningForbidden_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (affinity : Option CoreId) (cs : List CoreId) :
-    cs.any (fun c => st.scheduler.currentOnCore c == some tid
-        && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c)
-      = affinityRunningForbidden st tid affinity cs := by
-  induction cs with
-  | nil => rfl
-  | cons c cs ih =>
-    simp only [affinityRunningForbidden]
-    rw [List.any_cons, ← ih, currentOnCore_beq_some]
-    rfl
-
 /-- WS-ZA ZA5.2: the checks `setThreadCpuAffinityWithMigration` makes, asked
 before any write: the target is a TCB found in its slot, a bound core is one the
-platform declares, and the thread runs on no core the new affinity forbids.  When
-they pass the operation's state is `setAffinityPerform`
+platform declares, the target is no idle thread, and the thread runs on no core
+but its home.  When they pass the operation's state is `setAffinityPerform`
 (`setThreadCpuAffinityOnCore_of_admitted`). -/
 @[inline] def setAffinityAdmitted (st : SystemState) (tid : SeLe4n.ThreadId)
     (affinity : Option CoreId) : Bool :=
@@ -4105,12 +4203,15 @@ they pass the operation's state is `setAffinityPerform`
     && !(match affinity with
          | some c => decide (c.val ≥ st.machine.declaredCoreCount)
          | none => false)
-    && !affinityRunningForbidden st tid affinity SeLe4n.Kernel.Concurrency.allCores
+    && !isIdleThreadId tid
+    && !affinityRunningElsewhere st tid (determineTargetCore st tid)
+      SeLe4n.Kernel.Concurrency.allCores
 
 /-- WS-ZA ZA5.2: the affinity change once admitted.  Every read (the old home,
-the bound scheduling context) comes before the write, the TCB is rewritten in its
-slot, and then the replenishments and the run-queue entry follow the thread to
-its new home, as `setThreadCpuAffinityWithMigration`. -/
+the bound scheduling context, whether the thread runs there) comes before the
+write; a thread running on its old home is taken off it (WS-ZA ZA6.3), the TCB
+is rewritten in its slot, and then the replenishments and the run-queue entry
+follow the thread to its new home, as `setThreadCpuAffinityWithMigration`. -/
 def setAffinityPerform (st : SystemState) (tid : SeLe4n.ThreadId)
     (affinity : Option CoreId) : SystemState :=
   let oldCore := determineTargetCore st tid
@@ -4118,11 +4219,354 @@ def setAffinityPerform (st : SystemState) (tid : SeLe4n.ThreadId)
   match st.getTcb? tid with
   | none => st
   | some tcb =>
-    let st1 := st.updateTcb tid (fun t => { t with cpuAffinity := affinity })
+    let vacated := decide (oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid)
+    let st1 := (vacateForAffinityChange st tid oldCore newCore).updateTcb tid
+      (fun t => { t with cpuAffinity := affinity })
     let st2 := match tcb.schedContextBinding.scId? with
       | some scId => migrateSchedContextReplenishment st1 scId oldCore newCore
       | none => st1
-    migrateRunQueueOnAffinityChange st2 tid oldCore newCore
+    requeueVacatedOnNewHome (migrateRunQueueOnAffinityChange st2 tid oldCore newCore) tid
+      newCore vacated
+
+/-- The vacate writes the scheduler alone. -/
+@[simp] theorem vacateForAffinityChange_objects (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : CoreId) :
+    (vacateForAffinityChange st tid oldCore newCore).objects = st.objects := by
+  unfold vacateForAffinityChange; split <;> rfl
+
+@[simp] theorem vacateForAffinityChange_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : CoreId) :
+    (vacateForAffinityChange st tid oldCore newCore).machine = st.machine := by
+  unfold vacateForAffinityChange; split <;> rfl
+
+theorem vacateForAffinityChange_getTcb? (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore : CoreId) (t : SeLe4n.ThreadId) :
+    (vacateForAffinityChange st tid oldCore newCore).getTcb? t = st.getTcb? t := by
+  unfold SystemState.getTcb?; rw [vacateForAffinityChange_objects]
+
+/-- The vacate and the requeue write no replenish queue. -/
+@[simp] theorem vacateForAffinityChange_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (oldCore newCore c : CoreId) :
+    (vacateForAffinityChange st tid oldCore newCore).scheduler.replenishQueueOnCore c =
+      st.scheduler.replenishQueueOnCore c := by
+  unfold vacateForAffinityChange; split <;> simp
+
+@[simp] theorem requeueVacatedOnNewHome_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore c : CoreId) (vacated : Bool) :
+    (requeueVacatedOnNewHome st tid newCore vacated).scheduler.replenishQueueOnCore c =
+      st.scheduler.replenishQueueOnCore c := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · simp only [SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+        SystemState.runEnqueueOnCore_replenishQueueOnCore]
+    · rfl
+  · rfl
+
+/-- The requeue touches the object store only in the requeued thread's
+run-queue links and its neighbours'. -/
+theorem requeueVacatedOnNewHome_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) :
+    (requeueVacatedOnNewHome st tid newCore vacated).objectsAgreeOffRunLinks st := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _
+    · exact .refl _
+  · exact .refl _
+
+theorem requeueVacatedOnNewHome_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) (h : st.objects.invExt) :
+    (requeueVacatedOnNewHome st tid newCore vacated).objects.invExt := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ h
+    · exact h
+  · exact h
+
+@[simp] theorem requeueVacatedOnNewHome_machine (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) :
+    (requeueVacatedOnNewHome st tid newCore vacated).machine = st.machine := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · simp
+    · rfl
+  · rfl
+
+theorem vacateForAffinityChange_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) (oldCore newCore : CoreId) :
+    (vacateForAffinityChange st tid oldCore newCore).objectsAgreeOffRunLinks st := by
+  intro x; rw [vacateForAffinityChange_objects]
+
+@[simp] theorem vacateForAffinityChange_determineTargetCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (oldCore newCore : CoreId) (t : SeLe4n.ThreadId) :
+    determineTargetCore (vacateForAffinityChange st tid oldCore newCore) t =
+      determineTargetCore st t :=
+  determineTargetCore_of_objectsAgreeOffRunLinks
+    (vacateForAffinityChange_objectsAgreeOffRunLinks st tid oldCore newCore) t
+
+@[simp] theorem vacateForAffinityChange_getSchedContext? (st : SystemState)
+    (tid : SeLe4n.ThreadId) (oldCore newCore : CoreId) (s : SeLe4n.SchedContextId) :
+    (vacateForAffinityChange st tid oldCore newCore).getSchedContext? s =
+      st.getSchedContext? s := by
+  unfold SystemState.getSchedContext?; rw [vacateForAffinityChange_objects]
+
+/-- The vacate writes only `oldCore`'s `current` slot and reschedule flag. -/
+@[simp] theorem vacateForAffinityChange_runQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (oldCore newCore c : CoreId) :
+    (vacateForAffinityChange st tid oldCore newCore).scheduler.runQueueOnCore c =
+      st.scheduler.runQueueOnCore c := by
+  unfold vacateForAffinityChange; split <;> simp
+
+/-- The vacate keeps every run queue's agreement with the threads. -/
+theorem vacateForAffinityChange_runQueueRefined {st : SystemState} {tid : SeLe4n.ThreadId}
+    {oldCore newCore : CoreId} (h : st.runQueueRefined) :
+    (vacateForAffinityChange st tid oldCore newCore).runQueueRefined :=
+  SystemState.runQueueRefined_of_frame
+    (fun c t => SystemState.runLinkOn_of_objects (vacateForAffinityChange_objects _ _ _ _) c t)
+    (by unfold vacateForAffinityChange; split <;> rfl)
+    (by unfold vacateForAffinityChange; split <;> rfl) h
+
+/-- The affinity run-queue migration repoints no core's `current` slot. -/
+@[simp] theorem migrateRunQueueOnAffinityChange_currentOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split <;> simp
+
+/-- Where the migration leaves a thread: the migrated one, if its links named
+`fromCore`, on `toCore` alone; every other where it was. -/
+theorem migrateRunQueueOnAffinityChange_queuedOn (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore c : CoreId) (y : SeLe4n.ThreadId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).queuedOn c y =
+      if y = tid ∧ fromCore ≠ toCore ∧ st.queuedOn fromCore tid = true then decide (c = toCore)
+      else st.queuedOn c y := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rename_i hft; rw [if_neg (fun h => h.2.1 hft)]
+  · rename_i hft
+    split
+    · rename_i hT
+      have hq : st.queuedOn fromCore tid = false := by unfold SystemState.queuedOn; rw [hT]
+      rw [if_neg (fun h => by rw [hq] at h; exact absurd h.2.2 (by simp))]
+    · rename_i tcb hT
+      split
+      · rename_i hC
+        have hq : st.queuedOn fromCore tid = true := by
+          unfold SystemState.queuedOn; simp [hT, hC]
+        show ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid
+          tcb.boostedPriority).queuedOn c y = _
+        rw [SystemState.runEnqueueAdmitted_queuedOn, SystemState.runRemoveOnCore_queuedOn]
+        by_cases hy : y = tid
+        · subst hy
+          rw [if_pos rfl, if_pos ⟨rfl, hft, hq⟩, SystemState.runRemoveOnCore_getTcb?_isSome, hT]
+          simp
+        · rw [if_neg hy, if_neg (fun h => hy h.1), if_neg (fun h => hy h.1)]
+      · rename_i hC
+        have hq : st.queuedOn fromCore tid = false := by
+          unfold SystemState.queuedOn; simp [hT, hC]
+        rw [if_neg (fun h => by rw [hq] at h; exact absurd h.2.2 (by simp))]
+
+@[simp] theorem requeueVacatedOnNewHome_currentOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) (c : CoreId) :
+    (requeueVacatedOnNewHome st tid newCore vacated).scheduler.currentOnCore c =
+      st.scheduler.currentOnCore c := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · simp
+    · rfl
+  · rfl
+
+/-- The requeue moves no thread but the requeued one... -/
+theorem requeueVacatedOnNewHome_queuedOn_ne (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) (c : CoreId)
+    (y : SeLe4n.ThreadId) (hy : y ≠ tid) :
+    (requeueVacatedOnNewHome st tid newCore vacated).queuedOn c y = st.queuedOn c y := by
+  unfold requeueVacatedOnNewHome
+  split
+  · split
+    · show (st.runEnqueueOnCore newCore tid _).queuedOn c y = _
+      rw [SystemState.runEnqueueOnCore_queuedOn, if_neg (fun h => hy h.1)]
+    · rfl
+  · rfl
+
+/-- ...and that one only onto its new home, and only when it was vacated. -/
+theorem requeueVacatedOnNewHome_queuedOn_self (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newCore : CoreId) (vacated : Bool) (c : CoreId)
+    (h : (requeueVacatedOnNewHome st tid newCore vacated).queuedOn c tid = true) :
+    (vacated = true ∧ c = newCore) ∨ st.queuedOn c tid = true := by
+  unfold requeueVacatedOnNewHome at h
+  split at h
+  · rename_i hV
+    split at h
+    · change (st.runEnqueueOnCore newCore tid _).queuedOn c tid = true at h
+      rw [SystemState.runEnqueueOnCore_queuedOn] at h
+      split at h
+      · exact .inl ⟨hV, of_decide_eq_true h⟩
+      · exact .inr h
+    · exact .inr h
+  · exact .inr h
+
+/-- Which `current` slot the vacate empties. -/
+theorem vacateForAffinityChange_currentOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (oldCore newCore c : CoreId) :
+    (vacateForAffinityChange st tid oldCore newCore).scheduler.currentOnCore c =
+      if c = oldCore ∧ oldCore ≠ newCore ∧ st.scheduler.currentOnCore oldCore = some tid then none
+      else st.scheduler.currentOnCore c := by
+  unfold vacateForAffinityChange
+  split
+  · rename_i h
+    simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore]
+    by_cases hc : c = oldCore
+    · subst hc; rw [SchedulerState.setCurrentOnCore_currentOnCore_self, if_pos ⟨rfl, h⟩]
+    · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc),
+        if_neg (fun h' => hc h'.1)]
+  · rename_i h
+    rw [if_neg (fun h' => h h'.2)]
+
+/-- The affinity write replaces the target's TCB by the same TCB with the new
+affinity, and no other. -/
+theorem setThreadCpuAffinity_getTcb?_view {s s' : SystemState} {t : SeLe4n.ThreadId}
+    {a : Option CoreId} {tcb : TCB} (hInv : s.objects.invExt) (hT : s.getTcb? t = some tcb)
+    (hSet : setThreadCpuAffinity s t a = .ok s') :
+    s'.getTcb? t = some { tcb with cpuAffinity := a } ∧
+      (∀ u, u ≠ t → s'.getTcb? u = s.getTcb? u) ∧ s'.scheduler = s.scheduler := by
+  unfold setThreadCpuAffinity at hSet
+  rw [SystemState.getTcbWitnessed?_eq_some hT] at hSet
+  simp only [Except.ok.injEq] at hSet
+  subst hSet
+  exact ⟨SystemState.rewriteObject_tcb_getTcb?_self _ _ _ _ hInv,
+    fun u hu => SystemState.rewriteObject_getTcb?_ne _ _ _ _ hInv u
+      (fun h => hu (ThreadId.toObjId_injective _ _ h).symm), rfl⟩
+
+/-- **Where the affinity change leaves every thread**, from the state after the
+affinity write and the replenishment move (`st1`): the `current` slots are the
+vacate's, every other thread is as it was off its run-queue links, the target's
+TCB is its old one with the new affinity, no other thread changes queue, and the
+target ends queued only on its new home or where it already was off its old
+home — and only newly so if it was queued on or running on the home it left. -/
+theorem affinityChange_placement_of_mid {st st1 : SystemState} {t : SeLe4n.ThreadId}
+    {tcb : TCB} {affinity : Option CoreId} {old new : CoreId}
+    (hT : st.getTcb? t = some tcb)
+    (hT1 : st1.getTcb? t = some { tcb with cpuAffinity := affinity })
+    (hT1' : ∀ u, u ≠ t → st1.getTcb? u = st.getTcb? u)
+    (hC1 : ∀ c, st1.scheduler.currentOnCore c =
+      (vacateForAffinityChange st t old new).scheduler.currentOnCore c) :
+    let st' := requeueVacatedOnNewHome (migrateRunQueueOnAffinityChange st1 t old new) t new
+      (decide (old ≠ new ∧ st.scheduler.currentOnCore old = some t))
+    (∀ c, st'.scheduler.currentOnCore c =
+      (vacateForAffinityChange st t old new).scheduler.currentOnCore c) ∧
+    (∀ u, u ≠ t → (st'.getTcb? u).map TCB.withoutRunLinks = (st.getTcb? u).map TCB.withoutRunLinks) ∧
+    (st'.getTcb? t).map TCB.withoutRunLinks =
+      some ({ tcb with cpuAffinity := affinity }).withoutRunLinks ∧
+    (∀ c u, u ≠ t → st'.queuedOn c u = st.queuedOn c u) ∧
+    (∀ c, st'.queuedOn c t = true → c = new ∨ (c ≠ old ∧ st.queuedOn c t = true)) ∧
+    (∀ c, st'.queuedOn c t = true → st.queuedOn c t = true ∨
+      (old ≠ new ∧ (st.queuedOn old t = true ∨ st.scheduler.currentOnCore old = some t))) := by
+  intro st'
+  have hA : st'.objectsAgreeOffRunLinks st1 :=
+    (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _).trans
+      (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _)
+  have hQ1 : ∀ c u, st1.queuedOn c u = st.queuedOn c u := by
+    intro c u
+    by_cases hu : u = t
+    · subst hu; unfold SystemState.queuedOn; rw [hT1, hT]
+    · exact SystemState.queuedOn_of_getTcb? (hT1' u hu) c
+  refine ⟨fun c => ?_, fun u hu => ?_, ?_, fun c u hu => ?_, fun c hq => ?_, fun c hq => ?_⟩
+  · show (requeueVacatedOnNewHome _ _ _ _).scheduler.currentOnCore c = _
+    rw [requeueVacatedOnNewHome_currentOnCore, migrateRunQueueOnAffinityChange_currentOnCore, hC1]
+  · rw [hA.getTcb? u, hT1' u hu]
+  · rw [hA.getTcb? t, hT1]; rfl
+  · show (requeueVacatedOnNewHome _ _ _ _).queuedOn c u = _
+    rw [requeueVacatedOnNewHome_queuedOn_ne _ _ _ _ _ _ hu,
+      migrateRunQueueOnAffinityChange_queuedOn, if_neg (fun h => hu h.1), hQ1]
+  · rcases requeueVacatedOnNewHome_queuedOn_self _ _ _ _ _ hq with ⟨-, hc⟩ | hq2
+    · exact .inl hc
+    · rw [migrateRunQueueOnAffinityChange_queuedOn] at hq2
+      split at hq2
+      · exact .inl (of_decide_eq_true hq2)
+      · rename_i hn
+        rw [hQ1] at hq2
+        by_cases hc : c = old
+        · by_cases hon : old = new
+          · exact .inl (hc.trans hon)
+          · exact absurd ⟨rfl, hon, by rw [hQ1, ← hc]; exact hq2⟩ hn
+        · exact .inr ⟨hc, hq2⟩
+  · rcases requeueVacatedOnNewHome_queuedOn_self _ _ _ _ _ hq with ⟨hV, -⟩ | hq2
+    · have hV' := of_decide_eq_true hV
+      exact .inr ⟨hV'.1, .inr hV'.2⟩
+    · rw [migrateRunQueueOnAffinityChange_queuedOn] at hq2
+      split at hq2
+      · rename_i hcnd
+        exact .inr ⟨hcnd.2.1, .inl (by rw [← hQ1]; exact hcnd.2.2)⟩
+      · rw [hQ1] at hq2; exact .inl hq2
+
+/-- **The shape of a committed affinity change**: every check passed, the
+affinity write on the vacated state succeeded, and the committed state is the
+requeue over the run-queue and replenishment migrations — the one inversion the
+frame, footprint and noninterference proofs share. -/
+theorem setThreadCpuAffinityWithMigration_ok_shape {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {affinity : Option CoreId} {executingCore : CoreId}
+    {sgi : Option (CoreId × SgiKind)}
+    (h : setThreadCpuAffinityWithMigration st tid affinity executingCore = .ok (st', sgi)) :
+    ∃ tcb stSet, st.getTcb? tid = some tcb ∧
+      affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount) = false ∧
+      isIdleThreadId tid = false ∧
+      affinityRunningElsewhere st tid (determineTargetCore st tid)
+        SeLe4n.Kernel.Concurrency.allCores = false ∧
+      setThreadCpuAffinity (vacateForAffinityChange st tid (determineTargetCore st tid)
+        (affinity.getD bootCoreId)) tid affinity = .ok stSet ∧
+      st' = requeueVacatedOnNewHome (migrateRunQueueOnAffinityChange
+        (match tcb.schedContextBinding.scId? with
+          | some scId => migrateSchedContextReplenishment stSet scId
+              (determineTargetCore st tid) (affinity.getD bootCoreId)
+          | none => stSet) tid (determineTargetCore st tid) (affinity.getD bootCoreId)) tid
+        (affinity.getD bootCoreId)
+        (decide (determineTargetCore st tid ≠ affinity.getD bootCoreId ∧
+          st.scheduler.currentOnCore (determineTargetCore st tid) = some tid)) ∧
+      sgi = (if affinity.getD bootCoreId == executingCore then none
+        else if st'.queuedOn (affinity.getD bootCoreId) tid then
+          some (affinity.getD bootCoreId, SgiKind.reschedule)
+        else none) := by
+  unfold setThreadCpuAffinityWithMigration at h
+  cases hT : st.getTcb? tid with
+  | none => rw [hT] at h; exact absurd h (by simp)
+  | some tcb =>
+    rw [hT] at h
+    have hD : affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount) = false := by
+      cases hd : affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount)
+      · rfl
+      · rw [hd] at h; exact absurd h (by simp)
+    have hI : isIdleThreadId tid = false := by
+      cases hi : isIdleThreadId tid
+      · rfl
+      · rw [hD, hi] at h; exact absurd h (by simp)
+    have hR : affinityRunningElsewhere st tid (determineTargetCore st tid)
+        SeLe4n.Kernel.Concurrency.allCores = false := by
+      cases hr : affinityRunningElsewhere st tid (determineTargetCore st tid)
+          SeLe4n.Kernel.Concurrency.allCores
+      · rfl
+      · rw [hD, hI] at h; simp only [Bool.false_eq_true, ↓reduceIte, hr] at h
+        exact absurd h (by simp)
+    rw [hD, hI] at h
+    simp only [Bool.false_eq_true, ↓reduceIte, hR] at h
+    cases hSet : setThreadCpuAffinity (vacateForAffinityChange st tid
+        (determineTargetCore st tid) (affinity.getD bootCoreId)) tid affinity with
+    | error e => rw [hSet] at h; exact absurd h (by simp)
+    | ok stSet =>
+      rw [hSet] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨h1, h2⟩ := h
+      subst h1
+      exact ⟨tcb, stSet, rfl, hD, hI, hR, rfl, rfl, h2.symm⟩
 
 theorem setThreadCpuAffinityOnCore_of_admitted (st : SystemState)
     (vTargetTid : ValidThreadId) (affinity : Option CoreId) (executingCore : CoreId)
@@ -4134,24 +4578,19 @@ theorem setThreadCpuAffinityOnCore_of_admitted (st : SystemState)
   | none => simp [hT] at h
   | some tcb =>
     simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
-    obtain ⟨⟨hF, hD⟩, hR⟩ := h
+    obtain ⟨⟨⟨hF, hD⟩, hI⟩, hR⟩ := h
     have hD' : (affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount)) = false := by
       cases affinity <;> simp_all
-    have hR' : (SeLe4n.Kernel.Concurrency.allCores).any (fun c =>
-        st.scheduler.currentOnCore c == some vTargetTid.val
-        && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c) = false := by
-      rw [affinityRunningForbidden_eq]; exact hR
-    have hNew : determineTargetCore
-        (st.updateTcb vTargetTid.val (fun t => { t with cpuAffinity := affinity }))
-        vTargetTid.val = affinity.getD bootCoreId := by
-      unfold determineTargetCore
-      rw [SeLe4n.Kernel.updateTcb_getTcb?_self_of_findsInPlace _ hT hF]
-      cases affinity <;> rfl
+    have hT0 : (vacateForAffinityChange st vTargetTid.val (determineTargetCore st vTargetTid.val)
+        (affinity.getD bootCoreId)).getTcb? vTargetTid.val = some tcb := by
+      rw [vacateForAffinityChange_getTcb?]; exact hT
+    have hF0 : (vacateForAffinityChange st vTargetTid.val (determineTargetCore st vTargetTid.val)
+        (affinity.getD bootCoreId)).objects.findsInPlace vTargetTid.val.toObjId = true := by
+      rw [vacateForAffinityChange_objects]; exact hF
     unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration setThreadCpuAffinity
-    simp only [hT, hD', hR', Bool.false_eq_true, ↓reduceIte,
-      SystemState.getTcbWitnessed?_eq_some hT]
-    rw [SystemState.rewriteObject_tcb_eq_updateTcb hT (fun t => { t with cpuAffinity := affinity }),
-      hNew]
+    simp only [hT, hD', hI, hR, Bool.false_eq_true, ↓reduceIte,
+      SystemState.getTcbWitnessed?_eq_some hT0]
+    rw [SystemState.rewriteObject_tcb_eq_updateTcb hT0 (fun t => { t with cpuAffinity := affinity })]
     unfold setAffinityPerform
     simp only [hT]
     exact ⟨_, rfl⟩

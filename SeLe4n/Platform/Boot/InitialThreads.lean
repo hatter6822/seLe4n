@@ -713,7 +713,10 @@ theorem startInitialThreadOnCore_runQueueStage (st : SystemState) (tid : SeLe4n.
     obtain ⟨tcb, hT, -, -, -, -, hRun⟩ := initialThreadStartable_spec hs
     unfold startInitialThreadOnCore
     refine (SystemState.RunQueueStage.updateTcb st tid (f := fun t => { t with threadState := .Ready })
-      (fun _ _ => rfl)).trans (enqueueRunnableOnCore_runQueueStage _ _ tid ?_ ?_)
+      (fun _ _ => rfl)).trans (enqueueRunnableOnCore_runQueueStage _ _ tid ?_ ?_
+        (fun x hx => by
+          rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hT] at hx
+          cases hx; exact homedOn_determineTargetCore st tid tcb hT))
     · have h0 : st.currentNowhere tid := fun c hc => by
         simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores,
           List.any_eq_false] at hRun

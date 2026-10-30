@@ -1464,8 +1464,11 @@ theorem chooseBestRunnableEffective_unbound_equiv
 
 /-- WS-SM SM5.B.4: does core `c` admit running `tcb`?
 
-A thread with no CPU affinity (`cpuAffinity = none`) is *unbound* and runs on
-any core; a thread bound to `some c'` runs only on `c'`.  This is the predicate
+A thread with no CPU affinity (`cpuAffinity = none`) is *unbound* and admitted
+on any core; a thread bound to `some c'` only on `c'`.  An unbound thread is homed
+on the boot core (`determineTargetCore`), and the placement invariant
+(`currentDequeuedUnique`, WS-ZA ZA6.3) keeps it there, so the gate's wider
+admission is never what places it.  This is the predicate
 `switchToThreadOnCore` consults for its reject-remote gate (Theorem 3.2.3): a
 switch onto a core the thread is not admitted on is rejected with
 `KernelError.threadOnDifferentCore` rather than silently migrating the thread. -/
@@ -1791,10 +1794,11 @@ reads `cpuAffinity`.  Both are wrong for a removal:
 * a thread queued but not current matches `determineExecutingCore` nowhere, so it
   resolves to the boot core and a deschedule there edits a queue the thread is
   not on;
-* `affinityAdmitsCore` is `true` on **every** core for an unpinned thread
-  (`cpuAffinity = none`), so `runQueueAffinityConsistentOnCore` does not pin such
-  a thread to `determineTargetCore`'s answer either — it may legitimately sit on
-  any core's queue while that resolver says `bootCoreId`.
+* `determineTargetCore` names where the thread is homed, which is where it is
+  placed only because the placement invariant (`currentDequeuedUnique`'s
+  `currentHome` / `queuedHome`, WS-ZA ZA6.3) says so; a removal that read the home
+  would be correct on committed states and wrong on any state that invariant is
+  not yet known of, so the resolver reads the placement itself.
 
 This is this project's *a proxy is not the fact* (PR #889 review round 23) at the
 scheduler: the fact a removal is about is **queue membership**, and
@@ -2186,15 +2190,47 @@ theorem enqueueRunnableOnCore_replenishQueueOnCore (st : SystemState) (c : CoreI
     SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
     SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
+@[simp] theorem enqueueRunnableOnCore_releaseSlots (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (enqueueRunnableOnCore st c tid).scheduler.releaseSlots = st.scheduler.releaseSlots := by
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h] <;> rfl
+
+/-- WS-ZA ZA6.3: the wake holds the release queues — it marks a thread ready
+and links it into a run queue. -/
+theorem enqueueRunnableOnCore_releaseStateAgree (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SystemState.releaseStateAgree (enqueueRunnableOnCore st c tid) st := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hT]
+    exact .refl st
+  | some tcb =>
+    cases hD : wakeDeclines st c tid with
+    | true =>
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hT, hD, if_true]
+      exact .refl st
+    | false =>
+      have hPre := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
+      let st1 : SystemState :=
+        { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready)) }
+      have a1 : SystemState.releaseStateAgree st1 st :=
+        ⟨.insert hInv rfl (fun _ => by rw [hPre]; rfl), rfl⟩
+      refine (SystemState.releaseStateAgree.of_agreeOffRunLinks (st := st1)
+        (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hT hD) ?_).trans a1
+      rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h] <;> rfl
+
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
 
 A thread bound to `some c'` (`cpuAffinity = some c'`) wakes onto `c'`; an
 *unbound* thread (`cpuAffinity = none`, the TCB field default) wakes onto the
 boot core (`bootCoreId`) — this is the SM5.C.9 "boot-time default affinity =
 `bootCoreId`" rule, realised as the default *wake target* rather than by
-mutating the field (keeping the trace byte-identical and preserving the SM5.B
-"unbound runs on every core" admission semantics of `affinityAdmitsCore`).  A
-`tid` that does not resolve to a TCB also defaults to `bootCoreId` (fail-safe).
+mutating the field (keeping the trace byte-identical).  It is the thread's home:
+the placement invariant (`currentDequeuedUnique`, WS-ZA ZA6.3) keeps every thread
+current or queued only on the core this names, as seL4 keeps a thread on its
+`tcbAffinity` core, although `affinityAdmitsCore` alone admits an unbound thread
+on any core.  A `tid` that does not resolve to a TCB also defaults to `bootCoreId`
+(fail-safe).
 
 Pure function of `(st, tid)`; deterministic; total (`CoreId` is inhabited by
 `bootCoreId`). -/
@@ -2205,16 +2241,37 @@ def determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) : CoreId :=
       | some c' => c'
       | none    => bootCoreId
   | none => bootCoreId
+
+/-- WS-ZA ZA6.3: a thread is homed on the core `determineTargetCore` names. -/
+theorem homedOn_determineTargetCore (st : SystemState) (tid : SeLe4n.ThreadId) :
+    st.homedOn tid (determineTargetCore st tid) := fun x hx => by
+  unfold determineTargetCore; simp only [hx]; cases hA : x.cpuAffinity <;> simp
+
+/-- WS-ZA ZA6.3: ...and a thread with a TCB homed on `c` has `c` for its
+`determineTargetCore`. -/
+theorem determineTargetCore_eq_of_homedOn {st : SystemState} {tid : SeLe4n.ThreadId}
+    {c : CoreId} {x : TCB} (hx : st.getTcb? tid = some x) (h : st.homedOn tid c) :
+    determineTargetCore st tid = c := by
+  have := h x hx
+  unfold determineTargetCore; rw [hx]; cases hA : x.cpuAffinity <;> simp_all
+
+/-- WS-ZA ZA6.3: an active thread homed on `c` has `c` for its
+`determineTargetCore`. -/
+theorem determineTargetCore_eq_of_active_homedOn {st : SystemState} {tid : SeLe4n.ThreadId}
+    {c : CoreId} (ha : st.activeAt tid) (h : st.homedOn tid c) :
+    determineTargetCore st tid = c :=
+  let ⟨_, hx, _⟩ := ha; determineTargetCore_eq_of_homedOn hx h
+
 /-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
 the first core whose current slot holds it (`none` when not current anywhere).
-`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),
-but the two can diverge: unbinding a thread running on a secondary core is
-admitted (`setThreadCpuAffinityWithMigration`'s reject gate fires only when
-the NEW affinity forbids the running core, and `cpuAffinity = none` admits
-every core), leaving the thread current on that core while its home reverts
-to `bootCoreId`.  A suspend must deschedule and poke the running core, not
-the home — descheduling only the home would mark the victim `.Inactive`
-while the secondary core keeps executing it.  Completeness of the
+`determineTargetCore` is the wake/queue *home* (affinity defaulting to boot).
+On a committed state the two agree: an affinity change that moves a running
+thread's home takes it off the core it ran on in the same transition
+(`setThreadCpuAffinityWithMigration`'s vacate, WS-ZA ZA6.3), so the placement
+invariant (`currentDequeuedUnique`'s `currentHome`) holds.  A suspend still
+deschedules and pokes the core that is running the thread, read here, rather
+than its home: the core it acts on is then the one whose slot it clears, whether
+or not that invariant is known of the state it is handed.  Completeness of the
 first-match scan rests on `currentThreadUniqueAcrossCores`
 (`Scheduler/Invariant/PerCore.lean`, audit closure): a thread is current on
 at most one core.
@@ -2503,6 +2560,11 @@ survive it. -/
       = st.scheduler.replenishQueueOnCore c' := by
   simp [removeRunnableOnCore]
 
+@[simp] theorem removeRunnableOnCore_releaseSlots (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler.releaseSlots = st.scheduler.releaseSlots :=
+  SystemState.runDescheduleOnCore_releaseSlots st c tid
+
 
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and not the derivation tree, for the same
@@ -2663,6 +2725,13 @@ after the transition stopped using it. -/
   unfold descheduleAtPlacement descheduleAt
   split
   · exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
+  · rfl
+
+@[simp] theorem descheduleAtPlacement_releaseSlots (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).scheduler.releaseSlots = st.scheduler.releaseSlots := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_releaseSlots _ _ _
   · rfl
 
 /-- `removeRunnableOnCore` preserves every `getTcb?` lookup off the run-queue
@@ -3321,7 +3390,7 @@ theorem handleRescheduleSgiOnCore_eq_state (st : SystemState) (c : CoreId) :
 /-- WS-SM SM5.C.8 (plan §3.3, §4.1): set a thread's CPU affinity.
 
 The affinity-control transition: bind `targetTid` to a specific core
-(`affinity = some c`) or unbind it (`affinity = none`, runs on any core).
+(`affinity = some c`) or unbind it (`affinity = none`, homed on the boot core).
 After this, `determineTargetCore` wakes the thread onto the bound core, and
 `switchToThreadOnCore`'s reject-remote gate (`affinityAdmitsCore`) admits it
 only on that core.
