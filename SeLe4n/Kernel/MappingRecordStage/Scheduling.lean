@@ -329,6 +329,13 @@ theorem setMCPriorityOnCore_mappingStage {st st' : SystemState}
 
 /-! ### Scheduling contexts and affinity -/
 
+/-- The release queue's re-placement writes contexts' release fields alone. -/
+theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
+    MappingStage st (st.releasePlace c scId) :=
+  MappingStage.of_objectsAgreeOffSchedulerLinks
+    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
+    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
+
 /-- A scheduling context rewritten through its witnessed lookup. -/
 theorem MappingStage.rewriteObject_schedContext {st : SystemState} {scId : SeLe4n.SchedContextId}
     {sc : SchedContext} (h : st.getSchedContext? scId = some sc) (sc' : SchedContext)
@@ -358,6 +365,7 @@ theorem schedContextBind_mappingStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n
             · split at h
               · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
                 subst h
+                refine MappingStage.trans ?_ (releasePlace_mappingStage _ _ _)
                 refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
                 split
                 · refine MappingStage.trans ?_ (runRequeueOnCore_mappingStage _ _ _ _)
@@ -458,13 +466,13 @@ theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
             · rename_i boundTcb hBound _
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
-              exact hS1.trans
+              exact (hS1.trans (releasePlace_mappingStage _ _ _)).trans
                 ((((schedContextConfigureBoundPropagate_mappingStage _ _ _ _ hBound _ _).trans
                   (markCandidacyGainFor_mappingStage _ _ _)).trans
                   (markKeyChangeFor_mappingStage _ _ _)).trans
                   (repropagateFromWaiter_mappingStage _ _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2]; exact hS1
+              rw [← h.2]; exact hS1.trans (releasePlace_mappingStage _ _ _)
       · exact absurd h (by simp)
 
 /-- The unbind clears the context's bound thread and the thread's binding in
@@ -713,13 +721,6 @@ theorem timeoutBlockedThreads_mappingStage (st : SystemState) (scId : SeLe4n.Sch
       · exact h
     · exact h
 
-/-- The release queue's re-placement writes contexts' release fields alone. -/
-theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
-    MappingStage st (st.releasePlace c scId) :=
-  MappingStage.of_objectsAgreeOffSchedulerLinks
-    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
-    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
-
 theorem sliceExpireOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
     MappingStage st (sliceExpireOnCore st c tid tcb hTcb) :=
@@ -727,7 +728,7 @@ theorem sliceExpireOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : Se
 
 theorem spendBudgetOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
-    (ticks : Nat) : MappingStage st (spendBudgetOnCore st c tid scId sc hSc ticks) := by
+    (start ticks : Nat) : MappingStage st (spendBudgetOnCore st c tid scId sc hSc start ticks) := by
   unfold spendBudgetOnCore
   refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
   exact (MappingStage.rewriteObject_schedContext hSc _
@@ -737,7 +738,7 @@ theorem budgetExhaustOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : 
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
     (ticks : Nat) : MappingStage st (budgetExhaustOnCore st c tid k scId sc hSc ticks) :=
-  (((spendBudgetOnCore_mappingStage st c tid scId sc hSc ticks).trans
+  (((spendBudgetOnCore_mappingStage st c tid scId sc hSc _ ticks).trans
     (markKeyChangeFor_mappingStage _ tid k)).trans
     (timeoutBlockedThreads_mappingStage _ scId c)).trans (MappingStage.of_objects_eq rfl)
 
@@ -755,6 +756,7 @@ theorem timerTickBudgetOnCore_mappingStage {st : SystemState} {c : CoreId}
   all_goals
     split
     · rename_i sc hSc _
+      dsimp only
       split
       · exact budgetExhaustOnCore_mappingStage st c tid _ _ sc hSc 1
       · exact MappingStage.rewriteObject_schedContext hSc _
@@ -800,7 +802,7 @@ theorem yieldChargeOnCore_mappingStage {st st' : SystemState} {c : CoreId}
       split at h
       · rename_i sc hSc _
         rw [Except.ok.injEq] at h; subst h
-        exact (spendBudgetOnCore_mappingStage st c tid _ sc hSc _).trans
+        exact (spendBudgetOnCore_mappingStage st c tid _ sc hSc _ _).trans
           (markKeyChangeFor_mappingStage _ _ _)
       · cases h
 

@@ -110,11 +110,11 @@ noncomputable def stepPost (step : SchedulerStep) (st : SystemState) : Except Ke
     | .error e => .error e
   | .processReplenishmentsDue currentTime =>
     let (rq', dueIds) := (st.scheduler.replenishQueueOnCore bootCoreId).popDue currentTime
-    -- Each due SchedContext's replenishments are processed through the typed
+    -- Each due SchedContext's used-up head is released (WS-ZA ZA6.4) through the typed
     -- update (raw-write migration Cut B2); a due id that resolves to no
     -- SchedContext is the update's own `none` arm, i.e. left alone.
     let st' := dueIds.foldl (fun acc scId =>
-        acc.updateSchedContext scId fun sc => processReplenishments sc currentTime)
+        acc.updateSchedContext scId fun sc => sc.releaseReadyHead currentTime)
       { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
     .ok st'
   | .ipcTimeoutTick scId =>

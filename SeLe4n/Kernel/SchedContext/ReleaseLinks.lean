@@ -56,6 +56,14 @@ release time while it is on `c`'s queue. -/
 def SchedContext.releaseLinkOn (sc : SchedContext) (c : Concurrency.CoreId) : Option (Nat × Nat) :=
   if sc.releaseCoreCode = c.val + 1 then some (sc.releaseNextCode, sc.releaseAt) else none
 
+/-- WS-ZA ZA6.4: an operation that writes the refills alone (`refillsErased`)
+leaves the context's release link. -/
+theorem SchedContext.releaseLinkOn_of_refillsErased {sc x : SchedContext}
+    (h : x.refillsErased = sc.refillsErased) (c : Concurrency.CoreId) :
+    x.releaseLinkOn c = sc.releaseLinkOn c := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, h1, h2, h3⟩ := SchedContext.fields_of_refillsErased h
+  unfold SchedContext.releaseLinkOn; rw [h1, h2, h3]
+
 end SeLe4n.Kernel
 
 namespace SeLe4n.Model.SystemState
@@ -1795,6 +1803,28 @@ theorem _root_.SeLe4n.Kernel.SchedContext.releaseKey?_eq_some {sc : SchedContext
   unfold SchedContext.releaseKey?
   split <;> simp_all
 
+/-- **A released context's place is in the future**: after the release at `now`,
+a used-up head's first pending refill is released after `now`
+(`releaseReadyHead_pending_after`). -/
+theorem _root_.SeLe4n.Kernel.SchedContext.releaseReadyHead_releaseKey_gt (sc : SchedContext)
+    (now : Nat) : ∀ t, (sc.releaseReadyHead now).releaseKey? = some t → t > now := by
+  intro t ht
+  obtain ⟨hB, hP, rfl⟩ := SchedContext.releaseKey?_eq_some.mp ht
+  exact sc.releaseReadyHead_pending_after now hB hP
+
+/-- **A charged context's place is in the future**: the charge ends in the
+release at `now`. -/
+theorem _root_.SeLe4n.Kernel.SchedContext.chargeBudget_releaseKey_gt (sc : SchedContext)
+    (start usage now : Nat) :
+    ∀ t, (sc.chargeBudget start usage now).releaseKey? = some t → t > now :=
+  SchedContext.releaseReadyHead_releaseKey_gt _ now
+
+/-- The deadline rule keeps the place. -/
+theorem _root_.SeLe4n.Kernel.cbsUpdateDeadline_releaseKey (sc : SchedContext) (t : Nat) (b : Bool) :
+    (cbsUpdateDeadline sc t b).releaseKey? = sc.releaseKey? := by
+  unfold cbsUpdateDeadline; split <;> rfl
+
+
 /-- WS-ZA ZA6.3: core `c`'s release queue as the abstract queue reads it holds
 each context at its place: a queued context is held by the store and its
 entry's time is its place (`releaseKey?`). -/
@@ -2184,6 +2214,27 @@ theorem trans {a b d : SystemState} (h₂ : releaseOnlyWrite d b) (h₁ : releas
   refine ⟨?_, SchedulerState.releaseOnly.trans h₂.2 h₁.2⟩
   calc d = { b with objects := d.objects, scheduler := d.scheduler } := h₂.1
     _ = _ := by rw [h₁.1]
+
+/-- WS-ZA ZA6.4: a release-only write leaves every core's run queue, current
+thread and domain state. -/
+theorem runQueueOnCore {st' st : SystemState} (h : releaseOnlyWrite st' st) (c : CoreId) :
+    st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by rw [h.2]; rfl
+
+theorem currentOnCore {st' st : SystemState} (h : releaseOnlyWrite st' st) (c : CoreId) :
+    st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by rw [h.2]; rfl
+
+theorem activeDomainOnCore {st' st : SystemState} (h : releaseOnlyWrite st' st) (c : CoreId) :
+    st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c := by rw [h.2]; rfl
+
+theorem domainTimeRemainingOnCore {st' st : SystemState} (h : releaseOnlyWrite st' st)
+    (c : CoreId) :
+    st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c := by
+  rw [h.2]; rfl
+
+theorem domainScheduleIndexOnCore {st' st : SystemState} (h : releaseOnlyWrite st' st)
+    (c : CoreId) :
+    st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c := by
+  rw [h.2]; rfl
 
 theorem mapSchedContextInPlace (st : SystemState) (s : SeLe4n.SchedContextId)
     (g : SchedContext → SchedContext) : releaseOnlyWrite (st.mapSchedContextInPlace s g) st :=

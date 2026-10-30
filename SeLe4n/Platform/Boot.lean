@@ -2266,7 +2266,12 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     -- **WS-ZA ZA6.3**: and on no release queue.  Boot installs every core's
     -- release queue empty, so a config-supplied core could only name a queue
     -- place that does not exist.
-    sc.releaseCoreCode == 0
+    sc.releaseCoreCode == 0 &&
+    -- **WS-ZA ZA6.4**: and its refills conserved: the head and the pending
+    -- refills hold the budget exactly once, within the refill storage
+    -- (`refillsConserved`), the invariant the sliding-window bound rests on.
+    decide (sc.refillTotal = sc.budget.val) &&
+    decide (sc.refillSize ≤ maxReplenishments)
 
 @[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
     bootSafeSchedContextCheck sc =
@@ -2279,7 +2284,9 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.boundThread.isNone &&
        sc.scReply.isNone &&
        sc.donationOrigin.isNone &&
-       sc.releaseCoreCode == 0) := rfl
+       sc.releaseCoreCode == 0 &&
+       decide (sc.refillTotal = sc.budget.val) &&
+       decide (sc.refillSize ≤ maxReplenishments)) := rfl
 
 /-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
     no `prev` link.  `replyId` is pinned to the slot by
@@ -2482,8 +2489,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
@@ -2493,7 +2500,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
             Option.eq_none_of_isNone hNoOrigin, by simpa using hNoRelease⟩
     unfold schedContextWellFormed
     refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
-            ⟨hRepLen, ?_⟩, ?_⟩
+            ⟨hRepLen, ?_⟩, ?_, hTot, hFit⟩
     · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
     · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
   | frame _ | pageTable _ =>

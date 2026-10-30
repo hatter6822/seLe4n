@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.FrozenOps.Core
 import SeLe4n.Kernel.SchedContext.Budget
+import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Architecture.PageTableInstall
 import SeLe4n.Kernel.IPC.DualQueue.SenderMessage
 
@@ -1451,24 +1452,18 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     else
       match st.getObject? scId with
       | some (.schedContext sc) =>
+        -- WS-ZA ZA6.4: the live configure's refills (`configuredSchedContext`):
+        -- seL4-MCS's `refill_update` for a context in use, `refill_new`
+        -- otherwise, so the frozen mirror hands out the new budget once, as the
+        -- live operation does.  The keep decision is `configureKeepsHead`'s,
+        -- read over the frozen store.
+        let keep : Bool := budget != period && sc.budget.val != 0 &&
+          match sc.boundThread with
+          | some t => (frozenLookupTcb st t).any TCB.isRunnable
+          | none => false
         let updated : SeLe4n.Kernel.SchedContext :=
-          { sc with
-            budget := ⟨budget⟩
-            period := ⟨period⟩
-            priority := ⟨priority⟩
-            deadline := ⟨deadline⟩
-            domain := ⟨domain⟩
-            budgetRemaining := ⟨budget⟩
-            -- AK6-B/C parity (SC-M01/SC-M02): mirror the runtime
-            -- `schedContextConfigure` replenishment replacement so the
-            -- FROZEN variant does not leave stale replenishment entries
-            -- across reconfigures. The frozen timer is 0 at boot, so
-            -- the first eligibility aligns with `period`; any subsequent
-            -- reconfigure honors `timer + period` like the runtime path.
-            refillHeadPresent := true
-            refillHeadAmount := budget
-            refillHeadEligibleAt := 0 + period
-            refillTailCount := 0 }
+          SeLe4n.Kernel.SchedContextOps.configuredSchedContext budget period priority deadline
+            domain st.machine.timer keep sc
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
           match obj with
@@ -1728,9 +1723,10 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
             -- CBS path: decrement SchedContext budget
             match st.getSchedContext? scId with
             | some sc =>
-              let result := SeLe4n.Kernel.cbsBudgetCheck sc st.machine.timer 1
-              let updatedSc := result.1
-              let wasPreempted := result.2
+              -- WS-ZA ZA6.4: the live charge of the unit run from `timer`
+              -- (`chargeBudget`), and its exhaustion test (`tickExhausts`).
+              let updatedSc := sc.chargeBudget st.machine.timer 1 (st.machine.timer + 1)
+              let wasPreempted := sc.tickExhausts st.machine.timer
               match frozenWithObjectStored st scId.toObjId (.schedContext updatedSc) with
               | .ok stored =>
                 let st' := { stored with machine := tick st.machine }

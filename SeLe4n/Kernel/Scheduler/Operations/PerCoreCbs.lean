@@ -907,37 +907,41 @@ theorem replenishOnCore_preserves_perCoreCbsInvariant (st : SystemState)
 
 -- §7  SM5.H.7 — the CBS budget-bound (bandwidth) accounting.
 
-/-- WS-SM SM5.H.7 (CBS budget accounting): `consumeBudget` preserves the CBS
-bandwidth bound `budgetRemaining ≤ budget` — charging budget can only *decrease*
-`budgetRemaining` (`consumeBudget_budgetRemaining_le`), so an already-bounded
-remaining stays bounded.  The per-tick budget-charge half of the CBS isolation
-guarantee. -/
-theorem consumeBudget_preserves_le_budget (sc : SchedContext) (ticks : Nat)
-    (h : sc.budgetRemaining.val ≤ sc.budget.val) :
-    (consumeBudget sc ticks).budgetRemaining.val ≤ (consumeBudget sc ticks).budget.val := by
-  have hle := consumeBudget_budgetRemaining_le sc ticks
-  have hbudget : (consumeBudget sc ticks).budget = sc.budget := rfl
-  rw [hbudget]
-  exact Nat.le_trans hle h
+/-- WS-SM SM5.H.7 (CBS budget accounting): the charge preserves the CBS bandwidth
+bound `budgetRemaining ≤ budget` of a context whose refills hold its budget: the
+charge keeps the refills' total and the budget (WS-ZA ZA6.4,
+`chargeBudget_refillTotal`), and the head is one of the refills.  The per-tick
+budget-charge half of the CBS isolation guarantee. -/
+theorem chargeBudget_preserves_le_budget (sc : SchedContext) (start usage now : Nat)
+    (h : sc.refillTotal = sc.budget.val) :
+    (sc.chargeBudget start usage now).budgetRemaining.val ≤
+      (sc.chargeBudget start usage now).budget.val := by
+  have ht := sc.chargeBudget_refillTotal start usage now
+  rw [(sc.chargeBudget_period start usage now).2]
+  unfold SchedContext.refillTotal at ht h
+  omega
 
-/-- WS-SM SM5.H.7 (CBS budget accounting): `applyRefill` establishes the CBS
-bandwidth bound `budgetRemaining ≤ budget` unconditionally — the refill is capped
-at the `budget` ceiling (`applyRefill_le_budget`).  The replenishment half of the
-CBS isolation guarantee: no replenishment can push a SchedContext over its
+/-- WS-SM SM5.H.7 (CBS budget accounting): the release preserves the CBS bandwidth
+bound `budgetRemaining ≤ budget` of a context whose refills hold its budget —
+the released head is one of the refills (WS-ZA ZA6.4).  The replenishment half
+of the CBS isolation guarantee: no release can push a SchedContext over its
 configured budget. -/
-theorem applyRefill_preserves_le_budget (sc : SchedContext) (refillAmount : Nat) :
-    (applyRefill sc refillAmount).budgetRemaining.val ≤ (applyRefill sc refillAmount).budget.val := by
-  have hbudget : (applyRefill sc refillAmount).budget = sc.budget := rfl
-  rw [hbudget]
-  exact applyRefill_le_budget sc refillAmount
+theorem releaseReadyHead_preserves_le_budget (sc : SchedContext) (now : Nat)
+    (h : sc.refillTotal = sc.budget.val) :
+    (sc.releaseReadyHead now).budgetRemaining.val ≤ (sc.releaseReadyHead now).budget.val := by
+  have ht := sc.releaseReadyHead_refillTotal now
+  rw [(sc.releaseReadyHead_period now).2]
+  unfold SchedContext.refillTotal at ht h
+  omega
 
-/-- WS-SM SM5.H.7 (CBS budget accounting): `scheduleReplenishment` keeps the bound
-replenishment list within `maxReplenishments` (`truncateReplenishments_length_le`)
-— the per-core replenishment schedule cannot grow without bound. -/
-theorem scheduleReplenishment_replenishments_bounded (sc : SchedContext)
-    (currentTime : Nat) (consumed : Budget) :
-    (scheduleReplenishment sc currentTime consumed).replenishments.length ≤ maxReplenishments := by
-  exact SchedContext.replenishments_length_le _
+/-- WS-SM SM5.H.7 (CBS budget accounting): the charge keeps the refills within
+the context's storage (`refillsFit`, WS-ZA ZA6.4: `schedule_used` merges into the
+last refill at capacity) — the per-core replenishment schedule cannot grow
+without bound. -/
+theorem chargeBudget_replenishments_bounded (sc : SchedContext) (start usage now : Nat)
+    (h : sc.refillsFit) : (sc.chargeBudget start usage now).refillsFit :=
+  sc.chargeBudget_refillsFit start usage now h
+
 
 -- ============================================================================
 -- §9  SM5.H (C9) — object-store invariant (`invExt`) preservation
@@ -1482,58 +1486,30 @@ theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
       · rfl
     · rfl
 
-/-- WS-ZA ZA6.3: the context a budget-exhausting tick writes back — charged,
-its consumed budget scheduled as a refill at `now + period`, and its deadline
-moved on. -/
+/-- WS-ZA ZA6.3: the context a budget-exhausting tick writes back — the unit run
+from `now - 1` charged by `now` (WS-ZA ZA6.4, `SchedContext.chargeBudget`), and
+its deadline moved on. -/
 abbrev spentSchedContext (sc : SchedContext) (now : Nat) : SchedContext :=
-  cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) now ⟨sc.budgetRemaining.val⟩) now true
+  cbsUpdateDeadline (sc.chargeBudget (now - 1) 1 now) now true
 
-/-- **The spent context's place is in the future** when its pending refills were:
-its refills are the old ones and the new one a period on. -/
-theorem spentSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) (hP : 0 < sc.period.val)
-    (hOld : ∀ t, sc.releaseKey? = some t → t > now) :
+/-- **The spent context's place is in the future**: the charge ends in the
+release at `now`, so a used-up head's first pending refill is released after
+`now`. -/
+theorem spentSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) :
     ∀ t, (spentSchedContext sc now).releaseKey? = some t → t > now := by
   intro t ht
-  unfold SchedContext.releaseKey? at ht hOld
-  have e1 : (spentSchedContext sc now).replenishments =
-      (scheduleReplenishment (consumeBudget sc 1) now ⟨sc.budgetRemaining.val⟩).replenishments := by
-    show (cbsUpdateDeadline _ now true).replenishments = _
-    unfold cbsUpdateDeadline; split <;> rfl
-  rw [e1] at ht
-  unfold scheduleReplenishment at ht
-  dsimp only at ht
-  rw [SchedContext.withReplenishments_replenishments _ _ (truncateReplenishments_length_le _)] at ht
-  obtain ⟨r, hr, rfl⟩ := SystemState.refillsEarliest_mem ht
-  unfold truncateReplenishments at hr
-  rcases List.mem_append.mp ((List.drop_sublist _ _).subset hr) with hm | hm
-  · have hm' : r ∈ sc.replenishments := hm
-    obtain ⟨t0, ht0⟩ := SystemState.refillsEarliest_isSome (List.ne_nil_of_mem hm')
-    exact Nat.lt_of_lt_of_le (hOld t0 ht0) (SystemState.refillsEarliest_le ht0 r hm')
-  · rw [List.mem_singleton] at hm; subst hm
-    show now < now + sc.period.val; omega
+  rw [cbsUpdateDeadline_releaseKey] at ht
+  exact sc.chargeBudget_releaseKey_gt _ _ now t ht
 
-/-- **A refilled context's place is in the future**: the refill at `now` keeps
-only the refills released after `now`. -/
+/-- **A refilled context's place is in the future**: the release at `now` takes
+every pending refill released by `now` while the head is used up. -/
 theorem refilledSchedContext_releaseKey_gt (sc : SchedContext) (now : Nat) :
-    ∀ t, (cbsUpdateDeadline (processReplenishments sc now) now true).releaseKey? = some t →
+    ∀ t, (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseKey? = some t →
       t > now := by
   intro t ht
-  unfold SchedContext.releaseKey? at ht
-  have e1 : (cbsUpdateDeadline (processReplenishments sc now) now true).replenishments =
-      (processReplenishments sc now).replenishments := by
-    unfold cbsUpdateDeadline; split <;> rfl
-  rw [e1] at ht
-  unfold processReplenishments partitionEligible at ht
-  dsimp only at ht
-  rw [List.partition_eq_filter_filter] at ht
-  dsimp only at ht
-  rw [SchedContext.withReplenishments_replenishments _ _
-    (Nat.le_trans (List.length_filter_le _ _) (SchedContext.replenishments_length_le sc))] at ht
-  obtain ⟨r, hr, rfl⟩ := SystemState.refillsEarliest_mem ht
-  have := (List.mem_filter.mp hr).2
-  simp only [Function.comp_apply, Bool.not_eq_true', ReplenishmentEntry.isEligible,
-    decide_eq_false_iff_not] at this
-  omega
+  rw [cbsUpdateDeadline_releaseKey] at ht
+  exact sc.releaseReadyHead_releaseKey_gt now t ht
+
 
 /-- WS-SM SM5.H.2 (A2, the production bridge): in the budget-**exhausted** branch the
 live per-core timer tick's replenish-queue write on **every** core is exactly the
@@ -1547,7 +1523,7 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (st' : SystemState) (b : Bool)
     (hBound : tcb.schedContextBinding = .bound scId)
     (hSc : st.getSchedContext? scId = some sc)
-    (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hBudget : sc.tickExhausts (st.machine.timer - 1) = true)
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
@@ -1627,7 +1603,7 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
     (st' : SystemState) (b : Bool)
     (hDonated : tcb.schedContextBinding = .donated scId owner)
     (hSc : st.getSchedContext? scId = some sc)
-    (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hBudget : sc.tickExhausts (st.machine.timer - 1) = true)
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
@@ -1661,7 +1637,7 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
   | .bound scId =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
-          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          by_cases hBud : sc.tickExhausts (st.machine.timer - 1) = true
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_bound_exhausted_replenish_eq
               st c tid tcb scId sc st' b hB hSc hBud hStep c'))]
             refine replenishOnCore_preserves_replenishQueueValid_smp _ c scId ?_ c'
@@ -1678,7 +1654,7 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
   | .donated scId owner =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
-          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          by_cases hBud : sc.tickExhausts (st.machine.timer - 1) = true
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_donated_exhausted_replenish_eq
               st c tid tcb scId owner sc st' b hB hSc hBud hStep c'))]
             refine replenishOnCore_preserves_replenishQueueValid_smp _ c scId ?_ c'

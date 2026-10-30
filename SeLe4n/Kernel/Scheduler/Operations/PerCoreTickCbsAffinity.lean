@@ -153,8 +153,8 @@ theorem refillSchedContext_determineTargetCore (st : SystemState) (scId0 : SeLe4
       (getTcb?_insert_schedContext_eq st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) rfl t)
 
 /-- WS-SM SM5.I: `refillSchedContext` preserves every SchedContext's `boundThread`
-projection (`processReplenishments` / `cbsUpdateDeadline` write only budget / deadline
-fields, never `boundThread`). -/
+projection (`SchedContext.releaseReadyHead` writes the refills alone and
+`cbsUpdateDeadline` the deadline alone, never `boundThread`). -/
 theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedContextId)
     (now : Nat) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     ((refillSchedContext st scId0 now).getSchedContext? scId).map (·.boundThread)
@@ -164,10 +164,11 @@ theorem refillSchedContext_boundThread (st : SystemState) (scId0 : SeLe4n.SchedC
   | none => rw [SystemState.updateSchedContext_eq_self_of_none hOld]
   | some sc =>
     rw [SystemState.updateSchedContext_eq_of_some hOld]
-    have hBT : (cbsUpdateDeadline (processReplenishments sc now) now true).boundThread
+    have hBT : (cbsUpdateDeadline (sc.releaseReadyHead now) now true).boundThread
         = sc.boundThread := by
-      simp only [cbsUpdateDeadline, processReplenishments, applyRefill]
-      split <;> simp [SchedContext.boundThread]
+      unfold SchedContext.boundThread
+      rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
+        (SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1]
     exact getSchedContext?_boundThread_insert_schedContext st _ scId0 sc _ hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hOld) hBT rfl scId
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` (a register-context TCB write) preserves
@@ -486,12 +487,9 @@ theorem timeoutBlockedThreads_homeBindFrame (st : SystemState) (scId : SchedCont
 /-- The context an exhausting charge writes back names the thread it named. -/
 theorem spentSchedContext_boundThread (sc : SchedContext) (now : Nat) :
     (spentSchedContext sc now).boundThread = sc.boundThread := by
-  have h : (scheduleReplenishment (consumeBudget sc 1) now ⟨sc.budgetRemaining.val⟩).boundThreadCode =
-      sc.boundThreadCode := by
-    unfold scheduleReplenishment
-    rw [SchedContext.withReplenishments_boundThreadCode]; rfl
-  show SeLe4n.ThreadId.ofOptCode (cbsUpdateDeadline _ now true).boundThreadCode = _
-  unfold cbsUpdateDeadline; split <;> exact congrArg SeLe4n.ThreadId.ofOptCode h
+  unfold SchedContext.boundThread
+  rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
+    (SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased (now - 1) 1 now)).2.2.2.2.2.2.1]
 
 /-- **An exhausting charge keeps every core's queue affinity-consistent** when
 the context it re-places on core `c` names only threads homed on `c`: the
@@ -569,9 +567,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueAffinityConsistentOnCore
           rw [hBound scId sc hb hSc] at ht; cases ht; exact hHome) hCons
   have hSpend : ∀ scId sc (hSc : st.getSchedContext? scId = some sc),
       replenishQueueAffinityConsistentOnCore (st.rewriteObject scId.toObjId
-        (.schedContext (consumeBudget sc 1)) (SystemState.rewriteAdmissible_schedContext hSc _)) c' :=
-    fun scId sc hSc => (homeBindFrame.rewriteObject_schedContext (sc' := consumeBudget sc 1) hSc _
-      hInv rfl).affinityConsistent rfl hCons
+        (.schedContext (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer))
+        (SystemState.rewriteAdmissible_schedContext hSc _)) c' :=
+    fun scId sc hSc => (homeBindFrame.rewriteObject_schedContext
+      (sc' := sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) hSc _ hInv
+      (SchedContext.boundThread_of_refillsErased (sc.chargeBudget_refillsErased _ 1 _))).affinityConsistent
+      rfl hCons
   match hB : tcb.schedContextBinding with
   | .unbound =>
       by_cases hS : tcb.timeSlice ≤ 1
@@ -591,7 +592,7 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueAffinityConsistentOnCore
   | .bound scId | .donated scId _ =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
-          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          by_cases hBud : sc.tickExhausts (st.machine.timer - 1) = true
           · simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_some hSc,
               if_pos hBud, Prod.mk.injEq] at hStep
             obtain ⟨rfl, -⟩ := hStep
@@ -621,16 +622,12 @@ def currentBoundHomedOnCore (st : SystemState) (c : CoreId) : Prop :=
 
 /-- The context a charge writes back — `ticks` consumed, the consumed budget
 scheduled as a refill, the deadline moved on — keeps its release link core: the
-exhausting tick's (`spentSchedContext`, one tick) and the bound yield's (its whole
-remaining budget). -/
-theorem chargedSchedContext_releaseCoreCode (sc : SchedContext) (now ticks : Nat) :
-    (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks) now
-      ⟨sc.budgetRemaining.val⟩) now true).releaseCoreCode = sc.releaseCoreCode := by
-  have h : (scheduleReplenishment (consumeBudget sc ticks) now ⟨sc.budgetRemaining.val⟩).releaseCoreCode =
-      sc.releaseCoreCode := by
-    unfold scheduleReplenishment
-    rw [SchedContext.withReplenishments_releaseCoreCode]; rfl
-  unfold cbsUpdateDeadline; split <;> exact h
+exhausting tick's (`spentSchedContext`, one tick) and the bound yield's (its
+budget). -/
+theorem chargedSchedContext_releaseCoreCode (sc : SchedContext) (start ticks now : Nat) :
+    (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseCoreCode =
+      sc.releaseCoreCode :=
+  (spendRecord_release sc start ticks now).2.1
 
 /-- **A context is linked on its bound thread's home core or on none** (WS-ZA
 ZA6.3): a context linked on a core's release queue holds an entry there
@@ -652,23 +649,22 @@ charged thread's context, written back charged, is free on the charging core —
 names the charged thread, homed there (`currentBoundHomedOnCore`), and the write
 keeps its link core — so the requeue's branch that leaves both queues as they are
 is unreachable.  The exhausting tick charges one tick (`spentSchedContext`); the
-bound yield charges the whole remaining budget (`yieldChargeOnCore`). -/
+bound yield charges its budget (`yieldChargeOnCore`). -/
 theorem spendBudget_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {scId : SchedContextId} {sc : SchedContext}
-    (ticks : Nat) (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (start ticks : Nat) (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d)
     (hCur : currentBoundHomedOnCore st c) (hc : st.scheduler.currentOnCore c = some tid)
     (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
     (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
-        (scheduleReplenishment (consumeBudget sc ticks) st.machine.timer
-          ⟨sc.budgetRemaining.val⟩) st.machine.timer true))
+        (sc.chargeBudget start ticks st.machine.timer) st.machine.timer true))
       (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true := by
   have h := releaseFreeFor_of_boundHome hRef hAff hSc ((hCur tid tcb hc hT).2 scId sc hb hSc)
     (hCur tid tcb hc hT).1
   unfold SystemState.releaseFreeFor at h ⊢
   rw [SystemState.releaseCoreOf_rewriteObject_schedContext _ _ _ _ hSc hInv
-    (chargedSchedContext_releaseCoreCode sc _ _)]
+    (chargedSchedContext_releaseCoreCode sc _ _ _)]
   exact h
 
 -- ============================================================================
@@ -858,15 +854,13 @@ theorem timerTickOnCore_preserves_perCoreCbsInvariant_discharged (st : SystemSta
     (c : CoreId) (c' : CoreId)
     (hInv : ∀ c'', perCoreCbsInvariant st c'')
     (hInvObj : st.objects.invExt) (hRef : st.releaseQueueRefined)
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
-      0 < sc.period.val)
-    (hFuture : currentRefillsFutureOnCore (timerTickOnCorePrepared st c) c)
     (hCurrent : currentBoundHomedOnCore (timerTickOnCorePrepared st c) c) :
     perCoreCbsInvariant (timerTickOnCore st c) c' :=
   ⟨timerTickOnCore_preserves_replenishQueueValidOnCore st c c'
       (fun c'' => (hInv c'').1),
    timerTickOnCore_preserves_replenishmentPipelineOrderOnCore st c c' hInvObj
-      (fun c'' => (hInv c'').2.1) hPeriod hFuture,
+      (fun c'' => (hInv c'').2.1),
+
    timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore st c c'
       hInvObj hRef (fun c'' => (hInv c'').2.2) hCurrent⟩
 

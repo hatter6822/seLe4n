@@ -946,11 +946,6 @@ scenarios:
     function: runSchedContextOpsTrace
     subsystem: SchedContext
     description: "Z5-H2: schedContextUnbind not-bound rejected"
-  SCO-011:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runSchedContextOpsTrace
-    subsystem: SchedContext
-    description: "Z5-I1: schedContextYieldTo budget transfer"
   SCO-012:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runSchedContextOpsTrace
@@ -971,11 +966,6 @@ scenarios:
     function: runSchedContextOpsTrace
     subsystem: SchedContext
     description: "Z5-H2: schedContextUnbind RunQueue removal of unbound thread"
-  SCO-016:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runSchedContextOpsTrace
-    subsystem: SchedContext
-    description: "Z5-I2: schedContextYieldTo budget-starved target enqueued"
   SCO-017:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runSchedContextOpsTrace
@@ -986,11 +976,6 @@ scenarios:
     function: runSchedContextOpsTrace
     subsystem: SchedContext
     description: "Z5-AUD-10: schedContextBind TCB already bound to different SC rejected"
-  SCO-019:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runSchedContextOpsTrace
-    subsystem: SchedContext
-    description: "Z5-AUD-10: schedContextYieldTo no bound thread — no enqueue"
   SCO-020:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runTimeoutEndpointTrace

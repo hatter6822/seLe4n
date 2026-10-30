@@ -1086,7 +1086,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
-  , `SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
   , `SeLe4n.Kernel.advanceDomainOnCore
   , `SeLe4n.Kernel.advanceDomainOnCoreN
   , `SeLe4n.Kernel.applyReplyDonation

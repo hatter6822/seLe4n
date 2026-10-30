@@ -3026,7 +3026,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def timerTickWithBudget
 run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with[^\n]*(\n([ \t][^\n]*)?)*timerTickBudget st tid tcb hTcb" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 # ...and the trace model's replenishment fold is a typed update, not a raw
 # SchedContext insert (the fold's `none` arm was the update's `none` arm).
-run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext scId fun sc => processReplenishments sc currentTime" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*acc\.updateSchedContext scId fun sc => sc\.releaseReadyHead currentTime" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def stepPost \(step : SchedulerStep\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean'
 # The per-core tick's charge is ONE definition, spelled exactly: the witnessed
 # lookup handing `timerTickBudgetOnCore` its proof, and the arm that charges a
@@ -3230,11 +3230,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t]
 # unbind's writes do not bypass the scheduler stage.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContext(Bind|Unbind)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SchedContextId\.ofObjId vScId\.val\) with" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*let st1 : SystemState := \{ st with scheduler := sched0 \}(\n([ \t][^\n]*)?)*let st2 := st\.rewriteObject" SeLe4n/Kernel/SchedContext/Operations.lean'
-# The budget transfer: the source under its lookup's witness, the target
-# through the typed rewrite over the rewritten state -- the self-yield guard
-# is what makes the second key a different one.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextYieldTo[^\n]*(\n([ \t][^\n]*)?)*  if fromScId == targetScId then st else(\n([ \t][^\n]*)?)*  match st\.getSchedContextWitnessed\? fromScId with\n  \| some ⟨fromSc, hFrom⟩ =>(\n([ \t][^\n]*)?)*      let st1 := st\.rewriteObject fromScId\.toObjId \(KernelObject\.schedContext updatedFrom\)\n        \(SystemState\.rewriteAdmissible_schedContext hFrom updatedFrom\)\n      let st2 := st1\.updateSchedContext targetScId fun sc =>\n        \{ sc with budgetRemaining := ⟨newTargetBudget⟩, isActive := newTargetBudget > 0 \}" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextYieldTo[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? fromScId with" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The lemma library the proofs reduce the two-key writes with: a SchedContext
 # rewrite is invisible to every TCB lookup (and the twin), the typed
 # read-modify-writes inherit that, the keys of two typed witnesses are
@@ -7619,14 +7614,10 @@ run_check "INVARIANT" rg -n -U --multiline-dotall '^@\[csimp\] theorem releaseUn
 run_check "INVARIANT" rg -n -U --multiline-dotall '^@\[csimp\] theorem releaseLinkIn_eq_impl .*^def releaseInsertFresh ' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem releasePlace_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n -U --multiline-dotall '^@\[csimp\] theorem spendBudgetOnCore_eq_impl .*^@\[inline\] def budgetExhaustOnCore ' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def spendBudgetOnCoreImpl[^\n]*(\n([ \t][^\n]*)?)*  spendBudgetWrite st c tid scId ticks sc\.budgetRemaining\.val sc\.priority$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def scheduleReplenishmentImpl[^\n]*(\n([ \t][^\n]*)?)*      sc\.appendTailRecord sc\.refillTailCount consumed\.val eligibleAt$' SeLe4n/Kernel/SchedContext/Budget.lean
-run_check "INVARIANT" rg -n '^theorem SchedContext\.appendTailRecord_eq($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Budget.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def spendBudgetOnCoreImpl[^\n]*(\n([ \t][^\n]*)?)*  spendBudgetWrite st c tid scId start ticks sc\.priority$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def chargeSchedContext \(s : SchedContext\) \(start ticks now : Nat\) : SchedContext :=\n  cbsUpdateDeadline \(s\.chargeBudget start ticks now\) now true$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_negative_check "INVARIANT" rg -n -U '^@\[inline\] def yieldOnCoreR[^\n]*(\n([ \t][^\n]*)?)*effectiveSchedParams' SeLe4n/Kernel/RefusalCarryingDispatch.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem budgetExhaustOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem refillSchedContext_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem processReplenishments_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Budget.lean
-run_check "INVARIANT" rg -n '^theorem refillRecord_eq($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Budget.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem storeIdleThreadOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/IdleStore.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_sgis_complete($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
@@ -12821,16 +12812,17 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindReplen
 # RELATION: the configure's segment keys on the SCHEDCONTEXT resolving, not on
 # its being bound -- an unbound SC can still be queued, and the purge removes it
 # from the core its link names.  Mutation: key it on the bound thread, which
-# would drop the lock the purge takes.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SeLe4n\.SchedContextId\.ofObjId scObjId\) with\n *\| some _ => SchedContextOps\.purgeReplenishCores st" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+# would drop the lock the purge takes.  A bound context is then placed on its
+# thread's home core's release queue (WS-ZA ZA6.4), so that core follows.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SeLe4n\.SchedContextId\.ofObjId scObjId\) with\n *\| some sc => SchedContextOps\.purgeReplenishCores st \(SeLe4n\.SchedContextId\.ofObjId scObjId\) \+\+\n *match sc\.boundThread with\n *\| some t => \[determineTargetCore st t\]" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # The exactness halves -- what each arm writes, against what it declares.
-run_check "INVARIANT" rg -n '^theorem schedContextBind_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbind_replenishQueueOnCore_ne_of_link \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_link \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # ...and the declarations' own halves.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_no_replenishQueue \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_contains_home_replenishQueue_write \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # The witness and its runner call.
@@ -12985,15 +12977,13 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.replenishmentListWellFormed
 #check @SeLe4n.Kernel.replenishmentAmountsBounded
 #check @SeLe4n.Kernel.schedContextWellFormed
-#check @SeLe4n.Kernel.cbsBudgetCheck_preserves_schedContextWellFormed
-#check @SeLe4n.Kernel.cbsBudgetCheck_preserves_replenishmentAmountsBounded
-#check @SeLe4n.Kernel.cbs_single_period_bound
-#check @SeLe4n.Kernel.cbs_bandwidth_bounded
-#check @SeLe4n.Kernel.consumeBudget_preserves_budgetWithinBounds
-#check @SeLe4n.Kernel.consumeBudget_preserves_replenishmentAmountsBounded
-#check @SeLe4n.Kernel.processReplenishments_preserves_budgetWithinBounds
-#check @SeLe4n.Kernel.scheduleReplenishment_preserves_replenishmentListWellFormed
-#check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_budgetWithinBounds
+#check @SeLe4n.Kernel.refillsConserved
+#check @SeLe4n.Kernel.chargeBudget_preserves_schedContextWellFormed
+#check @SeLe4n.Kernel.releaseReadyHead_preserves_schedContextWellFormed
+#check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_schedContextWellFormed
+#check @SeLe4n.Kernel.refillNew_schedContextWellFormed
+#check @SeLe4n.Kernel.refillUpdate_schedContextWellFormed
+#check @SeLe4n.Kernel.refill_window_bound
 -- WS-Z Phase Z3: Replenishment Queue invariants and preservation
 #check @SeLe4n.Kernel.replenishQueueSorted
 #check @SeLe4n.Kernel.replenishQueueSizeConsistent
@@ -13030,8 +13020,6 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.budgetPositive_subset
 #check @SeLe4n.Kernel.effectiveSchedParams_unbound_legacy
 #check @SeLe4n.Kernel.hasSufficientBudget_unbound_legacy
-#check @SeLe4n.Kernel.consumeBudget_preserves_schedContextWellFormed_full
-#check @SeLe4n.Kernel.scheduleReplenishment_preserves_schedContextWellFormed_full
 #check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_wf
 -- D5: Bounded Latency Theorem surface anchors
 #check @SeLe4n.Kernel.Liveness.WCRTHypotheses
@@ -16416,9 +16404,9 @@ open SeLe4n.Kernel
 #check @perCoreCbsInvariant
 #check @default_perCoreCbsInvariant
 #check @replenishOnCore_preserves_perCoreCbsInvariant
-#check @consumeBudget_preserves_le_budget
-#check @applyRefill_preserves_le_budget
-#check @scheduleReplenishment_replenishments_bounded
+#check @SchedContext.chargeBudget_refillTotal
+#check @SchedContext.releaseReadyHead_refillTotal
+#check @SchedContext.chargeBudget_refillsFit
 -- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation.
 #check @migrateRunQueueOnAffinityChange
 #check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed

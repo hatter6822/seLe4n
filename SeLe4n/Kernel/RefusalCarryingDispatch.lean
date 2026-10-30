@@ -847,7 +847,7 @@ built pair of pairs, so the parts go to the key hook's parts form
         | some ⟨sc, hSc⟩ =>
           let d := effectiveDeadline st tcb
           .ok (scheduleEffectiveOnCoreTotal (markKeyChangeParts
-            (spendBudgetOnCore st c tid scId sc hSc sc.budgetRemaining.val) tid
+            (spendBudgetOnCore st c tid scId sc hSc st.machine.timer sc.budget.val) tid
             tcb.boostedPriority d tcb.domain) c)
         | none => .error (.missingSchedContext, st)
 

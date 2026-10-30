@@ -165,36 +165,28 @@ theorem cbsUpdateDeadline_preserves_schedContextWellFormed (sc : SchedContext) (
 
 /-- **`refill_new` at valid parameters is well formed**: the budget in one
 refill, none pending. -/
-theorem refillNew_schedContextWellFormed (sc : SchedContext) (budget period now : Nat)
-    (hP : 0 < period) (hBP : budget ≤ period) :
-    schedContextWellFormed
-      ({ sc.refillNew budget now with budget := ⟨budget⟩, period := ⟨period⟩ } : SchedContext) := by
+theorem refillNew_schedContextWellFormed (sc : SchedContext) (now : Nat)
+    (hP : 0 < sc.period.val) (hBP : sc.budget.val ≤ sc.period.val) :
+    schedContextWellFormed (sc.refillNew sc.budget.val now) := by
   refine schedContextWellFormed_of_refills _ (by simp [Period.isPositive]; exact hP) hBP ?_ ⟨?_, ?_⟩
   · intro r hr
-    rw [show ({ sc.refillNew budget now with budget := ⟨budget⟩, period := ⟨period⟩ } :
-        SchedContext).replenishments = (sc.refillNew budget now).replenishments from rfl,
-      SchedContext.refillNew_replenishments] at hr
+    rw [SchedContext.refillNew_replenishments] at hr
     simp at hr
-  · show (sc.refillNew budget now).refillTotal = budget
-    exact SchedContext.refillNew_refillTotal _ _ _
+  · exact SchedContext.refillNew_refillTotal _ _ _
   · unfold SchedContext.refillsFit
-    rw [SchedContext.refillSize_eq,
-      show ({ sc.refillNew budget now with budget := ⟨budget⟩, period := ⟨period⟩ } :
-        SchedContext).replenishments = (sc.refillNew budget now).replenishments from rfl,
-      SchedContext.refillNew_replenishments]
+    rw [SchedContext.refillSize_eq, SchedContext.refillNew_replenishments]
     simp [SchedContext.refillNew, maxReplenishments]; split <;> omega
 
 /-- **`refill_update` at valid parameters is well formed**, from a context whose
 pending refills are positive. -/
-theorem refillUpdate_schedContextWellFormed (sc : SchedContext) (budget period now : Nat)
-    (hP : 0 < period) (hBP : budget ≤ period) (h0 : 0 < budget) (hPos : sc.refillsPositive) :
-    schedContextWellFormed
-      ({ sc.refillUpdate budget period now with budget := ⟨budget⟩, period := ⟨period⟩ } :
-        SchedContext) := by
-  have hR : ({ sc.refillUpdate budget period now with budget := ⟨budget⟩, period := ⟨period⟩ } :
-      SchedContext).replenishments = (sc.refillUpdate budget period now).replenishments := rfl
-  have hPos' : (sc.refillUpdate budget period now).refillsPositive ∧
-      (sc.refillUpdate budget period now).refillsFit := by
+theorem refillUpdate_schedContextWellFormed (sc : SchedContext) (now : Nat)
+    (hP : 0 < sc.period.val) (hBP : sc.budget.val ≤ sc.period.val) (h0 : 0 < sc.budget.val)
+    (hPos : sc.refillsPositive) :
+    schedContextWellFormed (sc.refillUpdate sc.budget.val sc.period.val now) := by
+  obtain ⟨-, hb, hp, -⟩ := SchedContext.fields_of_refillsErased
+    (SchedContext.refillUpdate_refillsErased sc sc.budget.val sc.period.val now)
+  have hPos' : (sc.refillUpdate sc.budget.val sc.period.val now).refillsPositive ∧
+      (sc.refillUpdate sc.budget.val sc.period.val now).refillsFit := by
     unfold SchedContext.refillUpdate
     split
     · rename_i hb
@@ -209,12 +201,8 @@ theorem refillUpdate_schedContextWellFormed (sc : SchedContext) (budget period n
         unfold SchedContext.refillsFit
         rw [SchedContext.refillSize_eq, SchedContext.refillNew_replenishments]
         simp [SchedContext.refillNew, maxReplenishments]; split <;> omega
-  refine schedContextWellFormed_of_refills _ (by simp [Period.isPositive]; exact hP) hBP
-    (fun r hr => hPos'.1 r (hR ▸ hr)) ⟨?_, ?_⟩
-  · show (sc.refillUpdate budget period now).refillTotal = budget
-    exact SchedContext.refillUpdate_refillTotal _ _ _ _
-  · unfold SchedContext.refillsFit at hPos' ⊢
-    rw [SchedContext.refillSize_eq, hR]
-    have := hPos'.2; rw [SchedContext.refillSize_eq] at this; exact this
+  refine schedContextWellFormed_of_refills _ (by rw [hp]; simp [Period.isPositive]; exact hP)
+    (by rw [hp, hb]; exact hBP) hPos'.1 ⟨?_, hPos'.2⟩
+  rw [SchedContext.refillUpdate_refillTotal, hb]
 
 end SeLe4n.Kernel

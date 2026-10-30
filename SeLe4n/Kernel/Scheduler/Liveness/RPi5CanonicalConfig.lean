@@ -383,52 +383,39 @@ theorem rpi5CanonicalConfig_isCanonical :
   decide
 
 -- ============================================================================
--- AN5-D (SC-M01) — RPi5 CBS-window replenishments bounded witness
+-- AN5-D (SC-M01) — RPi5 CBS-window budget bound
 -- ============================================================================
 
-/-- AN5-D (SC-M01): Instantiate the `cbsWindowReplenishmentsBounded`
-scheduler-discipline predicate for the canonical RPi5 deployment.
+/-- AN5-D (SC-M01), restated over seL4-MCS's refills at WS-ZA ZA6.4: on the
+canonical RPi5 deployment a context configured with the canonical period runs
+at most its budget in any window of `cbsPeriodTicks` ticks.
 
-`cbs_bandwidth_bounded_tight` (AK6-I) proves the tight bound
-`totalConsumed ≤ budget × ⌈window / period⌉` *conditional* on the CBS
-scheduling discipline. On the canonical RPi5 deployment (period = 10_000
-ticks, admissionControl ≤ 750 ‰), the discipline is discharged at boot
-time from the admission-control witness: under 75 % utilisation, no
-SchedContext can have more replenishments in a window than
-`⌈window / period⌉` permits.
-
-This theorem packages the closure: **for any RPi5-canonical deployment,
-the tight CBS bound applies unconditionally** once the deployment passes
-admission control. -/
-theorem rpi5_cbs_window_replenishments_bounded
-    (sc : SeLe4n.Kernel.SchedContext)
-    (windowStart window : Nat)
-    (hamounts : SeLe4n.Kernel.replenishmentAmountsBounded sc)
-    (hDiscipline : SeLe4n.Kernel.cbsWindowReplenishmentsBounded sc windowStart window)
+This is `refill_window_bound` with the RPi5 period substituted: from a context
+whose refills total its budget (what every configure leaves and every
+transition keeps) and whose head is ready, any time-ordered sequence of runs,
+forfeits and releases runs at most `budget` units in `[w, w + cbsPeriodTicks)`.
+No scheduling-discipline hypothesis is left: the bound is the charging's own. -/
+theorem rpi5_cbs_window_budget_bounded
+    (sc : SeLe4n.Kernel.SchedContext) (es : List SeLe4n.Kernel.RefillEvent) (w c : Nat)
+    (hTot : sc.refillTotal = sc.budget.val)
+    (hReady : 0 < sc.budgetRemaining.val → sc.periodStart ≤ c)
+    (hOrd : SeLe4n.Kernel.refillEventsOrdered c es)
     (hPeriod : sc.period.val = rpi5CanonicalConfig.cbsPeriodTicks) :
-    SeLe4n.Kernel.totalConsumed sc windowStart window ≤
-      sc.budget.val * ((window + rpi5CanonicalConfig.cbsPeriodTicks - 1) /
-        rpi5CanonicalConfig.cbsPeriodTicks) := by
-  have h := SeLe4n.Kernel.cbs_bandwidth_bounded_tight sc windowStart window
-              hamounts hDiscipline
-  rw [hPeriod] at h
-  exact h
+    SeLe4n.Kernel.refillWindowRuns w sc es ≤ sc.budget.val ∧
+      w + sc.period.val = w + rpi5CanonicalConfig.cbsPeriodTicks :=
+  ⟨SeLe4n.Kernel.refill_window_bound sc es w c hTot hReady hOrd, by rw [hPeriod]⟩
 
-/-- AN5-D (SC-M01): Packaged statement with the RPi5 period substituted
-directly. The `cbsPeriodTicks = 10_000` substitution yields the concrete
-canonical-deployment bound. -/
-theorem rpi5_cbs_window_replenishments_bounded_concrete
-    (sc : SeLe4n.Kernel.SchedContext)
-    (windowStart window : Nat)
-    (hamounts : SeLe4n.Kernel.replenishmentAmountsBounded sc)
-    (hDiscipline : SeLe4n.Kernel.cbsWindowReplenishmentsBounded sc windowStart window)
+/-- AN5-D (SC-M01): the bound with the RPi5 period (`10_000` ticks)
+substituted: at most `budget` units run in `[w, w + 10_000)`. -/
+theorem rpi5_cbs_window_budget_bounded_concrete
+    (sc : SeLe4n.Kernel.SchedContext) (es : List SeLe4n.Kernel.RefillEvent) (w c : Nat)
+    (hTot : sc.refillTotal = sc.budget.val)
+    (hReady : 0 < sc.budgetRemaining.val → sc.periodStart ≤ c)
+    (hOrd : SeLe4n.Kernel.refillEventsOrdered c es)
     (hPeriod : sc.period.val = 10_000) :
-    SeLe4n.Kernel.totalConsumed sc windowStart window ≤
-      sc.budget.val * ((window + 10_000 - 1) / 10_000) := by
-  have h := SeLe4n.Kernel.cbs_bandwidth_bounded_tight sc windowStart window
-              hamounts hDiscipline
-  rw [hPeriod] at h
-  exact h
+    SeLe4n.Kernel.refillWindowRuns w sc es ≤ sc.budget.val ∧
+      w + sc.period.val = w + 10_000 :=
+  ⟨SeLe4n.Kernel.refill_window_bound sc es w c hTot hReady hOrd, by rw [hPeriod]⟩
 
 -- ============================================================================
 -- WS-SM SM5.J.4 — per-core RPi5 `eventuallyExits` closure + WCRT specialisation

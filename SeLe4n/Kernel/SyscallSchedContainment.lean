@@ -214,10 +214,10 @@ theorem schedLockSet_setMCPriorityOnCore_coversWrites (st st' : SystemState)
 
 /-- **Cut C6a**: `.schedContextBind`'s footprint covers its writes.
 
-The bind moves no replenishment — a reservation changes owner, and its
-replenishments were already on the home core the binding names — so the
-replenish clause is a whole-state frame, on all **three** of the arm's branches
-since WS-RR RR8.12 Cut B2 (`v0.35.182`) made it place a parked runnable thread.
+The bind moves one replenishment at most: WS-ZA ZA6.4's release placement, on
+the home core the binding names, so the replenish clause is the home core's, on
+all **three** of the arm's branches since WS-RR RR8.12 Cut B2 (`v0.35.182`) made
+it place a parked runnable thread.
 
 That cut is the one this docstring used to say *"will have to widen this
 footprint"*, and it did not: the run segment is
@@ -232,10 +232,12 @@ theorem schedLockSet_schedContextBindOnCore_coversWrites (st st' : SystemState)
     (hS : LockSet.ofList? (schedLockSet_schedContextBindOnCore st vThreadId.val)
       = some S) :
     footprintCoversWrites S st st' :=
-  footprintCoversWrites_of_confined S (schedContextBindWriteSet st vThreadId.val) []
+  footprintCoversWrites_of_confined S (schedContextBindWriteSet st vThreadId.val)
+    (schedContextBindWriteSet st vThreadId.val)
     st st' (LockSet.ofList?_pairs hS)
     (schedContextBind_confinedToCores vScId vThreadId st st' hObjInv hStep)
-    (fun d _ => schedContextBind_replenishQueueOnCore st st' vScId vThreadId d hStep)
+    (fun d hd => schedContextBind_replenishQueueOnCore_ne st st' vScId vThreadId d hObjInv
+      (fun e => hd (by rw [e]; exact List.mem_singleton_self _)) hStep)
 
 -- ============================================================================
 -- §6  The suspend arm

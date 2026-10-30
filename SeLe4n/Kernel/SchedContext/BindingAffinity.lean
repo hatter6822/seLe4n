@@ -516,10 +516,12 @@ private theorem unbind_read_frame (vScId : ValidObjId) (st st' : SystemState)
   · rw [determineTargetCore_of_schedulerLinks hA, hTgt]
 /-- **The `schedContextBind` characterisation**: a successful bind read an
 *unbound* SchedContext and an existing TCB, and produced exactly the two-insert
-object write — the SchedContext bound to the thread, the TCB bound to the
-SchedContext at the SchedContext's priority — with **every replenish queue
-untouched**.  The possible home-core run-queue rebucket and the thread-index
-update are erased here: only what the invariant proofs read survives. -/
+object write — the SchedContext, its head made ready, bound to the thread, the
+TCB bound to the SchedContext at the SchedContext's priority — with **every
+replenish queue untouched** until the last step, which places the context on
+its thread's home core's release queue (WS-ZA ZA6.4, seL4-MCS's `postpone`).
+The possible home-core run-queue rebucket and the thread-index update are
+erased here: only what the invariant proofs read survives. -/
 private theorem schedContextBind_ok_char
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
@@ -527,15 +529,26 @@ private theorem schedContextBind_ok_char
     ∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
       sc.boundThread = none ∧
     ∃ tcb, st.getTcb? vThreadId.val = some tcb ∧
-      st'.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId.val
-          (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
-                                   donationOrigin := none })).insert
+    ∃ mid : SystemState,
+      mid.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId.val
+          (.schedContext { sc.releaseReadyHead st.machine.timer with
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                             donationOrigin := none })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
             scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
             priority := sc.priority })) } ∧
-      st'.objects.invExt ∧
-      (∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) := by
+      mid.objects.invExt ∧
+      (∀ c, mid.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) ∧
+      st' = mid.releasePlace (determineTargetCore { st with objects := ((st.objects.insert vScId.val
+          (.schedContext { sc.releaseReadyHead st.machine.timer with
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                             donationOrigin := none })).insert
+          vThreadId.val.toObjId
+          (.tcb { tcb with
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
+            priority := sc.priority })) } vThreadId.val)
+        (SchedContextId.ofObjId vScId.val) := by
   simp only [schedContextBind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at h; cases h
@@ -580,7 +593,7 @@ private theorem schedContextBind_ok_char
             rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
               vThreadId.val tcb _ hObjInv hTcb] at h
             cases h
-            refine ⟨?_, ?_, ?_⟩
+            refine ⟨_, ?_, ?_, ?_, rfl⟩
             · -- objects: both rebucket arms move the thread through its TCB
               -- run-queue links over the double-insert store (WS-ZA ZA4.5), and
               -- the reschedule-pending hook writes no object.
@@ -609,49 +622,77 @@ private theorem schedContextBind_ok_char
               repeat' split
               all_goals simp
 
-/-- The read-frame a successful bind leaves behind: queues untouched, every
-*other* SchedContext's resolution untouched, every thread's home core untouched
-— and the bound SchedContext was, at the pre-state, live and unbound.  The
-last piece is what each preservation proof feeds orphan-freedom to rule the
-on-key entry out. -/
+/-- The read-frame a successful bind leaves behind: every queue entry was there
+before, or is the bound context's own on its thread's home core (the release
+placement, WS-ZA ZA6.4); every *other* SchedContext keeps its bound thread;
+every thread's home core is untouched; the bound SchedContext was, at the
+pre-state, live and unbound, and is bound to the thread afterwards.  The
+unbound piece is what each preservation proof feeds orphan-freedom to rule a
+pre-state entry naming it out. -/
 private theorem schedContextBind_read_frame
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
-    (∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) ∧
+    (∀ c e, e ∈ (st'.scheduler.replenishQueueOnCore c).entries →
+        e ∈ (st.scheduler.replenishQueueOnCore c).entries ∨
+        (e.1 = SchedContextId.ofObjId vScId.val ∧ c = determineTargetCore st vThreadId.val)) ∧
     (∀ scId, scId ≠ SchedContextId.ofObjId vScId.val →
-        st'.getSchedContext? scId = st.getSchedContext? scId) ∧
+        (st'.getSchedContext? scId).map (·.boundThread) =
+          (st.getSchedContext? scId).map (·.boundThread)) ∧
     (∀ t, determineTargetCore st' t = determineTargetCore st t) ∧
     (∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
-        sc.boundThread = none) := by
-  obtain ⟨sc, hSc, hBT, tcb, hTcb, hA, _, hQEq⟩ :=
+        sc.boundThread = none) ∧
+    ((st'.getSchedContext? (SchedContextId.ofObjId vScId.val)).map (·.boundThread) =
+        some (some vThreadId.val)) := by
+  obtain ⟨sc, hSc, hBT, tcb, hTcb, mid, hA, _, hQEq, hst⟩ :=
     schedContextBind_ok_char vScId vThreadId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
   have hTcbRaw : st.objects.get? vThreadId.val.toObjId = some (KernelObject.tcb tcb) :=
     (getTcb?_eq_some_iff st _ tcb).mp hTcb
-  -- The frame is the double insert's; the bind's run-queue link writes are
-  -- invisible to every reading below (WS-ZA ZA4.5).
-  obtain ⟨hOff, _, hTgt⟩ := double_insert_read_frame st
+  -- The frame is the double insert's; the bind's run-queue and release-link
+  -- writes are invisible to every reading below (WS-ZA ZA4.5).
+  obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
     ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
-        { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) })
-    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) }
+        { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) })
+    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0, priority := sc.priority }) }
     (SchedContextId.ofObjId vScId.val) sc
-    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
+    { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
     vThreadId.val tcb
     { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
                priority := sc.priority }
     hObjInv hScRaw hTcbRaw rfl rfl rfl
-  exact ⟨hQEq, fun scId hNe => (hA.getSchedContext? scId).trans (hOff scId hNe),
-    fun t => (determineTargetCore_of_objectsAgreeOffRunLinks hA t).trans (hTgt t), sc, hSc, hBT⟩
+  have hS : st'.objectsAgreeOffSchedulerLinks _ := hst ▸
+    (objectsAgreeOffSchedulerLinks.of_releaseLinks (releasePlace_agree mid _ _)).trans
+      (objectsAgreeOffSchedulerLinks.of_runLinks hA)
+  refine ⟨fun c e he => ?_, fun scId hNe => ?_, fun t => ?_, ⟨sc, hSc, hBT⟩, ?_⟩
+  · rw [hst] at he
+    by_cases hc : c = determineTargetCore { st with objects := ((st.objects.insert vScId.val
+          (.schedContext { sc.releaseReadyHead st.machine.timer with
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                             donationOrigin := none })).insert
+          vThreadId.val.toObjId
+          (.tcb { tcb with
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
+            priority := sc.priority })) } vThreadId.val
+    · rcases releasePlace_entries_cases mid _ _ c e he with m | ⟨hs, _⟩
+      · rw [hQEq c] at m; exact Or.inl m
+      · exact Or.inr ⟨hs, hc.trans (hTgt _)⟩
+    · rw [releasePlace_replenishQueueOnCore_ne mid _ _ c hc, hQEq c] at he
+      exact Or.inl he
+  · rw [boundThread_of_schedulerLinks hS, hOff scId hNe]
+  · rw [determineTargetCore_of_schedulerLinks hS, hTgt]
+  · rw [boundThread_of_schedulerLinks hS, hSelf]
+    simp [SchedContext.boundThread]
 
 /-- **The live `.schedContextBind` arm preserves affinity-consistency** — the
 first of the two theorems whose absence the pre-SM10 audit registered.
 
 Orphan-freedom supplies the pivotal fact: the SchedContext being bound was
-unbound, so its guard plus `hOrphan` rule out any queue entry naming it — the
-one entry class whose obligation the bind *creates* — and every other entry's
-three readings are framed by the double insert. -/
+unbound, so its guard plus `hOrphan` rule out any pre-state queue entry naming
+it; the one entry the bind adds is that context's own, placed on its thread's
+home core (WS-ZA ZA6.4), which is the core affinity asks for; and every other
+entry's three readings are framed by the double insert. -/
 theorem schedContextBind_preserves_replenishQueueAffinityConsistent_smp
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
@@ -659,53 +700,71 @@ theorem schedContextBind_preserves_replenishQueueAffinityConsistent_smp
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨hQEq, hOff, hTgt, sc, hSc, hBT⟩ :=
+  obtain ⟨hEnt, hOff, hTgt, ⟨sc, hSc, hBT⟩, hSelf⟩ :=
     schedContextBind_read_frame vScId vThreadId st st' hObjInv h
   intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
-  rw [hQEq c] at hMem
   by_cases hEqK : scId₀ = SchedContextId.ofObjId vScId.val
-  · -- the freshly-bound SchedContext: orphan-freedom + the unbound guard
-    -- forbid any pre-state entry, and the bind writes no queue.
-    subst hEqK
-    obtain ⟨scP, hScP, tidP, hTidP⟩ := hOrphan c _ t hMem
-    rw [hSc] at hScP
-    cases hScP
-    rw [hBT] at hTidP
-    cases hTidP
-  · rw [hTgt tid₀]
-    exact hCons c scId₀ t hMem sc₀ (by rw [← hOff scId₀ hEqK]; exact hSc₀) tid₀ hTid₀
+  · subst hEqK
+    rcases hEnt c _ hMem with m | ⟨-, hc⟩
+    · -- orphan-freedom + the unbound guard forbid any pre-state entry
+      obtain ⟨scP, hScP, tidP, hTidP⟩ := hOrphan c _ t m
+      rw [hSc] at hScP
+      cases hScP
+      rw [hBT] at hTidP
+      cases hTidP
+    · -- the placed entry sits on the bound thread's home core
+      rw [hSc₀] at hSelf
+      simp only [Option.map_some, Option.some.injEq] at hSelf
+      rw [hSelf] at hTid₀
+      cases hTid₀
+      rw [hTgt, hc]
+  · rcases hEnt c _ hMem with m | ⟨hs, _⟩
+    · obtain ⟨scB, hScB, hEqB⟩ := boundThread_pull (hOff scId₀ hEqK) hSc₀
+      rw [hTgt tid₀]
+      exact hCons c scId₀ t m scB hScB tid₀ (hEqB.trans hTid₀)
+    · exact absurd hs hEqK
 
-/-- **`schedContextBind` preserves orphan-freedom**: the queues are untouched,
-the on-key entry class is empty (same argument as the affinity proof), and
-every off-key entry's SchedContext resolution is framed. -/
+/-- **`schedContextBind` preserves orphan-freedom**: a pre-state entry names a
+bound context other than the one bound (same argument as the affinity proof),
+framed; the placed entry names the context just bound. -/
 theorem schedContextBind_preserves_replenishQueueEntriesBound_smp
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     replenishQueueEntriesBound_smp st' := by
-  obtain ⟨hQEq, hOff, _, sc, hSc, hBT⟩ :=
+  obtain ⟨hEnt, hOff, _, ⟨sc, hSc, hBT⟩, hSelf⟩ :=
     schedContextBind_read_frame vScId vThreadId st st' hObjInv h
   intro c scId₀ t hMem
-  rw [hQEq c] at hMem
-  obtain ⟨sc₀, hSc₀, tid₀, hTid₀⟩ := hOrphan c scId₀ t hMem
-  by_cases hEqK : scId₀ = SchedContextId.ofObjId vScId.val
-  · subst hEqK
-    rw [hSc] at hSc₀
-    cases hSc₀
-    rw [hBT] at hTid₀
-    cases hTid₀
-  · exact ⟨sc₀, by rw [hOff scId₀ hEqK]; exact hSc₀, tid₀, hTid₀⟩
+  rcases hEnt c _ hMem with m | ⟨hs, _⟩
+  · obtain ⟨sc₀, hSc₀, tid₀, hTid₀⟩ := hOrphan c scId₀ t m
+    by_cases hEqK : scId₀ = SchedContextId.ofObjId vScId.val
+    · subst hEqK
+      rw [hSc] at hSc₀
+      cases hSc₀
+      rw [hBT] at hTid₀
+      cases hTid₀
+    · exact bound_transfer (hOff scId₀ hEqK) ⟨sc₀, hSc₀, tid₀, hTid₀⟩
+  · simp only at hs
+    subst hs
+    cases hP : st'.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+    | none => rw [hP] at hSelf; cases hSelf
+    | some scP =>
+      rw [hP] at hSelf
+      simp only [Option.map_some, Option.some.injEq] at hSelf
+      exact ⟨scP, rfl, vThreadId.val, hSelf⟩
 
 /-- `schedContextBind` preserves the object store's extended invariant — its
-object footprint is two plain inserts and the run-queue link writes. -/
+object footprint is two plain inserts, the run-queue link writes and the
+release placement's link writes. -/
 theorem schedContextBind_preserves_objects_invExt
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     st'.objects.invExt := by
-  obtain ⟨_, _, _, _, _, _, hInv', _⟩ := schedContextBind_ok_char vScId vThreadId st st' hObjInv h
-  exact hInv'
+  obtain ⟨_, _, _, _, _, mid, _, hInv', _, rfl⟩ :=
+    schedContextBind_ok_char vScId vThreadId st st' hObjInv h
+  exact releasePlace_objects_invExt mid _ _ hInv'
 
 /-- `schedContextUnbind` preserves the object store's extended invariant — two
 plain inserts, the run-queue link writes and the release-link purge on the main

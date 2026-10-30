@@ -2018,27 +2018,6 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err => IO.println s!"[SCO-010] schedContextUnbind not-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-010] schedContextUnbind not-bound: unexpected success"
 
-  -- Z5-AUD-11: schedContextYieldTo — budget transfer
-  let fromSc : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
-    budget := ⟨200⟩, budgetRemaining := ⟨150⟩ }
-  let targetSc : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
-    budget := ⟨200⟩, budgetRemaining := ⟨30⟩ }
-  let fromId : SeLe4n.ObjId := ⟨5001⟩
-  let targetId : SeLe4n.ObjId := ⟨5002⟩
-  let stYield := st1.withObjectStored fromId (.schedContext fromSc)
-      |>.withObjectStored targetId (.schedContext targetSc)
-  let stAfterYield := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
-    stYield ⟨5001⟩ ⟨5002⟩
-  let fromRemaining := match stAfterYield.getSchedContext? (SeLe4n.SchedContextId.ofObjId fromId) with
-    | some sc => sc.budgetRemaining.val
-    | none => 9999
-  let targetRemaining := match stAfterYield.getSchedContext? (SeLe4n.SchedContextId.ofObjId targetId) with
-    | some sc => sc.budgetRemaining.val
-    | none => 9999
-  IO.println s!"[SCO-011] schedContextYieldTo from={fromRemaining} target={targetRemaining}"
-
   -- Z5-AUD-12: admission control — excludeId prevents double-counting
   let scSmall : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
@@ -2120,30 +2099,6 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       (stUnboundRQ.queuedPriorityOn bootCoreId tidInRQ) == some ⟨50⟩
     IO.println s!"[SCO-015] schedContextUnbind runqueue-rebucket: queued={stillQueued} legacyPrio={atLegacyPrio}"
 
-  -- Z5-AUD-16: schedContextYieldTo — budget-starved target gets enqueued
-  -- Tests Z5-I2: when target's budgetRemaining was 0 and transfer makes it > 0,
-  -- the target's bound thread must be enqueued in the RunQueue.
-  let tidTarget : SeLe4n.ThreadId := ⟨12⟩
-  let fromScStarve : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
-    budget := ⟨200⟩, budgetRemaining := ⟨100⟩ }
-  let targetScStarve : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
-    budget := ⟨200⟩, budgetRemaining := ⟨0⟩,   -- budget-starved!
-    boundThreadCode := SeLe4n.ThreadId.optCode (some tidTarget), priority := ⟨80⟩ }
-  let fromIdS : SeLe4n.ObjId := ⟨5001⟩
-  let targetIdS : SeLe4n.ObjId := ⟨5002⟩
-  let stYieldStarve := queueBoot ((resetBootQueue st1).withObjectStored fromIdS
-        (.schedContext fromScStarve) |>.withObjectStored targetIdS (.schedContext targetScStarve))
-      [] none
-  let stAfterYieldStarve := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
-    stYieldStarve ⟨5001⟩ ⟨5002⟩
-  let targetEnqueued := (stAfterYieldStarve.queuedOn bootCoreId tidTarget)
-  let targetBudget := match stAfterYieldStarve.getSchedContext? (SeLe4n.SchedContextId.ofObjId targetIdS) with
-    | some sc => sc.budgetRemaining.val
-    | none => 9999
-  IO.println s!"[SCO-016] schedContextYieldTo starved-enqueue: enqueued={targetEnqueued} budget={targetBudget}"
-
   -- Z5-AUD-17: admission control — failure when bandwidth exceeds 100%
   -- Tests that checkAdmission returns false when total > 1000 per-mille.
   let scHeavy : SeLe4n.Kernel.SchedContext := {
@@ -2170,43 +2125,6 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨1⟩, by decide⟩ stBind2 with
   | .error err => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: unexpected success"
-
-  -- Z5-AUD-19: schedContextYieldTo — target with no bound thread (no enqueue)
-  -- Tests Z5-I2 none branch: even if budget-starved, no enqueue when no boundThread.
-  let fromScNoBound : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
-    budget := ⟨200⟩, budgetRemaining := ⟨100⟩ }
-  let targetScNoBound : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
-    budget := ⟨200⟩, budgetRemaining := ⟨0⟩ }  -- starved but no bound thread
-  let stYieldNoBound := queueBoot ((resetBootQueue st1).withObjectStored fromIdS
-        (.schedContext fromScNoBound) |>.withObjectStored targetIdS (.schedContext targetScNoBound))
-      [] none
-  let stAfterNoBound := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
-    stYieldNoBound ⟨5001⟩ ⟨5002⟩
-  let rqEmpty := (stAfterNoBound.runQueueWalk bootCoreId).length == 0
-  IO.println s!"[SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty={rqEmpty}"
-
-  -- AK6-D (SC-M03): Self-yield guard — `schedContextYieldTo st x x = st`.
-  -- Without the guard, the naive implementation zeros the source SchedContext
-  -- then re-writes the target; when they alias, HashMap.insert ordering
-  -- decides whether `budgetRemaining := 0` wins. The guard forces identity.
-  let selfScId : SeLe4n.ObjId := ⟨5003⟩
-  let selfSc : SeLe4n.Kernel.SchedContext :=
-    { SeLe4n.Kernel.SchedContext.empty ⟨5003⟩ with
-      budget := ⟨200⟩, period := ⟨500⟩, budgetRemaining := ⟨150⟩
-      isActive := true }
-  let stSelfYield := st1.withObjectStored selfScId (.schedContext selfSc)
-  let stAfterSelf := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
-    stSelfYield ⟨5003⟩ ⟨5003⟩
-  let selfRemaining := match stAfterSelf.getSchedContext? (SeLe4n.SchedContextId.ofObjId selfScId) with
-    | some sc => sc.budgetRemaining.val
-    | none => 0
-  let selfActive := match stAfterSelf.getSchedContext? (SeLe4n.SchedContextId.ofObjId selfScId) with
-    | some sc => sc.isActive
-    | none => false
-  -- AK6-D invariant: self-yield leaves budgetRemaining and isActive UNCHANGED
-  IO.println s!"[SCO-019a] schedContextYieldTo self-guard (AK6-D): remaining={selfRemaining} isActive={selfActive}"
 
 -- ============================================================================
 -- Z6-AUD: Timeout endpoint trace tests
@@ -2918,25 +2836,28 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
         | none => false
       IO.println s!"[Z8J-002] SchedContext bind: bound={tcbBound}"
 
-      -- Z8-J2 cont: Decrement budget via cbsBudgetCheck (simulating 1 tick)
+      -- Z8-J2 cont: charge one tick (WS-ZA ZA6.4: seL4-MCS's charge, the unit
+      -- run from `τ`, `chargeBudget τ 1 (τ + 1)`, and its exhaustion test)
+      let tick := fun (sc : SeLe4n.Kernel.SchedContext) (τ : Nat) =>
+        (sc.chargeBudget τ 1 (τ + 1), sc.tickExhausts τ)
       match stBound.getSchedContext? (SeLe4n.SchedContextId.ofObjId scId) with
       | some scBound =>
-        let (scTick1, preempt1) := SeLe4n.Kernel.cbsBudgetCheck scBound 10 1
+        let (scTick1, preempt1) := tick scBound 10
         IO.println s!"[Z8J-003] budget after 1 tick: remaining={scTick1.budgetRemaining.val} preempted={preempt1}"
 
-        -- Z8-J2 cont: Decrement 3 more ticks (budget 5 → after 4 ticks = 1 remaining)
-        let (scTick2, _) := SeLe4n.Kernel.cbsBudgetCheck scTick1 11 1
-        let (scTick3, _) := SeLe4n.Kernel.cbsBudgetCheck scTick2 12 1
-        let (scTick4, preempt4) := SeLe4n.Kernel.cbsBudgetCheck scTick3 13 1
+        -- Z8-J2 cont: Charge 3 more ticks (budget 5 → after 4 ticks = 1 remaining)
+        let (scTick2, _) := tick scTick1 11
+        let (scTick3, _) := tick scTick2 12
+        let (scTick4, preempt4) := tick scTick3 13
         IO.println s!"[Z8J-004] budget after 4 ticks: remaining={scTick4.budgetRemaining.val} preempted={preempt4}"
 
         -- Z8-J3: Exhaust budget on 5th tick (budget=5, consumed=5 → exhausted)
-        let (scExhausted, preemptExhaust) := SeLe4n.Kernel.cbsBudgetCheck scTick4 14 1
+        let (scExhausted, preemptExhaust) := tick scTick4 14
         IO.println s!"[Z8J-005] budget exhausted: remaining={scExhausted.budgetRemaining.val} preempted={preemptExhaust}"
 
-        -- Z8-J3 cont: After exhaustion, replenishment was scheduled at time 14 + period(100) = 114.
-        -- Advance past the replenishment due time to trigger budget refill.
-        let (scReplenished, _) := SeLe4n.Kernel.cbsBudgetCheck scExhausted 115 0
+        -- Z8-J3 cont: the used head was scheduled one period after its release
+        -- (10 + period 100 = 110); past that, the release makes it the head again.
+        let scReplenished := scExhausted.releaseReadyHead 115
         let budgetRestored := scReplenished.budgetRemaining.val != 0
         IO.println s!"[Z8J-006] after replenishment: remaining={scReplenished.budgetRemaining.val} restored={budgetRestored}"
 

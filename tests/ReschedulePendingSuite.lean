@@ -359,42 +359,6 @@ private def stBoundFunded : SystemState :=
     |>.build
   enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
 
-/-- An unbound donor context with three ticks to give. -/
-private def scDonor : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 302
-
-/-- `boundTid` queued on core 1 under `scBound`, whose remaining budget is
-`remaining` (of 5), and the donor `scDonor`. -/
-private def stYield (remaining : Nat) : SystemState :=
-  let base := BootstrapBuilder.empty
-    |>.withObject boundTid.toObjId (.tcb boundTcb)
-    |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
-        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), deadline := ⟨9⟩,
-        budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨remaining⟩ })
-    |>.withObject scDonor.toObjId (.schedContext { SchedContext.empty scDonor with
-        budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨3⟩ })
-    |>.build
-  enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
-
-/-- §2.12 the yield-to onto a starved target already queued on a remote core
-(`schedContextYieldTo`'s already-queued branch): the transfer refills the
-target, which makes its queued thread one core 1's chooser may pick, so core 1
-is flagged.  Before the coverage relation read budget eligibility this branch
-returned the transferred state unflagged and core 1 kept its stale decision.
-A yield-to onto a target that still had budget gains no candidacy and flags
-nothing. -/
-private def runYieldToChecks : IO Unit := do
-  IO.println "--- §2.12 schedContextYieldTo onto a queued starved target ---"
-  let pre := stYield 0
-  let post := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo pre scDonor scBound
-  assertBool "yield-to refilled the target"
-    ((post.getSchedContext? scBound).map (·.budgetRemaining.val) == some 3)
-  assertBool "yield-to left the target's thread queued on core 1 (no second placement)"
-    (post.queuedOn core1 boundTid)
-  expectRaised "yield-to onto a starved target queued on a remote core" pre post core0 [core1]
-  let preFunded := stYield 1
-  let postFunded := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo preFunded scDonor scBound
-  expectRaised "yield-to onto a target that still had budget" preFunded postFunded core0 []
-
 /-- §2.8 the bound unbind (`cancelBoundDonationOnCore`): the thread's effective
 deadline stops being the context's, and the thread is queued on another core,
 so that core is flagged. -/
@@ -588,7 +552,6 @@ def runReschedulePendingChecks : IO Unit := do
   runDomainMoveChecks
   runDomainEvictionChecks
   runLocalDomainEvictionChecks
-  runYieldToChecks
   runClearChecks
   runMonotonicityChecks
   IO.println "=== reschedule_pending_suite: all checks passed ==="

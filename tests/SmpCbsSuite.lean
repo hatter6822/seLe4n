@@ -125,9 +125,9 @@ open SeLe4n.Testing
 #check @perCoreCbsInvariant
 #check @default_perCoreCbsInvariant
 #check @replenishOnCore_preserves_perCoreCbsInvariant
-#check @consumeBudget_preserves_le_budget
-#check @applyRefill_preserves_le_budget
-#check @scheduleReplenishment_replenishments_bounded
+#check @SchedContext.chargeBudget_refillTotal
+#check @SchedContext.releaseReadyHead_refillTotal
+#check @SchedContext.chargeBudget_refillsFit
 
 -- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation:
 #check @migrateRunQueueOnAffinityChange
@@ -323,10 +323,10 @@ example (st : SystemState) (c : CoreId) (scId : SchedContextId)
     perCoreCbsInvariant (replenishOnCore st c scId) c :=
   replenishOnCore_preserves_perCoreCbsInvariant st c scId hInv hFuture hTarget
 
--- SM5.H.7: the CBS budget bound is maintained by replenishment (unconditional).
-example (sc : SchedContext) (refillAmount : Nat) :
-    (applyRefill sc refillAmount).budgetRemaining.val ≤ (applyRefill sc refillAmount).budget.val :=
-  applyRefill_preserves_le_budget sc refillAmount
+-- SM5.H.7, WS-ZA ZA6.4: a charge keeps the refill total (unconditional).
+example (sc : SchedContext) (start usage now : Nat) :
+    (sc.chargeBudget start usage now).refillTotal = sc.refillTotal :=
+  sc.chargeBudget_refillTotal start usage now
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.H.8 cross-core CBS scenarios
@@ -482,23 +482,21 @@ private def runCompositeScenarios : IO Unit := do
   assertBool "decodeAffinity (out of range) = .error .invalidArgument"
     (match decodeAffinity (numCores + 5) with | .error .invalidArgument => true | _ => false)
 
-/-- §3.4 SM5.H.7: the CBS budget bounds (`budgetRemaining ≤ budget`) hold under
-charge / refill, and the replenishment schedule stays bounded. -/
+/-- §3.4 SM5.H.7, WS-ZA ZA6.4: the refill accounting — a charge keeps the
+refill total (the budget is conserved), takes what ran off the head, and keeps
+the refills within `maxReplenishments`. -/
 private def runBudgetScenarios : IO Unit := do
-  IO.println "--- §3.4 SM5.H.7 CBS budget accounting ---"
-  -- consumeBudget never exceeds the budget ceiling.
-  assertBool "consumeBudget keeps budgetRemaining ≤ budget (50 → 49 ≤ 100)"
-    ((consumeBudget sc0 1).budgetRemaining.val ≤ (consumeBudget sc0 1).budget.val)
-  assertBool "consumeBudget decrements budgetRemaining (50 → 49)"
-    ((consumeBudget sc0 1).budgetRemaining.val == 49)
-  -- applyRefill caps at the budget ceiling.
-  assertBool "applyRefill caps budgetRemaining at budget (50 + 1000 capped to 100)"
-    ((applyRefill sc0 1000).budgetRemaining.val == 100)
-  assertBool "applyRefill keeps budgetRemaining ≤ budget"
-    ((applyRefill sc0 1000).budgetRemaining.val ≤ (applyRefill sc0 1000).budget.val)
-  -- scheduleReplenishment keeps the schedule within maxReplenishments.
-  assertBool "scheduleReplenishment keeps ≤ maxReplenishments entries"
-    ((scheduleReplenishment sc0 0 ⟨10⟩).replenishments.length ≤ maxReplenishments)
+  IO.println "--- §3.4 SM5.H.7 CBS refill accounting ---"
+  let charged := sc0.chargeBudget 0 1 1
+  assertBool "a one-tick charge keeps the refill total (50 → 50)"
+    (charged.refillTotal == sc0.refillTotal)
+  assertBool "a one-tick charge takes one unit off the head (50 → 49)"
+    (charged.budgetRemaining.val == 49)
+  assertBool "a one-tick charge keeps the refills within maxReplenishments"
+    (charged.refillSize ≤ maxReplenishments)
+  let spent := sc0.chargeBudget 0 50 50
+  assertBool "a whole-head charge leaves the head used up and the total kept"
+    (spent.budgetRemaining.val == 0 && spent.refillTotal == sc0.refillTotal)
 
 /-- §3.5 SM5.H.5: the affinity-consistency invariant's *decidable* witnesses on the
 default (boot) and the CBS fixture states. -/
@@ -1184,8 +1182,8 @@ private def runSchedContextFootprintScenarios : IO Unit := do
     (hasReplenishWriteLock fpConfigure core1)
   assertBool "C3b-ii: ...and its run segment names the SAME core, so one lock covers both effects"
     (hasRunQueueWriteLock fpConfigure core1
-      && decide (schedContextConfigureReplenishCores stCbs scId0.toObjId
-          = schedContextWriteSet stCbs scId0.toObjId))
+      && (schedContextConfigureReplenishCores stCbs scId0.toObjId).all
+          (fun c => (schedContextWriteSet stCbs scId0.toObjId).contains c))
   match SchedContextOps.schedContextConfigure scId0Valid 100 1000 5 0 0 stCbs with
   | .error e =>
       assertBool s!"C3b-ii: the configure must succeed (got {repr e})" false
@@ -1198,14 +1196,16 @@ private def runSchedContextFootprintScenarios : IO Unit := do
   let fpBind := schedLockSet_schedContextBindOnCore stLifecycle tidLifecycle
   assertBool "C3b-ii: the bind declares the bound thread's home core's run-queue write lock"
     (hasRunQueueWriteLock fpBind (determineTargetCore stLifecycle tidLifecycle))
-  assertBool "C3b-ii: ...and NO replenish lock on any core"
-    (allCores.all (fun c => !hasReplenishWriteLock fpBind c))
+  let bindHome := determineTargetCore stLifecycle tidLifecycle
+  assertBool "C3b-ii: ...and the replenish lock of that home core alone (WS-ZA ZA6.4 postpone)"
+    (hasReplenishWriteLock fpBind bindHome
+      && allCores.all (fun c => c == bindHome || !hasReplenishWriteLock fpBind c))
   match SchedContextOps.schedContextBind scIdLifecycleValid tidLifecycleValid stLifecycle with
   | .error e =>
       assertBool s!"C3b-ii: the bind must succeed (got {repr e})" false
   | .ok ((), stBd) =>
-      assertBool "C3b-ii: ...and the live bind writes no replenish queue on any core"
-        (allCores.all (fun c =>
+      assertBool "C3b-ii: ...and the live bind writes no replenish queue outside the home core"
+        (allCores.all (fun c => c == bindHome ||
           (stBd.releaseEntriesOn c)
             == (stLifecycle.releaseEntriesOn c)))
 

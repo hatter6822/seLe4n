@@ -163,6 +163,7 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
+    (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
@@ -194,8 +195,19 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
+    -- The argument spill writes registers alone: no current slot, no queue.
+    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+        ).scheduler.currentOnCore e = some t → ∀ c,
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).queuedOn c t =
+          false := by
+      intro t ht c
+      rw [Platform.FFI.writeFfiRegistersToTcb_scheduler] at ht
+      rw [Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb,
+        (SystemState.RunCoresAgree.updateTcb (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+          hInv fun _ => rfl).queuedOn c t]
+      exact hAwayCur t ht c
     exact stepCoversInv_trans hW.stepCovers
-      (syscallEntryChecked_stepCovers hW.2.2 hB' hPl hE)
+      (syscallEntryChecked_stepCovers hW.2.2 hB' hPl hAwayW hE)
 
 /-! ### The committing seams
 
@@ -226,12 +238,13 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
+    (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) := by
-  obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced h
+  obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced hAwayCur h
   exact stepCovers_trans hD
     (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv)
 
@@ -289,6 +302,7 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
+    (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
     (hId : ∀ oid (tcb : TCB), (PriorityInheritance.settleResidencyOnCore
@@ -306,6 +320,6 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
   dsimp only
   rw [← rescheduleSgisFromFlags_eq_sgisOfRaised]
   exact computeCrossCoreSgis_mem_flags_of_covers hId
-    (syscallDispatchCrossCoreStep_stepCovers hInv hB hPlaced h).1 hMem
+    (syscallDispatchCrossCoreStep_stepCovers hInv hB hPlaced hAwayCur h).1 hMem
 
 end SeLe4n.Kernel

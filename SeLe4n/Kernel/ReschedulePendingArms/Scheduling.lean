@@ -630,27 +630,68 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
             refine ⟨hNoReader fun t tcb hT hB => ?_, hInvSt⟩
             have := hReader t tcb hT hB; rw [hBT] at this; cases this
           · rename_i boundTid hBT
+            -- The bound context is re-placed on its thread's home core first: a
+            -- release-queue edit, which moves no key input, run queue, current
+            -- slot or flag, so every frame fact above reads through it.
+            have hAP := SystemState.releasePlace_agree stStored (determineTargetCore st boundTid)
+              ⟨vScId.val.toNat⟩
+            have hWP := SystemState.releasePlace_releaseOnlyWrite stStored
+              (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩
+            have hInvSt := SystemState.releasePlace_objects_invExt stStored
+              (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩ hInvSt
+            have hGetSt : ∀ t, (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩).getTcb? t = st.getTcb? t := fun t => (hAP.getTcb? t).trans (hGetSt t)
+            have hRqSt : ∀ c t, (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩).queuedOn c t = st.queuedOn c t := fun c t => by
+              unfold SystemState.queuedOn; rw [hGetSt]
+            have hCurSt : ∀ c, (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
+              fun c => (hWP.currentOnCore c).trans (hCurSt c)
+            have hFlSt : ∀ c, (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩).scheduler.reschedulePendingOnCore c =
+                st.scheduler.reschedulePendingOnCore c := fun c => by
+              rw [hWP.2]; exact hFlSt c
+            have hKeySt : ∀ t, (∀ tcb, st.getTcb? t = some tcb →
+                tcb.schedContextBinding.scId? ≠ some (SchedContextId.ofObjId vScId.val)) →
+                schedKeyView (stStored.releasePlace (determineTargetCore st boundTid)
+                  ⟨vScId.val.toNat⟩) t = schedKeyView st t := fun t hNo =>
+              (schedKeyView_eq_of_keyInputsEq (keyInputsEq_of_objectsAgreeOffReleaseLinks hAP) t).trans
+                (hKeySt t hNo)
+            have hEligSt : ∀ t, (∀ tcb, st.getTcb? t = some tcb →
+                tcb.schedContextBinding.scId? ≠ some (SchedContextId.ofObjId vScId.val)) →
+                budgetEligibleView (stStored.releasePlace (determineTargetCore st boundTid)
+                  ⟨vScId.val.toNat⟩) t = budgetEligibleView st t := fun t hNo =>
+              (budgetEligibleView_eq_of_keyInputsEq
+                (keyInputsEq_of_objectsAgreeOffReleaseLinks hAP) t).trans (hEligSt t hNo)
+            generalize stStored.releasePlace (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩ = stP
+              at hStep hInvSt hGetSt hRqSt hCurSt hFlSt hKeySt hEligSt
+            have hNoReader : (∀ t tcb, st.getTcb? t = some tcb →
+                tcb.schedContextBinding.scId? ≠ some (SchedContextId.ofObjId vScId.val)) →
+                stepCovers e st stP := fun hNo =>
+              ⟨reschedulePendingCovers_of_frame (fun t => hKeySt t (hNo t)) (fun t => hEligSt t (hNo t))
+                (fun c _ => Or.inr ⟨fun t ht => by rwa [hRqSt] at ht, hCurSt c⟩),
+               fun c _ h => by rw [hFlSt]; exact h⟩
             split at hStep
             · rename_i boundTcb hBound _
               cases hStep
-              have hFr := schedContextConfigureBoundPropagate_keyWriteSlotFrame stStored ⟨vScId.val.toNat⟩ boundTid
+              have hFr := schedContextConfigureBoundPropagate_keyWriteSlotFrame stP ⟨vScId.val.toNat⟩ boundTid
                 boundTcb hBound priority domain hInvSt
               have hPre : st.getTcb? boundTid = some boundTcb := by rw [← hGetSt]; exact hBound
               -- The key hook over the candidacy hook, read against the pre-state's
               -- TCB, is the pre-state hook: it flags the bound thread's key change
               -- and the budget the reset hands it.
               rw [markKeyChangeFor_markCandidacyGainFor_eq (mid :=
-                SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                SchedContextOps.schedContextConfigureBoundPropagate stP ⟨vScId.val.toNat⟩
                   boundTid boundTcb hBound priority domain) hPre]
               have hNoOther : ∀ t, t ≠ boundTid → ∀ tcb, st.getTcb? t = some tcb →
                   tcb.schedContextBinding.scId? ≠ some (SchedContextId.ofObjId vScId.val) := by
                 intro t ht tcb hT hB
                 have := hReader t tcb hT hB; rw [hBT] at this; exact ht (Option.some.inj this).symm
               have hX : stepCovers e st (markKeyChangeFrom st
-                    (SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                    (SchedContextOps.schedContextConfigureBoundPropagate stP ⟨vScId.val.toNat⟩
                       boundTid boundTcb hBound priority domain) boundTid) ∧
                   (markKeyChangeFrom st
-                    (SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                    (SchedContextOps.schedContextConfigureBoundPropagate stP ⟨vScId.val.toNat⟩
                       boundTid boundTcb hBound priority domain) boundTid).objects.invExt := by
                 refine ⟨⟨markKeyChangeFrom_covers (fun t ht => ⟨?_, ?_⟩)
                     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩),
@@ -665,7 +706,7 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
                 · rw [markKeyChangeFrom_objects]; exact hFr.2.2.2.2
               -- The bound thread's chain re-walk: the identity, or one walk.
               generalize markKeyChangeFrom st
-                  (SchedContextOps.schedContextConfigureBoundPropagate stStored ⟨vScId.val.toNat⟩
+                  (SchedContextOps.schedContextConfigureBoundPropagate stP ⟨vScId.val.toNat⟩
                     boundTid boundTcb hBound priority domain) boundTid = X at hX ⊢
               have hRe := PriorityInheritance.repropagateFromWaiter_preserves
                 (fun s => stepCovers e X s ∧ s.objects.invExt) X boundTid
@@ -711,76 +752,81 @@ theorem sliceExpireOnCore_stepCovers (e : CoreId) (st : SystemState)
       SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
 
 /-- **The budget spend and its key hook cover.**  The spend rewrites the
-SchedContext's budget and deadline — a key input only the caller reads
-(`schedContextBindingBidirectional`) — refills on core `e` and queues the
-caller there.  The caller's key hook flags any core its moved key stales. -/
+SchedContext's refills and deadline — key inputs only the caller reads
+(`schedContextBindingBidirectional`) — re-places it on core `e`'s release queue
+and queues the caller there.  The caller's key hook flags any core its moved key
+stales.  The charge's release of a ready refill may make the caller
+budget-eligible (WS-ZA ZA6.4, `SchedContext.chargeBudget`), which stales no
+remote core that does not hold it: `hAway`, the caller on no unflagged remote
+queue, which the placement invariant gives the thread current on `e`. -/
 theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (scId : SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
-    (ticks : Nat) (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
-    (hBindId : tcb.schedContextBinding.scId? = some scId) :
-    stepCovers e st (markKeyChangeFor (spendBudgetOnCore st e tid scId sc hSc ticks) tid
+    (start ticks : Nat) (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hBindId : tcb.schedContextBinding.scId? = some scId)
+    (hAway : ∀ c, c ≠ e → st.scheduler.reschedulePendingOnCore c = false →
+      st.queuedOn c tid = false) :
+    stepCovers e st (markKeyChangeFor (spendBudgetOnCore st e tid scId sc hSc start ticks) tid
       (effectiveSchedParams st tcb)) ∧
-    (markKeyChangeFor (spendBudgetOnCore st e tid scId sc hSc ticks) tid
+    (markKeyChangeFor (spendBudgetOnCore st e tid scId sc hSc start ticks) tid
       (effectiveSchedParams st tcb)).objects.invExt := by
   have hTRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   have hScRaw := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
   have hAdm := SystemState.rewriteAdmissible_schedContext hSc
-    (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks)
-      st.machine.timer ⟨sc.budgetRemaining.val⟩) st.machine.timer true)
+    (cbsUpdateDeadline (sc.chargeBudget start ticks st.machine.timer) st.machine.timer true)
   have hAt := SystemState.rewriteObject_objects_self st scId.toObjId _ hAdm hObjInv
   have hNe : ∀ oid, scId.toObjId ≠ oid →
       (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = st.objects[oid]? :=
     fun oid h => SystemState.rewriteObject_objects_ne st scId.toObjId oid _ hAdm h hObjInv
+  -- A thread other than the caller does not read the context.
+  have hNoRead : ∀ t, t ≠ tid → ∀ tcb', st.getTcb? t = some tcb' →
+      tcb'.schedContextBinding.scId? ≠ some scId := by
+    intro t ht tcb' hT' hB'
+    obtain ⟨sc1, h1, hb1⟩ := hBi t tcb' scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hB'
+    obtain ⟨sc2, h2, hb2⟩ := hBi tid tcb scId hTRaw hBindId
+    rw [hScRaw] at h1 h2
+    cases h1; cases h2
+    rw [hb1] at hb2
+    exact ht (Option.some.inj hb2)
+  have hRep : ∀ c t, (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) e scId).queuedOn c t =
+      (st.rewriteObject scId.toObjId _ hAdm).queuedOn c t := fun c t =>
+    SystemState.queuedOn_of_getTcb? (replenishOnCore_getTcb? _ e scId t) c
+  have hRq : ∀ c, c ≠ e → ∀ t, (SystemState.runEnqueueOnCore (replenishOnCore
+      (st.rewriteObject scId.toObjId _ hAdm) e scId) e tid
+      (resolveInsertPriority (st.rewriteObject scId.toObjId _ hAdm) tid sc)).queuedOn c t = true →
+      st.queuedOn c t = true := by
+    intro c hc t ht
+    have := SystemState.runEnqueueOnCore_queuedOn_imp_ne hc ht
+    rwa [hRep, (SystemState.RunCoresAgree.rewriteObject_not_tcb hAdm hObjInv
+      (fun t h => by rw [hScRaw] at h; cases h) (fun t h => by cases h)).queuedOn] at this
   unfold spendBudgetOnCore
   dsimp only
-  refine ⟨⟨markKeyChangeFor_covers hTcb (fun t ht => ?_)
-    (candidacyNotGained_of_budget_mono (fun y => ?_) (fun s hs => ?_))
-    (fun c hc => Or.inr ⟨?_, ?_⟩),
+  refine ⟨⟨markKeyChangeFor_covers hTcb (fun t ht => ?_) (fun c hc hFl t ht => ?_)
+    (fun c hc => Or.inr ⟨hRq c hc, ?_⟩),
     fun c hc hp => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ ?_⟩, ?_⟩
   · rw [schedKeyView_of_objectsAgreeOffRunLinks
       (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _) t,
       schedKeyView_eq_of_keyInputsEq
         (keyInputsEq_of_objectsAgreeOffReleaseLinks (replenishOnCore_agree _ e scId)) t]
-    refine schedKeyView_eq_of_scSlotWrite (fun oid h => ?_) hScRaw hAt
-      (fun tcb' hT' hB' => ht ?_)
-    · show keyInputsOf (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = _
+    refine schedKeyView_eq_of_scSlotWrite (fun oid h => ?_) hScRaw hAt (hNoRead t ht)
+    show keyInputsOf (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = _
+    rw [hNe oid (Ne.symm h)]
+  · -- The caller is on no unflagged remote queue; any other thread's eligibility
+    -- reads a context the spend does not write.
+    by_cases hT : t = tid
+    · subst hT
+      have hFl0 : st.scheduler.reschedulePendingOnCore c = false := by
+        simpa [SystemState.rewriteObject_scheduler] using hFl
+      exact absurd (hRq c hc t ht) (by rw [hAway c hc hFl0]; simp)
+    · apply candidacyNotGained_of_eq
+      rw [budgetEligibleView_of_objectsAgreeOffRunLinks
+        (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _) t,
+        budgetEligibleView_eq_of_keyInputsEq
+          (keyInputsEq_of_objectsAgreeOffReleaseLinks (replenishOnCore_agree _ e scId)) t]
+      refine (budgetEligibleView_eq_of_scSlotWrite (fun oid h => ?_) hScRaw hAt
+        (hNoRead t hT)).symm
+      show keyInputsOf (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = _
       rw [hNe oid (Ne.symm h)]
-    · obtain ⟨sc1, h1, hb1⟩ := hBi t tcb' scId
-        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hB'
-      obtain ⟨sc2, h2, hb2⟩ := hBi tid tcb scId hTRaw hBindId
-      rw [hScRaw] at h1 h2
-      cases h1; cases h2
-      rw [hb1] at hb2
-      exact Option.some.inj hb2
-  · -- The spend rewrites a context, no binding.
-    rw [TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.schedContextBinding
-      ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _).getTcb? y),
-      replenishOnCore_getTcb?]
-    exact congrArg (Option.map TCB.schedContextBinding)
-      (SystemState.rewriteObject_schedContext_getTcb? st _ _ hAdm hObjInv y)
-  · -- The spend only consumes budget: no context's budget goes from empty to
-    -- positive.
-    rw [(SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _).getSchedContext?,
-      (replenishOnCore_agree _ e scId).getSchedContext?_map _ (fun _ => rfl) s] at hs
-    change ((st.rewriteObject scId.toObjId _ hAdm).getSchedContext? s).map _ = _ at hs
-    by_cases hS : s = scId
-    · subst hS
-      rw [SystemState.rewriteObject_schedContext_getSchedContext?_self st s _ hAdm hObjInv] at hs
-      rw [hSc]
-      simp only [Option.map_some, Option.some.injEq, cbsUpdateDeadline, scheduleReplenishment,
-        consumeBudget, Budget.decrement, Budget.isPositive, decide_eq_true_eq] at hs ⊢
-      split at hs <;> simp_all <;> omega
-    · rw [SystemState.rewriteObject_getSchedContext?_ne st _ _ hAdm hObjInv s
-        (fun h => hS (SchedContextId.toObjId_injective _ _ h).symm)] at hs
-      exact hs
-  · intro t ht
-    have := SystemState.runEnqueueOnCore_queuedOn_imp_ne hc ht
-    have hRep : ∀ c t, (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) e scId).queuedOn c t =
-        (st.rewriteObject scId.toObjId _ hAdm).queuedOn c t := fun c t =>
-      SystemState.queuedOn_of_getTcb? (replenishOnCore_getTcb? _ e scId t) c
-    rwa [hRep, (SystemState.RunCoresAgree.rewriteObject_not_tcb hAdm hObjInv
-      (fun t h => by rw [hScRaw] at h; cases h) (fun t h => by cases h)).queuedOn] at this
   · simp [replenishOnCore_currentOnCore, SystemState.rewriteObject_scheduler]
   · simpa [SystemState.rewriteObject_scheduler] using hp
   · rw [markKeyChangeFor_objects]
@@ -793,6 +839,7 @@ theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
 theorem yieldChargeOnCore_stepCovers (st st' : SystemState) (e : CoreId)
     (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hAway : ∀ c, c ≠ e → st.queuedOn c tid = false)
     (h : yieldChargeOnCore st e tid = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold yieldChargeOnCore at h
@@ -807,31 +854,34 @@ theorem yieldChargeOnCore_stepCovers (st st' : SystemState) (e : CoreId)
       split at h
       · rename_i sc hSc _
         cases h
-        exact spendBudgetKeyHook_stepCovers st e tid tcb hTcb scId sc hSc _ hObjInv hBi
-          (by rw [hBind]; rfl)
+        exact spendBudgetKeyHook_stepCovers st e tid tcb hTcb scId sc hSc _ _ hObjInv hBi
+          (by rw [hBind]; rfl) (fun c hc _ => hAway c hc)
       · cases h
     · rename_i scId owner hBind
       split at h
       · rename_i sc hSc _
         cases h
-        exact spendBudgetKeyHook_stepCovers st e tid tcb hTcb scId sc hSc _ hObjInv hBi
-          (by rw [hBind]; rfl)
+        exact spendBudgetKeyHook_stepCovers st e tid tcb hTcb scId sc hSc _ _ hObjInv hBi
+          (by rw [hBind]; rfl) (fun c hc _ => hAway c hc)
       · cases h
 
-/-- **The yield covers**: its charge covers and the scheduling point on core
-`e` covers (`scheduleEffectiveOnCore_stepCovers`). -/
+/-- **The yield covers**: its charge covers — the caller, current on `e`, on no
+queue (`hAwayCur`) — and the scheduling point on core `e` covers
+(`scheduleEffectiveOnCore_stepCovers`). -/
 theorem yieldOnCore_stepCovers (st st' : SystemState) (e : CoreId)
     (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : yieldOnCore st e = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold yieldOnCore at h
   split at h
   · cases h
-  · rename_i tid _
+  · rename_i tid hCurTid
     split at h
     · cases h
     · rename_i st1 hCharge
-      obtain ⟨h1, hInv1⟩ := yieldChargeOnCore_stepCovers st st1 e tid hObjInv hBi hCharge
+      obtain ⟨h1, hInv1⟩ := yieldChargeOnCore_stepCovers st st1 e tid hObjInv hBi
+        (fun c _ => hAwayCur tid hCurTid c) hCharge
       exact ⟨stepCovers_trans h1 (scheduleEffectiveOnCore_stepCovers e st1 _ hInv1 h),
         scheduleEffectiveOnCore_preserves_objects_invExt st1 e _ hInv1 h⟩
 
@@ -921,11 +971,15 @@ theorem bindQueueStage_slots (S : SystemState) (home : CoreId) (tid : SeLe4n.Thr
     · exact runEnqueueMark_slots _ _ c _ _
     · exact Or.inr ⟨fun t ht => ht, rfl⟩
 
-/-- **Bind covers.**  The context write keeps its deadline, the thread's binding
-and priority write ends in the key hook, and the one placement that grows a
-queue — placing a parked thread — flags that core. -/
+/-- **Bind covers.**  The context write — its head released by now (WS-ZA
+ZA6.4) — is read by no thread but the one it binds, since it named none
+(`schedContextBindingBidirectional`); the thread's binding and priority write
+ends in the key hook; the one placement that grows a queue — placing a parked
+thread — flags that core; and the context's re-placement on the home core's
+release queue is a release-queue edit. -/
 theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
     (vTid : SeLe4n.ValidThreadId) (e : CoreId) (hObjInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st)
     (hStep : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold SchedContextOps.schedContextBind at hStep
@@ -933,6 +987,7 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
   · rename_i sc hSc _
     split at hStep
     · contradiction
+    rename_i hFree
     split at hStep
     · contradiction
     split at hStep
@@ -947,14 +1002,32 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
         have hScRaw : st.objects[vScId.val]? = some (.schedContext sc) :=
           (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
         have hAdm : st.rewriteAdmissible vScId.val (.schedContext
-            { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none }) :=
+            { sc.releaseReadyHead st.machine.timer with
+              boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val)
+              donationOrigin := none }) :=
           SystemState.rewriteAdmissible_schedContext hSc _
         have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st _ _ hAdm hObjInv
-        have hK1 : keyInputsEq st (st.rewriteObject vScId.val _ hAdm) :=
-          keyInputsEq_rewriteObject hAdm hObjInv (by rw [hScRaw]; rfl)
+        -- No thread's binding names the context: it named no bound thread.
+        have hNo : ∀ t, ∀ tcb', st.getTcb? t = some tcb' →
+            tcb'.schedContextBinding.scId? ≠ some (SchedContextId.ofObjId vScId.val) := by
+          intro t tcb' hT' hB'
+          obtain ⟨sc', hSc', hBT⟩ := hBi t tcb' _ ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hB'
+          rw [show (SchedContextId.ofObjId vScId.val).toObjId = vScId.val from rfl, hScRaw] at hSc'
+          cases hSc'
+          rw [hBT] at hFree; exact hFree rfl
+        have hAt1 := SystemState.rewriteObject_objects_self st vScId.val _ hAdm hObjInv
+        have hFr1 : ∀ oid, oid ≠ (SchedContextId.ofObjId vScId.val).toObjId →
+            keyInputsOf (st.rewriteObject vScId.val _ hAdm).objects[oid]? = keyInputsOf st.objects[oid]? :=
+          fun oid h => by
+            rw [SystemState.rewriteObject_objects_ne st vScId.val oid _ hAdm (Ne.symm h) hObjInv]
+        have hKey1 : ∀ t, schedKeyView (st.rewriteObject vScId.val _ hAdm) t = schedKeyView st t :=
+          fun t => schedKeyView_eq_of_scSlotWrite hFr1 hScRaw hAt1 (hNo t)
+        have hElig1 : ∀ t, budgetEligibleView (st.rewriteObject vScId.val _ hAdm) t =
+            budgetEligibleView st t :=
+          fun t => budgetEligibleView_eq_of_scSlotWrite hFr1 hScRaw hAt1 (hNo t)
         have hT1 : (st.rewriteObject vScId.val _ hAdm).getTcb? vTid.val = some tcb :=
           (SystemState.rewriteObject_schedContext_getTcb? st _ _ hAdm hObjInv _).trans hT
-        have hK2 := keyInputsEq.trans_keyInputsEqExcept hK1
+        have hK2 :=
           (keyInputsEqExcept_updateTcb (f := fun t => { t with
             scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)),
             priority := sc.priority }) hInv1 (by rw [hT1]; rfl))
@@ -971,23 +1044,34 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
           SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.updateTcb hInv1 fun _ => rfl)
             (SystemState.RunCoresAgree.rewriteObject_not_tcb hAdm hObjInv
               (fun t h => by rw [hScRaw] at h; cases h) (fun t h => by cases h))
-        refine ⟨stepCovers_markKeyChangeFor hT (hK2.trans_offRunLinks ?_ ?_) ?_ ?_ ?_, ?_⟩
-        · intro x
+        refine ⟨stepCovers_trans ⟨markKeyChangeFor_covers hT (fun t ht => ?_)
+          (fun _ _ _ t _ => ?_) ?_, ?_⟩ (releasePlace_stepCovers e _ _ _), ?_⟩
+        · refine (schedKeyView_eq_of_keyInputsEqExcept (hK2.trans_offRunLinks (fun x => ?_)
+            (fun y hy => bindQueueStage_runCoreCode_ne _ _ _ _ _ y hy)) ht).trans (hKey1 t)
           split
           · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
           · split
             · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
             · rfl
-        · intro y hy
-          exact bindQueueStage_runCoreCode_ne _ _ _ _ _ y hy
-        · -- An unbound thread is budget-eligible already: a bind gains no candidacy.
-          intro _
-          simp only [budgetEligibleView, hT, Option.map_some, hasSufficientBudget, hUnb]
+        · by_cases ht : t = vTid.val
+          · -- An unbound thread is budget-eligible already: a bind gains no candidacy.
+            subst ht
+            intro _
+            simp only [budgetEligibleView, hT, Option.map_some, hasSufficientBudget, hUnb]
+          · refine candidacyNotGained_of_eq ((budgetEligibleView_eq_of_keyInputsEqExcept
+              (hK2.trans_offRunLinks (fun x => ?_)
+                (fun y hy => bindQueueStage_runCoreCode_ne _ _ _ _ _ y hy)) ht).trans (hElig1 t)).symm
+            split
+            · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+            · split
+              · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+              · rfl
         · intro c hc
           exact slots_bridge hA2
             (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler])
             (bindQueueStage_slots _ _ _ _ _ c)
         · intro c _ hF
+          apply markKeyChangeFor_reschedulePendingOnCore_mono
           split
           · rename_i hMem
             obtain ⟨_, _, hFl⟩ := runRequeue_slots _ _ c _ _ hMem
@@ -997,7 +1081,8 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
             · exact runEnqueueMark_flag_mono _ _ _ _ _
                 (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF)
             · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF
-        · rw [markKeyChangeFor_objects]
+        · apply SystemState.releasePlace_objects_invExt
+          rw [markKeyChangeFor_objects]
           split
           · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv2
           · split

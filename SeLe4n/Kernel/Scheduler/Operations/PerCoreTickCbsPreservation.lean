@@ -127,13 +127,11 @@ theorem processOneReplenishmentOnCore_releaseStateAgree (st : SystemState) (ec :
           (cbsUpdateDeadline x now true).releaseCoreCode = x.releaseCoreCode ∧
           (cbsUpdateDeadline x now true).releaseAt = x.releaseAt := by
         intro x; unfold cbsUpdateDeadline; split <;> exact ⟨rfl, rfl, rfl⟩
-      obtain ⟨h1, h2, h3⟩ := hD (processReplenishments sc now)
+      obtain ⟨h1, h2, h3⟩ := hD (sc.releaseReadyHead now)
       rw [h1, h2, h3]
-      unfold processReplenishments
-      split
-      simp only [SchedContext.withReplenishments_releaseNextCode,
-        SchedContext.withReplenishments_releaseCoreCode, SchedContext.withReplenishments_releaseAt]
-      exact ⟨rfl, rfl, rfl⟩)
+      obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
+        SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)
+      exact ⟨h4, h5, h6⟩)
   refine SystemState.releaseStateAgree.trans ⟨?_, ?_⟩ hR
   · exact SystemState.ReleaseLinksAgree.of_getSchedContext?
       (processOneReplenishmentOnCore_getSchedContext? st ec scId now hInv)
@@ -571,13 +569,6 @@ theorem timerTickOnCorePrepared_preserves_replenishmentPipelineOrderOnCore
   simp only [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore] at hMem
   exact hPipe c' pair hMem
 
-/-- WS-ZA ZA6.3: the context of the thread current on core `c` holds no refill
-released by now — the budget tick's re-placement of it then lands after now.
-The drain leaves this true of every context it releases. -/
-def currentRefillsFutureOnCore (s : SystemState) (c : CoreId) : Prop :=
-  ∀ tid tcb scId sc, s.scheduler.currentOnCore c = some tid → s.getTcb? tid = some tcb →
-    tcb.schedContextBinding.scId? = some scId → s.getSchedContext? scId = some sc →
-    ∀ t, sc.releaseKey? = some t → t > s.machine.timer
 
 /-- `timerTickOnCore_of`, with the budget arm told that its thread is current. -/
 theorem timerTickOnCore_of_current {P : SystemState → Prop} (st : SystemState) (c : CoreId)
@@ -597,12 +588,12 @@ theorem timerTickOnCore_of_current {P : SystemState → Prop} (st : SystemState)
     exact rescheduleIfPendingOnCore_of _ c h3 (hR _ h3)
 
 /-- The exhausted arm's re-placement keeps pipeline order: the charged context's
-place is its earliest pending refill, which is in the future when its refills
-were (`spentSchedContext_releaseKey_gt`). -/
+place is its first pending refill while its head is used up, which the charge's
+release at now leaves in the future (`spentSchedContext_releaseKey_gt`, WS-ZA
+ZA6.4). -/
 private theorem exhausted_pipeline (st : SystemState) (c c' : CoreId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
-    (hInv : st.objects.invExt) (hPipe : replenishmentPipelineOrderOnCore st c')
-    (hP : 0 < sc.period.val) (hOld : ∀ t, sc.releaseKey? = some t → t > st.machine.timer) :
+    (hInv : st.objects.invExt) (hPipe : replenishmentPipelineOrderOnCore st c') :
     replenishmentPipelineOrderOnCore (replenishOnCore (st.rewriteObject scId.toObjId
       (.schedContext (spentSchedContext sc st.machine.timer))
       (SystemState.rewriteAdmissible_schedContext hSc _)) c scId) c' := by
@@ -619,20 +610,17 @@ private theorem exhausted_pipeline (st : SystemState) (c c' : CoreId)
         some (spentSchedContext sc st.machine.timer) := by
       unfold SystemState.getSchedContext?; rw [SystemState.rewriteObject_objects_self _ _ _ _ hInv]
     rw [e] at hsc'; cases hsc'
-    exact spentSchedContext_releaseKey_gt sc _ hP hOld t hk
+    exact spentSchedContext_releaseKey_gt sc _ t hk
   · exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne _ c c' scId hcc hPR
 
 /-- WS-SM SM5.I: the per-core budget tick preserves pipeline-order — the unchanged
-branches frame the queue, and the bound-exhausted branch's insert (`now + period`)
-is future because the SchedContext's `period` is positive. -/
+branches frame the queue, and the bound-exhausted branch's placement is in the
+future because the charge releases every pending refill due by now (WS-ZA ZA6.4). -/
 theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (st' : SystemState) (b : Bool) (c' : CoreId)
     (hPipe : replenishmentPipelineOrderOnCore st c')
     (hInv : st.objects.invExt)
-    (hPeriod : ∀ scId sc, st.getSchedContext? scId = some sc → 0 < sc.period.val)
-    (hFuture : ∀ scId sc, tcb.schedContextBinding.scId? = some scId →
-      st.getSchedContext? scId = some sc → ∀ t, sc.releaseKey? = some t → t > st.machine.timer)
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) :
     replenishmentPipelineOrderOnCore st' c' := by
@@ -648,13 +636,12 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
   | .bound scId =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
-          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          by_cases hBud : sc.tickExhausts (st.machine.timer - 1) = true
           · have hQ := timerTickBudgetOnCore_bound_exhausted_replenish_eq
               st c tid tcb scId sc st' b hB hSc hBud hStep c'
             refine pipeline_frame_of_queue_timer_eq _ st' c' hQ
               (by rw [hM, replenishOnCore_machine]; rfl) ?_
-            exact exhausted_pipeline st c c' scId sc hSc hInv hPipe (hPeriod scId sc hSc)
-              (hFuture scId sc (by rw [hB]; rfl) hSc)
+            exact exhausted_pipeline st c c' scId sc hSc hInv hPipe
           · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
@@ -667,13 +654,12 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
   | .donated scId owner =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
-          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          by_cases hBud : sc.tickExhausts (st.machine.timer - 1) = true
           · have hQ := timerTickBudgetOnCore_donated_exhausted_replenish_eq
               st c tid tcb scId owner sc st' b hB hSc hBud hStep c'
             refine pipeline_frame_of_queue_timer_eq _ st' c' hQ
               (by rw [hM, replenishOnCore_machine]; rfl) ?_
-            exact exhausted_pipeline st c c' scId sc hSc hInv hPipe (hPeriod scId sc hSc)
-              (hFuture scId sc (by rw [hB]; rfl) hSc)
+            exact exhausted_pipeline st c c' scId sc hSc hInv hPipe
           · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
@@ -686,15 +672,12 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
 
 /-- WS-SM SM5.I (pipeline-order, headline): the **live per-core timer tick**
 preserves replenishment pipeline-order on every core, given the pre-tick
-pipeline-order and that every SchedContext (on the prepared state, which the budget
-tick runs against) has a positive `period` — so the budget insert `now + period` is
-strictly future, and `popDue` only removes entries. -/
+pipeline-order: the drain only removes due entries and re-places the contexts it
+releases after now, and the budget tick's placement is after now, since every
+charge ends in the release at now (WS-ZA ZA6.4). -/
 theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemState)
     (c : CoreId) (c' : CoreId) (hInv : st.objects.invExt)
-    (hPipe : ∀ c'', replenishmentPipelineOrderOnCore st c'')
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
-      0 < sc.period.val)
-    (hFuture : currentRefillsFutureOnCore (timerTickOnCorePrepared st c) c) :
+    (hPipe : ∀ c'', replenishmentPipelineOrderOnCore st c'') :
     replenishmentPipelineOrderOnCore (timerTickOnCore st c) c' := by
   have hPrep := timerTickOnCorePrepared_preserves_replenishmentPipelineOrderOnCore st c hInv hPipe
   have hInvP : (timerTickOnCorePrepared st c).objects.invExt :=
@@ -709,9 +692,10 @@ theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemS
   · intro s hs c''
     exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ c'' (hs c'')
       (scheduleEffectiveOnCore_eq_state s c)
-  · intro tid tcb hTcb st3 b hCur hb c''
+  · intro tid tcb hTcb st3 b _ hb c''
     exact timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c''
-      (hPrep c'') hInvP hPeriod (fun scId sc hB hSc => hFuture tid tcb scId sc hCur hTcb hB hSc) hb
+      (hPrep c'') hInvP hb
+
 
 -- (The `perCoreCbsInvariant` aggregate is `timerTickOnCore_preserves_perCoreCbsInvariant_discharged`
 -- in `PerCoreTickCbsAffinity`, which derives the affinity-consistency conjunct; WS-ZA
@@ -984,14 +968,12 @@ strict pipeline order on its own queue at the current clock — even when the
 input state holds entries due at exactly `machine.timer` (the post-advance
 window on the boot core, or a remote advance observed by this core's tick).
 The prepared phase `popDue`-drains everything `≤ timer` (strict remainder
-under sortedness); the budget phase's only insert is strictly future
-(`hPeriod`); the dispatch phase frames queue and timer. -/
+under sortedness); the budget phase's only placement is strictly future (the
+charge releases every pending refill due by now, WS-ZA ZA6.4); the dispatch
+phase frames queue and timer. -/
 theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
     (st : SystemState) (c : CoreId) (hRef : st.releaseQueueRefined) (hInv : st.objects.invExt)
-    (hValid : replenishQueueValidOnCore st c)
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
-      0 < sc.period.val)
-    (hFuture : currentRefillsFutureOnCore (timerTickOnCorePrepared st c) c) :
+    (hValid : replenishQueueValidOnCore st c) :
     replenishmentPipelineOrderOnCore (timerTickOnCore st c) c := by
   have hPrepSelf : replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c) c := by
     intro pair hMem
@@ -1016,9 +998,9 @@ theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
   · intro s hs
     exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ c hs
       (scheduleEffectiveOnCore_eq_state s c)
-  · intro tid tcb hTcb st3 b hCur hb
+  · intro tid tcb hTcb st3 b _ hb
     exact timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c
-      hPrepSelf hInvP hPeriod (fun scId sc hB hSc => hFuture tid tcb scId sc hCur hTcb hB hSc) hb
+      hPrepSelf hInvP hb
 
 /-- WS-SM (PR #880 round 4, the drain guarantee): a core's **committed run-loop
 step** re-establishes strict pipeline order on its own queue — the release
@@ -1030,13 +1012,7 @@ bounds. -/
 theorem perCoreTimerTickStep_establishes_replenishmentPipelineOrderOnCore_self
     (st : SystemState) (coreId : UInt64) (h : coreId.toNat < numCores)
     (hRef : st.releaseQueueRefined) (hInv : st.objects.invExt)
-    (hValid : replenishQueueValidOnCore st ⟨coreId.toNat, h⟩)
-    (hPeriod : ∀ scId sc,
-      (timerTickOnCorePrepared (tickClockedState st ⟨coreId.toNat, h⟩)
-          ⟨coreId.toNat, h⟩).getSchedContext? scId = some sc → 0 < sc.period.val)
-    (hFuture : currentRefillsFutureOnCore
-      (timerTickOnCorePrepared (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩)
-      ⟨coreId.toNat, h⟩) :
+    (hValid : replenishQueueValidOnCore st ⟨coreId.toNat, h⟩) :
     replenishmentPipelineOrderOnCore (perCoreTimerTickStep st coreId).1 ⟨coreId.toNat, h⟩ := by
   rw [perCoreTimerTickStep_valid_core st coreId h]
   have hA : SystemState.releaseStateAgree (tickClockedState st ⟨coreId.toNat, h⟩) st :=
@@ -1046,7 +1022,8 @@ theorem perCoreTimerTickStep_establishes_replenishmentPipelineOrderOnCore_self
     unfold replenishQueueValidOnCore; rw [hA.replenishQueueOnCore]; exact hValid
   have hSelf := timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
     (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ (hA.refined hRef)
-    (by rw [tickClockedState_objects]; exact hInv) hValid' hPeriod hFuture
+    (by rw [tickClockedState_objects]; exact hInv) hValid'
+
   exact scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore _
     ⟨coreId.toNat, h⟩ _ ⟨coreId.toNat, h⟩ hSelf (scheduleDomainOnCore_eq_state _ _)
 

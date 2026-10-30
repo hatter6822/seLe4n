@@ -102,6 +102,14 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.runRequeueOnCore_of_queued
   SystemState.RunQueueStage.runRequeueOnCore _ _ _ _
     ((SystemState.queuedOn_eq_runLinkOn _ _ _).symm.trans h)
 
+/-- The re-placement writes the contexts' release fields and the release
+queues alone. -/
+theorem releasePlace_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
+    (s : SeLe4n.SchedContextId) : RunQueueStage st (st.releasePlace c s) :=
+  .of_releaseOnlyWrite (SystemState.releasePlace_releaseOnlyWrite st c s)
+    (SystemState.releasePlace_agree st c s) (SystemState.releasePlace_objects_invExt st c s)
+    (fun _ h => SystemState.releasePlace_refined h c s)
+
 /-- The bind writes the context's bound thread, the thread's binding and
 priority, re-buckets or places the thread through the link-writing queue
 operations, and then the thread index and reschedule flags. -/
@@ -124,8 +132,11 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
             · split at h
               · have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
                   (SchedContextId.ofObjId vScId.val) sc).mp hSc
+                obtain ⟨-, -, -, -, -, -, -, -, -, hRel1, hRel2, hRel3⟩ :=
+                  SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased st.machine.timer)
                 simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
                 subst h
+                refine RunQueueStage.trans ?_ (releasePlace_runQueueStage _ _ _)
                 refine RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
                 split
                 · rename_i hMem
@@ -136,7 +147,10 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                       (SystemState.objStateMono_nonTcb
                         (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
                       (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+                      (hR := fun _ => by
+                        rw [show st.objects[vScId.val]? = _ from hScRaw]
+                        simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
+                          hRel2, hRel3])
                 · split
                   · rename_i hPlace
                     refine RunQueueStage.trans ?_
@@ -149,14 +163,20 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                       (SystemState.objStateMono_nonTcb
                         (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
                       (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+                      (hR := fun _ => by
+                        rw [show st.objects[vScId.val]? = _ from hScRaw]
+                        simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
+                          hRel2, hRel3])
                   · refine RunQueueStage.trans ?_ (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
                     exact RunQueueStage.insert rfl rfl rfl
                       (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
                       (SystemState.objStateMono_nonTcb
                         (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
                       (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+                      (hR := fun _ => by
+                        rw [show st.objects[vScId.val]? = _ from hScRaw]
+                        simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
+                          hRel2, hRel3])
               all_goals cases h
         · cases h
   · cases h
@@ -252,7 +272,8 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
                   change SystemState.objReleaseLinkOn (SchedContextOps.purgeReplenishment st
                     ⟨vScId.val.toNat⟩).objects[vScId.val]? c = none at hN
                   rw [hScP] at hN
-                  rw [hN]; simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn]))
+                  rw [hN]; simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn,
+                    SchedContextOps.configuredSchedContext_releaseCoreCode]))
           split at h
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2]; exact hS1
@@ -260,13 +281,13 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
             · rename_i boundTcb hBound _
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
-              exact hS1.trans
+              exact (hS1.trans (releasePlace_runQueueStage _ _ _)).trans
                 ((((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
                   (markCandidacyGainFor_runQueueStage _ _ _)).trans
                   (markKeyChangeFor_runQueueStage _ _ _)).trans
                   (PriorityInheritance.repropagateFromWaiter_runQueueStage _ _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2]; exact hS1
+              rw [← h.2]; exact hS1.trans (releasePlace_runQueueStage _ _ _)
       · exact absurd h (by simp)
 
 /-- The preemption saves the outgoing thread's registers (a TCB rewrite keeping
@@ -1184,14 +1205,6 @@ theorem scheduleEffectiveOnCore_runQueueDispatchStage {st st' : SystemState}
       · cases h
     · cases h
 
-/-- The re-placement writes the contexts' release fields and the release
-queues alone. -/
-theorem releasePlace_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
-    (s : SeLe4n.SchedContextId) : RunQueueStage st (st.releasePlace c s) :=
-  .of_releaseOnlyWrite (SystemState.releasePlace_releaseOnlyWrite st c s)
-    (SystemState.releasePlace_agree st c s) (SystemState.releasePlace_objects_invExt st c s)
-    (fun _ h => SystemState.releasePlace_refined h c s)
-
 /-- A SchedContext rewritten through its witnessed lookup. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_schedContext
     {st : SystemState} {scId : SeLe4n.SchedContextId} {sc sc' : SchedContext}
@@ -1296,14 +1309,15 @@ theorem sliceExpireOnCore_runQueueWindowStage (st : SystemState) (c : Concurrenc
 insert and the guarded enqueue of core `c`'s current thread. -/
 theorem spendBudgetOnCore_runQueueWindowStage (st : SystemState) (c : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
-    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
+    (hSc : st.getSchedContext? scId = some sc) (start ticks : Nat)
     (hCur : st.scheduler.currentOnCore c = some tid) :
-    SystemState.RunQueueWindowStage (.preempt c) st (spendBudgetOnCore st c tid scId sc hSc ticks) := by
+    SystemState.RunQueueWindowStage (.preempt c) st
+      (spendBudgetOnCore st c tid scId sc hSc start ticks) := by
   unfold spendBudgetOnCore
   refine SystemState.RunQueueWindowStage.trans (RunQueueStage.window ?_ (.preempt c))
     (SystemState.RunQueueWindowStage.requeueCurrent _ c tid _
       (by simpa [replenishOnCore_currentOnCore, SystemState.rewriteObject_scheduler] using hCur))
-  obtain ⟨h1, h2, h3⟩ := spendRecord_release sc ticks st.machine.timer
+  obtain ⟨h1, h2, h3⟩ := spendRecord_release sc start ticks st.machine.timer
   exact (RunQueueStage.rewriteObject_schedContext hSc
     (SystemState.rewriteAdmissible_schedContext hSc _)
     (fun _ => by simp only [SchedContext.releaseLinkOn, h1, h2, h3])).trans
@@ -1317,11 +1331,12 @@ theorem budgetExhaustOnCore_runQueueWindowStage (st : SystemState) (c : Concurre
     (hCur : st.scheduler.currentOnCore c = some tid) :
     SystemState.RunQueueWindowStage (.preempt c) st
       (budgetExhaustOnCore st c tid preKey scId sc hSc ticks) :=
-  (((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc ticks hCur).trans
+  (((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc _ ticks hCur).trans
     ((markKeyChangeFor_runQueueStage _ tid preKey).window (.preempt c))).trans
     (timeoutBlockedThreads_runQueueWindowStage (fun _ h => by cases h) _ scId c)).trans
     ((RunQueueStage.of_frame
-      (st := (timeoutBlockedThreads (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks)
+      (st := (timeoutBlockedThreads (markKeyChangeFor
+        (spendBudgetOnCore st c tid scId sc hSc (st.machine.timer - ticks) ticks)
         tid preKey) scId c).1)
       (st' := (budgetExhaustOnCore st c tid preKey scId sc hSc ticks)) rfl
       (by show (markRescheduleTargets _ _).runQueue = _; rw [markRescheduleTargets_eq]; rfl)
@@ -1349,10 +1364,13 @@ theorem timerTickBudgetOnCore_runQueueWindowStage {st : SystemState} {c : Concur
   all_goals
     split
     · rename_i sc hSc _
+      dsimp only
       split
       · exact budgetExhaustOnCore_runQueueWindowStage st c tid _ _ sc hSc 1 hCur
       · exact (RunQueueStage.rewriteObject_schedContext hSc
-          (SystemState.rewriteAdmissible_schedContext hSc _)).window (.preempt c)
+          (SystemState.rewriteAdmissible_schedContext hSc _)
+          (SchedContext.releaseLinkOn_of_refillsErased
+            (sc.chargeBudget_refillsErased _ _ _))).window (.preempt c)
     · exact (RunQueueStage.of_frame rfl rfl rfl).window (.preempt c)
 
 /-- A charge that does not preempt requeues nothing: a stage. -/
@@ -1371,11 +1389,13 @@ theorem timerTickBudgetOnCore_runQueueStage_of_not_preempted {st : SystemState}
   all_goals
     split at h
     · rename_i sc hSc _
+      dsimp only at h
       split at h
       · simp only [Prod.mk.injEq] at h; exact absurd h.2 (by decide)
       · simp only [Prod.mk.injEq] at h; rw [← h.1]
         exact RunQueueStage.rewriteObject_schedContext hSc
           (SystemState.rewriteAdmissible_schedContext hSc _)
+          (SchedContext.releaseLinkOn_of_refillsErased (sc.chargeBudget_refillsErased _ _ _))
     · simp only [Prod.mk.injEq] at h; rw [← h.1]
       exact RunQueueStage.of_frame rfl rfl rfl
 
@@ -1395,7 +1415,7 @@ theorem yieldChargeOnCore_runQueueWindowStage {st st' : SystemState} {c : Concur
       split at h
       · rename_i sc hSc _
         rw [Except.ok.injEq] at h; subst h
-        exact (spendBudgetOnCore_runQueueWindowStage st c tid _ sc hSc _ hCur).trans
+        exact (spendBudgetOnCore_runQueueWindowStage st c tid _ sc hSc _ _ hCur).trans
           ((markKeyChangeFor_runQueueStage _ _ _).window (.preempt c))
       · cases h
 

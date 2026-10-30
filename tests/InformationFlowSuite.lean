@@ -115,15 +115,11 @@ def test_schedContext_param_validation_rejects_invariant_violations
   | .ok () => return true
   | .error _ => return false
 
-/-- AK6-B (SC-M01): `applyConfigureParamsFull` produces the EXACT
-post-state shape `schedContextConfigure` writes into the store:
-  • `budget` and `period` reflect the new params,
-  • `budgetRemaining` is reset to the new budget,
-  • `replenishments` becomes a single-entry list `[{ amount := budget,
-    eligibleAt := timer + period }]`.
-The audit's M-01 finding was that an earlier helper `applyConfigureParams`
-left `replenishments` untouched, diverging from the actual operation. -/
-def test_applyConfigureParamsFull_post_state_shape : IO Bool := do
+/-- AK6-B (SC-M01), WS-ZA ZA6.4: `configuredSchedContext` — the record
+`schedContextConfigure` stores — writes the new parameters and, for a context
+not in use, seL4-MCS's `refill_new`: the whole budget in one head refill
+released now, no pending refill. -/
+def test_configuredSchedContext_post_state_shape : IO Bool := do
   let scInit : SeLe4n.Kernel.SchedContext :=
     { scId := SeLe4n.SchedContextId.ofNat 1
       budget := { val := 50 }
@@ -135,31 +131,22 @@ def test_applyConfigureParamsFull_post_state_shape : IO Bool := do
       boundThreadCode := 0
       isActive := false
       refillHeadPresent := true, refillHeadAmount := 50, refillHeadEligibleAt := 0 }
-  let post := SeLe4n.Kernel.SchedContextOps.applyConfigureParamsFull
-                scInit (budget := 100) (period := 1000)
-                (priority := 5) (deadline := 0) (domain := 0) (timer := 7)
-  -- Verify each updated field
+  let post := SeLe4n.Kernel.SchedContextOps.configuredSchedContext
+                (budget := 100) (period := 1000) (priority := 5) (deadline := 0)
+                (domain := 0) (timer := 7) (keep := false) scInit
   if post.budget.val ≠ 100 then return false
   if post.period.val ≠ 1000 then return false
   if post.priority.val ≠ 5 then return false
   if post.budgetRemaining.val ≠ 100 then return false
-  -- Verify replenishment list shape: exactly one entry, amount=budget,
-  -- eligibleAt = timer + period.
-  if post.replenishments.length ≠ 1 then return false
-  match post.replenishments.head? with
-  | none => return false
-  | some r =>
-      return r.amount.val == 100 && r.eligibleAt == 1007
+  if post.periodStart ≠ 7 then return false
+  return !post.refillHeadPresent && post.refillTotal == 100
 
-/-- AK6-C (SC-M02): `schedContextConfigure` schedules the fresh
-replenishment at `timer + period`, NOT `timer`.  An eligibility of
-`timer` would let a reconfigured SC immediately consume *both* the freshly
-written `budgetRemaining := budget` AND a same-tick replenishment of
-`amount := budget`, doubling its CBS bandwidth in a single period.
-
-The test exercises `applyConfigureParamsFull` with `timer = 100` and
-`period = 1000` and asserts the resulting `eligibleAt = 1100`. -/
-def test_schedContext_configure_replenishment_eligibility : IO Bool := do
+/-- AK6-C (SC-M02), WS-ZA ZA6.4: a reconfigure holds the new budget exactly
+once in its refills, whether the context keeps its head (`refill_update`, a
+context in use) or starts afresh (`refill_new`).  The earlier configure reset
+`budgetRemaining := budget` AND scheduled a refill of `budget`: two budgets in
+the first period, repeatable by reconfiguring. -/
+def test_schedContext_configure_budget_held_once : IO Bool := do
   let scInit : SeLe4n.Kernel.SchedContext :=
     { scId := SeLe4n.SchedContextId.ofNat 2
       budget := { val := 50 }
@@ -167,45 +154,19 @@ def test_schedContext_configure_replenishment_eligibility : IO Bool := do
       priority := { val := 0 }
       deadline := { val := 0 }
       domain := ⟨0⟩
-      budgetRemaining := { val := 50 }
-      boundThreadCode := 0
-      isActive := false
-      refillTailCount := 0 }
-  let post := SeLe4n.Kernel.SchedContextOps.applyConfigureParamsFull
-                scInit (budget := 100) (period := 1000)
-                (priority := 0) (deadline := 0) (domain := 0) (timer := 100)
-  match post.replenishments.head? with
-  | none => return false
-  | some r => return r.eligibleAt == 1100
-
-/-- AK6-D (SC-M03): `schedContextYieldTo` self-yield (`fromScId == targetScId`)
-returns the state unchanged.  Without this guard the naive implementation
-would zero the source budget then re-write the target with an
-implementation-dependent winner, leaking HashMap-ordering nondeterminism
-into a security-relevant transition. -/
-def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
-  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 3
-  let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId
-      budget := { val := 100 }
-      period := { val := 1000 }
-      priority := { val := 0 }
-      deadline := { val := 0 }
-      domain := ⟨0⟩
-      budgetRemaining := { val := 60 }
+      budgetRemaining := { val := 30 }
+      periodStart := 90
       boundThreadCode := 0
       isActive := true
-      refillTailCount := 0 }
-  let st : SystemState := { (default : SystemState) with
-    objects := (default : SystemState).objects.insert scId.toObjId
-      (.schedContext sc) }
-  let st' := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo st scId scId
-  -- The state must be byte-identical (no field changes).
-  -- We compare the two SchedContexts via their lookup result.
-  match st'.objects[scId.toObjId]? with
-  | some (.schedContext sc') =>
-      return sc'.budgetRemaining.val == 60 && sc'.isActive == true
-  | _ => return false
+      refillHeadPresent := true, refillHeadAmount := 20, refillHeadEligibleAt := 590 }
+  let cfg := fun keep => SeLe4n.Kernel.SchedContextOps.configuredSchedContext
+                (budget := 100) (period := 1000) (priority := 0) (deadline := 0)
+                (domain := 0) (timer := 100) (keep := keep) scInit
+  let kept := cfg true
+  let fresh := cfg false
+  -- The kept head is the 30 left of the old one, never the whole new budget.
+  return kept.refillTotal == 100 && fresh.refillTotal == 100 &&
+    kept.budgetRemaining.val == 30
 
 -- AN11-D audit-pass v2: the AK6-E / AK6-F theorems are documented at
 -- module scope via `#check` (compile-time naming-stability witness).  A
@@ -387,30 +348,39 @@ def test_defaultLabelingContext_runtime_rejection : IO Bool := do
   return SeLe4n.Kernel.isInsecureDefaultContext
            SeLe4n.Kernel.defaultLabelingContext
 
-/-- AK6-I (SC-M04): The tight CBS bandwidth bound formula
-`budget × ⌈window / period⌉` evaluates to the expected closed-form
-value for a representative SC configuration.  Sanity-check arithmetic
-that pins the bound's exact shape against silent migration. -/
-def test_cbs_bandwidth_bounded_tight_arithmetic : IO Bool := do
-  let budget := 100
-  let period := 1000
-  let window := 5000
-  -- ⌈5000/1000⌉ = 5, so 100 * 5 = 500.
-  return (budget * ((window + period - 1) / period)) == 500
+/-- AK6-I (SC-M04), WS-ZA ZA6.4: the sliding window on a concrete context.  A
+context of budget 100 and period 1000 that runs its whole head from time 0 is
+left no budget, and the 100 it ran is released one period after the head's
+release (seL4-MCS's `schedule_used`): no window of one period sees more than
+the budget (`refill_window_bound`). -/
+def test_refill_window_charge_releases_one_period_later : IO Bool := do
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := SeLe4n.SchedContextId.ofNat 4
+      budget := { val := 100 }
+      period := { val := 1000 }
+      priority := { val := 0 }
+      deadline := { val := 0 }
+      domain := ⟨0⟩
+      budgetRemaining := { val := 100 }
+      periodStart := 0
+      boundThreadCode := 0
+      isActive := true }
+  let spent := sc.chargeBudget 0 100 100
+  return spent.budgetRemaining.val == 0 && spent.releaseKey? == some 1000 &&
+    spent.refillTotal == 100
 
 /-- AN11-D dispatch table: maps each AK6 audit ID to the semantically-
 named test function.  The table is the canonical AK6 → semantics mapping;
 the audit ID appears nowhere else in the test bodies. -/
 def ak6Tests : List (String × IO Bool) :=
   [ ("AK6-A", test_schedContext_param_validation_rejects_invariant_violations)
-  , ("AK6-B", test_applyConfigureParamsFull_post_state_shape)
-  , ("AK6-C", test_schedContext_configure_replenishment_eligibility)
-  , ("AK6-D", test_schedContext_yield_self_returns_state_unchanged)
+  , ("AK6-B", test_configuredSchedContext_post_state_shape)
+  , ("AK6-C", test_schedContext_configure_budget_held_once)
   , ("AK6-E", test_niStepConstructorCoverage_witness_is_state_identity)
   , ("AK6-F", test_dispatchCapabilityOnly_projection_invariant)
   , ("AK6-G", test_projectKernelObject_strips_tcb_signals)
   , ("AK6-H", test_defaultLabelingContext_runtime_rejection)
-  , ("AK6-I", test_cbs_bandwidth_bounded_tight_arithmetic) ]
+  , ("AK6-I", test_refill_window_charge_releases_one_period_later) ]
 
 /-- AN11-D suite driver: walk `ak6Tests`, print `AK6-X PASS` or
 `AK6-X FAIL: <failure message>` for each row, and surface a
@@ -1756,20 +1726,12 @@ def runInformationFlowChecks : IO Unit := do
     IO.println "default labeling context runtime rejection verified"
 
   -- ======================================================================
-  -- AK6-I (SC-M04): cbs_bandwidth_bounded_tight arithmetic check
+  -- AK6-I (SC-M04), WS-ZA ZA6.4: the refill window on a concrete charge
   -- ======================================================================
   do
-    -- Runtime smoke check: verify the tight ceiling formula matches
-    -- expected values for a representative SC configuration.
-    -- budget = 100, period = 1000, window = 5000 → ⌈5000/1000⌉ = 5,
-    -- so tight bound = 100 * 5 = 500.
-    let budget := 100
-    let period := 1000
-    let window := 5000
-    let tight := budget * ((window + period - 1) / period)
-    expect "tight bound arithmetic (100 * ⌈5000/1000⌉ = 500)"
-      (tight = 500)
-    IO.println "CBS tight bandwidth bound arithmetic verified"
+    let ok ← test_refill_window_charge_releases_one_period_later
+    expect "a whole-head charge is released one period after the head" ok
+    IO.println "refill window charge verified"
 
   -- ======================================================================
   -- AN6-E.2 (IF-M02 / NI-L3): Four negative-case regression tests

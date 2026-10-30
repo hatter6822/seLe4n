@@ -701,6 +701,133 @@ with neither takes `refill_new`. -/
   else sc.refillNew nb now
 
 -- ============================================================================
+-- The refill operations write the refills alone
+-- ============================================================================
+
+/-- WS-ZA ZA6.4: a context with its refills erased — the head (`budgetRemaining`,
+`periodStart`, `isActive`) and the pending refills: every field the refill
+operations leave alone. -/
+@[inline] def SchedContext.refillsErased (sc : SchedContext) : SchedContext :=
+  { sc.pendingErased with budgetRemaining := ⟨0⟩, periodStart := 0, isActive := false }
+
+theorem SchedContext.refillsErased_of_pendingErased {sc sc' : SchedContext}
+    (h : sc'.pendingErased = sc.pendingErased) : sc'.refillsErased = sc.refillsErased := by
+  unfold SchedContext.refillsErased; rw [h]
+
+@[simp] theorem SchedContext.refillsErased_head (sc : SchedContext) (b : Budget) (t : Nat)
+    (a : Bool) :
+    ({ sc with budgetRemaining := b, periodStart := t, isActive := a } : SchedContext).refillsErased =
+      sc.refillsErased := rfl
+
+/-- The fields the refill operations leave alone, read through the erasure. -/
+theorem SchedContext.fields_of_refillsErased {sc sc' : SchedContext}
+    (h : sc'.refillsErased = sc.refillsErased) :
+    sc'.scId = sc.scId ∧ sc'.budget = sc.budget ∧ sc'.period = sc.period ∧
+      sc'.priority = sc.priority ∧ sc'.deadline = sc.deadline ∧ sc'.domain = sc.domain ∧
+      sc'.boundThreadCode = sc.boundThreadCode ∧ sc'.scReply = sc.scReply ∧
+      sc'.donationOrigin = sc.donationOrigin ∧
+      sc'.releaseNextCode = sc.releaseNextCode ∧ sc'.releaseCoreCode = sc.releaseCoreCode ∧
+      sc'.releaseAt = sc.releaseAt := by
+  have f : ∀ {α : Type} (g : SchedContext → α), (∀ s, g s.refillsErased = g s) →
+      g sc' = g sc := fun g hg => by rw [← hg sc', h, hg]
+  exact ⟨f (·.scId) (fun _ => rfl), f (·.budget) (fun _ => rfl), f (·.period) (fun _ => rfl),
+    f (·.priority) (fun _ => rfl), f (·.deadline) (fun _ => rfl), f (·.domain) (fun _ => rfl),
+    f (·.boundThreadCode) (fun _ => rfl), f (·.scReply) (fun _ => rfl),
+    f (·.donationOrigin) (fun _ => rfl),
+    f (·.releaseNextCode) (fun _ => rfl), f (·.releaseCoreCode) (fun _ => rfl),
+    f (·.releaseAt) (fun _ => rfl)⟩
+
+/-- The bound thread, read through the erasure. -/
+theorem SchedContext.boundThread_of_refillsErased {sc sc' : SchedContext}
+    (h : sc'.refillsErased = sc.refillsErased) : sc'.boundThread = sc.boundThread := by
+  unfold SchedContext.boundThread
+  rw [(SchedContext.fields_of_refillsErased h).2.2.2.2.2.2.1]
+
+theorem SchedContext.scheduleUsed_refillsErased (sc : SchedContext) (a t : Nat) :
+    (sc.scheduleUsed a t).refillsErased = sc.refillsErased :=
+  SchedContext.refillsErased_of_pendingErased (sc.scheduleUsed_pendingErased a t)
+
+theorem SchedContext.refillBudgetCheck_refillsErased (sc : SchedContext) (u : Nat) :
+    (sc.refillBudgetCheck u).refillsErased = sc.refillsErased := by
+  unfold SchedContext.refillBudgetCheck
+  dsimp only
+  split
+  · rfl
+  · split
+    · rw [SchedContext.scheduleUsed_refillsErased]; rfl
+    · rw [SchedContext.scheduleUsed_refillsErased]; rfl
+
+theorem SchedContext.releaseOne_refillsErased (sc : SchedContext) (now : Nat) :
+    (sc.releaseOne now).refillsErased = sc.refillsErased := by
+  unfold SchedContext.releaseOne
+  split
+  · show ({ sc.refillPop with budgetRemaining := _, periodStart := _, isActive := _ } :
+      SchedContext).refillsErased = _
+    rw [SchedContext.refillsErased_head]
+    exact SchedContext.refillsErased_of_pendingErased (sc' := sc.refillPop) sc.refillPop_pendingErased
+  · rfl
+
+theorem SchedContext.releaseReadyHead_refillsErased (sc : SchedContext) (now : Nat) :
+    (sc.releaseReadyHead now).refillsErased = sc.refillsErased :=
+  SchedContext.releaseReadyHeadN_induction (fun s => s.refillsErased = sc.refillsErased) now
+    (fun s h => (s.releaseOne_refillsErased now).trans h) _ sc rfl
+
+theorem SchedContext.mergeOverlapping_refillsErased :
+    ∀ (n : Nat) (sc : SchedContext),
+      (SchedContext.mergeOverlapping n sc).refillsErased = sc.refillsErased
+  | 0, _ => rfl
+  | n + 1, sc => by
+    unfold SchedContext.mergeOverlapping
+    split
+    · rw [SchedContext.mergeOverlapping_refillsErased n]
+      exact SchedContext.refillsErased_of_pendingErased (sc' := sc.refillPop) sc.refillPop_pendingErased
+    · rfl
+
+theorem SchedContext.refillUnblockCheck_refillsErased (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).refillsErased = sc.refillsErased := by
+  unfold SchedContext.refillUnblockCheck
+  split
+  · rw [SchedContext.mergeOverlapping_refillsErased]; rfl
+  · rfl
+
+/-- **The charge writes the refills alone.** -/
+theorem SchedContext.chargeBudget_refillsErased (sc : SchedContext) (start usage now : Nat) :
+    (sc.chargeBudget start usage now).refillsErased = sc.refillsErased := by
+  unfold SchedContext.chargeBudget
+  rw [SchedContext.releaseReadyHead_refillsErased, SchedContext.refillBudgetCheck_refillsErased,
+    SchedContext.refillUnblockCheck_refillsErased]
+
+theorem SchedContext.refillNew_refillsErased (sc : SchedContext) (budget now : Nat) :
+    (sc.refillNew budget now).refillsErased = sc.refillsErased := rfl
+
+theorem SchedContext.refillUpdateFrom_refillsErased (sc : SchedContext) (ha ht nb np now : Nat) :
+    (sc.refillUpdateFrom ha ht nb np now).refillsErased = sc.refillsErased := by
+  unfold SchedContext.refillUpdateFrom
+  split
+  · dsimp only
+    split
+    · rw [SchedContext.refillsErased_of_pendingErased (SchedContext.refillPush_pendingErased _ _ _)]
+      rfl
+    · rfl
+  · dsimp only
+    split
+    · rw [SchedContext.refillsErased_of_pendingErased (SchedContext.refillPush_pendingErased _ _ _),
+        SchedContext.refillsErased_of_pendingErased (SchedContext.refillPush_pendingErased _ _ _)]
+      rfl
+    · rw [SchedContext.refillsErased_of_pendingErased (SchedContext.refillPush_pendingErased _ _ _)]
+      rfl
+
+/-- **Configure's refills write the refills alone.** -/
+theorem SchedContext.refillUpdate_refillsErased (sc : SchedContext) (nb np now : Nat) :
+    (sc.refillUpdate nb np now).refillsErased = sc.refillsErased := by
+  unfold SchedContext.refillUpdate
+  split
+  · exact sc.refillUpdateFrom_refillsErased _ _ _ _ _
+  · split
+    · exact sc.refillUpdateFrom_refillsErased _ _ _ _ _
+    · exact sc.refillNew_refillsErased _ _
+
+-- ============================================================================
 -- Conservation: the head plus the pending refills is the budget
 -- ============================================================================
 
@@ -1497,6 +1624,87 @@ theorem refill_window_bound (sc : SchedContext) (es : List RefillEvent) (w c : N
     (hTot ▸ sc.tokensBefore_le_refillTotal _)
 
 -- ============================================================================
+-- The timer tick's charge
+-- ============================================================================
+
+/-- WS-ZA ZA6.4: whether the tick's charge of one unit run from `start` uses the
+head up: it holds at most the unit and `refill_unblock_check` merges no pending
+refill holding budget into it (seL4-MCS ends the timeslice when the charged
+head no longer holds the next unit, `refill_sufficient`).  Read off the
+context's fields, so no context is built to decide it. -/
+@[inline] def SchedContext.tickExhausts (sc : SchedContext) (start : Nat) : Bool :=
+  decide (sc.budgetRemaining.val ≤ 1) &&
+    !(decide (0 < sc.budgetRemaining.val) && decide (sc.periodStart ≤ start) &&
+      sc.refillHeadPresent && decide (sc.refillHeadEligibleAt ≤ start + sc.budgetRemaining.val) &&
+      decide (0 < sc.refillHeadAmount))
+
+/-- Nothing due, nothing released. -/
+theorem SchedContext.releaseReadyHead_of_not_due (sc : SchedContext) (now : Nat)
+    (h : sc.releaseDue now = false) : sc.releaseReadyHead now = sc := by
+  show SchedContext.releaseReadyHeadN 8 sc now = sc
+  unfold SchedContext.releaseReadyHeadN
+  rw [h]; rfl
+
+/-- A head holding budget is not released again. -/
+theorem SchedContext.releaseReadyHead_of_pos (sc : SchedContext) (now : Nat)
+    (h : 0 < sc.budgetRemaining.val) : sc.releaseReadyHead now = sc := by
+  have hd : sc.releaseDue now = false := by
+    cases e : sc.releaseDue now with
+    | false => rfl
+    | true => have := ((sc.releaseDue_iff now).mp e).1; omega
+  show SchedContext.releaseReadyHeadN 8 sc now = sc
+  unfold SchedContext.releaseReadyHeadN
+  rw [hd]; rfl
+
+/-- A charge less than the head leaves the rest of it. -/
+theorem SchedContext.refillBudgetCheck_partial (sc : SchedContext) (u : Nat)
+    (hu : 0 < u) (h : u < sc.budgetRemaining.val) :
+    (sc.refillBudgetCheck u).budgetRemaining.val = sc.budgetRemaining.val - u := by
+  unfold SchedContext.refillBudgetCheck
+  dsimp only
+  rw [if_neg (by omega), if_neg (by omega), (SchedContext.scheduleUsed_head _ _ _).1]
+
+/-- **A tick that does not exhaust charges a head holding budget.** -/
+theorem SchedContext.tickExhausts_false_pos (sc : SchedContext) (start : Nat)
+    (h : sc.tickExhausts start = false) : 0 < sc.budgetRemaining.val := by
+  unfold SchedContext.tickExhausts at h
+  by_cases hB : sc.budgetRemaining.val ≤ 1
+  · simp only [hB, decide_true, Bool.true_and, Bool.not_eq_false', Bool.and_eq_true,
+      decide_eq_true_eq] at h
+    exact h.1.1.1.1
+  · omega
+
+/-- **A tick that does not use the head up leaves it holding budget**: the
+context is not exhausted, so it is placed on no release queue. -/
+theorem SchedContext.chargeBudget_tick_pos (sc : SchedContext) (start now : Nat)
+    (h : sc.tickExhausts start = false) :
+    0 < (sc.chargeBudget start 1 now).budgetRemaining.val := by
+  have hu : 1 < (sc.refillUnblockCheck start).budgetRemaining.val := by
+    unfold SchedContext.tickExhausts at h
+    by_cases hB : sc.budgetRemaining.val ≤ 1
+    · simp only [hB, decide_true, Bool.true_and, Bool.not_eq_false', Bool.and_eq_true,
+        decide_eq_true_eq] at h
+      obtain ⟨⟨⟨⟨hB0, hT⟩, hP⟩, hE⟩, hA⟩ := h
+      unfold SchedContext.refillUnblockCheck
+      rw [if_pos ⟨hB0, hT⟩]
+      show 1 < (SchedContext.mergeOverlapping 8 { sc with periodStart := start }).budgetRemaining.val
+      unfold SchedContext.mergeOverlapping
+      rw [if_pos ⟨hP, hE⟩]
+      have := (SchedContext.mergeOverlapping_fields 7
+        { ({ sc with periodStart := start } : SchedContext).refillPop with
+          budgetRemaining := ⟨sc.budgetRemaining.val + sc.refillHeadAmount⟩ }).2.2.2
+      exact Nat.lt_of_lt_of_le (show 1 < sc.budgetRemaining.val + sc.refillHeadAmount by omega) this
+    · by_cases hc : 0 < sc.budgetRemaining.val ∧ sc.periodStart ≤ start
+      · exact Nat.lt_of_lt_of_le (by omega) (sc.refillUnblockCheck_head start hc.1 hc.2).2.2.2
+      · unfold SchedContext.refillUnblockCheck; rw [if_neg hc]; omega
+  unfold SchedContext.chargeBudget
+  rw [SchedContext.releaseReadyHead_of_pos _ _ (by
+    rw [SchedContext.refillBudgetCheck_partial _ 1 (by decide) hu]; omega),
+    SchedContext.refillBudgetCheck_partial _ 1 (by decide) hu]
+  omega
+
+
+-- ============================================================================
 -- Configure's refills
 -- ============================================================================
 
@@ -1612,6 +1820,36 @@ theorem cbsUpdateDeadline_refills (sc : SchedContext) (currentTime : Nat) (wasEx
       (cbsUpdateDeadline sc currentTime wasExhausted).period = sc.period ∧
       (cbsUpdateDeadline sc currentTime wasExhausted).boundThreadCode = sc.boundThreadCode := by
   unfold cbsUpdateDeadline; split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- WS-ZA ZA6.3/ZA6.4: the deadline rule after an operation that writes the
+refills alone writes none of the context's release-queue fields. -/
+theorem cbsUpdateDeadline_release_of_refillsErased {sc x : SchedContext}
+    (h : x.refillsErased = sc.refillsErased) (now : Nat) (b : Bool) :
+    (cbsUpdateDeadline x now b).releaseNextCode = sc.releaseNextCode ∧
+      (cbsUpdateDeadline x now b).releaseCoreCode = sc.releaseCoreCode ∧
+      (cbsUpdateDeadline x now b).releaseAt = sc.releaseAt := by
+  obtain ⟨h1, h2, h3⟩ := cbsUpdateDeadline_release x now b
+  obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ := SchedContext.fields_of_refillsErased h
+  exact ⟨h1.trans h4, h2.trans h5, h3.trans h6⟩
+
+/-- WS-ZA ZA6.3: the budget spend's record (the charge, then the deadline rule)
+writes none of the context's release-queue fields. -/
+theorem spendRecord_release (sc : SchedContext) (start ticks now : Nat) :
+    (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseNextCode =
+        sc.releaseNextCode ∧
+      (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseCoreCode =
+        sc.releaseCoreCode ∧
+      (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).releaseAt = sc.releaseAt :=
+  cbsUpdateDeadline_release_of_refillsErased (sc.chargeBudget_refillsErased start ticks now) now true
+
+/-- WS-ZA ZA6.3: the drain's refill record (the release, then the deadline rule)
+writes none of the context's release-queue fields. -/
+theorem refillRecord_release (sc : SchedContext) (now : Nat) :
+    (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseNextCode = sc.releaseNextCode ∧
+      (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseCoreCode =
+        sc.releaseCoreCode ∧
+      (cbsUpdateDeadline (sc.releaseReadyHead now) now true).releaseAt = sc.releaseAt :=
+  cbsUpdateDeadline_release_of_refillsErased (sc.releaseReadyHead_refillsErased now) now true
 
 -- ============================================================================
 -- Admission

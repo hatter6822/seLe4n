@@ -54,19 +54,19 @@ bundle: the SchedContext write keeps its `boundThread`, and the refill and the
 re-enqueue write no object a conjunct reads. -/
 theorem spendBudgetOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (scId : SchedContextId) (sc : SchedContext)
-    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
+    (hSc : st.getSchedContext? scId = some sc) (start ticks : Nat)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (spendBudgetOnCore st c tid scId sc hSc ticks) := by
+    ipcInvariantFull (spendBudgetOnCore st c tid scId sc hSc start ticks) := by
   have hPre := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
   have hAdm := SystemState.rewriteAdmissible_schedContext hSc
-    (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks) st.machine.timer
-      ⟨sc.budgetRemaining.val⟩) st.machine.timer true)
+    (cbsUpdateDeadline (sc.chargeBudget start ticks st.machine.timer) st.machine.timer true)
   have h1 : ipcInvariantFull (st.rewriteObject scId.toObjId _ hAdm) :=
     insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st scId sc _
       hObjInv hInv hPre (by
-        unfold cbsUpdateDeadline scheduleReplenishment consumeBudget
-        repeat' split
-        all_goals simp [SchedContext.boundThread])
+        unfold SchedContext.boundThread
+        rw [(cbsUpdateDeadline_refills _ _ _).2.2.2.2.2,
+          (SchedContext.fields_of_refillsErased
+            (sc.chargeBudget_refillsErased start ticks st.machine.timer)).2.2.2.2.2.2.1])
   unfold spendBudgetOnCore
   dsimp only
   have h2 : ipcInvariantFull (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) c scId) :=
@@ -148,9 +148,9 @@ theorem yieldChargeOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
       · rename_i sc hSc _
         cases hStep
         refine ⟨markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-            (spendBudgetOnCore_preserves_ipcInvariantFull st c tid _ sc hSc _ hObjInv hInv), ?_⟩
+            (spendBudgetOnCore_preserves_ipcInvariantFull st c tid _ sc hSc _ _ hObjInv hInv), ?_⟩
         rw [markKeyChangeFor_objects]
-        exact spendBudgetOnCore_objects_invExt st c tid _ sc hSc _ hObjInv
+        exact spendBudgetOnCore_objects_invExt st c tid _ sc hSc _ _ hObjInv
       · cases hStep
 
 /-- **The yield syscall preserves `ipcInvariantFull`.** -/
