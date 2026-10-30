@@ -406,82 +406,39 @@ own core's.
 Every arm is a composition of transitions that either frame every replenish queue
 or write core `c`'s slot; the `hne` hypothesis discharges the latter. -/
 theorem timerTickOnCore_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
-    (res : SystemState × List (CoreId × SgiKind)) (c' : CoreId) (hne : c ≠ c')
-    (hTick : timerTickOnCore st c = .ok res) :
-    res.1.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
-  rw [timerTickOnCore_eq_prepared] at hTick
+    (c' : CoreId) (hne : c ≠ c') :
+    (timerTickOnCore st c).scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
   -- the prepared state — the diagnostic clear composed with the drain — frames `c'`
-  have hPrep : (timerTickOnCorePrepared st c).1.scheduler.replenishQueueOnCore c'
+  have hPrep : (timerTickOnCorePrepared st c).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
     simp only [timerTickOnCorePrepared]
     rw [processReplenishmentsDueOnCore_replenishQueueOnCore_ne _ c _ c' hne]
     simp [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore]
-  split at hTick
-  · -- idle core: either the local-wake reschedule, or the prepared state verbatim
-    split at hTick
-    · split at hTick
-      · simp at hTick
-      · rename_i st2 hSgi
-        simp only [Except.ok.injEq] at hTick
-        subst hTick
-        rw [show ((st2, (timerTickOnCorePrepared st c).2.1) :
-          SystemState × List (CoreId × SgiKind)).1 = st2 from rfl,
-          handleRescheduleSgiOnCore_replenishQueueOnCore _ c st2 c' hSgi, hPrep]
-    · simp only [Except.ok.injEq] at hTick
-      subst hTick
-      exact hPrep
-  · -- a current thread: the budget charge, then at most one re-dispatch
-    split at hTick
-    · simp at hTick
-    · rename_i st3 preempted timeoutSgis hBudget
-      obtain ⟨tcb, hTcb, hBudget⟩ := timerTickChargeCurrentOnCore_ok hBudget
-      have hSt3 : st3.scheduler.replenishQueueOnCore c'
-          = st.scheduler.replenishQueueOnCore c' := by
-        rw [timerTickBudgetOnCore_replenishQueueOnCore_ne _ c _ tcb st3 preempted c' hne
-          hBudget, hPrep]
-      split at hTick
-      · split at hTick
-        · simp at hTick
-        · rename_i st4 hSched
-          simp only [Except.ok.injEq] at hTick
-          subst hTick
-          rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
-            SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
-            scheduleEffectiveOnCore_replenishQueueOnCore st3 c st4 c' hSched, hSt3]
-      · split at hTick
-        · split at hTick
-          · simp at hTick
-          · rename_i st4 hSgi
-            simp only [Except.ok.injEq] at hTick
-            subst hTick
-            rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
-              SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
-              handleRescheduleSgiOnCore_replenishQueueOnCore st3 c st4 c' hSgi, hSt3]
-        · simp only [Except.ok.injEq] at hTick
-          subst hTick
-          exact hSt3
+  refine timerTickOnCore_of
+    (P := fun s => s.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c')
+    st c hPrep ?_ ?_ ?_
+  · intro s hs
+    rw [handleRescheduleSgiOnCore_replenishQueueOnCore s c _ c'
+      (handleRescheduleSgiOnCore_eq_state s c)]
+    exact hs
+  · intro s hs
+    rw [scheduleEffectiveOnCore_replenishQueueOnCore s c _ c' (scheduleEffectiveOnCore_eq_state s c)]
+    exact hs
+  · intro tid tcb hTcb st3 b hb
+    rw [timerTickBudgetOnCore_replenishQueueOnCore_ne _ c _ tcb st3 b c' hne hb, hPrep]
 
 /-- **WS-RR RR7.39 (frame)**: the run-loop step writes no replenish queue but its
-own core's — the tick's frame carried through the fail-closed core decode and the
-domain transition. -/
+own core's — the tick's frame carried through the core decode and the domain
+transition. -/
 theorem perCoreTimerTickStep_replenishQueueOnCore_ne (st : SystemState) (coreId : UInt64)
     (c' : CoreId) (h : coreId.toNat < numCores)
     (hne : (⟨coreId.toNat, h⟩ : CoreId) ≠ c') :
     (perCoreTimerTickStep st coreId).1.scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
-  unfold perCoreTimerTickStep
-  rw [dif_pos h]
-  cases hTick : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ with
-  | error e => rfl
-  | ok res =>
-    simp only
-    cases hDom : scheduleDomainOnCore res.1 ⟨coreId.toNat, h⟩ with
-    | error e => rfl
-    | ok st2 =>
-      simp only
-      rw [scheduleDomainOnCore_replenishQueueOnCore res.1 _ st2 c' hDom,
-        timerTickOnCore_replenishQueueOnCore_ne _ _ res c' hne hTick,
-        tickClockedState_scheduler]
+  rw [perCoreTimerTickStep_valid_core st coreId h]
+  show (scheduleDomainOnCoreState _ _).scheduler.replenishQueueOnCore c' = _
+  rw [scheduleDomainOnCore_replenishQueueOnCore _ _ _ c' (scheduleDomainOnCore_eq_state _ _),
+    timerTickOnCore_replenishQueueOnCore_ne _ _ c' hne, tickClockedState_scheduler]
 
 /-- **WS-RR RR7.39 (the payoff for the timer seam)**: the verified tick step's
 writes are inside the footprint the entry declares.
@@ -540,7 +497,7 @@ acquire the undeclared arm never performed — is gone with the acquire.
 Inlined (WS-ZA ZA6.1), with `BracketSpec.run`, so the entry runs the step's own
 application and the record is never built at runtime. -/
 @[inline] def timerTickBracket (coreId : UInt64) :
-    BracketSpec (List (CoreId × SgiKind) × Bool) where
+    BracketSpec (PerCoreFlags × Bool) where
   declared := declaredLockSetForTimerTick coreId
   step := fun s => perCoreTimerTickStepWithClockAdvance s coreId
   inv := fun _ => True

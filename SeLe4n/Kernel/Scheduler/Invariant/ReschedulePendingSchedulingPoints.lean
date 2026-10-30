@@ -53,6 +53,24 @@ theorem preemptCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
             (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_tcb h _) hInv
               (by rw [hO]; rfl))
             (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _)
+  · unfold preemptCurrentOnCore
+    cases hC : st.scheduler.currentOnCore e with
+    | none => exact fun _ => rfl
+    | some prevTid =>
+      simp only []
+      by_cases hEq : (prevTid == incoming) = true
+      · simp only [hEq, if_true]; exact fun _ => trivial
+      · simp only [hEq, Bool.false_eq_true, if_false]
+        cases hW : st.getTcbWitnessed? prevTid with
+        | none => exact fun _ => rfl
+        | some w =>
+          obtain ⟨prevTcb, h⟩ := w
+          have hO : st.objects[prevTid.toObjId]? = some (.tcb prevTcb) :=
+            (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp h
+          exact budgetEligibleView_of_keyInputsEq_offRunLinks
+            (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_tcb h _) hInv
+              (by rw [hO]; rfl))
+            (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _)
   · intro c hc t ht; exact preemptCurrentOnCore_queuedOn_ne st e incoming hInv c (Ne.symm hc) t ht
   · intro c _; exact preemptCurrentOnCore_currentOnCore st e incoming c
   · intro c _ hp
@@ -69,12 +87,13 @@ theorem preemptCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
 scheduler, keeps the object store's key inputs and every flag, covers. -/
 theorem stepCovers_of_local_slots {e : CoreId} {pre post : SystemState}
     (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t)
+    (hElig : ∀ t, budgetEligibleView post t = budgetEligibleView pre t)
     (hRq : ∀ c, c ≠ e → ∀ t, post.queuedOn c t = true → pre.queuedOn c t = true)
     (hSched : ∀ c, c ≠ e →
       post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c ∧
       post.scheduler.reschedulePendingOnCore c = pre.scheduler.reschedulePendingOnCore c) :
     stepCovers e pre post :=
-  stepCovers_of_frame hKeys hRq (fun c hc => (hSched c hc).1)
+  stepCovers_of_frame hKeys hElig hRq (fun c hc => (hSched c hc).1)
     (fun c hc hp => by rw [(hSched c hc).2]; exact hp)
 
 /-- A step whose object store is a removal's queues nothing new on any core. -/
@@ -111,8 +130,11 @@ theorem switchToThreadOnCore_stepCovers (e : CoreId) (st st' : SystemState)
     · injection h with h
       subst h
       refine stepCovers_trans (preemptCurrentOnCore_stepCovers e st tid hInv)
-        (stepCovers_of_local_slots ?_ ?_ ?_)
+        (stepCovers_of_local_slots ?_ ?_ ?_ ?_)
       · exact schedKeyView_of_objectsAgreeOffRunLinks
+          (.trans (.of_objects_eq (by simp)) (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks
+            (preemptCurrentOnCore st e tid) e tid))
+      · exact budgetEligibleView_of_objectsAgreeOffRunLinks
           (.trans (.of_objects_eq (by simp)) (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks
             (preemptCurrentOnCore st e tid) e tid))
       · intro c _ t ht
@@ -126,7 +148,7 @@ theorem switchToThreadOnCore_stepCovers (e : CoreId) (st st' : SystemState)
 /-- Clearing the executing core's own flag covers. -/
 theorem clearReschedulePendingOnCore_stepCovers (e : CoreId) (st : SystemState) :
     stepCovers e st (st.clearReschedulePendingOnCore e) :=
-  stepCovers_of_local_slots (fun _ => rfl)
+  stepCovers_of_local_slots (fun _ => rfl) (fun _ => rfl)
     (fun c _ t ht => by
       rwa [(SystemState.RunCoresAgree.of_objects (st' := st.clearReschedulePendingOnCore e) (st := st)
         rfl).queuedOn] at ht)
@@ -140,7 +162,8 @@ theorem dropCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (dropCurrentOnCore st e) := by
   refine stepCovers_trans (preemptCurrentOnCore_stepCovers e st (idleThreadId e) hInv)
-    (stepCovers_of_local_slots ?_ ?_ ?_)
+    (stepCovers_of_local_slots ?_ ?_ ?_ ?_)
+  · exact fun _ => rfl
   · exact fun _ => rfl
   · intro c _ t ht
     rwa [(SystemState.RunCoresAgree.of_objects rfl).queuedOn] at ht
@@ -219,7 +242,7 @@ theorem deferResidentElsewhere_stepCovers (e : CoreId) (st : SystemState)
       · rename_i st' h
         exact switchToThreadOnCore_stepCovers e st st' _ hInv h
       · refine stepCovers_trans (preemptCurrentOnCore_stepCovers e st _ hInv)
-          (stepCovers_of_local_slots (fun _ => rfl)
+          (stepCovers_of_local_slots (fun _ => rfl) (fun _ => rfl)
             (fun c _ t ht => by rwa [(SystemState.RunCoresAgree.of_objects rfl).queuedOn] at ht) ?_)
         intro c hc
         have hne : e ≠ c := Ne.symm hc
@@ -312,6 +335,9 @@ theorem scheduleEffectiveOnCore_stepCovers (e : CoreId) (st st' : SystemState)
       (schedKeyView_of_objectsAgreeOffRunLinks
         (.trans (.of_objects_eq (SystemState.clearReschedulePendingOnCore_objects _ _))
           (idleFallbackOnCore_objectsAgreeOffRunLinks _ e)))
+      (budgetEligibleView_of_objectsAgreeOffRunLinks
+        (.trans (.of_objects_eq (SystemState.clearReschedulePendingOnCore_objects _ _))
+          (idleFallbackOnCore_objectsAgreeOffRunLinks _ e)))
       (fun c _ t ht => idleFallbackOnCore_queuedOn_imp _ e c t
         (by rwa [(SystemState.RunCoresAgree.of_objects
           (SystemState.clearReschedulePendingOnCore_objects _ _)).queuedOn] at ht)) ?_)
@@ -329,6 +355,9 @@ theorem scheduleEffectiveOnCore_stepCovers (e : CoreId) (st st' : SystemState)
       · cases h
         refine stepCovers_trans hS (stepCovers_of_local_slots
           (schedKeyView_of_objectsAgreeOffRunLinks
+            (.trans (.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _))
+              (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)))
+          (budgetEligibleView_of_objectsAgreeOffRunLinks
             (.trans (.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _))
               (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)))
           (fun c _ t ht => queuedOn_imp_of_runRemove (st := saveOutgoingContextOnCore st e) (e := e)

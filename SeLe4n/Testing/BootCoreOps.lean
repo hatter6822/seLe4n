@@ -30,9 +30,10 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 def bootSchedule : Kernel Unit := fun st =>
   (scheduleEffectiveOnCore st bootCoreId).map ((), ·)
 
-/-- `timerTickOnCore` on the boot core; its reschedule SGIs are dropped. -/
+/-- `timerTickOnCore` on the boot core (total); the reschedule flags it raises
+stay in the state. -/
 def bootTimerTick : Kernel Unit := fun st =>
-  (timerTickOnCore st bootCoreId).map fun r => ((), r.1)
+  .ok ((), timerTickOnCore st bootCoreId)
 
 /-- `yieldOnCore` on the boot core. -/
 def bootYield : Kernel Unit := fun st =>

@@ -626,11 +626,14 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
     let p0 := t0.boostedPriority
     let d0 := effectiveDeadline st t0
     let dom0 := t0.domain
+    let e0 := hasSufficientBudget st t0
     let st1 := st.updateSchedContext scId fun sc =>
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     let st2 := SchedContextOps.purgeReplenishmentOnCore st1 rqCore scId
     markKeyChangeParts
-      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+      (markCandidacyGainFor
+        (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+        tid e0)
       tid p0 d0 dom0
   | none =>
     let st1 : SystemState := st.updateSchedContext scId fun sc =>

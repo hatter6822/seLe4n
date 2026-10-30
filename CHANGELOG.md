@@ -1,3 +1,64 @@
+## v0.36.165 — WS-ZA ZA6.2: the tick is total, reports through the reschedule flags, and drains a refill in place
+
+The timer tick never refuses, as seL4's `timerTick` does not. Its wakes raise
+the reschedule flags of the cores whose decision they staled, and the step's
+SGIs are the raised flags. A tick that drains a due replenishment allocates
+nothing. The reschedule-coverage relation now reads budget eligibility, which
+closes a Low-severity spec gap found here.
+
+- **The total tick** (`SeLe4n/Kernel/Scheduler/Operations/Core.lean`,
+  `PerCoreTimerTick.lean`, `PerCoreTimerTickState.lean`, `PerCoreRunLoop.lean`).
+  - A current thread or bound context the store does not hold is charged
+    nothing, as an idle core is (`timerTickChargeCurrentOnCore`).
+  - The admission (`timerTickAdmittedOnCore`) and the state form it guarded are
+    deleted, with every theorem over the refusal arms restated over the total
+    tick (`timerTickOnCore_cases`, `timerTickOnCore_of`,
+    `perCoreTimerTickStep_valid_core`,
+    `perCoreTimerTickStep_currentThreadValidOnCore`).
+  - The frames the drain needs come from the store's invariant
+    (`processReplenishmentsDueOnCore_preserves_bidirectional`), not a check.
+- **The reschedule flags** (`ReschedulePendingArms/Tick.lean`,
+  `Scheduler/Operations/ReschedulePending.lean`).
+  - The drain's wakes and an exhausting charge's timeout wakes mark every
+    core whose decision they staled (`markRescheduleTargets`,
+    `markCandidacyGainFor`, `markRefillKeyChange`), as seL4's
+    `possibleSwitchTo` sets `ksSchedulerAction`.
+  - The ticking core reschedules locally (`rescheduleIfPendingOnCore`).
+  - Completeness: `perCoreTimerTickStep_stepCovers`,
+    `perCoreTimerTickStep_sgis_complete`,
+    `perCoreTimerTickStep_sgis_cover_diff` and
+    `perCoreTimerTickStep_raised_self`.
+- **The coverage relation reads what the chooser reads**
+  (`Scheduler/Invariant/ReschedulePendingCoverage.lean`).
+  - `keyInputsOf` carries each context's budget eligibility.
+  - `coreDecisionUnstaled` adds `candidacyNotGained`.
+  - The chooser's result depends only on the projected views
+    (`chooseBestRunnableEffective_eq_of_views` and four companions).
+  - The writers this exposed now mark the gain: `schedContextYieldTo`'s
+    already-queued branch, `schedContextConfigure`, `schedContextUnbind` and
+    the fast forms that inline the unbind's tail.
+  - A regression test covers the yield-to case (`tests/ReschedulePendingSuite.lean`).
+- **In place.**
+  - The drain reads the queue's head and writes nothing when it is not due
+    (`ReplenishQueue.headDue`).
+  - It keeps the queue past its due prefix in its slot
+    (`ReplenishQueue.dropDueQueue`).
+  - It refills a context in its cell (`refillSchedContextImpl`,
+    `refillRecord_eq`, `processReplenishments_eq_impl`).
+  - The exhausting charge with no IPC to time out writes only its diagnostic
+    (`budgetExhaustOnCore_eq_impl`).
+  - Boot gives each idle TCB its own cells (`storeIdleThreadOnCore_eq_impl`).
+  - These forms sit in `Core.lean` ahead of `timerTickOnCore`, since a
+    `@[csimp]` reaches only code compiled after it.
+- **The exerciser** (`rust/sele4n-hal/src/smp_exercisers.rs`,
+  `scripts/qemu_exerciser_lib.sh`) binds a one-tick budget to the root task,
+  yields it away, and enters two timer ticks: `refill-wait-tick` and
+  `refill-drain-tick`, each 0 at first call and steady. The bound yield reads
+  11, pinned until ZA6.3.
+- **Plan.** `ZERO_ALLOCATION_SYSCALL_PLAN.md` gains row ZA6.3 (the release
+  queue links through the scheduling contexts), and the rows after it are
+  renumbered ZA6.4 to ZA6.10, with every citation swept.
+
 ## v0.36.164 — WS-ZA ZA6.1: the timer tick, the reschedule SGI and each core's first entry read 0
 
 The timer tick, the `.reschedule` SGI and the secondary core's entry (each

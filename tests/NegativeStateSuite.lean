@@ -4013,15 +4013,18 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   | .ok _ =>
     IO.println "CONTROL passed [the bare switchDomain proceeds on the state the wrapper refuses]"
 
-  -- ...and on that same state the tick's own internals already refuse with the
-  -- same discriminant, so the guard adds nothing THERE.  Asserted rather than
-  -- left implicit: it is why (1) had to measure the save instead.
+  -- ...and on that same state the checked tick's guard refuses too, while the
+  -- bare tick, total as seL4's `timerTick` is (`v0.36.165`), charges the
+  -- dangling current thread nothing and proceeds: here too the GUARD is what
+  -- discriminates.
   expectErr "timerTickChecked refuses a dangling current thread"
     (bootTimerTickChecked x2Dangling)
     .schedulerInvariantViolation
-  expectErr "…and so does the bare timerTick, with the same discriminant"
-    (bootTimerTick x2Dangling)
-    .schedulerInvariantViolation
+  match bootTimerTick x2Dangling with
+  | .error e =>
+    throw <| IO.userError s!"the CONTROL (bare timerTick) must PROCEED on the dangling state — the tick is total — got {repr e}"
+  | .ok _ =>
+    IO.println "CONTROL passed [the bare timerTick proceeds on the state the wrapper refuses]"
 
   IO.println "all X2 runtime invariant tests passed"
 

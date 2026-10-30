@@ -1395,6 +1395,16 @@ theorem markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp
     (fun _ => markKeyChangeFor_runQueueOnCore st tid k _)
     (fun _ => markKeyChangeFor_currentOnCore st tid k _) (h c')
 
+/-- The candidacy hook only ever raises reschedule-pending flags. -/
+theorem markCandidacyGainFor_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool)
+    (h : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (markCandidacyGainFor st tid b) := fun c' =>
+  schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+    (.of_objects_eq (markCandidacyGainFor_objects st tid b)) (markCandidacyGainFor_machine st tid b)
+    (fun _ => markCandidacyGainFor_runQueueOnCore st tid b _)
+    (fun _ => markCandidacyGainFor_currentOnCore st tid b _) (h c')
+
 theorem schedulerInvariantStructuralRegNodup_perCore_to_reg
     {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore st c) :
     schedulerInvariantStructuralReg_perCore st c := h.1
@@ -2243,6 +2253,26 @@ theorem currentOnCore_ne_of_not_runningOnSomeCore {st : SystemState}
     exact ⟨c, List.mem_finRange c, by simp [hc]⟩
   rw [hrun] at h; exact absurd h (by simp)
 
+/-- A write that moves neither the store, the machine, nor any core's current
+thread or run queue — a reschedule-flag write, say — keeps the base safety
+invariant. -/
+theorem schedulerInvariantStructuralRegNodup_smp_of_frame (st st' : SystemState)
+    (hO : st'.objects = st.objects) (hM : st'.machine = st.machine)
+    (hC : ∀ c, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hQ : ∀ c, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  have hT : ∀ tid, st'.getTcb? tid = st.getTcb? tid := fun tid => by
+    unfold SystemState.getTcb?; rw [hO]
+  intro c'
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · exact schedulerInvariantStructural_perCore_frame (hC c') (hQ c')
+      (fun tid hh => by rw [hT]; exact hh) (hPre c').1.1
+  · exact contextMatchesCurrentOnCore_frame_at (hC c') (by rw [hM])
+      (fun tid tcb _ htcb => ⟨tcb, by rw [hT]; exact htcb, RegisterFile.beq_self _⟩)
+      ((hPre c').1.1.2.1) ((hPre c').1.2)
+  · exact (runQueueUniqueOnCore_frame (hQ c')).mpr (hPre c').2
+
 /-- WS-SM SM5.I.8 (tick phase 1 step): one CBS replenishment step preserves the
 base safety invariant — `refillSchedContext` preserves it (phase-1 atom) and the
 optional cross-core `wakeThread` preserves it (the per-step single-placement
@@ -2252,15 +2282,19 @@ theorem processOneReplenishmentOnCore_preserves_schedulerInvariantStructuralRegN
     (hInv : st.objects.invExt)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp
-      (processOneReplenishmentOnCore st execCore scId now).1 := by
+      (processOneReplenishmentOnCore st execCore scId now) := by
   have hRefillPre := refillSchedContext_preserves_schedulerInvariantStructuralRegNodup_smp
     st scId now hInv hPre
   have hRefillInv := refillSchedContext_preserves_objects_invExt st scId now hInv
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (schedulerInvariantStructuralRegNodup_smp) (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   · split
     · exact hRefillPre
     · rename_i tid _hwt hr
+      refine schedulerInvariantStructuralRegNodup_smp_of_frame _ _ rfl rfl
+        (fun _ => SchedulerState.markReschedulePendingOnCoreIf_currentOnCore _ _ _ _)
+        (fun _ => SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore _ _ _ _) ?_
       exact wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
         (refillSchedContext st scId now) tid execCore hRefillInv
         (currentOnCore_ne_of_not_runningOnSomeCore (by simpa using hr) _) hRefillPre
@@ -2271,23 +2305,19 @@ base safety invariant (and `objects.invExt`), by induction over the due list —
 each step is `processOneReplenishmentOnCore`. -/
 theorem foldl_processOneReplenishment_preserves (c : CoreId) (now : Nat)
     (dueIds : List SeLe4n.SchedContextId) :
-    ∀ acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool,
-      acc.1.objects.invExt → schedulerInvariantStructuralRegNodup_smp acc.1 →
-      ((dueIds.foldl (fun acc scId =>
-          let r := processOneReplenishmentOnCore acc.1 c scId now
-          (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1.objects.invExt ∧
+    ∀ acc : SystemState,
+      acc.objects.invExt → schedulerInvariantStructuralRegNodup_smp acc →
+      ((dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).objects.invExt ∧
         schedulerInvariantStructuralRegNodup_smp
-          (dueIds.foldl (fun acc scId =>
-            let r := processOneReplenishmentOnCore acc.1 c scId now
-            (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1) := by
+          (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc)) := by
   induction dueIds with
   | nil => intro acc h1 h2; exact ⟨h1, h2⟩
   | cons hd tl ih =>
       intro acc h1 h2
       refine ih _ ?_ ?_
-      · exact processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now h1
+      · exact processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now h1
       · exact processOneReplenishmentOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
-          acc.1 c hd now h1 h2
+          acc c hd now h1 h2
 
 /-- WS-SM SM5.I.8 (tick phase 1): `processReplenishmentsDueOnCore` preserves the
 base safety invariant on every core. -/
@@ -2295,7 +2325,7 @@ theorem processReplenishmentsDueOnCore_preserves_schedulerInvariantStructuralReg
     (st : SystemState) (c : CoreId) (now : Nat)
     (hInv : st.objects.invExt)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
-    schedulerInvariantStructuralRegNodup_smp (processReplenishmentsDueOnCore st c now).1 := by
+    schedulerInvariantStructuralRegNodup_smp (processReplenishmentsDueOnCore st c now) := by
   simp only [processReplenishmentsDueOnCore]
   refine (foldl_processOneReplenishment_preserves c now _ _ ?_ ?_).2
   · exact hInv
@@ -3774,11 +3804,11 @@ of `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` (the run-queue reasoni
 drops out — `allThreads` reads only `objects`). -/
 theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (st3 : SystemState) (b : Bool) {sgis : List (CoreId × SgiKind)}
+    (st3 : SystemState) (b : Bool)
     (hInv : st.objects.invExt)
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis))
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st3, b))
     (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st3 := by
   unfold timerTickBudgetOnCore budgetExhaustOnCore spendBudgetOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
@@ -3786,14 +3816,14 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
   · -- unbound
     split at hStep
     · -- case #1: reset to configDefaultTimeSlice
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      simp only [Prod.mk.injEq] at hStep
       obtain ⟨rfl, _⟩ := hStep
       exact allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
         (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid _)
         (allThreadsTimeSlicePositive_of_insert_pos hInv rfl hConfigTS h)
     · -- case #2: decrement (guard: timeSlice > 1)
       rename_i hnotle
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      simp only [Prod.mk.injEq] at hStep
       obtain ⟨rfl, _⟩ := hStep
       exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl (by simp only []; omega) h
   · -- bound
@@ -3802,7 +3832,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
     · rename_i sc hSc _
       split at hStep
       · -- case #3: budget exhausted
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
             ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
@@ -3823,21 +3853,25 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
           (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
             (resolveInsertPriority
               { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+        have h3' := allThreadsTimeSlicePositive_of_objects_eq
+          (markKeyChangeFor_objects _ tid (effectiveSchedParams st tcb)) h3
         have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
         exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
       · -- case #4: consume budget (SchedContext insert only)
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         exact allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
-    · simp at hStep
+    · simp only [Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep; exact h
   · -- donated (identical body to bound)
     rename_i scId _o heqB
     split at hStep
     · rename_i sc hSc _
       split at hStep
       · -- case #3: budget exhausted
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
             ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
@@ -3858,14 +3892,18 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
           (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
             (resolveInsertPriority
               { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+        have h3' := allThreadsTimeSlicePositive_of_objects_eq
+          (markKeyChangeFor_objects _ tid (effectiveSchedParams st tcb)) h3
         have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
         exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
       · -- case #4
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         exact allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
-    · simp at hStep
+    · simp only [Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep; exact h
 
 /-- WS-SM SM5.I.8: `replenishOnCore` preserves the qcc-free run-queue safety bundle
 on every core (it writes only the replenish queue — run queue and objects framed). -/
@@ -3886,12 +3924,12 @@ deliberately excludes).  `hTid` (the current thread resolves to `tcb`) discharge
 the re-enqueued thread's TCB-ness on the budget-exhausted path. -/
 theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (st3 : SystemState) (b : Bool) {sgis : List (CoreId × SgiKind)}
+    (st3 : SystemState) (b : Bool)
     (hInv : st.objects.invExt)
     (hTid : st.getTcb? tid = some tcb)
     (h : runQueueSafetyOnCore st c)
     {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st3, b)) :
     runQueueSafetyOnCore st3 c := by
   -- The bound/donated bodies are identical; both bind `scId`.  `boundAux`
   -- (below) factors them — it re-unfolds `timerTickBudgetOnCore`, so the
@@ -3902,7 +3940,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
   · -- unbound
     split at hStep
     · -- case #1: time-slice exhausted, preempt (re-enqueue tid into core c)
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      simp only [Prod.mk.injEq] at hStep
       obtain ⟨rfl, _⟩ := hStep
       generalize ({ tcb with timeSlice := st.scheduler.configDefaultTimeSlice } : TCB) = tcbR
       have hst' : runQueueSafetyOnCore
@@ -3915,7 +3953,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
         rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
       exact runEnqueueOnCore_preserves_runQueueSafetyOnCore _ c tid _ tcbR hself hst'
     · -- case #2: not preempted, decrement time-slice (object insert only)
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      simp only [Prod.mk.injEq] at hStep
       obtain ⟨rfl, _⟩ := hStep
       exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
         (fun x hx => getTcb?_isSome_insert_tcb st tid _ hInv x hx) h
@@ -3929,7 +3967,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
         exact (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
       split at hStep
       · -- case #3: budget exhausted → replenish + re-enqueue + timeoutBlockedThreads
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
             ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
@@ -3956,20 +3994,27 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
           (resolveInsertPriority
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
           tcb hTidR h2
+        have h3' := runQueue_frame_preserves_runQueueSafetyOnCore _
+          (markKeyChangeFor _ tid (effectiveSchedParams st tcb)) c
+          (markKeyChangeFor_runQueueOnCore _ tid _ c)
+          (fun x hx => by rw [markKeyChangeFor_getTcb?]; exact hx) h3
         have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
-        refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c
-          (by simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore])
-          (fun x hx => hx) h4
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
+        refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c ?_ ?_ h4
+        · simp only [markRescheduleTargets_runQueueOnCore,
+            SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore]
+        · exact fun x hx => hx
       · -- case #4: not preempted, consume budget (schedContext insert only)
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
           (fun x hx => by
             rw [getTcb?_insert_schedContext_eq st _ scId sc (consumeBudget sc 1) hInv hOldSc rfl x]
             exact hx) h
-    · -- .error .missingSchedContext
-      simp at hStep
+    · -- a bound context the store does not hold: charged nothing
+      simp only [Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep; exact h
   · -- donated (identical body to bound; binds scId + an unused owner)
     rename_i scId _o heqB
     split at hStep
@@ -3980,7 +4025,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
         exact (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
       split at hStep
       · -- case #3
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
             ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
@@ -4007,20 +4052,27 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
           (resolveInsertPriority
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
           tcb hTidR h2
+        have h3' := runQueue_frame_preserves_runQueueSafetyOnCore _
+          (markKeyChangeFor _ tid (effectiveSchedParams st tcb)) c
+          (markKeyChangeFor_runQueueOnCore _ tid _ c)
+          (fun x hx => by rw [markKeyChangeFor_getTcb?]; exact hx) h3
         have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c
-          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
-        refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c
-          (by simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore])
-          (fun x hx => hx) h4
+          (by rw [markKeyChangeFor_objects]
+              exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3'
+        refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c ?_ ?_ h4
+        · simp only [markRescheduleTargets_runQueueOnCore,
+            SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore]
+        · exact fun x hx => hx
       · -- case #4
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
         exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
           (fun x hx => by
             rw [getTcb?_insert_schedContext_eq st _ scId sc (consumeBudget sc 1) hInv hOldSc rfl x]
             exact hx) h
-    · -- .error .missingSchedContext
-      simp at hStep
+    · -- a bound context the store does not hold: charged nothing
+      simp only [Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep; exact h
 
 -- ── §8.3d  Prepared-phase discharge of the getTcb?-reading conjuncts
 --           (`runnableThreadsAreTCBs`) — placed here for `refillSchedContext_getTcb?_eq`. ──
@@ -4041,12 +4093,13 @@ core `c'` (refill frames it; the wake preserves it). -/
 theorem processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
     (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt)
     (h : runnableThreadsAreTCBsOnCore st c') :
-    runnableThreadsAreTCBsOnCore (processOneReplenishmentOnCore st execCore scId now).1 c' := by
+    runnableThreadsAreTCBsOnCore (processOneReplenishmentOnCore st execCore scId now) c' := by
   have hRefInv : (refillSchedContext st scId now).objects.invExt :=
     refillSchedContext_preserves_objects_invExt st scId now hInv
   have hRef : runnableThreadsAreTCBsOnCore (refillSchedContext st scId now) c' :=
     refillSchedContext_preserves_runnableThreadsAreTCBsOnCore st scId now c' hInv h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (fun s => runnableThreadsAreTCBsOnCore s c') (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4058,25 +4111,23 @@ theorem processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore (st
 
 private theorem foldl_processOneReplenishment_preserves_runnableThreadsAreTCBs
     (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
-    (acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool)
-    (hInv : acc.1.objects.invExt) (h : runnableThreadsAreTCBsOnCore acc.1 c') :
+    (acc : SystemState)
+    (hInv : acc.objects.invExt) (h : runnableThreadsAreTCBsOnCore acc c') :
     runnableThreadsAreTCBsOnCore
-      (dueIds.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1 c' := by
+      (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) c' := by
   induction dueIds generalizing acc with
   | nil => exact h
   | cons hd tl ih =>
       rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now hInv)
-        (processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore acc.1 c c' hd now hInv h)
+      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)
+        (processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore acc c c' hd now hInv h)
 
 /-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
 runnable-threads-are-TCBs on core `c`. -/
 theorem processReplenishmentsDueOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
     (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
     (h : runnableThreadsAreTCBsOnCore st c) :
-    runnableThreadsAreTCBsOnCore (processReplenishmentsDueOnCore st c now).1 c := by
+    runnableThreadsAreTCBsOnCore (processReplenishmentsDueOnCore st c now) c := by
   simp only [processReplenishmentsDueOnCore]
   apply foldl_processOneReplenishment_preserves_runnableThreadsAreTCBs
   · exact hInv
@@ -4088,13 +4139,69 @@ theorem processReplenishmentsDueOnCore_preserves_runnableThreadsAreTCBsOnCore (s
 runnable-threads-are-TCBs — discharges the capstone's `hPrepRat`. -/
 theorem timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : runnableThreadsAreTCBsOnCore st c) :
-    runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c).1 c := by
+    runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c) c := by
   simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_runnableThreadsAreTCBsOnCore
   · exact hInv
   · intro t ht
     simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] at ht
     exact h t ht
+
+/-- `processOneReplenishmentOnCore` keeps every core's current thread a TCB: the
+refill frames the scheduler and every `getTcb?`, and the wake enqueues without
+dispatching. -/
+theorem processOneReplenishmentOnCore_preserves_currentThreadValidOnCore (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt)
+    (h : currentThreadValidOnCore st c') :
+    currentThreadValidOnCore (processOneReplenishmentOnCore st execCore scId now) c' := by
+  have hRefInv := refillSchedContext_preserves_objects_invExt st scId now hInv
+  have hRef : currentThreadValidOnCore (refillSchedContext st scId now) c' := by
+    unfold currentThreadValidOnCore at h ⊢
+    rw [refillSchedContext_scheduler_eq]
+    simp only [refillSchedContext_getTcb?_eq st scId now hInv]
+    exact h
+  refine processOneReplenishmentOnCore_of_refillWake (fun s => currentThreadValidOnCore s c') (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next _hcond =>
+      have hW := wakeThread_preserves_currentThreadValidOnCore (refillSchedContext st scId now)
+        tid execCore c' hRefInv hRef
+      unfold currentThreadValidOnCore at hW ⊢
+      rw [SchedulerState.markReschedulePendingOnCoreIf_currentOnCore]
+      exact hW
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_currentThreadValidOnCore
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState)
+    (hInv : acc.objects.invExt) (h : currentThreadValidOnCore acc c') :
+    currentThreadValidOnCore
+      (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) c' := by
+  induction dueIds generalizing acc with
+  | nil => exact h
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)
+        (processOneReplenishmentOnCore_preserves_currentThreadValidOnCore acc c c' hd now hInv h)
+
+/-- WS-ZA ZA6.2 (prepared discharge): the prepared phase keeps core `c`'s current
+thread a TCB — the drain dispatches nothing and keeps every TCB.  This is the
+store fact the total tick's theorems consume (`hPrep` of
+`timerTickOnCore_preserves_currentThreadValidOnCore`): with it, the tick's arm
+for a current thread the store does not hold is unreachable. -/
+theorem timerTickOnCorePrepared_preserves_currentThreadValidOnCore (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt) (h : currentThreadValidOnCore st c) :
+    currentThreadValidOnCore (timerTickOnCorePrepared st c) c := by
+  simp only [timerTickOnCorePrepared, processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_currentThreadValidOnCore
+  · exact hInv
+  · unfold currentThreadValidOnCore at h ⊢
+    simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore,
+      SchedulerState.setLastTimeoutErrorsOnCore_currentOnCore]
+    exact h
 
 -- ── §8.3e  Prepared-phase discharge — `contextMatchesCurrentOnCore` (register bank) ──
 
@@ -4166,12 +4273,13 @@ core `c'`. -/
 theorem processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState)
     (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt)
     (h : contextMatchesCurrentOnCore st c') :
-    contextMatchesCurrentOnCore (processOneReplenishmentOnCore st execCore scId now).1 c' := by
+    contextMatchesCurrentOnCore (processOneReplenishmentOnCore st execCore scId now) c' := by
   have hRefInv : (refillSchedContext st scId now).objects.invExt :=
     refillSchedContext_preserves_objects_invExt st scId now hInv
   have hRef : contextMatchesCurrentOnCore (refillSchedContext st scId now) c' :=
     refillSchedContext_preserves_contextMatchesCurrentOnCore st scId now c' hInv h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (fun s => contextMatchesCurrentOnCore s c') (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4183,25 +4291,23 @@ theorem processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore (st 
 
 private theorem foldl_processOneReplenishment_preserves_contextMatchesCurrentOnCore
     (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
-    (acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool)
-    (hInv : acc.1.objects.invExt) (h : contextMatchesCurrentOnCore acc.1 c') :
+    (acc : SystemState)
+    (hInv : acc.objects.invExt) (h : contextMatchesCurrentOnCore acc c') :
     contextMatchesCurrentOnCore
-      (dueIds.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1 c' := by
+      (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) c' := by
   induction dueIds generalizing acc with
   | nil => exact h
   | cons hd tl ih =>
       rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now hInv)
-        (processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore acc.1 c c' hd now hInv h)
+      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)
+        (processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore acc c c' hd now hInv h)
 
 /-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
 the register-bank match on core `c`. -/
 theorem processReplenishmentsDueOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState)
     (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
     (h : contextMatchesCurrentOnCore st c) :
-    contextMatchesCurrentOnCore (processReplenishmentsDueOnCore st c now).1 c := by
+    contextMatchesCurrentOnCore (processReplenishmentsDueOnCore st c now) c := by
   simp only [processReplenishmentsDueOnCore]
   apply foldl_processOneReplenishment_preserves_contextMatchesCurrentOnCore
   · exact hInv
@@ -4212,7 +4318,7 @@ theorem processReplenishmentsDueOnCore_preserves_contextMatchesCurrentOnCore (st
 register-bank match — discharges the capstone's `hPrepCtx`. -/
 theorem timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : contextMatchesCurrentOnCore st c) :
-    contextMatchesCurrentOnCore (timerTickOnCorePrepared st c).1 c := by
+    contextMatchesCurrentOnCore (timerTickOnCorePrepared st c) c := by
   simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_contextMatchesCurrentOnCore
   · exact hInv
@@ -4230,40 +4336,39 @@ outcomes — including the budget-exhausted `timeoutBlockedThreads` path, whose
 target-aware wake and PIP reversion preserve the qcc-free safety bundle — by
 `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` (see the `_closed` capstone). -/
 theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
-    (st : SystemState) (c : CoreId) (st' : SystemState)
-    (sgis : List (CoreId × Concurrency.SgiKind))
+    (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hPrepQcc : queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).1.scheduler c)
-    (hPrepRat : runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c).1 c)
-    (hPrepCtx : contextMatchesCurrentOnCore (timerTickOnCorePrepared st c).1 c)
-    (hPrepNd : ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup)
-    (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
+    (hPrepQcc : queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).scheduler c)
+    (hPrepRat : runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c) c)
+    (hPrepCtx : contextMatchesCurrentOnCore (timerTickOnCorePrepared st c) c)
+    (hPrepNd : ((timerTickOnCorePrepared st c).scheduler.runQueueOnCore c).toList.Nodup)
+    (hPrepCtv : currentThreadValidOnCore (timerTickOnCorePrepared st c) c)
+    (hBudgetRqWf : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
        (st3.scheduler.runQueueOnCore c).wellFormed)
-    (hBudgetRat : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
+    (hBudgetRat : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
        runnableThreadsAreTCBsOnCore st3 c)
-    (hBudgetNd : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
+    (hBudgetNd : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
        (st3.scheduler.runQueueOnCore c).toList.Nodup)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    schedulerInvariantStructuralRegNodup_perCore st' c := by
+    :
+    schedulerInvariantStructuralRegNodup_perCore (timerTickOnCore st c) c := by
   have hPrepInv := timerTickOnCorePrepared_objects_invExt st c hInv
-  exact ⟨⟨⟨timerTickOnCore_preserves_queueCurrentConsistentOnCore st c st' sgis hPrepQcc hStep,
-            timerTickOnCore_preserves_currentThreadValidOnCore st c st' sgis hInv hStep,
-            timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore st c st' sgis
-              hPrepInv hPrepRat hBudgetRat hStep,
-            timerTickOnCore_preserves_runQueueOnCoreWellFormed st c st' sgis hwf hBudgetRqWf hStep⟩,
-           timerTickOnCore_preserves_contextMatchesCurrentOnCore st c st' sgis
-             hPrepInv hPrepCtx hStep⟩,
-          timerTickOnCore_preserves_runQueueUniqueOnCore st c st' sgis hPrepNd hBudgetNd hStep⟩
+  exact ⟨⟨⟨timerTickOnCore_preserves_queueCurrentConsistentOnCore st c hPrepQcc,
+            timerTickOnCore_preserves_currentThreadValidOnCore st c hInv hPrepCtv,
+            timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore st c
+              hPrepInv hPrepRat hPrepCtv hBudgetRat,
+            timerTickOnCore_preserves_runQueueOnCoreWellFormed st c hwf hBudgetRqWf⟩,
+           timerTickOnCore_preserves_contextMatchesCurrentOnCore st c hPrepInv hPrepCtx⟩,
+          timerTickOnCore_preserves_runQueueUniqueOnCore st c hPrepNd hBudgetNd⟩
 
 /-- WS-SM SM5.I.8 (capstone, clean form): the per-core timer tick preserves the
 full register-bank+Nodup base safety invariant, taking the **bundled pre-state**
@@ -4278,42 +4383,42 @@ path, whose target-aware `wakeThread` re-enqueue and `revertPriorityInheritance`
 walk preserve the qcc-free safety bundle) by
 `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` in the `_closed` capstone. -/
 theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
-    (st : SystemState) (c : CoreId) (st' : SystemState)
-    (sgis : List (CoreId × Concurrency.SgiKind))
+    (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
     (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
-    (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
+    (hBudgetRqWf : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
        (st3.scheduler.runQueueOnCore c).wellFormed)
-    (hBudgetRat : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
+    (hBudgetRat : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
        runnableThreadsAreTCBsOnCore st3 c)
-    (hBudgetNd : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
+    (hBudgetNd : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
        (st3.scheduler.runQueueOnCore c).toList.Nodup)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    schedulerInvariantStructuralRegNodup_perCore st' c := by
-  obtain ⟨⟨⟨hQcc, _hCtv, hRat, hRqwf⟩, hCtx⟩, hNd⟩ := hPre
+    :
+    schedulerInvariantStructuralRegNodup_perCore (timerTickOnCore st c) c := by
+  obtain ⟨⟨⟨hQcc, hCtv, hRat, hRqwf⟩, hCtx⟩, hNd⟩ := hPre
   exact timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
-    st c st' sgis hInv hRqwf
+    st c hInv hRqwf
     (timerTickOnCorePrepared_preserves_queueCurrentConsistentOnCore st c hQcc)
     (timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore st c hInv hRat)
     (timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore st c hInv hCtx)
     (timerTickOnCorePrepared_preserves_runQueueUnique st c hNd)
-    hBudgetRqWf hBudgetRat hBudgetNd hStep
+    (timerTickOnCorePrepared_preserves_currentThreadValidOnCore st c hInv hCtv)
+    hBudgetRqWf hBudgetRat hBudgetNd
 
 /-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves the qcc-free
 run-queue safety bundle on core `c` — bundles the three prepared dischargers (rat /
 rqWf / Nodup). -/
 theorem timerTickOnCorePrepared_preserves_runQueueSafetyOnCore (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : runQueueSafetyOnCore st c) :
-    runQueueSafetyOnCore (timerTickOnCorePrepared st c).1 c :=
+    runQueueSafetyOnCore (timerTickOnCorePrepared st c) c :=
   ⟨timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore st c hInv h.1,
    timerTickOnCorePrepared_runQueueOnCore_wellFormed st c h.2.1,
    timerTickOnCorePrepared_preserves_runQueueUnique st c h.2.2⟩
@@ -4333,27 +4438,26 @@ run-queue conjuncts (rat / rqWf / Nodup) never read `current`, so they survive �
 and the dispatch phase re-establishes `qcc`.  This is the unconditional per-core
 SM5.I.8 preservation result. -/
 theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
-    (st : SystemState) (c : CoreId) (st' : SystemState)
-    (sgis : List (CoreId × Concurrency.SgiKind))
+    (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
     (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    schedulerInvariantStructuralRegNodup_perCore st' c := by
+    :
+    schedulerInvariantStructuralRegNodup_perCore (timerTickOnCore st c) c := by
   have hPrepInv := timerTickOnCorePrepared_objects_invExt st c hInv
-  have hPrepSafe : runQueueSafetyOnCore (timerTickOnCorePrepared st c).1 c :=
+  have hPrepSafe : runQueueSafetyOnCore (timerTickOnCorePrepared st c) c :=
     timerTickOnCorePrepared_preserves_runQueueSafetyOnCore st c hInv
       (schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety hPre)
   refine timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
-    st c st' sgis hInv hPre ?_ ?_ ?_ hStep
-  · intro tid tcb st3 b sgis3 _hCur hTid hBud
+    st c hInv hPre ?_ ?_ ?_
+  · intro tid tcb st3 b _hCur hTid hBud
     exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
-      (timerTickOnCorePrepared st c).1 c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.1
-  · intro tid tcb st3 b sgis3 _hCur hTid hBud
+      (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.1
+  · intro tid tcb st3 b _hCur hTid hBud
     exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
-      (timerTickOnCorePrepared st c).1 c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).1
-  · intro tid tcb st3 b sgis3 _hCur hTid hBud
+      (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).1
+  · intro tid tcb st3 b _hCur hTid hBud
     exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
-      (timerTickOnCorePrepared st c).1 c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.2
+      (timerTickOnCorePrepared st c) c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.2
 
 -- ── §8.5  Global strengthening (step 3): the per-core timer-tick capstone for
 --          `allThreadsTimeSlicePositive` — composes the prepared (replenishment)
@@ -4383,34 +4487,34 @@ theorem wakeThread_configDefaultTimeSlice (st : SystemState) (tid : SeLe4n.Threa
 the whole scheduler unchanged; the optional wake preserves the field). -/
 theorem processOneReplenishmentOnCore_configDefaultTimeSlice (st : SystemState)
     (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) :
-    (processOneReplenishmentOnCore st execCore scId now).1.scheduler.configDefaultTimeSlice
+    (processOneReplenishmentOnCore st execCore scId now).scheduler.configDefaultTimeSlice
       = st.scheduler.configDefaultTimeSlice := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_configDefaultTimeSlice]
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
     next _hrun => rw [refillSchedContext_scheduler_eq]
     next _hcond =>
-      rw [wakeThread_configDefaultTimeSlice, refillSchedContext_scheduler_eq]
+      rw [SchedulerState.markReschedulePendingOnCoreIf_configDefaultTimeSlice,
+        wakeThread_configDefaultTimeSlice, refillSchedContext_scheduler_eq]
   next _heq => rw [refillSchedContext_scheduler_eq]
 
 private theorem foldl_processOneReplenishment_configDefaultTimeSlice
     (dueIds : List SeLe4n.SchedContextId) (c : CoreId) (now : Nat)
-    (acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool) :
-    (dueIds.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1.scheduler.configDefaultTimeSlice
-      = acc.1.scheduler.configDefaultTimeSlice := by
+    (acc : SystemState) :
+    (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).scheduler.configDefaultTimeSlice
+      = acc.scheduler.configDefaultTimeSlice := by
   induction dueIds generalizing acc with
   | nil => rfl
   | cons hd tl ih =>
       rw [List.foldl_cons, ih]
-      exact processOneReplenishmentOnCore_configDefaultTimeSlice acc.1 c hd now
+      exact processOneReplenishmentOnCore_configDefaultTimeSlice acc c hd now
 
 /-- `configDefaultTimeSlice` is preserved by the whole replenishment phase. -/
 theorem processReplenishmentsDueOnCore_configDefaultTimeSlice (st : SystemState)
     (c : CoreId) (now : Nat) :
-    (processReplenishmentsDueOnCore st c now).1.scheduler.configDefaultTimeSlice
+    (processReplenishmentsDueOnCore st c now).scheduler.configDefaultTimeSlice
       = st.scheduler.configDefaultTimeSlice := by
   simp only [processReplenishmentsDueOnCore]
   rw [foldl_processOneReplenishment_configDefaultTimeSlice]
@@ -4419,7 +4523,7 @@ theorem processReplenishmentsDueOnCore_configDefaultTimeSlice (st : SystemState)
 /-- `configDefaultTimeSlice` is preserved by the prepared phase — so `hConfigTS`
 on `st` carries to the budget tick's input state. -/
 theorem timerTickOnCorePrepared_configDefaultTimeSlice (st : SystemState) (c : CoreId) :
-    (timerTickOnCorePrepared st c).1.scheduler.configDefaultTimeSlice
+    (timerTickOnCorePrepared st c).scheduler.configDefaultTimeSlice
       = st.scheduler.configDefaultTimeSlice := by
   simp only [timerTickOnCorePrepared]
   rw [processReplenishmentsDueOnCore_configDefaultTimeSlice]
@@ -4440,12 +4544,13 @@ it; the optional wake preserves it). -/
 theorem processOneReplenishmentOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt)
     (h : allThreadsTimeSlicePositive st) :
-    allThreadsTimeSlicePositive (processOneReplenishmentOnCore st execCore scId now).1 := by
+    allThreadsTimeSlicePositive (processOneReplenishmentOnCore st execCore scId now) := by
   have hRefInv : (refillSchedContext st scId now).objects.invExt :=
     refillSchedContext_preserves_objects_invExt st scId now hInv
   have hRef : allThreadsTimeSlicePositive (refillSchedContext st scId now) :=
     refillSchedContext_preserves_allThreadsTimeSlicePositive st scId now hInv h
-  simp only [processOneReplenishmentOnCore]
+  refine processOneReplenishmentOnCore_of_refillWake (allThreadsTimeSlicePositive) (fun _ _ => rfl) ?_
+  simp only [refillWakeOnCore]
   split
   next tid _heq =>
     split
@@ -4457,25 +4562,23 @@ theorem processOneReplenishmentOnCore_preserves_allThreadsTimeSlicePositive (st 
 
 private theorem foldl_processOneReplenishment_preserves_allThreadsTimeSlicePositive
     (dueIds : List SeLe4n.SchedContextId) (c : CoreId) (now : Nat)
-    (acc : SystemState × List (CoreId × Concurrency.SgiKind) × Bool)
-    (hInv : acc.1.objects.invExt) (h : allThreadsTimeSlicePositive acc.1) :
+    (acc : SystemState)
+    (hInv : acc.objects.invExt) (h : allThreadsTimeSlicePositive acc) :
     allThreadsTimeSlicePositive
-      (dueIds.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1 := by
+      (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc) := by
   induction dueIds generalizing acc with
   | nil => exact h
   | cons hd tl ih =>
       rw [List.foldl_cons]
-      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now hInv)
-        (processOneReplenishmentOnCore_preserves_allThreadsTimeSlicePositive acc.1 c hd now hInv h)
+      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc c hd now hInv)
+        (processOneReplenishmentOnCore_preserves_allThreadsTimeSlicePositive acc c hd now hInv h)
 
 /-- WS-SM SM5.I global strengthening: the whole replenishment phase preserves
 `allThreadsTimeSlicePositive`. -/
 theorem processReplenishmentsDueOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
     (h : allThreadsTimeSlicePositive st) :
-    allThreadsTimeSlicePositive (processReplenishmentsDueOnCore st c now).1 := by
+    allThreadsTimeSlicePositive (processReplenishmentsDueOnCore st c now) := by
   simp only [processReplenishmentsDueOnCore]
   exact foldl_processOneReplenishment_preserves_allThreadsTimeSlicePositive _ c now _ hInv h
 
@@ -4484,7 +4587,7 @@ theorem processReplenishmentsDueOnCore_preserves_allThreadsTimeSlicePositive (st
 object-neutral; the replenishment phase preserves it). -/
 theorem timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
-    allThreadsTimeSlicePositive (timerTickOnCorePrepared st c).1 := by
+    allThreadsTimeSlicePositive (timerTickOnCorePrepared st c) := by
   simp only [timerTickOnCorePrepared]
   exact processReplenishmentsDueOnCore_preserves_allThreadsTimeSlicePositive _ c _ hInv h
 
@@ -4627,71 +4730,31 @@ and the dispatch phase (`scheduleEffectiveOnCore` on preemption).  `hConfigTS`
 is threaded through the prepared phase via
 `timerTickOnCorePrepared_configDefaultTimeSlice`. -/
 theorem timerTickOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
-    (c : CoreId) (st' : SystemState) (sgis : List (CoreId × Concurrency.SgiKind))
-    (hInv : st.objects.invExt)
+    (c : CoreId) (hInv : st.objects.invExt)
     (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
-    (hStep : timerTickOnCore st c = .ok (st', sgis))
     (h : allThreadsTimeSlicePositive st) :
-    allThreadsTimeSlicePositive st' := by
-  have hPrep : allThreadsTimeSlicePositive (timerTickOnCorePrepared st c).1 :=
-    timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive st c hInv h
+    allThreadsTimeSlicePositive (timerTickOnCore st c) := by
   have hPrepInv := timerTickOnCorePrepared_objects_invExt st c hInv
-  have hPrepCfg : (timerTickOnCorePrepared st c).1.scheduler.configDefaultTimeSlice > 0 := by
+  have hPrepCfg : (timerTickOnCorePrepared st c).scheduler.configDefaultTimeSlice > 0 := by
     rw [timerTickOnCorePrepared_configDefaultTimeSlice]; exact hConfigTS
-  rw [timerTickOnCore_eq_prepared] at hStep
-  cases hcur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
-  | none =>
-      simp only [hcur] at hStep
-      split at hStep
-      · cases hH : handleRescheduleSgiOnCore (timerTickOnCorePrepared st c).1 c with
-        | error e => simp [hH] at hStep
-        | ok st2 =>
-          simp only [hH, Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨h1, _⟩ := hStep
-          rw [← h1]
-          exact handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive _ c st2
-            hPrepInv hH hPrep
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨h1, _⟩ := hStep
-        rw [← h1]; exact hPrep
-  | some tid =>
-      cases htcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
-      | none => simp [hcur, timerTickChargeCurrentOnCore_none htcb] at hStep
-      | some tcb =>
-          cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb htcb with
-          | error e => simp [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud] at hStep
-          | ok r =>
-              obtain ⟨st3, preempted, tsgis⟩ := r
-              have hBudAll : allThreadsTimeSlicePositive st3 :=
-                timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
-                  (timerTickOnCorePrepared st c).1 c tid tcb st3 preempted hPrepInv hPrepCfg hbud hPrep
-              have hBudInv : st3.objects.invExt :=
-                timerTickBudgetOnCore_preserves_objects_invExt
-                  (timerTickOnCorePrepared st c).1 c tid tcb st3 preempted hPrepInv hbud
-              cases preempted with
-              | false =>
-                  simp only [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud, Bool.false_eq_true, if_false] at hStep
-                  split at hStep
-                  · cases hH : handleRescheduleSgiOnCore st3 c with
-                    | error e => simp [hH] at hStep
-                    | ok st4 =>
-                      simp only [hH, Except.ok.injEq, Prod.mk.injEq] at hStep
-                      obtain ⟨h1, _⟩ := hStep
-                      rw [← h1]
-                      exact handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive st3 c st4
-                        hBudInv hH hBudAll
-                  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                    obtain ⟨h1, _⟩ := hStep
-                    rw [← h1]; exact hBudAll
-              | true =>
-                  cases hsched : scheduleEffectiveOnCore st3 c with
-                  | error e => simp [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud, hsched] at hStep
-                  | ok st4 =>
-                      simp only [hcur, timerTickChargeCurrentOnCore_eq htcb, hbud, if_true, hsched,
-                        Except.ok.injEq, Prod.mk.injEq] at hStep
-                      obtain ⟨rfl, _⟩ := hStep
-                      exact scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive
-                        st3 c st4 hBudInv hsched hBudAll
+  refine (timerTickOnCore_of (P := fun s => s.objects.invExt ∧ allThreadsTimeSlicePositive s)
+    st c ⟨hPrepInv, timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive st c hInv h⟩
+    ?_ ?_ ?_).2
+  · intro s ⟨hI, hA⟩
+    exact ⟨handleRescheduleSgiOnCore_preserves_objects_invExt s c _ hI
+        (handleRescheduleSgiOnCore_eq_state s c),
+      handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive s c _ hI
+        (handleRescheduleSgiOnCore_eq_state s c) hA⟩
+  · intro s ⟨hI, hA⟩
+    exact ⟨scheduleEffectiveOnCore_preserves_objects_invExt s c _ hI
+        (scheduleEffectiveOnCore_eq_state s c),
+      scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive s c _ hI
+        (scheduleEffectiveOnCore_eq_state s c) hA⟩
+  · intro tid tcb hTcb st3 b hB
+    exact ⟨timerTickBudgetOnCore_preserves_objects_invExt _ c tid tcb st3 b hPrepInv hB,
+      timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive _ c tid tcb st3 b
+        hPrepInv hPrepCfg hB
+        (timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive st c hInv h)⟩
 
 -- (PR #880 round 7) `timerTickOnCore_preserves_allThreadsTimeSlicePositive`
 -- moved below the `handleRescheduleSgiOnCore` timeslice lemma it now cites

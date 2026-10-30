@@ -66,13 +66,15 @@ slot unchanged — it refills a SchedContext (whole scheduler framed) and option
 wakes a thread (a run-queue write), never touching a replenish queue. -/
 theorem processOneReplenishmentOnCore_replenishQueueOnCore_eq (st : SystemState) (ec : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) :
-    (processOneReplenishmentOnCore st ec scId now).1.scheduler.replenishQueueOnCore c'
+    (processOneReplenishmentOnCore st ec scId now).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
-  simp only [processOneReplenishmentOnCore]
+  rw [processOneReplenishmentOnCore, markRefillKeyChange_replenishQueueOnCore]
+  simp only [refillWakeOnCore]
   split
   · split
     · rw [refillSchedContext_scheduler_eq]
-    · rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_replenishQueueOnCore,
+    · rw [SchedulerState.markReschedulePendingOnCoreIf_replenishQueueOnCore,
+        wakeThread_state_eq_enqueue, enqueueRunnableOnCore_replenishQueueOnCore,
         refillSchedContext_scheduler_eq]
   · rw [refillSchedContext_scheduler_eq]
 
@@ -80,22 +82,20 @@ theorem processOneReplenishmentOnCore_replenishQueueOnCore_eq (st : SystemState)
 core's replenish-queue slot (each step is a `processOneReplenishmentOnCore`). -/
 theorem foldl_processOneReplenishment_replenishQueueOnCore (c : CoreId) (now : Nat) (c' : CoreId)
     (dueIds : List SeLe4n.SchedContextId)
-    (acc : SystemState × List (CoreId × SgiKind) × Bool) :
-    (dueIds.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1.scheduler.replenishQueueOnCore c'
-      = acc.1.scheduler.replenishQueueOnCore c' := by
+    (acc : SystemState) :
+    (dueIds.foldl (fun acc scId => processOneReplenishmentOnCore acc c scId now) acc).scheduler.replenishQueueOnCore c'
+      = acc.scheduler.replenishQueueOnCore c' := by
   induction dueIds generalizing acc with
   | nil => rfl
   | cons hd tl ih =>
       rw [List.foldl_cons, ih]
-      exact processOneReplenishmentOnCore_replenishQueueOnCore_eq acc.1 c hd now c'
+      exact processOneReplenishmentOnCore_replenishQueueOnCore_eq acc c hd now c'
 
 /-- WS-SM SM5.I: core `c`'s replenish queue after `processReplenishmentsDueOnCore` is
 exactly the `popDue` remainder (the wake fold never re-inserts). -/
 theorem processReplenishmentsDueOnCore_replenishQueueOnCore_self (st : SystemState)
     (c : CoreId) (now : Nat) :
-    (processReplenishmentsDueOnCore st c now).1.scheduler.replenishQueueOnCore c
+    (processReplenishmentsDueOnCore st c now).scheduler.replenishQueueOnCore c
       = ((st.scheduler.replenishQueueOnCore c).popDue now).1 := by
   simp only [processReplenishmentsDueOnCore]
   rw [foldl_processOneReplenishment_replenishQueueOnCore]
@@ -105,7 +105,7 @@ theorem processReplenishmentsDueOnCore_replenishQueueOnCore_self (st : SystemSta
 `processReplenishmentsDueOnCore` (`popDue` writes only core `c`'s slot). -/
 theorem processReplenishmentsDueOnCore_replenishQueueOnCore_ne (st : SystemState)
     (c : CoreId) (now : Nat) (c' : CoreId) (h : c ≠ c') :
-    (processReplenishmentsDueOnCore st c now).1.scheduler.replenishQueueOnCore c'
+    (processReplenishmentsDueOnCore st c now).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
   simp only [processReplenishmentsDueOnCore]
   rw [foldl_processOneReplenishment_replenishQueueOnCore]
@@ -167,7 +167,7 @@ remainder (sorted + size-consistent are preserved by removal); every other core'
 unchanged. -/
 theorem processReplenishmentsDueOnCore_preserves_replenishQueueValidOnCore (st : SystemState)
     (c : CoreId) (now : Nat) (c' : CoreId) (hValid : replenishQueueValidOnCore st c') :
-    replenishQueueValidOnCore (processReplenishmentsDueOnCore st c now).1 c' := by
+    replenishQueueValidOnCore (processReplenishmentsDueOnCore st c now) c' := by
   unfold replenishQueueValidOnCore at hValid ⊢
   by_cases h : c = c'
   · subst h
@@ -180,7 +180,7 @@ theorem processReplenishmentsDueOnCore_preserves_replenishQueueValidOnCore (st :
 preserves replenish-queue validity on every core. -/
 theorem timerTickOnCorePrepared_preserves_replenishQueueValidOnCore (st : SystemState)
     (c c' : CoreId) (hValid : replenishQueueValidOnCore st c') :
-    replenishQueueValidOnCore (timerTickOnCorePrepared st c).1 c' := by
+    replenishQueueValidOnCore (timerTickOnCorePrepared st c) c' := by
   simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_replenishQueueValidOnCore
   unfold replenishQueueValidOnCore at hValid ⊢
@@ -191,57 +191,25 @@ replenish-queue validity on every core.  The prepared phase preserves it, the SM
 §14 budget-tick A4 preserves it, and a preempting `scheduleEffectiveOnCore` frames
 it. -/
 theorem timerTickOnCore_preserves_replenishQueueValidOnCore (st : SystemState) (c : CoreId)
-    (st' : SystemState) (sgis : List (CoreId × SgiKind)) (c' : CoreId)
-    (hValid : ∀ c'', replenishQueueValidOnCore st c'')
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    replenishQueueValidOnCore st' c' := by
-  have hPrep : ∀ c'', replenishQueueValidOnCore (timerTickOnCorePrepared st c).1 c'' :=
+    (c' : CoreId) (hValid : ∀ c'', replenishQueueValidOnCore st c'') :
+    replenishQueueValidOnCore (timerTickOnCore st c) c' := by
+  have hPrep : ∀ c'', replenishQueueValidOnCore (timerTickOnCorePrepared st c) c'' :=
     fun c'' => timerTickOnCorePrepared_preserves_replenishQueueValidOnCore st c c'' (hValid c'')
-  rw [timerTickOnCore_eq_prepared] at hStep
-  split at hStep
-  · -- idle arm: the prepared state, or the round-7 local-wake reschedule
-    -- (whose handler never touches a replenish queue)
-    split at hStep
-    · split at hStep
-      · simp at hStep
-      · rename_i st2 hH
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hst, _⟩ := hStep; subst hst
-        have h2 := hPrep c'
-        unfold replenishQueueValidOnCore at h2 ⊢
-        rw [handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH]
-        exact h2
-    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrep c'
-  · split at hStep
-    · simp at hStep
-    · -- budget tick `.ok (st3, b)`
-      rename_i st3 b tsgis hbud
-      obtain ⟨tcb, hTcb, hbud⟩ := timerTickChargeCurrentOnCore_ok hbud
-      have h3 : replenishQueueValidOnCore st3 c' :=
-        timerTickBudgetOnCore_preserves_replenishQueueValidOnCore _ c _ _ _ _ c' hPrep hbud
-      split at hStep
-      · -- preempted: scheduleEffectiveOnCore
-        split at hStep
-        · simp at hStep
-        · rename_i st4 hsched
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst
-          unfold replenishQueueValidOnCore at h3 ⊢
-          rw [scheduleEffectiveOnCore_replenishQueueOnCore _ c _ c' hsched]
-          exact h3
-      · -- not preempted: the round-7 local-wake reschedule, or identity
-        split at hStep
-        · split at hStep
-          · simp at hStep
-          · rename_i st4 hH
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hst, _⟩ := hStep; subst hst
-            unfold replenishQueueValidOnCore at h3 ⊢
-            rw [handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH]
-            exact h3
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
+  refine timerTickOnCore_of (P := fun s => ∀ c'', replenishQueueValidOnCore s c'') st c hPrep
+    ?_ ?_ ?_ c'
+  · intro s hs c''
+    have h2 := hs c''
+    unfold replenishQueueValidOnCore at h2 ⊢
+    rw [handleRescheduleSgiOnCore_replenishQueueOnCore s c _ c''
+      (handleRescheduleSgiOnCore_eq_state s c)]
+    exact h2
+  · intro s hs c''
+    have h2 := hs c''
+    unfold replenishQueueValidOnCore at h2 ⊢
+    rw [scheduleEffectiveOnCore_replenishQueueOnCore s c _ c'' (scheduleEffectiveOnCore_eq_state s c)]
+    exact h2
+  · intro tid tcb hTcb st3 b hb c''
+    exact timerTickBudgetOnCore_preserves_replenishQueueValidOnCore _ c _ _ _ _ c'' hPrep hb
 
 -- ============================================================================
 -- §2  Machine-timer frames (the per-core tick reads but never advances the
@@ -346,29 +314,29 @@ branch writes only the object store / scheduler slots (the bound-exhausted branc
 `timeoutBlockedThreads` is machine-framed). -/
 theorem timerTickBudgetOnCore_machine (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (st' : SystemState) (b : Bool)
-    {sgis : List (CoreId × SgiKind)}
     {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) :
     st'.machine = st.machine := by
   unfold timerTickBudgetOnCore budgetExhaustOnCore spendBudgetOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound: both time-slice arms are object/scheduler writes
     split at hStep <;>
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      · simp only [Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst; simp
   all_goals
     -- bound and donated: identical structure (getSchedContext? then the budget `if`)
     split at hStep
     · split at hStep
       · -- budget exhausted (the `timeoutBlockedThreads` machine-frame closes it)
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst
         simp [timeoutBlockedThreads_machine, replenishOnCore]
       · -- budget > 1
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        simp only [Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst; rfl
-    · simp at hStep
+    · simp only [Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst; rfl
 
 /-- WS-SM SM5.I: `dispatchIdleOnCore` leaves the machine **timer** unchanged (it
 restores the idle thread's register context — `machine.regs` — but never the
@@ -414,47 +382,18 @@ theorem scheduleEffectiveOnCore_machine_timer (st : SystemState) (c : CoreId)
 machine **timer** unchanged — it reads `now := machine.timer` but never advances the
 global timer (prepared + budget tick fully preserve the machine; a preempting
 `scheduleEffectiveOnCore` changes only `machine.regs`). -/
-theorem timerTickOnCore_machine_timer_eq (st : SystemState) (c : CoreId)
-    (st' : SystemState) (sgis : List (CoreId × SgiKind))
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    st'.machine.timer = st.machine.timer := by
-  have hPrepM : (timerTickOnCorePrepared st c).1.machine = st.machine :=
-    timerTickOnCorePrepared_machine_eq st c
-  rw [timerTickOnCore_eq_prepared] at hStep
-  split at hStep
-  · -- idle arm: prepared, or the round-7 local-wake reschedule (timer-framed)
-    split at hStep
-    · split at hStep
-      · simp at hStep
-      · rename_i st2 hH
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hst, _⟩ := hStep; subst hst
-        rw [handleRescheduleSgiOnCore_machine_timer _ c _ hH, hPrepM]
-    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨hst, _⟩ := hStep; subst hst; rw [hPrepM]
-  · split at hStep
-    · simp at hStep
-    · rename_i st3 b tsgis hbud
-      obtain ⟨tcb, hTcb, hbud⟩ := timerTickChargeCurrentOnCore_ok hbud
-      have h3 : st3.machine = (timerTickOnCorePrepared st c).1.machine :=
-        timerTickBudgetOnCore_machine _ c _ _ _ _ hbud
-      split at hStep
-      · split at hStep
-        · simp at hStep
-        · rename_i st4 hsched
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst
-          rw [scheduleEffectiveOnCore_machine_timer _ c _ hsched, h3, hPrepM]
-      · split at hStep
-        · split at hStep
-          · simp at hStep
-          · rename_i st4 hH
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hst, _⟩ := hStep; subst hst
-            rw [handleRescheduleSgiOnCore_machine_timer _ c _ hH, h3, hPrepM]
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst
-          rw [h3, hPrepM]
+theorem timerTickOnCore_machine_timer_eq (st : SystemState) (c : CoreId) :
+    (timerTickOnCore st c).machine.timer = st.machine.timer := by
+  refine timerTickOnCore_of (P := fun s => s.machine.timer = st.machine.timer) st c
+    (by show (timerTickOnCorePrepared st c).machine.timer = _; rw [timerTickOnCorePrepared_machine_eq]) ?_ ?_ ?_
+  · intro s hs
+    rw [handleRescheduleSgiOnCore_machine_timer s c _ (handleRescheduleSgiOnCore_eq_state s c)]
+    exact hs
+  · intro s hs
+    rw [scheduleEffectiveOnCore_machine_timer s c _ (scheduleEffectiveOnCore_eq_state s c)]
+    exact hs
+  · intro tid tcb hTcb st3 b hb
+    rw [timerTickBudgetOnCore_machine _ c _ _ _ _ hb, timerTickOnCorePrepared_machine_eq]
 
 -- ============================================================================
 -- §3  Pipeline-order preservation (every pending replenishment stays in the
@@ -490,7 +429,7 @@ and never advances the timer. -/
 theorem processReplenishmentsDueOnCore_preserves_replenishmentPipelineOrderOnCore
     (st : SystemState) (c : CoreId) (now : Nat) (c' : CoreId)
     (hPipe : replenishmentPipelineOrderOnCore st c') :
-    replenishmentPipelineOrderOnCore (processReplenishmentsDueOnCore st c now).1 c' := by
+    replenishmentPipelineOrderOnCore (processReplenishmentsDueOnCore st c now) c' := by
   intro pair hMem
   rw [processReplenishmentsDueOnCore_machine_eq]
   by_cases h : c = c'
@@ -516,7 +455,7 @@ theorem scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore
 theorem timerTickOnCorePrepared_preserves_replenishmentPipelineOrderOnCore
     (st : SystemState) (c c' : CoreId)
     (hPipe : replenishmentPipelineOrderOnCore st c') :
-    replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c).1 c' := by
+    replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c) c' := by
   simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_replenishmentPipelineOrderOnCore
   intro pair hMem
@@ -538,11 +477,10 @@ is future because the SchedContext's `period` is positive. -/
 theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (st' : SystemState) (b : Bool) (c' : CoreId)
-    {sgis : List (CoreId × SgiKind)}
     (hPipe : replenishmentPipelineOrderOnCore st c')
     (hPeriod : ∀ scId sc, st.getSchedContext? scId = some sc → 0 < sc.period.val)
     {hW : st.getTcb? tid = some tcb}
-    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) :
     replenishmentPipelineOrderOnCore st' c' := by
   have hM : st'.machine.timer = st.machine.timer := by
     rw [timerTickBudgetOnCore_machine st c tid tcb st' b hStep]
@@ -550,7 +488,7 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
   | .unbound =>
       simp only [timerTickBudgetOnCore, sliceExpireOnCore, SystemState.rewriteObject, hB] at hStep
       split at hStep <;>
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        · simp only [Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
           exact pipeline_frame_of_queue_timer_eq st _ c' (by simp) hM hPipe
   | .bound scId =>
@@ -567,13 +505,15 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
               exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId _ hPipe
                 (by have := hPeriod scId sc hSc; omega)
             · exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne st c c' scId _ hcc hPipe
-          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
       | none =>
-          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
-          exact absurd hStep (by simp)
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc,
+            Prod.mk.injEq] at hStep
+          obtain ⟨hst, _⟩ := hStep; subst hst
+          exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
   | .donated scId owner =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
@@ -588,13 +528,15 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
               exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId _ hPipe
                 (by have := hPeriod scId sc hSc; omega)
             · exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne st c c' scId _ hcc hPipe
-          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
       | none =>
-          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
-          exact absurd hStep (by simp)
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc,
+            Prod.mk.injEq] at hStep
+          obtain ⟨hst, _⟩ := hStep; subst hst
+          exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
 
 /-- WS-SM SM5.I (pipeline-order, headline): the **live per-core timer tick**
 preserves replenishment pipeline-order on every core, given the pre-tick
@@ -602,53 +544,26 @@ pipeline-order and that every SchedContext (on the prepared state, which the bud
 tick runs against) has a positive `period` — so the budget insert `now + period` is
 strictly future, and `popDue` only removes entries. -/
 theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemState)
-    (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind)) (c' : CoreId)
+    (c : CoreId) (c' : CoreId)
     (hPipe : ∀ c'', replenishmentPipelineOrderOnCore st c'')
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).1.getSchedContext? scId = some sc →
-      0 < sc.period.val)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    replenishmentPipelineOrderOnCore st' c' := by
-  have hPrep : ∀ c'', replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c).1 c'' :=
+    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
+      0 < sc.period.val) :
+    replenishmentPipelineOrderOnCore (timerTickOnCore st c) c' := by
+  have hPrep : ∀ c'', replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c) c'' :=
     fun c'' => timerTickOnCorePrepared_preserves_replenishmentPipelineOrderOnCore st c c'' (hPipe c'')
-  rw [timerTickOnCore_eq_prepared] at hStep
-  split at hStep
-  · -- idle arm: prepared, or the round-7 local-wake reschedule (queue+timer framed)
-    split at hStep
-    · split at hStep
-      · simp at hStep
-      · rename_i st2 hH
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hst, _⟩ := hStep; subst hst
-        exact pipeline_frame_of_queue_timer_eq _ _ c'
-          (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH)
-          (handleRescheduleSgiOnCore_machine_timer _ c _ hH) (hPrep c')
-    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrep c'
-  · split at hStep
-    · simp at hStep
-    · rename_i st3 b tsgis hbud
-      obtain ⟨tcb, hTcb, hbud⟩ := timerTickChargeCurrentOnCore_ok hbud
-      have h3 : replenishmentPipelineOrderOnCore st3 c' :=
-        timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c'
-          (hPrep c') hPeriod hbud
-      split at hStep
-      · split at hStep
-        · simp at hStep
-        · rename_i st4 hsched
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst
-          exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ c' h3 hsched
-      · split at hStep
-        · split at hStep
-          · simp at hStep
-          · rename_i st4 hH
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hst, _⟩ := hStep; subst hst
-            exact pipeline_frame_of_queue_timer_eq _ _ c'
-              (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c' hH)
-              (handleRescheduleSgiOnCore_machine_timer _ c _ hH) h3
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
+  refine timerTickOnCore_of (P := fun s => ∀ c'', replenishmentPipelineOrderOnCore s c'') st c hPrep
+    ?_ ?_ ?_ c'
+  · intro s hs c''
+    have hH := handleRescheduleSgiOnCore_eq_state s c
+    exact pipeline_frame_of_queue_timer_eq _ _ c''
+      (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c'' hH)
+      (handleRescheduleSgiOnCore_machine_timer _ c _ hH) (hs c'')
+  · intro s hs c''
+    exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ c'' (hs c'')
+      (scheduleEffectiveOnCore_eq_state s c)
+  · intro tid tcb hTcb st3 b hb c''
+    exact timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c''
+      (hPrep c'') hPeriod hb
 
 -- ============================================================================
 -- §4  The aggregate: the live tick preserves `perCoreCbsInvariant`
@@ -676,17 +591,16 @@ core `c` is homed on `c`).  The strengthened
 phases proven) and narrows the residual to the budget-phase frame
 `hBudgetAffinity`.  This `hAffinity` form is retained for the existing call surface. -/
 theorem timerTickOnCore_preserves_perCoreCbsInvariant (st : SystemState) (c : CoreId)
-    (st' : SystemState) (sgis : List (CoreId × SgiKind)) (c' : CoreId)
+    (c' : CoreId)
     (hInv : ∀ c'', perCoreCbsInvariant st c'')
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).1.getSchedContext? scId = some sc →
+    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
       0 < sc.period.val)
-    (hAffinity : replenishQueueAffinityConsistentOnCore st' c')
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    perCoreCbsInvariant st' c' :=
-  ⟨timerTickOnCore_preserves_replenishQueueValidOnCore st c st' sgis c'
-      (fun c'' => (hInv c'').1) hStep,
-   timerTickOnCore_preserves_replenishmentPipelineOrderOnCore st c st' sgis c'
-      (fun c'' => (hInv c'').2.1) hPeriod hStep,
+    (hAffinity : replenishQueueAffinityConsistentOnCore (timerTickOnCore st c) c') :
+    perCoreCbsInvariant (timerTickOnCore st c) c' :=
+  ⟨timerTickOnCore_preserves_replenishQueueValidOnCore st c c'
+      (fun c'' => (hInv c'').1),
+   timerTickOnCore_preserves_replenishmentPipelineOrderOnCore st c c'
+      (fun c'' => (hInv c'').2.1) hPeriod,
    hAffinity⟩
 
 -- ============================================================================
@@ -707,7 +621,7 @@ theorem timerTickOnCore_preserves_perCoreCbsInvariant (st : SystemState) (c : Co
 --     (`tickClockedState_bootCore_replenish_ge`);
 --   * each core's own committed step *re-establishes* the strict form on its
 --     own queue at the current clock
---     (`perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`,
+--     (`perCoreTimerTickStep_establishes_replenishmentPipelineOrderOnCore_self`,
 --     via `popDue`'s prefix-drain under sortedness).
 --
 -- Together: strict pipeline order is a per-core property holding from a
@@ -868,15 +782,14 @@ The prepared phase `popDue`-drains everything `≤ timer` (strict remainder
 under sortedness); the budget phase's only insert is strictly future
 (`hPeriod`); the dispatch phase frames queue and timer. -/
 theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
-    (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (st : SystemState) (c : CoreId)
     (hSorted : replenishQueueSorted (st.scheduler.replenishQueueOnCore c))
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).1.getSchedContext? scId = some sc →
-      0 < sc.period.val)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    replenishmentPipelineOrderOnCore st' c := by
-  have hPrepSelf : replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c).1 c := by
+    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
+      0 < sc.period.val) :
+    replenishmentPipelineOrderOnCore (timerTickOnCore st c) c := by
+  have hPrepSelf : replenishmentPipelineOrderOnCore (timerTickOnCorePrepared st c) c := by
     intro pair hMem
-    have hQ : (timerTickOnCorePrepared st c).1.scheduler.replenishQueueOnCore c
+    have hQ : (timerTickOnCorePrepared st c).scheduler.replenishQueueOnCore c
         = ((st.scheduler.replenishQueueOnCore c).popDue st.machine.timer).1 := by
       simp only [timerTickOnCorePrepared]
       rw [processReplenishmentsDueOnCore_replenishQueueOnCore_self]
@@ -884,46 +797,19 @@ theorem timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
     rw [hQ] at hMem
     rw [timerTickOnCorePrepared_machine_eq]
     exact popDue_remaining_gt _ _ hSorted pair hMem
-  rw [timerTickOnCore_eq_prepared] at hStep
-  split at hStep
-  · -- idle arm: prepared, or the round-7 local-wake reschedule (queue+timer framed)
-    split at hStep
-    · split at hStep
-      · simp at hStep
-      · rename_i st2 hH
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hst, _⟩ := hStep; subst hst
-        exact pipeline_frame_of_queue_timer_eq _ _ c
-          (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c hH)
-          (handleRescheduleSgiOnCore_machine_timer _ c _ hH) hPrepSelf
-    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨hst, _⟩ := hStep; subst hst; exact hPrepSelf
-  · split at hStep
-    · simp at hStep
-    · rename_i st3 b tsgis hbud
-      obtain ⟨tcb, hTcb, hbud⟩ := timerTickChargeCurrentOnCore_ok hbud
-      have h3 : replenishmentPipelineOrderOnCore st3 c :=
-        timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c
-          hPrepSelf hPeriod hbud
-      split at hStep
-      · split at hStep
-        · simp at hStep
-        · rename_i st4 hsched
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst
-          exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore
-            _ c _ c h3 hsched
-      · split at hStep
-        · split at hStep
-          · simp at hStep
-          · rename_i st4 hH
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨hst, _⟩ := hStep; subst hst
-            exact pipeline_frame_of_queue_timer_eq _ _ c
-              (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c hH)
-              (handleRescheduleSgiOnCore_machine_timer _ c _ hH) h3
-        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨hst, _⟩ := hStep; subst hst; exact h3
+  refine timerTickOnCore_of (P := fun s => replenishmentPipelineOrderOnCore s c) st c hPrepSelf
+    ?_ ?_ ?_
+  · intro s hs
+    have hH := handleRescheduleSgiOnCore_eq_state s c
+    exact pipeline_frame_of_queue_timer_eq _ _ c
+      (handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ c hH)
+      (handleRescheduleSgiOnCore_machine_timer _ c _ hH) hs
+  · intro s hs
+    exact scheduleEffectiveOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ c hs
+      (scheduleEffectiveOnCore_eq_state s c)
+  · intro tid tcb hTcb st3 b hb
+    exact timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c
+      hPrepSelf hPeriod hb
 
 /-- WS-SM (PR #880 round 4, the drain guarantee): a core's **committed run-loop
 step** re-establishes strict pipeline order on its own queue — the sortedness
@@ -931,26 +817,21 @@ travels across the clock advance (scheduler untouched), the tick drains the
 due prefix at the advanced clock, and the domain tick preserves the result.
 Instantiated at a remote core's own next PPI, this is exactly what closes the
 due-now window `tickClockedState_bootCore_replenish_ge` bounds. -/
-theorem perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self
+theorem perCoreTimerTickStep_establishes_replenishmentPipelineOrderOnCore_self
     (st : SystemState) (coreId : UInt64) (h : coreId.toNat < numCores)
     (hSorted : replenishQueueSorted (st.scheduler.replenishQueueOnCore ⟨coreId.toNat, h⟩))
     (hPeriod : ∀ scId sc,
       (timerTickOnCorePrepared (tickClockedState st ⟨coreId.toNat, h⟩)
-          ⟨coreId.toNat, h⟩).1.getSchedContext? scId = some sc → 0 < sc.period.val)
-    (result : SystemState × List (CoreId × SgiKind)) (st2 : SystemState)
-    (hok : timerTickOnCore (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩
-      = .ok result)
-    (hdom : scheduleDomainOnCore result.1 ⟨coreId.toNat, h⟩ = .ok st2) :
+          ⟨coreId.toNat, h⟩).getSchedContext? scId = some sc → 0 < sc.period.val) :
     replenishmentPipelineOrderOnCore (perCoreTimerTickStep st coreId).1 ⟨coreId.toNat, h⟩ := by
-  obtain ⟨st', sgis⟩ := result
-  rw [perCoreTimerTickStep_ok st coreId h (st', sgis) st2 hok hdom]
+  rw [perCoreTimerTickStep_valid_core st coreId h]
   have hSorted' : replenishQueueSorted
       ((tickClockedState st ⟨coreId.toNat, h⟩).scheduler.replenishQueueOnCore
         ⟨coreId.toNat, h⟩) := by
     rw [tickClockedState_scheduler]; exact hSorted
   have hSelf := timerTickOnCore_establishes_replenishmentPipelineOrderOnCore_self
-    (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ st' sgis hSorted' hPeriod hok
-  exact scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore st'
-    ⟨coreId.toNat, h⟩ st2 ⟨coreId.toNat, h⟩ hSelf hdom
+    (tickClockedState st ⟨coreId.toNat, h⟩) ⟨coreId.toNat, h⟩ hSorted' hPeriod
+  exact scheduleDomainOnCore_preserves_replenishmentPipelineOrderOnCore _
+    ⟨coreId.toNat, h⟩ _ ⟨coreId.toNat, h⟩ hSelf (scheduleDomainOnCore_eq_state _ _)
 
 end SeLe4n.Kernel

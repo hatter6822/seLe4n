@@ -78,6 +78,13 @@ theorem markKeyChangeFor_preserves_ipcInvariantFull (st : SystemState)
   ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFor_objects _ _ _)
     h
 
+/-- The candidacy hook writes a flag or nothing. -/
+theorem markCandidacyGainFor_preserves_ipcInvariantFull (st : SystemState)
+    (tid : SeLe4n.ThreadId) (b : Bool)
+    (h : ipcInvariantFull st) : ipcInvariantFull (markCandidacyGainFor st tid b) :=
+  ipcInvariantFull_of_flagOnlyWrite (markCandidacyGainFor_objects _ _ _)
+    h
+
 /-- A reschedule-pending mark writes a flag and nothing else. -/
 theorem markReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemState)
     (c : CoreId) (h : ipcInvariantFull st) :
@@ -1757,20 +1764,24 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
             split at hStep
             · rename_i boundTcb hBT _
               cases hStep
-              have hObjP : (markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
+              have hObjP : (markKeyChangeFor (markCandidacyGainFor
+                  (SchedContextOps.schedContextConfigureBoundPropagate
                   stStored ⟨vScId.val.toNat⟩ boundTid boundTcb hBT priority domain) boundTid
+                  (hasSufficientBudget st boundTcb)) boundTid
                   (effectiveSchedParams st boundTcb)).objects.invExt := by
-                rw [markKeyChangeFor_objects]
+                rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
                 exact SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
                   _ _ _ _ _ _ _ hObjInvStored
               exact PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
                 (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjP
                   (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+                    (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
                     (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
-                      _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT)))
+                      _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT))))
                 (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+                  (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
                   (schedContextConfigureBoundPropagate_preserves_ipcInvariantFull stStored
-                    _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT))
+                    _ boundTid boundTcb priority domain hObjInvStored hInvStored hBT)))
             · cases hStep
               exact hInvStored
       · contradiction
@@ -2646,19 +2657,21 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             ipcInvariantFull_of_objects_eq (st := st) rfl hInv
           cases hStep
           exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+            (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
             (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
                   (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                    _ hObjInv hStage hScRaw hTcbRaw hBound)))
+                    _ hObjInv hStage hScRaw hTcbRaw hBound))))
         | none =>
           rw [hRC] at hStep
           simp only [Option.isSome_none] at hStep
           cases hStep
           exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+            (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
             (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
                   (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                    _ hObjInv hInv hScRaw hTcbRaw hBound)))
+                    _ hObjInv hInv hScRaw hTcbRaw hBound))))
       · rename_i hTcbNone
         dsimp only [SystemState.rewriteObject] at hStep
         cases hStep

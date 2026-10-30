@@ -1171,6 +1171,10 @@ def nonExecutedTransitionsPlain : List Name :=
   -- statement the fused declassify step's window recursion is proven equal
   -- to (`originateWindow_eq`); the compiled step runs `originateWindow`.
   , `SeLe4n.Kernel.originationPass
+  -- WS-ZA ZA6.2: the timer step's committed state, named for the theorems the
+  -- step's flag word is read against; the step and its compiled form build the
+  -- same state inline.
+  , `SeLe4n.Kernel.perCoreTimerTickPost
   , `SeLe4n.Kernel.processReplenishmentsDue
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
@@ -1188,6 +1192,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.schedule
   , `SeLe4n.Kernel.scheduleChecked
   , `SeLe4n.Kernel.scheduleDomain
+  -- WS-ZA ZA6.2: the domain accounting's `Except` statement, proven equal to the
+  -- form the timer step runs (`scheduleDomainOnCore_eq_state`); the step runs
+  -- `scheduleDomainOnCoreState`, which never refuses.
+  , `SeLe4n.Kernel.scheduleDomainOnCore
   , `SeLe4n.Kernel.scheduleEffective
   , `SeLe4n.Kernel.scheduleOrIdleOnCore
   , `SeLe4n.Kernel.setLockAt
@@ -1197,6 +1205,9 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.sweptAndRestored
   , `SeLe4n.Kernel.switchDomain
   , `SeLe4n.Kernel.switchDomainChecked
+  -- WS-ZA ZA6.2: the rotation's `Except` statement, proven equal to the form the
+  -- domain accounting runs (`switchDomainOnCore_eq_state`).
+  , `SeLe4n.Kernel.switchDomainOnCore
   , `SeLe4n.Kernel.syncThreadStates
   , `SeLe4n.Kernel.syscallEntry
   , `SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet
@@ -1206,7 +1217,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.timerTick
   , `SeLe4n.Kernel.timerTickBudget
   , `SeLe4n.Kernel.timerTickChecked
-  , `SeLe4n.Kernel.timerTickOnCorePreDomain
   , `SeLe4n.Kernel.timerTickOnCorePrepared
   , `SeLe4n.Kernel.timerTickWithBudget
   , `SeLe4n.Kernel.withOutgoingContextChecked

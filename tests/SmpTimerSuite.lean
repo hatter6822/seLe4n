@@ -69,8 +69,11 @@ open SeLe4n.Testing
 -- SM5.D.4 CBS replenishment + cross-core wake.
 #check @cbsReplenish_can_wake_remote_core
 #check @runningOnSomeCore
-#check @processOneReplenishmentOnCore_local_no_sgi
-#check @processOneReplenishmentOnCore_no_sgi_if_no_target
+#check @processOneReplenishmentOnCore_of_no_target
+#check @processOneReplenishmentOnCore_wake_eq
+#check @processOneReplenishmentOnCore_reschedulePendingOnCore_mono
+#check @processReplenishmentsDueOnCore_reschedulePendingOnCore_mono
+#check @processReplenishmentsDueOnCore_flags_wake_target
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_objects_invExt
 #check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
@@ -96,11 +99,13 @@ open SeLe4n.Testing
 #check @scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore
 #check @timerTickOnCore_eq_prepared
 #check @timerTickOnCorePrepared
-#check @timerTickOnCorePreDomain
+#check @timerTickOnCore_cases
+#check @timerTickOnCore_of
+#check @rescheduleIfPendingOnCore
+#check @timerTickOnCore_idle_local_wake_reschedules
+#check @timerTickOnCore_cannot_dispatch_vacated_core
 
 -- SM5.D.8 decidability witnesses.
-#check @timerTickOnCoreSucceeds
-#check @timerTickOnCoreEmitsSgi
 #check @timerTickBudgetOnCorePreempts
 
 -- SM5.I per-core run-loop step (PerCoreRunLoop) — the verified, FFI-free decision
@@ -111,12 +116,10 @@ open SeLe4n.Testing
 -- in `test_tier3_invariant_surface.sh` (elaboration-only, no link).
 #check @perCoreTimerTickStep
 #check @perCoreTimerTickStep_invalid_core
-#check @perCoreTimerTickStep_ok
-#check @perCoreTimerTickStep_error
-#check @perCoreTimerTickStep_domain_error
-#check @perCoreTimerTickStep_sgis_eq_tick
+#check @perCoreTimerTickStep_valid_core
+#check @perCoreTimerTickStep_raised_get
 #check @perCoreTimerTickStep_preserves_objects_invExt
-#check @perCoreTimerTickStep_ok_currentThreadValidOnCore
+#check @perCoreTimerTickStep_currentThreadValidOnCore
 #check @tickClockedState
 #check @tickClockedState_objects
 #check @tickClockedState_scheduler
@@ -128,12 +131,10 @@ open SeLe4n.Testing
 -- model clock moved (fail-closed arms report false).
 #check @perCoreTimerTickStepWithClockAdvance
 #check @perCoreTimerTickStepWithClockAdvance_state
-#check @perCoreTimerTickStepWithClockAdvance_sgis
+#check @perCoreTimerTickStepWithClockAdvance_raised
 #check @perCoreTimerTickStepWithClockAdvance_flag_def
 #check @perCoreTimerTickStepWithClockAdvance_flag_iff
 #check @perCoreTimerTickStepWithClockAdvance_flag_invalid_core
-#check @perCoreTimerTickStepWithClockAdvance_flag_error
-#check @perCoreTimerTickStepWithClockAdvance_flag_domain_error
 #check @scheduleDomainOnCore_preserves_currentThreadValidOnCore
 
 -- §4b SM5.D.6 full per-core domain re-dispatch (switchDomainOnCore / scheduleDomainOnCore).
@@ -176,35 +177,33 @@ open SeLe4n.Testing
 -- ============================================================================
 
 /-- SM5.D.2 / plan §6.1: the per-core tick advances core `c`'s state without
-advancing the global timer (idle path). -/
-example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
-    (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = none)
-    (hNoWake : (timerTickOnCorePrepared st c).2.2 = false)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) : st'.machine = st.machine :=
-  timerTickOnCore_advances_per_core st c st' sgis hCur hNoWake hStep
+advancing the global timer (quiet idle path). -/
+example (st : SystemState) (c : CoreId)
+    (hCur : (timerTickOnCorePrepared st c).scheduler.currentOnCore c = none)
+    (hNoWake : (timerTickOnCorePrepared st c).scheduler.reschedulePendingOnCore c = false) :
+    (timerTickOnCore st c).machine = st.machine :=
+  timerTickOnCore_advances_per_core st c hCur hNoWake
 
-/-- SM5.D.4 / plan §6.1: a remote-targeted CBS replenish (of a thread not running
-on any core — audit-pass-2 / Codex-P2 guard) emits a cross-core SGI. -/
+/-- SM5.D.4 / plan §6.1 (WS-ZA ZA6.2): a CBS replenish that wakes a thread not
+running on any core raises the reschedule flag of the thread's target core; the
+step reads the SGI it owes off that flag. -/
 example (st : SystemState) (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTarget : replenishWakeTarget st (refillSchedContext st scId now) scId = some tid)
     (hTcb : (refillSchedContext st scId now).getTcb? tid = some tcb)
-    (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false)
-    (hRemote : determineTargetCore (refillSchedContext st scId now) tid ≠ execCore) :
-    (processOneReplenishmentOnCore st execCore scId now).2.1
-      = some (determineTargetCore (refillSchedContext st scId now) tid, SgiKind.reschedule) :=
-  cbsReplenish_can_wake_remote_core st execCore scId now tid tcb hTarget hTcb hNotRunning hRemote
+    (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false) :
+    (processOneReplenishmentOnCore st execCore scId now).scheduler.reschedulePendingOnCore
+      (determineTargetCore (refillSchedContext st scId now) tid) = true :=
+  cbsReplenish_can_wake_remote_core st execCore scId now tid tcb hTarget hTcb hNotRunning
 
 /-- SM5.D.5 / plan §6.1: budget-tick preemption re-dispatches via the budget-aware
 reschedule. -/
-example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 st' : SystemState)
-    (tsgis : List (CoreId × SgiKind))
-    (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid)
-    (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb)
-    (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, true, tsgis))
-    (hSched : scheduleEffectiveOnCore st3 c = .ok st') :
-    timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2.1 ++ tsgis) :=
-  timerTickOnCore_preempts_local st c tid tcb st3 st' hCur hTcb hBud hSched
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st3 : SystemState)
+    (hCur : (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid)
+    (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb)
+    (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, true)) :
+    timerTickOnCore st c = scheduleEffectiveOnCoreState st3 c :=
+  timerTickOnCore_preempts_local st c tid tcb st3 hCur hTcb hBud
 
 /-- SM5.D.6 (audit-pass-2): domain rotation is the separate atomic `scheduleDomainOnCore`
 (via `switchDomainOnCore`), NOT the tick — so a running thread never outlives its
@@ -220,18 +219,16 @@ example (st : SystemState) (c : CoreId) (entry : DomainScheduleEntry) (st' : Sys
 /-- SM5.D.6 (audit-pass-2 capstone): the per-core timer tick PRESERVES
 `currentThreadInActiveDomainOnCore` (it does no in-tick rotation), given the
 replenishment preserves it. -/
-example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
+example (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt)
-    (hPrepDom : currentThreadInActiveDomainOnCore (timerTickOnCorePrepared st c).1 c)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    currentThreadInActiveDomainOnCore st' c :=
-  timerTickOnCore_preserves_currentThreadInActiveDomainOnCore st c st' sgis hInv hPrepDom hStep
+    (hPrepDom : currentThreadInActiveDomainOnCore (timerTickOnCorePrepared st c) c) :
+    currentThreadInActiveDomainOnCore (timerTickOnCore st c) c :=
+  timerTickOnCore_preserves_currentThreadInActiveDomainOnCore st c hInv hPrepDom
 
 /-- SM5.D.2 (preservation): the tick preserves the object-store invariant. -/
-example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
-    (hInv : st.objects.invExt) (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    st'.objects.invExt :=
-  timerTickOnCore_preserves_objects_invExt st c st' sgis hInv hStep
+example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt) :
+    (timerTickOnCore st c).objects.invExt :=
+  timerTickOnCore_preserves_objects_invExt st c hInv
 
 /-- SM5.D.3 (plan §4.4): the tick lock-set acquires object < run-queue < replenish-queue. -/
 example (c : CoreId) :
@@ -239,27 +236,28 @@ example (c : CoreId) :
       < LockKey.replenishQueue c :=
   LockKey.runQueue_lt_replenishQueue _ _
 
-/-- SM5.D.5/.6 (B1): the per-core tick preserves per-core current-thread validity
-UNCONDITIONALLY (idle / not-preempted / preempted all discharge). -/
-example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
-    (hInv : st.objects.invExt) (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    currentThreadValidOnCore st' c :=
-  timerTickOnCore_preserves_currentThreadValidOnCore st c st' sgis hInv hStep
+/-- SM5.D.5/.6 (B1): the per-core tick preserves per-core current-thread
+validity on every arm (idle / not-preempted / preempted), given it after the
+drain: the tick is total, so the current thread's survival of the drain is the
+store fact the proof consumes (`timerTickOnCorePrepared_preserves_currentThreadValidOnCore`
+discharges it from the pre-state). -/
+example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hPrep : currentThreadValidOnCore (timerTickOnCorePrepared st c) c) :
+    currentThreadValidOnCore (timerTickOnCore st c) c :=
+  timerTickOnCore_preserves_currentThreadValidOnCore st c hInv hPrep
 
 /-- SM5.D.5/.6 (B2): the per-core tick preserves per-core run-queue well-formedness,
-given the budget-tick discharge `hBudgetRqWf` (unconditional on clean paths via
-`timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed`; the
-bound-budget-exhausted re-enqueue is the SM5.F tracked gap). -/
-example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
+given the budget-tick discharge `hBudgetRqWf` (discharged for every arm by
+`timerTickBudgetOnCore_preserves_runQueueSafetyOnCore`). -/
+example (st : SystemState) (c : CoreId)
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
-    (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
-       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
-       (st3.scheduler.runQueueOnCore c).wellFormed)
-    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
-    (st'.scheduler.runQueueOnCore c).wellFormed :=
-  timerTickOnCore_preserves_runQueueOnCoreWellFormed st c st' sgis hwf hBudgetRqWf hStep
+    (hBudgetRqWf : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c) c tid tcb hTcb = (st3, b) →
+       (st3.scheduler.runQueueOnCore c).wellFormed) :
+    ((timerTickOnCore st c).scheduler.runQueueOnCore c).wellFormed :=
+  timerTickOnCore_preserves_runQueueOnCoreWellFormed st c hwf hBudgetRqWf
 
 /-- SM5.D.6: a successful per-core domain switch (non-empty schedule) clears the
 current thread on core `c`. -/
@@ -313,9 +311,7 @@ private def stUnbound (ts : Nat) : SystemState :=
 private def budgetPreempts (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcbWitnessed? tid with
   | some ⟨tcb, hTcb⟩ =>
-    match timerTickBudgetOnCore st c tid tcb hTcb with
-    | .ok (_, b, _) => b
-    | .error _ => false
+    (timerTickBudgetOnCore st c tid tcb hTcb).2
   | none => false
 
 /-- The decidable predicate `timerTickBudgetOnCorePreempts`, resolved the same way. -/
@@ -328,20 +324,11 @@ private def budgetPreemptsDecided (st : SystemState) (c : CoreId) (tid : SeLe4n.
 private def budgetTickKeepsTimer (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
   match st.getTcbWitnessed? tid with
   | some ⟨tcb, hTcb⟩ =>
-    match timerTickBudgetOnCore st c tid tcb hTcb with
-    | .ok (s, _) => s.machine.timer == st.machine.timer
-    | .error _ => false
+    (timerTickBudgetOnCore st c tid tcb hTcb).1.machine.timer == st.machine.timer
   | none => false
 
-private def tickOk (st : SystemState) (c : CoreId) : Bool :=
-  match timerTickOnCore st c with
-  | .ok _ => true
-  | .error _ => false
-
-private def tickMachineTimer (st : SystemState) (c : CoreId) : Option Nat :=
-  match timerTickOnCore st c with
-  | .ok (s, _) => some s.machine.timer
-  | .error _ => none
+private def tickMachineTimer (st : SystemState) (c : CoreId) : Nat :=
+  (timerTickOnCore st c).machine.timer
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -449,66 +436,61 @@ private def runBudgetPreemptChecks : IO Unit := do
   assertBool "budget tick does not advance machine.timer"
     (budgetTickKeepsTimer (stUnbound 5) bootCoreId tid)
 
-/-- §3.6 SM5.D.2 / .9: the idle tick succeeds, preserves the global timer, and
-clears the timeout-error diagnostic. -/
+/-- §3.6 SM5.D.2 / .9: the idle tick preserves the global timer and clears the
+timeout-error diagnostic (the tick is total: there is no refusal to test). -/
 private def runIdleTickChecks : IO Unit := do
   IO.println "--- §3.6 SM5.D.2/.9 idle tick ---"
-  assertBool "idle tick succeeds (returns .ok)"
-    (tickOk stIdle bootCoreId)
   assertBool "idle tick does not advance the global machine timer"
-    (tickMachineTimer stIdle bootCoreId == some stIdle.machine.timer)
-  assertBool "timerTickOnCoreSucceeds decides the idle tick succeeds"
-    (decide (timerTickOnCoreSucceeds stIdle bootCoreId))
+    (tickMachineTimer stIdle bootCoreId == stIdle.machine.timer)
   -- the prepared state has the boot core's lastTimeoutErrors cleared.
   assertBool "the prepared state clears core's lastTimeoutErrors (SM5.D.9)"
-    ((timerTickOnCorePrepared stIdle bootCoreId).1.scheduler.lastTimeoutErrorsOnCore bootCoreId == [])
-  -- the idle tick result is exactly the prepared state.
-  assertBool "idle tick result is the prepared state"
-    (match timerTickOnCore stIdle bootCoreId with
-     | .ok r => r.1.scheduler.currentOnCore bootCoreId == none
-     | .error _ => false)
+    ((timerTickOnCorePrepared stIdle bootCoreId).scheduler.lastTimeoutErrorsOnCore bootCoreId == [])
+  -- the quiet idle tick leaves the core idle and raises no flag.
+  assertBool "quiet idle tick leaves the core idle"
+    ((timerTickOnCore stIdle bootCoreId).scheduler.currentOnCore bootCoreId == none)
+  assertBool "quiet idle tick raises no reschedule flag"
+    ((timerTickOnCore stIdle bootCoreId).scheduler.reschedulePending == PerCoreFlags.none)
 
-/-- §3.7 SM5.D.4: a replenishment with no wake target emits no cross-core SGI. -/
+/-- §3.7 SM5.D.4: a replenishment with no wake target raises no reschedule flag. -/
 private def runReplenishChecks : IO Unit := do
   IO.println "--- §3.7 SM5.D.4 CBS replenishment ---"
   -- On the idle state, there is no SchedContext at scId 99, so `replenishWakeTarget`
-  -- is `none` and `processOneReplenishmentOnCore` emits no SGI.
+  -- is `none` and `processOneReplenishmentOnCore` is the refill alone.
   let scId : SeLe4n.SchedContextId := ⟨99⟩
   assertBool "no SchedContext ⇒ no wake target"
     (replenishWakeTarget stIdle (refillSchedContext stIdle scId 0) scId == none)
-  assertBool "no wake target ⇒ no cross-core SGI"
-    ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).2.1 == none)
-  assertBool "no wake target ⇒ no local-wake bit either"
-    ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).2.2 == false)
+  assertBool "no wake target ⇒ no reschedule flag raised on any core"
+    ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).scheduler.reschedulePending
+      == stIdle.scheduler.reschedulePending)
   -- the replenishment leaves the boot run queue empty (no thread became runnable).
   assertBool "no-op replenishment leaves the run queue empty"
-    ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.runQueueWalk bootCoreId).isEmpty
+    ((processReplenishmentsDueOnCore stIdle bootCoreId 0).runQueueWalk bootCoreId).isEmpty
   -- the per-core CBS replenishment does not advance the global timer.
   assertBool "replenishment does not advance machine.timer"
-    ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.machine.timer == stIdle.machine.timer)
+    ((processReplenishmentsDueOnCore stIdle bootCoreId 0).machine.timer == stIdle.machine.timer)
 
 /-- §3.8 SM5.I: the verified per-core run-loop step (`perCoreTimerTickStep`) — the
 FFI-free decision core the (HAL-linked) per-core timer entry drives.  The entry's
-runtime behaviour (firing SGIs through `ffiSendSgi`) is not host-runnable (the test
+runtime behaviour (firing the raised flags' SGIs through `ffiSendSgi`) is not host-runnable (the test
 exe does not link the HAL); we exercise the pure step here. -/
 private def runRunLoopStepChecks : IO Unit := do
   IO.println "--- §3.8 SM5.I per-core run-loop step ---"
   let st := stIdle
-  -- Out-of-range core id is a fail-closed no-op: state unchanged, no SGIs.
-  assertBool "step: out-of-range core id (99) is a no-op, no SGIs"
-    (((perCoreTimerTickStep st 99).2).isEmpty)
+  -- Out-of-range core id is a fail-closed no-op: state unchanged, no flag raised.
+  assertBool "step: out-of-range core id (99) is a no-op, no flag raised"
+    ((perCoreTimerTickStep st 99).2 == PerCoreFlags.none)
   assertBool "step: out-of-range core id (99) leaves the timer untouched"
     ((perCoreTimerTickStep st 99).1.machine.timer == st.machine.timer)
-  -- On a valid idle core (currentOnCore = none), the tick emits no cross-core SGIs.
-  assertBool "step: idle valid core (0) emits no cross-core SGIs"
-    (((perCoreTimerTickStep st 0).2).isEmpty)
-  -- The step never fabricates SGIs beyond what `timerTickOnCore` returns.
-  assertBool "step on valid core 3 emits no SGIs on the idle fixture"
-    (((perCoreTimerTickStep st 3).2).isEmpty)
+  -- On a valid idle core (currentOnCore = none), the tick raises no flag.
+  assertBool "step: idle valid core (0) raises no flag (no SGI owed)"
+    ((perCoreTimerTickStep st 0).2 == PerCoreFlags.none)
+  -- The step raises nothing the tick did not: the idle fixture wakes nothing.
+  assertBool "step on valid core 3 raises no flag on the idle fixture"
+    ((perCoreTimerTickStep st 3).2 == PerCoreFlags.none)
   -- Success path COMMITS a genuine state change (vs the fail-closed no-op):
   -- seed core 0's lastTimeoutErrors with a stale record, then a valid-core step
   -- runs the SM5.D.9 clear so the post-step record is empty — proving the step
-  -- took the `.ok result → result` branch and installed the new state, not `(st, [])`.
+  -- took the valid-core branch and installed the new state, not `(st, none)`.
   let staleErrs : List (ThreadId × KernelError) := [(ThreadId.ofNat 1, KernelError.invalidArgument)]
   let stStale : SystemState :=
     { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore bootCoreId staleErrs }
@@ -674,14 +656,14 @@ private def runClockAdvanceFlagChecks : IO Unit := do
   -- Fail-closed: an out-of-range core id commits nothing and reports nothing.
   assertBool "out-of-range core id reports no clock advance (fail-closed)"
     ((perCoreTimerTickStepWithClockAdvance stIdle 99).1.2 == false)
-  -- The flagged step commits the plain step's state and SGIs verbatim (the
-  -- flag is a report beside the commit, never a change to it).
+  -- The flagged step commits the plain step's state and raised flags verbatim
+  -- (the clock flag is a report beside the commit, never a change to it).
   assertBool "flagged step commits the plain step's state (timer agrees)"
     ((perCoreTimerTickStepWithClockAdvance stIdle 0).2.machine.timer
       == (perCoreTimerTickStep stIdle 0).1.machine.timer)
-  assertBool "flagged step emits the plain step's SGIs"
-    ((perCoreTimerTickStepWithClockAdvance stIdle 0).1.1.length
-      == (perCoreTimerTickStep stIdle 0).2.length)
+  assertBool "flagged step raises the plain step's flags"
+    ((perCoreTimerTickStepWithClockAdvance stIdle 0).1.1
+      == (perCoreTimerTickStep stIdle 0).2)
   -- The busy boundary fixture (§3.10) also commits a boot-core advance: the
   -- flag rides every committed boot step, whatever the scheduling outcome.
   assertBool "busy boundary fixture's boot step reports the clock advance"
@@ -692,7 +674,7 @@ clock advance can leave a REMOTE core's queued replenishment due at exactly
 the new clock — never strictly overdue (the weak form
 `tickClockedState_bootCore_replenish_ge` holds) — and the owning core's own
 next committed step drains it, restoring the strict pipeline-order form
-(`perCoreTimerTickStep_ok_establishes_replenishmentPipelineOrderOnCore_self`).
+(`perCoreTimerTickStep_establishes_replenishmentPipelineOrderOnCore_self`).
 The two-phase pin of the bounded release window inherent to per-core release
 queues (each core drains its own queue on its own PPI). -/
 private def runClockAdvanceReplenishChecks : IO Unit := do
@@ -727,9 +709,11 @@ replenishment that refills a HIGHER-priority thread queued on the executing
 core itself preempts the lower-priority current thread in the very tick that
 made it eligible.  The wake is otherwise invisible — placement suppressed (the
 thread sat queued since its exhaustion re-enqueue), no SGI (local target), no
-preemption flag (the current thread's budget survives the charge) — so before
-round 7 the refilled thread waited out the current thread's entire remaining
-budget on the default empty domain schedule.  Also pins the idle-slot arm (a
+preemption (the current thread's budget survives the charge) — so before round 7
+the refilled thread waited out the current thread's entire remaining budget on
+the default empty domain schedule.  Since WS-ZA ZA6.2 the wake raises the
+executing core's own reschedule flag, and the tick's local decision
+(`rescheduleIfPendingOnCore`) reads it.  Also pins the idle-slot arm (a
 vacated core dispatches its refilled thread — the round-17 carve-out) and the
 quiet-tick identity (no local wake, no re-dispatch). -/
 private def runLocalReplenishRescheduleChecks : IO Unit := do
@@ -753,38 +737,32 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
         scHi.toObjId (.schedContext scObj)).withRunnable [tidHi]).build
   let stBusy := { stBase with scheduler := stBase.scheduler.setCurrentOnCore bootCoreId (some tidLo) }
   let stDue := replenishOnCore stBusy bootCoreId scHi stBusy.machine.timer
-  -- The drain raises the local-wake bit: the wake resolved and targeted the
-  -- executing core, where no SGI can poke.
-  assertBool "the prepared phase raises the local-wake bit"
-    ((timerTickOnCorePrepared stDue bootCoreId).2.2 == true)
-  assertBool "the local wake fires no SGI (local target)"
-    ((timerTickOnCorePrepared stDue bootCoreId).2.1.isEmpty)
+  -- The drain raises the executing core's own flag: the wake resolved and
+  -- targeted the executing core, where no SGI can poke.
+  assertBool "the drain raises the executing core's reschedule flag"
+    ((timerTickOnCorePrepared stDue bootCoreId).scheduler.reschedulePendingOnCore bootCoreId
+      == true)
+  assertBool "the local wake owes no SGI (the step's decision clears the flag)"
+    ((perCoreTimerTickStep stDue 0).2 == PerCoreFlags.none)
   -- THE round-7 pin: the tick that refills tidHi dispatches it — the
   -- lower-priority current is preempted at the release point, not after its
   -- remaining budget.
   assertBool "the refilling tick preempts the lower-priority current (tidHi runs)"
-    (match timerTickOnCore stDue bootCoreId with
-     | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidHi
-     | .error _ => false)
+    ((timerTickOnCore stDue bootCoreId).scheduler.currentOnCore bootCoreId == some tidHi)
   assertBool "the preempted current is re-enqueued, not dropped"
-    (match timerTickOnCore stDue bootCoreId with
-     | .ok r => (r.1.queuedOn bootCoreId tidLo)
-     | .error _ => false)
+    ((timerTickOnCore stDue bootCoreId).queuedOn bootCoreId tidLo)
   -- Idle-slot arm (the round-17 carve-out): a vacated core whose queued thread
   -- was ineligible at vacate time is dispatched the moment its refill lands.
   let stVacantDue := replenishOnCore stBase bootCoreId scHi stBase.machine.timer
   assertBool "a vacated core dispatches its refilled thread in the same tick"
-    (match timerTickOnCore stVacantDue bootCoreId with
-     | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidHi
-     | .error _ => false)
-  -- Quiet tick: with no due replenishment the bit stays down and the tick is
+    ((timerTickOnCore stVacantDue bootCoreId).scheduler.currentOnCore bootCoreId == some tidHi)
+  -- Quiet tick: with no due replenishment the flag stays down and the tick is
   -- the plain budget charge — no re-dispatch, tidLo keeps the core.
-  assertBool "a quiet tick raises no local-wake bit"
-    ((timerTickOnCorePrepared stBusy bootCoreId).2.2 == false)
+  assertBool "a quiet tick raises no flag on the executing core"
+    ((timerTickOnCorePrepared stBusy bootCoreId).scheduler.reschedulePendingOnCore bootCoreId
+      == false)
   assertBool "a quiet non-preempting tick keeps the current thread"
-    (match timerTickOnCore stBusy bootCoreId with
-     | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidLo
-     | .error _ => false)
+    ((timerTickOnCore stBusy bootCoreId).scheduler.currentOnCore bootCoreId == some tidLo)
 
 /-- §3.13b a replenishment wakes only a runnable bound thread: a thread blocked
 in IPC or suspended (`.Inactive`) keeps its state and stays off the run queue
@@ -812,13 +790,12 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
     let stDue := replenishOnCore st bootCoreId scB st.machine.timer
     assertBool s!"{label}: the refill names no wake target"
       (replenishWakeTarget st (refillSchedContext st scB st.machine.timer) scB == none)
-    assertBool s!"{label}: the tick raises no local-wake bit"
-      ((timerTickOnCorePrepared stDue bootCoreId).2.2 == false)
+    assertBool s!"{label}: the drain raises no flag on the executing core"
+      ((timerTickOnCorePrepared stDue bootCoreId).scheduler.reschedulePendingOnCore bootCoreId
+        == false)
     assertBool s!"{label}: the tick queues the thread nowhere"
-      (match timerTickOnCore stDue bootCoreId with
-       | .ok r => !(r.1.queuedOn bootCoreId tidB) &&
-           r.1.scheduler.currentOnCore bootCoreId != some tidB
-       | .error _ => false)
+      (!((timerTickOnCore stDue bootCoreId).queuedOn bootCoreId tidB) &&
+        (timerTickOnCore stDue bootCoreId).scheduler.currentOnCore bootCoreId != some tidB)
 
 /-- §3.14 fixture: core 1 runs `tidCur`, charged on an SC one charge from
 exhaustion; `tidW` — blocked on the endpoint's send queue with the given
@@ -852,8 +829,8 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
 /-- §3.14 (PR #880 round 8 — affinity-aware budget-timeout wakes): a thread
 whose budget-bounded IPC times out on a secondary core's tick wakes onto its
 HOME core (its `cpuAffinity`; the boot core when unbound) — never hard-pinned
-to the boot queue — and a remote home core is poked with a `.reschedule` SGI
-carried in the tick's result.  Before round 8 the timeout wake was
+to the boot queue — and a remote home core's reschedule flag is raised, so the
+step's raised word names it and the entry fires its `.reschedule` SGI.  Before round 8 the timeout wake was
 `ensureRunnable` (bootCoreId-pinned, no SGI): an affinity-bound waiter landed
 on a queue whose dispatch gate refuses it (`affinityAdmitsCore` fail-closed)
 or ran off its affinity core, and no poke ever reached its home core. -/
@@ -864,38 +841,26 @@ private def runAffinityTimeoutWakeChecks : IO Unit := do
   -- Remote-affinity waiter: the exhaustion tick on core 1 wakes it onto core 2.
   let stRemote := mkTimeoutWakeState (some core2)
   assertBool "remote-affinity waiter wakes onto its HOME core's queue (core 2)"
-    (match timerTickOnCore stRemote core1 with
-     | .ok r => (r.1.queuedOn core2 tidW)
-     | .error _ => false)
+    ((timerTickOnCore stRemote core1).queuedOn core2 tidW)
   assertBool "remote-affinity waiter is NOT parked on the boot queue (the round-8 bug)"
-    (match timerTickOnCore stRemote core1 with
-     | .ok r => ! (r.1.queuedOn bootCoreId tidW)
-     | .error _ => false)
-  assertBool "the remote home core is poked: (core 2, .reschedule) rides the tick result"
-    (match timerTickOnCore stRemote core1 with
-     | .ok r => r.2.contains (core2, SgiKind.reschedule)
-     | .error _ => false)
+    (! (timerTickOnCore stRemote core1).queuedOn bootCoreId tidW)
+  assertBool "the remote home core's flag is raised by the tick"
+    ((timerTickOnCore stRemote core1).scheduler.reschedulePendingOnCore core2)
+  assertBool "the remote home core is poked: (core 2, .reschedule) is in the step's raised word"
+    ((sgisOfRaised (perCoreTimerTickStep stRemote 1).2).contains (core2, SgiKind.reschedule))
   -- Local-affinity waiter: the wake stays on the ticking core — no SGI at all.
   let stLocal := mkTimeoutWakeState (some core1)
   assertBool "local-affinity waiter wakes onto the ticking core's own queue"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r => (r.1.queuedOn core1 tidW)
-     | .error _ => false)
-  assertBool "a local timeout wake fires no SGI"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r => r.2.isEmpty
-     | .error _ => false)
+    ((timerTickOnCore stLocal core1).queuedOn core1 tidW)
+  assertBool "a local timeout wake fires no SGI (the dispatch clears the local flag)"
+    ((perCoreTimerTickStep stLocal 1).2 == PerCoreFlags.none)
   -- Unbound waiter: boot-core placement (as before round 8) — but the boot
   -- core now gets its `.reschedule` poke, since the wake is remote to core 1.
   let stUnbound := mkTimeoutWakeState none
   assertBool "unbound waiter wakes onto the boot queue"
-    (match timerTickOnCore stUnbound core1 with
-     | .ok r => (r.1.queuedOn bootCoreId tidW)
-     | .error _ => false)
+    ((timerTickOnCore stUnbound core1).queuedOn bootCoreId tidW)
   assertBool "the boot core is poked for the unbound waiter woken from core 1"
-    (match timerTickOnCore stUnbound core1 with
-     | .ok r => r.2.contains (bootCoreId, SgiKind.reschedule)
-     | .error _ => false)
+    ((sgisOfRaised (perCoreTimerTickStep stUnbound 1).2).contains (bootCoreId, SgiKind.reschedule))
 
 /-- §3.15 (WS-RR RR7.14 — the timeout return frame): a thread whose blocking IPC
 budget expires is woken `.ready` with `timedOut := true`, and until this row it
@@ -915,37 +880,30 @@ private def runTimeoutFrameStagingChecks : IO Unit := do
   assertBool "setup: the budget-blocked waiter holds a window that is not the timeout frame"
     (decide (Architecture.readReturnFrame stLocal tidW ≠ Architecture.timeoutFrame))
   assertBool "a timed-out waiter reads back .ipcTimeout after the exhaustion tick"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r => decide (Architecture.readReturnFrame r.1 tidW = Architecture.timeoutFrame)
-     | .error _ => false)
+    (decide (Architecture.readReturnFrame (timerTickOnCore stLocal core1) tidW
+      = Architecture.timeoutFrame))
   assertBool "…and it is the TIMEOUT frame, not the cancellation one"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r => decide (Architecture.readReturnFrame r.1 tidW
-                          ≠ Architecture.cancelledIpcFrame)
-     | .error _ => false)
+    (decide (Architecture.readReturnFrame (timerTickOnCore stLocal core1) tidW
+      ≠ Architecture.cancelledIpcFrame))
   assertBool "…while `timedOut` is still set — the flag and the frame are both carried"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r =>
-         match r.1.getTcb? tidW with
-         | some t => decide (t.timedOut = true ∧ t.ipcState = ThreadIpcState.ready)
-         | none => false
-     | .error _ => false)
+    (match (timerTickOnCore stLocal core1).getTcb? tidW with
+     | some t => decide (t.timedOut = true ∧ t.ipcState = ThreadIpcState.ready)
+     | none => false)
   assertBool "…and x7/pc/sp survive the staging (it writes x0-x5 only)"
-    (match timerTickOnCore stLocal core1, stLocal.getTcb? tidW with
-     | .ok r, some pre =>
-         match r.1.getTcb? tidW with
+    (match stLocal.getTcb? tidW with
+     | some pre =>
+         match (timerTickOnCore stLocal core1).getTcb? tidW with
          | some t => decide (t.registerContext.gpr ⟨7⟩ = pre.registerContext.gpr ⟨7⟩
                              ∧ t.registerContext.pc = pre.registerContext.pc
                              ∧ t.registerContext.sp = pre.registerContext.sp)
          | none => false
-     | _, _ => false)
+     | none => false)
   -- NEGATIVE: the still-running current thread on the ticking core is NOT
   -- handed a timeout frame — only the thread whose blocking IPC expired is.
   let tidCur := ThreadId.ofNat 320
   assertBool "NEGATIVE: the ticking core's current thread is handed no timeout frame"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r => decide (Architecture.readReturnFrame r.1 tidCur ≠ Architecture.timeoutFrame)
-     | .error _ => false)
+    (decide (Architecture.readReturnFrame (timerTickOnCore stLocal core1) tidCur
+      ≠ Architecture.timeoutFrame))
 
 /-- §3.15b (WS-BP BP7.5 — the timeout frame, delivered): staging the frame is
 half an answer; the other half is that the thread *reads* it.  A thread becomes
@@ -960,12 +918,9 @@ private def runTimeoutFrameDeliveryChecks : IO Unit := do
   let tidW := ThreadId.ofNat 321
   let stLocal := mkTimeoutWakeState (some core1)
   assertBool "a timed-out waiter, once switched to, resumes reading .ipcTimeout"
-    (match timerTickOnCore stLocal core1 with
-     | .ok r =>
-         match switchToThreadOnCore r.1 core1 tidW with
-         | .ok st' => decide ((Architecture.restoreTargetOnCore st' core1).deliveredFrame?
-                                = some Architecture.timeoutFrame)
-         | .error _ => false
+    (match switchToThreadOnCore (timerTickOnCore stLocal core1) core1 tidW with
+     | .ok st' => decide ((Architecture.restoreTargetOnCore st' core1).deliveredFrame?
+                            = some Architecture.timeoutFrame)
      | .error _ => false)
   assertBool "CONTROL: switched to before the tick, it would resume with its stale window"
     (match switchToThreadOnCore stLocal core1 tidW with

@@ -4343,7 +4343,7 @@ fields to a join point and the scheduler and the state are rebuilt. -/
 
 /-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
 (`cancelBoundDonationOnCore` at the victim's home core), the home core and the
-victim's entry-time scheduling key read before anything is written; the
+victim's entry-time scheduling key and budget eligibility read before anything is written; the
 identity on a victim holding no bound context. -/
 def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
@@ -4354,11 +4354,14 @@ def suspendReleasePerform (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
       let p0 := tcb.boostedPriority
       let d0 := effectiveDeadline st tcb
       let dom0 := tcb.domain
+      let e0 := hasSufficientBudget st tcb
       let st1 : SystemState := st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
       let st2 := suspendDropReplenishment st1 home scId
       markKeyChangeParts
-        (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+        (markCandidacyGainFor
+          (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
+          tid e0)
         tid p0 d0 dom0
     | _ => st
   | none => st

@@ -1576,6 +1576,38 @@ const PAGE_TABLE_UNMAP: u64 = 40;
 /// `Yield` (`SyscallId` 41).
 #[cfg(feature = "hw_target")]
 const YIELD: u64 = 41;
+/// **WS-ZA ZA6.2**: the steps of a scenario that are not syscalls, by a
+/// `syscall` no `SyscallId` takes.  A timer tick is entered as
+/// `handle_irq_per_core`'s timer branch enters it and measured as the kernel
+/// entries are ([`heap_allocations_kernel_entry`]); the two masks bracket the
+/// steps no real tick may come between, and are neither measured nor printed.
+#[cfg(feature = "hw_target")]
+const TIMER_TICK_STEP: u64 = u64::MAX;
+#[cfg(feature = "hw_target")]
+const MASK_TICKS_STEP: u64 = u64::MAX - 1;
+#[cfg(feature = "hw_target")]
+const UNMASK_TICKS_STEP: u64 = u64::MAX - 2;
+
+/// A scenario step of kind `syscall`, one of the three above.
+#[cfg(feature = "hw_target")]
+const fn kernel_step(name: &'static str, syscall: u64) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr: 0,
+        msg_len: 0,
+        msg: [0, 0, 0, 0],
+        primed: None,
+        blocks: false,
+    }
+}
+
+/// The refill scenario's scheduling context: a budget of one tick a period of
+/// two, so the refill a forfeit schedules falls due on the second tick after it.
+#[cfg(feature = "hw_target")]
+const REFILL_BUDGET: u64 = 1;
+#[cfg(feature = "hw_target")]
+const REFILL_PERIOD: u64 = 2;
 /// The declassification and audit calls (WS-ZA ZA5.13), by `SyscallId`.
 #[cfg(feature = "hw_target")]
 const DECLASSIFY: u64 = 30;
@@ -2108,9 +2140,12 @@ const PARTNER_PRIORITY: u64 = 255;
 ///   deleted; an endpoint, a notification, a reply and a CNode each carved
 ///   and its only capability deleted, which retires it; and the untyped
 ///   reset.  While the frame is mapped it is also the
-///   root task's IPC buffer, and the image's scheduling context is configured
-///   (its fifth word read from that buffer), bound to the suspended partner
-///   and unbound, then bound again and held while the partner is resumed and
+///   root task's IPC buffer, and the image's scheduling context is first
+///   configured to a one-tick budget every two ticks and bound to the root
+///   task, which yields its budget away and is refilled by the second of two
+///   kernel-entered timer ticks (the timer masked across them) and unbound;
+///   then configured (its fifth word read from that buffer), bound to the
+///   suspended partner and unbound, then bound again and held while the partner is resumed and
 ///   suspended, which releases it.  A service is registered on the image's
 ///   endpoint against the interface the boot installs (its fifth word read
 ///   from that buffer), queried and revoked.
@@ -2454,6 +2489,51 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             TCB_SET_IPC_BUFFER,
             ROOT_TCB_CAP,
             [FRAME_VADDR, 0, 0, 0],
+        ),
+        // WS-ZA ZA6.2: a tick that drains a due refill.  The context is
+        // configured to a one-tick budget every two ticks and bound to the
+        // root task, which yields: the forfeit spends the budget and queues
+        // its refill two ticks on, the yield returns its frame to the root
+        // task (ready, but ineligible), and core 0 runs its idle thread.  The
+        // first tick finds nothing due; the second drains the refill, which
+        // makes the root task eligible again, and the tick's own decision
+        // (the flag the refill raised) switches back to it, which the unbind
+        // then runs as.  No real tick may come between the bind and the
+        // drain, so the timer is masked across them.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        configure(
+            "refill-configure",
+            SCHED_CONTEXT_CAP,
+            [
+                REFILL_BUDGET,
+                REFILL_PERIOD,
+                PARTNER_PRIORITY,
+                REFILL_PERIOD,
+            ],
+        ),
+        invocation(
+            "refill-bind-root",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [ROOT_TCB_CAP, 0, 0, 0],
+        ),
+        RoundTrip {
+            name: "refill-yield",
+            syscall: YIELD,
+            cptr: 0,
+            msg_len: 0,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+        },
+        kernel_step("refill-wait-tick", TIMER_TICK_STEP),
+        kernel_step("refill-drain-tick", TIMER_TICK_STEP),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        invocation(
+            "refill-unbind-root",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
         ),
         configure(
             "sched-context-configure",
@@ -3089,8 +3169,32 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     for scenario in INVOCATION_SCENARIOS.iter() {
         for first in [true, false] {
             let which = if first { " (first call)" } else { "" };
+            let mut masked = None;
             for step in scenario.iter() {
-                if heap_allocations_round_trip(step, which) != Some(true) {
+                let ok = match step.syscall {
+                    MASK_TICKS_STEP => {
+                        masked = Some(crate::interrupts::disable_interrupts());
+                        true
+                    }
+                    UNMASK_TICKS_STEP => {
+                        if let Some(saved) = masked.take() {
+                            crate::interrupts::restore_interrupts(saved);
+                        }
+                        true
+                    }
+                    TIMER_TICK_STEP => {
+                        let entry = KernelEntry {
+                            name: step.name,
+                            enter: crate::timer::per_core_timer_tick_isr,
+                        };
+                        heap_allocations_kernel_entry(&entry, which) == Some(true)
+                    }
+                    _ => heap_allocations_round_trip(step, which) == Some(true),
+                };
+                if !ok {
+                    if let Some(saved) = masked.take() {
+                        crate::interrupts::restore_interrupts(saved);
+                    }
                     return Some(false);
                 }
             }

@@ -681,10 +681,18 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                 -- inheritance chain (`repropagateFromWaiter`); the boost it held
                 -- was computed from the old priority.  The walk runs as the bound
                 -- thread's home core, the core this configure's footprint locks.
+                --
+                -- The reset refills `budgetRemaining`, so a bound thread that had
+                -- exhausted its budget becomes one the chooser may pick: a
+                -- candidacy gain on the cores queueing it, flagged beside the
+                -- key change (`markCandidacyGainFor`, read against the PRE-state's
+                -- budget like the key).
                 let preKey := effectiveSchedParams st boundTcb
                 .ok ((), PriorityInheritance.repropagateFromWaiter
-                  (markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
-                    boundTid boundTcb hBound priority domain) boundTid preKey) boundTid
+                  (markKeyChangeFor (markCandidacyGainFor
+                    (schedContextConfigureBoundPropagate stStored scIdTyped
+                      boundTid boundTcb hBound priority domain) boundTid
+                    (hasSufficientBudget st boundTcb)) boundTid preKey) boundTid
                   (determineTargetCore st boundTid) st.objectIndex.length)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
@@ -742,8 +750,10 @@ context, the specification's propagation over the stored state. -/
       match stStored.getTcbWitnessed? boundTid with
       | some ⟨boundTcb, hBound⟩ =>
         PriorityInheritance.repropagateFromWaiter
-          (markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
-            boundTid boundTcb hBound priority domain) boundTid
+          (markKeyChangeFor (markCandidacyGainFor
+            (schedContextConfigureBoundPropagate stStored scIdTyped
+              boundTid boundTcb hBound priority domain) boundTid
+            (hasSufficientBudget st boundTcb)) boundTid
             (effectiveSchedParams st boundTcb)) boundTid
           (determineTargetCore st boundTid) st.objectIndex.length
       | none => stStored
@@ -773,8 +783,10 @@ across it). -/
       match stStored.getTcbWitnessed? boundTid with
       | some ⟨boundTcb, hBound⟩ =>
         PriorityInheritance.repropagateFromWaiter
-          (markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
-            boundTid boundTcb hBound priority domain) boundTid
+          (markKeyChangeFor (markCandidacyGainFor
+            (schedContextConfigureBoundPropagate stStored scIdTyped
+              boundTid boundTcb hBound priority domain) boundTid
+            (hasSufficientBudget st boundTcb)) boundTid
             (effectiveSchedParams st boundTcb)) boundTid
           (determineTargetCore st boundTid) st.objectIndex.length
       | none => stStored
@@ -1551,8 +1563,12 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
           -- The reschedule-SGI accumulator (KSC-1): the thread's key is its
           -- legacy one now; a re-bucketed queued thread flags its home exactly
-          -- when that differs from the reservation's key.
-          .ok ((), markKeyChangeFor st4 tid (effectiveSchedParams st tcb))
+          -- when that differs from the reservation's key.  An unbound thread
+          -- is always budget-eligible, so a queued thread whose reservation
+          -- had run dry is one the chooser may now pick: the candidacy hook
+          -- flags its cores (`markCandidacyGainFor`, against the pre-state).
+          .ok ((), markKeyChangeFor (markCandidacyGainFor st4 tid (hasSufficientBudget st tcb))
+            tid (effectiveSchedParams st tcb))
         -- Bound thread's TCB not found — clear SC side anyway
         | none =>
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
@@ -1617,7 +1633,8 @@ out over the same lookups. -/
         let st3q := schedContextUnbindQueueStage st3 unbindHome tid legacyPrio wasCurrent
         let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
         let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
-        markKeyChangeFor st4 tid (effectiveSchedParams st tcb)
+        markKeyChangeFor (markCandidacyGainFor st4 tid (hasSufficientBudget st tcb)) tid
+          (effectiveSchedParams st tcb)
       | none =>
         let updatedSc := { sc with boundThreadCode := 0, isActive := false,
                                    donationOrigin := none }
@@ -1688,13 +1705,14 @@ across a write and each is written in its slot
         let p0 := tcb.boostedPriority
         let d0 := effectiveDeadline st tcb
         let dom0 := tcb.domain
+        let e0 := hasSufficientBudget st tcb
         let st1 := unbindVacateRunningCore st runCore?
         let st2 := st1.updateSchedContext (SchedContextId.ofObjId vScId.val) clear
         let st3 := st2.updateTcb tid fun t =>
           { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
         let st3q := schedContextUnbindQueueStage st3 unbindHome tid legacyPrio wasCurrent
         let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
-        markKeyChangeParts st4 tid p0 d0 dom0
+        markKeyChangeParts (markCandidacyGainFor st4 tid e0) tid p0 d0 dom0
       | none =>
         let st1 := st.updateSchedContext (SchedContextId.ofObjId vScId.val) clear
         purgeReplenishmentFromAllCores st1 scIdTyped
@@ -1791,7 +1809,13 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
             -- The insert writes the thread's run-queue links (WS-ZA ZA4.5).  The
             -- reschedule-SGI accumulator (KSC-1): a wake on `refillHome`.
             (st2.runEnqueueOnCore refillHome tid (resolveInsertPriority st2 tid targetSc)).markReschedulePendingOnCore refillHome
-          else st2
+          else
+            -- Already queued (or running): the refill makes a queued thread one
+            -- the chooser may now pick, a candidacy gain on every core whose
+            -- queue holds it (`markCandidacyGainFor`; a running thread is in no
+            -- queue and is flagged nowhere).  The starved target was not
+            -- eligible before the transfer, so the gain is read against `false`.
+            markCandidacyGainFor st2 tid false
         | none => st2
       else st2
     | none => st
@@ -2084,6 +2108,8 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
           refine SystemState.RunQueueEntryStage.of_cond ?_ fun hD =>
             SystemState.RunQueueStage.of_invExt fun hInv => ?_
           · refine SystemState.RunQueueLinkStage.trans ?_ (.of_stage (markKeyChangeFor_runQueueStage _ _ _))
+            refine SystemState.RunQueueLinkStage.trans ?_
+              (.of_stage (markCandidacyGainFor_runQueueStage _ _ _))
             refine SystemState.RunQueueLinkStage.trans (st' := schedContextUnbindQueueStage _ _ _ _ _) ?_
               (.of_stage (SystemState.RunQueueStage.of_frame rfl rfl rfl))
             refine SystemState.RunQueueLinkStage.trans (st' := SystemState.updateTcb _ _ _) ?_
@@ -2125,6 +2151,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
                   SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hc
                 exact hrc ((hD.current c tid hc).2.1 r hCurR)
           refine SystemState.RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
+          refine SystemState.RunQueueStage.trans ?_ (markCandidacyGainFor_runQueueStage _ _ _)
           refine SystemState.RunQueueStage.trans (st' := schedContextUnbindQueueStage _ _ _ _ _) ?_
             (SystemState.RunQueueStage.of_frame rfl rfl rfl)
           refine SystemState.RunQueueStage.trans (st' := SystemState.updateTcb _ _ _) ?_

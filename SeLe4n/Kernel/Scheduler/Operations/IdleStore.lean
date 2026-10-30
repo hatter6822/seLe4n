@@ -59,6 +59,18 @@ guarded by the table-level `objStore` lock (`storeIdleThreadOnCoreLockSet`,
 def storeIdleThreadOnCore (st : SystemState) (c : CoreId) : SystemState :=
   st.withObjectStored (idleThreadId c).toObjId (KernelObject.tcb (readyIdleThread c))
 
+/-- WS-ZA ZA6.2: the compiled store.  The idle TCB is built from the defaults'
+constants, its register file among them, which the compiled kernel holds as
+shared values, so the first entry that saved a frame into it (the first tick on
+a core running its idle thread) copied the file.  The store gives it its own
+cells (`KernelObject.unshare`, the identity), as the boot does every initial
+object (`createBootObject`).  Proven equal (`storeIdleThreadOnCore_eq_impl`). -/
+def storeIdleThreadOnCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
+  st.withObjectStored (idleThreadId c).toObjId (KernelObject.tcb (readyIdleThread c)).unshare
+
+@[csimp] theorem storeIdleThreadOnCore_eq_impl :
+    @storeIdleThreadOnCore = @storeIdleThreadOnCoreImpl := rfl
+
 /-- The store writes no scheduler field. -/
 theorem storeIdleThreadOnCore_scheduler (st : SystemState) (c : CoreId) :
     (storeIdleThreadOnCore st c).scheduler = st.scheduler :=

@@ -4841,8 +4841,11 @@ private def vacatedRescheduled : SystemState :=
 
 The defect and its fix, computed on a real blocking send rather than argued.
 The negative here is the *defect itself*: the committed transition leaves core 0
-with no current thread while its run queue still holds an eligible one, and
-neither the SGI list nor the timer tick changes that. -/
+with no current thread while its run queue still holds an eligible one, and the
+SGI list does not change that.  The vacate raises core 0's own reschedule flag,
+so since WS-ZA ZA6.2 the core's next timer tick reads the flag and dispatches the
+queued thread (`rescheduleIfPendingOnCore`); the seam's local reschedule is what
+dispatches it without waiting for that tick. -/
 private def runVacatedCoreChecks : IO Unit := do
   IO.println "--- §5.5 the vacated core: a blocking send must leave a successor ---"
   -- The fixture is what we think it is.
@@ -4861,14 +4864,17 @@ private def runVacatedCoreChecks : IO Unit := do
   assertBool "NEGATIVE: the raw transition strands an eligible thread on an idle core"
     (decide (vacatedPost.scheduler.currentOnCore c0 = none) &&
      decide ((vacatedPost.runQueueWalk c0) ≠ []))
-  -- …and neither of the two mechanisms that might have covered for it does.
+  -- …and the SGI diff does not cover for it.
   assertBool "NEGATIVE: the SGI diff does not poke the executing core"
     (SeLe4n.Kernel.PriorityInheritance.computeCrossCoreSgis niState vacatedPost c0
       |>.all (fun p => decide (p.1 ≠ c0)))
-  assertBool "NEGATIVE: a timer tick on the vacated core still leaves it idle"
-    (match SeLe4n.Kernel.timerTickOnCore vacatedPost c0 with
-     | .ok res => decide (res.1.scheduler.currentOnCore c0 = none)
-     | .error _ => false)
+  -- The vacate raises the core's own flag: a point is owed, and the core's
+  -- next tick reads it (WS-ZA ZA6.2), so the stranding lasts at most one tick.
+  assertBool "the vacate raises core 0's own reschedule flag"
+    (vacatedPost.scheduler.reschedulePendingOnCore c0)
+  assertBool "the next timer tick on the vacated core dispatches the queued thread"
+    (decide ((SeLe4n.Kernel.timerTickOnCore vacatedPost c0).scheduler.currentOnCore c0
+      = some lowQueued))
   -- The fix: the entry seam's local reschedule dispatches the queued thread.
   assertBool "the local reschedule dispatches the queued thread"
     (decide (vacatedRescheduled.scheduler.currentOnCore c0 = some lowQueued))

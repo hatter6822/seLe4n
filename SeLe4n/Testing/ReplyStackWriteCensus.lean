@@ -383,6 +383,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "the per-core spelling of the same budget accounting; same reason")
   , (`SeLe4n.Kernel.refillSchedContext,
       "rebuilds a SchedContext for its replenishment; `scReply` is untouched")
+  , (`SeLe4n.Kernel.refillSchedContextImpl,
+      "the compiled form of the same replenishment (`refillRecord` or the specification's record), written in the context's cell; `scReply` is untouched")
   , (`SeLe4n.Kernel.handleYieldWithBudget,
       "`{ sc with budgetRemaining := Budget.zero, isActive := false }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation,

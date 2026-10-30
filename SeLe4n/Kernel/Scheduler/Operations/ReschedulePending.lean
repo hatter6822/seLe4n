@@ -242,15 +242,134 @@ builds the key as a triple hands its parts straight in. -/
   funext st tid k
   exact markKeyChangeFor_eq_parts st tid k
 
+/-- Any projection the single mark leaves alone, the flag loop leaves alone. -/
+theorem markKeyFlagsOver_extract_frame {F : Type} (extract : SystemState → F)
+    (h : ∀ (s : SystemState) c, extract (s.markReschedulePendingOnCore c) = extract s)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (rc : Nat) (w : Bool) (cs : List CoreId) :
+    extract (markKeyFlagsOver st tid rc w cs) = extract st := by
+  induction cs generalizing st with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [markKeyFlagsOver]
+    rw [ih]
+    split
+    · exact h st c
+    · rfl
+
+/-- WS-ZA ZA6.2: **the candidacy hook.**  The selector admits a queued thread
+only when it has budget (`hasSufficientBudget`, read by
+`chooseBestRunnableEffective` beside the key), so a write that gives a queued
+thread budget it lacked stales its core's decision as surely as a key move,
+with the key unchanged: a refill, a reconfigure, an unbind or a donation can
+each do it.  `preElig` is `hasSufficientBudget` of `tid` read before the write;
+each core whose queue holds `tid` is flagged when `tid` was ineligible then and
+is eligible now.  Losing eligibility flags nothing: a candidate leaving the
+field stales no decision, as a queue removal does not. -/
+def markCandidacyGainFor (st : SystemState) (tid : SeLe4n.ThreadId) (preElig : Bool) :
+    SystemState :=
+  if preElig then st
+  else
+    match st.getTcb? tid with
+    | some t =>
+      if hasSufficientBudget st t then markKeyFlagsOver st tid t.runCoreCode false allCores
+      else st
+    | none => st
+
+/-- Any projection the single mark leaves alone, the candidacy hook leaves alone. -/
+theorem markCandidacyGainFor_extract_frame {F : Type} (extract : SystemState → F)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : Bool)
+    (h : ∀ (s : SystemState) c, extract (s.markReschedulePendingOnCore c) = extract s) :
+    extract (markCandidacyGainFor st tid e) = extract st := by
+  unfold markCandidacyGainFor
+  split
+  · rfl
+  · split
+    · split
+      · exact markKeyFlagsOver_extract_frame extract h st tid _ false allCores
+      · rfl
+    · rfl
+
+/-- The candidacy hook's flags: a core's old flag, or the gain on a core whose
+queue holds `tid`. -/
+theorem markCandidacyGainFor_reschedulePendingOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid e).scheduler.reschedulePendingOnCore c =
+      (st.scheduler.reschedulePendingOnCore c ||
+        (!e && ((st.getTcb? tid).map (hasSufficientBudget st) == some true) &&
+          st.queuedOn c tid)) := by
+  unfold markCandidacyGainFor
+  cases e with
+  | true => simp
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, Bool.not_false, Bool.true_and]
+    cases hT : st.getTcb? tid with
+    | none => simp
+    | some t =>
+      simp only [Option.map_some]
+      cases hB : hasSufficientBudget st t with
+      | false => simp
+      | true =>
+        simp only [↓reduceIte]
+        rw [← markReschedulePendingWhere_eq_markKeyFlagsOver st tid t.runCoreCode false allCores st
+          (fun _ => rfl), markReschedulePendingWhere_reschedulePendingOnCore]
+        have hQ : st.queuedOn c tid = (t.runCoreCode == c.val + 1) := by
+          simp [SystemState.queuedOn, hT]
+        simp [hQ, Concurrency.mem_allCores]
+
+/-- The candidacy hook never lowers a flag. -/
+theorem markCandidacyGainFor_reschedulePendingOnCore_mono (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : Bool) (c : CoreId)
+    (h : st.scheduler.reschedulePendingOnCore c = true) :
+    (markCandidacyGainFor st tid e).scheduler.reschedulePendingOnCore c = true := by
+  rw [markCandidacyGainFor_reschedulePendingOnCore, h, Bool.true_or]
+
+/-- The candidacy hook writes the reschedule flags only. -/
+theorem markCandidacyGainFor_eq_with_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : Bool) :
+    markCandidacyGainFor st tid e =
+      { st with scheduler := { st.scheduler with reschedulePending :=
+          (markCandidacyGainFor st tid e).scheduler.reschedulePending } } :=
+  let Y := markCandidacyGainFor st tid e
+  markCandidacyGainFor_extract_frame
+    (fun s => ({ s with scheduler := { s.scheduler with reschedulePending :=
+      Y.scheduler.reschedulePending } } : SystemState)) st tid e (fun _ _ => rfl)
+
+@[simp] theorem markCandidacyGainFor_objects (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : Bool) : (markCandidacyGainFor st tid e).objects = st.objects :=
+  markCandidacyGainFor_extract_frame (fun s => s.objects) st tid e (fun _ _ => rfl)
+
+@[simp] theorem markCandidacyGainFor_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : Bool) : (markCandidacyGainFor st tid e).machine = st.machine :=
+  markCandidacyGainFor_extract_frame (fun s => s.machine) st tid e (fun _ _ => rfl)
+
+@[simp] theorem markCandidacyGainFor_currentOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid e).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.currentOnCore c) st tid e
+    (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_getTcb? (st : SystemState) (tid t : SeLe4n.ThreadId)
+    (e : Bool) : (markCandidacyGainFor st tid e).getTcb? t = st.getTcb? t := by
+  unfold SystemState.getTcb?; rw [markCandidacyGainFor_objects]
+
+@[simp] theorem markCandidacyGainFor_queuedOn (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : Bool) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (markCandidacyGainFor st tid e).queuedOn c t = st.queuedOn c t :=
+  (SystemState.RunCoresAgree.of_objects (markCandidacyGainFor_objects st tid e)).queuedOn c t
+
 /-- The key hook for a writer that hands in its **pre-state** rather than a key
 it already read: `tid`'s key is read on `pre`, the flags are raised on `post`.
 A thread with no TCB in `pre` had no key, so every core still holding it in a
-queue or the current slot is flagged.  The binding writers (donation, its
+queue or the current slot is flagged.  A move that leaves the key alone but
+makes `tid` budget-eligible where it was not (a binding to a context with
+budget left) is a candidacy gain the chooser reads, so it flags `tid`'s queued
+cores too (`markCandidacyGainFor`).  The binding writers (donation, its
 return, the donation cancels) end in this, once per thread whose binding they
 moved. -/
 def markKeyChangeFrom (pre post : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match pre.getTcb? tid with
-  | some tcb => markKeyChangeFor post tid (effectiveSchedParams pre tcb)
+  | some tcb => markKeyChangeFor (markCandidacyGainFor post tid (hasSufficientBudget pre tcb)) tid
+      (effectiveSchedParams pre tcb)
   | none => markReschedulePendingWhere post
       (fun c => post.queuedOn c tid ||
         post.scheduler.currentOnCore c == some tid) allCores
@@ -261,7 +380,8 @@ theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
     extract (markKeyChangeFrom pre post tid) = extract post := by
   unfold markKeyChangeFrom
   split
-  · exact markKeyChangeFor_extract_frame extract post tid _ h
+  · exact (markKeyChangeFor_extract_frame extract _ tid _ h).trans
+      (markCandidacyGainFor_extract_frame extract post tid _ h)
   · exact markReschedulePendingWhere_extract_frame extract h post _ allCores
 
 /-- The `.reschedule` SGIs a step owes, from the flag vector captured before
@@ -754,6 +874,165 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
     (markKeyChangeFrom pre st tid).getReply? rid = st.getReply? rid := by
   unfold SystemState.getReply?; rw [markKeyChangeFrom_objects]
 
+/-! ### Frames: the candidacy hook writes flags and nothing else -/
+
+@[simp] theorem markCandidacyGainFor_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).objectIndex = st.objectIndex :=
+  markCandidacyGainFor_extract_frame (fun s => s.objectIndex) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_cdt (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).cdt = st.cdt :=
+  markCandidacyGainFor_extract_frame (fun s => s.cdt) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).irqHandlers = st.irqHandlers :=
+  markCandidacyGainFor_extract_frame (fun s => s.irqHandlers) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).tlbShootdown = st.tlbShootdown :=
+  markCandidacyGainFor_extract_frame (fun s => s.tlbShootdown) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_perCoreTlb (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).perCoreTlb = st.perCoreTlb :=
+  markCandidacyGainFor_extract_frame (fun s => s.perCoreTlb) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_perCoreICache (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).perCoreICache = st.perCoreICache :=
+  markCandidacyGainFor_extract_frame (fun s => s.perCoreICache) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_pendingIcacheMaintenance (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).pendingIcacheMaintenance = st.pendingIcacheMaintenance :=
+  markCandidacyGainFor_extract_frame (fun s => s.pendingIcacheMaintenance) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_pendingPhysicalWrites (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).pendingPhysicalWrites = st.pendingPhysicalWrites :=
+  markCandidacyGainFor_extract_frame (fun s => s.pendingPhysicalWrites) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).objectIndexSet = st.objectIndexSet :=
+  markCandidacyGainFor_extract_frame (fun s => s.objectIndexSet) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).lifecycle = st.lifecycle :=
+  markCandidacyGainFor_extract_frame (fun s => s.lifecycle) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).asidTable = st.asidTable :=
+  markCandidacyGainFor_extract_frame (fun s => s.asidTable) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_interfaceRegistry (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).interfaceRegistry = st.interfaceRegistry :=
+  markCandidacyGainFor_extract_frame (fun s => s.interfaceRegistry) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_tlb (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).tlb = st.tlb :=
+  markCandidacyGainFor_extract_frame (fun s => s.tlb) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_declassificationAuditLog (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).declassificationAuditLog = st.declassificationAuditLog :=
+  markCandidacyGainFor_extract_frame (fun s => s.declassificationAuditLog) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_declassificationAuditEpoch (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).declassificationAuditEpoch = st.declassificationAuditEpoch :=
+  markCandidacyGainFor_extract_frame (fun s => s.declassificationAuditEpoch) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_declassificationRefusals (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).declassificationRefusals = st.declassificationRefusals :=
+  markCandidacyGainFor_extract_frame (fun s => s.declassificationRefusals) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_declassificationTaint (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).declassificationTaint = st.declassificationTaint :=
+  markCandidacyGainFor_extract_frame (fun s => s.declassificationTaint) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_getSchedContext? (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool)
+    (scId : SeLe4n.SchedContextId) :
+    (markCandidacyGainFor st tid b).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?; rw [markCandidacyGainFor_objects]
+
+@[simp] theorem markCandidacyGainFor_runQueueOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid b).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.runQueueOnCore c) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid b).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.replenishQueueOnCore c) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_activeDomainOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid b).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.activeDomainOnCore c) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_domainTimeRemainingOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid b).scheduler.domainTimeRemainingOnCore c
+      = st.scheduler.domainTimeRemainingOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.domainTimeRemainingOnCore c) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_domainScheduleIndexOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid b).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.domainScheduleIndexOnCore c) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_lastTimeoutErrorsOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) (c : CoreId) :
+    (markCandidacyGainFor st tid b).scheduler.lastTimeoutErrorsOnCore c
+      = st.scheduler.lastTimeoutErrorsOnCore c :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.lastTimeoutErrorsOnCore c) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_domainSchedule (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).scheduler.domainSchedule = st.scheduler.domainSchedule :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.domainSchedule) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_configDefaultTimeSlice (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).scheduler.configDefaultTimeSlice = st.scheduler.configDefaultTimeSlice :=
+  markCandidacyGainFor_extract_frame (fun s => s.scheduler.configDefaultTimeSlice) st tid b
+    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markCandidacyGainFor_runnableOnSomeCore (st : SystemState)
+    (tid tid' : SeLe4n.ThreadId) (b : Bool) :
+    runnableOnSomeCore (markCandidacyGainFor st tid b) tid' = runnableOnSomeCore st tid' := by
+  unfold runnableOnSomeCore
+  simp only [markCandidacyGainFor_queuedOn]
+
+@[simp] theorem markCandidacyGainFor_placedCoreOf? (st : SystemState)
+    (tid tid' : SeLe4n.ThreadId) (b : Bool) :
+    placedCoreOf? (markCandidacyGainFor st tid b) tid' = placedCoreOf? st tid' := by
+  unfold placedCoreOf?
+  simp only [markCandidacyGainFor_queuedOn, markCandidacyGainFor_currentOnCore]
+
+@[simp] theorem markCandidacyGainFor_getObject? (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool)
+    (oid : SeLe4n.ObjId) :
+    (markCandidacyGainFor st tid b).getObject? oid = st.getObject? oid := by
+  unfold SystemState.getObject?; rw [markCandidacyGainFor_objects]
+
+@[simp] theorem markCandidacyGainFor_getReply? (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool)
+    (rid : SeLe4n.ReplyId) :
+    (markCandidacyGainFor st tid b).getReply? rid = st.getReply? rid := by
+  unfold SystemState.getReply?; rw [markCandidacyGainFor_objects]
+
 /-- The hook writes the scheduler record only: the state after it is the state
 before it with the hook's scheduler.  The form a store-chain decomposition
 states its final step in, so every non-scheduler reading of the step is
@@ -810,6 +1089,10 @@ theorem markKeyChangeFor_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     SystemState.RunQueueStage st (markKeyChangeFor st tid k) :=
   RunQueueStage_of_reading (markKeyChangeFor_extract_frame runQueueReading st tid k (fun _ _ => rfl))
+
+theorem markCandidacyGainFor_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (b : Bool) : SystemState.RunQueueStage st (markCandidacyGainFor st tid b) :=
+  RunQueueStage_of_reading (markCandidacyGainFor_extract_frame runQueueReading st tid b (fun _ _ => rfl))
 
 theorem markKeyChangeFrom_runQueueStage (pre post : SystemState) (tid : SeLe4n.ThreadId) :
     SystemState.RunQueueStage post (markKeyChangeFrom pre post tid) :=

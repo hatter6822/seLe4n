@@ -455,7 +455,7 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
           · rename_i boundTcb hBound _
             rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2, PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
-              markKeyChangeFor_replenishQueueOnCore,
+              markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
               schedContextConfigureBoundPropagate_replenishQueueOnCore, hSched]
             exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
@@ -513,7 +513,7 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
   split at h
   · exact absurd h (by simp)
   · rw [Except.ok.injEq, Prod.mk.injEq] at h
-    rw [← h.2, markKeyChangeFor_replenishQueueOnCore]
+    rw [← h.2, markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore]
     rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm,
       SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]

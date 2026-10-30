@@ -142,18 +142,15 @@ fields are untouched, and the scheduling context its binding names is named by
 it, so — the binding pair, the loan record and the budgets holding — the retire
 guard refuses that context (`schedContextRetirable_false_of_tcbNamed`) and it
 stays. -/
-theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st : SystemState)
+theorem retireFinalObject_getSchedContext?_named (ec : CoreId) (target recorder : Nat)
+    (st : SystemState)
     (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
     {t : SeLe4n.ThreadId} {x : TCB}
-    (hx : (retireFinalObject ec target recorder st).getTcb? t = some x) :
-    schedKeyView (retireFinalObject ec target recorder st) t = schedKeyView st t := by
+    (hx : (retireFinalObject ec target recorder st).getTcb? t = some x)
+    (sc : SeLe4n.SchedContextId) (hsc : x.schedContextBinding.scId? = some sc) :
+    (retireFinalObject ec target recorder st).getSchedContext? sc = st.getSchedContext? sc := by
   have hp := (SystemState.getTcb?_eq_some_iff _ t x).mp hx
   have hk := retireFinalObject_tcb_back ec target recorder st hObjInv hp
-  have hpre : st.getTcb? t = some x := (SystemState.getTcb?_eq_some_iff st t x).mpr hk
-  unfold schedKeyView
-  rw [hx, hpre]
-  simp only [Option.map_some, Option.some.injEq]
-  rw [effectiveSchedParams_congr_binding (a := x) (b := x) rfl (fun sc hsc => ?_)]
   unfold SystemState.getSchedContext?
   cases hS : st.objects[sc.toObjId]? with
   | some o =>
@@ -186,6 +183,42 @@ theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st
         cases hS
       | _ => rfl
 
+/-- **The retire keeps the key of every thread it keeps**: the thread's own
+fields are untouched and the context its binding names stays
+(`retireFinalObject_getSchedContext?_named`). -/
+theorem retireFinalObject_schedKeyView (ec : CoreId) (target recorder : Nat) (st : SystemState)
+    (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
+    {t : SeLe4n.ThreadId} {x : TCB}
+    (hx : (retireFinalObject ec target recorder st).getTcb? t = some x) :
+    schedKeyView (retireFinalObject ec target recorder st) t = schedKeyView st t := by
+  have hp := (SystemState.getTcb?_eq_some_iff _ t x).mp hx
+  have hk := retireFinalObject_tcb_back ec target recorder st hObjInv hp
+  have hpre : st.getTcb? t = some x := (SystemState.getTcb?_eq_some_iff st t x).mpr hk
+  unfold schedKeyView
+  rw [hx, hpre]
+  simp only [Option.map_some, Option.some.injEq]
+  rw [effectiveSchedParams_congr_binding (st := st) (st' := retireFinalObject ec target recorder st)
+    (a := x) (b := x) rfl (fun sc hsc => by
+    rw [retireFinalObject_getSchedContext?_named ec target recorder st hObjInv hI hL hx sc hsc])]
+
+/-- **The retire keeps the budget eligibility of every thread it keeps**, by the
+same context-stays argument. -/
+theorem retireFinalObject_budgetEligibleView (ec : CoreId) (target recorder : Nat)
+    (st : SystemState)
+    (hObjInv : st.objects.invExt) (hI : ipcInvariantFull st) (hL : schedContextLinkInvariant st)
+    {t : SeLe4n.ThreadId} {x : TCB}
+    (hx : (retireFinalObject ec target recorder st).getTcb? t = some x) :
+    budgetEligibleView (retireFinalObject ec target recorder st) t = budgetEligibleView st t := by
+  have hp := (SystemState.getTcb?_eq_some_iff _ t x).mp hx
+  have hk := retireFinalObject_tcb_back ec target recorder st hObjInv hp
+  have hpre : st.getTcb? t = some x := (SystemState.getTcb?_eq_some_iff st t x).mpr hk
+  unfold budgetEligibleView
+  rw [hx, hpre]
+  simp only [Option.map_some, Option.some.injEq]
+  rw [hasSufficientBudget_congr_binding (st := st) (st' := retireFinalObject ec target recorder st)
+    (a := x) (b := x) rfl (fun sc hsc => by
+    rw [retireFinalObject_getSchedContext?_named ec target recorder st hObjInv hI hL hx sc hsc])]
+
 /-- **The final-delete retire covers**: it frames the scheduler and every
 thread's run-queue links, so no core's queue gains a thread and no current slot
 moves, and every thread it keeps keeps its key
@@ -214,7 +247,10 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
   unfold SystemState.queuedOn at ht
   cases hx : (retireFinalObject ec target recorder st).getTcb? t with
   | none => rw [hx] at ht; cases ht
-  | some x => exact (retireFinalObject_schedKeyView ec target recorder st hObjInv hI hL hx).symm
+  | some x =>
+    exact ⟨(retireFinalObject_schedKeyView ec target recorder st hObjInv hI hL hx).symm,
+      candidacyNotGained_of_eq
+        (retireFinalObject_budgetEligibleView ec target recorder st hObjInv hI hL hx).symm⟩
 
 /-- A thread space slot's set covers: the copy moves no key input, and the
 retire of what the old capability took with it covers
@@ -280,6 +316,26 @@ theorem schedKeyView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId
     rw [effectiveSchedParams_congr_binding hT (fun sc hsc =>
       getSchedContext?_deadline_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
 
+/-- The budget-eligibility twin of `schedKeyView_eq_of_slotUnread`: a step that
+moves no key input off slot `X` keeps the eligibility of every thread neither
+living at `X` nor bound to a context stored there. -/
+theorem budgetEligibleView_eq_of_slotUnread {pre post : SystemState} {X : SeLe4n.ObjId}
+    (hFrame : ∀ oid, oid ≠ X → keyInputsOf post.objects[oid]? = keyInputsOf pre.objects[oid]?)
+    {t : SeLe4n.ThreadId} (ht : t.toObjId ≠ X)
+    (hNo : ∀ tcb, pre.getTcb? t = some tcb → ∀ sc, tcb.schedContextBinding.scId? = some sc →
+      sc.toObjId ≠ X) :
+    budgetEligibleView post t = budgetEligibleView pre t := by
+  have hT := getTcb?_keyFields_of_keyInputsOf (hFrame _ ht)
+  unfold budgetEligibleView
+  cases hq : post.getTcb? t <;> cases hp : pre.getTcb? t <;> simp only [hq, hp] at hT ⊢
+  · rfl
+  · simp at hT
+  · simp at hT
+  · rename_i b a
+    simp only [Option.map_some, Option.some.injEq, tcbKeyFields, Prod.mk.injEq] at hT ⊢
+    rw [hasSufficientBudget_congr_binding hT.2.2.1 (fun sc hsc =>
+      getSchedContext?_budget_of_keyInputsOf (hFrame _ (hNo a hp sc hsc)))]
+
 /-- One slot's key inputs fix whether the thread living there is queued on a core. -/
 theorem queuedOn_of_keyInputsOf {pre post : SystemState} {t : SeLe4n.ThreadId}
     (hk : keyInputsOf post.objects[t.toObjId]? = keyInputsOf pre.objects[t.toObjId]?)
@@ -318,7 +374,11 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
     fun c _ hc => by rw [hSched]; exact hc⟩
   · have hne : t.toObjId ≠ X := fun hEq => by rw [hUnq c t hEq] at ht; cases ht
-    exact ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm⟩
+    refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
+      candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
+    intro tcb hT sc hsc hEq
+    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
+    rw [hEq, hAbs] at hSo; cases hSo
   · rw [hSched] at ht
     refine schedKeyNotWeakened_of_eq (hKeyNe t (fun hEq => ?_)).symm
     obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp (hPlaced c t (Or.inr ht))

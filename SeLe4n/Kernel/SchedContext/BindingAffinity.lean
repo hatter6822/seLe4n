@@ -391,12 +391,13 @@ private theorem schedContextUnbind_ok_char
           -- run-queue stage writes only run-queue links (WS-ZA ZA4.5), and the
           -- purge's object component is definitionally the identity.
           intro x
-          simp only [markKeyChangeFor_objects, purgeReplenishmentOnCore_objects]
+          simp only [markKeyChangeFor_objects, markCandidacyGainFor_objects,
+            purgeReplenishmentOnCore_objects]
           rw [schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _ x]
           exact congrArg (fun o => (o[x]?).map KernelObject.withoutRunLinks)
             (SystemState.updateTcb_after_rewriteObject_schedContext_objects
               _ vScId.val _ _ tid tcb _ hObjInv hTcb)
-        · rw [markKeyChangeFor_objects]
+        · rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
           refine schedContextUnbindQueueStage_objects_invExt _ _ _ _ _ ?_
           exact rewrite_updateTcb_objects_invExt _ _ _ _ tid tcb _ hObjInv hTcb
         · -- the replenish queue: only the final home-core purge touches it.
@@ -406,12 +407,12 @@ private theorem schedContextUnbind_ok_char
             cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
               (simp only []; repeat' split) <;>
               simp [purgeReplenishmentOnCore, hHome, SystemState.updateTcb_scheduler,
-                SystemState.rewriteObject_scheduler]
+                SystemState.rewriteObject_scheduler, markCandidacyGainFor_replenishQueueOnCore]
           · rw [if_neg hHome]
             cases hRun : Lifecycle.Suspend.runningCoreOf? st tid <;>
               (simp only []; repeat' split) <;>
               simp [purgeReplenishmentOnCore, SystemState.updateTcb_scheduler,
-                SystemState.rewriteObject_scheduler,
+                SystemState.rewriteObject_scheduler, markCandidacyGainFor_replenishQueueOnCore,
                 SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hHome]
       | none =>
         rw [hTcb] at h; simp only [] at h

@@ -255,7 +255,8 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
               exact hS1.trans
-                (((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
+                ((((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
+                  (markCandidacyGainFor_runQueueStage _ _ _)).trans
                   (markKeyChangeFor_runQueueStage _ _ _)).trans
                   (PriorityInheritance.repropagateFromWaiter_runQueueStage _ _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
@@ -1174,81 +1175,71 @@ theorem spendBudgetOnCore_runQueueWindowStage (st : SystemState) (c : Concurrenc
 
 /-- The tick's exhausted bound arm: the spend, the timeouts and the diagnostic. -/
 theorem budgetExhaustOnCore_runQueueWindowStage (st : SystemState) (c : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (tid : SeLe4n.ThreadId) (preKey : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
     (hCur : st.scheduler.currentOnCore c = some tid) :
-    SystemState.RunQueueWindowStage (.preempt c) st (budgetExhaustOnCore st c tid scId sc hSc ticks).1 :=
-  ((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc ticks hCur).trans
+    SystemState.RunQueueWindowStage (.preempt c) st
+      (budgetExhaustOnCore st c tid preKey scId sc hSc ticks) :=
+  (((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc ticks hCur).trans
+    ((markKeyChangeFor_runQueueStage _ tid preKey).window (.preempt c))).trans
     (timeoutBlockedThreads_runQueueWindowStage (fun _ h => by cases h) _ scId c)).trans
     ((RunQueueStage.of_frame
-      (st := (timeoutBlockedThreads (spendBudgetOnCore st c tid scId sc hSc ticks) scId c).1)
-      (st' := (budgetExhaustOnCore st c tid scId sc hSc ticks).1) rfl rfl rfl).window (.preempt c))
+      (st := (timeoutBlockedThreads (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks)
+        tid preKey) scId c).1)
+      (st' := (budgetExhaustOnCore st c tid preKey scId sc hSc ticks)) rfl
+      (by show (markRescheduleTargets _ _).runQueue = _; rw [markRescheduleTargets_eq]; rfl)
+      (by show (markRescheduleTargets _ _).runQueueEnds = _; rw [markRescheduleTargets_eq]; rfl)
+      (by show (markRescheduleTargets _ _).currentCode = _; rw [markRescheduleTargets_eq]; rfl)
+      rfl).window (.preempt c))
 
 /-- The tick's charge of core `c`'s current thread: a slice or budget step, and
 on its end the requeue that opens `c`'s scheduling point. -/
 theorem timerTickBudgetOnCore_runQueueWindowStage {st : SystemState} {c : Concurrency.CoreId}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {hTcb : st.getTcb? tid = some tcb}
-    {r : SystemState × Bool × List (Concurrency.CoreId × Concurrency.SgiKind)}
-    (h : timerTickBudgetOnCore st c tid tcb hTcb = .ok r)
+    {r : SystemState × Bool}
+    (h : timerTickBudgetOnCore st c tid tcb hTcb = r)
     (hCur : st.scheduler.currentOnCore c = some tid) :
     SystemState.RunQueueWindowStage (.preempt c) st r.1 := by
-  unfold timerTickBudgetOnCore at h
-  split at h
-  · split at h
-    · rw [Except.ok.injEq] at h; subst h
-      exact sliceExpireOnCore_runQueueWindowStage st c tid tcb hTcb hCur
-    · rw [Except.ok.injEq] at h; subst h
-      exact (RunQueueStage.rewriteObject_tcb hTcb (fun _ => by rfl)
+  subst h
+  unfold timerTickBudgetOnCore
+  split
+  · split
+    · exact sliceExpireOnCore_runQueueWindowStage st c tid tcb hTcb hCur
+    · exact (RunQueueStage.rewriteObject_tcb hTcb (fun _ => by rfl)
         (SystemState.rewriteAdmissible_tcb hTcb _)).window (.preempt c)
   all_goals
-    split at h
+    split
     · rename_i sc hSc _
-      split at h
-      · rw [Except.ok.injEq] at h; subst h
-        exact budgetExhaustOnCore_runQueueWindowStage st c tid _ sc hSc 1 hCur
-      · rw [Except.ok.injEq] at h; subst h
-        exact (RunQueueStage.rewriteObject_schedContext hSc
+      split
+      · exact budgetExhaustOnCore_runQueueWindowStage st c tid _ _ sc hSc 1 hCur
+      · exact (RunQueueStage.rewriteObject_schedContext hSc
           (SystemState.rewriteAdmissible_schedContext hSc _)).window (.preempt c)
-    · cases h
+    · exact (RunQueueStage.of_frame rfl rfl rfl).window (.preempt c)
 
 /-- A charge that does not preempt requeues nothing: a stage. -/
 theorem timerTickBudgetOnCore_runQueueStage_of_not_preempted {st : SystemState}
     {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId} {tcb : TCB} {hTcb : st.getTcb? tid = some tcb}
-    {r : SystemState × Bool × List (Concurrency.CoreId × Concurrency.SgiKind)}
-    (h : timerTickBudgetOnCore st c tid tcb hTcb = .ok r) (hP : r.2.1 = false) :
-    RunQueueStage st r.1 := by
+    {st3 : SystemState}
+    (h : timerTickBudgetOnCore st c tid tcb hTcb = (st3, false)) :
+    RunQueueStage st st3 := by
   unfold timerTickBudgetOnCore at h
   split at h
   · split at h
-    · rw [Except.ok.injEq] at h; subst h; cases hP
-    · rw [Except.ok.injEq] at h; subst h
+    · simp only [Prod.mk.injEq] at h; exact absurd h.2 (by decide)
+    · simp only [Prod.mk.injEq] at h; rw [← h.1]
       exact RunQueueStage.rewriteObject_tcb hTcb (fun _ => by rfl)
         (SystemState.rewriteAdmissible_tcb hTcb _)
   all_goals
     split at h
     · rename_i sc hSc _
       split at h
-      · rw [Except.ok.injEq] at h; subst h; cases hP
-      · rw [Except.ok.injEq] at h; subst h
+      · simp only [Prod.mk.injEq] at h; exact absurd h.2 (by decide)
+      · simp only [Prod.mk.injEq] at h; rw [← h.1]
         exact RunQueueStage.rewriteObject_schedContext hSc
           (SystemState.rewriteAdmissible_schedContext hSc _)
-    · cases h
-
-theorem timerTickChargeCurrentOnCore_runQueueStage_of_not_preempted {st : SystemState}
-    {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId}
-    {r : SystemState × Bool × List (Concurrency.CoreId × Concurrency.SgiKind)}
-    (h : timerTickChargeCurrentOnCore st c tid = .ok r) (hP : r.2.1 = false) :
-    RunQueueStage st r.1 := by
-  obtain ⟨_, _, hB⟩ := timerTickChargeCurrentOnCore_ok h
-  exact timerTickBudgetOnCore_runQueueStage_of_not_preempted hB hP
-
-theorem timerTickChargeCurrentOnCore_runQueueWindowStage {st : SystemState}
-    {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId}
-    {r : SystemState × Bool × List (Concurrency.CoreId × Concurrency.SgiKind)}
-    (h : timerTickChargeCurrentOnCore st c tid = .ok r)
-    (hCur : st.scheduler.currentOnCore c = some tid) : SystemState.RunQueueWindowStage (.preempt c) st r.1 := by
-  obtain ⟨_, _, hB⟩ := timerTickChargeCurrentOnCore_ok h
-  exact timerTickBudgetOnCore_runQueueWindowStage hB hCur
+    · simp only [Prod.mk.injEq] at h; rw [← h.1]
+      exact RunQueueStage.of_frame rfl rfl rfl
 
 /-- The yield's charge: the slice end or the budget forfeit with the key hook,
 each requeueing core `c`'s current thread. -/
@@ -1304,34 +1295,34 @@ theorem replenishWakeTarget_runnable {stPre refilled : SystemState}
   all_goals first | cases h | exact key _ h
 
 /-- One due replenishment: the refill and, for a runnable thread it makes
-eligible and no core runs, the wake. -/
+eligible and no core runs, the wake, under the refill's key hook. -/
 theorem processOneReplenishmentOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) :
-    RunQueueStage st (processOneReplenishmentOnCore st c scId now).1 := by
+    RunQueueStage st (processOneReplenishmentOnCore st c scId now) := by
   have hRefill : RunQueueStage st (refillSchedContext st scId now) := by
     unfold refillSchedContext; exact RunQueueStage.updateSchedContext _ _ _
   unfold processOneReplenishmentOnCore
+  refine RunQueueStage.trans ?_ (markRefillKeyChange_runQueueStage _ _ _)
+  unfold refillWakeOnCore
   dsimp only
   split
   · rename_i tid hW
     split
     · exact hRefill
     · rename_i hRun
-      exact hRefill.trans (wakeThread_runQueueStage _ _ c
+      exact (hRefill.trans (wakeThread_runQueueStage _ _ c
         (currentNowhere_of_runningOnSomeCore_false (Bool.eq_false_iff.mpr hRun))
-        (replenishWakeTarget_runnable hW).activeAt)
+        (replenishWakeTarget_runnable hW).activeAt)).trans (RunQueueStage.of_frame rfl rfl rfl)
   · exact hRefill
 
 /-- The replenishment drain: the replenish-queue pop, then a fold of refills. -/
 theorem processReplenishmentsDueOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
-    (now : Nat) : RunQueueStage st (processReplenishmentsDueOnCore st c now).1 := by
+    (now : Nat) : RunQueueStage st (processReplenishmentsDueOnCore st c now) := by
   unfold processReplenishmentsDueOnCore
   dsimp only
-  suffices H : ∀ (l : List SeLe4n.SchedContextId)
-      (acc : SystemState × List (Concurrency.CoreId × Concurrency.SgiKind) × Bool),
-      RunQueueStage st acc.1 → RunQueueStage st (l.foldl (fun acc scId =>
-        let r := processOneReplenishmentOnCore acc.1 c scId now
-        (r.1, acc.2.1 ++ r.2.1.toList, acc.2.2 || r.2.2)) acc).1 from
+  suffices H : ∀ (l : List SeLe4n.SchedContextId) (acc : SystemState),
+      RunQueueStage st acc → RunQueueStage st (l.foldl (fun acc scId =>
+        processOneReplenishmentOnCore acc c scId now) acc) from
     H _ _ (RunQueueStage.of_frame rfl rfl rfl)
   intro l
   induction l with
@@ -1345,48 +1336,28 @@ theorem processReplenishmentsDueOnCore_runQueueStage (st : SystemState) (c : Con
 charge, and the reschedule or the local reschedule decision.  A charge that
 preempts opens core `c`'s scheduling point and the reschedule closes it, so the
 tick is a kernel entry. -/
-theorem timerTickOnCore_runQueueEntryStage {st : SystemState} {c : Concurrency.CoreId}
-    {r : SystemState × List (Concurrency.CoreId × Concurrency.SgiKind)}
-    (h : timerTickOnCore st c = .ok r) : SystemState.RunQueueEntryStage st r.1 := by
-  unfold timerTickOnCore at h
-  dsimp only at h
-  have hP : RunQueueStage st (processReplenishmentsDueOnCore
-      { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] } c st.machine.timer).1 :=
+theorem timerTickOnCore_runQueueEntryStage (st : SystemState) (c : Concurrency.CoreId) :
+    SystemState.RunQueueEntryStage st (timerTickOnCore st c) := by
+  have hP : RunQueueStage st (timerTickOnCorePrepared st c) :=
     (RunQueueStage.of_frame (st := st)
       (st' := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] })
       rfl rfl rfl).trans
       (processReplenishmentsDueOnCore_runQueueStage
       { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] } c st.machine.timer)
-  split at h
-  · split at h
-    · split at h
-      · cases h
-      · rename_i hH
-        rw [Except.ok.injEq] at h; subst h
-        exact hP.entry.trans (handleRescheduleSgiOnCore_runQueueEntryStage hH)
-    · rw [Except.ok.injEq] at h; subst h; exact hP.entry
-  · rename_i tid hCur
-    split at h
-    · cases h
-    · rename_i st2 pre sgis hC
-      split at h
-      · rename_i hPre
-        split at h
-        · cases h
-        · rename_i hS
-          rw [Except.ok.injEq] at h; subst h; subst hPre
-          exact hP.entry.trans ((timerTickChargeCurrentOnCore_runQueueWindowStage hC hCur).dispatch
-            (scheduleEffectiveOnCore_runQueueDispatchStage hS))
-      · rename_i hPre
-        have hC2 := hP.trans (timerTickChargeCurrentOnCore_runQueueStage_of_not_preempted hC
-          (by simpa using hPre))
-        split at h
-        · split at h
-          · cases h
-          · rename_i hH
-            rw [Except.ok.injEq] at h; subst h
-            exact hC2.entry.trans (handleRescheduleSgiOnCore_runQueueEntryStage hH)
-        · rw [Except.ok.injEq] at h; subst h; exact hC2.entry
+  have hR : ∀ s, RunQueueStage st s →
+      SystemState.RunQueueEntryStage st (rescheduleIfPendingOnCore s c) := fun s hs => by
+    unfold rescheduleIfPendingOnCore
+    split
+    · exact hs.entry.trans (handleRescheduleSgiOnCore_runQueueEntryStage
+        (handleRescheduleSgiOnCore_eq_state s c))
+    · exact hs.entry
+  rcases timerTickOnCore_cases st c with ⟨_, h⟩ | ⟨_, _, _, h⟩ | ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ |
+      ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ <;> rw [h]
+  · exact hR _ hP
+  · exact hR _ hP
+  · exact hP.entry.trans ((timerTickBudgetOnCore_runQueueWindowStage hB hCur).dispatch
+      (scheduleEffectiveOnCore_runQueueDispatchStage (scheduleEffectiveOnCore_eq_state st3 c)))
+  · exact hR _ (hP.trans (timerTickBudgetOnCore_runQueueStage_of_not_preempted hB))
 
 /-- The live `.untypedRetype` arm: the carve. -/
 theorem untypedRetypeFromCap_runQueueStage {tid : SeLe4n.ThreadId}
