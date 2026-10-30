@@ -591,8 +591,7 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
       · intro hStep; exact absurd hStep (by simp)
       · next s3 hDon =>
         intro hStep
-        have hS23 := cancelSuspendDonation_runQueueStage _ s3 vtid.val _
-          (determineTargetCore st vtid.val) hDon
+        have hS23 := cancelSuspendDonation_runQueueStage _ s3 vtid.val _ hDon
         have hS3 := (hS1.trans hS12).trans hS23
         refine SystemState.RunQueueEntryStage.trans ?_
           (suspendRescheduleOnCore_runQueueEntryStage hStep)
@@ -612,7 +611,7 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
         obtain ⟨hInv1, hR1⟩ := hS1.1 hInv hR
         obtain ⟨hInv2, hR2⟩ := hS12.1 hInv1 hR1
         have hP : placedCoreOf? st vtid.val = placedCoreOf? s3 vtid.val := by
-          rw [cancelSuspendDonation_placedCoreOf? _ s3 _ _ _ vtid.val hInv2 hDon, hP12 hInv1,
+          rw [cancelSuspendDonation_placedCoreOf? _ s3 _ _ vtid.val hInv2 hDon, hP12 hInv1,
             cancelIpcBlockingReclaimed_placedCoreOf?_victim _ _ _ hInv]
         have hRun3 : s3.runnable vtid.val :=
           ((hS12.trans hS23).mono hInv1 hR1).runnable

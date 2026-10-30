@@ -395,15 +395,15 @@ theorem perCoreCbsTheorems_replenish_count :
 theorem perCoreCbsTheorems_preservation_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 8 := by decide
 
-/-- WS-SM SM5.H: 22 entries in the `migration` category. -/
+/-- WS-SM SM5.H: 25 entries in the `migration` category. -/
 theorem perCoreCbsTheorems_migration_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 25 := by decide
 
-/-- WS-SM SM5.H: 3 entries in the `affinityWrite` category. -/
+/-- WS-SM SM5.H: 4 entries in the `affinityWrite` category. -/
 theorem perCoreCbsTheorems_affinityWrite_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4 := by decide
 
-/-- WS-SM SM5.H: 19 entries in the `consistency` category. -/
+/-- WS-SM SM5.H: 22 entries in the `consistency` category. -/
 theorem perCoreCbsTheorems_consistency_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22 := by decide
 
@@ -419,7 +419,7 @@ theorem perCoreCbsTheorems_lockSet_count :
 theorem perCoreCbsTheorems_liveTick_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .liveTick)).length = 8 := by decide
 
-/-- WS-SM SM5.H: 2 entries in the `memoryModel` category. -/
+/-- WS-SM SM5.H: 3 entries in the `memoryModel` category. -/
 theorem perCoreCbsTheorems_memoryModel_count :
     (perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 3 := by decide
 

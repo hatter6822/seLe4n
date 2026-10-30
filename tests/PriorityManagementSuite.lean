@@ -1523,16 +1523,16 @@ private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
       ((st1.queuedPriorityOn bootCoreId targetTid) == some ⟨10⟩)
     expect "PM-FP-01 ...and writes no replenish queue on any core -- the empty segment's exact half"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-        (st1.scheduler.replenishQueueOnCore c).entries
-          == (st.scheduler.replenishQueueOnCore c).entries))
+        (st1.releaseEntriesOn c)
+          == (st.releaseEntriesOn c)))
   -- the ceiling arm shares the write set, so it shares the footprint.
   match setMCPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ core1 with
   | .error e => throw <| IO.userError s!"PM-FP-01 setMCPriority should succeed, got {repr e}"
   | .ok (st2, _) =>
     expect "PM-FP-01 the ceiling arm writes no replenish queue either"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-        (st2.scheduler.replenishQueueOnCore c).entries
-          == (st.scheduler.replenishQueueOnCore c).entries))
+        (st2.releaseEntriesOn c)
+          == (st.releaseEntriesOn c)))
 
 
 -- ============================================================================

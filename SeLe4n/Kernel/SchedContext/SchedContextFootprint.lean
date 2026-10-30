@@ -205,8 +205,9 @@ theorem schedLockSet_schedContextBindOnCore_no_replenishQueue (st : SystemState)
 Deliberately **not** `schedContextWriteSet`.  The two differ, and the difference
 is the defect this set exists to make visible: the run-queue re-bucket lands on
 the subject's **home** core, while the preemption guard clears `current` on the
-core actually **running** it.  Those coincide whenever affinity is set, and
-diverge for an unbound-affinity thread running on a secondary core.
+core actually **running** it.  Those coincide on every committed state under
+the placement invariant (`currentHome`, WS-ZA ZA6.3); the set names both
+because the operation reads both.
 
 SM8.B.2's write set, moved here from the staged non-interference module at
 `v0.35.168`. -/

@@ -576,7 +576,7 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- seL4's `finaliseCap` runs `unbindFromSc` on a TCB; this is that, per core.
 --
 -- The theorems that read `ipcInvariant` of these arms, the single-core bridges
--- (`cancelBoundDonationOnCore_bootCoreId`,
+-- (`cancelBoundDonationOnCore_eq_cancelBoundDonation`,
 -- `cancelDonatedDonationOnCore_eq_of_sharedHome`) and the suspend footprint
 -- stay in `Cancellation.lean`; the frames the destroy path's proofs read
 -- (`_runQueue_current_eq`, `_replenishQueue_{purged,ne}`,
@@ -586,19 +586,17 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 /-- WS-SM SM6.E.3 (plan §3.1): the R5.A in-place SchedContext unbind arm,
 across cores.
 
-Textual twin of `cancelBoundDonation` with the replenish-queue purge
-parametrised by `rqCore` — the core whose replenish queue holds the
-SchedContext's pending replenishments.  Under the SM5.H affinity invariant
-(`replenishQueueAffinityConsistentOnCore`) that is the bound thread's *home*
-core, which the dispatchers `cancelDonationArmOnCore` / `cancelDonationOnCore`
-resolve via `determineTargetCore`; the single-core form is exactly the
-`bootCoreId` instance (`cancelBoundDonationOnCore_bootCoreId`,
-`IPC/CrossCore/Cancellation.lean`).
+Textual twin of `cancelBoundDonation`.  The replenish-queue purge is exact
+(`SchedContextOps.purgeReplenishment`): it takes the context off the release
+queue its own link names, so the arm is handed no core — WS-ZA ZA6.3 removed the
+purge-core parameter the dispatchers used to resolve with `determineTargetCore`,
+which the exact removal never read.  The single-core form is the same function
+(`cancelBoundDonationOnCore_eq_cancelBoundDonation`, `IPC/CrossCore/Cancellation.lean`).
 
 Relocated from `Cancellation.lean` at `v0.35.164` so the destroy path can run
 it — see the section note above. -/
 def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    (tcb : TCB) :
     Except KernelError SystemState :=
   match tcb.schedContextBinding with
   | .bound scId =>
@@ -620,7 +618,7 @@ is written in its slot; the key hook then takes the parts
 (`markKeyChangeParts`).  A thread with no TCB keeps the specification's
 spelling (`cancelBoundDonationOnCore_of_bound`). -/
 @[inline] def cancelBoundDonationPerform (st : SystemState) (tid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (rqCore : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
+    (scId : SeLe4n.SchedContextId) : SystemState :=
   match st.getTcb? tid with
   | some t0 =>
     let p0 := t0.boostedPriority
@@ -644,9 +642,9 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
 
 /-- **A `.bound` thread's unbind succeeds with the in-place state.** -/
 theorem cancelBoundDonationOnCore_of_bound (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId) (scId : SeLe4n.SchedContextId)
+    (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (h : tcb.schedContextBinding = .bound scId) :
-    cancelBoundDonationOnCore st tid tcb rqCore = .ok (cancelBoundDonationPerform st tid scId rqCore) := by
+    cancelBoundDonationOnCore st tid tcb = .ok (cancelBoundDonationPerform st tid scId) := by
   unfold cancelBoundDonationOnCore cancelBoundDonationPerform
   rw [h]
   cases hT : st.getTcb? tid with
@@ -664,10 +662,10 @@ those links is `updateSchedContext` then `updateTcb`, which is what lets the two
 projection readings below be one application each of the update accessors' own
 lemmas instead of a case analysis over the operation. -/
 theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.objectsAgreeOffReleaseLinks ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
       (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })) := by
   simp only [cancelBoundDonationOnCore, hBinding] at h
@@ -685,14 +683,14 @@ theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
 The arm's own reading of the projection `schedContextBindingConsistent` reads:
 the target's binding is cleared and every other thread's is where it was. -/
 theorem cancelBoundDonationOnCore_getTcb? (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.getTcb? tid
         = (st.getTcb? tid).map (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       ∧ ∀ x : SeLe4n.ThreadId, x.toObjId ≠ tid.toObjId → st'.getTcb? x = st.getTcb? x := by
-  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding hInv h
+  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb scId hBinding hInv h
   have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   have hRead : ∀ x : SeLe4n.ThreadId, st'.getTcb? x
@@ -711,16 +709,16 @@ context.**
 The other projection: the target's context loses its bound thread, and every
 other context is untouched. -/
 theorem cancelBoundDonationOnCore_getSchedContext? (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     (st'.getSchedContext? scId).map (·.boundThread)
         = (st.getSchedContext? scId).map (fun _ => none)
       ∧ ∀ s : SeLe4n.SchedContextId, s.toObjId ≠ scId.toObjId →
           (st'.getSchedContext? s).map SchedContext.withoutRelease =
             (st.getSchedContext? s).map SchedContext.withoutRelease := by
-  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding hInv h
+  have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb scId hBinding hInv h
   have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   refine ⟨?_, fun s hNe => ?_⟩
@@ -737,14 +735,14 @@ Read straight off the arm's own per-key characterisation: the pointwise reading
 at `tid` is the pre-state record with its binding cleared, which is what the
 `.bound` arm exists to do. -/
 theorem cancelBoundDonationOnCore_target_unbound (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st')
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st')
     (t : TCB) (hT : st'.getTcb? tid = some t) :
     t.schedContextBinding = SchedContextBinding.unbound := by
-  have hSelf := (cancelBoundDonationOnCore_getTcb? st st' tid tcb rqCore scId hBinding hInv h).1
+  have hSelf := (cancelBoundDonationOnCore_getTcb? st st' tid tcb scId hBinding hInv h).1
   rw [hT, hTcb] at hSelf
   have hEq : t = { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } :=
     Option.some.inj hSelf
@@ -769,17 +767,17 @@ the store holds — stated where it binds, exactly as `cancelDonationArmOnCore`'
 callers already supply it. -/
 theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId) (scId : SeLe4n.SchedContextId)
+ (scId : SeLe4n.SchedContextId)
     (hBinding : tcb.schedContextBinding = .bound scId)
     (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt)
     (hCons : schedContextBindingConsistent st)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     schedContextBindingConsistent st' := by
   obtain ⟨hTSelf, hTNe⟩ :=
-    cancelBoundDonationOnCore_getTcb? st st' tid tcb rqCore scId hBinding hInv h
+    cancelBoundDonationOnCore_getTcb? st st' tid tcb scId hBinding hInv h
   obtain ⟨hSSelf, hSNe⟩ :=
-    cancelBoundDonationOnCore_getSchedContext? st st' tid tcb rqCore scId hBinding hInv h
+    cancelBoundDonationOnCore_getSchedContext? st st' tid tcb scId hBinding hInv h
   -- The pair the arm clears, read off Z4-O's forward clause at the target.
   obtain ⟨sc, hScPreRaw, hScBound⟩ := hCons.1 tid tcb
     ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb) scId hBinding
@@ -902,7 +900,7 @@ def cancelDonationArmOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TC
     Except KernelError SystemState :=
   match tcb.schedContextBinding with
   | .unbound => .ok st
-  | .bound _ => cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid)
+  | .bound _ => cancelBoundDonationOnCore st tid tcb
   | .donated _ _ => cancelDonatedDonationOnCore st tid tcb
 
 /-- The `.unbound` arm is the identity — the arm the detachment pack
@@ -916,7 +914,7 @@ theorem cancelDonationArmOnCore_of_unbound (st : SystemState) (tid : SeLe4n.Thre
 theorem cancelDonationArmOnCore_of_bound (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (scId : SeLe4n.SchedContextId) (h : tcb.schedContextBinding = .bound scId) :
     cancelDonationArmOnCore st tid tcb
-      = cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) := by
+      = cancelBoundDonationOnCore st tid tcb := by
   simp only [cancelDonationArmOnCore, h]
 
 /-- The `.donated` arm is the migrating return. -/

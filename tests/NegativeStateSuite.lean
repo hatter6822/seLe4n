@@ -4355,35 +4355,38 @@ private def r5eOrphanedBoundState : SystemState :=
     |>.withCurrent r5eOrphanedTid
     |>.buildChecked)
 
-/-- The TCB extracted from the fixture state, or a stub TCB if the fixture
-construction is broken (the stub triggers the runtime-failure
-`.invalidArgument` rather than `.missingSchedContext`, which would surface
-the misconstructed fixture rather than silently masking it). -/
+/-- The refusal itself: a bound thread whose context the store does not hold is
+refused with `.missingSchedContext` before any write.  `timerTickBudget` is the
+single-core specification, which writes the release queue's abstract (ghost)
+form, so it is not compiled (WS-ZA ZA6.3); the refusal is proven here and the
+runtime check below establishes that the fixture meets its two premises. -/
+private theorem timerTickBudget_refuses_orphaned_binding (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (scId : SeLe4n.SchedContextId) (hB : tcb.schedContextBinding = .bound scId)
+    (hSc : st.getSchedContext? scId = none) :
+    SeLe4n.Kernel.timerTickBudget st tid tcb hTcb = .error .missingSchedContext := by
+  have hW := SystemState.getSchedContextWitnessed?_eq_none hSc
+  unfold SeLe4n.Kernel.timerTickBudget
+  rw [hB]; simp only [hW]
+
+/-- The fixture meets the refusal's premises; a fixture that resolves no TCB
+is reported as misconstructed rather than run on a stub. -/
 private def runR5EOrphanedSchedContextChecks : IO Unit := do
   IO.println "\n=== WS-RC R5.E (DEEP-SCH-04): missingSchedContext surface ==="
-  -- `timerTickBudget` takes the witness that its TCB is the stored one
-  -- (`v0.35.67`), so the fixture's TCB is read through the witnessed lookup; a
-  -- fixture that resolves no TCB is reported as such rather than run on a stub.
-  let result : Except KernelError (SystemState × Bool) :=
-    match r5eOrphanedBoundState.getTcbWitnessed? r5eOrphanedTid with
-    | some ⟨tcb, hTcb⟩ =>
-        SeLe4n.Kernel.timerTickBudget r5eOrphanedBoundState r5eOrphanedTid tcb hTcb
-    | none => .error .invalidArgument
-  match result with
-  | .ok _ =>
+  -- `timerTickBudget_refuses_orphaned_binding` is the refusal; the fixture
+  -- meets its premises: its thread is bound to `r5eOrphanedScId`, which the
+  -- store does not hold.  A fixture that resolves no TCB is reported as such.
+  match r5eOrphanedBoundState.getTcb? r5eOrphanedTid with
+  | none => throw <| IO.userError "R5.E-NEG-01: the fixture resolves no TCB"
+  | some tcb =>
+    if tcb.schedContextBinding == .bound r5eOrphanedScId &&
+        (r5eOrphanedBoundState.getSchedContext? r5eOrphanedScId).isNone then
+      IO.println
+        ("negative check passed [R5.E-NEG-01 timerTickBudget rejects "
+         ++ "orphaned SchedContext binding with .missingSchedContext]")
+    else
       throw <| IO.userError
-        ("R5.E-NEG-01: timerTickBudget must NOT silently succeed on orphaned "
-         ++ "SchedContext binding (pre-R5 fallback was `(state, false)` — "
-         ++ "this regression-tests the explicit `.error .missingSchedContext` "
-         ++ "rejection)")
-  | .error e =>
-      if e == .missingSchedContext then
-        IO.println
-          ("negative check passed [R5.E-NEG-01 timerTickBudget rejects "
-           ++ "orphaned SchedContext binding with .missingSchedContext]")
-      else
-        throw <| IO.userError
-          s!"R5.E-NEG-01: expected .missingSchedContext, got {toString e}"
+        "R5.E-NEG-01: the fixture's thread is not bound to an absent SchedContext"
   IO.println "all WS-RC R5.E missingSchedContext surface checks passed"
 
 -- ============================================================================

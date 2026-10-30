@@ -2157,6 +2157,59 @@ private def runResidentFrameChecks : IO Unit := do
     (stC.scheduler.currentOnCore c1 == some handler &&
       stC.machine.residentOnCore c1 == some handler)
 
+/-- **The affinity stall's window (seL4's `remoteTCBStall`)**: an affinity change
+issued on core 1 moves `faulter`, running on core 0, to core 3.  The change
+vacates core 0 and queues the thread on core 3 in one commit
+(`vacateForAffinityChange`, `requeueVacatedOnNewHome`); the HAL's stall
+(`Concurrency.stallChangedCores`, `remote_stall.rs`) returns once core 0 has
+left EL0, but core 0 saves the thread's frame only when it takes the
+kernel-entry lock (`Architecture.saveVacatedFrameOnCore`).  Core 3 can take the
+lock first.  Its settle step selects the thread and then defers it
+(`deferResidentElsewhere`): core 0 still holds it as its resident.  Once core 0
+has saved the frame and settled, core 3's next scheduling point runs it.  Each
+step computes the reading without the deferral beside the live one. -/
+private def runAffinityRehomeResidencyChecks : IO Unit := do
+  IO.println "  affinity stall: the new home waits for the old home's save"
+  -- Core 0 runs `faulter` (off its queue) and holds it as resident; core 3 is
+  -- vacant with an empty queue.
+  let st0 : SystemState :=
+    (({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c3 none }).runRemoveOnCore
+      c3 weak).runRemoveOnCore c0 faulter
+  let stPre : SystemState :=
+    { st0 with machine := st0.machine.setResidentOnCore c0 (some faulter) }
+  match setThreadCpuAffinityWithMigration stPre faulter (some c3) c1 with
+  | .error e => throw (IO.userError s!"affinity change refused: {repr e}")
+  | .ok (stA, sgi) =>
+    assertBool "the change vacates core 0 and queues the thread on core 3"
+      (stA.scheduler.currentOnCore c0 == none && stA.queuedOn c3 faulter)
+    assertBool "and pokes core 3, the remote new home" (sgi == some (c3, .reschedule))
+    assertBool "core 0 has not yet saved: the thread is still its resident"
+      (stA.machine.residentOnCore c0 == some faulter)
+    assertBool "RETIRED: without the deferral core 3 resumes a thread core 0 still runs"
+      ((PriorityInheritance.dispatchVacatedCore stA c3).scheduler.currentOnCore c3
+        == some faulter)
+    let stEarly := PriorityInheritance.settleResidencyOnCore stA c3
+    assertBool "LIVE: core 3, settling first, does not resume the thread"
+      (stEarly.scheduler.currentOnCore c3 != some faulter &&
+        stEarly.machine.residentOnCore c3 != some faulter)
+    assertBool "and keeps it queued on core 3, its home" (stEarly.queuedOn c3 faulter)
+    -- Core 0 takes its entry: the frame goes into the thread, then it settles.
+    let live : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x9104 0x7000 (fun _ => 0xCD)
+    let stSaved := PriorityInheritance.settleResidencyOnCore
+      (Architecture.saveCapturedTrapFrame stEarly c0
+        (some (Architecture.InFlightContext.ofRegisterFile live))) c0
+    assertBool "core 0's save puts the live frame into the thread"
+      (savedPcOf stSaved faulter == some 0x9104)
+    assertBool "and core 0 no longer holds it" (stSaved.machine.residentOnCore c0 != some faulter)
+    match handleRescheduleSgiOnCore stSaved c3 with
+    | .error e => throw (IO.userError s!"core 3 reschedule failed: {repr e}")
+    | .ok stR =>
+      let stRun := PriorityInheritance.settleResidencyOnCore stR c3
+      assertBool "core 3's next scheduling point runs the thread from the saved frame"
+        (stRun.scheduler.currentOnCore c3 == some faulter &&
+          stRun.machine.residentOnCore c3 == some faulter &&
+          savedPcOf stRun faulter == some 0x9104)
+
 /-- An abandon deschedules the faulted thread where it is placed.  `orphan` is
 queued on core 2; its affinity is then pointed at core 3 without moving it, so
 its home core (`determineTargetCore`) and its placement disagree.  The abandon
@@ -2190,6 +2243,7 @@ def runFaultHandlingChecks : IO Unit := do
   runUnknownSyscallChecks
   runVacatedCoreChecks
   runResidentFrameChecks
+  runAffinityRehomeResidencyChecks
   runConfigureAndResumeChecks
   runSyscallCapFaultChecks
   runResumeChecks

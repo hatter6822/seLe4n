@@ -5242,12 +5242,12 @@ final-delete unbind passes the stored TCB with its owner code cleared, so a
 index drop, victim unbind — the §11 unbind-direction rewrite under a
 replenish-only scheduler change. -/
 theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb tcbV : TCB) (rqCore : CoreId)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb tcbV : TCB)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hBack : ∀ scId, tcbV.schedContextBinding = .bound scId → ∃ sc : SchedContext,
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThread = some tid)
-    (hStep : cancelBoundDonationOnCore st tid tcbV rqCore = .ok st') :
+    (hStep : cancelBoundDonationOnCore st tid tcbV = .ok st') :
     ipcInvariantFull st' := by
   unfold cancelBoundDonationOnCore at hStep
   cases hB : tcbV.schedContextBinding with
@@ -5308,14 +5308,14 @@ theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
 (`cancelBoundDonationOnCore_view_preserves_ipcInvariantFull` with the view the
 TCB). -/
 theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hBack : ∀ scId, tcb.schedContextBinding = .bound scId → ∃ sc : SchedContext,
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThread = some tid)
-    (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (hStep : cancelBoundDonationOnCore st tid tcb = .ok st') :
     ipcInvariantFull st' :=
-  cancelBoundDonationOnCore_view_preserves_ipcInvariantFull st st' tid tcb tcb rqCore hObjInv
+  cancelBoundDonationOnCore_view_preserves_ipcInvariantFull st st' tid tcb tcb hObjInv
     hInv hStored hBack hStep
 
 /-- The donated-donation cancel: the verified donation return plus the
@@ -5367,10 +5367,10 @@ private theorem cancelDonatedDonationOnCore_preserves_ipcInvariantFull
 /-- The bound-donation cancel touches only the victim's binding — every other
 bundle-read TCB field survives. -/
 private theorem cancelBoundDonationOnCore_victim_shape
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hObjInv : st.objects.invExt)
     (hStored : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hStep : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (hStep : cancelBoundDonationOnCore st tid tcb = .ok st') :
     ∀ tcbX : TCB, st'.getTcb? tid = some tcbX →
       tcbX.ipcState = tcb.ipcState ∧ tcbX.pendingMessage = tcb.pendingMessage ∧
       tcbX.timeoutBudget = tcb.timeoutBudget ∧ tcbX.queuePrev = tcb.queuePrev ∧
@@ -5637,20 +5637,20 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
         | bound scId =>
             simp only [hB] at hStep
             cases hDon : cancelBoundDonationOnCore st vtid.val tcb
-                (determineTargetCore st vtid.val) with
+                with
             | error e => rw [hDon] at hStep; cases hStep
             | ok stD =>
                 rw [hDon] at hStep
                 dsimp only [] at hStep
                 have hInvD := cancelBoundDonationOnCore_preserves_ipcInvariantFull st stD
-                  vtid.val tcb (determineTargetCore st vtid.val) hObjInv hInv hPre
+                  vtid.val tcb hObjInv hInv hPre
                   (fun s hb => hBidir _ tcb s hPre (by rw [hb]; rfl)) hDon
                 have hObjInvD := cancelBoundDonationOnCore_preserves_objects_invExt st stD
-                  vtid.val tcb (determineTargetCore st vtid.val) hObjInv
+                  vtid.val tcb hObjInv
                   hDon
                 have hShapeD := hShapeOf stD
                   (cancelBoundDonationOnCore_victim_shape st stD vtid.val tcb
-                    (determineTargetCore st vtid.val) hObjInv hPre
+                    hObjInv hPre
                     hDon)
                 obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
                   vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD

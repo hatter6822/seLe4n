@@ -4039,7 +4039,7 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
 
 /-- WS-SM SM5.H.4: decode a `tcbSetAffinity` argument register into a target
 affinity.  Values `0 .. numCores-1` bind the thread to that core; the dedicated
-marker `numCores` (= `affinityUnbindMarker`) unbinds it (runs on any core); any
+marker `numCores` (= `affinityUnbindMarker`) unbinds it (homed on the boot core); any
 larger value is rejected with `.invalidArgument`.  The validated decode the
 syscall dispatch uses. -/
 def affinityUnbindMarker : Nat := SeLe4n.Kernel.Concurrency.numCores

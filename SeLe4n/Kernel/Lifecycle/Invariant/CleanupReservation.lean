@@ -421,7 +421,7 @@ theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent
   | bound scId =>
     rw [hB] at h
     exact cancelBoundDonationOnCore_preserves_schedContextBindingConsistent st st' tid tcb
-      (determineTargetCore st tid) scId hB hTcb hInv hCons h
+      scId hB hTcb hInv hCons h
   | donated scId owner =>
     rw [hB] at h
     exact cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent st st' tid tcb
@@ -689,7 +689,7 @@ theorem cancelDonationArmOnCore_target_unbound
   | bound scId =>
     rw [hB] at h
     exact cancelBoundDonationOnCore_target_unbound st st' tid tcb
-      (determineTargetCore st tid) scId hB (getTcb?_of_lookupTcb st tid tcb hLk) hInv h t hT
+      scId hB (getTcb?_of_lookupTcb st tid tcb hLk) hInv h t hT
   | donated scId owner =>
     rw [hB] at h
     exact cancelDonatedDonationOnCore_target_unbound st st' tid tcb hLk hInv h t hT
@@ -714,7 +714,7 @@ theorem cancelDonationArmOnCore_target_isSome
   | bound scId =>
     rw [hB] at h
     have hSelf := (cancelBoundDonationOnCore_getTcb? st st' tid tcb
-      (determineTargetCore st tid) scId hB hInv h).1
+      scId hB hInv h).1
     rw [hSelf, getTcb?_of_lookupTcb st tid tcb hLk]; rfl
   | donated scId owner =>
     rw [hB] at h

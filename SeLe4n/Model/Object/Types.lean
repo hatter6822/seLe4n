@@ -1434,8 +1434,9 @@ structure TCB where
   timedOut : Bool := false
   /-- WS-SM SM5.B.4 (WS-SM SM5
       §3.2 / §5 SM5.B.4): CPU affinity — the core this thread is bound to.
-      `none` means *unbound* (the thread may run on any core); `some c` pins
-      the thread to core `c`.
+      `none` means *unbound*: the thread is homed on the boot core
+      (`determineTargetCore`), where the placement invariant keeps it; `some c`
+      pins the thread to core `c`.
 
       Default `none` is the pre-SMP-compatible value: every thread constructed
       without an explicit affinity is unbound, so the per-core

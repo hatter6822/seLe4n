@@ -912,14 +912,14 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
     (hT : s.getTcb? t = some tcb) (hS : tcb.scBindingScCode = x.val + 1)
     (hSc : s.getSchedContext? ⟨x.val⟩ = some sc) (hB : sc.boundThreadCode = t.val + 1)
     (hOk : cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
-      (determineTargetCore s t) = .ok s') : schedContextLinkInvariant s' := by
+      = .ok s') : schedContextLinkInvariant s' := by
   have hBind : ({ tcb with scBindingOwnerCode := 0 } : TCB).schedContextBinding =
       .bound ⟨x.val⟩ := by
     unfold TCB.schedContextBinding; simp only [hS]; rfl
   generalize hId : (⟨x.val⟩ : SeLe4n.SchedContextId) = scId at hBind hSc
-  obtain ⟨hTSelf, hTNe⟩ := cancelBoundDonationOnCore_getTcb? s s' t _ _ scId hBind hInv hOk
-  obtain ⟨hSSelf, hSNe⟩ := cancelBoundDonationOnCore_getSchedContext? s s' t _ _ scId hBind hInv hOk
-  have hObjs := cancelBoundDonationOnCore_objects s s' t _ _ scId hBind hInv hOk
+  obtain ⟨hTSelf, hTNe⟩ := cancelBoundDonationOnCore_getTcb? s s' t _ scId hBind hInv hOk
+  obtain ⟨hSSelf, hSNe⟩ := cancelBoundDonationOnCore_getSchedContext? s s' t _ scId hBind hInv hOk
+  have hObjs := cancelBoundDonationOnCore_objects s s' t _ scId hBind hInv hOk
   have hBt : sc.boundThread = some t := by
     simp only [SchedContext.boundThread, hB]; rfl
   have hScId : (TCB.schedContextBinding tcb).scId? = some scId := by
@@ -991,13 +991,13 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
   -- The replenishment pair: the purge leaves no entry naming the context.
   have hBound : replenishQueueEntriesBound_smp s' := by
     intro c s0 n hMem
-    obtain ⟨hm, hs⟩ := cancelBoundDonationOnCore_replenishQueue_purged_of_refined s s' t _ _ scId
+    obtain ⟨hm, hs⟩ := cancelBoundDonationOnCore_replenishQueue_purged_of_refined s s' t _ scId
       hBind hInv hI.refined hOk c (s0, n) hMem
     obtain ⟨sc1, h1, tid, hb⟩ := hI.replenishBound c s0 n hm
     obtain ⟨sc1', h1', hbt⟩ := hSFwd s0 hs sc1 h1
     exact ⟨sc1', h1', tid, hbt.trans hb⟩
   exact ⟨allTimeoutBudgetsNone_of_aux hAux hI.budgets, hCons, hBound,
-    cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp s s' t _ _ hInv
+    cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp s s' t _ hInv
       hI.replenishAffinity hOk, cancelBoundDonationOnCore_refined hInv hI.refined hOk⟩
 
 -- ============================================================================

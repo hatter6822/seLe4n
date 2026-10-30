@@ -943,10 +943,10 @@ open SeLe4n.Kernel.Lifecycle.Suspend
 /-- WS-ZA ZA4.5: the suspend's donation-cancellation dispatcher keeps the run
 queues in agreement with the links, on the arm that succeeds. -/
 theorem cancelSuspendDonation_runQueueStage (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hStep : (match tcb.schedContextBinding with
               | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .bound _ => cancelBoundDonationOnCore st tid tcb
               | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     SystemState.RunQueueStage st st' := by
   revert hStep
@@ -959,11 +959,11 @@ theorem cancelSuspendDonation_runQueueStage (st st' : SystemState)
 scheduler slots: both arms write no current slot and keep every thread's run
 core, so every thread's placement is the pre-state's. -/
 theorem cancelSuspendDonation_placedCoreOf? (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId) (u : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (u : SeLe4n.ThreadId)
     (hInv : st.objects.invExt)
     (hStep : (match tcb.schedContextBinding with
               | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .bound _ => cancelBoundDonationOnCore st tid tcb
               | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     placedCoreOf? st' u = placedCoreOf? st u := by
   revert hStep
@@ -973,7 +973,7 @@ theorem cancelSuspendDonation_placedCoreOf? (st st' : SystemState)
     intro hStep
     exact placedCoreOf?_congr_of_runCores_current_eq u
       (cancelBoundDonationOnCore_runCoresAgree hInv hStep)
-      (fun c => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb home c hStep).2)
+      (fun c => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb c hStep).2)
   | donated _ _ =>
     intro hStep
     exact placedCoreOf?_congr_of_runCores_current_eq u
@@ -1103,11 +1103,9 @@ theorem suspendThreadOnCore_holder_unplaced
         intro hStep
         -- G3 — the donation arm.
         have hP3 : threadPlacedOnSomeCore s3 holder = false := by
-          rw [cancelSuspendDonation_threadPlacedOnSomeCore _ s3 vtid.val _
-            (determineTargetCore st vtid.val) holder (hS2.1 hInv hR).1 hDon]
+          rw [cancelSuspendDonation_threadPlacedOnSomeCore _ s3 vtid.val _ holder (hS2.1 hInv hR).1 hDon]
           exact hP2
-        have hS3 := hS2.trans (cancelSuspendDonation_runQueueStage _ s3 vtid.val _
-          (determineTargetCore st vtid.val) hDon)
+        have hS3 := hS2.trans (cancelSuspendDonation_runQueueStage _ s3 vtid.val _ hDon)
         -- G4 — the placement removal, which is about the VICTIM.
         have hP4 : threadPlacedOnSomeCore
             (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) holder = false := by

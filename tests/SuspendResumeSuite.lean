@@ -835,8 +835,8 @@ private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
       ((st'.queuedOn core1 bTid))
     expect "SR-035 ...and writes no replenish queue on any core -- the empty segment's exact half"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-        (st'.scheduler.replenishQueueOnCore c).entries
-          == (st.scheduler.replenishQueueOnCore c).entries))
+        (st'.releaseEntriesOn c)
+          == (st.releaseEntriesOn c)))
   | .error e => throw <| IO.userError s!"SR-035 live resume should succeed, got {repr e}"
 
 end SeLe4n.Testing.SuspendResumeSuite

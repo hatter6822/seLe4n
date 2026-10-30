@@ -2892,7 +2892,7 @@ run_negative_check "INVARIANT" rg -n 'restoreToReadyOnCore_eq_enqueue_mid' SeLe4
 run_negative_check "INVARIANT" rg -n 'clearTcbIpcFields' SeLe4n tests
 # The cross-core twin of the bound-donation cancel is held to the single-core
 # arm by `rfl`, which is what forced the twin to migrate in the same cut.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelBoundDonationOnCore_bootCoreId[^\n]*(\n([ \t][^\n]*)?)*= cancelBoundDonation st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelBoundDonationOnCore_eq_cancelBoundDonation[^\n]*(\n([ \t][^\n]*)?)*= cancelBoundDonation st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # ----------------------------------------------------------------------------
 # v0.35.65 -- the witnessed lookups, and the scheduler's context-save family
@@ -7607,6 +7607,7 @@ run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_stepCovers($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_sgis_complete($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_sgis_cover_diff($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_raised_self($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCorePrepared_currentBoundHomedOnCore($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
 run_check "INVARIANT" rg -n '^theorem chooseBestRunnableEffective_eq_of_views($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
 run_check "INVARIANT" rg -n '^def candidacyNotGained($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
 run_check "INVARIANT" rg -n '^def markCandidacyGainFor($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
@@ -12225,9 +12226,8 @@ run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_replen
 run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 # RELATION: the donated arm's theorem composes the ONE general migration lemma rather
-# than a second confinement argument; the bound arm's names no core in its statement.
+# than a second confinement argument (the bound arm takes no core parameter at all).
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st st1" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*determineTargetCore st tid = rqCore" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # The witness computes the retired cleanup beside the live retype on both
 # binding shapes, with the unbound control on which the two agree.
 run_check "INVARIANT" rg -n '\(a\) NEGATIVE \(the defect\): the retired retype FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
@@ -16460,9 +16460,6 @@ open SeLe4n.Kernel
 -- the supporting replenish-queue + pipeline frames.
 #check @processReplenishmentsDueOnCore_preserves_replenishQueueValidOnCore
 #check @processReplenishmentsDueOnCore_preserves_replenishmentPipelineOrderOnCore
-#check @popDue_remaining_subset
--- the aggregate (validity + pipeline discharged, affinity-consistency the placement-gated input).
-#check @timerTickOnCore_preserves_perCoreCbsInvariant
 EOF
 lake env lean /tmp/sm5i_tick_cbs.lean'
 
@@ -16486,7 +16483,16 @@ open SeLe4n.Kernel
 -- the proven prepared + schedule per-phase affinity preservation.
 #check @timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore
 #check @scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
--- the headline + the strengthened aggregate (affinity DERIVED, budget-phase frame the residual).
+-- the budget phase: every write keeps homes and bound threads; the one new entry is homed.
+#check @abortPendingIpcOnEndpoint_homeBindFrame
+#check @timeoutThread_homeBindFrame
+#check @timeoutBlockedThreads_homeBindFrame
+#check @budgetExhaustOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @timerTickBudgetOnCore_preserves_replenishQueueAffinityConsistentOnCore
+-- the requeue is on the link core of the context itself.
+#check @releaseFreeFor_of_boundHome
+#check @budgetExhaust_requeue_releaseFreeFor
+-- the headline + the strengthened aggregate (affinity DERIVED in every phase).
 #check @timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore
 #check @timerTickOnCore_preserves_perCoreCbsInvariant_discharged
 EOF

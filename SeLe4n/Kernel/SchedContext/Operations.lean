@@ -1313,9 +1313,10 @@ every other observable per-core slot comes through unchanged. -/
 1. Verify the SchedContext has a bound thread
 2. (H1) If the bound thread is **running on some core**, clear that core's
    current slot to trigger rescheduling — the core is found by
-   `runningCoreOf?`, not by `determineTargetCore`, because the two diverge for
-   an unbound-affinity thread running on a secondary core (PR #861 review
-   rounds 39/40) and the wrapper's scheduling point reads the former
+   `runningCoreOf?`, not by `determineTargetCore`: the two agree on committed
+   states only through the placement invariant (WS-ZA ZA6.3; before it an
+   unbound-affinity thread could run on a secondary core, PR #861 review
+   rounds 39/40), and the wrapper's scheduling point reads the former
 3. (H2) Re-bucket the thread on its **home** core at its post-unbind legacy
    TCB priority — removed and re-inserted if it was queued, inserted if it was
    current, in **this** transition
@@ -1372,14 +1373,14 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- it were reading **different cores**.  `schedContextUnbindOnCore`
           -- resolves its reschedule target through `runningCoreOf?` — the core
           -- actually executing the thread — while this guard used
-          -- `determineTargetCore`, the affinity home.  Those agree whenever
-          -- affinity is set, since a thread is only dispatched on a core its
-          -- affinity admits; they diverge for an **unbound-affinity thread
-          -- running on a secondary core**, which is admitted (see
-          -- `runningCoreOf?`).  In that case home is boot, `wasCurrent` was
-          -- false, and the thread was left current on the secondary core AND
-          -- absent from every run queue — the round-13 defect surviving one
-          -- field over.  Both halves now read `runningCoreOf?`.
+          -- `determineTargetCore`, the affinity home.  Those agree on every
+          -- committed state under the placement invariant (`currentHome`,
+          -- WS-ZA ZA6.3); before it they diverged for an **unbound-affinity
+          -- thread running on a secondary core**.  In that case home was boot,
+          -- `wasCurrent` was false, and the thread was left current on the
+          -- secondary core AND absent from every run queue — the round-13
+          -- defect surviving one field over.  Both halves read `runningCoreOf?`,
+          -- the core whose slot the guard clears.
           --
           -- The *queue* side below stays on the home core, and deliberately: an
           -- unbound thread belongs on its home core's run queue, which is where

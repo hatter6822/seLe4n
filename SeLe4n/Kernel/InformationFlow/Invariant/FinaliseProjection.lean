@@ -373,12 +373,12 @@ theorem storeUnbindNotification_hidden (ctx : LabelingContext) (observer : IfObs
 hidden**: it rewrites the two, purges a replenish entry and raises reschedule
 flags, none of which the projection reads. -/
 theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfObserver)
-    {s s' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB} {c : CoreId}
+    {s s' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
     {scId : SeLe4n.SchedContextId} (hInv : s.objects.invExt)
     (hB : tcb.schedContextBinding = .bound scId)
     (hSc : objectObservable ctx observer scId.toObjId = false)
     (hT : objectObservable ctx observer tid.toObjId = false)
-    (h : cancelBoundDonationOnCore s tid tcb c = .ok s') :
+    (h : cancelBoundDonationOnCore s tid tcb = .ok s') :
     projectState ctx observer s' = projectState ctx observer s := by
   unfold cancelBoundDonationOnCore at h
   simp only [hB, Except.ok.injEq] at h
@@ -683,7 +683,7 @@ theorem finaliseThreadUnbindSchedContext_hidden (ctx : LabelingContext)
       rw [cancelDonationArmOnCore_of_codes s tid hS hO] at hOk
       have hP := cancelBoundDonationOnCore_hidden ctx observer hInv
         (schedContextBinding_of_codes hS hO) (hSc hS) hTh hOk
-      have hI := cancelBoundDonationOnCore_preserves_objects_invExt s st' tid t _ hInv hOk
+      have hI := cancelBoundDonationOnCore_preserves_objects_invExt s st' tid t hInv hOk
       obtain ⟨tx, hx, hk⟩ := (cancelBoundDonationOnCore_reachFieldFrame hInv hOk).fwd _ t hTo
       exact ⟨hP, hI, tx, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hx, hk.1, hk.2.2.1⟩
     · exact ⟨rfl, hInv, t, hT, rfl, rfl⟩

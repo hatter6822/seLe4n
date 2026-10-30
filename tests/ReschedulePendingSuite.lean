@@ -400,7 +400,7 @@ deadline stops being the context's, and the thread is queued on another core,
 so that core is flagged. -/
 private def runBoundUnbindChecks : IO Unit := do
   IO.println "--- §2.8 cancelBoundDonationOnCore ---"
-  match cancelBoundDonationOnCore stBound boundTid boundTcb core1 with
+  match cancelBoundDonationOnCore stBound boundTid boundTcb with
   | .ok post =>
     checkDiff "unbind of a thread queued on a remote core" stBound post core0 false
     expectRaised "unbind of a thread queued on a remote core" stBound post core0 [core1]

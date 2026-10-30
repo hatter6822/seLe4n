@@ -437,6 +437,34 @@ theorem timerTickOnCorePrepared_stepCovers (st : SystemState) (c : CoreId)
       (processReplenishmentsDueOnCore_stepCovers _ c _ hInv hBi),
     processReplenishmentsDueOnCore_preserves_bidirectional _ c _ hInv hBi⟩
 
+/-- **The prepared tick state carries `currentBoundHomedOnCore`** (WS-ZA ZA6.3):
+the diagnostic clear and the drain keep core `c`'s current thread, every thread's
+home and the binding pair, so the thread current on `c` before the tick, homed on
+`c` by the placement invariant (`currentHome`), is homed on `c` after it, and the
+context its binding names names it.  The budget phase's affinity precondition,
+discharged from the two invariants the per-core bundle carries. -/
+theorem timerTickOnCorePrepared_currentBoundHomedOnCore (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
+    (hBi : schedContextBindingBidirectional st) :
+    currentBoundHomedOnCore (timerTickOnCorePrepared st c) c := by
+  intro tid tcb hCur hTcb
+  have hInv0 : ({ st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] } :
+      SystemState).objects.invExt := hInv
+  have hCur0 : st.scheduler.currentOnCore c = some tid := by
+    unfold timerTickOnCorePrepared at hCur
+    rw [processReplenishmentsDueOnCore_currentOnCore_eq] at hCur
+    simpa using hCur
+  obtain ⟨x, hx, -⟩ := hD.currentActive c tid hCur0
+  refine ⟨?_, fun scId sc hb hSc => ?_⟩
+  · unfold timerTickOnCorePrepared
+    rw [processReplenishmentsDueOnCore_determineTargetCore _ c _ hInv0]
+    exact determineTargetCore_eq_of_homedOn hx (hD.currentHome c tid hCur0)
+  · obtain ⟨sc0, hS0, hB0⟩ := (timerTickOnCorePrepared_stepCovers st c hInv hBi).2 tid tcb scId
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb) hb
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hS0] at hSc
+    cases hSc
+    exact hB0
+
 /-- **The exhausting charge covers**: the spend and its key hook cover, the
 timeout pass covers, and the diagnostic write and the timeout wakes' flags
 frame every view and slot and only raise flags. -/

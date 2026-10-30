@@ -47,7 +47,8 @@ which is bad enough on its own terms and needs no overstating.
 `schedContextUnbindOnCore` is the per-core form, built like its siblings
 `suspendThreadOnCore` (SM6.E) and `setPriorityOnCore`: it resolves the core
 **actually running** the demoted thread from the pre-state (`runningCoreOf?`,
-not the queue home — the two diverge, which is why SM6.E introduced it) and
+not the queue home — the two agree on committed states only through the
+placement invariant, WS-ZA ZA6.3, and SM6.E introduced it when they did not) and
 runs the shared preemption seam `priorityRescheduleOnCore`, rescheduling inline
 when that core is the executing one and surfacing its `.reschedule` SGI when it
 is remote.

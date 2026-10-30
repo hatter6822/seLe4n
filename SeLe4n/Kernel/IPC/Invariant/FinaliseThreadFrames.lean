@@ -991,13 +991,13 @@ theorem finaliseThreadUnbindSchedContext_self {s : SystemState} {x : SeLe4n.Thre
     rw [if_pos (by simp [h0, hOwn, hRun, hHeld, hSc, hB])]
     have hBind := schedContextBinding_of_codes' h0 hOwn
     rw [cancelDonationArmOnCore_of_bound s x t _ hBind]
-    have hOk := cancelBoundDonationOnCore_of_bound s x t (determineTargetCore s x) _ hBind
+    have hOk := cancelBoundDonationOnCore_of_bound s x t _ hBind
     rw [hOk]
     dsimp only
-    obtain ⟨g1, g2⟩ := cancelBoundDonationOnCore_getTcb? s _ x t _ _ hBind hInv hOk
+    obtain ⟨g1, g2⟩ := cancelBoundDonationOnCore_getTcb? s _ x t _ hBind hInv hOk
     refine ⟨by rw [g1, hX]; rfl, g2,
-      fun c => (cancelBoundDonationOnCore_runQueue_current_eq s _ x t _ c hOk).2,
-      cancelBoundDonationOnCore_machine_eq s _ x t _ hOk⟩
+      fun c => (cancelBoundDonationOnCore_runQueue_current_eq s _ x t c hOk).2,
+      cancelBoundDonationOnCore_machine_eq s _ x t hOk⟩
 
 /-- **The suspend keeps every thread's blocking server**: the deschedule writes
 run-queue links, the mark the thread's run state and message. -/

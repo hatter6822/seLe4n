@@ -317,7 +317,7 @@ context — its own or on loan — is bound back to it.  The thread finalisation
 theorem finaliseScReleaseStep_keepsIpcInvariantFull :
     FinaliseScReleaseStep (fun s => ipcInvariantFull s ∧ s.objects.invExt) := by
   intro s s' t tcb sc x h hT hS hSc hB hOk
-  refine ⟨cancelBoundDonationOnCore_view_preserves_ipcInvariantFull s s' t tcb _ _ h.2 h.1
+  refine ⟨cancelBoundDonationOnCore_view_preserves_ipcInvariantFull s s' t tcb _ h.2 h.1
     ((SystemState.getTcb?_eq_some_iff s t tcb).mp hT)
     (fun scId hb => ?_) hOk, (FinaliseFrame.cancelBoundDonationOnCore h.2 hOk).invExt⟩
   rw [schedContextBinding_ownerCleared hS] at hb

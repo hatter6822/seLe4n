@@ -185,7 +185,7 @@ def FinaliseScReleaseStep (P : SystemState → Prop) : Prop :=
     s.getTcb? t = some tcb → tcb.scBindingScCode = x.val + 1 →
     s.getSchedContext? ⟨x.val⟩ = some sc → sc.boundThreadCode = t.val + 1 →
     cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
-      (determineTargetCore s t) = .ok s' → P s'
+      = .ok s' → P s'
 
 /-- **The unstack step a scheduling context's finalisation takes**: the head of
 the reply stack the context heads loses its upward link, then the context its
@@ -644,11 +644,11 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
   dsimp only at hSc
   rw [if_pos (show (t'.scBindingScCode == x.val + 1) = true by simp [hS'])] at hSc
   have hBind := schedContextBinding_ownerCleared (t := t') hS'
-  rw [cancelBoundDonationOnCore_of_bound _ _ _ _ _ hBind] at hSc
+  rw [cancelBoundDonationOnCore_of_bound _ _ _ _ hBind] at hSc
   dsimp only at hSc
   have hOk := cancelBoundDonationOnCore_of_bound s1 tid { t' with scBindingOwnerCode := 0 }
-    (determineTargetCore s1 tid) _ hBind
-  have hObj := cancelBoundDonationOnCore_objects s1 _ tid _ _ _ hBind hInv1 hOk
+    _ hBind
+  have hObj := cancelBoundDonationOnCore_objects s1 _ tid _ _ hBind hInv1 hOk
   -- The purge writes the context's release fields alone, which neither read
   -- below is about.
   obtain ⟨sc₁, hSc₁, hE⟩ := hObj.getSchedContext?_some' hSc
@@ -1746,8 +1746,8 @@ theorem markKeyChangeFrom (pre st : SystemState) (tid : SeLe4n.ThreadId)
 /-- **The reservation unbind**: the context's binding cleared, its replenishment
 purged, the thread's binding cleared, the key hook. -/
 theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
-    {c : Concurrency.CoreId} (hInv : st.objects.invExt)
-    (h : SeLe4n.Kernel.cancelBoundDonationOnCore st t tcb c = .ok st') : FinaliseFrame st st' := by
+    (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.cancelBoundDonationOnCore st t tcb = .ok st') : FinaliseFrame st st' := by
   unfold SeLe4n.Kernel.cancelBoundDonationOnCore at h
   split at h
   · rename_i scId _

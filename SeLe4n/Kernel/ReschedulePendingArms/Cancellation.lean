@@ -513,8 +513,8 @@ theorem budgetEligibleView_updateTcb_ne (s : SystemState) (tid : SeLe4n.ThreadId
 /-- **The bound unbind covers**: the context write keeps its deadline, the purge
 writes a replenish queue, and the victim's rebind ends in its hook. -/
 theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : CoreId} (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold cancelBoundDonationOnCore at h
   split at h

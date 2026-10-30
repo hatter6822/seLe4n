@@ -1045,8 +1045,8 @@ end ReachFieldFrame
 /-- **The reservation unbind keeps the reachable parts' fields**: a context
 rewritten, the scheduler, the thread's binding codes, the key hook. -/
 theorem cancelBoundDonationOnCore_reachFieldFrame {st st' : SystemState} {t : SeLe4n.ThreadId}
-    {tcb : TCB} {c : Concurrency.CoreId} (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st t tcb c = .ok st') : ReachFieldFrame st st' := by
+    {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelBoundDonationOnCore st t tcb = .ok st') : ReachFieldFrame st st' := by
   cases hBind : tcb.schedContextBinding with
   | bound scId =>
     let g : SchedContext → SchedContext := fun sc =>
@@ -1058,7 +1058,7 @@ theorem cancelBoundDonationOnCore_reachFieldFrame {st st' : SystemState} {t : Se
       (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) hI1
       (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩))
     exact h2.trans (ReachFieldFrame.of_agreeOffReleaseLinks
-      (cancelBoundDonationOnCore_objects st st' t tcb c scId hBind hInv h))
+      (cancelBoundDonationOnCore_objects st st' t tcb scId hBind hInv h))
   | _ => unfold cancelBoundDonationOnCore at h; rw [hBind] at h; cases h
 
 -- ============================================================================
@@ -1644,7 +1644,7 @@ theorem release {s s' : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB} {sc : Sch
     (hS : tcb.scBindingScCode = x.val + 1)
     (hSc : s.getSchedContext? ⟨x.val⟩ = some sc) (hB : sc.boundThreadCode = t.val + 1)
     (hOk : cancelBoundDonationOnCore s t { tcb with scBindingOwnerCode := 0 }
-      (determineTargetCore s t) = .ok s') :
+      = .ok s') :
     finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=
   have hI := finaliseScReleaseStep_keepsIpcInvariantFull s s' t tcb sc x ⟨h.1, h.2.1⟩ hT hS
     hSc hB hOk

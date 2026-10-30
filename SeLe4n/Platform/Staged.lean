@@ -439,15 +439,14 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- `timerTickOnCore_preserves_replenishQueueValidOnCore` (validity, unconditional),
 -- `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` (pipeline-order, given
 -- positive periods), the full `timerTickOnCore_machine_timer_eq` machine chain (the
--- tick never advances the global timer), and the aggregate
--- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
--- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
+-- tick never advances the global timer).  The SM5.I per-core run loop is the
+-- runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 -- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
 -- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
--- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried
--- entries proven via the prepared/schedule per-phase frames; only the budget-phase
--- frame (timeoutBlockedThreads object-frame) remains as tracked-debt residual.
+-- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — every phase
+-- proven: the carried entries via the prepared/budget/schedule frames, the
+-- exhausting tick's new entry from currentBoundHomedOnCore (WS-ZA ZA6.3).
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 -- WS-SM SM5.J: WCRT under fine locks (WS-SM SM5 §3.9,
 -- §5 SM5.J).  Bounds the per-core scheduler operations' worst-case response time
@@ -550,7 +549,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- `cancelIpcBlockingOnCore_{,ready_}cancellation_NI{,_smp}` +
 -- `cancelDonatedDonationOnCore_cancellation_NI{,_smp}` + the ∀-core
 -- replenish-queue / migration projection frames.  Every SM6.E-new state
--- effect (placement deschedule, rqCore-parametrised purge, replenishment
+-- effect (placement deschedule, exact link-core purge, replenishment
 -- migration) is discharged substantively; the composites consume the
 -- single-core teardown/return projection obligations that the production
 -- closure forms (`suspendThread_preserves_projection` G3/G5) document.

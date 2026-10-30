@@ -1154,9 +1154,8 @@ writes are the same SchedContext deactivation and TCB unbind inserts as the
 single-core arm. -/
 theorem cancelBoundDonationOnCore_preserves_objects_invExt
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.objects.invExt := by
   unfold cancelBoundDonationOnCore at h
   split at h
@@ -1173,9 +1172,8 @@ every core's run queue and current slot are exactly the pre-state's (the
 donation cancellation wakes and deschedules nothing). -/
 theorem cancelBoundDonationOnCore_runQueue_current_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
     ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
   simp only [cancelBoundDonationOnCore] at h
@@ -1194,11 +1192,10 @@ SchedContext survives only on a core its own link did not name — the queue tha
 link names is purged exactly, and nothing else is. -/
 theorem cancelBoundDonationOnCore_replenishQueue_purged
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (scId : SeLe4n.SchedContextId)
     (hBind : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st')
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st')
     (c : SeLe4n.Kernel.Concurrency.CoreId) (e : SeLe4n.SchedContextId × Nat)
     (he : e ∈ (st'.scheduler.replenishQueueOnCore c).entries) :
     e ∈ (st.scheduler.replenishQueueOnCore c).entries ∧
@@ -1218,15 +1215,14 @@ theorem cancelBoundDonationOnCore_replenishQueue_purged
 /-- …and over agreeing queues, none naming the SchedContext survives anywhere. -/
 theorem cancelBoundDonationOnCore_replenishQueue_purged_of_refined
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (scId : SeLe4n.SchedContextId)
     (hBind : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st')
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st')
     (c : SeLe4n.Kernel.Concurrency.CoreId) (e : SeLe4n.SchedContextId × Nat)
     (he : e ∈ (st'.scheduler.replenishQueueOnCore c).entries) :
     e ∈ (st.scheduler.replenishQueueOnCore c).entries ∧ e.1 ≠ scId := by
-  obtain ⟨hm, hs⟩ := cancelBoundDonationOnCore_replenishQueue_purged st st' tid tcb rqCore scId
+  obtain ⟨hm, hs⟩ := cancelBoundDonationOnCore_replenishQueue_purged st st' tid tcb scId
     hBind hInv h c e he
   refine ⟨hm, fun hEq => hs hEq (SystemState.releaseCoreOf_of_queuedOn ?_)⟩
   refine ((hRef c).queued scId).mpr ?_
@@ -1236,9 +1232,9 @@ theorem cancelBoundDonationOnCore_replenishQueue_purged_of_refined
 contexts' links — the context write keeps its release fields, the purge unlinks
 it through its neighbours, and the binding clear and key hook write none. -/
 theorem cancelBoundDonationOnCore_refined {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
+    {tid : SeLe4n.ThreadId} {tcb : TCB}
     (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') : st'.releaseQueueRefined := by
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') : st'.releaseQueueRefined := by
   unfold cancelBoundDonationOnCore at h
   split at h
   · rename_i scId _
@@ -1262,8 +1258,7 @@ theorem cancelBoundDonationOnCore_refined {st st' : SystemState}
 two record updates, none of which names `machine`. -/
 theorem cancelBoundDonationOnCore_machine_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.machine = st.machine := by
   simp only [cancelBoundDonationOnCore] at h
   split at h
@@ -1277,8 +1272,7 @@ theorem cancelBoundDonationOnCore_machine_eq
 /-- `v0.35.164`: ...nor the TLB-shootdown state, for the same reason. -/
 theorem cancelBoundDonationOnCore_tlbShootdown_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.tlbShootdown = st.tlbShootdown := by
   simp only [cancelBoundDonationOnCore] at h
   split at h
@@ -1374,7 +1368,7 @@ theorem cancelDonationArmOnCore_preserves_objects_invExt
   unfold cancelDonationArmOnCore at h
   split at h
   · injection h with h; subst h; exact hInv
-  · exact cancelBoundDonationOnCore_preserves_objects_invExt _ _ _ _ _ hInv h
+  · exact cancelBoundDonationOnCore_preserves_objects_invExt _ _ _ _ hInv h
   · exact cancelDonatedDonationOnCore_preserves_objects_invExt _ _ _ _ hInv h
 
 /-- `v0.35.164`: the dispatcher never disturbs any core's run queue or current
@@ -1391,7 +1385,7 @@ theorem cancelDonationArmOnCore_runQueue_current_eq
   unfold cancelDonationArmOnCore at h
   split at h
   · injection h with h; subst h; exact ⟨rfl, rfl⟩
-  · exact cancelBoundDonationOnCore_runQueue_current_eq _ _ _ _ _ c h
+  · exact cancelBoundDonationOnCore_runQueue_current_eq _ _ _ _ c h
   · exact cancelDonatedDonationOnCore_runQueue_current_eq _ _ _ _ c h
 
 /-- `v0.35.164`: the dispatcher writes no register bank. -/
@@ -1402,7 +1396,7 @@ theorem cancelDonationArmOnCore_machine_eq
   unfold cancelDonationArmOnCore at h
   split at h
   · injection h with h; subst h; rfl
-  · exact cancelBoundDonationOnCore_machine_eq _ _ _ _ _ h
+  · exact cancelBoundDonationOnCore_machine_eq _ _ _ _ h
   · exact cancelDonatedDonationOnCore_machine_eq _ _ _ _ h
 
 /-- `v0.35.164`: the dispatcher never touches the TLB-shootdown state. -/
@@ -1413,7 +1407,7 @@ theorem cancelDonationArmOnCore_tlbShootdown_eq
   unfold cancelDonationArmOnCore at h
   split at h
   · injection h with h; subst h; rfl
-  · exact cancelBoundDonationOnCore_tlbShootdown_eq _ _ _ _ _ h
+  · exact cancelBoundDonationOnCore_tlbShootdown_eq _ _ _ _ h
   · exact cancelDonatedDonationOnCore_tlbShootdown_eq _ _ _ _ h
 
 -- ----------------------------------------------------------------------------
@@ -1435,8 +1429,7 @@ theorem cancelDonationArmOnCore_tlbShootdown_eq
 matched on. -/
 theorem cancelBoundDonationOnCore_ok_bound
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     ∃ scId, tcb.schedContextBinding = .bound scId := by
   unfold cancelBoundDonationOnCore at h
   split at h
@@ -1536,15 +1529,14 @@ is not read.  The `_replenishQueue_purged` / `_replenishQueue_ne` frames supply
 the queue readings and `scUpdate_then_tcbUpdate_read_frame` the object ones. -/
 theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (hInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨scId, hBind⟩ := cancelBoundDonationOnCore_ok_bound st st' tid tcb rqCore h
+  obtain ⟨scId, hBind⟩ := cancelBoundDonationOnCore_ok_bound st st' tid tcb h
   have hSub : ∀ c e, e ∈ (st'.scheduler.replenishQueueOnCore c).entries →
       e ∈ (st.scheduler.replenishQueueOnCore c).entries := fun c e he =>
-    (cancelBoundDonationOnCore_replenishQueue_purged st st' tid tcb rqCore scId hBind hInv h c e he).1
+    (cancelBoundDonationOnCore_replenishQueue_purged st st' tid tcb scId hBind hInv h c e he).1
   simp only [cancelBoundDonationOnCore, hBind] at h
   injection h with h
   subst h
@@ -1632,7 +1624,7 @@ theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
   split at h
   · injection h with h; subst h; exact hCons
   · exact cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-      _ _ _ _ _ hInv hCons h
+      _ _ _ _ hInv hCons h
   · exact cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       _ _ _ _ hTcb hInv hCons h
 
@@ -3356,8 +3348,8 @@ theorem cancelDonatedDonationOnCore_runQueueStage {st st' : SystemState}
 /-- The in-place unbind: a context write, two scheduler-side writes the
 agreement does not read, the binding clear, and the key flags. -/
 theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     SystemState.RunQueueStage st st' := by
   unfold cancelBoundDonationOnCore at h
   split at h
@@ -3420,8 +3412,8 @@ theorem cancelDonatedDonationOnCore_runCoresAgree {st st' : SystemState}
 /-- The in-place donation cancel moves no thread's run-queue core: a context
 write, the binding clear and the key flags. -/
 theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
-    (hInv : st.objects.invExt) (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hInv : st.objects.invExt) (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     SystemState.RunCoresAgree st' st := by
   unfold cancelBoundDonationOnCore at h
   split at h

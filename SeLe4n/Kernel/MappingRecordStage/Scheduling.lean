@@ -132,10 +132,10 @@ theorem cancelIpcBlockingReclaimed_mappingStage (st : SystemState) (tid : SeLe4n
 /-- The suspend's donation arm: nothing, the in-place unbind, or the return and
 the replenishment migration. -/
 theorem cancelSuspendDonation_mappingStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} {home : CoreId}
+    {tcb : TCB}
     (hStep : (match tcb.schedContextBinding with
               | .unbound => (Except.ok st : Except KernelError SystemState)
-              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .bound _ => cancelBoundDonationOnCore st tid tcb
               | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     MappingStage st st' := by
   revert hStep

@@ -2528,6 +2528,15 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         },
         kernel_step("refill-wait-tick", TIMER_TICK_STEP),
         kernel_step("refill-drain-tick", TIMER_TICK_STEP),
+        // WS-ZA ZA6.3: a tick that exhausts a bound budget.  The drain left the
+        // root task current with its one-tick budget refilled; the next tick
+        // charges it, exhausts it, queues its refill two ticks on (the context
+        // linked into core 0's release queue in place) and runs the idle
+        // thread.  The tick after finds nothing due and the one after that
+        // drains the refill and switches back to the root task, as above.
+        kernel_step("exhaust-tick", TIMER_TICK_STEP),
+        kernel_step("exhaust-wait-tick", TIMER_TICK_STEP),
+        kernel_step("exhaust-drain-tick", TIMER_TICK_STEP),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
             "refill-unbind-root",

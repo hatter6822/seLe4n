@@ -74,10 +74,10 @@ theorem finaliseSchedContextUnbind_keeps {s : SystemState} {x : SeLe4n.ObjId}
   simp only [beq_iff_eq] at hG
   have hBind := schedContextBinding_ownerCleared (t := t) hG
   have hOk := cancelBoundDonationOnCore_of_bound s tid { t with scBindingOwnerCode := 0 }
-    (determineTargetCore s tid) _ hBind
+    _ hBind
   rw [hOk]
   dsimp only
-  have hObj := cancelBoundDonationOnCore_objects s _ tid _ _ _ hBind hInv hOk
+  have hObj := cancelBoundDonationOnCore_objects s _ tid _ _ hBind hInv hOk
   have hNe : tid.toObjId ≠ x := by
     intro e
     have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT

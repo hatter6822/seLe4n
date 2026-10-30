@@ -200,6 +200,7 @@ example (s : SchedulerState) (c c' : CoreId) (h : c ≠ c')
 example : (default : SchedulerState) = (default : SchedulerState) :=
   SchedulerState.ext_perCore (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
     (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) rfl rfl (fun _ => rfl)
+    (fun _ => rfl) (fun _ => rfl)
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): re-run every decidable check at runtime so
@@ -226,8 +227,11 @@ private def runDefaultInitChecks : IO Unit := do
   assertBool "runQueueOnCore is empty (toList = []) on every core"
     (allCores.all (fun c => decide
       (({ (default : SystemState) with scheduler := (default : SchedulerState) }).runQueueWalk c = [])))
-  assertBool "replenishQueueOnCore is empty (size = 0) on every core"
-    (allCores.all (fun c => decide (((default : SchedulerState).replenishQueueOnCore c).size = 0)))
+  -- The release queue is read through its executable form: the core's head
+  -- and count, from which the walk along the contexts' release links starts.
+  assertBool "the release queue is empty (head 0, count 0) on every core"
+    (allCores.all (fun c => (default : SchedulerState).releaseHeadOnCore c == 0 &&
+      (default : SchedulerState).releaseCountOnCore c == 0))
   assertBool "activeDomainOnCore = ⟨0⟩ on every core"
     (allCores.all (fun c => decide ((default : SchedulerState).activeDomainOnCore c = ⟨0⟩)))
   assertBool "domainTimeRemainingOnCore = 5 on every core"

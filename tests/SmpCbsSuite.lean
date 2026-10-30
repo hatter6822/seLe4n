@@ -44,7 +44,8 @@ Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.H
   the `schedContextBind` / `schedContextUnbind{,OnCore}` preservation theorems
   anchor and apply at elaboration time, and the runtime scenarios drive a full
   bind → replenish → unbind cycle, the unbind's home-core purge, the wrapper's
-  no-running-core arm, and the dead-TCB sweep arm's all-cores purge on concrete
+  no-running-core arm, and the dead-TCB arm's purge of the core its context is
+  linked on, on concrete
   fixtures.
 -/
 
@@ -71,10 +72,8 @@ open SeLe4n.Testing
 
 -- SM5.H.2 the replenishOnCore primitive + frames:
 #check @replenishOnCore
-#check @replenishOnCore_objects
 #check @replenishOnCore_machine
 #check @replenishOnCore_getTcb?
-#check @replenishOnCore_getSchedContext?
 #check @replenishOnCore_determineTargetCore
 #check @replenishOnCore_replenishQueueOnCore_self
 #check @replenishOnCore_replenishQueueOnCore_ne
@@ -128,11 +127,6 @@ open SeLe4n.Testing
 #check @consumeBudget_preserves_le_budget
 #check @applyRefill_preserves_le_budget
 #check @scheduleReplenishment_replenishments_bounded
-
--- SM5.H.2 (B8) the faithful sc-based scheduling primitive:
-#check @replenishScOnCore
-#check @replenishScOnCore_eq
-#check @replenishScOnCore_preserves_replenishmentPipelineOrderOnCore
 
 -- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation:
 #check @migrateRunQueueOnAffinityChange
@@ -216,24 +210,25 @@ example (oldCore newCore : SeLe4n.Kernel.Concurrency.CoreId) :
 -- ============================================================================
 
 -- SM5.H.3: scheduling a replenishment preserves replenish-queue validity.
-example (st : SystemState) (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+example (st : SystemState) (c : CoreId) (scId : SchedContextId)
     (hValid : replenishQueueValidOnCore st c) :
-    replenishQueueValidOnCore (replenishOnCore st c scId eligibleAt) c :=
-  replenishOnCore_preserves_replenishQueueValidOnCore st c scId eligibleAt hValid
+    replenishQueueValidOnCore (replenishOnCore st c scId) c :=
+  replenishOnCore_preserves_replenishQueueValidOnCore st c scId hValid
 
 -- SM5.H.6: scheduling a future replenishment preserves pipeline order.
-example (st : SystemState) (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
-    (hPipeline : replenishmentPipelineOrderOnCore st c) (hFuture : eligibleAt > st.machine.timer) :
-    replenishmentPipelineOrderOnCore (replenishOnCore st c scId eligibleAt) c :=
-  replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId eligibleAt hPipeline hFuture
+example (st : SystemState) (c : CoreId) (scId : SchedContextId)
+    (hPipeline : replenishmentPipelineOrderOnCore st c)
+    (hFuture : ∀ t, st.releaseKeyOf scId = some t → t > st.machine.timer) :
+    replenishmentPipelineOrderOnCore (replenishOnCore st c scId) c :=
+  replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId hPipeline hFuture
 
 -- SM5.H.5: scheduling a home-core replenishment preserves affinity consistency.
-example (st : SystemState) (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+example (st : SystemState) (c : CoreId) (scId : SchedContextId)
     (hCons : replenishQueueAffinityConsistentOnCore st c)
     (hTarget : ∀ sc, st.getSchedContext? scId = some sc →
       ∀ tid, sc.boundThread = some tid → determineTargetCore st tid = c) :
-    replenishQueueAffinityConsistentOnCore (replenishOnCore st c scId eligibleAt) c :=
-  replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore st c scId eligibleAt hCons hTarget
+    replenishQueueAffinityConsistentOnCore (replenishOnCore st c scId) c :=
+  replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore st c scId hCons hTarget
 
 -- SM5.H.4: the migration preserves replenish-queue validity on every core.
 example (st : SystemState) (scId : SchedContextId) (fromCore toCore : CoreId)
@@ -319,12 +314,13 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
   timerTickBudgetOnCore_preserves_replenishQueueValidOnCore st c tid tcb st' b c' hValid hStep
 
 -- SM5.H.7: scheduling maintains the aggregate per-core CBS invariant.
-example (st : SystemState) (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
-    (hInv : perCoreCbsInvariant st c) (hFuture : eligibleAt > st.machine.timer)
+example (st : SystemState) (c : CoreId) (scId : SchedContextId)
+    (hInv : perCoreCbsInvariant st c)
+    (hFuture : ∀ t, st.releaseKeyOf scId = some t → t > st.machine.timer)
     (hTarget : ∀ sc, st.getSchedContext? scId = some sc →
       ∀ tid, sc.boundThread = some tid → determineTargetCore st tid = c) :
-    perCoreCbsInvariant (replenishOnCore st c scId eligibleAt) c :=
-  replenishOnCore_preserves_perCoreCbsInvariant st c scId eligibleAt hInv hFuture hTarget
+    perCoreCbsInvariant (replenishOnCore st c scId) c :=
+  replenishOnCore_preserves_perCoreCbsInvariant st c scId hInv hFuture hTarget
 
 -- SM5.H.7: the CBS budget bound is maintained by replenishment (unconditional).
 example (sc : SchedContext) (refillAmount : Nat) :
@@ -356,11 +352,13 @@ affinity-consistent (`scId0` is homed on core 1 — `tcb0.cpuAffinity = some cor
 private def stCbs : SystemState :=
   let base := ((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
     tid0.toObjId (.tcb tcb0)).build
-  let q := ReplenishQueue.empty.insert scId0 5000
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core1 q }
+  withReleaseEntryOnCore base core1 scId0 5000
 
-/-- A `ReplenishQueue` is size-consistent (Bool form for runtime assertions). -/
-private def sizeConsistentB (rq : ReplenishQueue) : Bool := rq.size == rq.entries.length
+/-- Core `c`'s release queue is count-consistent (Bool form for runtime
+assertions): the walk along the contexts' release links from the core's head
+reads as many entries as the core's count records. -/
+private def sizeConsistentB (st : SystemState) (c : CoreId) : Bool :=
+  (st.releaseEntriesOn c).length == st.scheduler.releaseCountOnCore c
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -369,22 +367,33 @@ private def assertBool (name : String) (b : Bool) : IO Unit := do
     IO.println s!"  FAIL: {name}"
     throw (IO.userError s!"Assertion failed: {name}")
 
-/-- §3.1 SM5.H.2: `replenishOnCore` schedules an entry on the target core only. -/
+/-- §3.1 SM5.H.2: `replenishOnCore` places a context on the target core only, at
+its earliest pending refill (WS-ZA ZA6.3: one entry per context, keyed by the
+refill, as seL4-MCS's release queue is). -/
 private def runReplenishScenarios : IO Unit := do
   IO.println "--- §3.1 SM5.H.2 replenishOnCore scheduling ---"
-  let st' := replenishOnCore stCbs core1 scId0 6000
-  assertBool "replenishOnCore adds (scId0, 6000) to core 1's replenish queue"
-    ((st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 6000))
-  assertBool "replenishOnCore keeps core 1's existing (scId0, 5000) entry"
-    ((st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+  let base := ((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext
+      { sc0 with refillHeadPresent := true, refillHeadAmount := 50,
+                 refillHeadEligibleAt := 6000 })).withObject tid0.toObjId (.tcb tcb0)).build
+  let st' := replenishOnCore base core1 scId0
+  assertBool "replenishOnCore queues scId0 on core 1 at its refill's release time (6000)"
+    (st'.releaseEntriesOn core1 == [(scId0, 6000)])
+  assertBool "placing it again keeps one entry: a context is on its queue once"
+    ((replenishOnCore st' core1 scId0).releaseEntriesOn core1 == [(scId0, 6000)])
+  assertBool "a context already queued on core 1 is not placed on another core's queue"
+    ((replenishOnCore st' bootCoreId scId0).releaseEntriesOn bootCoreId == [] &&
+      (replenishOnCore st' bootCoreId scId0).releaseEntriesOn core1 == [(scId0, 6000)])
   assertBool "replenishOnCore leaves the boot core's replenish queue empty"
-    ((st'.scheduler.replenishQueueOnCore bootCoreId).entries.isEmpty)
-  assertBool "replenishOnCore never touches the object store (sc0 still resolves)"
+    ((st'.releaseEntriesOn bootCoreId).isEmpty)
+  assertBool "replenishOnCore keeps the context in the store (sc0 still resolves)"
     ((st'.getSchedContext? scId0).isSome)
   assertBool "replenishOnCore never advances the machine timer (still 0)"
-    (st'.machine.timer == stCbs.machine.timer)
-  assertBool "replenishOnCore keeps core 1's replenish queue size-consistent"
-    (sizeConsistentB (st'.scheduler.replenishQueueOnCore core1))
+    (st'.machine.timer == base.machine.timer)
+  assertBool "replenishOnCore keeps core 1's replenish queue count-consistent"
+    (sizeConsistentB st' core1)
+  assertBool "a context with no pending refill is not queued"
+    ((replenishOnCore ((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
+        tid0.toObjId (.tcb tcb0)).build core1 scId0).releaseEntriesOn core1 == [])
 
 /-- §3.2 SM5.H.4: the migration genuinely *moves* `scId0`'s entries between cores. -/
 private def runMigrationScenarios : IO Unit := do
@@ -392,22 +401,22 @@ private def runMigrationScenarios : IO Unit := do
   -- Migrate scId0's replenishments from core 1 to the boot core (core 0).
   let stM := migrateSchedContextReplenishment stCbs scId0 core1 bootCoreId
   assertBool "after migration, core 1's queue no longer holds (scId0, 5000)"
-    (!(stM.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+    (!(stM.releaseEntriesOn core1).contains (scId0, 5000))
   assertBool "after migration, the boot core's queue now holds (scId0, 5000)"
-    ((stM.scheduler.replenishQueueOnCore bootCoreId).entries.contains (scId0, 5000))
+    ((stM.releaseEntriesOn bootCoreId).contains (scId0, 5000))
   assertBool "after migration, the boot core's queue is size-consistent"
-    (sizeConsistentB (stM.scheduler.replenishQueueOnCore bootCoreId))
+    (sizeConsistentB stM bootCoreId)
   assertBool "after migration, core 1's queue is size-consistent"
-    (sizeConsistentB (stM.scheduler.replenishQueueOnCore core1))
+    (sizeConsistentB stM core1)
   assertBool "migration never touches the object store (sc0 still resolves)"
     ((stM.getSchedContext? scId0).isSome)
   -- A self-migration is the identity.
   assertBool "self-migration (core 1 → core 1) leaves core 1's queue unchanged"
-    (((migrateSchedContextReplenishment stCbs scId0 core1 core1).scheduler.replenishQueueOnCore core1).entries
-      == (stCbs.scheduler.replenishQueueOnCore core1).entries)
+    ((migrateSchedContextReplenishment stCbs scId0 core1 core1).releaseEntriesOn core1
+      == (stCbs.releaseEntriesOn core1))
   -- A core untouched by the migration is unchanged.
   assertBool "migration (core 1 → boot core) frames a third core's queue (core 1 ≠ this)"
-    ((migrateSchedContextReplenishment stCbs scId0 core1 bootCoreId).scheduler.replenishQueueOnCore ⟨2, by decide⟩).entries.isEmpty
+    ((migrateSchedContextReplenishment stCbs scId0 core1 bootCoreId).releaseEntriesOn ⟨2, by decide⟩).isEmpty
 
 /-- §3.3 SM5.H.4: the affinity-change-with-migration composite drags the SchedContext's
 replenishments to the new home core AND (for a remote new home) emits the cross-core
@@ -425,9 +434,9 @@ private def runCompositeScenarios : IO Unit := do
       assertBool "after the composite, tid0's cpuAffinity is committed to the boot core"
         (match st'.getTcb? tid0 with | some t => t.cpuAffinity == some bootCoreId | none => false)
       assertBool "after the composite, the boot core's queue holds (scId0, 5000)"
-        ((st'.scheduler.replenishQueueOnCore bootCoreId).entries.contains (scId0, 5000))
+        ((st'.releaseEntriesOn bootCoreId).contains (scId0, 5000))
       assertBool "after the composite, core 1's queue no longer holds (scId0, 5000)"
-        (!(st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+        (!(st'.releaseEntriesOn core1).contains (scId0, 5000))
       assertBool "after the composite, tid0's new home core is the boot core"
         (determineTargetCore st' tid0 == bootCoreId)
       -- tid0 was not runnable (not in any run queue), so no cross-core SGI fires
@@ -461,7 +470,7 @@ private def runCompositeScenarios : IO Unit := do
   | some vtid0 =>
       assertBool "setThreadCpuAffinityOp (bind tid0 → boot core) succeeds + migrates"
         (match setThreadCpuAffinityOp stCbs vtid0 (some bootCoreId) with
-         | .ok st' => (st'.scheduler.replenishQueueOnCore bootCoreId).entries.contains (scId0, 5000)
+         | .ok st' => (st'.releaseEntriesOn bootCoreId).contains (scId0, 5000)
          | .error _ => false)
   | none => assertBool "tid0 validates as a non-sentinel ThreadId" false
   -- `decodeAffinity` decodes the raw affinity word: 0..numCores-1 bind, the marker unbinds.
@@ -496,13 +505,13 @@ private def runAffinityScenarios : IO Unit := do
   IO.println "--- §3.5 SM5.H.5 affinity consistency witnesses ---"
   -- On the boot state the replenish queues are empty (vacuously consistent).
   assertBool "boot: every core's replenish queue is empty (vacuous consistency)"
-    ((allCores).all (fun c => ((default : SystemState).scheduler.replenishQueueOnCore c).entries.isEmpty))
+    ((allCores).all (fun c => ((default : SystemState).releaseEntriesOn c).isEmpty))
   -- On stCbs, core 1's single entry's SchedContext is homed on core 1 (the
   -- decidable content of affinity-consistency for that entry).
   assertBool "stCbs: scId0's bound thread (tid0) is homed on core 1 (matches its queue)"
     (determineTargetCore stCbs tid0 == core1)
   assertBool "stCbs: core 1's replenish queue holds exactly scId0's entry"
-    ((stCbs.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)])
+    ((stCbs.releaseEntriesOn core1) == [(scId0, 5000)])
 
 /-- §3.5b **PR #889 review round 20**: the live affinity path refuses a PE the
     platform does not have.
@@ -588,7 +597,7 @@ private def runRunQueueMigrationScenarios : IO Unit := do
   assertBool "after run-queue migration: tid0 entered the boot core's run queue"
     ((stMoved.queuedOn bootCoreId tid0))
   assertBool "run-queue migration frames the replenish queue (still holds scId0)"
-    ((stMoved.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+    ((stMoved.releaseEntriesOn core1).contains (scId0, 5000))
   -- A self-migration is the identity.
   assertBool "self run-queue migration (core 1 → core 1) is the identity"
     ((migrateRunQueueOnAffinityChange stRq tid0 core1 core1).queuedOn core1 tid0)
@@ -606,15 +615,25 @@ private def runRunQueueMigrationScenarios : IO Unit := do
   assertBool "D15: a migrated runnable thread carries its positive SC budget to the new core"
     (((stMoved.queuedOn bootCoreId tid0)) &&
      (match stMoved.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
-  -- #2 (Codex P1): rebinding a thread RUNNING on a core its new affinity forbids is
-  -- rejected fail-closed.  Put tid0 as `currentOnCore core1` (running ⇒ dequeue-on-
-  -- dispatch, in no run queue), then try to rebind it to the boot core (forbidden).
+  -- #2: rebinding a thread RUNNING on its home to another core takes it off that
+  -- core in the same transition (WS-ZA ZA6.3, seL4's `remoteTCBStall`), where the
+  -- retired reading refused it (`.threadOnDifferentCore`, Codex P1) — and refused
+  -- nothing when unpinning, leaving the thread running off its home.  Put tid0 as
+  -- `currentOnCore core1` (running ⇒ dequeue-on-dispatch, in no run queue), then
+  -- rebind it to the boot core.
   let stRunning : SystemState :=
     { stCbs with scheduler := stCbs.scheduler.setCurrentOnCore core1 (some tid0) }
   match setThreadCpuAffinityWithMigration stRunning tid0 (some bootCoreId) bootCoreId with
-  | .error .threadOnDifferentCore =>
-      assertBool "#2: rebinding a thread running on core 1 to the boot core is rejected (.threadOnDifferentCore)" true
-  | _ => assertBool "#2: running-on-forbidden-core rebind is rejected" false
+  | .ok (stV, _) =>
+      assertBool "#2: the rebind vacates core 1 and queues tid0 on its new home, the boot core"
+        (stV.scheduler.currentOnCore core1 == none && stV.queuedOn bootCoreId tid0 &&
+          !stV.queuedOn core1 tid0)
+      assertBool "#2: ...and flags core 1 to choose again"
+        (stV.scheduler.reschedulePendingOnCore core1)
+      assertBool "#2: ...and its reservation's refill follows it to the boot core"
+        ((stV.releaseEntriesOn bootCoreId) == [(scId0, 5000)] &&
+          (stV.releaseEntriesOn core1).isEmpty)
+  | .error _ => assertBool "#2: rebinding a running thread to another core succeeds" false
   -- rebinding the SAME running thread to its current (admitted) core 1 still succeeds.
   match setThreadCpuAffinityWithMigration stRunning tid0 (some core1) bootCoreId with
   | .ok _ => assertBool "#2: rebinding a running thread to its own (admitted) core 1 succeeds" true
@@ -626,9 +645,12 @@ validity (A4) — driven on a genuine budget-exhausted SchedContext. -/
 private def runLiveTickScenarios : IO Unit := do
   IO.println "--- §3.7 SM5.H.2 (A2/A4) live-tick CBS bridge ---"
   -- A budget-EXHAUSTED SchedContext (budgetRemaining = 1 ≤ 1) bound to tid0, on core 1.
+  -- Built and queued as `stCbs` is: a context's release links live in its own
+  -- fields, so the queued context is not overwritten in place.
   let scExhausted : SchedContext := { sc0 with budgetRemaining := ⟨1⟩ }
   let stExhausted : SystemState :=
-    { stCbs with objects := stCbs.objects.insert scId0.toObjId (.schedContext scExhausted) }
+    withReleaseEntryOnCore (((BootstrapBuilder.empty.withObject scId0.toObjId
+      (.schedContext scExhausted)).withObject tid0.toObjId (.tcb tcb0)).build) core1 scId0 5000
   -- Cut B2: the tick charges the thread the store holds, resolved through the
   -- witnessed lookup that supplies the proof its in-place rewrite consumes.
   match stExhausted.getTcbWitnessed? tid0 with
@@ -639,17 +661,18 @@ private def runLiveTickScenarios : IO Unit := do
           assertBool "bound-exhausted budget tick preempts (returns true)"
             (preempted == true)
           -- A2: the LIVE tick's replenish-queue write on core 1 is exactly the
-          -- abstract `replenishOnCore` primitive's (scheduling scId0 at now + period).
+          -- abstract `replenishOnCore` primitive's: the context sits where its
+          -- refills place it, so placing it again changes nothing.
           assertBool "A2: live bound-exhausted tick's core-1 replenish queue == replenishOnCore's"
-            ((st'.scheduler.replenishQueueOnCore core1).entries ==
-              ((replenishOnCore stExhausted core1 scId0
-                (stExhausted.machine.timer + scExhausted.period.val)).scheduler.replenishQueueOnCore core1).entries)
-          -- A2 (concretely): the new replenishment (scId0, 0 + 1000) was scheduled.
-          assertBool "A2: the tick scheduled (scId0, now + period = 1000) on core 1"
-            ((st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 1000))
+            ((st'.releaseEntriesOn core1) ==
+              ((replenishOnCore st' core1 scId0).releaseEntriesOn core1))
+          -- A2 (concretely): the new refill (0 + period = 1000) is earlier than the
+          -- pending one (5000), so the context's one entry moves up to 1000.
+          assertBool "A2: the tick re-keyed scId0 to its earliest refill (now + period = 1000)"
+            ((st'.releaseEntriesOn core1) == [(scId0, 1000)])
           -- A4: the post-tick core-1 replenish queue is still valid (size-consistent).
           assertBool "A4: live bound-exhausted tick keeps core 1's replenish queue size-consistent"
-            (sizeConsistentB (st'.scheduler.replenishQueueOnCore core1))
+            (sizeConsistentB st' core1)
           -- A non-exhausted / unbound tick leaves the replenish queue untouched (A4 other
           -- branches) — on a state that STORES the unbound thread, since the tick charges
           -- what the store holds.
@@ -661,18 +684,18 @@ private def runLiveTickScenarios : IO Unit := do
             (match stUnboundThread.getTcbWitnessed? tid0 with
              | some ⟨tcbU, hU⟩ =>
                match timerTickBudgetOnCore stUnboundThread core1 tid0 tcbU hU with
-               | (stU, _) => (stU.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)]
+               | (stU, _) => (stU.releaseEntriesOn core1) == [(scId0, 5000)]
              | none => false)
 
 /-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.7 SM5.H inventory partition counts ---"
-  assertBool "inventory has 119 entries"
-    (decide (perCoreCbsTheorems.length = 119))
+  assertBool "inventory has 116 entries"
+    (decide (perCoreCbsTheorems.length = 116))
   assertBool "predicate category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6))
-  assertBool "replenish category has 17 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 17))
+  assertBool "replenish category has 14 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 14))
   assertBool "preservation category has 8 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 8))
   assertBool "migration category has 25 entries"
@@ -720,10 +743,11 @@ private def runSm5hCompletionScenarios : IO Unit := do
 
 -- §3.9b (SM5.I affinity discharge): surface anchors for the affinity-consistency
 -- discharge.  The carried-entries affinity is DERIVED via the proven prepared /
--- schedule per-phase frames; the strengthened aggregate replaces the v0.31.57
--- whole-state assume-conclusion `hAffinity` with the budget-phase frame
--- `hBudgetAffinity` (the single tracked-debt residual).  Hypothesis-carrying
--- theorems, so surface-anchored (not runtime-decidable).
+-- budget / schedule per-phase frames; the strengthened aggregate replaces the
+-- v0.31.57 whole-state assume-conclusion `hAffinity` with `currentBoundHomedOnCore`
+-- on the prepared state, which the placement invariant and the binding pair give
+-- (WS-ZA ZA6.3).  Hypothesis-carrying theorems, so surface-anchored (not
+-- runtime-decidable).
 section Sm5iAffinityAnchors
 open SeLe4n.Kernel
 #check @affinityConsistent_transfer
@@ -735,6 +759,11 @@ open SeLe4n.Kernel
 #check @scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
 #check @timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore
 #check @timerTickOnCore_preserves_perCoreCbsInvariant_discharged
+#check @timerTickBudgetOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @budgetExhaustOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @timeoutBlockedThreads_homeBindFrame
+#check @releaseFreeFor_of_boundHome
+#check @budgetExhaust_requeue_releaseFreeFor
 -- non-vacuity: the freshly-booted system is affinity-consistent on every core, so the
 -- pre-state `hCons` hypothesis of the headline is satisfiable.
 example (c : SeLe4n.Kernel.Concurrency.CoreId) :
@@ -751,11 +780,10 @@ private def runSm5iTickCbsChecks : IO Unit := do
   IO.println "--- §3.9 SM5.I live-tick preserves perCoreCbsInvariant (validity + pipeline) ---"
   let st := BootstrapBuilder.empty.build
   let st1 := timerTickOnCore st bootCoreId
-  let rq := st1.scheduler.replenishQueueOnCore bootCoreId
-  assertBool "SM5.I: live-tick result replenish queue is size-consistent (validity)"
-    (rq.size == rq.entries.length)
+  assertBool "SM5.I: live-tick result replenish queue is count-consistent (validity)"
+    (sizeConsistentB st1 bootCoreId)
   assertBool "SM5.I: live-tick result replenish queue is future-ordered (pipeline)"
-    (rq.entries.all (fun pair => decide (pair.2 > st1.machine.timer)))
+    ((st1.releaseEntriesOn bootCoreId).all (fun pair => decide (pair.2 > st1.machine.timer)))
   assertBool "SM5.I: live-tick reads but does not advance the global timer"
     (st1.machine.timer == st.machine.timer)
 
@@ -771,12 +799,8 @@ private def runSm5iTickCbsChecks : IO Unit := do
 #check @default_replenishQueueEntriesBound_smp
 #check @replenishQueueEntriesBoundOnCore_transfer
 #check @replenishQueueAffinityConsistentOnCore_transfer
-#check @purgeReplenishmentOnCore_preserves_replenishQueueEntriesBoundOnCore
 #check @replenishOnCore_preserves_replenishQueueEntriesBoundOnCore
 #check @migrateSchedContextReplenishment_preserves_replenishQueueEntriesBound_smp
-#check @purgeReplenishmentFromAllCores_replenishQueueOnCore
-#check @purgeReplenishmentFromAllCores_objects
-#check @purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp
 #check @schedContextBind_preserves_replenishQueueAffinityConsistent_smp
 #check @schedContextBind_preserves_replenishQueueEntriesBound_smp
 #check @schedContextBind_preserves_objects_invExt
@@ -819,12 +843,12 @@ example (vScId : ValidObjId) (st st' : SystemState)
 
 example (vScId : ValidObjId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
-    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hRef : st.releaseQueueRefined)
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : SchedContextOps.schedContextUnbind vScId st = .ok ((), st')) :
     replenishQueueEntriesBound_smp st' :=
   schedContextUnbind_preserves_replenishQueueEntriesBound_smp vScId st st'
-    hObjInv hCons hOrphan h
+    hObjInv hRef hOrphan h
 
 example (vScId : ValidObjId) (ec : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
@@ -838,12 +862,12 @@ example (vScId : ValidObjId) (ec : CoreId) (st st' : SystemState)
 example (vScId : ValidObjId) (ec : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
     (hObjInv : st.objects.invExt)
-    (hCons : replenishQueueAffinityConsistent_smp st)
+    (hRef : st.releaseQueueRefined)
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi?)) :
     replenishQueueEntriesBound_smp st' :=
   schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp vScId ec st st'
-    sgi? hObjInv hCons hOrphan h
+    sgi? hObjInv hRef hOrphan h
 
 -- non-vacuity: the freshly-booted system satisfies the orphan-freedom
 -- hypothesis, so the bind theorems' `hOrphan` is satisfiable from boot.
@@ -877,8 +901,7 @@ private def stLifecycle : SystemState :=
     (.schedContext sc0)).withObject tid0.toObjId (.tcb tcb0)).withObject
     scIdLifecycle.toObjId (.schedContext scLifecycle)).withObject
     tidLifecycle.toObjId (.tcb tcbLifecycle)).build
-  let q := ReplenishQueue.empty.insert scId0 5000
-  { base with scheduler := base.scheduler.setReplenishQueueOnCore core1 q }
+  withReleaseEntryOnCore base core1 scId0 5000
 
 private def scIdLifecycleValid : SeLe4n.ValidObjId := ⟨scIdLifecycle.toObjId, by decide⟩
 private def tidLifecycleValid : SeLe4n.ValidThreadId := ⟨tidLifecycle, by decide⟩
@@ -886,13 +909,14 @@ private def scId0Valid : SeLe4n.ValidObjId := ⟨scId0.toObjId, by decide⟩
 
 private def core2 : CoreId := ⟨2, by decide⟩
 
-/-- A SchedContext bound to a thread with **no TCB** — the unbind sweep arm's
-input shape.  Its entries sit on *two* cores: with the bound TCB gone,
-`determineTargetCore` has nothing to read, so a home-core purge could compute
-the wrong core — which is exactly why the sweep arm purges every core rather
-than trusting the home computation.  (The mis-homed second entry also shows the
-state is outside the affinity invariant; the sweep is the fail-closed cleanup
-that re-establishes orphan-freedom regardless.) -/
+/-- A SchedContext bound to a thread with **no TCB** — the unbind's dead-TCB
+arm's input shape.  Its entry sits on core 2: with the bound TCB gone,
+`determineTargetCore` has nothing to read, so a home-core purge would compute
+the boot core — which is exactly why the purge reads the core the context is
+linked on (`releaseCoreOf`, WS-ZA ZA6.3) rather than trusting the home
+computation.  (The mis-homed entry also shows the state is outside the affinity
+invariant; the purge is the fail-closed cleanup that re-establishes
+orphan-freedom regardless.) -/
 private def tidDangling : SeLe4n.ThreadId := ThreadId.ofNat 120
 private def scIdDangling : SchedContextId := SchedContextId.ofNat 220
 private def scDangling : SchedContext :=
@@ -902,10 +926,7 @@ private def scDangling : SchedContext :=
 private def stDangling : SystemState :=
   let base := (BootstrapBuilder.empty.withObject scIdDangling.toObjId
     (.schedContext scDangling)).build
-  let sched := (base.scheduler.setReplenishQueueOnCore core1
-    (ReplenishQueue.empty.insert scIdDangling 5000)).setReplenishQueueOnCore core2
-    (ReplenishQueue.empty.insert scIdDangling 7000)
-  { base with scheduler := sched }
+  withReleaseEntryOnCore base core2 scIdDangling 7000
 private def scIdDanglingValid : SeLe4n.ValidObjId := ⟨scIdDangling.toObjId, by decide⟩
 
 /-- §4.4: the binding lifecycle drives the replenish-queue invariants live —
@@ -913,7 +934,7 @@ bind commits both binding sides and frames every queue; replenish populates the
 home core; unbind clears both binding sides and purges exactly the home core's
 entries for its SchedContext (the other SchedContext's entry survives); the
 per-core wrapper agrees and surfaces no SGI for a thread running nowhere; the
-dead-TCB sweep arm purges **every** core. -/
+dead-TCB arm purges the core its context is linked on. -/
 private def runBindingLifecycleScenarios : IO Unit := do
   IO.println "--- §4.4 binding lifecycle: bind → replenish → unbind ---"
   -- ── bind ──
@@ -930,14 +951,14 @@ private def runBindingLifecycleScenarios : IO Unit := do
          | some t => t.schedContextBinding == .bound scIdLifecycle
          | none => false)
       assertBool "bind leaves core 1's replenish queue exactly as it was"
-        ((stB.scheduler.replenishQueueOnCore core1).entries
-          == (stLifecycle.scheduler.replenishQueueOnCore core1).entries)
+        ((stB.releaseEntriesOn core1)
+          == (stLifecycle.releaseEntriesOn core1))
       assertBool "bind leaves the boot core's replenish queue empty"
-        ((stB.scheduler.replenishQueueOnCore bootCoreId).entries.isEmpty)
+        ((stB.releaseEntriesOn bootCoreId).isEmpty)
       -- ── replenish on the new binding's home core ──
-      let stR := replenishOnCore stB core1 scIdLifecycle 9000
+      let stR := withReleaseEntryOnCore stB core1 scIdLifecycle 9000
       assertBool "replenish after bind lands (scIdLifecycle, 9000) on core 1"
-        ((stR.scheduler.replenishQueueOnCore core1).entries.contains (scIdLifecycle, 9000))
+        ((stR.releaseEntriesOn core1).contains (scIdLifecycle, 9000))
       -- ── unbind (main arm: the bound TCB exists) ──
       match SchedContextOps.schedContextUnbind scIdLifecycleValid stR with
       | .error _ =>
@@ -952,10 +973,10 @@ private def runBindingLifecycleScenarios : IO Unit := do
              | some t => t.schedContextBinding == .unbound
              | none => false)
           assertBool "unbind purges its SchedContext's entries from the home core"
-            ((stU.scheduler.replenishQueueOnCore core1).entries.all
+            ((stU.releaseEntriesOn core1).all
               (fun e => e.1 != scIdLifecycle))
           assertBool "unbind leaves the other SchedContext's entry standing"
-            ((stU.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+            ((stU.releaseEntriesOn core1).contains (scId0, 5000))
   -- ── the live wrapper: no running core → unbind's state, no SGI ──
   match SchedContextOps.schedContextUnbindOnCore scId0Valid core1 stCbs with
   | .error _ =>
@@ -964,22 +985,24 @@ private def runBindingLifecycleScenarios : IO Unit := do
       assertBool "wrapper surfaces no SGI for a bound thread running nowhere"
         sgi?.isNone
       assertBool "wrapper purges the home core's entry (scId0, 5000)"
-        ((stW.scheduler.replenishQueueOnCore core1).entries.all
+        ((stW.releaseEntriesOn core1).all
           (fun e => e.1 != scId0))
       assertBool "wrapper clears the SchedContext side too"
         (match stW.getSchedContext? scId0 with
          | some sc => sc.boundThread == (none : Option SeLe4n.ThreadId)
          | none => false)
-  -- ── the sweep arm: dead TCB → every core purged ──
+  -- ── the dead-TCB arm: the core the context is linked on purged ──
   match SchedContextOps.schedContextUnbind scIdDanglingValid stDangling with
   | .error _ =>
-      assertBool "sweep-arm unbind succeeds on a dead-TCB binding" false
+      assertBool "the unbind succeeds on a dead-TCB binding" false
   | .ok ((), stS) =>
-      assertBool "sweep arm purges core 1's entry for the dead-TCB SchedContext"
-        ((stS.scheduler.replenishQueueOnCore core1).entries.isEmpty)
-      assertBool "sweep arm purges core 2's (mis-homed) entry as well"
-        ((stS.scheduler.replenishQueueOnCore core2).entries.isEmpty)
-      assertBool "sweep arm clears the SchedContext side (orphan-freedom restored)"
+      assertBool "setup: the dead-TCB SchedContext is queued on core 2, off any home"
+        ((stDangling.releaseEntriesOn core2) == [(scIdDangling, 7000)])
+      assertBool "the unbind purges the entry from the core it is linked on (core 2)"
+        ((stS.releaseEntriesOn core2).isEmpty)
+      assertBool "and every other core's queue stays empty"
+        ((stS.releaseEntriesOn core1).isEmpty && (stS.releaseEntriesOn bootCoreId).isEmpty)
+      assertBool "the unbind clears the SchedContext side (orphan-freedom restored)"
         (match stS.getSchedContext? scIdDangling with
          | some sc => sc.boundThread == (none : Option SeLe4n.ThreadId) && !sc.isActive
          | none => false)
@@ -999,9 +1022,7 @@ private def tcbUnbound : TCB :=
 private def stAffinityFp : SystemState :=
   let base := (((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
     tid0.toObjId (.tcb tcb0)).withObject tidUnbound.toObjId (.tcb tcbUnbound)).build
-  { base with
-    scheduler := base.scheduler.setReplenishQueueOnCore core1
-      (ReplenishQueue.empty.insert scId0 5000) }
+  withReleaseEntryOnCore base core1 scId0 5000
 
 /-- Does a scheduler-domain footprint name this core's replenish-queue write lock? -/
 private def hasReplenishWriteLock (fp : List (LockKey × Concurrency.AccessMode))
@@ -1070,24 +1091,25 @@ private def runAffinityFootprintScenarios : IO Unit := do
   | .ok (stU, _) =>
       assertBool "C3b-i: ...and the live arm writes no replenish queue on any core there"
         (allCores.all (fun c =>
-          (stU.scheduler.replenishQueueOnCore c).entries
-            == (stAffinityFp.scheduler.replenishQueueOnCore c).entries))
+          (stU.releaseEntriesOn c)
+            == (stAffinityFp.releaseEntriesOn c)))
   match setThreadCpuAffinityWithMigration stAffinityFp tid0 (some core2) bootCoreId with
   | .error e =>
       assertBool s!"the bound affinity change must succeed (got {repr e})" false
   | .ok (stB, _) =>
       assertBool "C3b-i: the bound shape's live arm DOES move the reservation, to the new home"
-        ((stB.scheduler.replenishQueueOnCore core2).entries.contains (scId0, 5000) &&
-          !(stB.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+        ((stB.releaseEntriesOn core2).contains (scId0, 5000) &&
+          !(stB.releaseEntriesOn core1).contains (scId0, 5000))
 
 /-- §4.6 (WS-RR RR8.12 Cut C3b-ii) the reading this cut had to reject: a
 one-core replenish segment for the unbind, keyed on the bound thread's home.
 
 It is right on the arm where the bound TCB resolves and **false** on the arm
 where it does not — with the TCB gone from the store there is no `cpuAffinity`
-left to read, `determineTargetCore` falls back to the boot core, and the
-transition sweeps every core instead (`purgeReplenishmentFromAllCores`).  Spelled
-here and nowhere else, so §4.6's assertions are known to discriminate. -/
+left to read, `determineTargetCore` falls back to the boot core, while the
+transition purges the core the context's own release link names
+(`purgeReplenishCores`, WS-ZA ZA6.3).  Spelled here and nowhere else, so §4.6's
+assertions are known to discriminate. -/
 private def homeOnlyUnbindReplenishCores (st : SystemState) (scObjId : ObjId) :
     List CoreId :=
   match SchedContextOps.schedContextBoundThread? st scObjId with
@@ -1099,9 +1121,10 @@ scheduler-domain footprints.**
 
 Four things this measures that no theorem states of a *state*.
 
-1. The unbind's replenish segment is `allCores` on the **sweep** arm and one
-   core on the bound arm, and the live transition agrees with each: on the sweep
-   fixture it purges core 2, which the home-only reading above does not declare.
+1. The unbind's replenish segment is the core the context is linked on, on the
+   **dead-TCB** arm as on the bound arm, and the live transition agrees with
+   each: on the dead-TCB fixture it purges core 2, which the home-only reading
+   above does not declare.
 2. The configure's replenish segment is the SC's **home** core, which is the same
    core its run segment names whenever the SC is bound — one core for an
    operation with two scheduling effects.
@@ -1112,46 +1135,46 @@ private def runSchedContextFootprintScenarios : IO Unit := do
   IO.println "--- §4.6 Cut C3b-ii: the three SchedContext arms' scheduler footprints ---"
   -- ── (1) the unbind, on both arms ──
   let fpUnbindBound := schedLockSet_schedContextUnbindOnCore stCbs scId0.toObjId bootCoreId
-  let fpUnbindSweep := schedLockSet_schedContextUnbindOnCore stDangling scIdDangling.toObjId
+  let fpUnbindDeadTcb := schedLockSet_schedContextUnbindOnCore stDangling scIdDangling.toObjId
     bootCoreId
   assertBool "pre: scId0's bound thread resolves and is homed on core 1"
     ((SchedContextOps.schedContextBoundThread? stCbs scId0.toObjId == some tid0)
       && determineTargetCore stCbs tid0 == core1
       && (stCbs.getTcb? tid0).isSome)
-  assertBool "pre: scIdDangling names a thread with NO TCB — the sweep arm's shape"
+  assertBool "pre: scIdDangling names a thread with NO TCB — the dead-TCB arm's shape"
     ((SchedContextOps.schedContextBoundThread? stDangling scIdDangling.toObjId
         == some tidDangling)
       && (stDangling.getTcb? tidDangling).isNone)
   assertBool "C3b-ii: the bound arm declares exactly the home core's replenish write lock"
     (hasReplenishWriteLock fpUnbindBound core1
       && allCores.all (fun c => c == core1 || !hasReplenishWriteLock fpUnbindBound c))
-  assertBool "C3b-ii: the SWEEP arm declares EVERY core's"
-    (allCores.all (fun c => hasReplenishWriteLock fpUnbindSweep c))
+  assertBool "C3b-ii: the dead-TCB arm declares the core the context is linked on (core 2) alone"
+    (hasReplenishWriteLock fpUnbindDeadTcb core2
+      && allCores.all (fun c => c == core2 || !hasReplenishWriteLock fpUnbindDeadTcb c))
   assertBool "C3b-ii: the retired home-only reading declares ONE core on the bound arm..."
     ((homeOnlyUnbindReplenishCores stCbs scId0.toObjId).length == 1)
-  assertBool "C3b-ii: ...and one on the SWEEP arm too, where the live one names all — the narrowing is live in reverse"
-    ((homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId).length == 1
-      && (schedContextUnbindReplenishCores stDangling scIdDangling.toObjId).length
-          == allCores.length)
-  -- ...and the live transition writes the cores the sweep segment names.
+  assertBool "C3b-ii: ...and the boot core on the dead-TCB arm, where the live one names core 2"
+    (homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId == [bootCoreId]
+      && schedContextUnbindReplenishCores stDangling scIdDangling.toObjId == [core2])
+  -- ...and the live transition writes the core the segment names.
   match SchedContextOps.schedContextUnbindOnCore scIdDanglingValid bootCoreId stDangling with
   | .error e =>
-      assertBool s!"C3b-ii: the sweep-arm unbind must succeed (got {repr e})" false
+      assertBool s!"C3b-ii: the dead-TCB unbind must succeed (got {repr e})" false
   | .ok (stS, _) =>
-      assertBool "C3b-ii: the live sweep purges core 1's entry"
-        ((stS.scheduler.replenishQueueOnCore core1).entries.isEmpty)
-      assertBool "C3b-ii: ...and core 2's, which the home-only reading never declared"
-        ((stS.scheduler.replenishQueueOnCore core2).entries.isEmpty
+      assertBool "C3b-ii: the live dead-TCB unbind leaves core 1's queue empty"
+        ((stS.releaseEntriesOn core1).isEmpty)
+      assertBool "C3b-ii: ...and purges core 2's entry, which the home-only reading never declared"
+        ((stS.releaseEntriesOn core2).isEmpty
           && !(homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId).contains core2)
   match SchedContextOps.schedContextUnbindOnCore scId0Valid bootCoreId stCbs with
   | .error e =>
       assertBool s!"C3b-ii: the bound-arm unbind must succeed (got {repr e})" false
   | .ok (stB, _) =>
       assertBool "C3b-ii: the bound arm purges the home core and leaves every other alone"
-        ((stB.scheduler.replenishQueueOnCore core1).entries.all (fun e => e.1 != scId0)
+        ((stB.releaseEntriesOn core1).all (fun e => e.1 != scId0)
           && allCores.all (fun c => c == core1 ||
-              (stB.scheduler.replenishQueueOnCore c).entries
-                == (stCbs.scheduler.replenishQueueOnCore c).entries))
+              (stB.releaseEntriesOn c)
+                == (stCbs.releaseEntriesOn c)))
   -- ── (2) the configure ──
   let fpConfigure := schedLockSet_schedContextConfigureOnCore stCbs scId0.toObjId
   assertBool "C3b-ii: the configure declares the SC's home core's replenish write lock — the purge's"
@@ -1166,8 +1189,8 @@ private def runSchedContextFootprintScenarios : IO Unit := do
   | .ok ((), stC) =>
       assertBool "C3b-ii: the live configure writes no replenish queue outside the declared core"
         (allCores.all (fun c => c == core1 ||
-          (stC.scheduler.replenishQueueOnCore c).entries
-            == (stCbs.scheduler.replenishQueueOnCore c).entries))
+          (stC.releaseEntriesOn c)
+            == (stCbs.releaseEntriesOn c)))
   -- ── (3) the bind ──
   let fpBind := schedLockSet_schedContextBindOnCore stLifecycle tidLifecycle
   assertBool "C3b-ii: the bind declares the bound thread's home core's run-queue write lock"
@@ -1180,8 +1203,8 @@ private def runSchedContextFootprintScenarios : IO Unit := do
   | .ok ((), stBd) =>
       assertBool "C3b-ii: ...and the live bind writes no replenish queue on any core"
         (allCores.all (fun c =>
-          (stBd.scheduler.replenishQueueOnCore c).entries
-            == (stLifecycle.scheduler.replenishQueueOnCore c).entries))
+          (stBd.releaseEntriesOn c)
+            == (stLifecycle.releaseEntriesOn c)))
 
 /-- §4.7 **WS-RR RR8.12 Cut C4 — the syscall-level scheduler resolver.**
 

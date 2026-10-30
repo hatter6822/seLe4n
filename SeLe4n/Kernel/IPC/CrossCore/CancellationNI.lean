@@ -30,8 +30,8 @@ discharged **substantively** here:
 * the **placement deschedule** (`descheduleThread`, the `removeRunnableOnCore`
   of a high victim on the core the state places it on — WS-RR RR8.6) — §2;
 * the **∀-core replenish-queue frames** (`setReplenishQueueOnCore` at *any*
-  core is projection-invisible — the rqCore-parametrised purge of the per-core
-  bound arm reduces to exactly this) — §1;
+  core is projection-invisible — the exact purge of the per-core bound arm, on
+  the core its own link names, reduces to exactly this) — §1;
 * the **replenishment migration** (`migrateSchedContextReplenishment`, the
   §2b donated-arm addition) — §1;
 * the **composite** `cancelIpcBlockingOnCore` for a `.ready` victim (the
@@ -65,7 +65,8 @@ open SeLe4n.Kernel.Lifecycle.Suspend
 
 /-- WS-SM SM6.E: writing *any* core's replenish queue preserves the low
 observer's projection — the ∀-core generalisation of the bootCore-pinned
-AK6-F.2a frame, covering the per-core bound arm's rqCore-parametrised purge. -/
+AK6-F.2a frame, covering the per-core bound arm's exact purge on whichever core
+its own link names. -/
 theorem setReplenishQueueOnCore_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (c : CoreId) (rq : ReplenishQueue) :

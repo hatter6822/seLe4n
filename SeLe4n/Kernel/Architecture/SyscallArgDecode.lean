@@ -1714,7 +1714,7 @@ theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
 
 /-- WS-SM SM5.H.4: per-syscall argument structure for `tcbSetAffinity`.
     Register mapping: x2 = the raw affinity word.  Values `0 .. numCores-1` bind the
-    target thread to that core; the marker `numCores` unbinds it (runs on any core).
+    target thread to that core; the marker `numCores` unbinds it (homed on the boot core).
     The target thread comes from the capability target.  The raw value is range-validated
     downstream by `decodeAffinity` (which produces the typed `Option CoreId`). -/
 structure SetAffinityArgs where

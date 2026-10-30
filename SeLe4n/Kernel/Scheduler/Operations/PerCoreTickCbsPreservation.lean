@@ -33,7 +33,8 @@ The three conjuncts decompose by difficulty:
 * **Affinity-consistency** — `popDue` removes entries (monotone), and the budget
   insert is for the running thread's bound SchedContext, which is homed on `c` under
   the affinity-placement precondition (current thread on `c` ⇒ homed on `c`) and
-  `schedContextBindingConsistent`.
+  the binding pair; proven in `PerCoreTickCbsAffinity`, which holds the aggregate
+  `timerTickOnCore_preserves_perCoreCbsInvariant_discharged`.
 
 ## Build reachability
 
@@ -712,44 +713,9 @@ theorem timerTickOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemS
     exact timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore _ c _ _ _ _ c''
       (hPrep c'') hInvP hPeriod (fun scId sc hB hSc => hFuture tid tcb scId sc hCur hTcb hB hSc) hb
 
--- ============================================================================
--- §4  The aggregate: the live tick preserves `perCoreCbsInvariant`
--- ============================================================================
-
-/-- WS-SM SM5.I (aggregate): the **live per-core timer tick** preserves the per-core
-CBS invariant `perCoreCbsInvariant` (validity ∧ pipeline-order ∧ affinity-consistency).
-
-The **validity** and **pipeline-order** conjuncts are discharged *unconditionally*
-(given the pre-tick invariant + positive SchedContext periods on the prepared state):
-the tick only `popDue`-removes replenish entries and re-inserts one strictly-future
-entry, and never advances `machine.timer`.
-
-The **affinity-consistency** conjunct (every queued SchedContext's bound thread is
-homed on the core) is supplied here verbatim as `hAffinity` — covering the *entire*
-post-state replenish queue, both the carried-over `popDue` entries and the single new
-budget insert.  **This is a strictly weaker form than necessary** (it assumes the
-conclusion): the tick provably never writes a TCB's `cpuAffinity` nor a SchedContext's
-`boundThread`, so the carried entries' affinity is *derivable* from the pre-tick
-affinity via per-phase `determineTargetCore` / `boundThread` frames, and only the new
-budget insert genuinely needs the *affinity-placement invariant* (a thread current on
-core `c` is homed on `c`).  The strengthened
-`PerCoreTickCbsAffinity.timerTickOnCore_preserves_perCoreCbsInvariant_discharged`
-**supersedes** this: it derives the carried-entries affinity (prepared + schedule
-phases proven) and narrows the residual to the budget-phase frame
-`hBudgetAffinity`.  This `hAffinity` form is retained for the existing call surface. -/
-theorem timerTickOnCore_preserves_perCoreCbsInvariant (st : SystemState) (c : CoreId)
-    (c' : CoreId)
-    (hInv : ∀ c'', perCoreCbsInvariant st c'') (hObj : st.objects.invExt)
-    (hPeriod : ∀ scId sc, (timerTickOnCorePrepared st c).getSchedContext? scId = some sc →
-      0 < sc.period.val)
-    (hFuture : currentRefillsFutureOnCore (timerTickOnCorePrepared st c) c)
-    (hAffinity : replenishQueueAffinityConsistentOnCore (timerTickOnCore st c) c') :
-    perCoreCbsInvariant (timerTickOnCore st c) c' :=
-  ⟨timerTickOnCore_preserves_replenishQueueValidOnCore st c c'
-      (fun c'' => (hInv c'').1),
-   timerTickOnCore_preserves_replenishmentPipelineOrderOnCore st c c' hObj
-      (fun c'' => (hInv c'').2.1) hPeriod hFuture,
-   hAffinity⟩
+-- (The `perCoreCbsInvariant` aggregate is `timerTickOnCore_preserves_perCoreCbsInvariant_discharged`
+-- in `PerCoreTickCbsAffinity`, which derives the affinity-consistency conjunct; WS-ZA
+-- ZA6.3 retired the form here that took it as an input.)
 
 -- ============================================================================
 -- §5  SMP clock-advance honesty (PR #880 round 4)

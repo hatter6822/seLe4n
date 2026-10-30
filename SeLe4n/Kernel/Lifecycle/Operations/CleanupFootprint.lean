@@ -105,13 +105,13 @@ def releaseSchedContextBindingReplenishCores (st : SystemState) (scId : SeLe4n.S
 -- ============================================================================
 
 /-- **`v0.35.169`: the `.bound` unbind writes exactly the core the context's own
-release link names** (WS-ZA ZA6.3), whatever purge core it is handed. -/
+release link names** (WS-ZA ZA6.3). -/
 theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore c : CoreId) (scId : SeLe4n.SchedContextId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId) (scId : SeLe4n.SchedContextId)
     (hBind : tcb.schedContextBinding = .bound scId)
     (hne : c ∉ SchedContextOps.purgeReplenishCores (st.updateSchedContext scId fun sc =>
         { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) scId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold cancelBoundDonationOnCore at h
   rw [hBind] at h
@@ -153,7 +153,7 @@ theorem donationArmAt_replenishQueueOnCore_ne (st st' : SystemState)
     (hne : c ∉ cancelDonationArmReplenishCores st tid tcb)
     (h : (match tcb.schedContextBinding with
           | .unbound => (Except.ok st : Except KernelError SystemState)
-          | .bound _ => cancelBoundDonationOnCore st tid tcb home
+          | .bound _ => cancelBoundDonationOnCore st tid tcb
           | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold cancelDonationArmReplenishCores at hne
@@ -163,7 +163,7 @@ theorem donationArmAt_replenishQueueOnCore_ne (st st' : SystemState)
       rw [Except.ok.injEq] at h; rw [← h]
   | bound scId =>
       rw [hBind] at h hne
-      exact cancelBoundDonationOnCore_replenishQueueOnCore_ne st st' tid tcb _ c scId hBind hne h
+      exact cancelBoundDonationOnCore_replenishQueueOnCore_ne st st' tid tcb c scId hBind hne h
   | donated scId owner =>
       rw [hBind] at h hne
       cases hRet : cleanupDonatedSchedContext st tid with
