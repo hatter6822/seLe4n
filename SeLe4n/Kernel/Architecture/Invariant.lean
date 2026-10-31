@@ -177,7 +177,15 @@ core's head and count (`SchedulerState.releaseHeadCode`/`releaseCount`), the
 same terms on which the 17th relates the run queues.  It is what lets the
 executed tick, yield and drain read the links in place of the abstract queue.
 It reads the contexts' release fields and the scheduler's release slots, so the
-adapter transitions frame it as they frame the 17th. -/
+adapter transitions frame it as they frame the 17th.
+
+WS-ZA ZA6.4: `refillsSound` added as the 20th component — every scheduling
+context is well formed (its refills conserve its budget and fit their
+capacity), no bound context's pending refill is stranded off the release
+queues (`releaseNoRefillStranded`, seL4-MCS's release-queue rule), and every
+queued context is bound.  Every kernel entry keeps it through its run-queue
+stages (`RunQueueLinkStage.refills`); it reads the contexts and the release
+queues, so the adapter transitions frame it. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -197,7 +205,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     auditLogBounded st.declassificationAuditLog ∧
     st.runQueueRefined ∧
     st.liveMappingsRecorded ∧
-    st.releaseQueueRefined
+    st.releaseQueueRefined ∧
+    st.refillsSound
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -684,7 +693,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -748,6 +757,33 @@ theorem default_system_state_proofLayerInvariantBundle :
   · exact SystemState.default_liveMappingsRecorded
   -- 19. releaseQueueRefined (WS-ZA ZA6.3: no context, every queue empty)
   · exact SystemState.default_releaseQueueRefined
+  -- 20. refillsSound (WS-ZA ZA6.4: no context, every queue empty)
+  · exact SystemState.default_refillsSound
+
+-- ============================================================================
+-- WS-ZA ZA6.4: the refill guarantees, system-wide
+-- ============================================================================
+
+/-- WS-ZA ZA6.4: **refill conservation, system-wide**: in every state the bundle
+holds of, each scheduling context's refills — the head's remaining budget and
+every pending refill — sum to its configured budget, and fit their capacity. -/
+theorem proofLayerInvariantBundle_refillsConserved {st : SystemState}
+    (h : proofLayerInvariantBundle st) {s : SeLe4n.SchedContextId} {sc : SchedContext}
+    (hs : st.getSchedContext? s = some sc) : refillsConserved sc :=
+  (SystemState.schedContextWellFormed_of_get h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 hs).2.2.2.2
+
+/-- WS-ZA ZA6.4: **the per-period bound, system-wide** (seL4-MCS's sporadic-server
+guarantee): for every scheduling context of a state the bundle holds of, over
+any time-ordered sequence of runs, forfeits and releases from its period start,
+the units it runs in any window of one period number at most its budget
+(`refill_window_bound`, fed the conservation the bundle carries). -/
+theorem proofLayerInvariantBundle_refill_window_bound {st : SystemState}
+    (h : proofLayerInvariantBundle st) {s : SeLe4n.SchedContextId} {sc : SchedContext}
+    (hs : st.getSchedContext? s = some sc) (es : List RefillEvent) (w : Nat)
+    (hOrd : refillEventsOrdered sc.periodStart es) :
+    refillWindowRuns w sc es ≤ sc.budget.val :=
+  refill_window_bound sc es w sc.periodStart (proofLayerInvariantBundle_refillsConserved h hs).1
+    (fun _ => Nat.le_refl _) hOrd
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems

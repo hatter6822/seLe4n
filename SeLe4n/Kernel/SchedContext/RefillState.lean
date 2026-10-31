@@ -853,4 +853,47 @@ theorem closePlace_facts_bound {X : SystemState} {s : SeLe4n.SchedContextId} {u 
     fun a ha _ => by rw [hXs] at ha; cases ha; exact hB,
     fun _ e _ hes => ⟨u, by rw [hes]; exact hXs, hB⟩⟩
 
+/-- WS-ZA ZA6.4: **a state whose release queues are all empty is sound** when
+each of its contexts is well formed and bound to no thread: no bound context has
+a refill pending, and nothing is queued — the empty state and the boot states. -/
+theorem refillsSound_of_empty {st : SystemState}
+    (hQ : ∀ c, (st.scheduler.replenishQueueOnCore c).entries = [])
+    (hW : ∀ (oid : SeLe4n.ObjId) (sc : SchedContext), st.objects[oid]? = some (.schedContext sc) →
+      schedContextWellFormed sc ∧ sc.boundThread = none) : st.refillsSound := by
+  refine ⟨fun oid sc h => (hW oid sc h).1, fun s t hk => ?_,
+    fun c e he => by rw [hQ c] at he; cases he⟩
+  cases e : st.getSchedContext? s with
+  | none => rw [e] at hk; cases hk
+  | some sc =>
+    rw [e] at hk
+    have hb := (hW _ sc ((getSchedContext?_eq_some_iff _ _ _).mp e)).2
+    simp [SchedContext.boundReleaseKey?, hb] at hk
+
+/-- The empty state is sound: it holds no context and queues nothing. -/
+theorem default_refillsSound : (default : SystemState).refillsSound :=
+  refillsSound_of_empty
+    (fun c => by
+      show ((default : SchedulerState).replenishQueueOnCore c).entries = []
+      rw [(default_state_perCoreInitialized c).2.2.1]; rfl)
+    (fun oid sc h => by
+      have h0 : (default : SystemState).objects[oid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [h0] at h; cases h)
+
+/-- A step that writes neither the objects nor the scheduler keeps the state
+sound: the soundness reads the contexts and the release queues alone. -/
+theorem refillsSound_of_objects_scheduler_eq {st st' : SystemState}
+    (hO : st'.objects = st.objects) (hS : st'.scheduler = st.scheduler)
+    (h : st.refillsSound) : st'.refillsSound := by
+  obtain ⟨hW, hN, hB⟩ := h
+  have hG : ∀ s, st'.getSchedContext? s = st.getSchedContext? s := fun s => by
+    unfold getSchedContext?; rw [hO]
+  refine ⟨fun oid sc e => hW oid sc (hO ▸ e), fun s t hk => ?_, fun c e he => ?_⟩
+  · rw [hG] at hk
+    obtain ⟨c, hc⟩ := hN s t hk
+    exact ⟨c, by rw [hS]; exact hc⟩
+  · rw [hS] at he
+    obtain ⟨sc, h1, h2⟩ := hB c e he
+    exact ⟨sc, by rw [hG]; exact h1, h2⟩
+
 end SeLe4n.Model.SystemState

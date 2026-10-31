@@ -4028,7 +4028,7 @@ run_check "INVARIANT" rg -n '^def liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Mod
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded_of_epochsVacant($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.default_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
-run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'SystemState\.liveMappingsRecorded_of_epochsVacant' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
@@ -8881,22 +8881,36 @@ run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord
 # the identifier outright would forbid the carriage too.  What must stay absent
 # is the field being READ as a conjunct: the `st.declassificationRefusals`
 # projection, and anything conjoined after the bundle's last conjunct — which is
-# how every conjunct from the 12th to the 19th was actually added (the 19th,
-# every core's release queue agreeing with the links threaded through its
-# scheduling contexts, of WS-ZA ZA6.3, is the bundle's last).
+# how every conjunct from the 12th to the 20th was actually added (the 20th,
+# the refill state's soundness of WS-ZA ZA6.4, is the bundle's last).
 run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.runQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.liveMappingsRecorded ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^    st\.releaseQueueRefined$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_negative_check "INVARIANT" rg -n 'st\.releaseQueueRefined ' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.releaseQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.refillsSound$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'st\.refillsSound ' SeLe4n/Kernel/Architecture/Invariant.lean
 # The 19th conjunct, its per-core form, and boot's and the default state's
 # establishment of it (every queue empty, no context linked).
 run_check "INVARIANT" rg -n '^def releaseQueueRefinedOnCore \(st : SystemState\) \(c : CoreId\) : Prop :=' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^def releaseQueueRefined \(st : SystemState\) : Prop := ∀ c, st\.releaseQueueRefinedOnCore c$' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^theorem default_releaseQueueRefined($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
 run_check "INVARIANT" rg -n '^  · exact SystemState\.default_releaseQueueRefined$' SeLe4n/Kernel/Architecture/Invariant.lean
+# The 20th conjunct (WS-ZA ZA6.4): the refill state's soundness, its default and
+# boot establishment, the system-level conservation and per-period bound read
+# off the bundle, and the payoffs carrying it through every kernel entry.
+run_check "INVARIANT" rg -n '^  · exact SystemState\.default_refillsSound$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_refillsConserved($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_refill_window_bound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n 'SystemState\.refillsSound_of_empty' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean

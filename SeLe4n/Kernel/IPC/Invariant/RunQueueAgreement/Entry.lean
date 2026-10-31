@@ -692,4 +692,100 @@ theorem fpAccessEntryState_runQueueEntryStage (coreId : UInt64)
   · exact (fpAccessOnCore_runQueueStage _ _ live).entry.trans
       (dispatchVacatedCore_runQueueEntryStage _ _)
 
+/-! ### The refill state across every entry -/
+
+/-- WS-ZA ZA6.4: **a kernel entry keeps the refill state sound**: its link half
+carries it (`RunQueueLinkStage.refills`) off no context. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.refillsSound {st st' : SystemState}
+    (h : SystemState.RunQueueEntryStage st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    st'.refillsSound :=
+  (SystemState.refillsSound_iff_except _).mpr
+    (h.1.refills _ hInv hR hRel ((SystemState.refillsSound_iff_except _).mp hS))
+
+/-- **The syscall entry keeps the refill state sound** — the bind, the configure
+and the bound yield among its arms. -/
+theorem syscallDispatchEntryState_preserves_refillsSound (ctx : LabelingContext)
+    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (E : EntryPremises st) (hRel : st.releaseQueueRefined)
+    (hS : st.refillsSound) :
+    (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).refillsSound :=
+  (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E).refillsSound
+    E.objInv E.refined hRel hS
+
+/-- **The timer entry keeps the refill state sound** — the drain's refills and
+re-placements, and the charge with its postpone. -/
+theorem perCoreTimerTickEntryState_preserves_refillsSound (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hRel : st.releaseQueueRefined)
+    (hS : st.refillsSound)
+    (hInv' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).objects.invExt)
+    (hRef' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).releaseQueueRefined)
+    (hD' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).currentDequeuedUnique)
+    (hBi' : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
+    (hAff' : ∀ d, replenishQueueAffinityConsistentOnCore
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+        ((timerTickBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).refillsSound :=
+  (perCoreTimerTickEntryState_runQueueEntryStage coreId frame st hInv' hRef' hD' hBi' hAff').refillsSound
+    hInv hR hRel hS
+
+/-- **The reschedule entry keeps the refill state sound.** -/
+theorem perCoreRescheduleEntryState_preserves_refillsSound (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hRel : st.releaseQueueRefined)
+    (hS : st.refillsSound) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+        ((rescheduleBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).refillsSound :=
+  (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).refillsSound hInv hR hRel hS
+
+/-- **The cross-core suspend keeps the refill state sound.** -/
+theorem suspendThreadCrossCoreDrainedStep_preserves_refillsSound (tid : UInt64) (e : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    (suspendThreadCrossCoreDrainedStep tid e st).2.refillsSound :=
+  (suspendThreadCrossCoreDrainedStep_runQueueEntryStage tid e st).refillsSound hInv hR hRel hS
+
+/-- **The fault entry keeps the refill state sound.** -/
+theorem faultEntryState_preserves_refillsSound (lctx : LabelingContext) (coreId : UInt64)
+    (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st)
+    (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt (faultEntryStep lctx
+        (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId))).refillsSound :=
+  (faultEntryState_runQueueEntryStage lctx coreId frame ectx w st E).refillsSound
+    E.objInv E.refined hRel hS
+
+/-- **The unknown-syscall entry keeps the refill state sound.** -/
+theorem unknownSyscallEntryState_preserves_refillsSound (lctx : LabelingContext)
+    (coreId : UInt64) (frame : Architecture.InFlightContext)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (st : SystemState)
+    (E : EntryPremises st) (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+        (unknownSyscallEntryStep lctx
+        (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId))).refillsSound :=
+  (unknownSyscallEntryState_runQueueEntryStage lctx coreId frame ectx w st E).refillsSound
+    E.objInv E.refined hRel hS
+
+/-- **The FP/SIMD entry keeps the refill state sound.** -/
+theorem fpAccessEntryState_preserves_refillsSound (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (live : Option FpContext)
+    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId).refillsSound :=
+  (fpAccessEntryState_runQueueEntryStage coreId frame live st).refillsSound hInv hR hRel hS
+
 end SeLe4n.Kernel

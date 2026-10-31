@@ -5947,7 +5947,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hEffective : effectiveParamsMatchRunQueue ist.state)
     (hRun : ist.state.runQueueRefined)
     (hBindings : notificationBindingReciprocal ist.state)
-    (hRel : ist.state.releaseQueueRefined) :
+    (hRel : ist.state.releaseQueueRefined)
+    (hRefill : ist.state.refillsSound) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hTlb, hShoot, hPerCoreTlb, hPerCoreICache, hAudit⟩ := hFields
   obtain ⟨hComp, hAcyc, hLinks, hTreeShape⟩ := hTree
@@ -6420,11 +6421,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       fun tid t s cap hObj hc =>
         ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 s cap hc
   -- 19. releaseQueueRefined (WS-ZA ZA6.3): the caller's hypothesis.
-  -- Compose all 19 components
+  -- 20. refillsSound (WS-ZA ZA6.4): the caller's hypothesis.
+  -- Compose all 20 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill⟩
 
 -- ============================================================================
 -- WS-RR RR5.13 / PR #889 review: results that read the object store through
@@ -8679,8 +8681,17 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
           have h0 := ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2
           simp [h0]
         | _ => rfl)
+  -- WS-ZA ZA6.4: no boot context is bound, every one is well formed, and the
+  -- default release slots queue nothing, so the refill state is sound.
+  have hRefill : ist.state.refillsSound := SystemState.refillsSound_of_empty
+    (fun c => by
+      rw [hSch]
+      show ((default : SchedulerState).replenishQueueOnCore c).entries = []
+      rw [(default_state_perCoreInitialized c).2.2.1]; rfl)
+    (fun oid sc hO => ⟨((hShape _ _ hO).2.2.2.2.2.1 sc rfl).1,
+      ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.1⟩)
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hTree hAsid hUntyped hSched hCur
-    ?_ ?_ hRun hBindings hRel
+    ?_ ?_ hRun hBindings hRel hRefill
   · have hE : ist.state.scheduler.replenishQueueOnCore bootCoreId = ReplenishQueue.empty := by
       rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).2.2.1
     simp only [replenishQueueValid, hE]
