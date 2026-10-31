@@ -6102,8 +6102,10 @@ Every kernel object has a decidable well-formedness predicate:
   - **Compiled form.**  `activateThreadOnCoreImpl`, the `@[csimp]` form
     (`activateThreadOnCore_eq_impl`), reads the core's current-thread code, so
     no `some` is built, then that thread's yield-to code, and answers its
-    input when either is 0; the linked case is out of line
-    (`@[noinline] completeCurrentYield`).
+    input when either is 0.  It and `activateThreadAt` are out of line, as is
+    the linked case (`completeCurrentYield`): inlined, the step's branches met
+    in the timer entry's body and the join point built the tick's result pair,
+    one heap cell per tick.
   - **Lock coverage.**  Every footprint the kernel declares names the table
     write lock (`schedFootprintOfCores`,
     `mem_unifiedLockSetForSyscall_objStore`), which covers every object at
@@ -6129,8 +6131,9 @@ Every kernel object has a decidable well-formedness predicate:
     the boot core, the current thread
     (`activateThreadOnCore_preserves_projection`).  Its per-core
     non-interference is ZA6.9's.
-  - **Zero allocation.**  The unlinked path builds nothing and writes nothing,
-    so every entry scenario still reads 0 heap cells.
+  - **Zero allocation.**  The unlinked path builds nothing and writes nothing:
+    on the QEMU exerciser every scenario reads its pin, 0 for every syscall,
+    tick and entry, at first call and steady state.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
