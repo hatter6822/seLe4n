@@ -183,6 +183,30 @@ theorem isQueue_append {nx pv nx' pv' : ThreadId → Nat} {head tail : Nat}
         have := (List.nodup_append.mp hnd).2.2 x hxL b (by simp)
         exact this hxb
 
+/-- A queue read backwards is the queue of the reversed list, with the two
+directions' links and the two ends exchanged. -/
+theorem isQueue_reverse {nx pv : ThreadId → Nat} {head tail : Nat} {l : List ThreadId} :
+    IsQueue nx pv head tail l ↔ IsQueue pv nx tail head l.reverse := by
+  unfold IsQueue
+  rw [List.reverse_reverse]
+  exact ⟨fun ⟨a, b, c, d⟩ => ⟨b, a, d, c⟩, fun ⟨a, b, c, d⟩ => ⟨b, a, d, c⟩⟩
+
+/-- Prepending `y` to the queue `l` (WS-ZA ZA6.9, seL4's `tcbSchedEnqueue`):
+`y` points forward at the old head and back at nothing, the old head points
+back at `y`, and every other member keeps its links.  The mirror of
+`isQueue_append`, read through `isQueue_reverse`. -/
+theorem isQueue_cons {nx pv nx' pv' : ThreadId → Nat} {head tail : Nat}
+    {l : List ThreadId} {y : ThreadId}
+    (hq : IsQueue nx pv head tail l) (hnd : l.Nodup)
+    (hpv : ∀ x ∈ l, pv' x = if code x = head then code y else pv x) (hpvy : pv' y = 0)
+    (hnx : ∀ x ∈ l, nx' x = nx x) (hnxy : nx' y = head) :
+    IsQueue nx' pv' (code y) (if head = 0 then code y else tail) (y :: l) := by
+  have hr := isQueue_append (isQueue_reverse.mp hq) (List.pairwise_reverse.mpr (hnd.imp Ne.symm))
+    (fun x hx => hpv x (List.mem_reverse.mp hx)) hpvy
+    (fun x hx => hnx x (List.mem_reverse.mp hx)) hnxy
+  rw [← List.reverse_cons] at hr
+  exact isQueue_reverse.mpr hr
+
 /-- Unlinking `x` from the chain `A ++ x :: B` along one direction: the members
 of `A` keep their links and the first member of `B` takes over `x`'s. -/
 theorem linked_unlink {f f' : ThreadId → Nat} {pre : Nat} {A B : List ThreadId} {x : ThreadId}

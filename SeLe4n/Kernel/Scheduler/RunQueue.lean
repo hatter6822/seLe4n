@@ -533,6 +533,126 @@ theorem maxPrioCode_append (lk : ThreadId → RunQueueLink) (A B : List ThreadId
 theorem maxPrioCode_cons (lk : ThreadId → RunQueueLink) (z : ThreadId) (r : List ThreadId) :
     maxPrioCode lk (z :: r) = max ((lk z).prio.val + 1) (maxPrioCode lk r) := rfl
 
+/-- WS-ZA ZA6.9: the links after `t` joins at priority `p` **ahead of** the
+queue's first thread (code `head`) and its bucket's first (code `bhead`), seL4's
+`tcbSchedEnqueue` (the head of the band; `appendLinks` is `tcbSchedAppend`). -/
+def prependLinks (links : RHTable ThreadId RunQueueLink) (t : ThreadId) (p : Priority)
+    (head bhead : Nat) : RHTable ThreadId RunQueueLink :=
+  let l1 := setLink links t
+    (fun x => { x with prio := p, queued := true, prev := 0, next := head, bucketPrev := 0, bucketNext := bhead })
+  let l2 := setLinkAt l1 head (fun x => { x with prev := code t })
+  setLinkAt l2 bhead (fun x => { x with bucketPrev := code t })
+
+theorem prependLinks_invExtK {links : RHTable ThreadId RunQueueLink} (h : links.invExtK)
+    (t : ThreadId) (p : Priority) (head bhead : Nat) :
+    (prependLinks links t p head bhead).invExtK := by
+  unfold prependLinks
+  exact setLinkAt_invExtK (setLinkAt_invExtK (setLink_invExtK h _ _) _ _) _ _
+
+theorem linkOf_prependLinks {links : RHTable ThreadId RunQueueLink} (h : links.invExtK)
+    (t : ThreadId) (p : Priority) (head bhead : Nat)
+    (ht : code t ≠ head) (hb : code t ≠ bhead) (x : ThreadId) :
+    linkOf (prependLinks links t p head bhead) x =
+      if x = t then
+        { linkOf links t with prio := p, queued := true, prev := 0, next := head, bucketPrev := 0, bucketNext := bhead }
+      else { linkOf links x with
+        prev := if code x = head then code t else (linkOf links x).prev
+        bucketPrev := if code x = bhead then code t else (linkOf links x).bucketPrev } := by
+  unfold prependLinks
+  dsimp only
+  have h1 := setLink_invExtK h t
+    (fun x => { x with prio := p, queued := true, prev := 0, next := head, bucketPrev := 0, bucketNext := bhead })
+  have h2 := setLinkAt_invExtK h1 head (fun x => { x with prev := code t })
+  rw [linkOf_setLinkAt h2.1, linkOf_setLinkAt h1.1, linkOf_setLink h.1]
+  by_cases hx : x = t
+  · subst hx; simp [ht, hb]
+  · simp only [hx, ↓reduceIte]
+    by_cases e1 : code x = head <;> by_cases e2 : code x = bhead
+    · simp only [if_pos e1, if_pos e2]
+    · simp only [if_pos e1, if_neg e2]
+    · simp only [if_neg e1, if_pos e2]
+    · simp only [if_neg e1, if_neg e2]
+
+/-- The bucket ends after `t` joins ahead of the bucket's first thread (code
+`bhead`). -/
+@[inline] def prependEnds (t : ThreadId) (bhead : Nat) (e : BucketEnds) : BucketEnds :=
+  { head := code t, tail := if bhead = 0 then code t else e.tail }
+
+/-- A nonzero head code of a queue names one of its members. -/
+theorem code_ne_head {l : List ThreadId} {e : Nat} (he : e = lastCode 0 l.reverse) {t : ThreadId}
+    (ht : t ∉ l) : code t ≠ e := code_ne_end he (fun h => ht (List.mem_reverse.mp h))
+
+/-- **Prepending a thread not in the queue at priority `p`** (WS-ZA ZA6.9): the
+queue of `t :: l`, `t` first in its bucket. -/
+theorem layout_prepend {links buckets head tail size maxCode l}
+    (hL : Layout links buckets head tail size maxCode l) (hK : links.invExtK)
+    (hKb : buckets.invExtK) (t : ThreadId) (p : Priority) (ht : t ∉ l) :
+    Layout (prependLinks links t p head (endsOf buckets p).head)
+      (setEnds buckets p (prependEnds t (endsOf buckets p).head))
+      (code t) (if head = 0 then code t else tail) (size + 1) (max maxCode (p.val + 1))
+      (t :: l) := by
+  obtain ⟨bhead, hbh⟩ : ∃ b, b = (endsOf buckets p).head := ⟨_, rfl⟩
+  rw [← hbh]
+  have hBq := hL.bucket p
+  rw [← hbh] at hBq
+  have hH : head = lastCode 0 l.reverse := hL.queue.1
+  have hB : bhead = lastCode 0 (l.filter (fun x => (linkOf links x).prio == p)).reverse := hBq.1
+  have ht' : code t ≠ head := code_ne_head hH ht
+  have hb' : code t ≠ bhead := code_ne_head hB (fun hm => ht (List.mem_filter.mp hm).1)
+  have hlk := linkOf_prependLinks hK t p head bhead ht' hb'
+  have hne : ∀ x ∈ l, x ≠ t := fun x hx e => ht (e ▸ hx)
+  have hprio : ∀ x ∈ l, (linkOf (prependLinks links t p head bhead) x).prio = (linkOf links x).prio := by
+    intro x hx; rw [hlk, if_neg (hne x hx)]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · refine isQueue_cons hL.queue hL.nodup (fun x hx => ?_) ?_ (fun x hx => ?_) ?_
+    · rw [hlk, if_neg (hne x hx)]
+    · rw [hlk, if_pos rfl]
+    · rw [hlk, if_neg (hne x hx)]
+    · rw [hlk, if_pos rfl]
+  · exact List.nodup_cons.mpr ⟨ht, hL.nodup⟩
+  · simp [hL.length]
+  · intro x
+    by_cases hx : x = t
+    · subst hx; rw [hlk, if_pos rfl]; simp
+    · rw [hlk, if_neg hx, hL.queued x]; simp [hx]
+  · intro q
+    rw [endsOf_setEnds hKb.1]
+    by_cases hq : q = p
+    · subst hq
+      simp only [prependEnds]
+      have hft : (t :: l).filter (fun x => (linkOf (prependLinks links t q head bhead) x).prio == q) =
+          t :: l.filter (fun x => (linkOf links x).prio == q) := by
+        rw [List.filter_cons, if_pos (by rw [hlk, if_pos rfl]; simp),
+          List.filter_congr (q := fun x => (linkOf links x).prio == q) (fun x hx => by rw [hprio x hx])]
+      rw [hft]
+      refine isQueue_cons hBq (nodup_filter _ hL.nodup) (fun x hx => ?_) ?_ (fun x hx => ?_) ?_
+      · rw [hlk, if_neg (hne x (List.mem_filter.mp hx).1)]
+      · rw [hlk, if_pos rfl]
+      · rw [hlk, if_neg (hne x (List.mem_filter.mp hx).1)]
+      · rw [hlk, if_pos rfl]
+    · simp only [if_neg hq]
+      have hft : (t :: l).filter (fun x => (linkOf (prependLinks links t p head bhead) x).prio == q) =
+          l.filter (fun x => (linkOf links x).prio == q) := by
+        rw [List.filter_cons, if_neg (by rw [hlk, if_pos rfl]; simpa using Ne.symm hq),
+          List.filter_congr (q := fun x => (linkOf links x).prio == q) (fun x hx => by rw [hprio x hx])]
+      rw [hft]
+      refine (isQueue_congr (fun x hx => ?_) (fun x hx => ?_)).mpr (hL.bucket q)
+      · rw [hlk, if_neg (hne x (List.mem_filter.mp hx).1)]
+      · have hxl := (List.mem_filter.mp hx).1
+        rw [hlk, if_neg (hne x hxl)]
+        simp only
+        rw [if_neg]
+        intro hc
+        have hxp : x ∈ l.filter (fun x => (linkOf links x).prio == p) := by
+          have hm := decode_lastCode_mem (l := (l.filter (fun x => (linkOf links x).prio == p)).reverse)
+            (by rw [← hB, ← hc]; exact code_ne_zero x)
+          rw [← hB, ← hc, decode_code] at hm; exact List.mem_reverse.mp hm
+        have h1 := (List.mem_filter.mp hx).2
+        have h2 := (List.mem_filter.mp hxp).2
+        simp at h1 h2; exact hq (h1.symm.trans h2)
+  · rw [maxPrioCode_cons, maxPrioCode_congr hprio, ← hL.maxCode, hlk, if_pos rfl]
+    simp only; omega
+
 theorem le_maxPrioCode {lk : ThreadId → RunQueueLink} {l : List ThreadId} {z : ThreadId}
     (hz : z ∈ l) : (lk z).prio.val + 1 ≤ maxPrioCode lk l := by
   induction l with
@@ -768,6 +888,58 @@ theorem contains_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : 
     · exact code_ne_end rq.layout.queue.2.1 (fun h => hc ((rq.layout.queued tid).mpr h))
     · exact code_ne_end (rq.layout.bucket prio).2.1
         (fun h => hc ((rq.layout.queued tid).mpr (List.mem_filter.mp h).1))
+
+/-- WS-ZA ZA6.9: enqueue `tid` at priority `prio` **ahead of** every queued
+thread, first in its bucket (seL4's `tcbSchedEnqueue`; `insert` is
+`tcbSchedAppend`); a thread already queued is left where it is. -/
+def insertHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
+  if hc : rq.contains tid then rq
+  else
+    let bhead := (endsOf rq.buckets prio).head
+    { links := prependLinks rq.links tid prio rq.head bhead
+      buckets := setEnds rq.buckets prio (prependEnds tid bhead)
+      head := code tid
+      tail := if rq.head = 0 then code tid else rq.tail
+      size := rq.size + 1
+      maxCode := max rq.maxCode (prio.val + 1)
+      links_invExtK := prependLinks_invExtK rq.links_invExtK _ _ _ _
+      buckets_invExtK := setEnds_invExtK rq.buckets_invExtK _ _
+      layout := (layout_prepend rq.layout rq.links_invExtK rq.buckets_invExtK tid prio
+        (fun h => hc ((rq.layout.queued tid).mpr h))).self }
+
+theorem toList_insertHead_not_mem (rq : RunQueue) (tid : ThreadId) (prio : Priority)
+    (h : ¬(tid ∈ rq)) : (rq.insertHead tid prio).toList = tid :: rq.toList := by
+  unfold insertHead
+  rw [dif_neg (show ¬(rq.contains tid = true) from h)]
+  exact (layout_prepend rq.layout rq.links_invExtK rq.buckets_invExtK tid prio
+    (fun h' => h ((rq.layout.queued tid).mpr h'))).walk_eq
+
+theorem insertHead_of_mem (rq : RunQueue) (tid : ThreadId) (prio : Priority) (h : tid ∈ rq) :
+    rq.insertHead tid prio = rq := by
+  unfold insertHead; rw [dif_pos (show rq.contains tid = true from h)]
+
+theorem contains_insertHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
+    (rq.insertHead tid prio).contains x = (rq.contains x || x == tid) := by
+  unfold insertHead
+  by_cases hc : rq.contains tid
+  · rw [dif_pos hc]
+    by_cases hx : x = tid
+    · subst hx; simp [hc]
+    · simp [hx]
+  · rw [dif_neg hc]
+    unfold contains
+    rw [linkOf_prependLinks rq.links_invExtK]
+    · by_cases hx : x = tid
+      · subst hx; simp
+      · simp [hx]
+    · exact code_ne_head rq.layout.queue.1 (fun h => hc ((rq.layout.queued tid).mpr h))
+    · exact code_ne_head (rq.layout.bucket prio).1
+        (fun h => hc ((rq.layout.queued tid).mpr (List.mem_filter.mp h).1))
+
+theorem links_insertHead_of_not_contains {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false)
+    (p : Priority) :
+    (rq.insertHead t p).links = prependLinks rq.links t p rq.head (endsOf rq.buckets p).head := by
+  unfold insertHead; rw [dif_neg (by rw [h]; decide)]
 
 theorem maxPrioCode_mid (lk : ThreadId → RunQueueLink) (A B : List ThreadId) (t : ThreadId) :
     maxPrioCode lk (A ++ t :: B) = max (maxPrioCode lk (A ++ B)) ((lk t).prio.val + 1) := by
@@ -1654,6 +1826,32 @@ theorem contains_of_code_eq_bucket_tail {rq : RunQueue} {x : ThreadId} {p : Prio
   have hm := decode_lastCode_mem (by rw [← he, ← h]; exact code_ne_zero x)
   rw [← he, ← h, decode_code] at hm
   exact (rq.mem_toList_iff_mem x).mp (List.mem_filter.mp hm).1
+
+/-- The thread a queue's nonzero head code names is on the queue (WS-ZA ZA6.9). -/
+theorem contains_of_code_eq_head {rq : RunQueue} {x : ThreadId} (h : code x = rq.head) :
+    rq.contains x = true := by
+  have he := rq.layout_toList.queue.1
+  have hm := decode_lastCode_mem (l := rq.toList.reverse) (by rw [← he, ← h]; exact code_ne_zero x)
+  rw [← he, ← h, decode_code] at hm
+  exact (rq.mem_toList_iff_mem x).mp (List.mem_reverse.mp hm)
+
+theorem contains_of_code_eq_bucket_head {rq : RunQueue} {x : ThreadId} {p : Priority}
+    (h : code x = (endsOf rq.buckets p).head) : rq.contains x = true := by
+  have he := (rq.layout_toList.bucket p).1
+  have hm := decode_lastCode_mem (by rw [← he, ← h]; exact code_ne_zero x)
+  rw [← he, ← h, decode_code] at hm
+  exact (rq.mem_toList_iff_mem x).mp (List.mem_filter.mp (List.mem_reverse.mp hm)).1
+
+/-- A thread not on the queue is neither its first thread nor any bucket's. -/
+theorem code_ne_queue_head {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false) :
+    code t ≠ rq.head :=
+  code_ne_head rq.layout_toList.queue.1
+    (fun hm => by rw [(rq.mem_toList_iff_mem t).mp hm] at h; cases h)
+
+theorem code_ne_bucket_head {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false)
+    (p : Priority) : code t ≠ (endsOf rq.buckets p).head :=
+  code_ne_head (rq.layout_toList.bucket p).1
+    (fun hm => by rw [(rq.mem_toList_iff_mem t).mp (List.mem_filter.mp hm).1] at h; cases h)
 
 /-- A read of a queue's entries that agrees with the queue on every queued
 thread walks the queue's list and finds its highest priority. -/
