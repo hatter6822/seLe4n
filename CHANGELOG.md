@@ -1,3 +1,66 @@
+## v0.36.169 — WS-ZA ZA6.6: the yield link, with its cancel and complete paths
+
+A thread that yields to a scheduling context and the context it yielded to are
+now linked at both ends, as seL4-MCS links them (`tcbYieldTo`, `scYieldFrom`).
+The link is cancelled where seL4-MCS cancels it and completed where seL4-MCS
+completes it. Nothing sets a link until ZA6.8's `seL4_SchedContext_YieldTo`.
+
+- **The two ends** (`SeLe4n/Model/Object/Types.lean`,
+  `SeLe4n/Kernel/SchedContext/Types.lean`).
+  - `TCB.yieldToCode` and `SchedContext.yieldFromCode`: 0 for none, `n+1`
+    for object `n`, in the objects' own fields, as `boundThreadCode` holds a
+    binding. Both take part in structural equality; a boot thread or context
+    must carry none (`bootTcbShape`, `bootSafeSchedContextCheck`).
+- **The operations** (`SeLe4n/Kernel/SchedContext/YieldLink.lean`).
+  - `cancelYieldTo` (seL4's `schedContext_cancelYieldTo`) clears both ends
+    from the thread's side; `cancelYieldFrom` clears them from the context's.
+  - `setConsumed` (seL4's `setConsumed`) takes the context's consumed time
+    off it (`SchedContext.updateConsumed`) and writes it to the yielder's
+    first message register, with a one-register message info.
+  - `completeYieldFrom` (seL4's `if (sc->scYieldFrom)
+    schedContext_completeYieldTo(sc->scYieldFrom)`) runs `setConsumed`, then
+    `cancelYieldFrom`; on agreeing links it is `completeYieldTo` of the
+    yielder (`completeYieldFrom_eq_completeYieldTo`).
+  - `threadFinaliseYield` completes the yield recorded by the context the
+    thread holds, then cancels the thread's own link.
+- **Where they run.**
+  - Suspend (spec, per-core and admitted fast form) ends with
+    `cancelYieldTo`, as seL4-MCS's `suspend` does; its lock footprint
+    declares the linked context (`yieldToContextOf?`; the bound moves from 17
+    to 18, `lockSet_tcbSuspendOnCore_size_le_eighteen`). The frozen suspend
+    mirrors it.
+  - A thread's final delete (`finaliseThread`) ends with
+    `threadFinaliseYield`; a context's final delete (`finaliseSchedContext`'s
+    cleanup) completes the yield it records.
+  - The pre-retype cleanup runs the same steps: `threadFinaliseYield` on a
+    thread target, `completeYieldFrom` after the binding release on a context
+    target.
+- **The invariant** (`SeLe4n/Kernel/SchedContext/YieldLinkInvariant.lean`).
+  - `SystemState.yieldLinksAgree`: each end names the other. It is the
+    proof-layer bundle's 21st conjunct, with its frame `YieldLinksKept`.
+  - Every run-queue link stage carries it (`RunQueueLinkStage.yield`), so
+    every kernel entry preserves it
+    (`syscallDispatchEntryState_preserves_yieldLinksAgree` and its timer,
+    reschedule, cross-core suspend, fault, unknown-syscall and FP/SIMD
+    siblings). The default state, boot and the taint-word frame
+    (`yieldLinksAgree_of_objectsAgreeOffTaint`) establish or keep it.
+- **Finalisation proofs.**
+  - The finalise closures take a `FinaliseYieldStep`, and every closure user
+    proves its predicate across the cancel and the completion.
+  - `SystemState.objectsAgreeOffYield` now erases every yield write (both
+    codes, the two return registers, the consumed count), so the
+    scheduling, reservation and binding facts carry across the steps.
+  - A finalised context records no yielder (`schedContextRecordReleased`),
+    a finalised thread links to no context (`finaliseThread_quiesces`), and
+    a retype target holds no link end (`retypeTargetDetached.tcbYieldUnlinked`).
+  - The steps are invisible to every observer (`projectedObjectsWrite`): the
+    projection erases both codes and the thread's registers, and the context
+    whose consumed count changes is hidden.
+- **Tests.** `SuspendResumeSuite` SR-036 to SR-039: suspend (live and frozen)
+  clears both ends, a context's final delete hands its yielder the consumed
+  time, a yielder's final delete clears both ends.
+- **Zero allocation.** MEASURED_PLACEHOLDER
+
 ## v0.36.168 — WS-ZA ZA6.5: every charge records the time it consumed
 
 Each scheduling context now keeps seL4-MCS's consumed time (`scConsumed`).
