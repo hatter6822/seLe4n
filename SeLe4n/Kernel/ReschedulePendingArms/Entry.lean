@@ -230,9 +230,26 @@ theorem faultEntryDeliver_stepCovers (lctx : LabelingContext) (st : SystemState)
       (ectx := ectx) (w := w) (c := c) (tid := tid) hInv
     exact stepCovers_trans hD (scheduleLocalSuccessorFrom_stepCovers c (some tid) _ hDInv)
 
+/-- WS-ZA ZA6.7: **the activation covers**: what it writes — the current
+thread's yield-to code and two return registers, the context's yield-from code
+and consumed count (`KernelObject.withoutYield`), and the core's bank — is no
+key input, and it writes no scheduler state. -/
+theorem activateThreadOnCore_stepCovers (e c : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) : stepCovers e st (activateThreadOnCore st c) :=
+  stepCovers_of_keys_sched
+    (keyInputsEq_of_objectsAgreeOffYield (activateThreadOnCore_objectsAgreeOffYield st c hInv))
+    (activateThreadOnCore_scheduler st c)
+
+theorem activateThreadAt_stepCovers (e : CoreId) (st : SystemState) (coreId : UInt64)
+    (hInv : st.objects.invExt) : stepCovers e st (activateThreadAt st coreId) := by
+  unfold activateThreadAt
+  split
+  · exact activateThreadOnCore_stepCovers e _ st hInv
+  · exact stepCovers_refl e st
+
 /-- **The syscall seam covers** on the executing core: the ABI dispatch, the
-caller's return staging, the local scheduling point and the residency
-settlement.  (A refused dispatch fires no SGI, so it owes nothing.) -/
+caller's return staging, the local scheduling point, the residency settlement
+and the activation.  (A refused dispatch fires no SGI, so it owes nothing.) -/
 theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
@@ -241,22 +258,28 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
-    stepCovers e st (PriorityInheritance.settleResidencyOnCore
+    stepCovers e st (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e) := by
+        (Architecture.stageCallerReturn st st' e outcome) e) e) e) := by
   obtain ⟨hD, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced hAwayCur h
-  exact stepCovers_trans hD
-    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv)
+  have hSInv := settleResidencyOnCore_preserves_objects_invExt e _
+    (scheduleLocalSuccessorFrom_preserves_objects_invExt e (st.scheduler.currentOnCore e) _
+      (stageCallerReturnFor_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv).2)
+  exact stepCovers_trans (stepCovers_trans hD
+    (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv))
+    (activateThreadOnCore_stepCovers e e _ hSInv)
 
 /-- **The suspend seam covers** on the executing core: the suspend, then the
-core's own scheduling point. -/
+core's own scheduling point and the activation. -/
 theorem suspendThenScheduleLocal_stepCovers {s s' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {e : CoreId} {sgi : Option (CoreId × SgiKind)} (hInv : s.objects.invExt)
     (h : Lifecycle.Suspend.suspendThreadOnCore s vtid e = .ok (s', sgi)) :
-    stepCovers e s (PriorityInheritance.scheduleLocalSuccessor s s' e) := by
+    stepCovers e s (activateThreadOnCore (PriorityInheritance.scheduleLocalSuccessor s s' e) e) := by
   obtain ⟨hS, hSInv⟩ := suspendThreadOnCore_stepCovers s s' vtid e sgi hInv h
-  exact stepCovers_trans hS
-    (scheduleLocalSuccessorFrom_stepCovers e (s.scheduler.currentOnCore e) s' hSInv)
+  exact stepCovers_trans (stepCovers_trans hS
+    (scheduleLocalSuccessorFrom_stepCovers e (s.scheduler.currentOnCore e) s' hSInv))
+    (activateThreadOnCore_stepCovers e e _
+      (scheduleLocalSuccessorFrom_preserves_objects_invExt e _ s' hSInv))
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 
@@ -305,14 +328,15 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
-    (hId : ∀ oid (tcb : TCB), (PriorityInheritance.settleResidencyOnCore
+    (hId : ∀ oid (tcb : TCB), (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e).getObject? oid =
+        (Architecture.stageCallerReturn st st' e outcome) e) e) e).getObject? oid =
       some (.tcb tcb) → tcb.tid.toObjId = oid)
     {c : CoreId} {k : SgiKind}
-    (hMem : (c, k) ∈ PriorityInheritance.computeCrossCoreSgis st (PriorityInheritance.settleResidencyOnCore
-      (PriorityInheritance.scheduleLocalSuccessor st
-        (Architecture.stageCallerReturn st st' e outcome) e) e) e) :
+    (hMem : (c, k) ∈ PriorityInheritance.computeCrossCoreSgis st
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
+        (PriorityInheritance.scheduleLocalSuccessor st
+          (Architecture.stageCallerReturn st st' e outcome) e) e) e) e) :
     (c, SgiKind.reschedule) ∈ sgisOfRaised (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2
         x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).1.2.1 ∨
       st.scheduler.reschedulePendingOnCore c = true := by

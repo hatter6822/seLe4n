@@ -6036,8 +6036,9 @@ Every kernel object has a decidable well-formedness predicate:
     it is removed.  It was not seL4's yieldTo.  seL4-MCS's
     `seL4_SchedContext_YieldTo` is a scheduling-context capability invocation,
     and the zero-allocation plan adds it in rows ZA6.5 to ZA6.8:
-    consumed-time accounting (landed at `v0.36.168`, below), the yield link,
-    the activation step and the invocation.
+    consumed-time accounting (landed at `v0.36.168`, below), the yield link
+    (`v0.36.169`), the activation step (`v0.36.170`, below) and the
+    invocation.
   - **Zero allocation.**  The configure, the bind and the refill scenarios
     read 0 heap cells at first call and steady state on the QEMU exerciser.
     The configure's resolution runs in continuation form
@@ -6073,6 +6074,63 @@ Every kernel object has a decidable well-formedness predicate:
     are.
   - **Zero allocation.**  The count is one field written in the charge's own
     record update, so every charge scenario still reads 0 heap cells.
+- **A pending yield completes when the yielder next runs** (`v0.36.170`, WS-ZA
+  ZA6.7).  seL4-MCS's `activateThread` begins with
+  `if (ksCurThread->tcbYieldTo) schedContext_completeYieldTo(ksCurThread)`.
+  This kernel restores the committed state at exit without writing it, and a
+  core's current thread is chosen at many sites, so the completion is one write
+  step at the tail of every entry: `activateThreadOnCore`
+  (`Scheduler/ActivateThread.lean`).
+  - **Where it runs.**  After the residency settle and before the restore
+    target is read, on the executing core, in every entry: the syscall step
+    (`syscallDispatchCrossCoreStep`), the timer tick, the reschedule SGI and
+    the secondary core's first entry (the reschedule entry), the cross-core
+    suspend (`suspendThreadBracket`), the fault, unknown-syscall and FP/SIMD
+    entries (`activateThreadAt`, which writes nothing for a core id naming no
+    core).
+  - **What it writes.**  When the core's current thread has a yield link, the
+    completion of ZA6.6 (`completeYieldTo`): the context's consumed time into
+    the thread's saved `x2` with a one-register message info in `x1`, the
+    count taken off the context, and both ends cleared.  The core's register
+    bank takes the same two registers (`completeCurrentYield`), because the
+    bank holds the current thread's live context
+    (`activateThreadOnCore_preserves_contextMatchesCurrentOnCore`), as a
+    still-current caller's result is staged into both.  What it does is
+    `activateThreadOnCore_completes`.  With no link it is the identity
+    (`activateThreadOnCore_of_unlinked`); the yieldTo invocation (ZA6.8) is
+    the first transition that sets one.
+  - **Compiled form.**  `activateThreadOnCoreImpl`, the `@[csimp]` form
+    (`activateThreadOnCore_eq_impl`), reads the core's current-thread code, so
+    no `some` is built, then that thread's yield-to code, and answers its
+    input when either is 0; the linked case is out of line
+    (`@[noinline] completeCurrentYield`).
+  - **Lock coverage.**  Every footprint the kernel declares names the table
+    write lock (`schedFootprintOfCores`,
+    `mem_unifiedLockSetForSyscall_objStore`), which covers every object at
+    once, and the step writes no scheduler state, so the footprint each entry
+    declared from its pre-state covers the thread and context it writes
+    although the thread is chosen after the footprint was computed
+    (`activateThreadOnCore_coversWrites`), as seL4's big kernel lock covers
+    `activateThread`.  The register bank is per-core state no lock guards.
+    The syscall commit's tail (`syscallCommitTail_coversWrites`) and the
+    cross-core suspend (`suspendSeamAction_coversWrites`) include it, and the
+    timer and reschedule entries' declared footprints cover their whole tail,
+    the step, the settle and the activation
+    (`perCoreTimerTickEntryTail_coversWrites`,
+    `perCoreRescheduleEntryTail_coversWrites`).
+  - **Proofs.**  The step is a run-queue stage
+    (`activateThreadOnCore_runQueueStage`, so every entry's refill, yield-link
+    and table-reference payoffs carry it), a mapping-record stage
+    (`activateThreadOnCore_mappingStage`), covered by the reschedule-pending
+    accounting (`activateThreadOnCore_stepCovers`), confined to its core's
+    slots (`activateThreadOnCore_confinedToCores`), a table-reference frame
+    that propagates no taint (`activateThreadOnCore_declassificationTaint`),
+    and invisible to an observer who sees neither the linked context nor, on
+    the boot core, the current thread
+    (`activateThreadOnCore_preserves_projection`).  Its per-core
+    non-interference is ZA6.9's.
+  - **Zero allocation.**  The unlinked path builds nothing and writes nothing,
+    so every entry scenario still reads 0 heap cells.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any

@@ -484,8 +484,15 @@ thread's final delete completes its held context's yield at its context unbind
 (`completeHeldYield`, seL4-MCS's `unbindFromSC`), and a context's final delete
 completes the yield it records.  The frozen suspend mirrors every
 scheduling-context step of the live one (`frozenSuspendDonation`).
-ZA6.7 and ZA6.8 add the rest of seL4's `seL4_SchedContext_YieldTo`: the
-activation step at entry exit, and the invocation.  ZA6.9 puts
+Since `v0.36.170` (ZA6.7) every entry ends with the current thread's
+activation (`activateThreadOnCore`, seL4-MCS's `activateThread`): after the
+residency settle and before the restore target is read, a current thread with
+a yield link has its yield completed, its saved context and the core's bank
+taking the same two registers.  A new entry, or a new tail step after the
+settle, keeps that order and proves the activation's stages through it; the
+step's object writes are covered by the table write lock every declared
+footprint names.  ZA6.8 adds the rest of seL4's
+`seL4_SchedContext_YieldTo`, the invocation.  ZA6.9 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:

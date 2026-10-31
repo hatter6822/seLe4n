@@ -377,9 +377,11 @@ example (coreId : UInt64) :
               -- PR #904 review (`v0.36.41`): the core's residency settles on
               -- the successor the reschedule staged; WS-ZA ZA6.1: the
               -- restore target and the current thread cross as words.
-              let post := SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore
-                ((SeLe4n.Kernel.rescheduleBracket coreId).run
-                  (SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st c frame)).2 c
+              -- WS-ZA ZA6.7: then the current thread's activation.
+              let post := SeLe4n.Kernel.activateThreadOnCore
+                (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore
+                  ((SeLe4n.Kernel.rescheduleBracket coreId).run
+                    (SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st c frame)).2 c) c
               ((SeLe4n.Kernel.Architecture.restoreCommitKindOnCore post c,
                 SeLe4n.Kernel.Architecture.restoreContextOnCore post c,
                 SeLe4n.Kernel.Architecture.restoreTableBaseOnCore post c,

@@ -966,8 +966,10 @@ an IPC arm's footprint names an endpoint and not a thread; a suspend is
 thread-directed, so it supplies exactly that) for the thread on the executing
 core — or, on a core running nothing, the victim itself — suspending `vtid`.
 The step is the suspend on the executing core followed by the executing core's
-local successor, with the pre-state reads captured first (KSC-1: a remote core
-is poked when the step raised its reschedule flag), and the proof field is
+local successor and the activation of the thread it is left running (WS-ZA
+ZA6.7, `activateThreadOnCore`), with the pre-state reads captured first (KSC-1:
+a remote core is poked when the step raised its reschedule flag), and the proof
+field is
 `suspendSeamAction_coversWrites` (WS-LS LS2.3).
 
 **WS-SM SM8.B (review round 17)**: the local reschedule is *self-disabling* on
@@ -988,7 +990,10 @@ seams do not disagree about who is responsible for a vacated core. -/
     let pending0 := reschedulePendingSnapshot s
     match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
     | Except.ok (s', _) =>
-        let s'' := PriorityInheritance.scheduleLocalSuccessorFrom caller? s' execCore
+        -- WS-ZA ZA6.7: the thread the core is left running is activated
+        -- (`activateThreadOnCore`), as every entry's tail activates it.
+        let s'' := activateThreadOnCore
+          (PriorityInheritance.scheduleLocalSuccessorFrom caller? s' execCore) execCore
         (((0 : UInt32), rescheduleSgisFromFlags pending0 s''.scheduler.reschedulePending), s'')
     | Except.error e =>
         ((Platform.FFI.KernelError.toUInt32 e, ([] : List (CoreId × SgiKind))), s)
@@ -1012,8 +1017,8 @@ theorem suspendThreadBracket_run (vtid : SeLe4n.ValidThreadId) (execCore : CoreI
     (suspendThreadBracket vtid execCore).run s =
       (match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
        | Except.ok (s', _) =>
-           let s'' := PriorityInheritance.scheduleLocalSuccessorFrom
-             (s.scheduler.currentOnCore execCore) s' execCore
+           let s'' := activateThreadOnCore (PriorityInheritance.scheduleLocalSuccessorFrom
+             (s.scheduler.currentOnCore execCore) s' execCore) execCore
            (((0 : UInt32), rescheduleSgisFromFlags (reschedulePendingSnapshot s)
                s''.scheduler.reschedulePending), s'')
        | Except.error e =>

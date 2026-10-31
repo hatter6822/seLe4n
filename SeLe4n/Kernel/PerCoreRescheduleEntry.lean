@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.Kernel.Scheduler.ActivateThread
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
@@ -161,8 +162,8 @@ def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit :=
     let frame ← Platform.FFI.ffiTrapContext
     let (kind, context, tableBase, asid, code, writes, icache) ←
       Platform.FFI.modifyGetKernelState (fun st =>
-        let post := PriorityInheritance.settleResidencyOnCore
-          ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+        let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
+          ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
         ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
           post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
@@ -202,8 +203,8 @@ theorem perCoreRescheduleEntry_def (coreId : UInt64) :
         let frame ← Platform.FFI.ffiTrapContext
         let (kind, context, tableBase, asid, code, writes, icache) ←
           Platform.FFI.modifyGetKernelState (fun st =>
-            let post := PriorityInheritance.settleResidencyOnCore
-              ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
+              ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
             ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
