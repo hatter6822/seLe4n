@@ -878,6 +878,42 @@ private def sr037_frozenSuspendCancelsYieldTo : IO Unit := do
     | _, _ => throw <| IO.userError "SR-037 frozen objects not found"
   | .error e => throw <| IO.userError s!"SR-037 frozen suspend should succeed, got {repr e}"
 
+/-- A yielder (thread 1) linked to context 50, which has consumed 7 units. -/
+private def yieldLinkedState : SystemState :=
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨1000⟩, consumed := 7, yieldFromCode := 2 }
+  mkState [(⟨1⟩, .tcb { mkTcb 1 .Ready with yieldToCode := 51 }), (⟨50⟩, .schedContext sc)]
+
+/-- SR-038 (seL4-MCS `finaliseCap` on a context →
+`schedContext_completeYieldTo(sc->scYieldFrom)`): the context's final delete
+hands its yielder the consumed time (`setConsumed`: the one-register message
+info in `x1`, the count in `x2`) and clears both link ends. -/
+private def sr038_contextFinaliseCompletesYield : IO Unit := do
+  let st' := SeLe4n.Kernel.finaliseSchedContext ⟨50⟩ yieldLinkedState
+  match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+  | some (.tcb t), some (.schedContext sc) =>
+    expect "SR-038 the yielder's MR0 holds the consumed time" (t.registerContext.x2 == 7)
+    expect "SR-038 ...with a one-register message info"
+      (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+    expect "SR-038 the yielder's link is cleared" (t.yieldToCode == 0)
+    expect "SR-038 the context's link is cleared and its count taken off"
+      (sc.yieldFromCode == 0 && sc.consumed == 0)
+  | _, _ => throw <| IO.userError "SR-038 objects not found after the finalise"
+
+/-- SR-039 (seL4-MCS `finaliseCap` on a thread → `suspend` →
+`schedContext_cancelYieldTo`): the yielder's final delete clears both link
+ends and writes no consumed time anywhere. -/
+private def sr039_threadFinaliseCancelsYield : IO Unit := do
+  let st' := SeLe4n.Kernel.finaliseThread ⟨1⟩ yieldLinkedState
+  match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+  | some (.tcb t), some (.schedContext sc) =>
+    expect "SR-039 the finalised thread's link is cleared" (t.yieldToCode == 0)
+    expect "SR-039 the context forgets its yielder, keeping its count"
+      (sc.yieldFromCode == 0 && sc.consumed == 7)
+  | _, _ => throw <| IO.userError "SR-039 objects not found after the finalise"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -938,4 +974,6 @@ def main : IO Unit := do
   IO.println "--- ZA6.6: suspend cancels the yield link ---"
   sr036_suspendCancelsYieldTo
   sr037_frozenSuspendCancelsYieldTo
-  IO.println "=== All D1 suspend/resume tests passed (38 tests) ==="
+  sr038_contextFinaliseCompletesYield
+  sr039_threadFinaliseCancelsYield
+  IO.println "=== All D1 suspend/resume tests passed (40 tests) ==="

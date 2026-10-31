@@ -1456,12 +1456,16 @@ run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4
 run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
 # The two exhaustive positional patterns keep their arity pin: a field added to
 # `SchedContext` fails these definitions rather than defaulting to "unread".
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, donationOrigin, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt, _consumed⟩" SeLe4n/Platform/Boot.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _donationOrigin, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt, _consumed⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, donationOrigin, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _donationOrigin, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode⟩" SeLe4n/Platform/Boot.lean'
 # WS-ZA ZA6.5: the consumed time takes part in structural equality (the frozen
 # differential compares it) and a boot context must carry none.
-run_check "INVARIANT" rg -n '^    a\.consumed == b\.consumed$' SeLe4n/Kernel/SchedContext/Types.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def bootSafeSchedContextCheck \(sc : SchedContext\)[^\n]*(\n([ \t][^\n]*)?)*    sc\.consumed == 0$" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" rg -n '^    a\.consumed == b\.consumed &&$' SeLe4n/Kernel/SchedContext/Types.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bootSafeSchedContextCheck \(sc : SchedContext\)[^\n]*(\n([ \t][^\n]*)?)*    sc\.consumed == 0 &&$" SeLe4n/Platform/Boot.lean'
+# WS-ZA ZA6.6: the yield link takes part in structural equality, and a boot
+# context names no yielder.
+run_check "INVARIANT" rg -n '^    a\.yieldFromCode == b\.yieldFromCode$' SeLe4n/Kernel/SchedContext/Types.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bootSafeSchedContextCheck \(sc : SchedContext\)[^\n]*(\n([ \t][^\n]*)?)*    sc\.yieldFromCode == 0$" SeLe4n/Platform/Boot.lean'
 # ...and every charge adds the time run inside the one charge function.
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def SchedContext\.chargeBudget \(sc : SchedContext\) \(start usage now : Nat\) :\n    SchedContext :=\n  \(\(\(sc\.refillUnblockCheck start\)\.refillBudgetCheck usage\)\.releaseReadyHead now\)\.addConsumed\n    \(now - start\)$" SeLe4n/Kernel/SchedContext/Budget.lean'
 # A boot SchedContext heads no reply stack: every admissible boot Reply is inert
@@ -2440,7 +2444,9 @@ run_check "INVARIANT" rg -n '^  donationOrigin : Option SeLe4n.ThreadId := none'
 # It is ERASED by the projection, in the cut that added it -- a `ThreadId` naming a
 # possibly-high caller is the linkage `boundThread` and `Reply.caller` are erased for.
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationOrigin_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "donationOrigin := none,\n *releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0 \}" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "donationOrigin := none,\n *releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0," SeLe4n/Kernel/InformationFlow/Projection.lean'
+# WS-ZA ZA6.6: ...and the context's yield-link end, which names a thread.
+run_check "INVARIANT" rg -n '^ *yieldFromCode := 0 \}$' SeLe4n/Kernel/InformationFlow/Projection.lean
 # ...and the release links' erasure is what every release-queue edit's NI rests
 # on: one theorem over the release-only writes, with no domain hypothesis (a low
 # context's successor link may name a high one), and one corollary per edit.
@@ -3278,7 +3284,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore \(st
 # reaches for it with the thread in the second position; `tcbStoreOrIdentity_*`
 # -- the store-or-identity shape it replaced -- is retired and must not return.
 run_check "INVARIANT" rg -n '^theorem updateTcb_ipcInvariantStage \(s : SystemState\) \(tid : SeLe4n\.ThreadId\)' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_ipcInvariantStage[^\n]*(\n([ \t][^\n]*)?)*            refine IpcInvariantStage\.trans \(clearPendingState_ipcInvariantStage _ vtid\.val\) \?_\n            exact updateTcb_ipcInvariantStage _ vtid\.val _" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_ipcInvariantStage[^\n]*(\n([ \t][^\n]*)?)*            refine IpcInvariantStage\.trans \(clearPendingState_ipcInvariantStage _ vtid\.val\) \?_\n            exact \(updateTcb_ipcInvariantStage _ vtid\.val _\)\.trans\n              \(cancelYieldTo_ipcInvariantStage _ vtid\.val\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" rg -n 'tcbStoreOrIdentity_ipcInvariantStage' SeLe4n/ tests/
 # The two consumer statements are stated over the primitive, not over a
 # re-spelled match: the confinement in the per-core NI surface and the
@@ -4034,7 +4040,7 @@ run_check "INVARIANT" rg -n '^def liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Mod
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded_of_epochsVacant($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.default_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
-run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound ∧\n    st\.yieldLinksAgree$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'SystemState\.liveMappingsRecorded_of_epochsVacant' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
@@ -4173,7 +4179,7 @@ run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_closed($|[ ({:\[\]])' 
 # or executing thread is finalised, not refused: the admission no longer reads
 # the core holds.  v0.36.141: no destroy cleanup follows; the retire reads what
 # the finalisation left off the thread's own links.
-run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    finaliseThreadUnbindSchedContext\n      \(finaliseThreadReleaseCores\n        \(finaliseThreadSuspend\n          \(finaliseThreadEndWaiters\n            \(finaliseThreadReturnLoan\n              \(finaliseThreadCancel\n                \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\n  else st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseThread \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if threadFinaliseAdmitted st x then\n[^\n]*\n    let held := threadHeldContextCode st tid\n    threadFinaliseYield\n      \(finaliseThreadUnbindSchedContext\n        \(finaliseThreadReleaseCores\n          \(finaliseThreadSuspend\n            \(finaliseThreadEndWaiters\n              \(finaliseThreadReturnLoan\n                \(finaliseThreadCancel\n                  \(finaliseThreadUnbindNotification st tid\) tid\) tid\) tid\) tid\) tid\) tid\) tid held\n  else st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # The server's waiters are ended as reply_remove ends them, the lender first
 # (its context returned before the suspend), then the plain waiters head first,
 # fuel the server's own count; each step follows the server's live head.
@@ -4469,7 +4475,7 @@ run_negative_check "INVARIANT" rg -n 'storeNamesNone|storeNamesThreadNone' SeLe4
 # scTCB and scReply), with no walk of the object table or the replenishment
 # queues; the scheduling links that make those the whole truth are carried along
 # the whole delete chain, and an admitted context is proven named by none.
-run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.donationOrigin\.isNone && sc\.scReply\.isNone &&\n      sc\.releaseCoreCode == 0\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.donationOrigin\.isNone && sc\.scReply\.isNone &&\n      sc\.releaseCoreCode == 0 && sc\.yieldFromCode == 0\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'storeNamesSchedContextNone|replenishQueuesNameNone|replenishQueuesOnNameNone|replenishEntriesNameNone|schedContextRetirable_false_of_named' SeLe4n
 run_check "INVARIANT" rg -n '^structure schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
@@ -8895,8 +8901,9 @@ run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog �
 run_check "INVARIANT" rg -n '^    st\.runQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.liveMappingsRecorded ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.releaseQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^    st\.refillsSound$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_negative_check "INVARIANT" rg -n 'st\.refillsSound ' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.refillsSound ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.yieldLinksAgree$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'st\.yieldLinksAgree ' SeLe4n/Kernel/Architecture/Invariant.lean
 # The 19th conjunct, its per-core form, and boot's and the default state's
 # establishment of it (every queue empty, no context linked).
 run_check "INVARIANT" rg -n '^def releaseQueueRefinedOnCore \(st : SystemState\) \(c : CoreId\) : Prop :=' SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
@@ -8917,6 +8924,19 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_preserve
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+# The 21st conjunct (WS-ZA ZA6.6): the yield link's two ends agree; the default
+# state, boot (every boot thread and context codes 0), the taint-word frame and
+# the payoffs carrying it through every kernel entry.
+run_check "INVARIANT" rg -n '^  · exact SystemState\.default_yieldLinksAgree$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n 'SystemState\.yieldLinksAgree_of_clear fun k' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem yieldLinksAgree_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
@@ -12365,7 +12385,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem releaseSchedContextBinding_pr
 # context a frame still names and releases one nothing does.  Declaration-bounded
 # (a column-0 line ends the gap); the comment between the two is blank in the
 # code view.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*\| \.schedContext sc =>(\n([ \t][^\n]*)?)*if sc\.scReply\.isSome then \.error \.revocationRequired\n *else \.ok \(releaseSchedContextBinding st \(SeLe4n\.SchedContextId\.ofObjId target\) sc\)" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*\| \.schedContext sc =>(\n([ \t][^\n]*)?)*if sc\.scReply\.isSome then \.error \.revocationRequired\n *else \.ok \(completeYieldFrom\n *\(releaseSchedContextBinding st \(SeLe4n\.SchedContextId\.ofObjId target\) sc\)\n *\(SeLe4n\.SchedContextId\.ofObjId target\)\)" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # NEGATIVE: the retired arm, which guarded the head and then committed NOTHING.
 # It keeps every token of the guard and differs only in what follows the `else`.
 # Mutation: restore `else .ok st`.
@@ -12393,7 +12413,7 @@ run_check "INVARIANT" rg -n '\(d\) CONTROL: on a context bound to nothing the tw
 # rather than the arm having been the identity: the release writes none of the six
 # `observableSlotsConfinedToCores` slots, the replenish queue not being one.
 run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_confinedToCores \(' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "\| schedContext _ =>[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_confinedToCores _ _ _" SeLe4n/Kernel/SlotConfinement/MemoryArms.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| schedContext _ =>[^\n]*(\n([ \t][^\n]*)?)*observableSlotsConfinedToCores_trans\n *\(releaseSchedContextBinding_confinedToCores _ _ _\)" SeLe4n/Kernel/SlotConfinement/MemoryArms.lean'
 
 # ---------------------------------------------------------------------------
 # `v0.35.166` (register row 63's LAYERING half): the destroy path's cleanup gets
@@ -12450,7 +12470,7 @@ run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_replen
 # arm's pair (`v0.35.164`) and the `.schedContext` arm's release (`v0.35.165`) --
 # and nothing else does.  Mutation: keep every name and drop either citation.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*\(releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp\n *st \(SeLe4n\.SchedContextId\.ofObjId target\) sc hInv hCons\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
 # NEGATIVE: the composite takes NO detachment pack.  Under `retypeTargetDetached`
 # the whole cleanup is the identity (`lifecyclePreRetypeCleanup_detached_frame`),
 # so a theorem stated under it would exercise neither arm -- the pack is the
@@ -18497,7 +18517,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_un
 # the scheduling point, and each stage needs its predecessor's store invariant.
 # The relation pinned is that the agreement reaches the scheduling point.)
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*\(hInv : st\.objects\.invExt\) \(hR : st\.runQueueRefined\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*\(\(hS6 hInv hR\)\.2 executingCore\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*\(\(hS6b hInv hR\)\.2 executingCore\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_blockedOnReply' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # The G7 side condition of the PLACED direction is stated where it lives: a
 # scheduling point strands a thread whose TCB does not resolve.  The UNPLACED

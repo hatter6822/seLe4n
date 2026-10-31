@@ -471,8 +471,17 @@ goes through that function, never writing the count itself, and charges a
 yield-style forfeit from `now` so it adds no time; the count is read and taken
 off through `SchedContext.consumedReading` / `SchedContext.updateConsumed`
 (seL4's `schedContext_updateConsumed`), and it is outside the refill view.
-ZA6.6 to ZA6.8 add the rest of seL4's `seL4_SchedContext_YieldTo`: the yield
-link, the activation step at entry exit, and the invocation.  ZA6.9 puts
+Since `v0.36.169` (ZA6.6) the yield link is kept at both ends
+(`TCB.yieldToCode`, `SchedContext.yieldFromCode`, seL4-MCS's `tcbYieldTo` and
+`scYieldFrom`) and the two always name each other: `SystemState.yieldLinksAgree`
+is the proof-layer bundle's 21st conjunct, carried by every run-queue link stage
+(`RunQueueLinkStage.yield`, from a `YieldLinksKept` frame).  New code that
+writes either code goes through `cancelYieldTo`, `cancelYieldFrom` or
+`completeYieldFrom` (seL4's cancel and complete), and a frame that writes
+neither proves `YieldLinksKept`; a suspend and a thread's final delete cancel
+the thread's link, and a context's final delete completes the yield it records.
+ZA6.7 and ZA6.8 add the rest of seL4's `seL4_SchedContext_YieldTo`: the
+activation step at entry exit, and the invocation.  ZA6.9 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:
