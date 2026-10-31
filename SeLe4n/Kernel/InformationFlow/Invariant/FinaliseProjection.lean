@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 import SeLe4n.Kernel.IPC.Invariant.CancelAllReachability
 import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
+import SeLe4n.Kernel.Scheduler.ActivateThread
 
 /-!
 # The finalisation is invisible when what it touches is hidden
@@ -245,6 +246,22 @@ theorem completeHeldYield (s : SystemState) (held : Nat)
   · exact refl s
   · rename_i k
     exact completeYieldFrom s ⟨k⟩ hInv (hX (Nat.succ_ne_zero k))
+
+/-- WS-ZA ZA6.7: the completion of a yield to a hidden context, from the
+yielder's end. -/
+theorem completeYieldTo (s : SystemState) (y : SeLe4n.ThreadId) (hInv : s.objects.invExt)
+    (hX : ∀ t k, s.getTcb? y = some t → t.yieldToCode = k + 1 →
+      objectObservable ctx observer (⟨k⟩ : SeLe4n.SchedContextId).toObjId = false) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.completeYieldTo s y) := by
+  unfold SeLe4n.Kernel.completeYieldTo
+  split
+  · rename_i t hT
+    split
+    · exact refl s
+    · rename_i k hY
+      exact (setConsumed s ⟨k⟩ y hInv (hX t k hT hY)).trans
+        (cancelYieldTo _ y (SystemState.setConsumed_preserves_objects_invExt _ _ _ hInv))
+  · exact refl s
 
 end projectedObjectsWrite
 
@@ -2148,5 +2165,48 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     (fun h0 w hw => hU h0 w (by unfold untypedRecordsChild at hw ⊢; rw [hUt] at hw; exact hw))
     (fun h0 y hy => hK h0 y (by unfold untypedRecordsChild at hy ⊢; rw [hUt] at hy; exact hy))
     hR).trans hP0
+
+-- ============================================================================
+-- §  The activation at entry exit
+-- ============================================================================
+
+/-- WS-ZA ZA6.7: **the activation is invisible when what it touches is hidden**:
+the context core `c`'s current thread yielded to, whose consumed time it reads
+and whose end of the link it clears, and — on the boot core, whose bank the
+projection shows while its current thread is observable — that thread.  The
+thread's own writes (its link and its saved return registers) are erased by the
+projection. -/
+theorem activateThreadOnCore_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (s : SystemState) (c : CoreId) (hInv : s.objects.invExt)
+    (hX : ∀ tid t k, s.scheduler.currentOnCore c = some tid → s.getTcb? tid = some t →
+      t.yieldToCode = k + 1 →
+      objectObservable ctx observer (⟨k⟩ : SeLe4n.SchedContextId).toObjId = false)
+    (hR : c = Concurrency.bootCoreId → ∀ tid, s.scheduler.currentOnCore c = some tid →
+      threadObservable ctx observer tid = false) :
+    projectState ctx observer (activateThreadOnCore s c) = projectState ctx observer s := by
+  rcases activateThreadOnCore_cases s c with h | ⟨tid, t, k, hC, hT, hY, h⟩
+  · rw [h]
+  rw [h]
+  have hP : projectState ctx observer (SeLe4n.Kernel.completeYieldTo s tid) =
+      projectState ctx observer s :=
+    (projectedObjectsWrite.completeYieldTo s tid hInv
+      (fun t' k' hT' hY' => hX tid t' k' hC hT' hY')).projection
+  unfold completeCurrentYield
+  split
+  · rw [← hP]
+    have hSch : (SeLe4n.Kernel.completeYieldTo s tid).scheduler = s.scheduler := by
+      rw [SystemState.completeYieldTo_eq_objects s tid]
+    simp only [projectState]
+    congr 1
+    unfold projectMachineRegs
+    dsimp only
+    rw [hSch]
+    by_cases hb : c = Concurrency.bootCoreId
+    · subst hb
+      rw [hC]
+      simp only [hR rfl tid hC, Bool.false_eq_true, ↓reduceIte]
+    · rw [MachineState.regs_eq_regsOnCore_bootCore, MachineState.regs_eq_regsOnCore_bootCore,
+        MachineState.modifyRegsOnCore_eq, MachineState.regsOnCore_setRegsOnCore_ne _ _ _ _ hb]
+  · exact hP
 
 end SeLe4n.Kernel

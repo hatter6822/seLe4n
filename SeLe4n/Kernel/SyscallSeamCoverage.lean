@@ -149,26 +149,43 @@ theorem settleResidencyOnCore_coversWrites (S : LockSet) (e : CoreId) (st : Syst
       (deferResidentElsewhere_coversWrites S e _ hTable hRun))
     (footprintCoversWrites_of_objects_scheduler_eq S rfl rfl)
 
+/-- WS-ZA ZA6.7: **the activation is covered by every footprint naming the table
+write lock.**  It writes the executing core's current thread and the context its
+yield link names — objects the footprint, computed before the scheduler chose
+that thread, cannot name one by one, and the table write lock covers at once —
+and the executing core's register bank, which no lock guards; no scheduler
+state.  Every declared footprint of the kernel names the table write lock
+(`schedFootprintOfCores`, `mem_unifiedLockSetForSyscall_objStore`), as seL4's
+big kernel lock covers its `activateThread`. -/
+theorem activateThreadOnCore_coversWrites (S : LockSet) (e : CoreId) (st : SystemState)
+    (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs) :
+    footprintCoversWrites S st (activateThreadOnCore st e) :=
+  footprintCoversWrites_of_scheduler_eq S hTable (activateThreadOnCore_scheduler st e)
+
 /-- **The syscall commit's tail is covered**: from the dispatched state, staging
 the caller's result (a register write under the table lock), the local successor
-and the residency settling (the executing core's own scheduling points), and
-the two hardware-ledger clears (scheduler- and store-inert). -/
+and the residency settling (the executing core's own scheduling points), the
+activation of the thread the core resumes (under the table lock,
+`activateThreadOnCore_coversWrites`), and the two hardware-ledger clears
+(scheduler- and store-inert). -/
 theorem syscallCommitTail_coversWrites (S : LockSet) (e : CoreId)
     (caller? : Option SeLe4n.ThreadId) (post : SystemState) (o : Architecture.SyscallOutcome)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
     (hRun : (LockKey.runQueue e, AccessMode.write) ∈ S.pairs) :
     footprintCoversWrites S post
       (Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance
-        (PriorityInheritance.settleResidencyOnCore
+        (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessorFrom caller?
-            (Architecture.stageCallerReturnFor caller? post e o) e) e))) :=
+            (Architecture.stageCallerReturnFor caller? post e o) e) e) e))) :=
   footprintCoversWrites_trans S
     (footprintCoversWrites_trans S
       (footprintCoversWrites_of_scheduler_eq S hTable
         (Architecture.stageCallerReturnFor_scheduler caller? post e o))
       (footprintCoversWrites_trans S
-        (scheduleLocalSuccessorFrom_coversWrites S e caller? _ hTable hRun)
-        (settleResidencyOnCore_coversWrites S e _ hTable hRun)))
+        (footprintCoversWrites_trans S
+          (scheduleLocalSuccessorFrom_coversWrites S e caller? _ hTable hRun)
+          (settleResidencyOnCore_coversWrites S e _ hTable hRun))
+        (activateThreadOnCore_coversWrites S e _ hTable)))
     (footprintCoversWrites_of_objects_scheduler_eq S
       (by simp only [Architecture.clearPhysicalWrites, (Architecture.clearIcacheMaintenance_frame _).1])
       (by simp only [Architecture.clearPhysicalWrites, (Architecture.clearIcacheMaintenance_frame _).2.2.1]))
@@ -861,8 +878,8 @@ theorem suspendSeamAction_coversWrites (caller : SeLe4n.ThreadId)
     footprintCoversWrites U s
       (match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
        | .ok (s', _) =>
-           PriorityInheritance.scheduleLocalSuccessorFrom (s.scheduler.currentOnCore execCore)
-             s' execCore
+           activateThreadOnCore (PriorityInheritance.scheduleLocalSuccessorFrom
+             (s.scheduler.currentOnCore execCore) s' execCore) execCore
        | .error _ => s) := by
   obtain ⟨S, hSched⟩ := unifiedLockSetForSyscall_some_imp_sched _ _ _ _ _ hU
   have hTable := mem_unifiedLockSetForSyscall_objStore _ _ _ _ _ hU
@@ -872,10 +889,62 @@ theorem suspendSeamAction_coversWrites (caller : SeLe4n.ThreadId)
       validThreadId_val_toValid?] using hSched
   split
   · rename_i s' sgi hStep
-    exact footprintCoversWrites_trans U
+    exact footprintCoversWrites_trans U (footprintCoversWrites_trans U
       (unifiedLockSetForSyscall_coversWrites _ _ _ _ S U s s' hSched hU
         (schedLockSet_suspendThreadOnCore_coversWrites s s' vtid execCore sgi S hStep hS))
-      (scheduleLocalSuccessorFrom_coversWrites U execCore _ s' hTable hRunE)
+      (scheduleLocalSuccessorFrom_coversWrites U execCore _ s' hTable hRunE))
+      (activateThreadOnCore_coversWrites U execCore _ hTable)
   · exact footprintCoversWrites_refl U s
+
+/-! ### The timer and reschedule entries' tails
+
+WS-ZA ZA6.7.  The timer and reschedule entries run their bracket's step, then
+the residency settle and the activation on the same core.  Both tail steps write
+the object store and the executing core's run-queue state only, and both
+brackets' footprints name the table write lock and that core's run-queue lock,
+so the footprint each bracket declares covers the whole committed tail, not the
+step alone. -/
+
+/-- **The timer entry's tick, settle and activation are inside its declared
+footprint.** -/
+theorem perCoreTimerTickEntryTail_coversWrites (st : SystemState) (coreId : UInt64)
+    (h : coreId.toNat < Concurrency.numCores) :
+    footprintCoversWrites
+      ⟨timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩,
+        timerTickOnCoreCompleteLockSet_keys_nodup _⟩
+      st (activateThreadAt (PriorityInheritance.settleResidencyAt
+        ((timerTickBracket coreId).run st).2 coreId) coreId) := by
+  have hTable : (LockKey.objStore, AccessMode.write) ∈
+      timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩ := List.mem_cons_self
+  have hRun : (LockKey.runQueue ⟨coreId.toNat, h⟩, AccessMode.write) ∈
+      timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩ :=
+    List.mem_cons_of_mem _ (List.mem_append_left _ (mem_allCoreRunQueueLockSegment _))
+  unfold activateThreadAt PriorityInheritance.settleResidencyAt
+  rw [Concurrency.coreIdOfUInt64?_eq_some coreId h]
+  exact footprintCoversWrites_trans _
+    (footprintCoversWrites_trans _ (perCoreTimerTickStepWithClockAdvance_coversWrites st coreId h)
+      (settleResidencyOnCore_coversWrites _ _ _ hTable hRun))
+    (activateThreadOnCore_coversWrites _ _ _ hTable)
+
+/-- **The reschedule entry's step, settle and activation are inside its declared
+footprint** — and the secondary core's first entry's, which is this entry. -/
+theorem perCoreRescheduleEntryTail_coversWrites (st : SystemState) (coreId : UInt64)
+    (h : coreId.toNat < Concurrency.numCores) :
+    footprintCoversWrites
+      ⟨handleRescheduleSgiOnCoreLockSet ⟨coreId.toNat, h⟩,
+        switchToThreadOnCoreLockSet_keys_nodup _⟩
+      st (activateThreadAt (PriorityInheritance.settleResidencyAt
+        ((rescheduleBracket coreId).run st).2 coreId) coreId) := by
+  have hTable : (LockKey.objStore, AccessMode.write) ∈
+      handleRescheduleSgiOnCoreLockSet ⟨coreId.toNat, h⟩ := List.mem_cons_self
+  have hRun : (LockKey.runQueue ⟨coreId.toNat, h⟩, AccessMode.write) ∈
+      handleRescheduleSgiOnCoreLockSet ⟨coreId.toNat, h⟩ :=
+    List.mem_cons_of_mem _ List.mem_cons_self
+  unfold activateThreadAt PriorityInheritance.settleResidencyAt
+  rw [Concurrency.coreIdOfUInt64?_eq_some coreId h]
+  exact footprintCoversWrites_trans _
+    (footprintCoversWrites_trans _ (perCoreRescheduleStep_coversWrites st coreId h)
+      (settleResidencyOnCore_coversWrites _ _ _ hTable hRun))
+    (activateThreadOnCore_coversWrites _ _ _ hTable)
 
 end SeLe4n.Kernel

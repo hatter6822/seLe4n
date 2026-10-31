@@ -4887,7 +4887,7 @@ run_check "INVARIANT" rg -n -U '^    if captured\.is_none\(\) \{\n        crate:
 run_check "INVARIANT" rg -n '^        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^          \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2 c$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n '^          \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2 c\) c$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 # v0.36.40: a trap on a core another core vacated (a remote suspend cleared the
 # slot while its thread still ran here) dispatches a successor rather than
 # resuming nothing, which the trap layer answers by halting the PE.  The rule,
@@ -4917,7 +4917,7 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchStep.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := activateThreadOnCore \(PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance rest\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
@@ -8303,11 +8303,14 @@ run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*
 run_check "INVARIANT" rg -n -U '^  \| some ic =>\n    let rf := ic\.snapshot\n    saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_current_not_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n 'PriorityInheritance\.settleResidencyOnCore' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
-run_check "INVARIANT" rg -n 'PriorityInheritance\.settleResidencyOnCore' SeLe4n/Kernel/SecondaryEntry.lean
-run_check "INVARIANT" rg -n '^        let post := PriorityInheritance\.settleResidencyOnCore post c$' SeLe4n/Kernel/PerCoreTimerEntry.lean
-run_check "INVARIANT" rg -n '^      let st. := PriorityInheritance\.settleResidencyAt st. coreId$' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^    let res := \(res\.1, PriorityInheritance\.settleResidencyAt res\.2 coreId\)$' SeLe4n/Kernel/FaultEntry.lean
+# WS-ZA ZA6.7: each entry's settled state is then activated on the same core
+# (seL4-MCS's `activateThread`), the settle the activation's argument.
+run_check "INVARIANT" rg -n -U '^        let post := activateThreadOnCore \(PriorityInheritance\.settleResidencyOnCore\n          \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2 c\) c$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
+run_check "INVARIANT" rg -n -U '^            let post := activateThreadOnCore \(PriorityInheritance\.settleResidencyOnCore\n              \(\(rescheduleBracket coreId\)\.run \(Architecture\.saveCapturedTrapFrame st c frame\)\)\.2 c\) c$' SeLe4n/Kernel/SecondaryEntry.lean
+run_check "INVARIANT" rg -n '^        let post := activateThreadOnCore \(PriorityInheritance\.settleResidencyOnCore post c\) c$' SeLe4n/Kernel/PerCoreTimerEntry.lean
+run_check "INVARIANT" rg -n '^      let st. := activateThreadAt \(PriorityInheritance\.settleResidencyAt st. coreId\) coreId$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^    let res := \(res\.1,\n      activateThreadAt \(PriorityInheritance\.settleResidencyAt res\.2 coreId\) coreId\)$' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n -U '^        let s'"''"' := activateThreadOnCore\n          \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? s'"'"' execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)$' SeLe4n/Kernel/FaultEntry.lean
 run_prose_check "INVARIANT" rg -n 'RETIRED: the current-slot save drops the vacated core.s frame' tests/FaultHandlingSuite.lean
 run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes a thread core 0 still runs' tests/FaultHandlingSuite.lean
@@ -8937,6 +8940,33 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_preserve
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+# WS-ZA ZA6.7: seL4-MCS's `activateThread` yield completion at every entry's
+# tail.  The compiled form reads the core's current-thread code (no `some`
+# built) and is out of line, the linked case too (an inlined form's join point
+# built the timer entry's step-result pair); the completion writes the
+# yielder's saved context and the core's bank alike; the tail is covered by the
+# declared footprints, and each stage family carries it.
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def completeCurrentYield \(st : SystemState\)[^\n]*\n[^\n]*\n  match st\.getSchedContext\? s with\n  \| some sc =>\n    let w := sc\.consumedReading\.toUInt64\n    let s1 := completeYieldTo st tid\n    \{ s1 with machine := s1\.machine\.modifyRegsOnCore c \(·\.withConsumed w\) \}$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def activateThreadOnCoreImpl \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  match st\.scheduler\.currentCode\.get c with\n  \| 0 => st$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem activateThreadOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_completes($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Entry.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryTail_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryTail_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+# The yielder's saved registers are its live ones when a context's final delete
+# completes its yield: no core's current or resident thread holds a link
+# after that core's entry tail (settle, then activation).
+run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SystemState\.yieldLinkedNotResident \(st : SystemState\) : Prop :=\n  ∀ \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) \(t : TCB\),\n    \(st\.scheduler\.currentOnCore c = some tid ∨ st\.machine\.residentOnCore c = some tid\) →\n    st\.getTcb\? tid = some t → t\.yieldToCode = 0$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_current_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_residentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_settle_unlinkedOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean

@@ -250,6 +250,26 @@ theorem deferResidentElsewhere_stepCovers (e : CoreId) (st : SystemState)
     · exact stepCovers_refl e st
   · exact stepCovers_refl e st
 
+theorem deferResidentElsewhere_preserves_objects_invExt (e : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) : (deferResidentElsewhere st e).objects.invExt := by
+  unfold deferResidentElsewhere
+  split
+  · split
+    · split
+      · rename_i st' h
+        exact switchToThreadOnCore_preserves_objects_invExt st e _ st' hInv h
+      · exact preemptCurrentOnCore_preserves_objects_invExt st e _ hInv
+    · exact hInv
+  · exact hInv
+
+/-- WS-ZA ZA6.7: the residency settling keeps the store's table invariant, so
+the activation after it reads a well-formed store. -/
+theorem settleResidencyOnCore_preserves_objects_invExt (e : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) : (settleResidencyOnCore st e).objects.invExt := by
+  unfold settleResidencyOnCore
+  exact deferResidentElsewhere_preserves_objects_invExt e _
+    (dispatchVacatedCore_preserves_objects_invExt e st hInv)
+
 /-- **The commit's residency settling covers**: the dispatch and the deferral
 are scheduling points on the executing core, and the residency record is a
 machine write. -/

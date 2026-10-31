@@ -959,6 +959,121 @@ private def sr040_liveFrozenSuspendAgree : IO Unit := do
   | .error e, _ => throw <| IO.userError s!"SR-040 live suspend should succeed, got {repr e}"
   | _, .error e => throw <| IO.userError s!"SR-040 frozen suspend should succeed, got {repr e}"
 
+/-- A yielder (thread 1) current on the boot core and linked to context 50,
+which has consumed 7 units; thread 2 unlinked. -/
+private def yieldLinkedCurrentState (current : SeLe4n.ThreadId) : SystemState :=
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨1000⟩, consumed := 7, yieldFromCode := 2 }
+  mkState [(⟨1⟩, .tcb { mkTcb 1 .Running with yieldToCode := 51 }),
+    (⟨2⟩, .tcb (mkTcb 2 .Running)), (⟨50⟩, .schedContext sc)] (some current)
+
+/-- SR-041 (WS-ZA ZA6.7, seL4-MCS `activateThread` →
+`schedContext_completeYieldTo(ksCurThread)`): the activation of a current
+thread with a pending yield hands it the consumed time — in its saved context
+and in the core's register bank, its live context — and clears both link
+ends. -/
+private def sr041_activationCompletesCurrentYield : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  let st := yieldLinkedCurrentState ⟨1⟩
+  let st' := SeLe4n.Kernel.activateThreadOnCore st core
+  match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+  | some (.tcb t), some (.schedContext sc) =>
+    expect "SR-041 the yielder's MR0 holds the consumed time" (t.registerContext.x2 == 7)
+    expect "SR-041 ...with a one-register message info"
+      (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+    expect "SR-041 the core's bank holds the same two registers"
+      (st'.machine.regsOnCore core == t.registerContext)
+    expect "SR-041 the yielder's link is cleared" (t.yieldToCode == 0)
+    expect "SR-041 the context's link is cleared and its count taken off"
+      (sc.yieldFromCode == 0 && sc.consumed == 0)
+    expect "SR-041 the scheduler is unchanged"
+      (st'.scheduler.currentOnCore core == st.scheduler.currentOnCore core)
+  | _, _ => throw <| IO.userError "SR-041 objects not found after the activation"
+
+/-- SR-042: the activation of an unlinked current thread, and the activation at a
+core id that names no core, write nothing; a linked thread that is not current
+keeps its pending yield. -/
+private def sr042_activationWithoutPendingYieldIsIdentity : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  let st := yieldLinkedCurrentState ⟨2⟩
+  let st' := SeLe4n.Kernel.activateThreadOnCore st core
+  match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+  | some (.tcb t), some (.schedContext sc) =>
+    expect "SR-042 a non-current yielder keeps its link" (t.yieldToCode == 51)
+    expect "SR-042 ...and the context its yielder and count"
+      (sc.yieldFromCode == 2 && sc.consumed == 7)
+    expect "SR-042 the bank is unchanged"
+      (st'.machine.regsOnCore core == st.machine.regsOnCore core)
+  | _, _ => throw <| IO.userError "SR-042 objects not found after the activation"
+  let stL := yieldLinkedCurrentState ⟨1⟩
+  let stA := SeLe4n.Kernel.activateThreadAt stL 9
+  match stA.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-042 a core id naming no core completes no yield" (t.yieldToCode == 51)
+  | _ => throw <| IO.userError "SR-042 the yielder not found"
+
+/-- The yielder of `yieldLinkedCurrentState` last ran on core 1: current there,
+with its live frame in core 1's bank, while the boot core runs thread 2.  With
+`vacated`, core 1 has since saved its frame and holds no thread. -/
+private def yieldLinkedRemoteState (vacated : Bool) : SystemState :=
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st := yieldLinkedCurrentState ⟨2⟩
+  let regs := match st.objects[(⟨1⟩ : ObjId)]? with
+    | some (.tcb t) => t.registerContext
+    | _ => default
+  let cur : Option SeLe4n.ThreadId := if vacated then none else some ⟨1⟩
+  { st with
+    scheduler := st.scheduler.setCurrentOnCore core1 cur
+    machine := (st.machine.setRegsOnCore core1 regs).setResidentOnCore core1 cur }
+
+/-- SR-043 (a yielder that last ran on another core): the pending yield is
+completed by the activation on the yielder's own core, which writes that core's
+bank and no other; the boot core's activation leaves it pending; the entry tail
+on core 1 (residency settle, then activation) leaves neither the core's current
+nor its resident thread linked; and once core 1 has vacated the yielder, the
+context's final delete writes the yielder's saved context and no core's bank. -/
+private def sr043_remoteYielderCompletesOnItsCore : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st := yieldLinkedRemoteState false
+  let st0 := SeLe4n.Kernel.activateThreadOnCore st core0
+  match st0.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-043 the boot core's activation leaves a remote yield pending"
+      (t.yieldToCode == 51 && st0.machine.regsOnCore core1 == st.machine.regsOnCore core1)
+  | _ => throw <| IO.userError "SR-043 the yielder not found after the boot activation"
+  let st1 := SeLe4n.Kernel.activateThreadOnCore st core1
+  match st1.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-043 core 1's activation completes the yield"
+      (t.yieldToCode == 0 && t.registerContext.x2 == 7)
+    expect "SR-043 ...in core 1's bank, the yielder's live frame"
+      (st1.machine.regsOnCore core1 == t.registerContext)
+    expect "SR-043 ...and leaves the boot core's bank alone"
+      (st1.machine.regsOnCore core0 == st.machine.regsOnCore core0)
+  | _ => throw <| IO.userError "SR-043 the yielder not found after core 1's activation"
+  let stT := SeLe4n.Kernel.activateThreadOnCore
+    (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore st core1) core1
+  let unlinked (o : Option SeLe4n.ThreadId) : Bool := match o with
+    | some tid => match stT.objects[tid.toObjId]? with
+      | some (.tcb t) => t.yieldToCode == 0
+      | _ => true
+    | none => true
+  expect "SR-043 core 1's entry tail leaves its current and resident threads unlinked"
+    (unlinked (stT.scheduler.currentOnCore core1) && unlinked (stT.machine.residentOnCore core1))
+  let stV := yieldLinkedRemoteState true
+  let stF := SeLe4n.Kernel.finaliseSchedContext ⟨50⟩ stV
+  match stF.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-043 a vacated yielder's completion writes its saved context"
+      (t.yieldToCode == 0 && t.registerContext.x2 == 7)
+    expect "SR-043 ...and no core's bank"
+      (stF.machine.regsOnCore core0 == stV.machine.regsOnCore core0 &&
+        stF.machine.regsOnCore core1 == stV.machine.regsOnCore core1)
+  | _ => throw <| IO.userError "SR-043 the yielder not found after the finalise"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1022,4 +1137,7 @@ def main : IO Unit := do
   sr038_contextFinaliseCompletesYield
   sr039_threadFinaliseCancelsYield
   sr040_liveFrozenSuspendAgree
-  IO.println "=== All D1 suspend/resume tests passed (41 tests) ==="
+  sr041_activationCompletesCurrentYield
+  sr042_activationWithoutPendingYieldIsIdentity
+  sr043_remoteYielderCompletesOnItsCore
+  IO.println "=== All D1 suspend/resume tests passed (46 tests) ==="

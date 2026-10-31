@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.Kernel.Scheduler.ActivateThread
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
@@ -158,7 +159,7 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
       Platform.FFI.modifyGetKernelState (fun st =>
         let (raisedAndFlag, post) := (timerTickBracket coreId).run
           (Architecture.saveCapturedTrapFrame st c frame)
-        let post := PriorityInheritance.settleResidencyOnCore post c
+        let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore post c) c
         ((raisedAndFlag.1, raisedAndFlag.2,
           Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
@@ -203,7 +204,7 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
           Platform.FFI.modifyGetKernelState (fun st =>
             let (raisedAndFlag, post) := (timerTickBracket coreId).run
               (Architecture.saveCapturedTrapFrame st c frame)
-            let post := PriorityInheritance.settleResidencyOnCore post c
+            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore post c) c
             ((raisedAndFlag.1, raisedAndFlag.2,
               Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,

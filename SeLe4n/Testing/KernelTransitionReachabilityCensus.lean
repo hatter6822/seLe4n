@@ -1097,11 +1097,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
   , `SeLe4n.Kernel.commitKernelAction
-  -- WS-ZA ZA6.6: seL4-MCS's `schedContext_completeYieldTo`, the yielder-side
-  -- statement the context-side completion is proven equal to on a state whose
-  -- yield links agree (`completeYieldFrom_eq_completeYieldTo`); the
-  -- finalisations run `completeYieldFrom`.
-  , `SeLe4n.Kernel.completeYieldTo
   , `SeLe4n.Kernel.cspaceLookupMultiLevel
   , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate

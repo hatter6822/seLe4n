@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 import SeLe4n.Kernel.Architecture.PerCoreCacheModel
+import SeLe4n.Kernel.Scheduler.ActivateThread
 import SeLe4n.Platform.FFI
 
 /-!
@@ -76,8 +77,11 @@ result where it is computed and the nested tuple is never built. -/
       -- PR #904 review (`v0.36.41`): settle what this core resumes — a thread
       -- still resident on another core is deferred, and the one resumed here
       -- becomes this core's resident thread (`settleResidencyOnCore`).
-      let st'' := PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
+      -- WS-ZA ZA6.7: then the thread it resumes is activated (seL4-MCS's
+      -- `activateThread`: a pending yield it made completes,
+      -- `activateThreadOnCore`), before any diff or the restore target is read.
+      let st'' := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
+        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore) execCore
       -- KSC-1: a remote core is poked when the step raised its reschedule flag
       -- (`syscallDispatchCrossCoreStep_sgis_cover_diff`: the flags cover the old
       -- whole-index diff, which stays as the specification).
@@ -106,10 +110,10 @@ theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : C
       ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (outcome, st')) :
     syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st =
-      let st'' := PriorityInheritance.settleResidencyOnCore
+      let st'' := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore execCore)
           (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore execCore) st' execCore
-            outcome) execCore) execCore
+            outcome) execCore) execCore) execCore
       ((outcome,
         st.scheduler.reschedulePending.raised st''.scheduler.reschedulePending,
         Architecture.shootdownPostedTargetsFrom st.tlbShootdown.roundGeneration st'',
@@ -143,10 +147,10 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
           ipcBufferAddr elr spsr spEl0 x30 st).2.pendingPhysicalWrites = [] ∧
       (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.1.toList =
-        (PriorityInheritance.settleResidencyOnCore
+        (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
           (PriorityInheritance.scheduleLocalSuccessor st
             (Architecture.stageCallerReturn st st' execCore outcome) execCore)
-          execCore).pendingPhysicalWrites := by
+          execCore) execCore).pendingPhysicalWrites := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   refine ⟨outcome, st', h, ?_, ?_⟩ <;> rw [syscallDispatchCrossCoreStep_of_ok h]
@@ -169,6 +173,8 @@ theorem syscallDispatchCrossCoreStep_restoreTarget (ctx : LabelingContext)
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok h]
+  dsimp only
+  generalize activateThreadOnCore _ execCore = x
   rfl
 
 /-- WS-ZA ZA4.7: the step's commit record with its current thread as its code
@@ -207,9 +213,9 @@ value-returning syscall builds neither its outcome nor its frame. -/
       ipcBufferAddr elr spsr spEl0 x30 st with
   | ((tag, w0, w1, w2, w3, w4, w5), st') =>
       let stR := Architecture.stageCallerReturnWords callerCode st' execCore tag w0 w1 w2 w3 w4 w5
-      let st1 := PriorityInheritance.settleResidencyOnCore
+      let st1 := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom (SeLe4n.ThreadId.ofOptCode callerCode) stR
-          execCore) execCore
+          execCore) execCore) execCore
       -- The operand list is written over the cell the last round's catch-up
       -- kept (`shootdownPostedOpsTaking`); every read below is of the state
       -- that no longer holds it.

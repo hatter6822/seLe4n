@@ -149,6 +149,31 @@ theorem settleResidencyAt_mappingStage (st : SystemState) (coreId : UInt64) :
   · exact settleResidencyOnCore_mappingStage st _
   · exact MappingStage.refl _
 
+/-- WS-ZA ZA6.7: the yield completion rewrites a context and a thread in place. -/
+theorem completeYieldTo_mappingStage (st : SystemState) (y : SeLe4n.ThreadId) :
+    MappingStage st (completeYieldTo st y) := by
+  unfold completeYieldTo
+  split
+  · split
+    · exact MappingStage.refl _
+    · exact (setConsumed_mappingStage _ _ _).trans (cancelYieldTo_mappingStage _ _)
+  · exact MappingStage.refl _
+
+/-- WS-ZA ZA6.7: **the activation keeps the mappings recorded**: the yield
+completion, and the core's bank, which holds no mapping. -/
+theorem activateThreadOnCore_mappingStage (st : SystemState) (c : CoreId) :
+    MappingStage st (activateThreadOnCore st c) := by
+  rcases activateThreadOnCore_objects st c with h | ⟨tid, _, h⟩
+  · exact MappingStage.of_objects_eq h
+  · exact (completeYieldTo_mappingStage st tid).trans (MappingStage.of_objects_eq h)
+
+theorem activateThreadAt_mappingStage (st : SystemState) (coreId : UInt64) :
+    MappingStage st (activateThreadAt st coreId) := by
+  unfold activateThreadAt
+  split
+  · exact activateThreadOnCore_mappingStage st _
+  · exact MappingStage.refl _
+
 /-! ### The trap-frame saves and the ledger drains -/
 
 theorem saveTrapFrameOnCore_mappingStage (st : SystemState) (c : CoreId)
@@ -346,7 +371,8 @@ theorem syscallDispatchCrossCoreStep_mappingStage {ctx : LabelingContext} {e : C
   exact (syscallDispatchFromAbi_mappingStage P hD).trans
     ((((stageCallerReturnFor_mappingStage _ _ e outcome).trans
     (scheduleLocalSuccessorFrom_mappingStage _ _ e)).trans
-    (settleResidencyOnCore_mappingStage _ e)).trans (clearLedgers_mappingStage' _))
+    (settleResidencyOnCore_mappingStage _ e)).trans
+    ((activateThreadOnCore_mappingStage _ e).trans (clearLedgers_mappingStage' _)))
 
 /-- **The syscall entry's committed state keeps the mappings recorded**: the
 trap-frame save, the entry's IPC-buffer words handed to the state, the step,
@@ -404,33 +430,37 @@ theorem suspendThreadCrossCoreDrainedStep_mappingStage (tid : UInt64) (e : CoreI
       dsimp only
       split
       · rename_i s' sgi hS
-        exact (suspendThreadOnCore_mappingStage hS).trans
-          (scheduleLocalSuccessorFrom_mappingStage _ _ e)
+        exact ((suspendThreadOnCore_mappingStage hS).trans
+          (scheduleLocalSuccessorFrom_mappingStage _ _ e)).trans
+          (activateThreadOnCore_mappingStage _ e)
       · exact MappingStage.refl _
 
 /-- **The timer entry's committed state keeps the mappings recorded**: the
-trap-frame save, the tick, the residency settlement and the ledger drains. -/
+trap-frame save, the tick, the residency settlement, the activation and the
+ledger drains. -/
 theorem perCoreTimerTickEntryState_mappingStage (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) :
     MappingStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((timerTickBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))) :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
   ((saveCapturedTrapFrameAt_mappingStage st coreId frame).trans
     (perCoreTimerTickStep_mappingStage _ coreId)).trans
-    ((settleResidencyAt_mappingStage _ coreId).trans (clearLedgers_mappingStage _))
+    (((settleResidencyAt_mappingStage _ coreId).trans (activateThreadAt_mappingStage _ coreId)).trans
+      (clearLedgers_mappingStage _))
 
 /-- **The reschedule entry's committed state keeps the mappings recorded** (the
 secondary core's first entry is this one). -/
 theorem perCoreRescheduleEntryState_mappingStage (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) :
     MappingStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((rescheduleBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))) :=
-  (((saveCapturedTrapFrameAt_mappingStage st coreId frame).trans
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
+  ((((saveCapturedTrapFrameAt_mappingStage st coreId frame).trans
     (perCoreRescheduleStep_mappingStage _ coreId)).trans
-    (settleResidencyAt_mappingStage _ coreId)).trans (clearLedgers_mappingStage _)
+    (settleResidencyAt_mappingStage _ coreId)).trans (activateThreadAt_mappingStage _ coreId)).trans
+    (clearLedgers_mappingStage _)
 
 /-- The register spill, then the flow-checked delivery. -/
 theorem faultDeliveredState_mappingStage (lctx : LabelingContext) (st : SystemState)
@@ -481,25 +511,27 @@ theorem faultEntryState_mappingStage (lctx : LabelingContext) (coreId : UInt64)
     (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
     (w : FaultRegisterWindow) (st : SystemState) :
     MappingStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt (faultEntryStep lctx
-        (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))) :=
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w
+          coreId).2 coreId) coreId))) :=
   ((saveCapturedTrapFrameAt_mappingStage st coreId (some frame)).trans
     (faultEntryStep_mappingStage lctx _ ectx w coreId)).trans
-    ((settleResidencyAt_mappingStage _ coreId).trans (clearLedgers_mappingStage _))
+    (((settleResidencyAt_mappingStage _ coreId).trans (activateThreadAt_mappingStage _ coreId)).trans
+      (clearLedgers_mappingStage _))
 
 /-- **The unknown-syscall entry's committed state keeps the mappings recorded.** -/
 theorem unknownSyscallEntryState_mappingStage (lctx : LabelingContext) (coreId : UInt64)
     (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
     (w : FaultRegisterWindow) (st : SystemState) :
     MappingStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         (unknownSyscallEntryStep lctx
         (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))) :=
+        coreId) coreId))) :=
   ((saveCapturedSyscallFrameAt_mappingStage st coreId (some frame)).trans
     (unknownSyscallEntryStep_mappingStage lctx _ ectx w coreId)).trans
-    ((settleResidencyAt_mappingStage _ coreId).trans (clearLedgers_mappingStage _))
+    (((settleResidencyAt_mappingStage _ coreId).trans (activateThreadAt_mappingStage _ coreId)).trans
+      (clearLedgers_mappingStage _))
 
 /-- The lazy FP/SIMD switch writes the previous owner's saved FP context and the
 core's owner slot. -/
@@ -532,9 +564,10 @@ theorem fpAccessOnCore_mappingStage (st : SystemState) (c : CoreId)
 theorem fpAccessEntryState_mappingStage (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (live : Option FpContext)
     (st : SystemState) :
-    MappingStage st (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) := by
+    MappingStage st (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId) := by
   refine (saveCapturedTrapFrameAt_mappingStage st coreId frame).trans ?_
+  refine MappingStage.trans ?_ (activateThreadAt_mappingStage _ coreId)
   refine MappingStage.trans ?_ (settleResidencyAt_mappingStage _ coreId)
   unfold fpAccessEntryStep
   split

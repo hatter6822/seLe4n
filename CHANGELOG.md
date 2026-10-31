@@ -1,3 +1,105 @@
+## v0.36.170 — WS-ZA ZA6.7: the current thread's activation at every entry's tail
+
+seL4-MCS completes a pending yield when the yielder next runs: `activateThread`
+begins with `if (ksCurThread->tcbYieldTo) schedContext_completeYieldTo(ksCurThread)`.
+This kernel restores the committed state at exit without writing it and picks a
+core's current thread at many sites, so the completion is now one write step at
+the tail of every kernel entry. Nothing sets a link until ZA6.9's
+`seL4_SchedContext_YieldTo`, so on every reachable state the step is still the
+identity.
+
+- **The step** (`SeLe4n/Kernel/Scheduler/ActivateThread.lean`, new).
+  - `activateThreadOnCore st c`: core `c`'s current thread, when its yield-to
+    code names a context, has its yield completed (`completeYieldTo`, ZA6.6:
+    the consumed time into its saved `x2` with a one-register message info in
+    `x1`, the count taken off, both ends cleared), and the core's register
+    bank takes the same two registers (`completeCurrentYield`), because the
+    bank is the current thread's live context, as a still-current caller's
+    result is staged into both. Otherwise it is the identity
+    (`activateThreadOnCore_of_unlinked`). `activateThreadAt` is the form for a
+    raw core id, writing nothing for an id naming no core.
+  - What it does is `activateThreadOnCore_completes`; it keeps the bank equal
+    to the current thread's context
+    (`activateThreadOnCore_preserves_contextMatchesCurrentOnCore`).
+  - Compiled form: `activateThreadOnCoreImpl` (`@[csimp]`,
+    `activateThreadOnCore_eq_impl`) reads the current-thread code, so no
+    `some` is built, then the thread's yield-to code. It, `activateThreadAt`
+    and the linked case (`completeCurrentYield`) are `@[noinline]`: the first
+    measurement, with the step inlined, read 1 cell per timer tick, because
+    its branches met in the timer entry's body and the join point built the
+    bracket's (flags, advanced) result pair.
+- **Where it runs.** After the residency settle, before the restore target is
+  read, on the executing core: the syscall step (`syscallDispatchCrossCoreStep`),
+  the timer entry, the reschedule entry and so the secondary core's first
+  entry, the cross-core suspend (`suspendThreadBracket`), and the fault,
+  unknown-syscall and FP/SIMD entries.
+- **Lock coverage.** Every footprint the kernel declares names the table write
+  lock, which covers every object, and the step writes no scheduler state, so
+  it is covered by the footprint the entry declared from its pre-state even
+  though the thread it writes is chosen afterwards
+  (`activateThreadOnCore_coversWrites`), as seL4's big kernel lock covers
+  `activateThread`; the register bank is per-core state no lock guards. The
+  syscall commit tail and the suspend seam include it
+  (`syscallCommitTail_coversWrites`, `suspendSeamAction_coversWrites`).
+  Fixed along the way: the timer and reschedule brackets' coverage stopped at
+  their step, with the settle after it in no coverage claim; their declared
+  footprints now cover the whole tail, step, settle and activation
+  (`perCoreTimerTickEntryTail_coversWrites`,
+  `perCoreRescheduleEntryTail_coversWrites`).
+- **Proofs carried by every entry.** A run-queue stage
+  (`activateThreadOnCore_runQueueStage`, so every entry's `refillsSound`,
+  `yieldLinksAgree` and table-reference payoffs carry it), a mapping-record
+  stage (`activateThreadOnCore_mappingStage`), the reschedule-pending coverage
+  (`activateThreadOnCore_stepCovers`), slot confinement to its core
+  (`activateThreadOnCore_confinedToCores`), a table-reference frame that
+  propagates no taint (`activateThreadOnCore_declassificationTaint`), and the
+  projection unchanged when the linked context and, on the boot core, the
+  current thread are hidden (`activateThreadOnCore_preserves_projection`). Every
+  entry-state theorem of those families is restated over the new tail.
+- **Census.** `completeYieldTo` is on an executed path now, so its entry in the
+  kernel-transition reachability census's not-executed list is deleted.
+- **The yielder's saved registers are its live ones.** ZA6.6's `setConsumed`
+  writes a yielder's saved context when a context's final delete completes
+  its yield, which is sound only while no core holds the yielder's registers
+  unsaved. `SystemState.yieldLinkedNotResident` states it: no core's current
+  or resident thread has a yield link. Each entry's tail establishes it on
+  its core (`activateThreadOnCore_current_unlinked`,
+  `activateThreadOnCore_residentOnCore`,
+  `activateThreadOnCore_settle_unlinkedOnCore`: after the settle the
+  resident thread is the current one or none, and the activation unlinks the
+  current one). No path leaves a linked thread resident on another core: a
+  link is set only on a yieldTo caller, whose own trap saved its frame and
+  which the yield deschedules, so no path is rerouted through the
+  remote-stall save. The kernel-wide form is registered as ZA6.8, ahead of
+  the yieldTo invocation (ZA6.9).
+- **Plan.** ZA6.8 is inserted: a thread with a yield link is never current or
+  resident with unsaved registers, kernel-wide (a run-queue link-stage field
+  saying no step sets a yield code, a cross-core frame saying an entry makes
+  no thread current or resident on another core, and the invariant carried
+  at every entry boundary). The yieldTo invocation becomes ZA6.9 and consumes
+  it; every later row moves up one (ZA6.10 to ZA6.17), with every citation in
+  the plans, the debt register, the workstream context, the spec and the
+  source comments swept.
+- **Tests.** `SuspendResumeSuite` SR-041 (a linked current thread's activation
+  writes the consumed time into its context and the bank, and clears both
+  ends), SR-042 (no link, a non-current yielder, or a core id naming no
+  core: nothing written) and SR-043 (a yielder that last ran on core 1: the
+  boot core's activation leaves it pending, core 1's completes it in core 1's
+  bank alone, core 1's entry tail leaves its current and resident threads
+  unlinked, and once core 1 has vacated it a context's final delete writes
+  its saved context and no bank). The suite's closing count is corrected to
+  the 46 tests it runs.
+- **Zero allocation.** Measured on a fresh untraced archive
+  (`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS, every pin
+  exact and unchanged): all 152 scenarios, 304 readings; 252 read 0 (among
+  them `timer-tick`, `yield`, `refill-yield`, `refill-wait-tick`,
+  `refill-drain-tick`, `exhaust-tick`, `exhaust-drain-tick`, `tcb-suspend`,
+  `tcb-suspend-bound`, the `sched-context-*` and `refill-*` invocations, and
+  every IPC round trip), and the other 52 read their objects' own pins (the
+  retypes, `vspace-map*`, `vspace-unify-instruction`, `resume-carved-tcb`).
+  The generated C of every entry has the same allocation sites as at
+  `v0.36.169`.
+
 ## v0.36.169 — WS-ZA ZA6.6: the yield link, with its cancel and complete paths
 
 A thread that yields to a scheduling context and the context it yielded to are

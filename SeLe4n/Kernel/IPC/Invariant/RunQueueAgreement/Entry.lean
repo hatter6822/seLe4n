@@ -468,7 +468,8 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
   exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
     ((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
     (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
-    (settleResidencyOnCore_runQueueEntryStage _ e)).trans (clearLedgers_runQueueStage' _).entry)
+    (settleResidencyOnCore_runQueueEntryStage _ e)).trans
+    ((activateThreadOnCore_runQueueStage _ e).entry.trans (clearLedgers_runQueueStage' _).entry))
 
 /-- **The syscall entry's committed state keeps the agreement**: the trap-frame
 save, the entry's IPC-buffer words handed to the state, the step, and the
@@ -534,8 +535,9 @@ theorem suspendThreadCrossCoreDrainedStep_runQueueEntryStage (tid : UInt64) (e :
       dsimp only
       split
       · rename_i s' sgi hS
-        exact (suspendThreadOnCore_runQueueEntryStage (by simpa using hIdle) hS).trans
-          (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)
+        exact ((suspendThreadOnCore_runQueueEntryStage (by simpa using hIdle) hS).trans
+          (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
+          (activateThreadOnCore_runQueueStage _ e).entry
       · exact (RunQueueStage.refl _).entry
 
 /-- **The timer entry's committed state keeps the agreement**: the trap-frame
@@ -550,24 +552,26 @@ theorem perCoreTimerTickEntryState_runQueueEntryStage (coreId : UInt64)
     (hAff : ∀ d, replenishQueueAffinityConsistentOnCore
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
     SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((timerTickBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))) :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
   ((saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans
     (perCoreTimerTickStep_runQueueEntryStage _ coreId hInv hRef hD hBi hAff)).trans
-    ((settleResidencyAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry)
+    (((settleResidencyAt_runQueueEntryStage _ coreId).trans
+      (activateThreadAt_runQueueStage _ coreId).entry).trans (clearLedgers_runQueueStage _).entry)
 
 /-- **The reschedule entry's committed state keeps the agreement** (the
 secondary core's first entry is this one). -/
 theorem perCoreRescheduleEntryState_runQueueEntryStage (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) :
     SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((rescheduleBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))) :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
   (((saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans
     (perCoreRescheduleStep_runQueueEntryStage _ coreId)).trans
-    (settleResidencyAt_runQueueEntryStage _ coreId)).trans (clearLedgers_runQueueStage _).entry
+    (settleResidencyAt_runQueueEntryStage _ coreId)).trans
+    ((activateThreadAt_runQueueStage _ coreId).entry.trans (clearLedgers_runQueueStage _).entry)
 
 /-- The fault delivery both fault entries share: a vacated core's dispatch, or
 the delivery and the core's own scheduling point. -/
@@ -616,13 +620,15 @@ theorem faultEntryState_runQueueEntryStage (lctx : LabelingContext) (coreId : UI
     (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
     (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st) :
     SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt (faultEntryStep lctx
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx
         (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))) :=
+        coreId) coreId))) :=
   have hS := saveCapturedTrapFrameAt_runQueueStage st coreId (some frame)
   ((hS.entry.trans (faultEntryStep_runQueueEntryStage lctx _ ectx w coreId
     (E.of_ipcFrame hS (saveCapturedTrapFrameAt_ipcFrame st coreId _)))).trans
-    ((settleResidencyAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
+    (((settleResidencyAt_runQueueEntryStage _ coreId).trans
+      (activateThreadAt_runQueueStage _ coreId).entry).trans (clearLedgers_runQueueStage _).entry))
 
 theorem saveCapturedSyscallFrameAt_runQueueStage (st : SystemState) (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) :
@@ -637,10 +643,10 @@ theorem unknownSyscallEntryState_runQueueEntryStage (lctx : LabelingContext) (co
     (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
     (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st) :
     SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         (unknownSyscallEntryStep lctx
         (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))) :=
+        coreId) coreId))) :=
   have hS := saveCapturedSyscallFrameAt_runQueueStage st coreId (some frame)
   have hF : IpcFrame st (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) := by
     unfold Concurrency.saveCapturedSyscallFrameAt
@@ -649,7 +655,8 @@ theorem unknownSyscallEntryState_runQueueEntryStage (lctx : LabelingContext) (co
     · exact IpcFrame.refl _
   ((hS.entry.trans (unknownSyscallEntryStep_runQueueEntryStage lctx _ ectx w coreId
     (E.of_ipcFrame hS hF))).trans
-    ((settleResidencyAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
+    (((settleResidencyAt_runQueueEntryStage _ coreId).trans
+      (activateThreadAt_runQueueStage _ coreId).entry).trans (clearLedgers_runQueueStage _).entry))
 
 /-- The lazy FP/SIMD switch writes the previous owner's saved FP context and the
 core's owner slot. -/
@@ -682,9 +689,10 @@ theorem fpAccessOnCore_runQueueStage (st : SystemState) (c : CoreId)
 theorem fpAccessEntryState_runQueueEntryStage (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (live : Option FpContext)
     (st : SystemState) :
-    SystemState.RunQueueEntryStage st (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) := by
+    SystemState.RunQueueEntryStage st (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId) := by
   refine (saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans ?_
+  refine SystemState.RunQueueEntryStage.trans ?_ (activateThreadAt_runQueueStage _ coreId).entry
   refine SystemState.RunQueueEntryStage.trans ?_ (settleResidencyAt_runQueueEntryStage _ coreId)
   unfold fpAccessEntryStep
   split
@@ -730,9 +738,9 @@ theorem perCoreTimerTickEntryState_preserves_refillsSound (coreId : UInt64)
     (hAff' : ∀ d, replenishQueueAffinityConsistentOnCore
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((timerTickBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).refillsSound :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).refillsSound :=
   (perCoreTimerTickEntryState_runQueueEntryStage coreId frame st hInv' hRef' hD' hBi' hAff').refillsSound
     hInv hR hRel hS
 
@@ -742,9 +750,9 @@ theorem perCoreRescheduleEntryState_preserves_refillsSound (coreId : UInt64)
     (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hRel : st.releaseQueueRefined)
     (hS : st.refillsSound) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((rescheduleBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).refillsSound :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).refillsSound :=
   (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).refillsSound hInv hR hRel hS
 
 /-- **The cross-core suspend keeps the refill state sound.** -/
@@ -760,9 +768,10 @@ theorem faultEntryState_preserves_refillsSound (lctx : LabelingContext) (coreId 
     (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st)
     (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt (faultEntryStep lctx
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx
         (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))).refillsSound :=
+        coreId) coreId))).refillsSound :=
   (faultEntryState_runQueueEntryStage lctx coreId frame ectx w st E).refillsSound
     E.objInv E.refined hRel hS
 
@@ -772,10 +781,10 @@ theorem unknownSyscallEntryState_preserves_refillsSound (lctx : LabelingContext)
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (st : SystemState)
     (E : EntryPremises st) (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         (unknownSyscallEntryStep lctx
         (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))).refillsSound :=
+        coreId) coreId))).refillsSound :=
   (unknownSyscallEntryState_runQueueEntryStage lctx coreId frame ectx w st E).refillsSound
     E.objInv E.refined hRel hS
 
@@ -784,8 +793,8 @@ theorem fpAccessEntryState_preserves_refillsSound (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (live : Option FpContext)
     (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
     (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
-    (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId).refillsSound :=
+    (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId).refillsSound :=
   (fpAccessEntryState_runQueueEntryStage coreId frame live st).refillsSound hInv hR hRel hS
 
 /-! ### The yield link across every entry -/
@@ -821,9 +830,9 @@ theorem perCoreTimerTickEntryState_preserves_yieldLinksAgree (coreId : UInt64)
     (hAff' : ∀ d, replenishQueueAffinityConsistentOnCore
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((timerTickBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).yieldLinksAgree :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).yieldLinksAgree :=
   (perCoreTimerTickEntryState_runQueueEntryStage coreId frame st hInv' hRef' hD' hBi' hAff'
     ).yieldLinksAgree hInv hR hY
 
@@ -832,9 +841,9 @@ theorem perCoreRescheduleEntryState_preserves_yieldLinksAgree (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState)
     (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hY : st.yieldLinksAgree) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         ((rescheduleBracket coreId).run
-          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).yieldLinksAgree :=
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).yieldLinksAgree :=
   (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).yieldLinksAgree hInv hR hY
 
 /-- **The cross-core suspend keeps the yield link in agreement** — the cancel
@@ -851,9 +860,10 @@ theorem faultEntryState_preserves_yieldLinksAgree (lctx : LabelingContext) (core
     (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st)
     (hY : st.yieldLinksAgree) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt (faultEntryStep lctx
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx
         (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))).yieldLinksAgree :=
+        coreId) coreId))).yieldLinksAgree :=
   (faultEntryState_runQueueEntryStage lctx coreId frame ectx w st E).yieldLinksAgree
     E.objInv E.refined hY
 
@@ -863,10 +873,10 @@ theorem unknownSyscallEntryState_preserves_yieldLinksAgree (lctx : LabelingConte
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (st : SystemState)
     (E : EntryPremises st) (hY : st.yieldLinksAgree) :
     (Architecture.clearIcacheMaintenance
-      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         (unknownSyscallEntryStep lctx
         (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
-        coreId))).yieldLinksAgree :=
+        coreId) coreId))).yieldLinksAgree :=
   (unknownSyscallEntryState_runQueueEntryStage lctx coreId frame ectx w st E).yieldLinksAgree
     E.objInv E.refined hY
 
@@ -875,8 +885,8 @@ theorem fpAccessEntryState_preserves_yieldLinksAgree (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) (live : Option FpContext)
     (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
     (hY : st.yieldLinksAgree) :
-    (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId).yieldLinksAgree :=
+    (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId).yieldLinksAgree :=
   (fpAccessEntryState_runQueueEntryStage coreId frame live st).yieldLinksAgree hInv hR hY
 
 end SeLe4n.Kernel
