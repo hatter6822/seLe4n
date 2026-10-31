@@ -8,9 +8,6 @@
  "AK6_A": {
   "tests/fixtures/main_trace_smoke.expected": 1
  },
- "AK6_D": {
-  "tests/fixtures/main_trace_smoke.expected": 1
- },
  "AN12": {
   "scripts/test_tier3_invariant_surface.sh": 1
  },
@@ -57,7 +54,7 @@
   "scripts/test_tier3_invariant_surface.sh": 39
  },
  "SM5": {
-  "scripts/test_tier3_invariant_surface.sh": 109,
+  "scripts/test_tier3_invariant_surface.sh": 108,
   "tests/fixtures/scenario_registry.yaml": 6
  },
  "SM6": {
@@ -91,7 +88,7 @@
   "scripts/test_tier3_invariant_surface.sh": 1
  },
  "Z5_AUD_10": {
-  "tests/fixtures/scenario_registry.yaml": 2
+  "tests/fixtures/scenario_registry.yaml": 1
  },
  "Z5_AUD_7": {
   "tests/fixtures/scenario_registry.yaml": 1
@@ -116,12 +113,6 @@
  },
  "Z5_H2": {
   "tests/fixtures/scenario_registry.yaml": 3
- },
- "Z5_I1": {
-  "tests/fixtures/scenario_registry.yaml": 1
- },
- "Z5_I2": {
-  "tests/fixtures/scenario_registry.yaml": 1
  },
  "Z6_AUD": {
   "tests/fixtures/scenario_registry.yaml": 12
