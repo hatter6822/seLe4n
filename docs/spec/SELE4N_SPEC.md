@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.167` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 542,075 across 491 Lean files |
-| **Test LoC** | 87,585 across 70 Lean test suites |
+| **Production LoC** | 542,126 across 491 Lean files |
+| **Test LoC** | 87,743 across 70 Lean test suites |
 | **Proved declarations** | 20,488 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -5959,7 +5959,14 @@ Every kernel object has a decidable well-formedness predicate:
     CNode at slot `base + c` (`schedControlBootSlots`; RPi5 slots 12–15, QEMU
     `virt` slots 16–19).  ABI: MR0 the context's capability address, MR1
     budget, MR2 period, MR3 `priority | domain << 8`, MR4 (the IPC buffer's
-    overflow word) deadline.
+    overflow word) deadline.  MR3 holds the priority in bits 0–7 and the domain
+    in bits 8–11; the kernel refuses a word of 4096 or more
+    (`decodeSchedContextConfigureArgsChecked`, `.invalidArgument`), and the
+    Rust encoder refuses a priority above 255 or a domain above 15
+    (`InvalidSyscallArgument`) rather than masking either into another valid
+    configuration.  The frozen configure mirrors the resume tail
+    (`frozenConfigureResumeBound`), so a parked bound thread it places is one
+    `frozenChooseThread` can select.
   - **Refills.**  The charge is seL4-MCS's: `refillBudgetCheck`
     (`refill_budget_check`), `scheduleUsed` merging into the tail refill at
     capacity, so no budget is dropped (`schedule_used`), and

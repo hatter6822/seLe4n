@@ -1395,6 +1395,45 @@ def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
 -- Z8-H: Frozen SchedContext Operations
 -- ============================================================================
 
+/-- **WS-ZA ZA6.4: the frozen mirror of configure's resume tail**
+(`SchedContextOps.configureResumeBound`, seL4-MCS's `schedContext_resume` then
+`possibleSwitchTo` at the end of `invokeSchedControl_ConfigureFlags`), on the
+configured context `sc` and its bound thread `t`, over the state the
+propagation halves left.  Arm for arm, in this surface's vocabulary:
+
+* the **current** thread is left where it is.  Live, a current thread is on no
+  run queue (`queueCurrentConsistent`, dequeue-on-dispatch), so the live tail's
+  queued arm cannot see it and its current arm writes only the reschedule flag,
+  which the frozen surface does not carry (frozen dispatch also leaves a current
+  thread in its bucket, so it must be asked about before the bucket is);
+* a **queued** thread stays queued while the context can run it now
+  (`budgetRemaining` positive) and is taken out of its bucket otherwise
+  (`frozenRemoveRunnable`, the live `runRemoveOnCore`);
+* a **parked** runnable thread (`frozenBindPlacesParkedThread`, the mirror of the
+  guard the live tail reads) is placed in the bucket its effective priority
+  names (`frozenRebucketRunnable`, which only appends when the thread is in no
+  bucket).  The live insert priority is `resolveInsertPriority`, which for a
+  thread bound to the context it was just configured from is
+  `TCB.boostedPriority` — the key the frozen bind places at, for the same
+  reason;
+* anything else is left as it is.
+
+Without it a runnable bound thread parked off every bucket stayed outside every
+bucket after a configure that gave its context budget, so `frozenChooseThread`
+could never select it while the live scheduler could. -/
+def frozenConfigureResumeBound (st : FrozenSystemState) (t : SeLe4n.ThreadId)
+    (sc : SeLe4n.Kernel.SchedContext) : FrozenSystemState :=
+  if st.scheduler.current == some t then st
+  else if frozenQueuedAnywhere st t then
+    if sc.budgetRemaining.isPositive then st else frozenRemoveRunnable st t
+  else
+    match frozenLookupTcb st t with
+    | some tcb =>
+      if frozenBindPlacesParkedThread st t tcb sc then
+        frozenRebucketRunnable st t tcb.boostedPriority
+      else st
+    | none => st
+
 /-- Z8-H: Frozen SchedContext configure — update scheduling parameters.
 Mirrors `schedContextConfigure` in frozen state. SchedContext is passthrough-
 frozen (no internal RHTables), so this is a straightforward lookup + store.
@@ -1479,70 +1518,79 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
             -- no write and no re-bucket even when the domain moved.  This comment
             -- claimed that before the code did it: the gate was the *disjunction*,
             -- so a domain-only reconfigure reached the re-bucketing writer.
+            --
+            -- WS-ZA ZA6.4: then the live resume tail (`frozenConfigureResumeBound`)
+            -- over the state the halves left, whether or not either half wrote,
+            -- as the live `configureResumeBound` runs over the propagation's
+            -- state whenever the bound thread exists.
             match sc.boundThread with
             | none => .ok ((), st')
             | some boundTid =>
               match frozenLookupTcb st' boundTid with
               | none => .ok ((), st')
               | some boundTcb =>
-                -- The id comes from the **argument**, as the live gate's does
-                -- (`SchedContextId.ofObjId vScId.val`), not from the record's own
-                -- `scId` field: a self-id field is data the store holds and the
-                -- operation is about the object at this key.  Same derivation the
-                -- frozen bind uses for its own binding.
-                if boundTcb.schedContextBinding.ownScId?
-                    != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
-                  .ok ((), st')
-                else
-                  -- **TWO HALVES, one per parameter** (PR #897 review, `v0.35.105`).
-                  -- `schedContextConfigureBoundPropagate` is two independently
-                  -- gated writes -- a priority half that re-buckets and a domain
-                  -- half that writes in place -- and `v0.35.101` mirrored it as
-                  -- **one** gate over their union feeding the re-bucketing
-                  -- writer.  A domain-only reconfiguration then re-bucketed:
-                  -- `RunQueue.insert` appends, so a queued bound thread moved to
-                  -- its bucket's *tail* at an unchanged key while the live
-                  -- operation left it where it was.  Measured on a reservation
-                  -- bound to a queued thread with a same-priority peer: live
-                  -- leaves the bucket `[62, 63]`, the fused mirror left
-                  -- `[63, 62]`, so `frozenChooseThread` selected the other
-                  -- thread.  Two live questions given one frozen answer is the
-                  -- dual of this project's *one question, two answers* shape, and
-                  -- the remedy is the same -- mirror the structure rather than
-                  -- the outcome.
-                  --
-                  -- The ownership gate is hoisted above both halves rather than
-                  -- asked twice, which is exact and not a narrowing: the live
-                  -- domain half consults `schedContextConfigurePropagates
-                  -- boundTcb`, the **pre-write** record, exactly as its priority
-                  -- half does, so the predicate cannot change between them.
-                  --
-                  -- The priority half: the live gate is *the priority moved*, and
-                  -- the write goes through the re-bucketing writer because a base
-                  -- priority **is** the run-queue key (`TCB.boostedPriority`).
-                  let priorityHalf : Except KernelError FrozenSystemState :=
-                    if boundTcb.priority == (⟨priority⟩ : SeLe4n.Priority) then .ok st'
-                    else
-                      frozenWriteTcbRebucketed st' boundTid
-                        { boundTcb with priority := ⟨priority⟩ }
-                  match priorityHalf with
-                  | .error e => .error e
-                  | .ok stPri =>
-                    -- The domain half reads the record the priority half may have
-                    -- rewritten, so it **re-resolves** -- the live half does, for
-                    -- the same reason -- and its write is the surface's ordinary
-                    -- in-place store: a domain is not a run-queue key, so nothing
-                    -- here may move a bucket.
-                    match frozenLookupTcb stPri boundTid with
-                    | none => .ok ((), stPri)
-                    | some currentTcb =>
-                      if currentTcb.domain == (⟨domain⟩ : SeLe4n.DomainId) then
-                        .ok ((), stPri)
+                let propagated : Except KernelError FrozenSystemState :=
+                  -- The id comes from the **argument**, as the live gate's does
+                  -- (`SchedContextId.ofObjId vScId.val`), not from the record's own
+                  -- `scId` field: a self-id field is data the store holds and the
+                  -- operation is about the object at this key.  Same derivation the
+                  -- frozen bind uses for its own binding.
+                  if boundTcb.schedContextBinding.ownScId?
+                      != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
+                    .ok st'
+                  else
+                    -- **TWO HALVES, one per parameter** (PR #897 review, `v0.35.105`).
+                    -- `schedContextConfigureBoundPropagate` is two independently
+                    -- gated writes -- a priority half that re-buckets and a domain
+                    -- half that writes in place -- and `v0.35.101` mirrored it as
+                    -- **one** gate over their union feeding the re-bucketing
+                    -- writer.  A domain-only reconfiguration then re-bucketed:
+                    -- `RunQueue.insert` appends, so a queued bound thread moved to
+                    -- its bucket's *tail* at an unchanged key while the live
+                    -- operation left it where it was.  Measured on a reservation
+                    -- bound to a queued thread with a same-priority peer: live
+                    -- leaves the bucket `[62, 63]`, the fused mirror left
+                    -- `[63, 62]`, so `frozenChooseThread` selected the other
+                    -- thread.  Two live questions given one frozen answer is the
+                    -- dual of this project's *one question, two answers* shape, and
+                    -- the remedy is the same -- mirror the structure rather than
+                    -- the outcome.
+                    --
+                    -- The ownership gate is hoisted above both halves rather than
+                    -- asked twice, which is exact and not a narrowing: the live
+                    -- domain half consults `schedContextConfigurePropagates
+                    -- boundTcb`, the **pre-write** record, exactly as its priority
+                    -- half does, so the predicate cannot change between them.
+                    --
+                    -- The priority half: the live gate is *the priority moved*, and
+                    -- the write goes through the re-bucketing writer because a base
+                    -- priority **is** the run-queue key (`TCB.boostedPriority`).
+                    let priorityHalf : Except KernelError FrozenSystemState :=
+                      if boundTcb.priority == (⟨priority⟩ : SeLe4n.Priority) then .ok st'
                       else
-                        match frozenWithObjectStored stPri boundTid.toObjId
-                            (.tcb { currentTcb with domain := ⟨domain⟩ }) with
-                        | .ok stDom => .ok ((), stDom)
-                        | .error e => .error e
+                        frozenWriteTcbRebucketed st' boundTid
+                          { boundTcb with priority := ⟨priority⟩ }
+                    match priorityHalf with
+                    | .error e => .error e
+                    | .ok stPri =>
+                      -- The domain half reads the record the priority half may have
+                      -- rewritten, so it **re-resolves** -- the live half does, for
+                      -- the same reason -- and its write is the surface's ordinary
+                      -- in-place store: a domain is not a run-queue key, so nothing
+                      -- here may move a bucket.
+                      match frozenLookupTcb stPri boundTid with
+                      | none => .ok stPri
+                      | some currentTcb =>
+                        if currentTcb.domain == (⟨domain⟩ : SeLe4n.DomainId) then
+                          .ok stPri
+                        else
+                          match frozenWithObjectStored stPri boundTid.toObjId
+                              (.tcb { currentTcb with domain := ⟨domain⟩ }) with
+                          | .ok stDom => .ok stDom
+                          | .error e => .error e
+                match propagated with
+                | .error e => .error e
+                | .ok stProp => .ok ((), frozenConfigureResumeBound stProp boundTid updated)
           | .error e => .error e
         else
           .error .resourceExhausted

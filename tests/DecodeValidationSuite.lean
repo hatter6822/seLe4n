@@ -140,6 +140,42 @@ def test_t09_sc_boundary_accepted : IO Unit := do
   | .error _ =>
     throw <| IO.userError "T09: expected ok at boundary"
 
+/-- Words whose low twelve bits name a valid priority and domain but which set
+a bit above the domain's: each must be refused, never read as its low bits. -/
+def highBitParamWords : List Nat :=
+  [ 4096 + 100 + 1 * 256          -- bit 12 over priority 100, domain 1
+  , 2^40 + 255 + 15 * 256         -- bit 40 over the maxima
+  , 2^63 + 7                      -- the word's top bit
+  , 2^64 - 1 ]                    -- every bit
+
+/-- T10: WS-ZA ZA6.4 review — the checked configure decode refuses a parameter
+word with any bit set above the packed priority and domain, so a stray high bit
+is never truncated into the valid configuration its low bits name. -/
+def test_t10_sc_rejects_high_param_bits : IO Unit := do
+  for w in highBitParamWords do
+    match decodeSchedContextConfigureArgsChecked (stubOf #[7, 1000, 10000, w, 5000]) with
+    | .error .invalidArgument => pure ()
+    | _ => throw <| IO.userError s!"T10: expected invalidArgument for parameter word {w}"
+  IO.println "check passed [parameter words with a bit above bit 11 rejected]"
+
+/-- T11: the register-routed decode (`decodeSchedContextConfigureArgsCheckedBy`,
+read on machine words) refuses the same high-bit words and accepts the maxima. -/
+def test_t11_sc_word_reader_rejects_high_param_bits : IO Unit := do
+  let reader (w : Nat) : MsgRegReader := fun i =>
+    match i with
+    | 0 => .ok 7 | 1 => .ok 1000 | 2 => .ok 10000 | 3 => .ok (UInt64.ofNat w)
+    | 4 => .ok 5000 | _ => .error .invalidMessageInfo
+  for w in highBitParamWords do
+    match decodeSchedContextConfigureArgsCheckedBy (reader w) with
+    | .error .invalidArgument => pure ()
+    | _ => throw <| IO.userError s!"T11: expected invalidArgument for parameter word {w}"
+  match decodeSchedContextConfigureArgsCheckedBy (reader (255 + 15 * 256)) with
+  | .ok args =>
+    expectCond "decode-validation" "word reader priority maximum" (args.priority == 255)
+    expectCond "decode-validation" "word reader domain maximum" (args.domain == 15)
+  | .error e => throw <| IO.userError s!"T11: expected ok at the maxima, got {toString e}"
+  IO.println "check passed [word-read parameter words with a bit above bit 11 rejected]"
+
 /-- Running entry. -/
 def runAllTests : IO Unit := do
   IO.println "=== AK3-E + AK3-J Decode Validation regression suite ==="
@@ -152,6 +188,8 @@ def runAllTests : IO Unit := do
   test_t07_sc_rejects_zero_period
   test_t08_sc_accepts_valid
   test_t09_sc_boundary_accepted
+  test_t10_sc_rejects_high_param_bits
+  test_t11_sc_word_reader_rejects_high_param_bits
   IO.println "=== All decode validation tests passed ==="
 
 end SeLe4n.Testing.DecodeValidation

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/za54-part54",
-      "commit_sha": "58664de83e6a2e12b31f151d8f13910f866e3f3c",
-      "tree_sha": "ff27a68d5aafb4a6c2773d02d2a8ca04dcabd9f3",
-      "committed_at_utc": "2026-10-31T05:22:43+00:00"
+      "commit_sha": "ca4936fe7cdd0f5571099630df1bd5e28a250c1a",
+      "tree_sha": "9a9d8047d8eb722c7e6a1752066f9c7ea92152a1",
+      "committed_at_utc": "2026-10-31T06:33:47+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "914a1ac915239943612f5209f12ab18458d23d66cbbc3fc43bf4ec102942ea22"
+    "source_digest": "f67e6d78b472493daef04ffcb14b59fae8ca93b87488140a40ee3b1c267404f9"
   },
   "summary": {
     "module_count": 561,
-    "declaration_count": 31694
+    "declaration_count": 31699
   },
   "readme_sync": {
     "version": "0.36.167",
     "lean_toolchain": "v4.28.0",
     "production_files": 491,
-    "production_loc": 542075,
+    "production_loc": 542126,
     "test_files": 70,
-    "test_loc": 87585,
+    "test_loc": 87743,
     "proved_theorem_lemma_decls": 20488,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -22674,10 +22674,9 @@
           "kind": "def",
           "name": "decodeSchedContextConfigureArgsChecked",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked",
-          "line": 1245,
+          "line": 1246,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs",
-            "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs.domain",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgs",
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SyscallDecodeResult"
@@ -22687,7 +22686,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgsChecked_invariants",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked_invariants",
-          "line": 1254,
+          "line": 1255,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs.domain",
@@ -22701,7 +22700,7 @@
           "kind": "def",
           "name": "decodeSchedContextBindArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs",
-          "line": 1282,
+          "line": 1285,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.CPtr.val",
@@ -22715,7 +22714,7 @@
           "kind": "def",
           "name": "decodeSchedContextUnbindArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs",
-          "line": 1288,
+          "line": 1291,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextUnbindArgs",
             "SeLe4n.Model.KernelError",
@@ -22726,7 +22725,7 @@
           "kind": "structure",
           "name": "TcbBindNotificationArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.TcbBindNotificationArgs",
-          "line": 1297,
+          "line": 1300,
           "called": [
             "SeLe4n.CPtr"
           ]
@@ -22735,14 +22734,14 @@
           "kind": "structure",
           "name": "TcbUnbindNotificationArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.TcbUnbindNotificationArgs",
-          "line": 1303,
+          "line": 1306,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeTcbBindNotificationArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeTcbBindNotificationArgs",
-          "line": 1308,
+          "line": 1311,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.CPtr.val",
@@ -22756,7 +22755,7 @@
           "kind": "def",
           "name": "decodeTcbUnbindNotificationArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeTcbUnbindNotificationArgs",
-          "line": 1314,
+          "line": 1317,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.TcbUnbindNotificationArgs",
             "SeLe4n.Model.KernelError",
@@ -22767,7 +22766,7 @@
           "kind": "def",
           "name": "encodeSchedContextConfigureArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSchedContextConfigureArgs",
-          "line": 1323,
+          "line": 1326,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs",
@@ -22778,7 +22777,7 @@
           "kind": "def",
           "name": "encodeSchedContextBindArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSchedContextBindArgs",
-          "line": 1327,
+          "line": 1330,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextBindArgs",
@@ -22789,7 +22788,7 @@
           "kind": "def",
           "name": "encodeSchedContextUnbindArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSchedContextUnbindArgs",
-          "line": 1331,
+          "line": 1334,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextUnbindArgs",
             "SeLe4n.RegValue"
@@ -22799,7 +22798,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgs_roundtrip",
-          "line": 1339,
+          "line": 1342,
           "called": [
             "SeLe4n.CPtr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs",
@@ -22813,7 +22812,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs_roundtrip",
-          "line": 1345,
+          "line": 1348,
           "called": [
             "SeLe4n.CPtr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextBindArgs",
@@ -22827,7 +22826,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextUnbindArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs_roundtrip",
-          "line": 1351,
+          "line": 1354,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextUnbindArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs",
@@ -22839,7 +22838,7 @@
           "kind": "def",
           "name": "encodeNotificationSignalArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeNotificationSignalArgs",
-          "line": 1356,
+          "line": 1359,
           "called": [
             "SeLe4n.Badge.val",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.NotificationSignalArgs",
@@ -22850,7 +22849,7 @@
           "kind": "def",
           "name": "encodeNotificationWaitArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeNotificationWaitArgs",
-          "line": 1360,
+          "line": 1363,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.NotificationWaitArgs",
             "SeLe4n.RegValue"
@@ -22860,7 +22859,7 @@
           "kind": "def",
           "name": "encodeReplyRecvArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeReplyRecvArgs",
-          "line": 1364,
+          "line": 1367,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.ReplyRecvArgs",
@@ -22871,7 +22870,7 @@
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeNotificationSignalArgs_roundtrip",
-          "line": 1369,
+          "line": 1372,
           "called": [
             "SeLe4n.Badge.ofNatMasked_toNat",
             "SeLe4n.Badge.valid",
@@ -22886,7 +22885,7 @@
           "kind": "theorem",
           "name": "decodeNotificationWaitArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeNotificationWaitArgs_roundtrip",
-          "line": 1378,
+          "line": 1381,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.NotificationWaitArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeNotificationWaitArgs",
@@ -22898,7 +22897,7 @@
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeReplyRecvArgs_roundtrip",
-          "line": 1383,
+          "line": 1386,
           "called": [
             "SeLe4n.CPtr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.ReplyRecvArgs",
@@ -22912,7 +22911,7 @@
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all",
-          "line": 1394,
+          "line": 1397,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_roundtrip",
@@ -22968,7 +22967,7 @@
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeNotificationSignalArgs_error_iff",
-          "line": 1436,
+          "line": 1439,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeNotificationSignalArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -22980,7 +22979,7 @@
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeReplyRecvArgs_error_iff",
-          "line": 1453,
+          "line": 1456,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeReplyRecvArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -22992,7 +22991,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgs_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgs_error_iff",
-          "line": 1474,
+          "line": 1477,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23005,7 +23004,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs_error_iff",
-          "line": 1507,
+          "line": 1510,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23017,7 +23016,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextUnbindArgs_error_iff",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs_error_iff",
-          "line": 1524,
+          "line": 1527,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextUnbindArgs",
             "SeLe4n.Model.SyscallDecodeResult"
@@ -23027,7 +23026,7 @@
           "kind": "def",
           "name": "decodeExtraCapAddrs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeExtraCapAddrs",
-          "line": 1544,
+          "line": 1547,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat",
@@ -23041,7 +23040,7 @@
           "kind": "theorem",
           "name": "arm64_regCount_valid",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.arm64_regCount_valid",
-          "line": 1565,
+          "line": 1568,
           "called": [
             "SeLe4n.RegName.arm64GPRCount"
           ]
@@ -23050,7 +23049,7 @@
           "kind": "theorem",
           "name": "machineConfig_registerCount_default_eq_arm64GPRCount",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.machineConfig_registerCount_default_eq_arm64GPRCount",
-          "line": 1572,
+          "line": 1575,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.RegName.arm64GPRCount"
@@ -23060,21 +23059,21 @@
           "kind": "structure",
           "name": "SuspendArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SuspendArgs",
-          "line": 1585,
+          "line": 1588,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ResumeArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.ResumeArgs",
-          "line": 1591,
+          "line": 1594,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSuspendArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSuspendArgs",
-          "line": 1595,
+          "line": 1598,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SuspendArgs",
             "SeLe4n.Model.KernelError",
@@ -23085,7 +23084,7 @@
           "kind": "def",
           "name": "decodeResumeArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeResumeArgs",
-          "line": 1600,
+          "line": 1603,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.ResumeArgs",
             "SeLe4n.Model.KernelError",
@@ -23096,7 +23095,7 @@
           "kind": "def",
           "name": "encodeSuspendArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSuspendArgs",
-          "line": 1605,
+          "line": 1608,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SuspendArgs",
             "SeLe4n.RegValue"
@@ -23106,7 +23105,7 @@
           "kind": "def",
           "name": "encodeResumeArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeResumeArgs",
-          "line": 1608,
+          "line": 1611,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.ResumeArgs",
             "SeLe4n.RegValue"
@@ -23116,7 +23115,7 @@
           "kind": "theorem",
           "name": "decodeSuspendArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSuspendArgs_roundtrip",
-          "line": 1611,
+          "line": 1614,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SuspendArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSuspendArgs",
@@ -23128,7 +23127,7 @@
           "kind": "theorem",
           "name": "decodeResumeArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeResumeArgs_roundtrip",
-          "line": 1616,
+          "line": 1619,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.ResumeArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeResumeArgs",
@@ -23140,21 +23139,21 @@
           "kind": "structure",
           "name": "SetPriorityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetPriorityArgs",
-          "line": 1627,
+          "line": 1630,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SetMCPriorityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetMCPriorityArgs",
-          "line": 1634,
+          "line": 1637,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSetPriorityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetPriorityArgs",
-          "line": 1645,
+          "line": 1648,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetPriorityArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23166,7 +23165,7 @@
           "kind": "def",
           "name": "decodeSetMCPriorityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetMCPriorityArgs",
-          "line": 1654,
+          "line": 1657,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetMCPriorityArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23178,7 +23177,7 @@
           "kind": "def",
           "name": "encodeSetPriorityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetPriorityArgs",
-          "line": 1665,
+          "line": 1668,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetPriorityArgs",
             "SeLe4n.RegValue"
@@ -23188,7 +23187,7 @@
           "kind": "def",
           "name": "encodeSetMCPriorityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetMCPriorityArgs",
-          "line": 1669,
+          "line": 1672,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetMCPriorityArgs",
             "SeLe4n.RegValue"
@@ -23198,7 +23197,7 @@
           "kind": "theorem",
           "name": "decodeSetPriorityArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetPriorityArgs_roundtrip",
-          "line": 1677,
+          "line": 1680,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetPriorityArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetPriorityArgs",
@@ -23211,7 +23210,7 @@
           "kind": "theorem",
           "name": "decodeSetMCPriorityArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetMCPriorityArgs_roundtrip",
-          "line": 1683,
+          "line": 1686,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetMCPriorityArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetMCPriorityArgs",
@@ -23224,7 +23223,7 @@
           "kind": "structure",
           "name": "SetIPCBufferArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs",
-          "line": 1696,
+          "line": 1699,
           "called": [
             "SeLe4n.VAddr"
           ]
@@ -23233,7 +23232,7 @@
           "kind": "def",
           "name": "decodeSetIPCBufferArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs",
-          "line": 1703,
+          "line": 1706,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23249,7 +23248,7 @@
           "kind": "def",
           "name": "encodeSetIPCBufferArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs",
-          "line": 1711,
+          "line": 1714,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs",
             "SeLe4n.RegValue",
@@ -23260,7 +23259,7 @@
           "kind": "theorem",
           "name": "decodeSetIPCBufferArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs_roundtrip",
-          "line": 1719,
+          "line": 1722,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs",
@@ -23276,14 +23275,14 @@
           "kind": "structure",
           "name": "SetAffinityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetAffinityArgs",
-          "line": 1736,
+          "line": 1739,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSetAffinityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetAffinityArgs",
-          "line": 1744,
+          "line": 1747,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetAffinityArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23295,7 +23294,7 @@
           "kind": "def",
           "name": "encodeSetAffinityArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetAffinityArgs",
-          "line": 1750,
+          "line": 1753,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetAffinityArgs",
             "SeLe4n.RegValue"
@@ -23305,7 +23304,7 @@
           "kind": "theorem",
           "name": "decodeSetAffinityArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetAffinityArgs_roundtrip",
-          "line": 1754,
+          "line": 1757,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetAffinityArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetAffinityArgs",
@@ -23318,7 +23317,7 @@
           "kind": "structure",
           "name": "SetFaultHandlerArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetFaultHandlerArgs",
-          "line": 1769,
+          "line": 1772,
           "called": [
             "SeLe4n.CPtr"
           ]
@@ -23327,7 +23326,7 @@
           "kind": "def",
           "name": "decodeSetFaultHandlerArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs",
-          "line": 1775,
+          "line": 1778,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.CPtr.val",
@@ -23341,7 +23340,7 @@
           "kind": "def",
           "name": "encodeSetFaultHandlerArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetFaultHandlerArgs",
-          "line": 1781,
+          "line": 1784,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetFaultHandlerArgs",
@@ -23352,7 +23351,7 @@
           "kind": "theorem",
           "name": "decodeSetFaultHandlerArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs_roundtrip",
-          "line": 1785,
+          "line": 1788,
           "called": [
             "SeLe4n.CPtr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetFaultHandlerArgs",
@@ -23366,14 +23365,14 @@
           "kind": "structure",
           "name": "AuditReadArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditReadArgs",
-          "line": 1803,
+          "line": 1806,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeAuditReadArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditReadArgs",
-          "line": 1811,
+          "line": 1814,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditReadArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23385,7 +23384,7 @@
           "kind": "def",
           "name": "encodeAuditReadArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeAuditReadArgs",
-          "line": 1819,
+          "line": 1822,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditReadArgs",
             "SeLe4n.RegValue"
@@ -23395,7 +23394,7 @@
           "kind": "theorem",
           "name": "decodeAuditReadArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditReadArgs_roundtrip",
-          "line": 1823,
+          "line": 1826,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditReadArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditReadArgs",
@@ -23408,14 +23407,14 @@
           "kind": "structure",
           "name": "AuditDrainArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditDrainArgs",
-          "line": 1833,
+          "line": 1836,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeAuditDrainArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditDrainArgs",
-          "line": 1839,
+          "line": 1842,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditDrainArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23427,7 +23426,7 @@
           "kind": "def",
           "name": "encodeAuditDrainArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeAuditDrainArgs",
-          "line": 1845,
+          "line": 1848,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditDrainArgs",
             "SeLe4n.RegValue"
@@ -23437,7 +23436,7 @@
           "kind": "theorem",
           "name": "decodeAuditDrainArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditDrainArgs_roundtrip",
-          "line": 1849,
+          "line": 1852,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.AuditDrainArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeAuditDrainArgs",
@@ -23450,7 +23449,7 @@
           "kind": "structure",
           "name": "SetSpaceArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs",
-          "line": 1864,
+          "line": 1867,
           "called": [
             "SeLe4n.CPtr"
           ]
@@ -23459,7 +23458,7 @@
           "kind": "def",
           "name": "decodeSetSpaceArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetSpaceArgs",
-          "line": 1870,
+          "line": 1873,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.CPtr.val",
@@ -23473,7 +23472,7 @@
           "kind": "def",
           "name": "encodeSetSpaceArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetSpaceArgs",
-          "line": 1877,
+          "line": 1880,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs",
@@ -23484,7 +23483,7 @@
           "kind": "theorem",
           "name": "decodeSetSpaceArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetSpaceArgs_roundtrip",
-          "line": 1881,
+          "line": 1884,
           "called": [
             "SeLe4n.CPtr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetSpaceArgs",
@@ -23498,7 +23497,7 @@
           "kind": "structure",
           "name": "PageTableMapArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.PageTableMapArgs",
-          "line": 1895,
+          "line": 1898,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.VAddr"
@@ -23508,7 +23507,7 @@
           "kind": "def",
           "name": "decodePageTableMapArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageTableMapArgs",
-          "line": 1901,
+          "line": 1904,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.PageTableMapArgs",
@@ -23522,7 +23521,7 @@
           "kind": "def",
           "name": "encodePageTableMapArgs",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.encodePageTableMapArgs",
-          "line": 1908,
+          "line": 1911,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.PageTableMapArgs",
@@ -23534,7 +23533,7 @@
           "kind": "theorem",
           "name": "decodePageTableMapArgs_roundtrip",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageTableMapArgs_roundtrip",
-          "line": 1912,
+          "line": 1915,
           "called": [
             "SeLe4n.CPtr.ofNat_toNat",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.PageTableMapArgs",
@@ -23550,7 +23549,7 @@
           "kind": "abbrev",
           "name": "MsgRegReader",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
-          "line": 1925,
+          "line": 1928,
           "called": [
             "SeLe4n.Model.KernelError"
           ]
@@ -23559,7 +23558,7 @@
           "kind": "def",
           "name": "msgRegOfFile",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFile",
-          "line": 1929,
+          "line": 1932,
           "called": [
             "SeLe4n.RegisterFile",
             "SeLe4n.SyscallRegisterLayout",
@@ -23570,7 +23569,7 @@
           "kind": "theorem",
           "name": "requireMsgReg_map_readReg",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg_map_readReg",
-          "line": 1936,
+          "line": 1939,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFile",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23586,7 +23585,7 @@
           "kind": "def",
           "name": "decodeCSpaceMintArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgsBy",
-          "line": 1951,
+          "line": 1954,
           "called": [
             "SeLe4n.Badge.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs",
@@ -23600,7 +23599,7 @@
           "kind": "theorem",
           "name": "decodeCSpaceMintArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_eq_by",
-          "line": 1964,
+          "line": 1967,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23618,7 +23617,7 @@
           "kind": "def",
           "name": "decodeCSpaceCopyArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgsBy",
-          "line": 1976,
+          "line": 1979,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceCopyArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -23631,7 +23630,7 @@
           "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_eq_by",
-          "line": 1982,
+          "line": 1985,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23649,7 +23648,7 @@
           "kind": "def",
           "name": "decodeCSpaceMoveArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgsBy",
-          "line": 1994,
+          "line": 1997,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMoveArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -23662,7 +23661,7 @@
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_eq_by",
-          "line": 2000,
+          "line": 2003,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23680,7 +23679,7 @@
           "kind": "def",
           "name": "decodeCSpaceDeleteArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgsBy",
-          "line": 2012,
+          "line": 2015,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceDeleteArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -23693,7 +23692,7 @@
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_eq_by",
-          "line": 2017,
+          "line": 2020,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23711,7 +23710,7 @@
           "kind": "def",
           "name": "decodeUntypedRetypeArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgsBy",
-          "line": 2029,
+          "line": 2032,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -23726,7 +23725,7 @@
           "kind": "theorem",
           "name": "decodeUntypedRetypeArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs_eq_by",
-          "line": 2044,
+          "line": 2047,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23744,7 +23743,7 @@
           "kind": "def",
           "name": "decodeVSpaceMapArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgsBy",
-          "line": 2056,
+          "line": 2059,
           "called": [
             "SeLe4n.ASID.isValidForConfig",
             "SeLe4n.ASID.ofNat",
@@ -23761,7 +23760,7 @@
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs_eq_by",
-          "line": 2076,
+          "line": 2079,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23779,7 +23778,7 @@
           "kind": "def",
           "name": "decodeVSpaceUnmapArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgsBy",
-          "line": 2088,
+          "line": 2091,
           "called": [
             "SeLe4n.ASID.isValidForConfig",
             "SeLe4n.ASID.ofNat",
@@ -23794,7 +23793,7 @@
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_eq_by",
-          "line": 2101,
+          "line": 2104,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23812,7 +23811,7 @@
           "kind": "def",
           "name": "decodeSchedContextBindArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgsBy",
-          "line": 2113,
+          "line": 2116,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -23824,7 +23823,7 @@
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextBindArgs_eq_by",
-          "line": 2118,
+          "line": 2121,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23842,7 +23841,7 @@
           "kind": "def",
           "name": "msgRegOfFileThen",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
-          "line": 2133,
+          "line": 2136,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
             "SeLe4n.RegisterFile",
@@ -23854,7 +23853,7 @@
           "kind": "theorem",
           "name": "requireMsgReg_map_readReg_push",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg_map_readReg_push",
-          "line": 2141,
+          "line": 2144,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg",
@@ -23868,16 +23867,16 @@
         },
         {
           "kind": "theorem",
-          "name": "schedParamsDomain_ge_iff",
-          "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.schedParamsDomain_ge_iff",
-          "line": 2164,
+          "name": "schedParams_ge_iff",
+          "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.schedParams_ge_iff",
+          "line": 2168,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSchedContextConfigureArgsCheckedBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
-          "line": 2172,
+          "line": 2175,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.CPtr.toNat",
@@ -23890,16 +23889,15 @@
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgsChecked_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked_eq_by",
-          "line": 2185,
+          "line": 2188,
           "called": [
             "SeLe4n.CPtr.ofWord_eq_ofNat",
-            "SeLe4n.Kernel.Architecture.SyscallArgDecode.SchedContextConfigureArgs.domain",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.msgRegOfFileThen",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg_map_readReg_push",
-            "SeLe4n.Kernel.Architecture.SyscallArgDecode.schedParamsDomain_ge_iff",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.schedParams_ge_iff",
             "SeLe4n.Model.SyscallDecodeResult",
             "SeLe4n.RegValue",
             "SeLe4n.RegisterFile",
@@ -23911,7 +23909,7 @@
           "kind": "def",
           "name": "decodeServiceRegisterArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
-          "line": 2201,
+          "line": 2204,
           "called": [
             "SeLe4n.InterfaceId.ofNat",
             "SeLe4n.InterfaceId.toNat",
@@ -23926,7 +23924,7 @@
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgs_eq_by",
-          "line": 2219,
+          "line": 2222,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgs",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeServiceRegisterArgsBy",
@@ -23944,7 +23942,7 @@
           "kind": "def",
           "name": "decodeTcbBindNotificationArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeTcbBindNotificationArgsBy",
-          "line": 2231,
+          "line": 2234,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -23956,7 +23954,7 @@
           "kind": "theorem",
           "name": "decodeTcbBindNotificationArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeTcbBindNotificationArgs_eq_by",
-          "line": 2236,
+          "line": 2239,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -23974,7 +23972,7 @@
           "kind": "def",
           "name": "decodeSetPriorityArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetPriorityArgsBy",
-          "line": 2248,
+          "line": 2251,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetPriorityArgs",
@@ -23985,7 +23983,7 @@
           "kind": "theorem",
           "name": "decodeSetPriorityArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetPriorityArgs_eq_by",
-          "line": 2254,
+          "line": 2257,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -24003,7 +24001,7 @@
           "kind": "def",
           "name": "decodeSetMCPriorityArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetMCPriorityArgsBy",
-          "line": 2266,
+          "line": 2269,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetMCPriorityArgs",
@@ -24014,7 +24012,7 @@
           "kind": "theorem",
           "name": "decodeSetMCPriorityArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetMCPriorityArgs_eq_by",
-          "line": 2272,
+          "line": 2275,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -24032,7 +24030,7 @@
           "kind": "def",
           "name": "decodeSetIPCBufferArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgsBy",
-          "line": 2284,
+          "line": 2287,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs",
@@ -24046,7 +24044,7 @@
           "kind": "theorem",
           "name": "decodeSetIPCBufferArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs_eq_by",
-          "line": 2291,
+          "line": 2294,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -24064,7 +24062,7 @@
           "kind": "def",
           "name": "decodeSetAffinityArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetAffinityArgsBy",
-          "line": 2303,
+          "line": 2306,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.SetAffinityArgs",
@@ -24075,7 +24073,7 @@
           "kind": "theorem",
           "name": "decodeSetAffinityArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetAffinityArgs_eq_by",
-          "line": 2308,
+          "line": 2311,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -24093,7 +24091,7 @@
           "kind": "def",
           "name": "decodeSetFaultHandlerArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetFaultHandlerArgsBy",
-          "line": 2320,
+          "line": 2323,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -24105,7 +24103,7 @@
           "kind": "theorem",
           "name": "decodeSetFaultHandlerArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetFaultHandlerArgs_eq_by",
-          "line": 2325,
+          "line": 2328,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -24123,7 +24121,7 @@
           "kind": "def",
           "name": "decodeSetSpaceArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetSpaceArgsBy",
-          "line": 2337,
+          "line": 2340,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -24135,7 +24133,7 @@
           "kind": "theorem",
           "name": "decodeSetSpaceArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetSpaceArgs_eq_by",
-          "line": 2343,
+          "line": 2346,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -24153,7 +24151,7 @@
           "kind": "def",
           "name": "decodePageTableMapArgsBy",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageTableMapArgsBy",
-          "line": 2355,
+          "line": 2358,
           "called": [
             "SeLe4n.CPtr.ofWord",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
@@ -24166,7 +24164,7 @@
           "kind": "theorem",
           "name": "decodePageTableMapArgs_eq_by",
           "full_name": "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageTableMapArgs_eq_by",
-          "line": 2361,
+          "line": 2364,
           "called": [
             "SeLe4n.Badge.ofWord_eq_ofNatMasked",
             "SeLe4n.CPtr.ofWord_eq_ofNat",
@@ -84383,7 +84381,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Operations",
       "path": "SeLe4n/Kernel/FrozenOps/Operations.lean",
-      "declaration_count": 44,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "def",
@@ -84905,13 +84903,32 @@
         },
         {
           "kind": "def",
+          "name": "frozenConfigureResumeBound",
+          "full_name": "SeLe4n.Kernel.FrozenOps.frozenConfigureResumeBound",
+          "line": 1424,
+          "called": [
+            "SeLe4n.Kernel.Budget.isPositive",
+            "SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread",
+            "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
+            "SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere",
+            "SeLe4n.Kernel.FrozenOps.frozenRebucketRunnable",
+            "SeLe4n.Kernel.FrozenOps.frozenRemoveRunnable",
+            "SeLe4n.Kernel.SchedContext",
+            "SeLe4n.Model.FrozenSchedulerState",
+            "SeLe4n.Model.FrozenSystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenSchedContextConfigure",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSchedContextConfigure",
-          "line": 1442,
+          "line": 1481,
           "called": [
             "SeLe4n.DomainId",
             "SeLe4n.Kernel.Budget",
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
+            "SeLe4n.Kernel.FrozenOps.frozenConfigureResumeBound",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed",
@@ -84937,7 +84954,7 @@
           "kind": "def",
           "name": "frozenSchedContextBind",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSchedContextBind",
-          "line": 1555,
+          "line": 1603,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack",
@@ -84955,7 +84972,7 @@
           "kind": "def",
           "name": "frozenSchedContextUnbind",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind",
-          "line": 1658,
+          "line": 1706,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
@@ -84966,7 +84983,7 @@
           "kind": "def",
           "name": "frozenTimerTickBudget",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget",
-          "line": 1713,
+          "line": 1761,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenTimerTick",
@@ -84978,7 +84995,7 @@
           "kind": "def",
           "name": "frozenSuspendThread",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSuspendThread",
-          "line": 1769,
+          "line": 1817,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -84994,7 +85011,7 @@
           "kind": "def",
           "name": "frozenResumeThread",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenResumeThread",
-          "line": 1837,
+          "line": 1885,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenComputeMaxWaiterPriority",
@@ -85010,7 +85027,7 @@
           "kind": "def",
           "name": "frozenWriteBasePriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenWriteBasePriority",
-          "line": 1907,
+          "line": 1955,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
             "SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed",
@@ -85029,7 +85046,7 @@
           "kind": "def",
           "name": "frozenSetPriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetPriority",
-          "line": 1931,
+          "line": 1979,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -85042,7 +85059,7 @@
           "kind": "def",
           "name": "frozenSetMCPriority",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetMCPriority",
-          "line": 1950,
+          "line": 1998,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -85057,7 +85074,7 @@
           "kind": "def",
           "name": "frozenSetIPCBuffer",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenSetIPCBuffer",
-          "line": 1989,
+          "line": 2037,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenKernel",
             "SeLe4n.Kernel.FrozenOps.frozenLookupTcb",
@@ -85073,7 +85090,7 @@
           "kind": "def",
           "name": "frozenOpCoverage",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
-          "line": 2039,
+          "line": 2087,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -85082,7 +85099,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_count",
-          "line": 2112,
+          "line": 2160,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId.all"
@@ -85092,7 +85109,7 @@
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
           "full_name": "SeLe4n.Kernel.FrozenOps.frozenOpCoverage_exhaustive",
-          "line": 2117,
+          "line": 2165,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenOpCoverage",
             "SeLe4n.Model.SyscallId"
@@ -432668,7 +432685,7 @@
     {
       "module": "tests.DecodeValidationSuite",
       "path": "tests/DecodeValidationSuite.lean",
-      "declaration_count": 12,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "def",
@@ -432779,9 +432796,37 @@
         },
         {
           "kind": "def",
+          "name": "highBitParamWords",
+          "full_name": "SeLe4n.Testing.DecodeValidation.highBitParamWords",
+          "line": 145,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "test_t10_sc_rejects_high_param_bits",
+          "full_name": "SeLe4n.Testing.DecodeValidation.test_t10_sc_rejects_high_param_bits",
+          "line": 154,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked",
+            "SeLe4n.Testing.DecodeValidation.stubOf"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t11_sc_word_reader_rejects_high_param_bits",
+          "full_name": "SeLe4n.Testing.DecodeValidation.test_t11_sc_word_reader_rejects_high_param_bits",
+          "line": 163,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.MsgRegReader",
+            "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsCheckedBy",
+            "SeLe4n.Testing.expectCond"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runAllTests",
           "full_name": "SeLe4n.Testing.DecodeValidation.runAllTests",
-          "line": 144,
+          "line": 180,
           "called": [
             "SeLe4n.Testing.DecodeValidation.test_t01_high_mr2_is_a_capability_address",
             "SeLe4n.Testing.DecodeValidation.test_t02_decode_carries_frame_cptr",
@@ -432791,14 +432836,16 @@
             "SeLe4n.Testing.DecodeValidation.test_t06_sc_rejects_zero_budget",
             "SeLe4n.Testing.DecodeValidation.test_t07_sc_rejects_zero_period",
             "SeLe4n.Testing.DecodeValidation.test_t08_sc_accepts_valid",
-            "SeLe4n.Testing.DecodeValidation.test_t09_sc_boundary_accepted"
+            "SeLe4n.Testing.DecodeValidation.test_t09_sc_boundary_accepted",
+            "SeLe4n.Testing.DecodeValidation.test_t10_sc_rejects_high_param_bits",
+            "SeLe4n.Testing.DecodeValidation.test_t11_sc_word_reader_rejects_high_param_bits"
           ]
         },
         {
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 161,
+          "line": 199,
           "called": [
             "SeLe4n.Testing.DecodeValidation.runAllTests"
           ]
@@ -436017,7 +436064,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 109,
+      "declaration_count": 110,
       "declarations": [
         {
           "kind": "def",
@@ -438094,9 +438141,47 @@
         },
         {
           "kind": "def",
+          "name": "differentialSchedContextConfigureResumesBound",
+          "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextConfigureResumesBound",
+          "line": 2988,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.bootCoreId",
+            "SeLe4n.Kernel.FrozenOps.frozenChooseThread",
+            "SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere",
+            "SeLe4n.Kernel.FrozenOps.frozenSchedContextConfigure",
+            "SeLe4n.Kernel.FrozenOps.frozenStateAgrees",
+            "SeLe4n.Kernel.FrozenOps.frozenWithObjectStored",
+            "SeLe4n.Kernel.SchedContext",
+            "SeLe4n.Kernel.SchedContext.withoutRelease",
+            "SeLe4n.Kernel.SchedContextBinding",
+            "SeLe4n.Kernel.SchedContextBinding.scCode",
+            "SeLe4n.Kernel.placedCoreOf?",
+            "SeLe4n.Model.Builder.createObject",
+            "SeLe4n.Model.IntermediateState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.setIpcState",
+            "SeLe4n.Model.freeze",
+            "SeLe4n.Model.mkEmptyIntermediateState",
+            "SeLe4n.Priority",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.Testing.FrozenOpsSuite.bucketOnCore",
+            "SeLe4n.Testing.FrozenOpsSuite.diffA",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddSchedContext",
+            "SeLe4n.Testing.FrozenOpsSuite.diffAddTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.diffScId",
+            "SeLe4n.Testing.FrozenOpsSuite.diffTcb",
+            "SeLe4n.Testing.FrozenOpsSuite.expect",
+            "SeLe4n.Testing.FrozenOpsSuite.liveSchedContextConfigureState",
+            "SeLe4n.ThreadId.optCode",
+            "SeLe4n.ThreadId.toObjId"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "differentialSendFromAbsentSenderAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSendFromAbsentSenderAgrees",
-          "line": 2987,
+          "line": 3106,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointSend",
@@ -438129,7 +438214,7 @@
           "kind": "def",
           "name": "differentialSendRendezvousDeliversAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialSendRendezvousDeliversAgrees",
-          "line": 3025,
+          "line": 3144,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.FrozenOps.frozenEndpointSend",
@@ -438165,7 +438250,7 @@
           "kind": "def",
           "name": "differentialWakeAtUnqueuedPriorityAgrees",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialWakeAtUnqueuedPriorityAgrees",
-          "line": 3062,
+          "line": 3181,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -438202,7 +438287,7 @@
           "kind": "def",
           "name": "differentialScenarios",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialScenarios",
-          "line": 3098,
+          "line": 3217,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch",
             "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointCallAgrees",
@@ -438225,7 +438310,7 @@
           "kind": "def",
           "name": "operationDifferentialScenarios",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.operationDifferentialScenarios",
-          "line": 3134,
+          "line": 3253,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch",
             "SeLe4n.Testing.FrozenOpsSuite.differentialEndpointReplyDonationAgrees",
@@ -438239,7 +438324,7 @@
           "kind": "def",
           "name": "differentialRegistryMatchesClaim",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialRegistryMatchesClaim",
-          "line": 3144,
+          "line": 3263,
           "called": [
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.all",
             "SeLe4n.Kernel.FrozenOps.FrozenOpBranch.syscall",
@@ -438257,7 +438342,7 @@
           "kind": "def",
           "name": "differentialComparisonHasBite",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.differentialComparisonHasBite",
-          "line": 3178,
+          "line": 3297,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Badge.zero",
@@ -438289,7 +438374,7 @@
           "kind": "def",
           "name": "frozenAgreementComparesDerivationLinks",
           "full_name": "SeLe4n.Testing.FrozenOpsSuite.frozenAgreementComparesDerivationLinks",
-          "line": 3196,
+          "line": 3315,
           "called": [
             "SeLe4n.Kernel.FrozenOps.frozenStateAgrees",
             "SeLe4n.Model.SlotRef",
@@ -438309,7 +438394,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 3213,
+          "line": 3332,
           "called": [
             "SeLe4n.Testing.FrozenOpsSuite.differentialComparisonHasBite",
             "SeLe4n.Testing.FrozenOpsSuite.differentialQueueNeighbourResolutionAgrees",
@@ -438322,6 +438407,7 @@
             "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextBindPlacesParked",
             "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextBindRefusalsAgree",
             "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextConfigureDomainOnlyKeepsOrder",
+            "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextConfigureResumesBound",
             "SeLe4n.Testing.FrozenOpsSuite.differentialSchedContextUnbindClearsOrigin",
             "SeLe4n.Testing.FrozenOpsSuite.differentialTaintedSignalAgrees",
             "SeLe4n.Testing.FrozenOpsSuite.fo001_lookupExisting",

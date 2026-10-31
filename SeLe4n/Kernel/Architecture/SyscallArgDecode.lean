@@ -1232,10 +1232,11 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
     `decodeVSpaceMapArgsChecked`; WS-BP BP7.1 tombstone in this file).
 
     Checks:
-    - domain < 16      (fits in `numDomains`; WS-ZA ZA6.4: with the priority in
-                        bits 0–7 of the same word, so a word with any bit at or
-                        above 12 set is refused and the priority, its low byte,
-                        fits in `Priority` by construction)
+    - schedParams < 4096 (WS-ZA ZA6.4: the priority is bits 0–7 and the
+                        domain bits 8–11 of one word, and a word with any bit at
+                        or above 12 set is refused — so the domain fits in
+                        `numDomains` and the priority, its low byte, fits in
+                        `Priority`, and no stray bit is silently dropped)
     - budget > 0       (non-degenerate CBS server; also closes SC-H01 part)
     - period > 0       (CBS replenishment math requires positive period)
 
@@ -1245,7 +1246,7 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
 def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextConfigureArgs := do
   let args ← decodeSchedContextConfigureArgs decoded
-  if args.domain ≥ 16 then .error .invalidArgument
+  if args.schedParams ≥ 4096 then .error .invalidArgument
   else if args.budget = 0 then .error .invalidArgument
   else if args.period = 0 then .error .invalidArgument
   else pure args
@@ -1254,7 +1255,8 @@ def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
 theorem decodeSchedContextConfigureArgsChecked_invariants
     (d : SyscallDecodeResult) (args : SchedContextConfigureArgs)
     (hOk : decodeSchedContextConfigureArgsChecked d = .ok args) :
-    args.priority ≤ 255 ∧ args.domain < 16 ∧ args.budget > 0 ∧ args.period > 0 := by
+    args.schedParams < 4096 ∧ args.priority ≤ 255 ∧ args.domain < 16 ∧
+      args.budget > 0 ∧ args.period > 0 := by
   unfold decodeSchedContextConfigureArgsChecked at hOk
   simp only [bind, Except.bind] at hOk
   cases hInner : decodeSchedContextConfigureArgs d with
@@ -1270,9 +1272,10 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
         · rename_i hD hB hPer
           simp only [pure, Except.pure, Except.ok.injEq] at hOk
           subst hOk
-          refine ⟨?_, ?_, ?_, ?_⟩
+          have hW := Nat.not_le.mp hD
+          refine ⟨hW, ?_, ?_, ?_, ?_⟩
           · unfold SchedContextConfigureArgs.priority; omega
-          · exact Nat.not_le.mp hD
+          · unfold SchedContextConfigureArgs.domain; omega
           · omega
           · omega
 
@@ -2158,13 +2161,13 @@ theorem requireMsgReg_map_readReg_push (layout : SyscallRegisterLayout) (regs : 
         omega
       simp only [hi, hi', hEq, ↓reduceDIte, ↓reduceIte, Except.map]
 
-/-- WS-ZA ZA6.4: the parameter word's domain is out of range exactly when the
-word is at least `16 * 256`: the check read on the machine word, so a word of any
-value is compared without a heap number. -/
-theorem schedParamsDomain_ge_iff (w : UInt64) : 16 ≤ w.toNat / 256 ↔ 4096 ≤ w := by
+/-- WS-ZA ZA6.4: the parameter word sets a bit above the domain's (bit 12 or
+higher, which includes every out-of-range domain) exactly when it is at least
+`16 * 256`: the check read on the machine word, so a word of any value is
+compared without a heap number. -/
+theorem schedParams_ge_iff (w : UInt64) : 4096 ≤ w.toNat ↔ 4096 ≤ w := by
   rw [UInt64.le_iff_toNat_le]
   simp only [UInt64.toNat_ofNat]
-  omega
 
 /-- WS-ZA ZA5.2: `decodeSchedContextConfigureArgsChecked` over a reader, each
 check in the decode's order.  WS-ZA ZA6.4: the context capability's address is
@@ -2194,7 +2197,7 @@ theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLa
   generalize msgRegOfFileThen layout regs w = g
   cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
-      SchedContextConfigureArgs.domain, schedParamsDomain_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat]
+      schedParams_ge_iff, SeLe4n.CPtr.ofWord_eq_ofNat]
 
 /-- WS-ZA ZA5.5: `decodeServiceRegisterArgs` over a reader, each check in the
 decode's order. -/

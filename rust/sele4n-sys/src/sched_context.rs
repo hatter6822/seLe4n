@@ -20,7 +20,8 @@ use sele4n_types::{CPtr, KernelResult, SyscallId};
 /// by `resolveSchedControlConfigureTarget`.  A context bound to a thread homed on
 /// another core is refused (`ThreadOnDifferentCore`).  Parameters: budget,
 /// period, priority (≤255), deadline, domain (≤15); priority and domain travel
-/// in one word (MR\[3\]).
+/// in one word (MR\[3\]).  An out-of-range priority or domain returns
+/// `Err(InvalidSyscallArgument)` without a syscall.
 ///
 /// This syscall requires 5 message registers, but ARM64 only provides 4
 /// inline (x2–x5). The 5th value (`deadline`) is written to the IPC buffer's
@@ -46,7 +47,10 @@ pub fn sched_context_configure(
         deadline,
         domain,
     };
-    let encoded = args.encode();
+    // A priority above 255 or a domain above 15 is refused here, before any
+    // write, with `InvalidSyscallArgument` — never masked into another valid
+    // configuration.
+    let encoded = args.encode()?;
     // The 5th word (the deadline) goes to the IPC buffer's overflow slot
     // (register index 4).  AK4-F (R-ABI-M04): `set_mr(4)` returns `Ok(())` on
     // success; overflow-slot write only.
@@ -112,4 +116,28 @@ pub fn yield_now() -> KernelResult<SyscallResponse> {
         msg_regs: [0; 4],
         syscall_id: SyscallId::Yield,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sele4n_types::KernelError;
+
+    /// An out-of-range priority or domain is refused before the wrapper writes
+    /// the overflow word or traps: never masked into another configuration.
+    #[test]
+    fn configure_refuses_out_of_range_before_any_write() {
+        let mut buf = IpcBuffer::new();
+        let cap = CPtr::from(1u64);
+        let sc = CPtr::from(2u64);
+        assert_eq!(
+            sched_context_configure(cap, sc, 10, 100, 256, 77, 0, &mut buf),
+            Err(KernelError::InvalidSyscallArgument)
+        );
+        assert_eq!(
+            sched_context_configure(cap, sc, 10, 100, 0, 77, 16, &mut buf),
+            Err(KernelError::InvalidSyscallArgument)
+        );
+        assert_eq!(buf.get_mr(4), Ok(0));
+    }
 }
