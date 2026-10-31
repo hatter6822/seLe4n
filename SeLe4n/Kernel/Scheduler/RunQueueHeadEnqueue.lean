@@ -304,4 +304,356 @@ theorem runEnqueueHeadOnCore_currentOnCore (st : SystemState) (c c' : CoreId)
     (st.runEnqueueHeadOnCore c t p).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
   unfold SchedulerState.currentOnCore; rw [runEnqueueHeadOnCore_current]
 
+-- ============================================================================
+-- Agreement with the queue
+-- ============================================================================
+
+theorem runPrependOnCore_runQueueOnCore (st : SystemState) (c c' : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.runPrependOnCore c t p).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+  unfold runPrependOnCore
+  rw [SchedulerState.setRunQueueEndsOnCore_runQueueOnCore, runPrependLinks_scheduler]
+
+theorem runPrependOnCore_runQueueEndsOnCore (st : SystemState) (c c' : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runPrependOnCore c t p).scheduler.runQueueEndsOnCore c' =
+      if c' = c then (st.scheduler.runQueueEndsOnCore c).prepend t p
+      else st.scheduler.runQueueEndsOnCore c' := by
+  unfold runPrependOnCore
+  by_cases h : c' = c
+  · subst h; rw [if_pos rfl, SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_self,
+      runPrependLinks_scheduler]
+  · rw [if_neg h, SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_ne _ _ _ _ (Ne.symm h),
+      runPrependLinks_scheduler]
+
+/-- The entry every core's queue reads for every thread after the prepend: the
+joining thread's TCB entry, then the backward links of the queue's and the
+bucket's old first threads. -/
+theorem runPrependLinks_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (x : SeLe4n.ThreadId) :
+    (st.runPrependLinks c t p).runLinkOn c' x =
+      let e := st.scheduler.runQueueEndsOnCore c
+      let bhead := (RunQueue.endsOf e.buckets p).head
+      let L1 := if x = t then
+          (match st.getTcb? t with
+           | some tcb => ({ tcb with
+              runCoreCode := c.val + 1, runPrio := p, runPrevCode := 0, runNextCode := e.head,
+              runBucketPrevCode := 0, runBucketNextCode := bhead } : TCB).runLinkOn c'
+           | none => RunQueue.RunQueueLink.none)
+        else st.runLinkOn c' x
+      let L2 := if code x = e.head then RunQueueLink.withPrevIfQueued (code t) L1 else L1
+      if code x = bhead then RunQueueLink.withBucketPrevIfQueued (code t) L2 else L2 := by
+  unfold runPrependLinks
+  rw [runLinkOn_updateTcbAtCode_map _ _ _ c' _ (fun tcb => TCB.runLinkOn_setBucketPrev tcb _ c')
+      (RunQueueLink.withBucketPrevIfQueued_none _),
+    runLinkOn_updateTcbAtCode_map _ _ _ c' _ (fun tcb => TCB.runLinkOn_setPrev tcb _ c')
+      (RunQueueLink.withPrevIfQueued_none _)]
+  by_cases hx : x = t
+  · subst hx; rw [runLinkOn_mapTcbInPlace_self _ _ _]; simp only [if_true]; rfl
+  · rw [runLinkOn_mapTcbInPlace_ne _ _ _ _ hx]; simp only [hx, if_false]
+
+theorem runPrependOnCore_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (x : SeLe4n.ThreadId) :
+    (st.runPrependOnCore c t p).runLinkOn c' x = (st.runPrependLinks c t p).runLinkOn c' x := rfl
+
+/-- Head-enqueueing a TCB that is on no other core's queue keeps every core's
+queue in agreement with the threads. -/
+theorem runEnqueueHeadAdmitted_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    {p : SeLe4n.Priority} (hR : st.runQueueRefined)
+    (hT : (st.getTcb? t).isSome)
+    (hOther : ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false) :
+    (st.runEnqueueHeadAdmitted c t p).runQueueRefined := by
+  unfold runEnqueueHeadAdmitted
+  by_cases hq : (st.runLinkOn c t).queued = true
+  · have hc : (st.scheduler.runQueueOnCore c).contains t = true := by
+      rw [← (hR c).contains]; exact hq
+    simp only [hq, if_true]
+    rw [RunQueue.insertHead_of_mem _ _ _ hc, SchedulerState.setRunQueueOnCore_runQueueOnCore]
+    exact hR
+  · simp only [hq, if_false, Bool.false_eq_true]
+    have hc : (st.scheduler.runQueueOnCore c).contains t = false := by
+      rw [← (hR c).contains]; simpa using hq
+    obtain ⟨tcb, hTcb⟩ := Option.isSome_iff_exists.mp hT
+    intro c'
+    refine ⟨?_, fun x => ?_⟩
+    · rw [SchedulerState.setRunQueueOnCore_runQueueEndsOnCore, runPrependOnCore_runQueueEndsOnCore]
+      by_cases h : c' = c
+      · subst h
+        rw [if_pos rfl, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+          runPrependOnCore_runQueueOnCore, (hR c').1]
+        unfold RunQueueEnds.prepend RunQueue.insertHead
+        rw [dif_neg (by rw [hc]; decide)]
+        rfl
+      · rw [if_neg h, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm h),
+          runPrependOnCore_runQueueOnCore]
+        exact (hR c').1
+    · rw [runLinkOn_withScheduler, runPrependOnCore_runLinkOn,
+        runPrependLinks_runLinkOn st c t p c' x]
+      have hE := (hR c).1
+      have hH0 : (st.scheduler.runQueueEndsOnCore c).head = (st.scheduler.runQueueOnCore c).head := by
+        rw [hE]; rfl
+      have hB0 : (st.scheduler.runQueueEndsOnCore c).buckets = (st.scheduler.runQueueOnCore c).buckets := by
+        rw [hE]; rfl
+      dsimp only
+      rw [hH0, hB0, hTcb]
+      have htT := RunQueue.code_ne_queue_head hc
+      have htB := RunQueue.code_ne_bucket_head hc p
+      by_cases h : c' = c
+      · subst h
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, runPrependOnCore_runQueueOnCore]
+        unfold RunQueue.queuedLink
+        rw [RunQueue.links_insertHead_of_not_contains hc,
+          RunQueue.linkOf_prependLinks (st.scheduler.runQueueOnCore c').links_invExtK _ _ _ _ htT htB]
+        by_cases hx : x = t
+        · subst hx
+          simp only [if_true, if_neg htT, if_neg htB, TCB.runLinkOn, TCB.runLink]
+        · simp only [if_neg hx]
+          rw [(hR c').2 x]
+          unfold RunQueue.queuedLink
+          by_cases hLq : (RunQueue.linkOf (st.scheduler.runQueueOnCore c').links x).queued = true
+          · by_cases e1 : code x = (st.scheduler.runQueueOnCore c').head <;>
+            by_cases e2 : code x = (RunQueue.endsOf (st.scheduler.runQueueOnCore c').buckets p).head
+            · simp only [hLq, if_pos e1, if_pos e2, if_true, RunQueueLink.withPrevIfQueued,
+                RunQueueLink.withBucketPrevIfQueued]
+            · simp only [hLq, if_pos e1, if_neg e2, if_true, RunQueueLink.withPrevIfQueued]
+            · simp only [hLq, if_neg e1, if_pos e2, if_true, RunQueueLink.withBucketPrevIfQueued]
+            · simp only [hLq, if_neg e1, if_neg e2, if_true]
+              generalize RunQueue.linkOf (st.scheduler.runQueueOnCore c').links x = L at hLq ⊢
+              cases L; simp_all
+          · have hLq' : (RunQueue.linkOf (st.scheduler.runQueueOnCore c').links x).queued = false := by
+              simpa using hLq
+            simp [hLq']
+      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm h),
+          runPrependOnCore_runQueueOnCore, ← (hR c').2 x]
+        have hL1 : (if x = t then (({ tcb with
+              runCoreCode := c.val + 1, runPrio := p, runPrevCode := 0,
+              runNextCode := (st.scheduler.runQueueOnCore c).head,
+              runBucketPrevCode := 0,
+              runBucketNextCode := (RunQueue.endsOf (st.scheduler.runQueueOnCore c).buckets p).head } : TCB).runLinkOn c') else st.runLinkOn c' x) = st.runLinkOn c' x := by
+          by_cases hx : x = t
+          · subst hx
+            rw [if_pos rfl, (hR c').2 x, RunQueue.queuedLink_of_not_contains (hOther c' h)]
+            unfold TCB.runLinkOn
+            rw [if_neg (fun e => h (Fin.ext (by simp at e; omega)))]
+          · rw [if_neg hx]
+        rw [hL1]
+        have hoff : ∀ {k : Nat}, k = (st.scheduler.runQueueOnCore c).head ∨
+            k = (RunQueue.endsOf (st.scheduler.runQueueOnCore c).buckets p).head →
+            code x = k → (st.runLinkOn c' x).queued = false := by
+          intro k hk e
+          have hcx : (st.scheduler.runQueueOnCore c).contains x = true := by
+            rcases hk with hk | hk
+            · exact RunQueue.contains_of_code_eq_head (e.trans hk)
+            · exact RunQueue.contains_of_code_eq_bucket_head (e.trans hk)
+          have hq1 : (st.runLinkOn c x).queued = true := by rw [(hR c).contains]; exact hcx
+          cases hq2 : (st.runLinkOn c' x).queued
+          · rfl
+          · exact absurd (runLinkOn_queued_unique hq1 hq2).symm h
+        by_cases e1 : code x = (st.scheduler.runQueueOnCore c).head
+        · rw [if_pos e1, RunQueueLink.withPrevIfQueued_of_not_queued (hoff (Or.inl rfl) e1)]
+          by_cases e2 : code x = (RunQueue.endsOf (st.scheduler.runQueueOnCore c).buckets p).head
+          · rw [if_pos e2, RunQueueLink.withBucketPrevIfQueued_of_not_queued (hoff (Or.inr rfl) e2)]
+          · rw [if_neg e2]
+        · rw [if_neg e1]
+          by_cases e2 : code x = (RunQueue.endsOf (st.scheduler.runQueueOnCore c).buckets p).head
+          · rw [if_pos e2, RunQueueLink.withBucketPrevIfQueued_of_not_queued (hoff (Or.inr rfl) e2)]
+          · rw [if_neg e2]
+
+/-- Every head enqueue keeps every core's queue in agreement with the threads. -/
+theorem runEnqueueHeadOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    {p : SeLe4n.Priority} (hR : st.runQueueRefined) :
+    (st.runEnqueueHeadOnCore c t p).runQueueRefined := by
+  unfold runEnqueueHeadOnCore
+  split
+  · next h =>
+    exact runEnqueueHeadAdmitted_refined hR (runEnqueueAdmits_isSome h)
+      (runEnqueueAdmits_not_contains hR h)
+  · exact hR
+
+-- ============================================================================
+-- Membership
+-- ============================================================================
+
+/-- An admitted head enqueue of `t` moves no other thread's core code. -/
+theorem runEnqueueHeadAdmitted_runCoreCode_ne (st : SystemState) (c : CoreId)
+    (t y : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hy : y ≠ t) :
+    ((st.runEnqueueHeadAdmitted c t p).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode := by
+  unfold runEnqueueHeadAdmitted; dsimp only
+  split
+  · rfl
+  · show ((st.runPrependLinks c t p).getTcb? y).map TCB.runCoreCode = _
+    unfold runPrependLinks; dsimp only
+    refine (updateTcbAtCode_runCoreCode _ _ (fun x => { x with runBucketPrevCode := code t })
+      (fun _ => rfl) y).trans ?_
+    refine (updateTcbAtCode_runCoreCode _ _ (fun x => { x with runPrevCode := code t })
+      (fun _ => rfl) y).trans ?_
+    exact mapTcbInPlace_runCoreCode _ _ _ _ (fun _ => Or.inr (Ne.symm hy))
+
+/-- The prepend's TCB writes give `t` core `c`'s code. -/
+theorem runPrependLinks_runCoresAgree_self (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    ((st.runPrependLinks c t p).getTcb? t).map TCB.runCoreCode =
+      (st.getTcb? t).map (fun _ => c.val + 1) := by
+  unfold runPrependLinks; dsimp only
+  rw [updateTcbAtCode_runCoreCode _ _ (fun x => { x with runBucketPrevCode := code t })
+      (fun _ => rfl) t,
+    updateTcbAtCode_runCoreCode _ _ (fun x => { x with runPrevCode := code t }) (fun _ => rfl) t,
+    mapTcbInPlace_getTcb?_self, Option.map_map]
+  rfl
+
+/-- After the admitted head enqueue of `t` on core `c`, `t` — when it is a
+thread — is queued on `c` and on no other core, and no other thread moves on
+or off a queue. -/
+theorem runEnqueueHeadAdmitted_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runEnqueueHeadAdmitted c t p).queuedOn c' y =
+      if y = t then ((st.getTcb? t).isSome && decide (c' = c)) else st.queuedOn c' y := by
+  by_cases hy : y = t
+  · subst hy
+    rw [if_pos rfl]
+    have hcode : ∀ tcb : TCB, tcb.runCoreCode = c.val + 1 →
+        (tcb.runCoreCode == c'.val + 1) = decide (c' = c) := by
+      intro tcb hC
+      rw [hC]
+      by_cases hc : c' = c
+      · subst hc; simp
+      · simp only [hc, decide_false, beq_eq_false_iff_ne]
+        intro h; exact hc (Fin.ext (by omega))
+    unfold runEnqueueHeadAdmitted; dsimp only
+    split
+    · next hq =>
+      show st.queuedOn c' y = _
+      obtain ⟨tcb, hT, hC⟩ := (runLinkOn_queued_iff st c y).mp hq
+      unfold queuedOn; rw [hT]
+      simp only [Option.isSome_some, Bool.true_and]
+      exact hcode tcb hC
+    · show (st.runPrependLinks c y p).queuedOn c' y = _
+      have h := runPrependLinks_runCoresAgree_self st c y p
+      unfold queuedOn
+      cases h1 : (st.runPrependLinks c y p).getTcb? y <;> cases h2 : st.getTcb? y <;>
+        rw [h1, h2] at h <;>
+        simp only [Option.map_none, Option.map_some, reduceCtorEq, Option.some.injEq] at h
+      · rfl
+      · simp only [Option.isSome_some, Bool.true_and]; exact hcode _ h
+  · rw [if_neg hy]
+    have h := runEnqueueHeadAdmitted_runCoreCode_ne st c t y p hy
+    unfold queuedOn
+    cases h1 : (st.runEnqueueHeadAdmitted c t p).getTcb? y <;> cases h2 : st.getTcb? y <;>
+      rw [h1, h2] at h <;>
+      simp only [Option.map_none, Option.map_some, reduceCtorEq, Option.some.injEq] at h <;>
+      simp only [h]
+
+theorem runEnqueueHeadOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runEnqueueHeadOnCore c t p).queuedOn c' y =
+      if y = t ∧ st.runEnqueueAdmits c t = true then decide (c' = c)
+      else st.queuedOn c' y := by
+  unfold runEnqueueHeadOnCore
+  split
+  · next hA =>
+    rw [runEnqueueHeadAdmitted_queuedOn]
+    by_cases hy : y = t
+    · subst hy
+      rw [if_pos rfl, if_pos ⟨rfl, hA⟩, runEnqueueAdmits_isSome hA, Bool.true_and]
+    · rw [if_neg hy, if_neg (fun h => hy h.1)]
+  · next hA =>
+    rw [if_neg (fun h => hA h.2)]
+
+/-- A head enqueue of `t` moves no other thread's core code. -/
+theorem runEnqueueHeadOnCore_runCoreCode_ne (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hy : y ≠ t) :
+    ((st.runEnqueueHeadOnCore c t p).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode := by
+  unfold runEnqueueHeadOnCore; split
+  · exact runEnqueueHeadAdmitted_runCoreCode_ne st c t y p hy
+  · rfl
+
+theorem runEnqueueHeadAdmitted_runQueueOnCore_self (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runEnqueueHeadAdmitted c t p).scheduler.runQueueOnCore c =
+      (st.scheduler.runQueueOnCore c).insertHead t p := by
+  unfold runEnqueueHeadAdmitted
+  dsimp only
+  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  split
+  · rfl
+  · rw [runPrependOnCore_runQueueOnCore]
+
+theorem runEnqueueHeadOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h : c ≠ c') :
+    (st.runEnqueueHeadOnCore c t p).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+  unfold runEnqueueHeadOnCore runEnqueueHeadAdmitted
+  split
+  · dsimp only
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+    split
+    · rfl
+    · rw [runPrependOnCore_runQueueOnCore]
+  · rfl
+
+-- ============================================================================
+-- Stages
+-- ============================================================================
+
+/-- The guarded head enqueue keeps the link agreement whichever thread it places. -/
+theorem RunQueueLinkStage.runEnqueueHeadOnCore (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    RunQueueLinkStage st (st.runEnqueueHeadOnCore c t p) :=
+  .of_tableFrame (fun h r =>
+      ⟨runEnqueueHeadOnCore_objects_invExt st c t p h, runEnqueueHeadOnCore_refined r⟩)
+    (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
+      (runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
+    (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
+      (by rw [runEnqueueHeadOnCore_scheduler]; split <;> rfl))
+    (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p))
+    fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
+
+/-- The guarded head enqueue of a runnable thread current on no core, on its
+home core, is a stage. -/
+theorem RunQueueStage.runEnqueueHeadOnCore (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hNC : ∀ c', st.scheduler.currentOnCore c' ≠ some t)
+    (hRun : st.runnable t) (hHome : st.homedOn t c) :
+    RunQueueStage st (st.runEnqueueHeadOnCore c t p) :=
+  RunQueueStage.of_link' (RunQueueLinkStage.runEnqueueHeadOnCore st c t p)
+    (fun c' y h' => by rwa [runEnqueueHeadOnCore_currentOnCore] at h')
+    (fun c' y hy c'' h' => by
+      rw [runEnqueueHeadOnCore_queuedOn, if_neg (fun h => hNC _ (h.1 ▸ hy))] at h'
+      exact h')
+    (fun y hy c'' h' => by
+      rw [runEnqueueHeadOnCore_queuedOn] at h'
+      split at h'
+      · rename_i h; obtain ⟨rfl, hA⟩ := h
+        rw [runEnqueueAdmits_not_idle hA] at hy; cases hy
+      · exact h')
+    (fun c' y h' => by
+      rw [runEnqueueHeadOnCore_queuedOn] at h'
+      split at h'
+      · rename_i h; obtain ⟨rfl, -⟩ := h
+        exact .inr ⟨(StateMono.of_agreeOffRunLinks
+          (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c y p) y).1 hRun,
+          (of_decide_eq_true h') ▸
+            (StateMono.of_agreeOffRunLinks
+              (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c y p)).homedOn hRun.activeAt hHome⟩
+      · exact .inl h')
+    (StateMono.of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p))
+
+/-- A stage, then the head enqueue of a thread runnable before it and current
+nowhere after it, on its home core. -/
+theorem RunQueueStage.then_enqueueHead {st s : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    {p : SeLe4n.Priority} (h1 : RunQueueStage st s)
+    (hNC : ∀ c', s.scheduler.currentOnCore c' ≠ some t) (hRun : st.runnable t)
+    (hHome : s.homedOn t c) :
+    RunQueueStage st (s.runEnqueueHeadOnCore c t p) :=
+  ⟨h1.1.trans (RunQueueLinkStage.runEnqueueHeadOnCore s c t p), fun e h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    (RunQueueStage.runEnqueueHeadOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)
+      hHome).2.1 e h' r' r''
+      (h1.2.1 e h r r' d),
+    fun h r =>
+      let ⟨h', r'⟩ := h1.1 h r
+      (h1.2.2 h r).trans
+        ((RunQueueStage.runEnqueueHeadOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)
+          hHome).2.2 h' r')⟩
+
 end SeLe4n.Model.SystemState
