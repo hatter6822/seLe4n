@@ -109,19 +109,31 @@ theorem qemuVirtRootTaskUntyped_region :
     [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)] =
       qemuVirtBootRamExtensions := rfl
 
-/-- The root CNode's 60-bit guard: its top bit set, so the root task's
+/-- The root CNode's 59-bit guard: its top bit set, so the root task's
     capability address for slot `n` is `2^63 + n`.  WS-ZA ZA4.8: every
     capability address the allocation exerciser resolves is then a word that
     does not fit a scalar `Nat`, and its guard and slot are read from that word
     on every lookup the gate measures. -/
-def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 59
+def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 58
+
+/-- **WS-ZA ZA6.4**: the root CNode's geometry: one level resolving a whole
+    64-bit CPtr, the 59-bit guard `qemuVirtRootTaskCNodeGuard` over 32 slots —
+    the first sixteen the boot objects' and the exerciser's, the next four each
+    core's scheduling control (`qemuVirtSchedControlSlotBase`). -/
+def qemuVirtRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
+  CNode.ofList 64 59 qemuVirtRootTaskCNodeGuard 5 slots
+
+/-- **WS-ZA ZA6.4**: the first of the root task's scheduling-control slots, core
+    `c`'s at `16 + c`. -/
+def qemuVirtSchedControlSlotBase : Nat := 16
 
 /-- The root task's boot capabilities, by slot: its own TCB, CNode and VSpace,
     the interrupt notification, the untyped, and the allocation exerciser's
     partner thread, endpoint and reply object, and in slot 0 the exerciser's
     scheduling context (slot 9 is left free for the reply capability the
     exerciser mints from slot 8, and slots 10 to 15 for the objects it copies
-    and carves). -/
+    and carves), and (WS-ZA ZA6.4) each core's scheduling control from
+    `qemuVirtSchedControlSlotBase`. -/
 def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
@@ -131,12 +143,13 @@ def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
-  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ]
+  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ] ++
+  SeLe4n.Platform.RPi5.schedControlBootSlots qemuVirtSchedControlSlotBase
 
-/-- The root task's CNode: its boot capabilities (`qemuVirtRootTaskCNodeSlots`),
-    guarded by `qemuVirtRootTaskCNodeGuard`. -/
+/-- The root task's CNode: its boot capabilities (`qemuVirtRootTaskCNodeSlots`)
+    in the root CNode's geometry (`qemuVirtRootCNodeOf`). -/
 def qemuVirtRootTaskCNode : CNode :=
-  { rpi5InitialCNode qemuVirtRootTaskCNodeSlots with guardValue := qemuVirtRootTaskCNodeGuard }
+  qemuVirtRootCNodeOf qemuVirtRootTaskCNodeSlots
 
 /-- The untrusted thread's CNode: its own objects and nothing of the boot
     domain's. -/
@@ -253,6 +266,9 @@ theorem qemuVirtBoundPlatformConfig_wellFormed :
   rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
   decide
 
+-- WS-ZA ZA6.4: the root CNode's 32 cells (each core's scheduling control above
+-- the first sixteen) lengthen the object check's walk past the default budget.
+set_option maxRecDepth 8192 in
 theorem qemuVirtBoundPlatformConfig_bootSafe :
     qemuVirtBoundPlatformConfig.initialObjects.all
       (fun entry => bootSafeObjectCheck entry.obj) = true := by

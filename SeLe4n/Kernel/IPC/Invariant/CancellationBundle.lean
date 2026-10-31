@@ -548,6 +548,65 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
       spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
 
+/-- WS-ZA ZA6.4: the cancelled caller's donation return keeps every context's
+refill view (`returnDonatedSchedContext_refillViewsKept`). -/
+theorem returnDonationToCancelledCaller_refillViewsKept (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
+    RefillViewsKept (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st := by
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none =>
+    rw [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD]; exact .refl st
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+    rw [hD]
+    cases hT : st.getTcb? v with
+    | none => exact .refl st
+    | some _ =>
+      dsimp only
+      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      | error _ => exact .refl st
+      | ok st' =>
+        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        exact returnDonatedSchedContext_refillViewsKept hInv hPop
+
+/-- WS-ZA ZA6.4: **the teardown keeps every context's refill view** — it writes
+a context only through the donation return, which keeps it. -/
+theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) :
+    RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
+  have hEp : ∀ s, (Lifecycle.Suspend.restoreToReadyStaging
+      (removeFromAllEndpointQueues st v) v
+      (some Architecture.cancelledIpcFrame)).getSchedContext? s = st.getSchedContext? s :=
+    fun s => by
+      rw [restoreToReadyStaging_getSchedContext?_eq _ v _
+          (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
+        removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+  unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
+  cases hIp : tcbV.ipcState with
+  | ready => exact .refl _
+  | blockedOnSend _ => exact .of_getSchedContext?_eq hEp
+  | blockedOnReceive _ => exact .of_getSchedContext?_eq hEp
+  | blockedOnCall _ => exact .of_getSchedContext?_eq hEp
+  | blockedOnNotification _ =>
+    exact .of_getSchedContext?_eq fun s => by
+      rw [restoreToReadyStaging_getSchedContext?_eq _ v _
+          (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv),
+        removeFromNotificationWaitQueue_getSchedContext?_eq st v hInv]
+  | blockedOnReply ep rt =>
+    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st v tcbV hInv
+    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+    dsimp only
+    refine RefillViewsKept.trans (.of_getSchedContext?_eq fun s => ?_)
+      (returnDonationToCancelledCaller_refillViewsKept st v tcbV hInv)
+    rw [(SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).getSchedContext?,
+      consumeReplyLink_getSchedContext?_eq _ v tcbV
+        (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
+      restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
+      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
+
 /-- WS-SM SM6.E (resolution frame) / **WS-RR RR8.11**: the teardown never moves
 **any** thread's home core.
 
@@ -782,6 +841,7 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_tableReferenceFrame st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv)
 
 /-- ...and so does the teardown with its replenishment migration. -/
 theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)

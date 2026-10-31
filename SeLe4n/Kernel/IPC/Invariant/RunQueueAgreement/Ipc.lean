@@ -63,6 +63,7 @@ theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : S
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]
         simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hI, hNW])
     (fun c => by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
+    (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
@@ -94,7 +95,11 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
         (fun _ => hF) (fun _ => ⟨.of_objReleaseLinkOn fun k c => by
           rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
           · rw [e]
-          · rw [h0, h1]; rfl, by rw [hD.scheduler_eq]⟩),
+          · rw [h0, h1]; rfl, by rw [hD.scheduler_eq]⟩)
+        (fun _ => .of_eq fun k => by
+          rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+          · rw [e]
+          · rw [h0, h1]; rfl),
       fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq
         (by rw [hD.scheduler_eq]) hL hM d, fun _ _ => hM⟩
 
@@ -169,7 +174,7 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
       ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
         rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
-        · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_)
+        · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_)
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -177,6 +182,9 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
       · exact SystemState.slotStateMono.of_eq e
       · exact SystemState.slotStateMono.of_obj h2
           (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl)
+    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+      · rw [e]
+      · rw [h1, h2]; rfl
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl

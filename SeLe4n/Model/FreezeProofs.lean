@@ -1451,9 +1451,9 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · rfl
   · exact (freeze_preserves_configDefaultTimeSlice ist).symm
   -- WS-ZA ZA6.3: the release queue is read along the links the agreement holds.
-  · exact (freezeScheduler_replenishQueue_entries hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2).symm
-  · rw [(hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId).count]
-    exact (freezeScheduler_replenishQueue_size hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2).symm
+  · exact (freezeScheduler_replenishQueue_entries hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1).symm
+  · rw [(hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 bootCoreId).count]
+    exact (freezeScheduler_replenishQueue_size hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1).symm
   -- WS-SM SM7.C.1: perCoreTlb carried bitwise through freeze
   · exact (freeze_preserves_perCoreTlb ist).symm
   -- WS-SM SM7.D.1: perCoreICache carried bitwise through freeze

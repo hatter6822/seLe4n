@@ -437,8 +437,8 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- WS-SM SM5.I: the live per-core timer tick preserves `perCoreCbsInvariant` —
 -- `timerTickOnCore_preserves_replenishQueueValidOnCore` (validity, unconditional),
--- `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` (pipeline-order, given
--- positive periods), the full `timerTickOnCore_machine_timer_eq` machine chain (the
+-- `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` (pipeline-order,
+-- unconditional since WS-ZA ZA6.4), the full `timerTickOnCore_machine_timer_eq` machine chain (the
 -- tick never advances the global timer).  The SM5.I per-core run loop is the
 -- runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation

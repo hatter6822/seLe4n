@@ -169,8 +169,9 @@ private def t02_service_register_bounds_rejected : IO Unit := do
 private def t03_sched_context_configure_full_abi : IO Unit := do
   let syscallId := 17  -- schedContextConfigure
   let msgLen := 5
-  let inline : Array UInt64 := #[1000, 10000, 128, 5000]     -- x2..x5
-  let overflow : Array UInt64 := #[3]                         -- MR[4] = domain=3
+  -- WS-ZA ZA6.4: x2 = the context's cptr, x5 = priority 128 | domain 3 << 8
+  let inline : Array UInt64 := #[7, 1000, 10000, 128 + 3 * 256]     -- x2..x5
+  let overflow : Array UInt64 := #[5000]                      -- MR[4] = deadline=5000
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
@@ -183,6 +184,7 @@ private def t03_sched_context_configure_full_abi : IO Unit := do
     | .error e =>
       throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
+      expect "context cptr=7" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
       expect "budget=1000" (args.budget == 1000)
       expect "period=10000" (args.period == 10000)
       expect "priority=128" (args.priority == 128)
@@ -194,8 +196,8 @@ private def t03_sched_context_configure_full_abi : IO Unit := do
 private def t04_sc_configure_domain_rejected : IO Unit := do
   let syscallId := 17
   let msgLen := 5
-  let inline : Array UInt64 := #[1000, 10000, 128, 5000]
-  let overflow : Array UInt64 := #[16]  -- domain=16 > MAX_DOMAIN=15
+  let inline : Array UInt64 := #[7, 1000, 10000, 128 + 16 * 256]  -- domain=16 > MAX_DOMAIN=15
+  let overflow : Array UInt64 := #[5000]
   let st := buildAbiState syscallId msgLen inline overflow
   let tid : SeLe4n.ThreadId := ⟨900⟩
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout

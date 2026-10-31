@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.SlotConfinement.IpcArms
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
+import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 
 /-!
 # Per-core slot confinement — the live SchedContext arms
@@ -176,8 +177,10 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             -- insert under the pre-state's TCB witness.
             rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
               vThreadId.val tcb _ hObjInv hTcb]
-            let sc1 : SchedContext := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
-                                                donationOrigin := none }
+            let sc1 : SchedContext :=
+              { sc.releaseReadyHead st.machine.timer with
+                boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val)
+                donationOrigin := none }
             let scObj : KernelObject := .schedContext sc1
             let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
             let tcb1 : TCB :=
@@ -216,6 +219,7 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- placement arm raises the home core's flag; neither moves a slot.
               -- WS-ZA ZA4.5: both queue arms write through the thread's TCB
               -- run-queue links, on the home core only.
+              refine (SystemState.releaseOnlyWrite.runQueueOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
               refine (markKeyChangeFor_runQueueOnCore _ _ _ _).trans ?_
               split
               · rw [SystemState.runRequeueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
@@ -223,28 +227,32 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
                 · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
                     SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
                 · rfl
-            · refine (markKeyChangeFor_currentOnCore _ _ _ _).trans ?_
+            · refine (SystemState.releaseOnlyWrite.currentOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+              refine (markKeyChangeFor_currentOnCore _ _ _ _).trans ?_
               split
               · rw [SystemState.runRequeueOnCore_currentOnCore]
               · split
                 · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
                     SystemState.runEnqueueOnCore_currentOnCore]
                 · rfl
-            · refine (markKeyChangeFor_activeDomainOnCore _ _ _ _).trans ?_
+            · refine (SystemState.releaseOnlyWrite.activeDomainOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+              refine (markKeyChangeFor_activeDomainOnCore _ _ _ _).trans ?_
               split
               · rw [SystemState.runRequeueOnCore_activeDomainOnCore]
               · split
                 · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
                     SystemState.runEnqueueOnCore_activeDomainOnCore]
                 · rfl
-            · refine (markKeyChangeFor_domainTimeRemainingOnCore _ _ _ _).trans ?_
+            · refine (SystemState.releaseOnlyWrite.domainTimeRemainingOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+              refine (markKeyChangeFor_domainTimeRemainingOnCore _ _ _ _).trans ?_
               split
               · rw [SystemState.runRequeueOnCore_domainTimeRemainingOnCore]
               · split
                 · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
                     SystemState.runEnqueueOnCore_domainTimeRemainingOnCore]
                 · rfl
-            · refine (markKeyChangeFor_domainScheduleIndexOnCore _ _ _ _).trans ?_
+            · refine (SystemState.releaseOnlyWrite.domainScheduleIndexOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+              refine (markKeyChangeFor_domainScheduleIndexOnCore _ _ _ _).trans ?_
               split
               · rw [SystemState.runRequeueOnCore_domainScheduleIndexOnCore]
               · split
@@ -252,6 +260,8 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
                     SystemState.runEnqueueOnCore_domainScheduleIndexOnCore]
                 · rfl
             · -- registers: untouched on all three arms.
+              refine (congrArg (fun m => m.regsOnCore c)
+                (SystemState.releaseOnlyWrite.machine (SystemState.releasePlace_releaseOnlyWrite _ _ _))).trans ?_
               refine (congrArg (fun m => m.regsOnCore c) (markKeyChangeFor_machine _ _ _)).trans ?_
               split
               · rw [SystemState.runRequeueOnCore_machine]
@@ -500,20 +510,27 @@ theorem schedContextConfigureBoundPropagate_tcbChainFields (stStored : SystemSta
             hInvW (hRaw _ _ hCur) rfl rfl rfl t).trans (hW t)
       · exact hW t
 
-/-- After a configure's SchedContext store and propagation, the bound thread's
-chain names the pre-state's cores: neither write moves a home core or a blocking
-edge, and the key-change flag is a scheduler write. -/
-theorem waiterChainWriteSet_configurePropagate (st stStored : SystemState)
+/-- After a configure's SchedContext store and propagation, the state keeps the
+store invariant, every home core and every blocking edge of the pre-state:
+neither write moves a home core or a blocking edge, and the key-change flag is
+a scheduler write. -/
+theorem configurePropagate_chainShape (st stStored : SystemState)
     (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (b : Bool) (ec : CoreId) (fuel : Nat)
-    (hInvSt : st.objects.invExt) (hInvStored : stStored.objects.invExt)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (b : Bool)
+    (hInvStored : stStored.objects.invExt)
     (hGet : ∀ t, stStored.getTcb? t = st.getTcb? t) :
-    waiterChainWriteSet (markKeyChangeFor (markCandidacyGainFor
+    (markKeyChangeFor (markCandidacyGainFor
         (SchedContextOps.schedContextConfigureBoundPropagate
-          stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k)
-        boundTid ec fuel =
-      waiterChainWriteSet st boundTid ec fuel := by
+          stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k).objects.invExt ∧
+    (∀ t, determineTargetCore (markKeyChangeFor (markCandidacyGainFor
+        (SchedContextOps.schedContextConfigureBoundPropagate
+          stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k) t =
+        determineTargetCore st t) ∧
+    (∀ t, blockingServer (markKeyChangeFor (markCandidacyGainFor
+        (SchedContextOps.schedContextConfigureBoundPropagate
+          stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k) t =
+        blockingServer st t) := by
   have hXInv : (markKeyChangeFor (markCandidacyGainFor
       (SchedContextOps.schedContextConfigureBoundPropagate
         stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k).objects.invExt := by
@@ -529,7 +546,50 @@ theorem waiterChainWriteSet_configurePropagate (st stStored : SystemState)
         (tid := t) (by rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]), ← hGet t]
     exact schedContextConfigureBoundPropagate_tcbChainFields stStored scId boundTid boundTcb
       hBound priority domain hInvStored t)
-  exact PriorityInheritance.waiterChainWriteSet_congr _ st boundTid ec fuel hXInv hInvSt hH hE
+  exact ⟨hXInv, hH, hE⟩
+
+/-- After a configure's SchedContext store and propagation, the bound thread's
+chain names the pre-state's cores (`configurePropagate_chainShape`). -/
+theorem waiterChainWriteSet_configurePropagate (st stStored : SystemState)
+    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (b : Bool) (ec : CoreId) (fuel : Nat)
+    (hInvSt : st.objects.invExt) (hInvStored : stStored.objects.invExt)
+    (hGet : ∀ t, stStored.getTcb? t = st.getTcb? t) :
+    waiterChainWriteSet (markKeyChangeFor (markCandidacyGainFor
+        (SchedContextOps.schedContextConfigureBoundPropagate
+          stStored scId boundTid boundTcb hBound priority domain) boundTid b) boundTid k)
+        boundTid ec fuel =
+      waiterChainWriteSet st boundTid ec fuel :=
+  have h := configurePropagate_chainShape st stStored scId boundTid boundTcb hBound priority
+    domain k b hInvStored hGet
+  PriorityInheritance.waiterChainWriteSet_congr _ st boundTid ec fuel h.1 hInvSt h.2.1 h.2.2
+
+/-- WS-ZA ZA6.4: the configure's resume tail writes the bound thread's home core
+alone: a removal or a placement there, and a reschedule flag, which is no
+observable slot. -/
+theorem configureResumeBound_confinedToCores (st : SystemState) (t : SeLe4n.ThreadId)
+    (sc : SchedContext) :
+    observableSlotsConfinedToCores st (SchedContextOps.configureResumeBound st t sc)
+      [determineTargetCore st t] := by
+  refine ⟨fun c hc => ?_, fun c _ => ?_, fun c _ => ?_, fun c _ => ?_, fun c _ => ?_,
+    fun c _ => ?_⟩
+  · have hne : determineTargetCore st t ≠ c := fun h => hc (by simp [h])
+    unfold SchedContextOps.configureResumeBound
+    dsimp only
+    repeat' split
+    all_goals simp only [SystemState.runEnqueueOnCore_scheduler,
+      SystemState.runRemoveOnCore_scheduler, SystemState.markReschedulePendingOnCore_scheduler,
+      SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
+    all_goals (try split) <;>
+      simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+  all_goals
+    unfold SchedContextOps.configureResumeBound
+    dsimp only
+    repeat' split
+    all_goals try simp only [SystemState.runEnqueueOnCore_scheduler,
+      SystemState.runRemoveOnCore_scheduler, SystemState.markReschedulePendingOnCore_scheduler]
+    all_goals (try split) <;> simp
 
 /-- A step that ends in the waiter-side chain re-walk writes its prefix's cores
 and the chain's. -/
@@ -541,6 +601,15 @@ theorem observableSlotsConfinedToCores_repropagate {st X : SystemState}
   subst hW
   exact observableSlotsConfinedToCores_trans hX
     (repropagateFromWaiter_confinedToCores X tid ec fuel)
+
+/-- WS-ZA ZA6.4: the release placement writes the release queues alone, so it
+moves no observable slot on any core. -/
+theorem releasePlace_confinedToCores (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) :
+    observableSlotsConfinedToCores st (st.releasePlace c s) [] :=
+  have h := SystemState.releasePlace_releaseOnlyWrite st c s
+  ⟨fun d _ => h.runQueueOnCore d, fun d _ => h.currentOnCore d,
+    fun d _ => h.activeDomainOnCore d, fun d _ => h.domainTimeRemainingOnCore d,
+    fun d _ => h.domainScheduleIndexOnCore d, fun d _ => by rw [h.machine]⟩
 
 /-- SM8.B.2 (**the live `.schedContextConfigure` bound**): a configure writes no
 core outside its subject's home core and, when that thread is reply-blocked, the
@@ -603,7 +672,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 (storeObject_machine_eq _ _ _ _ hStore))
           · next boundTid hBound =>
             simp only [hBound]
-            have hInvStored : stStored.objects.invExt :=
+            have hInvStored0 : stStored.objects.invExt :=
               -- Named again for the same reason: the store's pre-state is the
               -- post-replenish one, not `st`.
               -- `by exact` postpones these until `hStore` has fixed the
@@ -612,7 +681,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 (hObjInv := by exact hInvP)
             -- The SchedContext store is not a migration, and the replenish write
             -- leaves `objects` alone, so the home core is already the pre-state's.
-            have hHomeStored : ∀ x : SeLe4n.ThreadId,
+            have hHomeStored0 : ∀ x : SeLe4n.ThreadId,
                 determineTargetCore stStored x = determineTargetCore st x := fun x => by
               -- The lemma's own conclusion names the store's pre-state — the
               -- post-replenish one. Ascribing the statement up front would pin
@@ -624,20 +693,52 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 (hStore := hStore) (hPre := by exact hScPRaw) (hObjInv := by exact hInvP)
               exact h.trans (determineTargetCore_congr _ _ x
                 (by rw [SchedContextOps.purgeReplenishment_getTcb?]))
+            have hGetSt0 : ∀ t, stStored.getTcb? t = st.getTcb? t := fun t =>
+              (storeObject_schedContextAt_getTcb?_eq
+                (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
+                stStored (SeLe4n.SchedContextId.ofObjId vScId.val) scP _ (by exact hScP)
+                (by exact hInvP) (by exact hStore) t).trans
+                (SchedContextOps.purgeReplenishment_getTcb? st _ t)
+            have hStoredConf0 : observableSlotsConfinedToCores st stStored [] :=
+              observableSlotsConfinedToCores_trans
+                (purgeReplenishment_confinedToCores st _)
+                (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                  (storeObject_scheduler_eq _ _ _ _ hStore)
+                  (storeObject_machine_eq _ _ _ _ hStore))
+            -- WS-ZA ZA6.4: the release placement on the home core writes the
+            -- release queue alone: no object a reading below sees, no slot.
+            have hAgP := SystemState.releasePlace_agree stStored (determineTargetCore st boundTid)
+              ⟨vScId.val.toNat⟩
+            have hInvStored := SystemState.releasePlace_objects_invExt stStored
+              (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩ hInvStored0
+            have hGetSt : ∀ t, (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩).getTcb? t = st.getTcb? t := fun t =>
+              (hAgP.getTcb? t).trans (hGetSt0 t)
+            have hHomeStored : ∀ x : SeLe4n.ThreadId,
+                determineTargetCore (stStored.releasePlace (determineTargetCore st boundTid)
+                  ⟨vScId.val.toNat⟩) x = determineTargetCore st x := fun x =>
+              (determineTargetCore_congr _ _ x (by rw [hAgP.getTcb? x])).trans (hHomeStored0 x)
+            have hStoredConf : observableSlotsConfinedToCores st
+                (stStored.releasePlace (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩) [] :=
+              observableSlotsConfinedToCores_trans hStoredConf0
+                (releasePlace_confinedToCores _ _ _)
+            clear hGetSt0 hHomeStored0 hStoredConf0 hInvStored0 hAgP
+            generalize stStored.releasePlace (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩ =
+              stPlaced at hStep hInvStored hGetSt hHomeStored hStoredConf
             split at hStep
             · next boundTcb hTcbStored _ =>
               have hTcbStoredRaw :
-                  stStored.objects.get? boundTid.toObjId = some (.tcb boundTcb) := by
-                simpa using (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp
+                  stPlaced.objects.get? boundTid.toObjId = some (.tcb boundTcb) := by
+                simpa using (SystemState.getTcb?_eq_some_iff stPlaced boundTid boundTcb).mp
                   hTcbStored
               let boundTcb2 : TCB := { boundTcb with priority := ⟨priority⟩ }
               let boundObj : KernelObject := .tcb boundTcb2
               let stWithTcb : SystemState :=
-                { stStored with objects := stStored.objects.insert boundTid.toObjId boundObj }
+                { stPlaced with objects := stPlaced.objects.insert boundTid.toObjId boundObj }
               have hHomeWith : determineTargetCore stWithTcb boundTid
                   = determineTargetCore st boundTid :=
                 Eq.trans
-                  (determineTargetCore_insert_tcb stStored stWithTcb boundTid boundTcb boundTcb2
+                  (determineTargetCore_insert_tcb stPlaced stWithTcb boundTid boundTcb boundTcb2
                     hInvStored hTcbStoredRaw rfl rfl boundTid)
                   (hHomeStored boundTid)
               rw [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -646,24 +747,27 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               -- The chain re-walk last: its cores are the pre-state chain's,
               -- because the store and the propagation move no home core and no
               -- blocking edge.
-              have hGetSt : ∀ t, stStored.getTcb? t = st.getTcb? t := fun t =>
-                (storeObject_schedContextAt_getTcb?_eq
-                  (SchedContextOps.purgeReplenishment st ⟨vScId.val.toNat⟩)
-                  stStored (SeLe4n.SchedContextId.ofObjId vScId.val) scP _ (by exact hScP)
-                  (by exact hInvP) (by exact hStore) t).trans
-                  (SchedContextOps.purgeReplenishment_getTcb? st _ t)
-              refine observableSlotsConfinedToCores_repropagate ?_
-                (waiterChainWriteSet_configurePropagate st stStored _ boundTid boundTcb _ priority
-                  domain _ _ _ _ hObjInv hInvStored hGetSt)
+              -- WS-ZA ZA6.4: the resume tail runs after the re-walk, on the
+              -- bound thread's home, which neither the propagation nor the
+              -- re-walk moves.
+              obtain ⟨hXInv, hHX, -⟩ := configurePropagate_chainShape st stPlaced _ boundTid
+                boundTcb _ priority domain (effectiveSchedParams st boundTcb)
+                (hasSufficientBudget st boundTcb) hInvStored hGetSt
+              refine observableSlotsConfinedToCores_mono (fun c hc => by
+                  rcases List.mem_append.mp hc with h | h
+                  · exact h
+                  · rw [List.mem_singleton] at h
+                    rw [h, PriorityInheritance.repropagateFromWaiter_determineTargetCore _ _ _ _
+                      hXInv, hHX]
+                    simp)
+                (observableSlotsConfinedToCores_trans
+                  (observableSlotsConfinedToCores_repropagate ?_
+                    (waiterChainWriteSet_configurePropagate st stPlaced _ boundTid boundTcb _
+                      priority domain _ _ _ _ hObjInv hInvStored hGetSt))
+                  (configureResumeBound_confinedToCores _ boundTid _))
               unfold SchedContextOps.schedContextConfigureBoundPropagate
-              -- The prefix common to every arm: replenish purge then the SC
-              -- store, neither of which is confined-relevant.
-              have hStoredConf : observableSlotsConfinedToCores st stStored [] :=
-                observableSlotsConfinedToCores_trans
-                  (purgeReplenishment_confinedToCores st _)
-                  (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-                    (storeObject_scheduler_eq _ _ _ _ hStore)
-                    (storeObject_machine_eq _ _ _ _ hStore))
+              -- The prefix common to every arm: replenish purge, the SC store
+              -- and the release placement, none of which is confined-relevant.
               refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
                 simp only [List.mem_singleton] at hc <;>
                 (have hne : determineTargetCore stWithTcb boundTid ≠ c := by
@@ -720,7 +824,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                   | (rw [SystemState.runRequeueOnCore_domainScheduleIndexOnCore]
                      exact hStoredConf.domainScheduleIndex c hNil)
                   | (rw [SystemState.runRequeueOnCore_machine]; exact hStoredConf.regs c hNil)
-                  -- arms that stop at `stStored` / `stWithTcb` (object writes only)
+                  -- arms that stop at `stPlaced` / `stWithTcb` (object writes only)
                   | exact hStoredConf.runQueue c hNil
                   | exact hStoredConf.current c hNil
                   | exact hStoredConf.activeDomain c hNil
@@ -734,13 +838,40 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               obtain ⟨-, hs⟩ := hStep
               subst hs
               refine observableSlotsConfinedToCores_widen_any ?_
-              exact observableSlotsConfinedToCores_trans
-                (purgeReplenishment_confinedToCores st _)
-                (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-                  (storeObject_scheduler_eq _ _ _ _ hStore)
-                  (storeObject_machine_eq _ _ _ _ hStore))
+              exact hStoredConf
       · exact absurd hStep (by simp)
     · exact absurd hStep (by simp)
+
+/-- WS-ZA ZA6.4 (**the live `.schedContextConfigure` bound**): a configure
+through core `core`'s control writes no core outside the configure's write set
+and, on a move, the affinity change's pair and the control's core
+(`schedControlConfigureWriteSet`).  The move is bounded by
+`setThreadCpuAffinityWithMigration_confinedToCores`, and the configure on the
+moved state by `schedContextConfigure_confinedToCores`, whose write set read off
+the moved state is the pre-state's or the control's core
+(`schedContextConfigureWriteSet_of_move`). -/
+theorem schedControlConfigure_confinedToCores (core : CoreId) (vScId : SeLe4n.ValidObjId)
+    (budget period priority deadline domain : Nat) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
+      domain st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (schedControlConfigureWriteSet st core vScId.val) := by
+  rcases SchedContextOps.schedControlConfigure_ok_cases hStep with
+    h | ⟨sc, t, stM, sgi, hSc, hB, hNe, hM, h⟩
+  · exact observableSlotsConfinedToCores_mono
+      (schedContextConfigureWriteSet_subset_schedControl st core vScId.val)
+      (schedContextConfigure_confinedToCores vScId _ _ _ _ _ st st' hObjInv h)
+  · rw [(schedControlConfigureWriteSet_of_move hSc hB hNe).1]
+    have hInvM := setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hObjInv _ hM
+    refine observableSlotsConfinedToCores_mono (fun d hd => ?_)
+      (observableSlotsConfinedToCores_trans
+        (setThreadCpuAffinityWithMigration_confinedToCores st stM t (some core) core sgi hObjInv hM)
+        (schedContextConfigure_confinedToCores vScId _ _ _ _ _ stM st' hInvM h))
+    rcases List.mem_append.mp hd with hd | hd
+    · exact List.mem_append.mpr (.inl hd)
+    · rcases schedContextConfigureWriteSet_of_move hObjInv hSc hB hM d hd with e | e
+      · exact List.mem_append.mpr (.inr (e ▸ List.mem_cons_self ..))
+      · exact List.mem_append.mpr (.inr (List.mem_cons_of_mem _ e))
 
 -- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextUnbindOnCoreWriteSet` moved to
 -- the production `SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` (via

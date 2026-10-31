@@ -870,7 +870,7 @@ theorem timerTickBudgetOnCore_preserves_objects_invExt (st : SystemState) (c : C
         obtain ⟨hst, _⟩ := hStep; subst hst
         apply timeoutBlockedThreads_preserves_objects_invExt
         rw [markKeyChangeFor_objects]
-        exact spendBudgetOnCore_objects_invExt _ _ _ _ _ _ _ hInv
+        exact spendBudgetOnCore_objects_invExt _ _ _ _ _ _ _ _ hInv
       · simp only [Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst
         exact RHTable_insert_preserves_invExt st.objects _ _ hInv
@@ -908,7 +908,7 @@ theorem timerTickBudgetOnCore_bound_preempts (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (st' : SystemState) (b : Bool)
     (hBound : tcb.schedContextBinding = .bound scId)
-    (hSc : st.getSchedContext? scId = some sc) (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hSc : st.getSchedContext? scId = some sc) (hBudget : sc.tickExhausts (st.machine.timer - 1) = true)
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) : b = true := by
   simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hBound, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget,
@@ -922,7 +922,7 @@ theorem timerTickBudgetOnCore_bound_not_preempted (st : SystemState) (c : CoreId
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (st' : SystemState) (b : Bool)
     (hBound : tcb.schedContextBinding = .bound scId)
-    (hSc : st.getSchedContext? scId = some sc) (hBudget : ¬ sc.budgetRemaining.val ≤ 1)
+    (hSc : st.getSchedContext? scId = some sc) (hBudget : ¬ sc.tickExhausts (st.machine.timer - 1) = true)
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) : b = false := by
   simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hBound, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBudget,
@@ -936,7 +936,7 @@ theorem timerTickBudgetOnCore_donated_preempts (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (originalOwner : SeLe4n.ThreadId) (sc : SchedContext) (st' : SystemState) (b : Bool)
     (hDonated : tcb.schedContextBinding = .donated scId originalOwner)
-    (hSc : st.getSchedContext? scId = some sc) (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hSc : st.getSchedContext? scId = some sc) (hBudget : sc.tickExhausts (st.machine.timer - 1) = true)
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = (st', b)) : b = true := by
   simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hDonated, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget,
@@ -2084,7 +2084,7 @@ theorem timerTickBudgetOnCore_notPreempted_scheduler_eq (st : SystemState) (c : 
       obtain ⟨hst, -⟩ := hStep; subst hst
       rfl
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2096,7 +2096,7 @@ theorem timerTickBudgetOnCore_notPreempted_scheduler_eq (st : SystemState) (c : 
       obtain ⟨hst, -⟩ := hStep; subst hst
       rfl
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2139,7 +2139,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid (st : SystemState) (c : C
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨tcb, hCur⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2156,7 +2156,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid (st : SystemState) (c : C
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨tcb, hCur⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2423,7 +2423,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_forward (st : SystemState) (c
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨t, hx⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2440,7 +2440,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_forward (st : SystemState) (c
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨t, hx⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2532,7 +2532,7 @@ theorem timerTickBudgetOnCore_notPreempted_regsOnCore_eq (st : SystemState) (c :
       obtain ⟨hst, -⟩ := hStep; subst hst
       rfl
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2544,7 +2544,7 @@ theorem timerTickBudgetOnCore_notPreempted_regsOnCore_eq (st : SystemState) (c :
       obtain ⟨hst, -⟩ := hStep; subst hst
       rfl
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2585,7 +2585,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid_reg (st : SystemState) (c
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨tcb, hTcb, rfl⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2602,7 +2602,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid_reg (st : SystemState) (c
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨tcb, hTcb, rfl⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2894,7 +2894,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_domain (st : SystemState) (c 
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨tcb, hCur, rfl⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep
@@ -2911,7 +2911,7 @@ theorem timerTickBudgetOnCore_notPreempted_getTcb?_domain (st : SystemState) (c 
       obtain ⟨hst, -⟩ := hStep; subst hst
       exact ⟨tcb, hCur, rfl⟩
     | some sc =>
-      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      by_cases hbg : sc.tickExhausts (st.machine.timer - 1) = true
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hbg, Prod.mk.injEq] at hStep
         exact absurd hStep.2 (by decide)
       · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hb, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hbg, Prod.mk.injEq] at hStep

@@ -10,6 +10,7 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.SchedContext.Invariant
 import SeLe4n.Kernel.SchedContext.ReleaseLinks
+import SeLe4n.Kernel.SchedContext.RefillState
 
 /-!
 # Scheduler Invariant Definitions
@@ -650,13 +651,8 @@ theorem default_currentBudgetPositive :
 -- Z4-M: schedContextsWellFormed invariant
 -- ============================================================================
 
-/-- Z4-M: Every SchedContext object in the store satisfies `schedContextWellFormed`.
-
-System-wide per-object well-formedness for all SchedContext objects. -/
-def schedContextsWellFormed (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
-    st.objects[oid]? = some (.schedContext sc) →
-    schedContextWellFormed sc
+-- `schedContextsWellFormed` is defined with the refill state every transition
+-- keeps (`SeLe4n.Kernel.SchedContext.RefillState`).
 
 /-- Z4-M: Default state has no SchedContext objects — vacuously true.
 The default object store is empty (`RHTable.empty 16`), so all lookups

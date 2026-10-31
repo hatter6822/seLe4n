@@ -393,7 +393,7 @@ private def sad015_replyRecv : IO Unit := do
 
 /-- SAD-016: decodeSchedContextConfigureArgs — valid decode with 5 registers. -/
 private def sad016_schedContextConfigure : IO Unit := do
-  let stub := mkStub #[⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩, ⟨0⟩]
+  let stub := mkStub #[⟨7⟩, ⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
   let result := decodeSchedContextConfigureArgs stub
   expect "SAD-016a scConfigure ok" result.isOk
   match result with
@@ -401,6 +401,8 @@ private def sad016_schedContextConfigure : IO Unit := do
     expect "SAD-016b budget" (args.budget == 1000)
     expect "SAD-016c period" (args.period == 5000)
     expect "SAD-016d priority" (args.priority == 128)
+    expect "SAD-016e context cptr" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
+    expect "SAD-016f deadline" (args.deadline == 10000)
   | .error _ => expect "SAD-016 unexpected error" false
 
 /-- SAD-017: decodeSchedContextConfigureArgs — insufficient registers (4). -/

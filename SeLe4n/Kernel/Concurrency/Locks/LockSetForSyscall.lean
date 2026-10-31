@@ -188,6 +188,10 @@ structure SyscallLockOperands where
   unsupplied operand read as an unpin request, which is a footprint for a
   different transition. -/
   affinity : Option (Option CoreId) := none
+  /-- **WS-ZA ZA6.4**: the core whose scheduling control a `.schedContextConfigure`
+  is invoked through — the core a context whose bound thread is homed elsewhere
+  moves to, so its scheduler footprint names it. -/
+  controlCore : Option CoreId := none
 
 /-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
 def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :

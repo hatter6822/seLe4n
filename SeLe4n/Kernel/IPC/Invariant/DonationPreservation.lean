@@ -1511,6 +1511,49 @@ theorem donateSchedContext_releaseStateAgree
   have a5 : SystemState.releaseStateAgree st' s4 := .of_objects_eq (by rw [hEq]) (by rw [hEq]; rfl)
   exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
 
+/-- WS-ZA ZA6.4: the donation keeps every context's refill view: the context is
+rebound (bound to the client before, to the server after) with its budget and
+refills kept, the frame push writes no context, and the threads are stored over
+threads. -/
+theorem donateSchedContext_refillViewsKept
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    RefillViewsKept st' st := by
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+    hSc, hBound, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc
+  have a1 : RefillViewsKept s1 st := .storeObject hObjInv hS1 (by
+    rw [hScRaw]; simp only [objRefillView, Option.some.injEq]
+    unfold SchedContext.boundThread at hBound
+    unfold SchedContext.refillView
+    rcases hc : sc.boundThreadCode with _ | k
+    · rw [hc] at hBound; cases hBound
+    · simp only [SeLe4n.ThreadId.optCode]
+      rw [show min (serverTid.val + 1) 1 = 1 by omega, show min (k + 1) 1 = 1 by omega])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  obtain ⟨_, hRepPre, _, _, _⟩ := donationPushFrame?_ok st donorTcb pushRid pushReply hFrame
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    have hNe : pushRid.toObjId ≠ clientScId.toObjId := by
+      intro hk
+      have := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+      rw [hk, hScRaw] at this
+      cases this
+    unfold SystemState.getReply? at hRepPre ⊢
+    rw [storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hNe hObjInv hS1]
+    exact hRepPre
+  have a2 : RefillViewsKept s2 s1 :=
+    .of_getSchedContext?_eq (storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2)
+  have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have a3 : RefillViewsKept s3 s2 := .storeObject hInv2 hS3 (by
+    rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; rfl)
+  have hInv3 := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have a4 : RefillViewsKept s4 s3 := .storeObject hInv3 hS4 (by
+    rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; rfl)
+  have a5 : RefillViewsKept st' s4 := .of_objects_eq (by rw [hEq])
+  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the donation push writes no CDT
 table. -/
 theorem donateSchedContext_cdt_eq

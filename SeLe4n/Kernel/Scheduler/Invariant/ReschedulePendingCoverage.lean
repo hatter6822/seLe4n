@@ -686,21 +686,25 @@ theorem markKeyChangeFor_reschedulePendingOnCore_of_weakened {pre mid : SystemSt
     rcases hLt with h | h | h <;> simp [h]
 
 /-- **The key hook covers a key writer.**  If the write `pre → mid` moved no
-other thread's key, made no thread budget-eligible (a key writer leaves the
-binding alone), and every remote core is flagged or kept its slots (its queue
-may only shrink), then the hook's post-state covers the step. -/
+other thread's key, made no thread an unflagged remote core holds
+budget-eligible (a key writer leaves the binding alone), and every remote core
+is flagged or kept its slots (its queue may only shrink), then the hook's
+post-state covers the step. -/
 theorem markKeyChangeFor_covers {e : CoreId} {pre mid : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hPre : pre.getTcb? tid = some tcb)
     (hOthers : ∀ t, t ≠ tid → schedKeyView mid t = schedKeyView pre t)
-    (hElig : ∀ t, candidacyNotGained pre mid t)
+    (hElig : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = false →
+      ∀ t, mid.queuedOn c t = true → candidacyNotGained pre mid t)
     (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
       ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
     reschedulePendingCovers e pre
       (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) := by
   intro c hc
+  cases hFl : mid.scheduler.reschedulePendingOnCore c
+  case true => exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ hFl)
   rcases hSlots c hc with hUp | ⟨hRq, hCur⟩
-  · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ hUp)
+  · rw [hFl] at hUp; cases hUp
   by_cases hA : mid.queuedOn c tid = true ∧ schedKeyView mid tid ≠ schedKeyView pre tid
   · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_of_moved hPre hA.1 hA.2)
   by_cases hB : mid.scheduler.currentOnCore c = some tid ∧ ¬ schedKeyNotWeakened pre mid tid
@@ -715,7 +719,7 @@ theorem markKeyChangeFor_covers {e : CoreId} {pre mid : SystemState}
   refine ⟨fun t ht => ?_, ?_, fun t ht => ?_⟩
   · rw [markKeyChangeFor_queuedOn] at ht
     refine ⟨hRq t ht, (hKey t ht).trans (schedKeyView_markKeyChangeFor _ _ _ t).symm, ?_⟩
-    unfold candidacyNotGained; rw [budgetEligibleView_markKeyChangeFor]; exact hElig t
+    unfold candidacyNotGained; rw [budgetEligibleView_markKeyChangeFor]; exact hElig c hc hFl t ht
   · simp only [markKeyChangeFor_currentOnCore]; exact hCur
   · simp only [markKeyChangeFor_currentOnCore] at ht
     intro kq hq
@@ -1466,7 +1470,7 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
     (hMono : reschedulePendingMonotone e pre mid) :
     stepCovers e pre (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) :=
   ⟨markKeyChangeFor_covers hPre (fun _ ht => schedKeyView_eq_of_keyInputsEqExcept hKeys ht)
-    (fun t => by
+    (fun _ _ _ t _ => by
       by_cases ht : t = tid
       · subst ht; exact hSelf
       · exact candidacyNotGained_of_eq (budgetEligibleView_eq_of_keyInputsEqExcept hKeys ht).symm)

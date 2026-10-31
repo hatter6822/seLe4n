@@ -611,6 +611,12 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_crossCoreNonInterference
 #check @SeLe4n.Kernel.schedContextConfigure_confinedToCores
 #check @SeLe4n.Kernel.schedContextConfigure_crossCoreNonInterference
+-- WS-ZA ZA6.4: the live arm configures through a core's control, moving a
+-- thread homed elsewhere to that core first.
+#check @SeLe4n.Kernel.schedControlConfigure_confinedToCores
+#check @SeLe4n.Kernel.schedControlConfigure_crossCoreNonInterference
+#check @SeLe4n.Kernel.schedControlConfigureWriteSet
+#check @SeLe4n.Kernel.configureResumeBound_confinedToCores
 -- The configure write set gains the bound thread's inheritance chain, which the
 -- propagated priority re-walks when the thread is reply-blocked.
 #check @SeLe4n.Kernel.schedContextConfigureWriteSet

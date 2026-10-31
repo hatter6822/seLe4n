@@ -647,8 +647,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
     | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
-    | exact (schedContextConfigure_stepCovers _ _ _ _ _ _ _ _ _ hInv hBi h)
-    | exact (schedContextBind_stepCovers _ _ _ _ _ hInv h)
+    | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
+    | exact (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv
@@ -871,12 +871,15 @@ theorem syscallResolveCap_state {gate : SyscallGate} {st st' : SystemState} {cap
 
 /-- **The checked dispatch covers** on the executing core: the capability
 resolution reads, the routed arm covers, and the taint pass writes the taint
-ledger alone. -/
+ledger alone.  The yield's charge may release a ready refill (WS-ZA ZA6.4), so it
+reads that the executing core's current thread is on no queue (`hAwayCur`,
+which `currentDequeuedUnique` gives between scheduling points). -/
 theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {e : CoreId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
+    (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold dispatchSyscallChecked at h
@@ -889,7 +892,7 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
     · cases h
     · rename_i hYieldOk
       cases h
-      exact yieldOnCore_stepCovers st _ e hInv hB.bidirectional hYieldOk
+      exact yieldOnCore_stepCovers st _ e hInv hB.bidirectional hAwayCur hYieldOk
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
@@ -924,6 +927,7 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hB : finalisingDeleteBundle st) (hPlaced : placedThreadsHaveTcbs st)
+    (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold syscallEntryChecked at h
@@ -944,6 +948,7 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
   rw [ht] at h
   exact dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
+    (fun t ht c => hAwayCur t ht c)
     h
 
 end SeLe4n.Kernel

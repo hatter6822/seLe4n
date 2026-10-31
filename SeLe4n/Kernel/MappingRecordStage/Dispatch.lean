@@ -150,17 +150,19 @@ theorem dispatchCapabilityOnly_mappingStage
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object scId =>
+    case schedControl core =>
       try dsimp only [] at hStep
       cases hDec : decodeSchedContextConfigureArgsChecked decoded with
       | error e => simp only [hDec] at hStep; cases hStep
       | ok args =>
           simp only [hDec] at hStep
-          cases hVal : validateObjIdArg scId with
+          cases hVal : resolveSchedControlConfigureTarget tid core args.scCPtr st with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact schedContextConfigure_mappingStage hStep
+              split at hStep
+              · exact schedControlConfigure_mappingStage hStep
+              · cases hStep
     all_goals try cases hStep
   case schedContextBind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

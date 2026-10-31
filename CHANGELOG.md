@@ -1,3 +1,171 @@
+## v0.36.167 — WS-ZA ZA6.4: configure takes SchedControl authority, and budgets are charged as seL4-MCS charges them
+
+A scheduling context is now configured only through a per-core SchedControl
+capability, as seL4-MCS's `seL4_SchedControl_ConfigureFlags` is, and its
+budget is charged with seL4-MCS's refill operations. A bound context holding a
+pending refill is always on a release queue, and every kernel transition
+keeps the refill state sound.
+
+- **Security fix: the configure overrun.**
+  - Before: a configure was an invocation of the context's own capability,
+    and it set `budgetRemaining` to the full budget while queueing a pending
+    refill of that budget. A thread holding its own context's capability
+    could reconfigure it every period and run two budgets per period.
+  - Now: the configure needs a SchedControl capability, which only the root
+    task holds at boot. A configure through a scheduling-context capability
+    is refused (`.invalidCapability`). The refills hold the budget once
+    (`refill_new` / `refill_update`).
+- **Authority** (`SeLe4n/Kernel/API.lean`, `SeLe4n/Model/Object/Types.lean`).
+  - `CapTarget.schedControl core` and `Capability.schedControlOf`. Every
+    exhaustive match over capability targets has an arm for it.
+  - `resolveSchedControlConfigureTarget` resolves MR0's context capability
+    with the write right. The live arm, the fast path and the lock-operand
+    builder share it.
+  - Boot: core `c`'s control goes in the root task's CNode at `base + c`
+    (`schedControlBootSlots`). RPi5 uses slots 12–15. QEMU `virt` uses slots
+    16–19, in a root CNode grown to 32 slots. The simulation platform has no
+    root CNode and installs none.
+  - ABI: MR0 the context's cptr, MR1 budget, MR2 period, MR3
+    `priority | domain << 8`, MR4 deadline (the overflow word). The Rust ABI,
+    the `sele4n-sys` wrapper (`sched_context_configure(sched_control, …)`),
+    the conformance tests and the exerciser follow.
+- **The core move** (`SeLe4n/Kernel/SchedContext/SchedControl.lean`).
+  - As seL4's `invokeSchedControl_ConfigureFlags` does, a context bound to a
+    thread homed on another core moves to the control's core with its thread
+    before it is configured (`schedControlConfigure`). The move is the
+    affinity change's migration (`setThreadCpuAffinityWithMigration`): the
+    release entry is removed and the thread dequeued on the old core, a
+    thread running there is vacated with a remote stall
+    (`vacateForAffinityChange`, `requeueVacatedOnNewHome`), and both are
+    placed on the new core.
+  - The `.threadOnDifferentCore` refusal is removed. The footprint is the
+    move's and the configure's (`schedControlConfigureWriteSet`,
+    `SchedControlFootprint.lean`).
+- **The resume tail** (`configureResumeBound`). A configure ends in seL4-MCS's
+  `schedContext_resume` and `possibleSwitchTo`: a runnable bound thread whose
+  refill is ready and sufficient is enqueued on its home core, and one its
+  context cannot run is taken off its queue.
+- **Refills** (`SeLe4n/Kernel/SchedContext/Budget.lean`).
+  - The charge is `refillBudgetCheck` with `scheduleUsed`, which merges into
+    the tail refill at capacity, so no budget is dropped. It is followed by
+    `refillUnblockCheck` / `releaseReadyHead`.
+  - Conservation (`refillsConserved`, part of `schedContextWellFormed`) is
+    proven for the charge, the release, the deadline move and both configure
+    forms. The window bound is `refill_window_bound`.
+- **No refill stranded** (`SeLe4n/Kernel/SchedContext/ReleaseLinks.lean`).
+  - The predicate is `SystemState.releaseNoRefillStranded`.
+  - Configure and bind place a bound context whose head is not released on
+    its thread's home core's release queue (`releasePlace`, seL4's
+    `postpone`). The bind and configure footprints declare that core's
+    release queue.
+  - Resume needs no step of its own: suspend unbinds the thread's context
+    and purges its entry. Every suite's state-invariant surface checks the
+    predicate (`releaseNoRefillStrandedChecks`).
+- **Kernel-wide proofs.**
+  - `SystemState.refillsSound` (every context well formed,
+    `releaseNoRefillStranded`, and every queued context bound) is the
+    proof-layer bundle's 20th conjunct, carried as `releaseQueueRefined` is:
+    every run-queue link stage keeps it (`RunQueueLinkStage.refills`), a step
+    that writes a context's refills is a frame closed by the placement after
+    it, and the payoffs are per entry
+    (`syscallDispatchEntryState_preserves_refillsSound` and its timer,
+    reschedule, cross-core suspend, fault, unknown-syscall and FP/SIMD
+    siblings).
+  - The default state and boot establish it (`default_refillsSound`,
+    `refillsSound_of_empty`).
+  - At system level, conservation and the per-period bound are read off the
+    bundle (`proofLayerInvariantBundle_refillsConserved`,
+    `proofLayerInvariantBundle_refill_window_bound`).
+- **Debt:** the `docs/REGISTERED_DEBT.md` bind-postpone row is closed.
+- **The removed budget transfer.** The kernel-internal `schedContextYieldTo`
+  was wired to no syscall and wrote `budgetRemaining` on two contexts outside
+  every refill rule, so it broke refill conservation, and it is removed with
+  its traces, tests, bridge and census rows. It was not seL4's yieldTo. The
+  trace fixture loses those lines, and its checksum is regenerated.
+- **Plan.** `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` gains rows ZA6.5
+  to ZA6.8, which add seL4's `seL4_SchedContext_YieldTo`: consumed-time
+  accounting (`setConsumed`, `chargeBudget` / `commitTime`), the yield link
+  (`schedContext_cancelYieldTo` / `completeYieldTo`), the activation step at
+  entry exit (`activateThread`) and the invocation itself, which reads 0
+  allocations. The noninterference row becomes ZA6.9 and names yieldTo's
+  charge. Every later row is renumbered (ZA6.10–ZA6.16), and the citations in
+  the plans, `docs/REGISTERED_DEBT.md`, `WORKSTREAM_CONTEXT.md`, the spec and
+  `trap.rs` follow.
+- **Zero allocation.**
+  - The first measurement read 5 cells at the configure and 1 at each drain.
+    A QEMU trace of `lean_alloc_small`'s callers attributed them: the
+    configure's syscall gate and lookup cells, its context and object cells
+    (the branch on `keep` inside the record update drops the reuse), and the
+    drain's context cell (the pop's branch inside `releaseOne`'s update).
+  - Each now has a compiled form proven equal by `csimp`:
+    `resolveSchedControlConfigureTargetK`, `configuredSchedContextImpl` and
+    `SchedContext.releaseOneImpl`.
+  - The exerciser's waiting tick between `exhaust-tick` and
+    `exhaust-drain-tick` is dropped: under seL4's refill semantics the used
+    refill is due on the next tick.
+  - Measured on a fresh untraced archive
+    (`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`), first call
+    and steady state: `sched-context-configure`, `sched-context-bind`,
+    `sched-context-unbind`, `sched-context-rebind`, `tcb-resume-bound`,
+    `refill-configure` (5 at first call before the fix), `refill-bind-root`,
+    `refill-yield`, `refill-wait-tick`, `refill-drain-tick` (1 at first call
+    before), `exhaust-tick`, `exhaust-drain-tick` and `refill-unbind-root`
+    all read 0 and 0. yieldTo has no scenario until ZA6.8 adds it.
+- **Tests.**
+  - `SyscallDispatchSuite` SD-063 is the regression: configure through the
+    context capability is refused, through the home core's control it
+    succeeds, and through another core's control it moves a bound context.
+  - The fixture helper `withReleaseEntryOnCore` queues a context with its
+    head used up, since the queue holds only such contexts.
+  - The identifier-naming baseline's retired entries are regenerated with
+    `scripts/check_identifier_naming.py`.
+
+### Review fixes
+
+- **The configure's encoder no longer truncates.**
+  `SchedContextConfigureArgs::encode` packed `priority | domain << 8` into
+  MR3 through masks, so a priority above 255 or a domain above 15 became a
+  different, valid configuration (256 encoded as priority 0, domain 16 as
+  domain 0). Before this release the two values travelled in separate words
+  and the kernel refused them. The encoder now returns
+  `KernelResult<[u64; 5]>` and refuses either field out of range with
+  `InvalidSyscallArgument`, the error the decode returns for the same word;
+  `sched_context_configure` propagates it before it writes the overflow word
+  or traps.
+- **The kernel's MR3 check is stated on the word.**
+  `decodeSchedContextConfigureArgsChecked` refuses any parameter word of 4096
+  or more (a bit set above the packed priority and domain) by testing the
+  word itself rather than its derived domain, which is the test the
+  register-routed `decodeSchedContextConfigureArgsCheckedBy` already ran.
+  `decodeSchedContextConfigureArgsChecked_invariants` now concludes
+  `schedParams < 4096` as well, and `schedParamsDomain_ge_iff` gives way to
+  `schedParams_ge_iff`.
+- **The frozen configure runs the resume tail.**
+  `frozenSchedContextConfigure` copied the live configure's refills but not
+  `configureResumeBound`, so a runnable bound thread parked off every queue
+  stayed outside every frozen bucket and `frozenChooseThread` could not
+  select it while the live scheduler could. `frozenConfigureResumeBound`
+  mirrors the tail arm for arm: a current thread is left alone, a queued one
+  leaves its bucket when the context has no budget, and a parked runnable
+  one is placed at its effective priority. It runs over the state the two
+  propagation halves leave, whether or not either wrote.
+- **Tests.**
+  - Rust: the encoder refuses priority 256 and domain 16 (unit and
+    conformance), accepts the maxima, and the wrapper refuses both before
+    any write.
+  - `DecodeValidationSuite` T10 and T11 refuse parameter words with bit 12,
+    bit 40, bit 63 or every bit set, through the checked decode and the
+    word reader.
+  - `FrozenOpsSuite` FO-052 runs the configure on both surfaces and compares
+    the states whole: a parked bound thread is placed and selectable, a
+    suspended one is not, and a queued one whose kept head is not yet
+    released leaves its queue.
+- **Debt.** The frozen surface keeps no release-queue links, so the frozen
+  configure does not mirror the live `releasePlace` and `purgeReplenishment`;
+  FO-052's removal half agrees with the live state except on the context's
+  release links. Registered in `docs/REGISTERED_DEBT.md` §C with a closure
+  target before ZA6.16.
+
 ## v0.36.166 — WS-ZA ZA6.3: the release queue links through the scheduling contexts
 
 Each core's release queue is now singly linked through its scheduling

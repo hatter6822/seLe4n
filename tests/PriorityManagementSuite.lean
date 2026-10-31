@@ -1610,7 +1610,7 @@ private def pm_pip_02_configureReboostsServer : IO Unit := do
     [(scObjId, .schedContext sc)]
   expect "PM-PIP-02 the configure footprint names the server's home core"
     (decide ((LockKey.runQueue core2, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
-      schedLockSet_schedContextConfigureOnCore st scObjId))
+      schedLockSet_schedControlConfigure st core2 scObjId))
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 90 0 0 st with
   | .error e => throw <| IO.userError s!"PM-PIP-02 configure should succeed, got {repr e}"
   | .ok ((), st1) =>

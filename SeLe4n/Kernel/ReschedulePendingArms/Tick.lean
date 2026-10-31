@@ -45,32 +45,6 @@ theorem slots_of_reschedulePendingCovers {e : CoreId} {pre post : SystemState}
         post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c) :=
   fun c hc => (h c hc).imp id fun hU => ⟨fun t ht => (hU.1 t ht).1, hU.2.1⟩
 
-/-- The binding pair carries over a step that moves no binding and no context's
-bound thread. -/
-theorem schedContextBindingBidirectional.of_bindings {pre post : SystemState}
-    (h : schedContextBindingBidirectional pre) (hB : bindingsAgree post pre)
-    (hS : ∀ s, (post.getSchedContext? s).map (·.boundThread) =
-      (pre.getSchedContext? s).map (·.boundThread)) :
-    schedContextBindingBidirectional post := by
-  intro t tcb s hT hs
-  have hb := hB t
-  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT] at hb
-  cases hp : pre.getTcb? t with
-  | none => rw [hp] at hb; cases hb
-  | some tcb0 =>
-    rw [hp] at hb
-    simp only [Option.map_some, Option.some.injEq] at hb
-    obtain ⟨sc0, h0, hbt⟩ := h t tcb0 s ((SystemState.getTcb?_eq_some_iff _ _ _).mp hp)
-      (by rw [← hb]; exact hs)
-    have hs' := hS s
-    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr h0] at hs'
-    cases hq : post.getSchedContext? s with
-    | none => rw [hq] at hs'; cases hs'
-    | some sc =>
-      rw [hq] at hs'
-      simp only [Option.map_some, Option.some.injEq] at hs'
-      exact ⟨sc, (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hq, hs'.trans hbt⟩
-
 /-- A run-queue placement moves no thread's key or budget eligibility: the woken
 TCB's rewrite marks it `.ready`, and its run-queue links are no key input. -/
 theorem enqueueRunnableOnCore_views (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
@@ -149,7 +123,7 @@ theorem refillSchedContext_views_of_unbound (st : SystemState) (scId : SeLe4n.Sc
   | some sc =>
     have hPre := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS
     have hPost : (refillSchedContext st scId now).objects[scId.toObjId]? =
-        some (.schedContext (cbsUpdateDeadline (processReplenishments sc now) now true)) := by
+        some (.schedContext (cbsUpdateDeadline (sc.releaseReadyHead now) now true)) := by
       apply (SystemState.getSchedContext?_eq_some_iff _ _ _).mp
       unfold refillSchedContext
       rw [SystemState.updateSchedContext_getSchedContext?_self _ _ _ hInv, hS]; rfl
@@ -257,20 +231,6 @@ theorem processOneReplenishmentOnCore_preserves_bidirectional (st : SystemState)
     (fun s => ?_)
   rw [processOneReplenishmentOnCore, markRefillKeyChange_getSchedContext?, hBt s,
     refillSchedContext_boundThread st scId now hInv s]
-
-/-- A release-queue edit keeps the binding pair: it writes no TCB and no
-context's bound thread. -/
-theorem schedContextBindingBidirectional_of_agreeOffReleaseLinks {st st' : SystemState}
-    (h : st'.objectsAgreeOffReleaseLinks st) (hB : schedContextBindingBidirectional st) :
-    schedContextBindingBidirectional st' := by
-  intro t tcb scId hT hS
-  have hT' : st.getTcb? t = some tcb := by
-    rw [← h.getTcb? t]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-  obtain ⟨sc, hsc, hb⟩ := hB t tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hS
-  obtain ⟨sc', hsc', e⟩ :=
-    h.getSchedContext?_some ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hsc)
-  exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hsc',
-    (congrArg SchedContext.boundThread e).trans hb⟩
 
 /-- **The drain covers**: the replenish-queue write-back moves no view, queue,
 current slot or flag, and each due replenishment covers under the store
@@ -482,8 +442,8 @@ theorem currentBoundHomedOnCore_of_placement (st : SystemState) (c : CoreId)
   exact hB0
 
 /-- **The bound yield's requeue is on the context's own core** (WS-ZA ZA6.3):
-the yielding thread is current on `c`, so its context, charged its whole
-remaining budget, is free on `c`, and the requeue's branch that leaves both
+the yielding thread is current on `c`, so its context, charged its budget,
+is free on `c`, and the requeue's branch that leaves both
 queues as they are is unreachable (`spendBudget_requeue_releaseFreeFor`). -/
 theorem yieldCharge_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {scId : SchedContextId} {sc : SchedContext}
@@ -494,10 +454,9 @@ theorem yieldCharge_requeue_releaseFreeFor {st : SystemState} {c : CoreId}
     (hT : st.getTcb? tid = some tcb) (hb : tcb.schedContextBinding.scId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) :
     (st.rewriteObject scId.toObjId (.schedContext (cbsUpdateDeadline
-        (scheduleReplenishment (consumeBudget sc sc.budgetRemaining.val) st.machine.timer
-          ⟨sc.budgetRemaining.val⟩) st.machine.timer true))
+        (sc.chargeBudget st.machine.timer sc.budget.val st.machine.timer) st.machine.timer true))
       (SystemState.rewriteAdmissible_schedContext hSc _)).releaseFreeFor c scId = true :=
-  spendBudget_requeue_releaseFreeFor _ hInv hRef hAff
+  spendBudget_requeue_releaseFreeFor _ _ hInv hRef hAff
     (currentBoundHomedOnCore_of_placement st c hD hBi) hc hT hb hSc
 
 /-- **The exhausting charge covers**: the spend and its key hook cover, the
@@ -507,9 +466,12 @@ theorem budgetExhaustOnCore_stepCovers (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (scId : SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
     (ticks : Nat) (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
-    (hBindId : tcb.schedContextBinding.scId? = some scId) :
+    (hBindId : tcb.schedContextBinding.scId? = some scId)
+    (hAway : ∀ c', c' ≠ c → st.scheduler.reschedulePendingOnCore c' = false →
+      st.queuedOn c' tid = false) :
     stepCovers c st (budgetExhaustOnCore st c tid (effectiveSchedParams st tcb) scId sc hSc ticks) := by
-  obtain ⟨hS, hI⟩ := spendBudgetKeyHook_stepCovers st c tid tcb hTcb scId sc hSc ticks hInv hBi hBindId
+  obtain ⟨hS, hI⟩ := spendBudgetKeyHook_stepCovers st c tid tcb hTcb scId sc hSc _ ticks hInv hBi
+    hBindId hAway
   refine stepCovers_trans (stepCovers_trans hS (timeoutBlockedThreads_stepCovers c _ scId c hI)) ?_
   unfold budgetExhaustOnCore
   exact stepCovers_of_objects_eq rfl (fun _ _ => by simp)
@@ -517,11 +479,14 @@ theorem budgetExhaustOnCore_stepCovers (st : SystemState) (c : CoreId)
 
 /-- **The charge covers.**  The unbound decrement writes `timeSlice`, no key
 input; the slice expiry covers; the bound charge that leaves budget keeps the
-context's deadline and its budget positive; the exhausting charge covers; a
-context the store does not hold is charged nothing. -/
+context's deadline and its budget positive; the exhausting charge covers, the
+charged thread on no unflagged remote queue (`hAway`); a context the store does
+not hold is charged nothing. -/
 theorem timerTickBudgetOnCore_stepCovers (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hAway : ∀ c', c' ≠ c → st.scheduler.reschedulePendingOnCore c' = false →
+      st.queuedOn c' tid = false) :
     stepCovers c st (timerTickBudgetOnCore st c tid tcb hTcb).1 := by
   have hO := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   unfold timerTickBudgetOnCore
@@ -536,15 +501,21 @@ theorem timerTickBudgetOnCore_stepCovers (st : SystemState) (c : CoreId)
     rename_i hBind
     split
     · rename_i sc hSc _
+      dsimp only
       split
       · exact budgetExhaustOnCore_stepCovers st c tid tcb hTcb _ sc hSc 1 hInv hBi
-          (by rw [hBind]; rfl)
+          (by rw [hBind]; rfl) hAway
       · rename_i hBudget
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
+        have hEx : sc.tickExhausts (st.machine.timer - 1) = false := by simpa using hBudget
+        have hD := (SchedContext.fields_of_refillsErased
+          (sc.chargeBudget_refillsErased (st.machine.timer - 1) 1 st.machine.timer)).2.2.2.2.1
+        have hP1 := sc.chargeBudget_tick_pos _ st.machine.timer hEx
+        have hP0 := sc.tickExhausts_false_pos _ hEx
         exact stepCovers_of_scheduler_eq
           (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_schedContext hSc _) hInv (by
             rw [hScRaw]
-            simp only [keyInputsOf, consumeBudget, Budget.decrement, Budget.isPositive]
+            simp only [keyInputsOf, Budget.isPositive, hD]
             congr 3
             simp only [decide_eq_decide]
             omega))
@@ -616,11 +587,28 @@ thread already queued but ineligible before its refill (PR #880 round 7) —
 has its reschedule flag up, and no remote flag came down.  Consumes the store
 invariant and the binding pair, which every phase keeps; no runtime check. -/
 theorem timerTickOnCore_stepCovers (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hD : st.currentDequeuedUnique) :
     stepCovers c st (timerTickOnCore st c) := by
   obtain ⟨hP, hPBi⟩ := timerTickOnCorePrepared_stepCovers st c hInv hBi
   have hPInv := timerTickOnCorePrepared_preserves_objects_invExt st c hInv
-  refine (timerTickOnCore_of (P := fun s => stepCovers c st s ∧ s.objects.invExt) st c
+  -- The charged thread, current on `c`, was on no queue before the tick
+  -- (`currentDequeuedUnique`), so on no unflagged remote queue after the drain.
+  have hAway : ∀ tid, (timerTickOnCorePrepared st c).scheduler.currentOnCore c = some tid →
+      ∀ c', c' ≠ c → (timerTickOnCorePrepared st c).scheduler.reschedulePendingOnCore c' = false →
+        (timerTickOnCorePrepared st c).queuedOn c' tid = false := by
+    intro tid hCur c' hc' hFl
+    have hCur0 : st.scheduler.currentOnCore c = some tid := by
+      unfold timerTickOnCorePrepared at hCur
+      rw [processReplenishmentsDueOnCore_currentOnCore_eq] at hCur
+      simpa using hCur
+    cases hq : (timerTickOnCorePrepared st c).queuedOn c' tid
+    · rfl
+    · rcases hP.1 c' hc' with hUp | hUn
+      · rw [hFl] at hUp; cases hUp
+      · have := (hUn.1 tid hq).1
+        rw [hD.not_queued hCur0 c'] at this; cases this
+  refine (timerTickOnCore_of_current (P := fun s => stepCovers c st s ∧ s.objects.invExt) st c
     ⟨hP, hPInv⟩ (fun s hs => ⟨stepCovers_trans hs.1
         (handleRescheduleSgiOnCore_stepCovers c s _ hs.2 (handleRescheduleSgiOnCore_eq_state s c)),
       handleRescheduleSgiOnCore_preserves_objects_invExt s c _ hs.2
@@ -629,8 +617,8 @@ theorem timerTickOnCore_stepCovers (st : SystemState) (c : CoreId)
         (scheduleEffectiveOnCore_stepCovers c s _ hs.2 (scheduleEffectiveOnCore_eq_state s c)),
       scheduleEffectiveOnCore_preserves_objects_invExt s c _ hs.2
         (scheduleEffectiveOnCore_eq_state s c)⟩)
-    (fun tid tcb hTcb st3 b hb => ⟨stepCovers_trans hP (by
-        have h := timerTickBudgetOnCore_stepCovers _ c tid tcb hTcb hPInv hPBi
+    (fun tid tcb hTcb st3 b hCur hb => ⟨stepCovers_trans hP (by
+        have h := timerTickBudgetOnCore_stepCovers _ c tid tcb hTcb hPInv hPBi (hAway tid hCur)
         rw [hb] at h; exact h),
       timerTickBudgetOnCore_preserves_objects_invExt _ c tid tcb st3 b hPInv hb⟩)).1
 
@@ -677,7 +665,8 @@ theorem timerTickOnCore_reschedulePendingOnCore_self (st : SystemState) (c : Cor
 flag; the tick covers; the domain step covers. -/
 theorem perCoreTimerTickStep_stepCovers (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < Concurrency.numCores) (hInv : st.objects.invExt)
-    (hBi : schedContextBindingBidirectional st) :
+    (hBi : schedContextBindingBidirectional st)
+    (hD : st.currentDequeuedUnique) :
     stepCovers ⟨coreId.toNat, h⟩ st (perCoreTimerTickStep st coreId).1 := by
   rw [perCoreTimerTickStep_valid_core st coreId h]
   have hC : stepCovers ⟨coreId.toNat, h⟩ st (tickClockedState st ⟨coreId.toNat, h⟩) :=
@@ -687,7 +676,12 @@ theorem perCoreTimerTickStep_stepCovers (st : SystemState) (coreId : UInt64)
     rw [tickClockedState_objects]; exact hInv
   have hCBi : schedContextBindingBidirectional (tickClockedState st ⟨coreId.toNat, h⟩) := by
     unfold tickClockedState; split <;> exact hBi
-  exact stepCovers_trans (stepCovers_trans hC (timerTickOnCore_stepCovers _ _ hCInv hCBi))
+  have hCD : (tickClockedState st ⟨coreId.toNat, h⟩).currentDequeuedUnique :=
+    SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
+      (by rw [tickClockedState_scheduler])
+      (fun c t => by unfold SystemState.runLinkOn SystemState.getTcb?; rw [tickClockedState_objects])
+      (SystemState.StateMono.of_objects (tickClockedState_objects _ _)) hD
+  exact stepCovers_trans (stepCovers_trans hC (timerTickOnCore_stepCovers _ _ hCInv hCBi hCD))
     (scheduleDomainOnCoreState_stepCovers _ _ (timerTickOnCore_preserves_objects_invExt _ _ hCInv))
 
 /-- **The run-loop step's SGIs are complete** (WS-ZA ZA6.2).  Every core other
@@ -697,11 +691,12 @@ then outstanding from the entry that raised it, and one reschedule answers
 both (the duplicate collapse). -/
 theorem perCoreTimerTickStep_sgis_complete (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < Concurrency.numCores) (hInv : st.objects.invExt)
-    (hBi : schedContextBindingBidirectional st) (d : CoreId) (hd : d ≠ ⟨coreId.toNat, h⟩)
+    (hBi : schedContextBindingBidirectional st)
+    (hD : st.currentDequeuedUnique) (d : CoreId) (hd : d ≠ ⟨coreId.toNat, h⟩)
     (hStaled : ¬ coreDecisionUnstaled st (perCoreTimerTickStep st coreId).1 d) :
     (perCoreTimerTickStep st coreId).2.get d = true ∨
       st.scheduler.reschedulePendingOnCore d = true := by
-  have hF := ((perCoreTimerTickStep_stepCovers st coreId h hInv hBi).1 d hd).resolve_right hStaled
+  have hF := ((perCoreTimerTickStep_stepCovers st coreId h hInv hBi hD).1 d hd).resolve_right hStaled
   rw [perCoreTimerTickStep_raised_get]
   cases hPre : st.scheduler.reschedulePendingOnCore d
   · left
@@ -718,6 +713,7 @@ no core the step's SGI set misses, but for a core whose flag was already up
 theorem perCoreTimerTickStep_sgis_cover_diff (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < Concurrency.numCores) (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st)
+    (hD : st.currentDequeuedUnique)
     (hId : ∀ oid (tcb : TCB), (perCoreTimerTickStep st coreId).1.getObject? oid = some (.tcb tcb) →
       tcb.tid.toObjId = oid)
     {d : CoreId} {k : SgiKind}
@@ -726,7 +722,7 @@ theorem perCoreTimerTickStep_sgis_cover_diff (st : SystemState) (coreId : UInt64
     (perCoreTimerTickStep st coreId).2.get d = true ∨
       st.scheduler.reschedulePendingOnCore d = true := by
   have hF := computeCrossCoreSgis_core_flagged_of_covers hId
-    (perCoreTimerTickStep_stepCovers st coreId h hInv hBi).1 hMem
+    (perCoreTimerTickStep_stepCovers st coreId h hInv hBi hD).1 hMem
   rw [perCoreTimerTickStep_raised_get]
   cases hPre : st.scheduler.reschedulePendingOnCore d
   · left

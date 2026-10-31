@@ -370,7 +370,8 @@ def replaceRunQueueOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.Core
 
 /-- Queue scheduling context `s` on core `c`'s release queue, due at `t`: the
 context's earliest pending refill becomes one refill of its full budget at `t`
-(the queue's key is that refill, `SchedContext.releaseKey?`, as seL4-MCS keys
+and its head is used up (`budgetRemaining = 0`: seL4-MCS queues only a context
+whose head refill is not yet ready; the queue's key is that refill, `SchedContext.releaseKey?`, as seL4-MCS keys
 its release queue by the head refill's release time), and the context is placed
 through the kernel's own `replenishOnCore`, which writes the contexts' release
 links and the abstract queue together (WS-ZA ZA6.3).  A write to the
@@ -379,8 +380,9 @@ compiled kernel reads.  A context the store does not hold is left unqueued. -/
 def withReleaseEntryOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (s : SeLe4n.SchedContextId) (t : Nat) : SystemState :=
   SeLe4n.Kernel.replenishOnCore (st.updateSchedContext s fun sc =>
-    { sc with refillHeadPresent := true, refillHeadAmount := sc.budget.val,
-              refillHeadEligibleAt := t, refillTailCount := 0 }) c s
+    { sc with budgetRemaining := ⟨0⟩, refillHeadPresent := true,
+              refillHeadAmount := sc.budget.val, refillHeadEligibleAt := t,
+              refillTailCount := 0 }) c s
 
 /-- Runtime form of `chooseThreadOnCoreSelects`: core `c`'s selection read
 through the threads' run-queue links (`chooseThreadOnCoreByLinks`, equal to

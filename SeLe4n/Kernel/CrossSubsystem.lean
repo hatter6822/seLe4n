@@ -2602,7 +2602,6 @@ read.
 | schedContextConfigure |
 | schedContextBind |
 | schedContextUnbind |
-| schedContextYieldTo |
 | setPriorityOp |
 | setMCPriorityOp |
 | vspaceMapPage |
@@ -3171,28 +3170,6 @@ theorem schedContextBind_crossSubsystemInvariant_bridge
     Clears SchedContext `boundThread` and TCB `schedContextBinding` fields.
     Does not modify `serviceRegistry` or `objectIndex`. -/
 theorem schedContextUnbind_crossSubsystemInvariant_bridge
-    (st st' : SystemState)
-    (hPre : crossSubsystemInvariant st)
-    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
-    (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
-    (hEndpointQ : noStaleEndpointQueueReferences st')
-    (hNotifWait : noStaleNotificationWaitReferences st')
-    (hScStore : schedContextStoreConsistent st')
-    (hScDual : schedContextNotDualBound st')
-    (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
-    (hLockstep : lifecycleObjectTypeLockstep st')
-    (hUntypedDisj : untypedRegionsDisjoint st') :
-    crossSubsystemInvariant st' :=
-  crossSubsystemInvariant_objects_change_bridge st st' hPre hSvcReg hIfaceReg
-    hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
-
-/-- AD4-E (F-08): `schedContextYieldTo` preserves `crossSubsystemInvariant`.
-    Transfers budget between SchedContexts. Rewrites both SchedContext objects
-    in place (`rewriteObject` under the source's witness, then
-    `updateSchedContext`). Does not modify `serviceRegistry` or
-    `objectIndex`. -/
-theorem schedContextYieldTo_crossSubsystemInvariant_bridge
     (st st' : SystemState)
     (hPre : crossSubsystemInvariant st)
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)

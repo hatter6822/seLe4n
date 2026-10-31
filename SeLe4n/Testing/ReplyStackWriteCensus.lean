@@ -307,7 +307,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
   , (`SeLe4n.Kernel.spendBudgetOnCore,
-      "rebuilds a SchedContext for its budget accounting (`consumeBudget`, `scheduleReplenishment`, `cbsUpdateDeadline`); `scReply` is untouched")
+      "rebuilds a SchedContext for its budget accounting (`SchedContext.chargeBudget`, `cbsUpdateDeadline`); `scReply` is untouched")
     -- ---------------------------------------------------------------------
     -- Reached through a helper, which is what the frontier started following
     -- at `v0.35.13`.  Each of these composes `Model.linkReply` and touches no
@@ -380,8 +380,6 @@ def chainNeutralConstructors : List (Name × String) :=
       "the bound release proven equal to `cancelBoundDonationOnCore` (exempt below): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
       "the admitted suspend: `suspendReleasePerform`, the deschedule and the TCB's state; a victim blocked on nothing holds no reply link to consume")
-  , (`SeLe4n.Kernel.SchedContextOps.schedContextYieldTo,
-      "rebuilds both SchedContexts for their budget accounting; `scReply` is in neither assignment list")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,
@@ -396,8 +394,6 @@ def chainNeutralConstructors : List (Name × String) :=
       "the per-core spelling of the same budget accounting; same reason")
   , (`SeLe4n.Kernel.refillSchedContext,
       "rebuilds a SchedContext for its replenishment; `scReply` is untouched")
-  , (`SeLe4n.Kernel.refillSchedContextImpl,
-      "the compiled form of the same replenishment (`refillRecord` or the specification's record), written in the context's cell; `scReply` is untouched")
   , (`SeLe4n.Kernel.handleYieldWithBudget,
       "`{ sc with budgetRemaining := Budget.zero, isActive := false }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation,

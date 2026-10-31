@@ -34,7 +34,9 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
       st'.scheduler = st.scheduler)
     (hF : st.objects.invExt → SystemState.TableReferenceFrame st st')
     (hR : st.objects.invExt → ∀ (oid : SeLe4n.ObjId) (c : Concurrency.CoreId),
-      SystemState.objReleaseLinkOn st'.objects[oid]? c = SystemState.objReleaseLinkOn st.objects[oid]? c) :
+      SystemState.objReleaseLinkOn st'.objects[oid]? c = SystemState.objReleaseLinkOn st.objects[oid]? c)
+    (hV : st.objects.invExt → ∀ oid : SeLe4n.ObjId,
+      objRefillView st'.objects[oid]? = objRefillView st.objects[oid]?) :
     RunQueueStage st st' :=
   have hL : st.objects.invExt → ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun hInv c t => by
     rw [SystemState.runLinkOn_eq_objRunLinkOn, SystemState.runLinkOn_eq_objRunLinkOn]
@@ -42,7 +44,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
   ⟨.of_tableFrame (fun hInv r => ⟨(h hInv).1,
       SystemState.runQueueRefined_of_frame (hL hInv) (by rw [(h hInv).2.2.2])
         (by rw [(h hInv).2.2.2]) r⟩) hF
-      (fun hInv => ⟨.of_objReleaseLinkOn (hR hInv), by rw [(h hInv).2.2.2]⟩),
+      (fun hInv => ⟨.of_objReleaseLinkOn (hR hInv), by rw [(h hInv).2.2.2]⟩)
+      (fun hInv => .of_eq (hV hInv)),
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [(h hInv).2.2.2])
       (hL hInv) (SystemState.StateMono.of_slots (h hInv).2.2.1) d,
     fun hInv _ => SystemState.StateMono.of_slots (h hInv).2.2.1⟩
@@ -67,7 +70,11 @@ theorem vspaceRootOnlyWrite_runQueueStage {st st' : SystemState}
       rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
       · rw [e]
       · rw [h1, h2]; rfl)
-    fun hInv oid c => by
+    (fun hInv oid c => by
+      rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
+      · rw [e]
+      · rw [h1, h2]; rfl)
+    fun hInv oid => by
       rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -244,10 +251,18 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     cases o with
     | none => rfl
     | some obj => cases obj <;> first | rfl | exact absurd h (by simp [retireTouched])
+  have hVT : ∀ o : Option KernelObject, retireTouched o → objRefillView o = none := by
+    intro o h
+    cases o with
+    | none => rfl
+    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [retireTouched])
   refine RunQueueStage.of_slots (fun hInv => ?_) hF (fun hInv oid c => by
     rcases (h hInv).2.2 oid with e | ⟨t1, t2⟩
     · rw [e]
-    · rw [hRT _ t1, hRT _ t2])
+    · rw [hRT _ t1, hRT _ t2]) (fun hInv oid => by
+    rcases (h hInv).2.2 oid with e | ⟨t1, t2⟩
+    · rw [e]
+    · rw [hVT _ t1, hVT _ t2])
   obtain ⟨hExt, hS1, hW⟩ := h hInv
   have hT : ∀ o : Option KernelObject, retireTouched o → ∀ c, SystemState.objRunLinkOn o c = RunQueue.RunQueueLink.none := by
     intro o h c
@@ -278,7 +293,12 @@ theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target record
       SystemState.runQueueRefined_of_frame (hL hInv) (by rw [hS]) (by rw [hS]) r⟩,
       fun hInv _ hR => retireFinalObject_preserves_tableReferencesRecorded ec target recorder st
         hInv hR,
-      fun hInv _ hR => (retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR⟩,
+      fun hInv _ hR => (retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR,
+      fun _ hInv _ hR x => SystemState.refillsSoundExcept_of_kept
+        (.of_schedContexts_backward fun _ _ hp => retireFinalObject_back ec target recorder st hInv hp
+          (fun _ h => KernelObject.noConfusion h))
+        (fun c => by rw [(retireFinalObject_releaseStateAgree ec target recorder st hInv).replenishQueueOnCore c])
+        ((retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR) x⟩,
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) (hL hInv)
       (retireFinalObject_stateMono ec target recorder hInv) d,
     fun hInv _ => retireFinalObject_stateMono ec target recorder hInv⟩
@@ -296,8 +316,10 @@ theorem storeObject_inert_runQueueStage {st st' : SystemState} {oid : SeLe4n.Obj
     (hObj : ∀ t, obj ≠ .tcb t)
     (hB : obj.tableBackLinks = old.tableBackLinks := by table_backlinks)
     (hR : ∀ c, SystemState.objReleaseLinkOn (some obj) c =
-      SystemState.objReleaseLinkOn (some old) c := by release_links) : RunQueueStage st st' :=
-  RunQueueStage.storeObject_nonTcb hStore hPre hObj hOld hB hR
+      SystemState.objReleaseLinkOn (some old) c := by release_links)
+    (hV : objRefillView (some obj) = objRefillView (some old) := by refill_view) :
+    RunQueueStage st st' :=
+  RunQueueStage.storeObject_nonTcb hStore hPre hObj hOld hB hR hV
 
 theorem tagFrameMapping_runQueueStage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {frameId : SeLe4n.ObjId} {st st' : SystemState} {e : Nat}
@@ -664,7 +686,8 @@ theorem updateSchedContext_runQueueStage (st : SystemState) (scId : SeLe4n.Sched
     (f : SchedContext → SchedContext)
     (hf : ∀ sc, (f sc).releaseNextCode = sc.releaseNextCode ∧
       (f sc).releaseCoreCode = sc.releaseCoreCode ∧ (f sc).releaseAt = sc.releaseAt := by
-        intro _; exact ⟨rfl, rfl, rfl⟩) :
+        intro _; exact ⟨rfl, rfl, rfl⟩)
+    (hv : ∀ sc, (f sc).refillView = sc.refillView := by intro _; rfl) :
     SystemState.RunQueueStage st (st.updateSchedContext scId f) := by
   have hU := SystemState.updateSchedContext_scheduler st scId f
   apply SystemState.RunQueueStage.of_placement
@@ -680,6 +703,32 @@ theorem updateSchedContext_runQueueStage (st : SystemState) (scId : SeLe4n.Sched
       (SystemState.updateSchedContext_getTcb? st scId _ hInv)
   · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
   · exact fun hInv => .updateSchedContext st scId f hInv hf
+  · exact fun hInv => .updateSchedContext st scId f hInv hv
+  · show (st.updateSchedContext scId _).scheduler.currentCode = _
+    rw [hU]
+
+/-- WS-ZA ZA6.4: **a context update that may write its refills is a frame stage
+off that context** — the drain's refill, whose placement closes it. -/
+theorem updateSchedContext_runQueueFrameStage (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext)
+    (hf : ∀ sc, (f sc).releaseNextCode = sc.releaseNextCode ∧
+      (f sc).releaseCoreCode = sc.releaseCoreCode ∧ (f sc).releaseAt = sc.releaseAt) :
+    SystemState.RunQueueFrameStage (· = scId) st (st.updateSchedContext scId f) := by
+  have hU := SystemState.updateSchedContext_scheduler st scId f
+  apply SystemState.RunQueueFrameStage.of_placement
+  · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+  · show (st.updateSchedContext scId _).scheduler.runQueue = _
+    rw [hU]
+  · show (st.updateSchedContext scId _).scheduler.runQueueEnds = _
+    rw [hU]
+  · intro hInv x
+    exact congrArg (Option.map TCB.placement)
+      (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
+  · exact fun hInv => SystemState.StateMono.of_getTcb
+      (SystemState.updateSchedContext_getTcb? st scId _ hInv)
+  · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
+  · exact fun hInv => .updateSchedContext st scId f hInv hf
+  · exact fun hInv => SystemState.RefillsKeptOff.updateSchedContext st scId f hInv
   · show (st.updateSchedContext scId _).scheduler.currentCode = _
     rw [hU]
 
@@ -896,21 +945,25 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
     | none => rfl
     | some _ => rw [h] at hFresh; simp at hFresh
   have k1 := storeObject_inert_runQueueStage hStUt hUt (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
-  have k2 : RunQueueStage stUt stCh :=
-    RunQueueStage.storeObject hStCh (fun c => by rw [hChildNone]; cases req <;> rfl)
+  have k2 : RunQueueStage stUt stCh := by
+   cases req with
+   | schedContext _ =>
+    unfold storeObject at hStCh; cases hStCh
+    exact RunQueueStage.insert_freshContext rfl rfl rfl hChildNone rfl
+      (schedContextWellFormed_empty _) rfl rfl (by rw [hChildNone]; rfl)
+      (fun c => by rw [hChildNone]; simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn,
+        CarveRequest.object, SeLe4n.Kernel.SchedContext.empty])
+   | _ =>
+    exact RunQueueStage.storeObject hStCh (fun c => by rw [hChildNone]; rfl)
       (by
         rw [hChildNone]
-        cases req with
-        | tcb dom core =>
-          refine ⟨fun _ h => ?_, fun _ h _ => ?_⟩
-          · cases h
-          · cases h; exact .inl rfl
-        | _ => exact SystemState.objStateMono_nonTcb rfl rfl)
-      (by rw [hChildNone]; cases req <;> rfl)
-      (fun c => by
-        rw [hChildNone]
-        cases req <;> first | rfl | simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn,
-          CarveRequest.object, SeLe4n.Kernel.SchedContext.empty])
+        first
+        | exact SystemState.objStateMono_nonTcb rfl rfl
+        | (refine ⟨fun _ h => ?_, fun _ h _ => ?_⟩
+           · cases h
+           · cases h; exact .inl rfl))
+      (by rw [hChildNone]; rfl)
+      (fun c => by rw [hChildNone]; rfl) (by rw [hChildNone]; rfl)
   have k3 := storeObject_inert_runQueueStage hStIdx hOCh (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
   have kZ : RunQueueStage st1 (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))) :=
     RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _ _)

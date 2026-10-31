@@ -26,7 +26,8 @@ theorem timerTickBudget_F1_succeeds
   by_cases h : tcb.timeSlice ≤ 1 <;> simp [h]
 
 /-- D5-D (Z4-F2/F3): For bound threads with a valid SchedContext lookup,
-`timerTickBudget` always succeeds with preemption iff budget ≤ 1. -/
+`timerTickBudget` always succeeds with preemption iff the tick uses the head up
+(`SchedContext.tickExhausts`, WS-ZA ZA6.4). -/
 theorem timerTickBudget_bound_succeeds
     (st : SystemState) (tid : ThreadId) (tcb : TCB)
     (scId : SchedContextId) (sc : SchedContext)
@@ -35,10 +36,10 @@ theorem timerTickBudget_bound_succeeds
     (hTcb : st.getTcb? tid = some tcb) :
     ∃ st' preempted,
       timerTickBudget st tid tcb hTcb = .ok (st', preempted) ∧
-      (preempted = true ↔ sc.budgetRemaining.val ≤ 1) := by
+      (preempted = true ↔ sc.tickExhausts st.machine.timer = true) := by
   simp only [timerTickBudget, hBound, SystemState.getSchedContextWitnessed?_eq_some
     ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup)]
-  by_cases h : sc.budgetRemaining.val ≤ 1 <;> simp [h]
+  by_cases h : sc.tickExhausts st.machine.timer = true <;> simp [h]
 
 /-- D5-D (Z4-F2/F3 donated variant): Same for donated SchedContexts. -/
 theorem timerTickBudget_donated_succeeds
@@ -49,22 +50,17 @@ theorem timerTickBudget_donated_succeeds
     (hTcb : st.getTcb? tid = some tcb) :
     ∃ st' preempted,
       timerTickBudget st tid tcb hTcb = .ok (st', preempted) ∧
-      (preempted = true ↔ sc.budgetRemaining.val ≤ 1) := by
+      (preempted = true ↔ sc.tickExhausts st.machine.timer = true) := by
   simp only [timerTickBudget, hDonated, SystemState.getSchedContextWitnessed?_eq_some
     ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup)]
-  by_cases h : sc.budgetRemaining.val ≤ 1 <;> simp [h]
+  by_cases h : sc.tickExhausts st.machine.timer = true <;> simp [h]
 
-/-- D5-D: `consumeBudget` decreases budget by the specified tick count
-(saturating at 0). Direct from definition. -/
-theorem consumeBudget_val_eq (sc : SchedContext) (ticks : Nat) :
-    (consumeBudget sc ticks).budgetRemaining.val =
-    sc.budgetRemaining.val - ticks := by
-  simp [consumeBudget, Budget.decrement]
-
-/-- D5-D: `consumeBudget` by 1 tick monotonically decreases budget. -/
-theorem consumeBudget_one_le (sc : SchedContext) :
-    (consumeBudget sc 1).budgetRemaining.val ≤ sc.budgetRemaining.val :=
-  consumeBudget_budgetRemaining_le sc 1
+/-- D5-D: the tick's charge holds the refills' total (WS-ZA ZA6.4,
+`SchedContext.chargeBudget_refillTotal`): what the head loses is scheduled again,
+so the context's budget is neither lost nor gained by a tick. -/
+theorem chargeBudget_tick_refillTotal (sc : SchedContext) (start now : Nat) :
+    (sc.chargeBudget start 1 now).refillTotal = sc.refillTotal :=
+  sc.chargeBudget_refillTotal start 1 now
 
 -- ============================================================================
 -- D5-F: Time-slice preemption bound

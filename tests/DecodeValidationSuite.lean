@@ -77,19 +77,21 @@ def test_t03_noncanonical_vaddr_boundary_rejected : IO Unit := do
   | _ =>
     throw <| IO.userError "T03: expected addressOutOfBounds at the canonical boundary"
 
-/-- T04: AK3-J — checked schedContextConfigure rejects priority > 255. -/
+/-- T04: AK3-J — checked schedContextConfigure rejects a priority-and-domain
+word with a bit above the domain's (WS-ZA ZA6.4: priority is bits 0–7 and the
+domain bits 8–11 of MR3, so no priority above 255 can be named). -/
 def test_t04_sc_rejects_high_priority : IO Unit := do
-  -- budget=1000, period=10000, priority=256 (too high), deadline=5000, domain=0
-  let stub := stubOf #[1000, 10000, 256, 5000, 0]
+  -- context cptr=7, budget=1000, period=10000, params=4096 (bit 12), deadline=5000
+  let stub := stubOf #[7, 1000, 10000, 4096, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
-    IO.println "check passed [priority > 255 rejected]"
+    IO.println "check passed [parameter word ≥ 4096 rejected]"
   | _ =>
-    throw <| IO.userError "T04: expected invalidArgument for priority > 255"
+    throw <| IO.userError "T04: expected invalidArgument for a parameter word ≥ 4096"
 
 /-- T05: AK3-J — checked schedContextConfigure rejects domain ≥ 16. -/
 def test_t05_sc_rejects_high_domain : IO Unit := do
-  let stub := stubOf #[1000, 10000, 100, 5000, 16]
+  let stub := stubOf #[7, 1000, 10000, 100 + 16 * 256, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
     IO.println "check passed [domain ≥ 16 rejected]"
@@ -98,7 +100,7 @@ def test_t05_sc_rejects_high_domain : IO Unit := do
 
 /-- T06: AK3-J — checked schedContextConfigure rejects budget = 0. -/
 def test_t06_sc_rejects_zero_budget : IO Unit := do
-  let stub := stubOf #[0, 10000, 100, 5000, 0]
+  let stub := stubOf #[7, 0, 10000, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
     IO.println "check passed [budget = 0 rejected]"
@@ -107,7 +109,7 @@ def test_t06_sc_rejects_zero_budget : IO Unit := do
 
 /-- T07: AK3-J — checked schedContextConfigure rejects period = 0. -/
 def test_t07_sc_rejects_zero_period : IO Unit := do
-  let stub := stubOf #[1000, 0, 100, 5000, 0]
+  let stub := stubOf #[7, 1000, 0, 100, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
     IO.println "check passed [period = 0 rejected]"
@@ -116,10 +118,11 @@ def test_t07_sc_rejects_zero_period : IO Unit := do
 
 /-- T08: AK3-J — checked schedContextConfigure accepts valid args. -/
 def test_t08_sc_accepts_valid : IO Unit := do
-  -- budget=1000, period=10000, priority=100, deadline=5000, domain=1
-  let stub := stubOf #[1000, 10000, 100, 5000, 1]
+  -- context cptr=7, budget=1000, period=10000, priority=100 domain=1, deadline=5000
+  let stub := stubOf #[7, 1000, 10000, 100 + 1 * 256, 5000]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
+    expectCond "decode-validation" "context cptr" (args.scCPtr == SeLe4n.CPtr.ofNat 7)
     expectCond "decode-validation" "budget" (args.budget == 1000)
     expectCond "decode-validation" "period" (args.period == 10000)
     expectCond "decode-validation" "priority" (args.priority == 100)
@@ -129,13 +132,49 @@ def test_t08_sc_accepts_valid : IO Unit := do
 
 /-- T09: AK3-J — boundary: priority = 255 accepted, domain = 15 accepted. -/
 def test_t09_sc_boundary_accepted : IO Unit := do
-  let stub := stubOf #[1, 1, 255, 0, 15]
+  let stub := stubOf #[7, 1, 1, 255 + 15 * 256, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
     expectCond "decode-validation" "priority boundary" (args.priority == 255)
     expectCond "decode-validation" "domain boundary" (args.domain == 15)
   | .error _ =>
     throw <| IO.userError "T09: expected ok at boundary"
+
+/-- Words whose low twelve bits name a valid priority and domain but which set
+a bit above the domain's: each must be refused, never read as its low bits. -/
+def highBitParamWords : List Nat :=
+  [ 4096 + 100 + 1 * 256          -- bit 12 over priority 100, domain 1
+  , 2^40 + 255 + 15 * 256         -- bit 40 over the maxima
+  , 2^63 + 7                      -- the word's top bit
+  , 2^64 - 1 ]                    -- every bit
+
+/-- T10: WS-ZA ZA6.4 review — the checked configure decode refuses a parameter
+word with any bit set above the packed priority and domain, so a stray high bit
+is never truncated into the valid configuration its low bits name. -/
+def test_t10_sc_rejects_high_param_bits : IO Unit := do
+  for w in highBitParamWords do
+    match decodeSchedContextConfigureArgsChecked (stubOf #[7, 1000, 10000, w, 5000]) with
+    | .error .invalidArgument => pure ()
+    | _ => throw <| IO.userError s!"T10: expected invalidArgument for parameter word {w}"
+  IO.println "check passed [parameter words with a bit above bit 11 rejected]"
+
+/-- T11: the register-routed decode (`decodeSchedContextConfigureArgsCheckedBy`,
+read on machine words) refuses the same high-bit words and accepts the maxima. -/
+def test_t11_sc_word_reader_rejects_high_param_bits : IO Unit := do
+  let reader (w : Nat) : MsgRegReader := fun i =>
+    match i with
+    | 0 => .ok 7 | 1 => .ok 1000 | 2 => .ok 10000 | 3 => .ok (UInt64.ofNat w)
+    | 4 => .ok 5000 | _ => .error .invalidMessageInfo
+  for w in highBitParamWords do
+    match decodeSchedContextConfigureArgsCheckedBy (reader w) with
+    | .error .invalidArgument => pure ()
+    | _ => throw <| IO.userError s!"T11: expected invalidArgument for parameter word {w}"
+  match decodeSchedContextConfigureArgsCheckedBy (reader (255 + 15 * 256)) with
+  | .ok args =>
+    expectCond "decode-validation" "word reader priority maximum" (args.priority == 255)
+    expectCond "decode-validation" "word reader domain maximum" (args.domain == 15)
+  | .error e => throw <| IO.userError s!"T11: expected ok at the maxima, got {toString e}"
+  IO.println "check passed [word-read parameter words with a bit above bit 11 rejected]"
 
 /-- Running entry. -/
 def runAllTests : IO Unit := do
@@ -149,6 +188,8 @@ def runAllTests : IO Unit := do
   test_t07_sc_rejects_zero_period
   test_t08_sc_accepts_valid
   test_t09_sc_boundary_accepted
+  test_t10_sc_rejects_high_param_bits
+  test_t11_sc_word_reader_rejects_high_param_bits
   IO.println "=== All decode validation tests passed ==="
 
 end SeLe4n.Testing.DecodeValidation

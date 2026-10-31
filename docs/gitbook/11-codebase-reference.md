@@ -86,7 +86,8 @@ Machine-readable mirror: [`docs/codebase_map.json`](../../docs/codebase_map.json
   - `Types.lean` — SchedContextId, Budget, Period, SchedContext, SchedContextBinding.
   - `Budget.lean` — CBS budget operations: consume, replenish, admission control.
   - `ReplenishQueue.lean` — sorted replenishment queue: insert, popDue, remove.
-  - `Operations.lean` — schedContextConfigure/Bind/Unbind/YieldTo operations.
+  - `Operations.lean` — schedContextConfigure/Bind/Unbind operations.
+  - `SchedControl.lean` — the per-core SchedControl configure, which moves a context to its control's core.
   - `Invariant/Defs.lean` — invariant definitions, preservation proofs, bandwidth theorems.
   - `Invariant/Preservation.lean` — operation-level preservation theorems.
   - Re-export hubs: `Invariant.lean`, `SeLe4n/Kernel/SchedContext.lean`.

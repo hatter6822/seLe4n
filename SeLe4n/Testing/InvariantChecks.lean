@@ -266,6 +266,26 @@ fails it. -/
 def replyNextLinkReciprocalBool (st : SystemState) : Bool :=
   (replyNextLinkReciprocalChecks st.objectIndex st).all (·.2)
 
+/-- **WS-ZA ZA6.4**: `SystemState.releaseNoRefillStranded` as a runtime check:
+a bound context whose head refill is used up and pending is on some core's
+release queue at that refill's time, read off the links themselves: the
+context is on the core's chain walked from its head (`releaseWalk`, the count
+as fuel) and its link holds that time.
+
+One row per bound context holding a pending refill; a failing row names the
+context and the release time no queue holds. -/
+def releaseNoRefillStrandedChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    let s := SeLe4n.SchedContextId.ofObjId oid
+    match (st.getSchedContext? s).bind SeLe4n.Kernel.SchedContext.boundReleaseKey? with
+    | some t =>
+        (s!"bound context with a pending refill is queued: oid={oid} at={t}",
+          SeLe4n.Kernel.Concurrency.allCores.any fun c =>
+            (st.releaseWalk c (st.scheduler.releaseCountOnCore c)
+              (st.scheduler.releaseHeadOnCore c)).contains s && st.releaseAtOn c s == t) :: acc
+    | none => acc) []
+
 /-- M-11 CSpace coherency: every capability slot — a CNode's slot or a thread's
 space slot — whose capability targets an object has that
 object present in the object store — and, where the capability names the object's
@@ -299,6 +319,8 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   -- coherent — and deliberately not "check the trail exists", since a
   -- `SystemState` always has one.
   | .auditTrail => true
+  -- WS-ZA ZA6.4: a scheduling-control capability names a core, not an object.
+  | .schedControl _ => true
 
 /-- One check per occupied capability slot of every listed object: a CNode's
 slots and a thread's two space slots, read as `KernelObject.slotCap` reads them. -/
@@ -799,6 +821,8 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState) :
     ++ endpointQueueLinksOnlyBlockedChecks objectIds st
     -- WS-ZA ZA5.4 part 27: the chain invariant's upward reciprocity.
     ++ replyNextLinkReciprocalChecks objectIds st
+    -- WS-ZA ZA6.4: the release queues strand no bound context's pending refill.
+    ++ releaseNoRefillStrandedChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

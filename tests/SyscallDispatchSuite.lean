@@ -1771,6 +1771,107 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
      | _ => false)
     "an empty CSpace slot must fail with invalidCapability"
 
+/-- SD-063 (WS-ZA ZA6.4): **a scheduling context is configured through a core's
+scheduling-control capability, and through nothing else.**
+
+seL4-MCS's `seL4_SchedControl_ConfigureFlags` is an invocation of a per-core
+`SchedControl` capability, the context named as an extra capability; a
+`SchedContext` capability binds, unbinds and names the context and configures
+nothing.  Until WS-ZA ZA6.4 the configure was an invocation of the scheduling
+context's own capability, so its holder could reset the budget it had been
+handed, period after period.
+
+The caller's CNode holds a writable capability to an unbound context at slot 0,
+core 0's and core 1's scheduling controls at slots 1 and 2, a capability to the
+CNode at slot 3 and a writable capability to a second context, bound to a thread
+homed on core 0, at slot 4.  Through `dispatchSyscall`: the configure invoked on
+the context's own capability is refused (`.invalidCapability`) and changes
+nothing; through core 0's control it configures the context MR0 names; core 0's
+control configures the context whose thread is homed on core 0 in place; core 1's
+control configures it too, moving the context and its thread to core 1 as seL4's
+`invokeSchedControl_ConfigureFlags` does, and the runnable thread, whose fresh
+refill is ready, is queued there (`schedContext_resume`); and MR0 naming
+anything but a scheduling context is `.invalidCapability`. -/
+private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let scBObj : SeLe4n.ObjId := ⟨61⟩
+  let scBId  : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scBObj
+  let tgtTid : SeLe4n.ThreadId := ⟨70⟩
+  let scCap  : Capability := { target := .object scObj, rights := AccessRightSet.ofList [.write] }
+  let scBCap : Capability := { target := .object scBObj, rights := AccessRightSet.ofList [.write] }
+  let cnCap  : Capability := { target := .object cnId, rights := AccessRightSet.ofList [.write] }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (tgtTid.toObjId, .tcb { (mkTcb 70).withCSpaceRoot cnId with
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scBId),
+          scBindingOwnerCode := 0 }),
+      (scObj, .schedContext (SeLe4n.Kernel.SchedContext.empty scId)),
+      (scBObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scBId with
+          boundThreadCode := SeLe4n.ThreadId.optCode (some tgtTid) }),
+      (cnId, .cnode (CNode.ofList 4 0 0 4 [(SeLe4n.Slot.ofNat 0, scCap),
+             (SeLe4n.Slot.ofNat 1, Capability.schedControlOf 0),
+             (SeLe4n.Slot.ofNat 2, Capability.schedControlOf 1),
+             (SeLe4n.Slot.ofNat 3, cnCap), (SeLe4n.Slot.ofNat 4, scBCap)]))
+    ]
+  -- MR0 the context's address, then budget 100, period 1000, priority 20 in
+  -- domain 0, deadline 0.
+  let decoded (capAddr scCPtr : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat capAddr,
+      msgInfo := { length := 5, extraCaps := 0, label := 0 },
+      syscallId := .schedContextConfigure,
+      msgRegs := #[SeLe4n.RegValue.ofNat scCPtr, SeLe4n.RegValue.ofNat 100,
+        SeLe4n.RegValue.ofNat 1000, SeLe4n.RegValue.ofNat 20, SeLe4n.RegValue.ofNat 0],
+      inlineCount := 4, overflowCount := 1 }
+  let configured (s : SystemState) (id : SeLe4n.SchedContextId) : Bool :=
+    (s.getSchedContext? id).any (fun sc =>
+      sc.budget.val == 100 && sc.period.val == 1000 && sc.priority.val == 20)
+  -- The regression: the context's own capability configures nothing.
+  expect "sd063_configure_through_sched_context_cap_refused"
+    (match dispatchSyscallAsCurrent (decoded 0 0) caller bootCoreId st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a configure invoked on a scheduling-context capability must be refused"
+  expect "sd063_refused_configure_leaves_the_context"
+    (!configured st scId)
+    "the fixture's context starts unconfigured"
+  match dispatchSyscallAsCurrent (decoded 1 0) caller bootCoreId st with
+  | .ok ((), st') =>
+      expect "sd063_configure_through_sched_control_configures_mr0s_context"
+        (configured st' scId && !configured st' scBId)
+        "core 0's scheduling control must configure the context MR0 names, and only it"
+  | .error e =>
+      failLine "sd063_configure_through_sched_control_configures_mr0s_context"
+        s!"unexpected refusal: {repr e}"
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  expect "sd063_other_cores_control_moves_a_bound_context"
+    (match dispatchSyscallAsCurrent (decoded 2 4) caller bootCoreId st with
+     | .ok ((), st') =>
+         configured st' scBId && determineTargetCore st' tgtTid == core1
+           && st'.queuedOn core1 tgtTid && !st'.queuedOn bootCoreId tgtTid
+     | .error _ => false)
+    "core 1's control must move the context and its thread to core 1 and queue the thread there"
+  expect "sd063_home_cores_control_configures_a_bound_context"
+    (match dispatchSyscallAsCurrent (decoded 1 4) caller bootCoreId st with
+     | .ok ((), st') =>
+         configured st' scBId && determineTargetCore st' tgtTid == bootCoreId
+           && st'.queuedOn bootCoreId tgtTid
+     | .error _ => false)
+    "core 0's control must configure the context bound to a thread homed on core 0 and queue it"
+  expect "sd063_mr0_naming_no_sched_context_refused"
+    (match dispatchSyscallAsCurrent (decoded 1 3) caller bootCoreId st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "MR0 naming a CNode capability is not a scheduling context"
+  expect "sd063_resolver_answers_the_held_context"
+    (match resolveSchedControlConfigureTarget caller 0 (SeLe4n.CPtr.ofNat 0) st with
+     | .ok v => decide (v.val = scObj)
+     | .error _ => false)
+    "the resolver answers the context MR0's capability names"
+
 /-- SD-061 (WS-ZA ZA5.4 part 14): **every kernel object kind is carved from an
 untyped through the live dispatch.**
 
@@ -2365,6 +2466,8 @@ def main : IO Unit := do
   sd059_cspaceRevokeThroughTheSyscallGate
   IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
   sd060_schedContextBind_requires_tcb_capability
+  IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
+  sd063_schedContextConfigure_requires_sched_control
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"
   sd061_every_kind_is_carved
   IO.println "--- the in-place retype checks authority before it reads its target ---"

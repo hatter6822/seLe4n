@@ -76,14 +76,15 @@ namespace SeLe4n.Model
 
 /-- **The object a capability names**, seL4's `sameObjectAs` by object id,
 untyped included: `.object o` names `o`, a reply capability its reply, a CNode
-slot capability its CNode, and the audit-trail capability nothing, so it is the
-same object as no other capability. -/
+slot capability its CNode, and the audit-trail and scheduling-control
+capabilities nothing, so each is the same object as no other capability. -/
 def Capability.namedObject (c : Capability) : Option SeLe4n.ObjId :=
   match c.target with
   | .object o => some o
   | .cnodeSlot cn _ => some cn
   | .replyCap r => some r.toObjId
   | .auditTrail => none
+  | .schedControl _ => none
 
 /-- A capability's object is read from its target alone. -/
 theorem Capability.namedObject_of_target {c c' : Capability} (h : c'.target = c.target) :

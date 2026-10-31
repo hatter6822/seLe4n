@@ -2971,6 +2971,125 @@ private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := d
   expect "FO-048: both parameters moved — both effects, and the states agree"
     (liveAt 5 1 5 == some [diffA] && frozenAt 5 1 5 == some [diffA] && agreesAt 5 1)
 
+/-- **FO-052 (WS-ZA ZA6.4 review): configure's resume tail, on both surfaces.**
+
+The live configure ends in seL4-MCS's `schedContext_resume` (`configureResumeBound`):
+a runnable bound thread parked on no run queue is placed once its context can run
+it, and a queued one whose context cannot is taken off.  The frozen configure
+copied the new refills and not the tail, so a parked bound thread stayed outside
+every bucket and `frozenChooseThread` could not select it while the live
+scheduler could.  `frozenConfigureResumeBound` is the mirror.
+
+Two halves, one per arm that writes: the placement (a parked `.Ready` thread on a
+context with budget) and the removal (a queued thread whose context's head is not
+yet released, so the kept head leaves it no budget).  Each is compared whole with
+`frozenStateAgrees`, and the placement also through `frozenChooseThread`, which is
+the reader the divergence was in. -/
+private def differentialSchedContextConfigureResumesBound : IO Unit := do
+  let cfgScId : SeLe4n.SchedContextId := diffScId
+  let boundBinding : TCB → TCB := fun t =>
+    { t with threadState := .Ready,
+             scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+               (SeLe4n.Kernel.SchedContextBinding.bound cfgScId),
+             scBindingOwnerCode := 0 }
+  let boundTcb : TCB := TCB.setIpcState (boundBinding (diffTcb 62)) .ready
+  let readySc : SeLe4n.Kernel.SchedContext :=
+    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      refillHeadPresent := true, refillHeadAmount := 100, refillHeadEligibleAt := 0,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some diffA) }
+  let agrees (ist : IntermediateState) (prio : Nat) : Bool :=
+    match liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 0 (freeze ist)).toOption with
+    | some l, some f => frozenStateAgrees f.2 l
+    | _, _ => false
+  -- (1) PLACEMENT: the bound thread is `.ready`, `.Ready` and on NO run queue.
+  let istParked := diffAddSchedContext
+    (Builder.createObject mkEmptyIntermediateState boundTcb.tid.toObjId (.tcb boundTcb)
+      (fun _ h => nomatch h) (fun _ h => nomatch h))
+    cfgScId readySc
+  let fzParked := freeze istParked
+  expect "FO-052 control: the bound thread is parked on no core and in no bucket"
+    (SeLe4n.Kernel.placedCoreOf? istParked.state diffA == none
+      && !SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzParked diffA)
+  expect "FO-052 control: the frozen copy of the pre-state agrees, and selects nothing"
+    (frozenStateAgrees fzParked istParked.state
+      && (match frozenChooseThread fzParked with
+          | .ok (none, _) => true
+          | _ => false))
+  expect "FO-052: the live configure places the parked bound thread"
+    ((liveSchedContextConfigureState istParked.state cfgScId 100 1000 5 0 0).map
+       (fun st => bucketOnCore st bootCoreId ⟨5⟩) == some [diffA])
+  match frozenSchedContextConfigure cfgScId.toObjId 100 1000 5 0 0 fzParked with
+  | .error e => expect s!"FO-052: the frozen configure succeeds (error: {reprStr e})" false
+  | .ok (_, fz') =>
+    expect "FO-052: ...and so does the frozen one, in the bucket its new priority names"
+      ((fz'.scheduler.byPriority.get? (⟨5⟩ : SeLe4n.Priority)).getD [] == [diffA])
+    expect "FO-052: ...so the frozen chooser can select it"
+      (match frozenChooseThread fz' with
+       | .ok (some t, _) => t == diffA
+       | _ => false)
+  expect "FO-052: ...and the two states agree whole"
+    (agrees istParked 5)
+  -- NEGATIVE: the tail is the placement -- the same configure on a SUSPENDED
+  -- bound thread places nothing on either surface, and the two still agree.
+  let suspendedTcb : TCB := { boundTcb with threadState := .Inactive }
+  let istSuspended := diffAddSchedContext
+    (Builder.createObject mkEmptyIntermediateState suspendedTcb.tid.toObjId (.tcb suspendedTcb)
+      (fun _ h => nomatch h) (fun _ h => nomatch h))
+    cfgScId readySc
+  expect "FO-052 NEGATIVE: a suspended bound thread is not placed, on either surface"
+    ((liveSchedContextConfigureState istSuspended.state cfgScId 100 1000 5 0 0).map
+        (fun st => bucketOnCore st bootCoreId ⟨5⟩) == some []
+      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 5 0 0
+            (freeze istSuspended)).toOption.map
+          (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false
+      && agrees istSuspended 5)
+  -- (2) REMOVAL: a queued bound thread whose context's head is released only at
+  -- 1000.  The configure keeps that head (`configureKeepsHead`: a runnable bound
+  -- thread, budget ≠ period), so the context has no budget now.
+  let unreadySc : SeLe4n.Kernel.SchedContext :=
+    { readySc with budgetRemaining := ⟨0⟩, refillHeadEligibleAt := 1000 }
+  let istQueued := diffAddSchedContext (diffAddTcb mkEmptyIntermediateState boundTcb)
+    cfgScId unreadySc
+  expect "FO-052 control: the bound thread starts queued on both surfaces"
+    (bucketOnCore istQueued.state bootCoreId ⟨0⟩ == [diffA]
+      && SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere (freeze istQueued) diffA)
+  expect "FO-052: the live configure takes the thread off its run queue"
+    ((liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0).map
+       (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [])
+  expect "FO-052: ...and the frozen one takes it out of every bucket"
+    (((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
+        (freeze istQueued)).toOption.map
+      (fun r => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere r.2 diffA)) == some false)
+  -- The live configure also puts the context on its home core's release queue
+  -- (`releasePlace`), which writes the context's release links; the frozen
+  -- surface keeps no release-queue links (`docs/REGISTERED_DEBT.md` §C, "The
+  -- frozen surface keeps no release-queue links"), so the states agree whole once those links are
+  -- taken from the live record -- and the records agree off them.
+  expect "FO-052: ...and the two states agree whole, off the context's release links"
+    (match liveSchedContextConfigureState istQueued.state cfgScId 100 1000 0 0 0,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 0
+            (freeze istQueued)).toOption with
+     | some l, some f =>
+       match l.getSchedContext? cfgScId, f.2.getSchedContext? cfgScId with
+       | some lsc, some fsc =>
+         lsc.withoutRelease == fsc.withoutRelease
+           && (match frozenWithObjectStored f.2 cfgScId.toObjId (.schedContext lsc) with
+               | .ok f' => frozenStateAgrees f' l
+               | .error _ => false)
+       | _, _ => false
+     | _, _ => false)
+  expect "FO-052 NEGATIVE: ...and that is the only difference the comparison sees"
+    (!agrees istQueued 0)
+  -- CONTROL: on a context with budget the queued thread stays queued on both.
+  let istQueuedReady := diffAddSchedContext (diffAddTcb mkEmptyIntermediateState boundTcb)
+    cfgScId readySc
+  expect "FO-052 CONTROL: with budget the queued thread stays queued, and the states agree"
+    ((liveSchedContextConfigureState istQueuedReady.state cfgScId 100 1000 0 0 0).map
+        (fun st => bucketOnCore st bootCoreId ⟨0⟩) == some [diffA]
+      && agrees istQueuedReady 0)
+
 /-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
 
 On a rendezvous the message goes straight from the argument into the receiver's
@@ -3272,6 +3391,7 @@ def main : IO Unit := do
   differentialSchedContextBindRefusalsAgree
   differentialSchedContextBindPlacesParked
   differentialSchedContextConfigureDomainOnlyKeepsOrder
+  differentialSchedContextConfigureResumesBound
   differentialComparisonHasBite
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
   -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner

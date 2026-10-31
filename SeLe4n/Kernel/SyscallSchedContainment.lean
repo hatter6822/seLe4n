@@ -214,10 +214,10 @@ theorem schedLockSet_setMCPriorityOnCore_coversWrites (st st' : SystemState)
 
 /-- **Cut C6a**: `.schedContextBind`'s footprint covers its writes.
 
-The bind moves no replenishment — a reservation changes owner, and its
-replenishments were already on the home core the binding names — so the
-replenish clause is a whole-state frame, on all **three** of the arm's branches
-since WS-RR RR8.12 Cut B2 (`v0.35.182`) made it place a parked runnable thread.
+The bind moves one replenishment at most: WS-ZA ZA6.4's release placement, on
+the home core the binding names, so the replenish clause is the home core's, on
+all **three** of the arm's branches since WS-RR RR8.12 Cut B2 (`v0.35.182`) made
+it place a parked runnable thread.
 
 That cut is the one this docstring used to say *"will have to widen this
 footprint"*, and it did not: the run segment is
@@ -232,10 +232,12 @@ theorem schedLockSet_schedContextBindOnCore_coversWrites (st st' : SystemState)
     (hS : LockSet.ofList? (schedLockSet_schedContextBindOnCore st vThreadId.val)
       = some S) :
     footprintCoversWrites S st st' :=
-  footprintCoversWrites_of_confined S (schedContextBindWriteSet st vThreadId.val) []
+  footprintCoversWrites_of_confined S (schedContextBindWriteSet st vThreadId.val)
+    (schedContextBindWriteSet st vThreadId.val)
     st st' (LockSet.ofList?_pairs hS)
     (schedContextBind_confinedToCores vScId vThreadId st st' hObjInv hStep)
-    (fun d _ => schedContextBind_replenishQueueOnCore st st' vScId vThreadId d hStep)
+    (fun d hd => schedContextBind_replenishQueueOnCore_ne st st' vScId vThreadId d hObjInv
+      (fun e => hd (by rw [e]; exact List.mem_singleton_self _)) hStep)
 
 -- ============================================================================
 -- §6  The suspend arm
@@ -489,29 +491,24 @@ theorem not_footprintCoversWrites_of_replenish_moved (S : LockSet)
 -- consumer would then have to case-split to reach, which is the duplication this
 -- family exists to avoid.
 
-/-- **WS-RR RR8.12 Cut C6b**: `.schedContextConfigure`'s footprint covers its
-writes.
-
-A reconfiguration rewrites the reservation, purges its stale replenishment from
-the queue its own release link names and, when that thread is reply-blocked, re-walks the
-inheritance chain its propagated priority feeds, and nothing else — and the
-unresolved arm is not a gap but a
-refusal, since the transition's own branch errors there. -/
-theorem schedLockSet_schedContextConfigureOnCore_coversWrites (st st' : SystemState)
+/-- WS-ZA ZA6.4: **the live `.schedContextConfigure` arm's footprint covers its
+writes** — the configure through core `core`'s control, with the move of a
+thread homed elsewhere to that core (`schedControlConfigure_confinedToCores`,
+`schedControlConfigure_replenishQueueOnCore_ne`). -/
+theorem schedLockSet_schedControlConfigure_coversWrites (st st' : SystemState) (core : CoreId)
     (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
     (S : LockSet) (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
       domain st = .ok ((), st'))
-    (hS : LockSet.ofList? (schedLockSet_schedContextConfigureOnCore st vScId.val)
-      = some S) :
+    (hS : LockSet.ofList? (schedLockSet_schedControlConfigure st core vScId.val) = some S) :
     footprintCoversWrites S st st' :=
-  footprintCoversWrites_of_confined S (schedContextConfigureWriteSet st vScId.val)
-    (schedContextConfigureReplenishCores st vScId.val) st st'
+  footprintCoversWrites_of_confined S (schedControlConfigureWriteSet st core vScId.val)
+    (schedControlConfigureReplenishCores st core vScId.val) st st'
     (LockSet.ofList?_pairs hS)
-    (schedContextConfigure_confinedToCores vScId budget period priority deadline domain st st'
-      hObjInv hStep)
-    (fun d hd => schedContextConfigure_replenishQueueOnCore_ne st st' vScId budget period
-      priority deadline domain d hd hStep)
+    (schedControlConfigure_confinedToCores core vScId budget period priority deadline domain
+      st st' hObjInv hStep)
+    (fun d hd => schedControlConfigure_replenishQueueOnCore_ne st st' core vScId budget period
+      priority deadline domain d hObjInv hd hStep)
 
 /-- **Cut C6b**: `.schedContextUnbind`'s footprint covers its writes.
 

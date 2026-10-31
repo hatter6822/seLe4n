@@ -321,7 +321,7 @@ run_check_with_timeout "TRACE" lake exe smp_domain_suite
 # (replenishOnCore), the cross-core SchedContext replenishment migration
 # (migrateSchedContextReplenishment — entries genuinely move between cores), the
 # affinity-change-with-migration composite (setThreadCpuAffinityWithMigration), the
-# CBS budget bounds (consumeBudget / applyRefill keep budgetRemaining ≤ budget), the
+# refill accounting (a charge keeps the refill total and the refills bounded), the
 # affinity-consistency witnesses, and the SM5.H theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_cbs_suite
 

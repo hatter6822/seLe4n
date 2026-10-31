@@ -240,12 +240,12 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
       default_perCoreCbsInvariant .budget,
     pccbst! "replenishOnCore_preserves_perCoreCbsInvariant: scheduling maintains the per-core CBS invariant (SM5.H.7)"
       replenishOnCore_preserves_perCoreCbsInvariant .budget,
-    pccbst! "consumeBudget_preserves_le_budget: charging budget preserves the CBS bandwidth bound (SM5.H.7)"
-      consumeBudget_preserves_le_budget .budget,
-    pccbst! "applyRefill_preserves_le_budget: replenishment establishes the CBS bandwidth bound (SM5.H.7)"
-      applyRefill_preserves_le_budget .budget,
-    pccbst! "scheduleReplenishment_replenishments_bounded: the replenishment schedule stays within maxReplenishments (SM5.H.7)"
-      scheduleReplenishment_replenishments_bounded .budget,
+    pccbst! "SchedContext.chargeBudget_refillTotal: a charge keeps the refill total, so the budget is conserved (ZA6.4)"
+      SchedContext.chargeBudget_refillTotal .budget,
+    pccbst! "SchedContext.releaseReadyHead_refillTotal: the release at a time moves amounts between refills only (ZA6.4)"
+      SchedContext.releaseReadyHead_refillTotal .budget,
+    pccbst! "SchedContext.chargeBudget_refillsFit: a charge keeps the refills within maxReplenishments (ZA6.4)"
+      SchedContext.chargeBudget_refillsFit .budget,
     -- ── SM5.H.4 (§9) object-store invariant preservation (.preservation) ──
     pccbst! "replenishOnCore_preserves_objects_invExt: scheduling preserves the object-store invariant"
       replenishOnCore_preserves_objects_invExt .preservation,

@@ -3561,14 +3561,14 @@ This is the core arithmetic lemma for CBS budget decrement correctness. -/
 theorem budget_decrement_stays_positive (b : Nat) (h : b > 1) :
     b - 1 > 0 := by omega
 
-/-- Z4-Q2 (substantive): When `budgetRemaining > 1` in the bound decrement path,
-the resulting SchedContext has `budgetRemaining > 0`. Proves the CBS budget
-accounting maintains the `budgetPositive` invariant through normal ticks. -/
-theorem consumeBudget_positive_of_gt_one (sc : SchedContext)
-    (h : sc.budgetRemaining.val > 1) :
-    (consumeBudget sc 1).budgetRemaining.val > 0 := by
-  simp [consumeBudget, Budget.decrement]
-  omega
+/-- Z4-Q2 (substantive): a tick that does not use the head up
+(`SchedContext.tickExhausts`) leaves the SchedContext with `budgetRemaining > 0`
+(WS-ZA ZA6.4: the charge is seL4-MCS's `refill_budget_check`).  Proves the CBS
+budget accounting maintains the `budgetPositive` invariant through normal ticks. -/
+theorem chargeBudget_positive_of_not_exhausted (sc : SchedContext) (start now : Nat)
+    (h : sc.tickExhausts start = false) :
+    (sc.chargeBudget start 1 now).budgetRemaining.val > 0 :=
+  sc.chargeBudget_tick_pos start now h
 
 -- Z4-S1 (substantive): Unbound timerTickBudget preserves scheduler structure.
 
@@ -3605,47 +3605,17 @@ theorem timerTickBudget_unbound_preempt_objects_key
   subst hfst
   exact ⟨_, rfl⟩
 
--- Z4-S2 (substantive): consumeBudget preserves per-SchedContext well-formedness.
+-- Z4-S2 (substantive): the charge preserves per-SchedContext well-formedness.
 
-/-- Z4-S2a: `consumeBudget` preserves per-object `wellFormed`.
-Bridges Z2's per-object theorem to the system-level invariant. -/
-theorem consumeBudget_preserves_wf
-    (sc : SchedContext) (ticks : Nat) (h : sc.wellFormed) :
-    (consumeBudget sc ticks).wellFormed :=
-  consumeBudget_preserves_wellFormed sc ticks h
-
-/-- Z4-S2b: `consumeBudget` preserves the full 4-conjunct `schedContextWellFormed`.
-Composes Z2's four per-component preservation theorems. -/
-theorem consumeBudget_preserves_schedContextWellFormed_full
-    (sc : SchedContext) (ticks : Nat)
+/-- Z4-S2: the charge (`SchedContext.chargeBudget`: the timer tick's and the
+yield's, WS-ZA ZA6.4) preserves the full `schedContextWellFormed`, the refills'
+conservation among it.  Re-export of `chargeBudget_preserves_schedContextWellFormed`
+for the scheduler's preservation proofs. -/
+theorem chargeBudget_preserves_schedContextWellFormed_full
+    (sc : SchedContext) (start usage now : Nat)
     (h : schedContextWellFormed sc) :
-    schedContextWellFormed (consumeBudget sc ticks) := by
-  obtain ⟨hwf, hbounds, hrepl, hamounts⟩ := h
-  exact ⟨consumeBudget_preserves_wellFormed sc ticks hwf,
-         consumeBudget_preserves_budgetWithinBounds sc ticks hbounds,
-         consumeBudget_preserves_replenishmentListWellFormed sc ticks hrepl,
-         consumeBudget_preserves_replenishmentAmountsBounded sc ticks hamounts⟩
-
--- Z4-S3 (substantive): scheduleReplenishment preserves per-SchedContext well-formedness.
-
-/-- Z4-S3: `scheduleReplenishment` preserves the full 4-conjunct
-`schedContextWellFormed`, given that the consumed amount is positive and
-within budget. These preconditions hold in both callers:
-- `timerTickBudget` exhaustion: consumed = budgetRemaining > 0 (guard), ≤ budget (invariant)
-- `handleYieldWithBudget`: consumed = budgetRemaining > 0 (current is positive), ≤ budget (invariant) -/
-theorem scheduleReplenishment_preserves_schedContextWellFormed_full
-    (sc : SchedContext) (now : Nat) (consumed : Budget)
-    (h : schedContextWellFormed sc)
-    (hPos : consumed.val > 0)
-    (hLe : consumed.val ≤ sc.budget.val) :
-    schedContextWellFormed (scheduleReplenishment sc now consumed) := by
-  obtain ⟨hwf, hbounds, hrepl, hamounts⟩ := h
-  exact ⟨scheduleReplenishment_preserves_wellFormed sc now consumed hwf,
-         scheduleReplenishment_preserves_budgetWithinBounds sc now consumed hbounds,
-         scheduleReplenishment_preserves_replenishmentListWellFormed
-           sc now consumed hrepl hPos,
-         scheduleReplenishment_preserves_replenishmentAmountsBounded
-           sc now consumed hamounts hLe⟩
+    schedContextWellFormed (sc.chargeBudget start usage now) :=
+  chargeBudget_preserves_schedContextWellFormed sc start usage now h
 
 -- Z4-T: Selection correctness and dequeue preservation.
 
@@ -3699,8 +3669,8 @@ theorem hasSufficientBudget_unbound_legacy
   simp [hasSufficientBudget, hUnbound]
 
 /-- Z4-U3: `cbsUpdateDeadline` preserves per-object `wellFormed`.
-Composes with Z4-S2/S3 for the full exhaustion pipeline:
-consumeBudget → scheduleReplenishment → cbsUpdateDeadline. -/
+Composes with Z4-S2 for the full exhaustion pipeline:
+chargeBudget → cbsUpdateDeadline. -/
 theorem cbsUpdateDeadline_preserves_wf
     (sc : SchedContext) (now : Nat) (preempt : Bool)
     (h : sc.wellFormed) :

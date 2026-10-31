@@ -1101,6 +1101,14 @@ theorem markKeyChangeFor_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId
     SystemState.RunQueueStage st (markKeyChangeFor st tid k) :=
   RunQueueStage_of_reading (markKeyChangeFor_extract_frame runQueueReading st tid k (fun _ _ => rfl))
 
+/-- WS-ZA ZA6.4: the key hook writes flags alone: every context and every
+release queue is kept. -/
+theorem markKeyChangeFor_refillsKeptOff (P : SeLe4n.SchedContextId → Prop) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
+    SystemState.RefillsKeptOff P (markKeyChangeFor st tid k) st :=
+  .of_releaseSlots (.of_objects_eq (markKeyChangeFor_objects st tid k))
+    (markKeyChangeFor_extract_frame (fun s => s.scheduler.releaseSlots) st tid k (fun _ _ => rfl))
+
 theorem markCandidacyGainFor_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (b : Bool) : SystemState.RunQueueStage st (markCandidacyGainFor st tid b) :=
   RunQueueStage_of_reading (markCandidacyGainFor_extract_frame runQueueReading st tid b (fun _ _ => rfl))

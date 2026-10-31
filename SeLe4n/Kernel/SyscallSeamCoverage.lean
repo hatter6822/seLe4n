@@ -385,23 +385,32 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
               sgi S hObjInv hStep hSched
           · exact absurd hDisp (by simp)
   -- ---- `.schedContextConfigure` -------------------------------------------
+  -- WS-ZA ZA6.4: the operand is the context the scheduling control's resolver
+  -- answers, read by the arm and the footprint from one definition.
   case schedContextConfigure =>
-    cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
-    rename_i scId
-    subst hOps
-    simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
-      Option.bind_some] at hSched
-    rw [hT] at hDisp
-    simp only at hDisp
-    split at hDisp
-    · exact absurd hDisp (by simp)
+    cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps
+    rename_i core
+    split at hOps
+    · exact absurd hOps (by simp)
     · rename_i args hArgs
-      split at hDisp
-      · exact absurd hDisp (by simp)
-      · rename_i vScId hV
-        rw [← validateObjIdArg_ok_val _ _ hV] at hSched
-        exact schedLockSet_schedContextConfigureOnCore_coversWrites st st' vScId _ _ _ _ _ S
-          hObjInv hDisp hSched
+      split at hOps
+      · exact absurd hOps (by simp)
+      · rename_i v hRes
+        split at hOps
+        · rename_i hCore
+          injection hOps with hOps
+          subst hOps
+          simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
+            Option.bind_some] at hSched
+          rw [hT] at hDisp
+          simp only at hDisp
+          rw [hArgs] at hDisp
+          simp only at hDisp
+          rw [hRes] at hDisp
+          simp only [hCore, dite_true] at hDisp
+          exact schedLockSet_schedControlConfigure_coversWrites st st' _ v _ _ _ _ _ S
+            hObjInv hDisp hSched
+        · exact absurd hOps (by simp)
   -- ---- `.schedContextBind` ------------------------------------------------
   case schedContextBind =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps

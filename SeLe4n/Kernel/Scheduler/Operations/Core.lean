@@ -86,19 +86,34 @@ open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 /-- WS-ZA ZA6.3: **a release-queue edit is a run-queue stage** — it writes
 contexts' release fields and the release queues alone, so every thread's TCB,
 every slot's back-links, the run queues, their ends and every current slot are
-kept; the release queues stay refined by `hR`. -/
-theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
-    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+kept; the release queues stay refined by `hR` and the refill state sound by
+`hF`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.of_releaseOnlyWrite
+    {P : SchedContextId → Prop} {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
     (hA : st'.objectsAgreeOffReleaseLinks st) (hI : st.objects.invExt → st'.objects.invExt)
-    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined) :
-    SystemState.RunQueueStage st st' := by
+    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
+    (hF : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.releaseQueueRefined →
+      st.refillsSoundExcept S → st'.refillsSoundExcept S) :
+    SystemState.RunQueueFrameStage P st st' := by
   have hS := hW.2
-  refine SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
-    ?_ ?_ ?_ ?_ hR
+  refine SystemState.RunQueueFrameStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
+    ?_ ?_ ?_ ?_ hR hF
   · rw [hS]
   · rw [hS]
   · rw [hS]
   · rw [hW.1]; rfl
+
+/-- ...with the refill state carried off every set by `hF`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
+    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+    (hA : st'.objectsAgreeOffReleaseLinks st) (hI : st.objects.invExt → st'.objects.invExt)
+    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
+    (hF : ∀ S, st.objects.invExt → st.releaseQueueRefined → st.refillsSoundExcept S →
+      st'.refillsSoundExcept S) :
+    SystemState.RunQueueStage st st' := by
+  have hS := hW.2
+  exact SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
+    (by rw [hS]) (by rw [hS]) (by rw [hS]) (by rw [hW.1]; rfl) hR hF
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 
@@ -509,45 +524,16 @@ noncomputable def popDueReplenishments (st : SystemState) (now : Nat)
   (st.scheduler.replenishQueueOnCore bootCoreId).popDue now
 
 /-- Z4-G2: Refill a single SchedContext's budget via CBS replenishment processing.
-Looks up the SchedContext, calls `processReplenishments` and `cbsUpdateDeadline`,
-writes the updated object back to the store through `SystemState.updateSchedContext`
-(the in-place rewrite under the witnessed lookup). No-op if the SchedContext is not
-found or is not a SchedContext object. -/
+WS-ZA ZA6.4: the release of a used-up head (`SchedContext.releaseReadyHead`,
+seL4-MCS's `refill_ready` head taken when the context is woken off its release
+queue) and the CBS deadline rule, written back to the store through
+`SystemState.updateSchedContext` (the in-place rewrite under the witnessed
+lookup).  The release reads and writes the context's own fields, so no refill
+list is built.  No-op if the SchedContext is not found. -/
 def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (now : Nat) : SystemState :=
   st.updateSchedContext scId fun sc =>
-    cbsUpdateDeadline (processReplenishments sc now) now true
-
-/-- WS-ZA ZA6.2: the compiled `refillSchedContext`.  The context is read first,
-and when its refill is the one record update (`refillInPlace`: no pending
-refill, or every pending refill due — the drain's case) it is written as that
-straight-line record in its slot (`refillRecord`), reusing the object and the
-context; the specification's write runs the refill and the deadline as two
-steps with a branch between them, so the compiled write built a new context.
-Any other context takes the specification's write.  A call, as the
-specification is, so each write is specialized once here and its callers pass
-no closure.  Proven equal (`refillSchedContext_eq_impl`). -/
-@[noinline] def refillSchedContextImpl (st : SystemState) (scId : SeLe4n.SchedContextId)
-    (now : Nat) : SystemState :=
-  match st.getSchedContext? scId with
-  | some sc =>
-    if refillInPlace sc now then st.updateSchedContext scId fun s => refillRecord s now
-    else st.updateSchedContext scId fun s =>
-      cbsUpdateDeadline (processReplenishments s now) now true
-  | none => st
-
-@[csimp] theorem refillSchedContext_eq_impl : @refillSchedContext = @refillSchedContextImpl := by
-  funext st scId now
-  unfold refillSchedContext refillSchedContextImpl
-  cases hSc : st.getSchedContext? scId with
-  | none => exact SystemState.updateSchedContext_eq_self_of_none hSc _
-  | some sc =>
-    dsimp only
-    split
-    · rename_i hIn
-      rw [SystemState.updateSchedContext_eq_of_some hSc, SystemState.updateSchedContext_eq_of_some hSc,
-        refillRecord_eq sc now hIn]
-    · rfl
+    cbsUpdateDeadline (sc.releaseReadyHead now) now true
 
 /-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
 was restored. Pops due entries from the replenish queue, refills each
@@ -687,9 +673,10 @@ theorem timeoutBlockedThreads_eq_fold (st : SystemState) (scId : SeLe4n.SchedCon
 
 Dispatches on the current thread's `schedContextBinding`:
 - **Unbound** (Z4-F1): Delegates to the existing time-slice decrement logic.
-- **Bound, budget > 1** (Z4-F2): Decrements the SchedContext budget by 1 tick.
-- **Bound, budget ≤ 1** (Z4-F3): Budget exhausted — schedules a replenishment
-  entry, inserts into the system replenish queue, preempts the current thread
+- **Bound, head not used up** (Z4-F2): charges the unit (`SchedContext.chargeBudget`).
+- **Bound, head used up** (Z4-F3, `SchedContext.tickExhausts`): Budget exhausted —
+  charges it, inserts the context into the system replenish queue at its place,
+  preempts the current thread
   (re-enqueue + reschedule).
 
 Returns `(updatedState, wasPreempted)`. Callers use `wasPreempted` to decide
@@ -729,23 +716,24 @@ noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tc
   | .bound scId | .donated scId _ =>
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
-      if sc.budgetRemaining.val ≤ 1 then
-        -- Z4-F3: Budget exhausted — schedule replenishment and preempt.
-        -- CBS semantics: `consumedAmount` is the full remaining budget (not 1 tick),
-        -- because the entire period's consumed budget is recorded for replenishment.
-        -- `now` is captured pre-tick: replenishment is scheduled relative to when
-        -- budget was consumed, not after the timer advances (standard CBS timing).
+      if sc.tickExhausts st.machine.timer then
+        -- Z4-F3: Budget exhausted — charge the unit and preempt.
+
+        -- WS-ZA ZA6.4: the charge is seL4-MCS's (`SchedContext.chargeBudget`):
+        -- the unit run from `now` (the timer advances after this tick) is
+        -- charged against the head refill, the used head is scheduled again one
+        -- period after its release (`schedule_used`), and the context waits on
+        -- the release queue for its first pending refill (`releaseKey?`).
         let now := st.machine.timer
-        let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-        let sc' := consumeBudget sc 1
-        let sc'' := scheduleReplenishment sc' now consumedAmount
-        let sc''' := cbsUpdateDeadline sc'' now true
+        let sc''' := cbsUpdateDeadline (sc.chargeBudget now 1 (now + 1)) now true
         -- Write updated SchedContext back (the in-place rewrite under the witnessed lookup)
         let st' := { st.rewriteObject scId.toObjId (.schedContext sc''')
                        (SystemState.rewriteAdmissible_schedContext hSc sc''') with
           machine := tick st.machine }
-        -- Insert into system replenish queue for future refill
-        let rq := (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
+        -- Insert into system replenish queue at the context's place
+        let rq := match sc'''.releaseKey? with
+          | some t => (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId t
+          | none => st'.scheduler.replenishQueueOnCore bootCoreId
         -- AG1-A: Re-enqueue current thread at effective priority (base + PIP boost)
         let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore bootCoreId rq).setRunQueueOnCore bootCoreId ((st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc))) }
         -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
@@ -765,8 +753,9 @@ noncomputable def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tc
           st'''.scheduler.setLastTimeoutErrorsOnCore bootCoreId timeoutErrors }
         .ok (st'''', true)
       else
-        -- Z4-F2: Budget remains — decrement and continue
-        let sc' := consumeBudget sc 1
+        -- Z4-F2: Budget remains — charge the unit and continue
+        let now := st.machine.timer
+        let sc' := sc.chargeBudget now 1 (now + 1)
         let st' := { st.rewriteObject scId.toObjId (.schedContext sc')
                        (SystemState.rewriteAdmissible_schedContext hSc sc') with
           machine := tick st.machine }
@@ -872,8 +861,9 @@ noncomputable def timerTickWithBudget : Kernel Unit :=
 /-- Z4-J: Extended yield with SchedContext budget handling.
 
 When a SchedContext-bound thread yields:
-1. Charges remaining budget as consumed (schedule replenishment for it)
-2. Inserts replenishment entry into system queue
+1. Charges the head refill in full (seL4-MCS's yield charge, WS-ZA ZA6.4)
+2. Inserts the context into the system queue at its place (`releaseKey?`)
+
 3. Re-enqueues at updated deadline/priority
 4. Calls `schedule` to select next thread
 
@@ -894,13 +884,14 @@ noncomputable def handleYieldWithBudget : Kernel Unit :=
         | .bound scId | .donated scId _ =>
           match st.getSchedContextWitnessed? scId with
           | some ⟨sc, h⟩ =>
-            -- Charge remaining budget and schedule replenishment
+            -- WS-ZA ZA6.4: the head refill is charged in full and scheduled one
+            -- period after its release (seL4-MCS's yield charge)
             let now := st.machine.timer
-            let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-            let sc' := { sc with budgetRemaining := Budget.zero, isActive := false }
-            let sc'' := scheduleReplenishment sc' now consumedAmount
-            -- Insert into replenish queue
-            let rq := (st.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
+            let sc'' := sc.chargeBudget now sc.budget.val now
+            -- Insert into replenish queue at the context's place
+            let rq := match sc''.releaseKey? with
+              | some t => (st.scheduler.replenishQueueOnCore bootCoreId).insert scId t
+              | none => st.scheduler.replenishQueueOnCore bootCoreId
             -- Write updated SchedContext (the in-place rewrite under the witnessed lookup)
             let st' := { st.rewriteObject scId.toObjId (.schedContext sc'')
                            (SystemState.rewriteAdmissible_schedContext h sc'') with
@@ -1944,6 +1935,22 @@ theorem _root_.SeLe4n.Model.SystemState.releasePlace_getTcb? (s : SystemState)
     (s.releasePlace c scId).getTcb? t = s.getTcb? t :=
   (SystemState.releasePlace_agree s c scId).getTcb? t
 
+@[simp] theorem _root_.SeLe4n.Model.SystemState.releasePlace_queuedOn (s : SystemState)
+    (c : CoreId) (scId : SeLe4n.SchedContextId) (c' : CoreId) (t : SeLe4n.ThreadId) :
+    (s.releasePlace c scId).queuedOn c' t = s.queuedOn c' t := by
+  unfold SystemState.queuedOn; rw [SystemState.releasePlace_getTcb?]
+
+@[simp] theorem releasePlace_runnableOnSomeCore (s : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    runnableOnSomeCore (s.releasePlace c scId) t = runnableOnSomeCore s t := by
+  unfold runnableOnSomeCore; simp only [SystemState.releasePlace_queuedOn]
+
+@[simp] theorem releasePlace_placedCoreOf? (s : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    placedCoreOf? (s.releasePlace c scId) t = placedCoreOf? s t := by
+  unfold placedCoreOf?
+  simp only [SystemState.releasePlace_queuedOn, SystemState.releasePlace_currentOnCore]
+
 /-- ...stated over the drain of all of core `c`'s due refills. -/
 theorem processReplenishmentsDueOnCore_induction (P : SystemState → Prop) (st : SystemState)
     (c : CoreId) (now : Nat)
@@ -1986,28 +1993,29 @@ so a yield and an expired slice cannot come to disagree. -/
     (SystemState.rewriteAdmissible_tcb hTcb tcb')
   st'.runEnqueueOnCore c tid tcb.boostedPriority
 
-/-- WS-ZA ZA4.3: a bound thread's budget is spent on core `c`, charging `ticks`
-against SchedContext `scId` (the timer tick charges `1` to a budget of at most
-one; the yield syscall charges the whole remaining budget, `seL4_Yield` under
-MCS).  Either way the budget reaches zero: the remaining budget is recorded as
-consumed and its refill scheduled one period on (`scheduleReplenishment`,
-`replenishOnCore`), the CBS deadline moves, and `tid` is re-enqueued on core
-`c` at its insert priority (ineligible until the refill).  The part of the
-timer tick's exhausted arm that the yield syscall shares; the tick then times
-out the SchedContext's IPC-blocked threads (`budgetExhaustOnCore`). -/
+/-- WS-ZA ZA4.3: a bound thread's budget is spent on core `c`: `ticks` run from
+`start` are charged against SchedContext `scId` (the timer tick charges the unit
+just run to a head it uses up; the yield syscall charges the whole head,
+`seL4_Yield` under MCS).  WS-ZA ZA6.4: the charge is seL4-MCS's
+(`SchedContext.chargeBudget`: `refill_unblock_check` at the run's start,
+`refill_budget_check` with `schedule_used`, then the release of a pending refill
+already due), so the budget is conserved and the used head is released again one
+period after its release.  The CBS deadline moves, the context goes on core
+`c`'s release queue at its place (`replenishOnCore`, seL4-MCS's `postpone`), and
+`tid` is re-enqueued on core `c` at its insert priority (ineligible until the
+release).  The part of the timer tick's exhausted arm that the yield syscall
+shares; the tick then times out the SchedContext's IPC-blocked threads
+(`budgetExhaustOnCore`). -/
 @[inline] def spendBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SchedContextId) (sc : SchedContext)
-    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
+    (hSc : st.getSchedContext? scId = some sc) (start ticks : Nat) : SystemState :=
   let now := st.machine.timer
-  let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-  let sc' := consumeBudget sc ticks
-  let sc'' := scheduleReplenishment sc' now consumedAmount
-  let sc''' := cbsUpdateDeadline sc'' now true
+  let sc''' := cbsUpdateDeadline (sc.chargeBudget start ticks now) now true
   let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
     (SystemState.rewriteAdmissible_schedContext hSc sc''')
   -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
   -- `replenishOnCore`: the context goes on core `c`'s release queue at its
-  -- earliest pending refill, the one just scheduled among them (WS-ZA ZA6.3).
+  -- place, its first pending refill's release (WS-ZA ZA6.3, ZA6.4).
   let stReplenished := replenishOnCore st' c scId
   stReplenished.runEnqueueOnCore c tid (resolveInsertPriority st' tid sc)
 
@@ -2029,12 +2037,12 @@ object table rebuilt; proven equal to the specification
   simp only [RobinHood.RHTable.modify_of_get? hx]
   rfl
 
-/-- WS-ZA ZA6.3: the context a charge writes back: `ticks` consumed, the
-`consumed` budget scheduled as a refill, the deadline rule applied.  A call, so
-the slot's rewrite is one straight-line write of the object it holds and reuses
-that object's cell. -/
-@[noinline] def chargeSchedContext (s : SchedContext) (now ticks consumed : Nat) : SchedContext :=
-  cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now ⟨consumed⟩) now true
+/-- WS-ZA ZA6.3: the context a charge writes back: `ticks` run from `start`
+charged by `now` (`SchedContext.chargeBudget`, WS-ZA ZA6.4), the deadline rule
+applied.  A call, so the slot's rewrite is one straight-line write of the object
+it holds and reuses that object's cell. -/
+@[noinline] def chargeSchedContext (s : SchedContext) (start ticks now : Nat) : SchedContext :=
+  cbsUpdateDeadline (s.chargeBudget start ticks now) now true
 
 /-- WS-ZA ZA6.3: the priority a thread is re-enqueued at: its boosted priority
 (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`), or `fallback` when the
@@ -2053,16 +2061,16 @@ theorem resolveInsertPriority_eq_insertPriorityOf (st : SystemState) (tid : SeLe
   | none => rfl
   | some tcb => exact resolveEffectivePrioDeadline_fst_eq_boostedPriority st tcb
 
-/-- WS-ZA ZA6.3: the budget spend's writes, handed the charge (`ticks`), the
-consumed budget and the fallback priority read off the context: the context
-rewritten in its slot (`chargeSchedContext`), placed on core `c`'s release queue
+/-- WS-ZA ZA6.3: the budget spend's writes, handed the charge (`ticks` from
+`start`) and the fallback priority read off the context: the context rewritten
+in its slot (`chargeSchedContext`), placed on core `c`'s release queue
 (`replenishOnCore`) and `tid` re-enqueued.  A call, so the caller's context is
 not held across the rewrite of its slot. -/
 @[noinline] def spendBudgetWrite (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (scId : SchedContextId) (ticks consumed : Nat) (fallback : SeLe4n.Priority) : SystemState :=
+    (scId : SchedContextId) (start ticks : Nat) (fallback : SeLe4n.Priority) : SystemState :=
   let now := st.machine.timer
   let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
-    chargeSchedContext s now ticks consumed)
+    chargeSchedContext s start ticks now)
   let prio := insertPriorityOf st' tid fallback
   (replenishOnCore st' c scId).runEnqueueOnCore c tid prio
 
@@ -2075,11 +2083,11 @@ context the caller looked up is released before its slot is rewritten.
 Proven equal to the specification (`spendBudgetOnCore_eq_impl`). -/
 @[inline] def spendBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SchedContextId) (sc : SchedContext)
-    (_hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
-  spendBudgetWrite st c tid scId ticks sc.budgetRemaining.val sc.priority
+    (_hSc : st.getSchedContext? scId = some sc) (start ticks : Nat) : SystemState :=
+  spendBudgetWrite st c tid scId start ticks sc.priority
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
-  funext st c tid scId sc hSc ticks
+  funext st c tid scId sc hSc start ticks
   have hx := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
   unfold spendBudgetOnCore spendBudgetOnCoreImpl spendBudgetWrite chargeSchedContext
     SystemState.modifyObject SystemState.rewriteObject
@@ -2102,9 +2110,10 @@ is in place, the refill is a scheduler write, and the enqueue writes run-queue
 links in place (WS-ZA ZA4.5). -/
 theorem spendBudgetOnCore_objects_invExt (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (scId : SchedContextId) (sc : SchedContext)
-    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
+    (hSc : st.getSchedContext? scId = some sc) (start ticks : Nat)
     (hObjInv : st.objects.invExt) :
-    (spendBudgetOnCore st c tid scId sc hSc ticks).objects.invExt :=
+    (spendBudgetOnCore st c tid scId sc hSc start ticks).objects.invExt :=
+
   SystemState.runEnqueueOnCore_objects_invExt _ c tid _
     (SystemState.releasePlace_objects_invExt _ c scId
       (SystemState.rewriteObject_preserves_objects_invExt st _ _
@@ -2207,7 +2216,7 @@ question alike. -/
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
   -- PR #880 round 8: timeout wakes land on each thread's HOME core.
   let timedOut := timeoutBlockedThreads
-    (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks) tid preKey) scId c
+    (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc (st.machine.timer - ticks) ticks) tid preKey) scId c
   { timedOut.1 with scheduler := (markRescheduleTargets
       (timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1) timedOut.2.2) }
 
@@ -2257,7 +2266,7 @@ result.  A bound thread blocked on IPC runs the specification. -/
     (preKey : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
-  let spent := markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc ticks) tid preKey
+  let spent := markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc (st.machine.timer - ticks) ticks) tid preKey
   if timeoutPassQuiet spent scId then
     { spent with scheduler := spent.scheduler.setLastTimeoutErrorsOnCore c [] }
   else
@@ -2285,9 +2294,10 @@ Dispatches on `tcb.schedContextBinding` exactly as `timerTickBudget`:
 - **Unbound, time-slice ≤ 1**: reset `timeSlice` to `configDefaultTimeSlice`,
   re-enqueue `tid` into core `c`'s run queue at `TCB.boostedPriority`,
   signal preemption.
-- **Bound, budget > 1**: decrement the SchedContext budget; no preemption.
-- **Bound, budget ≤ 1**: budget exhausted — schedule a replenishment, insert it
-  into core `c`'s replenish queue, re-enqueue `tid` into core `c`'s run queue,
+- **Bound, head not used up** (`SchedContext.tickExhausts`): charge the unit
+  just run (`SchedContext.chargeBudget`, WS-ZA ZA6.4); no preemption.
+- **Bound, head used up**: budget exhausted — charge it, put the context on
+  core `c`'s release queue at its place, re-enqueue `tid` into core `c`'s run queue,
   run `tid`'s key hook against its key before the spend, time out any IPC-blocked threads the SC bounded (recording errors in core `c`'s
   `lastTimeoutErrorsOnCore` diagnostic, flagging each woken thread's home core),
   signal preemption.
@@ -2316,10 +2326,11 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
   | .bound scId | .donated scId _ =>
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
-      if sc.budgetRemaining.val ≤ 1 then
+      let now := st.machine.timer
+      if sc.tickExhausts (now - 1) then
         (budgetExhaustOnCore st c tid (effectiveSchedParams st tcb) scId sc hSc 1, true)
       else
-        let sc' := consumeBudget sc 1
+        let sc' := sc.chargeBudget (now - 1) 1 now
         (st.rewriteObject scId.toObjId (.schedContext sc')
           (SystemState.rewriteAdmissible_schedContext hSc sc'), false)
     | none => (st, false)
@@ -2339,12 +2350,13 @@ re-inserting a copy of the object, so the store is updated in place. -/
   | .bound scId | .donated scId _ =>
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
-      if sc.budgetRemaining.val ≤ 1 then
+      let now := st.machine.timer
+      if sc.tickExhausts (now - 1) then
         (budgetExhaustOnCore st c tid (tcb.boostedPriority, effectiveDeadline st tcb, tcb.domain)
           scId sc hSc 1, true)
       else
         (st.modifyObject scId.toObjId
-          (SystemState.mapSchedContextObject fun s => consumeBudget s 1), false)
+          (SystemState.mapSchedContextObject fun s => s.chargeBudget (now - 1) 1 now), false)
     | none => (st, false)
 
 @[csimp] theorem timerTickBudgetOnCore_eq_impl :
@@ -2365,22 +2377,24 @@ re-inserting a copy of the object, so the store is updated in place. -/
     | some sc =>
       have hy := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS
       simp only [SystemState.getSchedContextWitnessed?_eq_some hS]
-      by_cases hBud : sc.budgetRemaining.val ≤ 1
-      · simp only [hBud, ↓reduceIte, effectiveSchedParams_eq_parts]
-      · simp only [hBud, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
+      cases hBud : sc.tickExhausts (st.machine.timer - 1)
+      · simp only [hBud, Bool.false_eq_true, ↓reduceIte, SystemState.modifyObject,
+          SystemState.rewriteObject]
         rw [RobinHood.RHTable.modify_of_get? hy]
         rfl
+      · simp only [hBud, ↓reduceIte, effectiveSchedParams_eq_parts]
   | donated scId o =>
     cases hS : st.getSchedContext? scId with
     | none => simp only [SystemState.getSchedContextWitnessed?_eq_none hS]
     | some sc =>
       have hy := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hS
       simp only [SystemState.getSchedContextWitnessed?_eq_some hS]
-      by_cases hBud : sc.budgetRemaining.val ≤ 1
-      · simp only [hBud, ↓reduceIte, effectiveSchedParams_eq_parts]
-      · simp only [hBud, ↓reduceIte, SystemState.modifyObject, SystemState.rewriteObject]
+      cases hBud : sc.tickExhausts (st.machine.timer - 1)
+      · simp only [hBud, Bool.false_eq_true, ↓reduceIte, SystemState.modifyObject,
+          SystemState.rewriteObject]
         rw [RobinHood.RHTable.modify_of_get? hy]
         rfl
+      · simp only [hBud, ↓reduceIte, effectiveSchedParams_eq_parts]
 
 /-- WS-SM SM5.D.5 (raw-write migration Cut B2): charge core `c`'s current thread
 `tid` one tick, **resolved from the store** — the witnessed lookup
@@ -2576,7 +2590,7 @@ theorem timerTickOnCore_of {P : SystemState → Prop} (st : SystemState) (c : Co
 /-- WS-ZA ZA4.3: charge a yield to `tid`, current on core `c`.  Yield forfeits
 what is left of the caller's allotment (decided 2026-10-11; `seL4_Yield` under
 MCS): a thread bound to a SchedContext gives up its remaining budget until the
-refill (`spendBudgetOnCore`, charging the whole remaining budget), and an
+release (`spendBudgetOnCore`, charging the whole head refill from now), and an
 unbound thread ends its time slice (`sliceExpireOnCore`).  Both are shared with
 the timer tick's exhausted arms.
 
@@ -2600,7 +2614,7 @@ def yieldChargeOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
     | .bound scId | .donated scId _ =>
       match st.getSchedContextWitnessed? scId with
       | some ⟨sc, hSc⟩ =>
-        .ok (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc sc.budgetRemaining.val)
+        .ok (markKeyChangeFor (spendBudgetOnCore st c tid scId sc hSc st.machine.timer sc.budget.val)
           tid (effectiveSchedParams st tcb))
       -- R5.E fail-closed, as the tick: unreachable under
       -- `schedContextStoreConsistent`.

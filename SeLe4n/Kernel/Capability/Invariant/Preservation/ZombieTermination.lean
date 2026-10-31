@@ -446,6 +446,7 @@ theorem slotRetireTarget_of_final {st : SystemState} {cnode : SeLe4n.ObjId}
   | replyCap r => rw [ht] at ho; cases ho; simp [hK, hF]
   | cnodeSlot cn _ => rw [ht] at ho; cases ho; simp [hK, hF]
   | auditTrail => rw [ht] at ho; cases ho
+  | schedControl _ => rw [ht] at ho; cases ho
 
 /-- An object holding a capability is of a retirable kind. -/
 theorem retirableKind_of_zombieHolds {root : SeLe4n.ObjId} {rootSlot : SeLe4n.Slot}

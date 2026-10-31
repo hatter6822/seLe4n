@@ -2219,6 +2219,28 @@ theorem enqueueRunnableOnCore_releaseStateAgree (st : SystemState) (c : CoreId)
         (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hT hD) ?_).trans a1
       rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h] <;> rfl
 
+/-- WS-ZA ZA6.4: the wake keeps every context's refill view: it writes the
+woken thread's state and run-queue links, no context. -/
+theorem enqueueRunnableOnCore_refillViewsKept (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RefillViewsKept (enqueueRunnableOnCore st c tid) st := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hT]
+    exact .refl st
+  | some tcb =>
+    cases hD : wakeDeclines st c tid with
+    | true =>
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hT, hD, if_true]
+      exact .refl st
+    | false =>
+      have hPre := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
+      let st1 : SystemState :=
+        { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready)) }
+      have a1 : RefillViewsKept st1 st := .insert hInv rfl (by rw [hPre]; rfl)
+      exact (RefillViewsKept.of_agreeOffRunLinks (st := st1)
+        (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hT hD)).trans a1
+
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
 
 A thread bound to `some c'` (`cpuAffinity = some c'`) wakes onto `c'`; an

@@ -521,7 +521,21 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                   some { caller := tid,
                          targetThread := some (SeLe4n.ThreadId.ofNat objId.toNat),
                          affinity := some affinity }
-      | .schedContextConfigure, .object scId
+      -- WS-ZA ZA6.4: a configure names its context through the SAME resolver
+      -- the live arm configures through (`resolveSchedControlConfigureTarget`):
+      -- a context capability at MR0, the invoked capability a core's
+      -- scheduling control.
+      | .schedContextConfigure, .schedControl core =>
+          match Architecture.SyscallArgDecode.decodeSchedContextConfigureArgsChecked decoded with
+          | .error _ => none
+          | .ok args =>
+              match resolveSchedControlConfigureTarget tid core args.scCPtr s with
+              | .error _ => none
+              | .ok v =>
+                  if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
+                    some { SyscallLockOperands.ofObjectTarget tid v.val with
+                           controlCore := some ⟨core, hCore⟩ }
+                  else none
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
       | .schedContextBind, .object _ =>
           match resolveSchedContextBindThread tid
@@ -605,6 +619,7 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
       | cnodeSlot _ => rw [hTgt] at h; exact absurd h (by simp)
       | replyCap _ => rw [hTgt] at h; exact absurd h (by simp)
       | auditTrail => rw [hTgt] at h; exact absurd h (by simp)
+      | schedControl _ => rw [hTgt] at h; exact absurd h (by simp)
       | object objId =>
       rw [hTgt] at h
       simp only at h

@@ -379,6 +379,31 @@ theorem mem_remove_entries {rq : ReplenishQueue} {scId : SchedContextId}
   have hbeq : (e.1 == scId) = true := by rw [hEq]; exact beq_self_eq_true _
   simp [hbeq] at h'
 
+/-- WS-ZA ZA6.4: a fold of inserts keyed by `scId` keeps every seed entry and
+holds every moved entry keyed by `scId` — the converse of
+`mem_foldl_insert_provenance`. -/
+theorem mem_foldl_insert_of (moved : List (SchedContextId × Nat)) (scId : SchedContextId) :
+    ∀ (toQ : ReplenishQueue) (e : SchedContextId × Nat),
+      (e ∈ toQ.entries ∨ (e ∈ moved ∧ e.1 = scId)) →
+      e ∈ (moved.foldl (fun q x => q.insert scId x.2) toQ).entries := by
+  induction moved with
+  | nil =>
+    intro toQ e h
+    rcases h with h | ⟨h, -⟩
+    · exact h
+    · exact absurd h List.not_mem_nil
+  | cons hd tail ih =>
+    intro toQ e h
+    rw [List.foldl_cons]
+    apply ih
+    rcases h with h | ⟨hm, hk⟩
+    · exact Or.inl (subset_insertSorted _ scId hd.2 e h)
+    · rcases List.mem_cons.mp hm with rfl | hm'
+      · left
+        have : e = (scId, e.2) := by rw [← hk]
+        rw [this]; exact mem_insertSorted _ scId _
+      · exact Or.inr ⟨hm', hk⟩
+
 /-- WS-SM SM5.H.4: a member of a fold-of-inserts (all keyed by `scId`) is either
 an original member of the seed queue `toQ`, or one of the inserted entries
 `(scId, x.2)` for some `x` in the moved list.  The provenance lemma the migration
@@ -698,6 +723,56 @@ theorem migrateSchedContextReplenishment_mem_toCore (st : SystemState)
     have hK : x.1 = scId := by simpa [beq_iff_eq] using hxK
     subst hEq
     exact Or.inr ⟨rfl, by rw [← hK]; exact hxMem⟩
+
+/-- WS-ZA ZA6.4: **the migration keeps the refill state sound** — it moves
+`scId`'s entries from one core's queue to another's at their times and writes no
+context's refills: no entry is lost and none is made up
+(`refillsSound_of_releaseMove`). -/
+theorem migrateSchedContextReplenishment_refillsSoundExcept {S : SchedContextId → Prop}
+    {st : SystemState}
+    (hR : st.releaseQueueRefined) (scId : SchedContextId) (fromCore toCore : CoreId)
+    (h : st.refillsSoundExcept S) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).refillsSoundExcept S := by
+  by_cases hft : fromCore = toCore
+  · subst hft; rw [migrateSchedContextReplenishment_noop]; exact h
+  refine SystemState.refillsSoundExcept_of_releaseMove
+    (.of_agreeOffReleaseLinks (migrateSchedContextReplenishment_agree st scId fromCore toCore))
+    ?_ ?_ (migrateSchedContextReplenishment_refined hR scId fromCore toCore) h
+  · intro c e _ he
+    left
+    obtain ⟨a, b⟩ := e
+    by_cases hc1 : c = fromCore
+    · subst hc1
+      by_cases hk : a = scId
+      · refine ⟨toCore, ?_⟩
+        rw [migrateSchedContextReplenishment_replenishQueueOnCore_to st scId c toCore hft]
+        exact mem_foldl_insert_of _ _ _ _ (Or.inr ⟨List.mem_filter.mpr ⟨he, by simp [hk]⟩, hk⟩)
+      · refine ⟨c, ?_⟩
+        rw [migrateSchedContextReplenishment_replenishQueueOnCore_from st scId c toCore hft]
+        exact List.mem_filter.mpr ⟨he, by simp [hk]⟩
+    · by_cases hc2 : c = toCore
+      · subst hc2
+        refine ⟨c, ?_⟩
+        rw [migrateSchedContextReplenishment_replenishQueueOnCore_to st scId fromCore c hft]
+        exact mem_foldl_insert_of _ _ _ _ (Or.inl he)
+      · refine ⟨c, ?_⟩
+        rw [migrateSchedContextReplenishment_replenishQueueOnCore_other st scId fromCore toCore c
+          (Ne.symm hc1) (Ne.symm hc2)]
+        exact he
+  · intro c' e he
+    by_cases hc1 : c' = fromCore
+    · subst hc1
+      rw [migrateSchedContextReplenishment_replenishQueueOnCore_from st scId c' toCore hft] at he
+      exact ⟨c', (mem_remove_entries he).1⟩
+    · by_cases hc2 : c' = toCore
+      · subst hc2
+        rcases migrateSchedContextReplenishment_mem_toCore st scId fromCore c' hft e he with
+          h1 | ⟨-, h2⟩
+        · exact ⟨c', h1⟩
+        · exact ⟨fromCore, h2⟩
+      · rw [migrateSchedContextReplenishment_replenishQueueOnCore_other st scId fromCore toCore c'
+          (Ne.symm hc1) (Ne.symm hc2)] at he
+        exact ⟨c', he⟩
 
 -- ============================================================================
 -- §5  SM5.H.5 — migration-level affinity behaviour

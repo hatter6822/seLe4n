@@ -419,6 +419,7 @@ the capability is final (`SystemState.capIsFinal`). -/
       if retirableKind st r.toObjId && st.capIsFinal cnode slot then r.toObjId.val + 1 else 0
     | .cnodeSlot cn _ => if retirableKind st cn && st.capIsFinal cnode slot then cn.val + 1 else 0
     | .auditTrail => 0
+    | .schedControl _ => 0
   | none => 0
 
 /-- The recorder word of the target word `t` (`0` for none), read from slot
@@ -443,6 +444,7 @@ nothing**: the check a delete's fast path asks of the capability it read
   | .replyCap r => !(retirableKind st r.toObjId && st.capIsFinal cnode slot)
   | .cnodeSlot cn _ => !(retirableKind st cn && st.capIsFinal cnode slot)
   | .auditTrail => true
+  | .schedControl _ => true
 
 theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
     {slot : SeLe4n.Slot} {cap : Capability} (h : st.slotCapAt ⟨cnode, slot⟩ = some cap) :
@@ -455,6 +457,7 @@ theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
   | replyCap r => cases retirableKind st r.toObjId <;> cases st.capIsFinal cnode slot <;> simp
   | cnodeSlot cn _ => cases retirableKind st cn <;> cases st.capIsFinal cnode slot <;> simp
   | auditTrail => simp
+  | schedControl _ => simp
 
 theorem slotRetireTarget_of_empty {st : SystemState} {cnode : SeLe4n.ObjId}
     {slot : SeLe4n.Slot} (h : st.slotCapAt ⟨cnode, slot⟩ = none) :

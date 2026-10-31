@@ -49,6 +49,7 @@ audit-trail capability names nothing. -/
   | .cnodeSlot cn _ => cn.val == o
   | .replyCap r => r.toNat == o
   | .auditTrail => false
+  | .schedControl _ => false
 
 theorem Capability.namesObjectWord_iff (c : Capability) (o : SeLe4n.ObjId) :
     c.namesObjectWord o.val = true ↔ c.namedObject = some o := by
@@ -61,6 +62,7 @@ theorem Capability.namesObjectWord_iff (c : Capability) (o : SeLe4n.ObjId) :
     simp only [SeLe4n.ReplyId.toObjId, SeLe4n.ObjId.ofNat, Option.some.injEq, SeLe4n.ObjId.mk.injEq,
       beq_iff_eq]
   | auditTrail => simp
+  | schedControl _ => simp
 
 namespace SystemState
 
@@ -95,6 +97,7 @@ def capIsFinal (st : SystemState) (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) : 
     | .cnodeSlot cn _ => st.linksMissObject ⟨cnode, slot⟩ cn.val
     | .replyCap rp => st.linksMissObject ⟨cnode, slot⟩ rp.toNat
     | .auditTrail => true
+    | .schedControl _ => true
 
 /-- **The specification of finality**: no other slot holds a capability naming
 the object the capability in slot `r` names. -/
@@ -149,6 +152,7 @@ theorem capIsFinal_eq_true_iff_links (st : SystemState) (r : SlotRef) :
     | cnodeSlot cn _ => simpa using linksMissObject_iff st r cn
     | replyCap rp => simpa using linksMissObject_iff st r rp.toObjId
     | auditTrail => simp
+    | schedControl _ => simp
 
 /-- A descent followed by a descent is a descent. -/
 theorem desc_trans {ch : SlotRef → List SlotRef} {a b c : SlotRef} (h₁ : Desc ch a b)

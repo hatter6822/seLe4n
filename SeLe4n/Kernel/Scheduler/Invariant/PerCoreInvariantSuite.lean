@@ -3827,8 +3827,8 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
       · -- case #3: budget exhausted
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
-            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
+            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : allThreadsTimeSlicePositive
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } :=
           allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
@@ -3866,8 +3866,8 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
       · -- case #3: budget exhausted
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
-            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
+            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : allThreadsTimeSlicePositive
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } :=
           allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
@@ -3962,8 +3962,8 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
       · -- case #3: budget exhausted → replenish + re-enqueue + timeoutBlockedThreads
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
-            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
+            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : runQueueSafetyOnCore
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } c :=
           objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
@@ -4003,7 +4003,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
         obtain ⟨rfl, _⟩ := hStep
         exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
           (fun x hx => by
-            rw [getTcb?_insert_schedContext_eq st _ scId sc (consumeBudget sc 1) hInv hOldSc rfl x]
+            rw [getTcb?_insert_schedContext_eq st _ scId sc (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) hInv hOldSc rfl x]
             exact hx) h
     · -- a bound context the store does not hold: charged nothing
       simp only [Prod.mk.injEq] at hStep
@@ -4020,8 +4020,8 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
       · -- case #3
         simp only [Prod.mk.injEq] at hStep
         obtain ⟨rfl, _⟩ := hStep
-        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
-            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        generalize (cbsUpdateDeadline (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer)
+            st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
         have h1 : runQueueSafetyOnCore
             { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } c :=
           objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
@@ -4061,7 +4061,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
         obtain ⟨rfl, _⟩ := hStep
         exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
           (fun x hx => by
-            rw [getTcb?_insert_schedContext_eq st _ scId sc (consumeBudget sc 1) hInv hOldSc rfl x]
+            rw [getTcb?_insert_schedContext_eq st _ scId sc (sc.chargeBudget (st.machine.timer - 1) 1 st.machine.timer) hInv hOldSc rfl x]
             exact hx) h
     · -- a bound context the store does not hold: charged nothing
       simp only [Prod.mk.injEq] at hStep

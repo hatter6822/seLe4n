@@ -783,6 +783,31 @@ theorem liveMappingsRecorded_of_objectsAgreeOffTaint
   SystemState.liveMappingsRecorded.of_mappingFactsKept
     (SystemState.mappingFactsKept.of_objectsAgreeOffTaint hA) h
 
+/-- WS-ZA ZA6.4: a word write keeps every context's refills — a context holds
+no taint word — and writes no release queue, so the refill state stays sound. -/
+theorem refillsSound_of_objectsAgreeOffTaint
+    (hA : st.objectsAgreeOffTaint { st with objects := O })
+    (hR' : SystemState.releaseQueueRefined { st with objects := O }) (h : st.refillsSound) :
+    SystemState.refillsSound { st with objects := O } := by
+  refine SystemState.refillsSound_of_kept (st := st) (st' := { st with objects := O })
+    (fun k v hv => ?_) (fun _ => rfl) hR' h
+  change objRefillView O[k]? = some v at hv
+  cases h2 : O[k]? with
+  | none => rw [h2] at hv; cases hv
+  | some o' =>
+    rw [h2] at hv
+    obtain ⟨o, h1, e⟩ := hA.some_iff _ o' h2
+    rw [h1]
+    cases hH : o'.holdsTaint with
+    | false =>
+      have hx := KernelObject.eq_of_eraseTaint_eq hH e
+      first | (rw [← hx]; exact hv) | (rw [hx]; exact hv) | (subst hx; exact hv)
+    | true =>
+      cases o' with
+      | tcb x => cases hv
+      | notification n => cases hv
+      | _ => simp [KernelObject.holdsTaint] at hH
+
 /-- WS-ZA ZA6.3: a word write keeps every release link — a context holds no
 taint word, and a thread or a notification holds no release link — and writes
 no scheduler slot. -/
@@ -821,7 +846,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     (h : proofLayerInvariantBundle st) : proofLayerInvariantBundle { st with objects := O } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit, bRun, bMap, bRel⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill⟩ := h
   have hI' := hI bCap.2.2.2.2.1
   exact ⟨schedulerInvariantBundleFull_of_objectsAgreeOffTaint hA bSched,
     capabilityInvariantBundle_of_objectsAgreeOffTaint hA hI' bCap,
@@ -838,6 +863,8 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     icacheCoherent_perCore_of_objectsAgreeOffTaint hA bIcache, bAck, bAudit,
     runQueueRefined_of_objectsAgreeOffTaint hA bRun,
     liveMappingsRecorded_of_objectsAgreeOffTaint hA bMap,
-    releaseQueueRefined_of_objectsAgreeOffTaint hA bRel⟩
+    releaseQueueRefined_of_objectsAgreeOffTaint hA bRel,
+    refillsSound_of_objectsAgreeOffTaint hA (releaseQueueRefined_of_objectsAgreeOffTaint hA bRel)
+      bRefill⟩
 
 end SeLe4n.Kernel.Architecture

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.MappingRecordStage.SchedulingPoint
+import SeLe4n.Kernel.SchedContext.SchedControl
 
 /-! # The thread-lifecycle and scheduling arms keep the mappings recorded
 
@@ -329,6 +330,13 @@ theorem setMCPriorityOnCore_mappingStage {st st' : SystemState}
 
 /-! ### Scheduling contexts and affinity -/
 
+/-- The release queue's re-placement writes contexts' release fields alone. -/
+theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
+    MappingStage st (st.releasePlace c scId) :=
+  MappingStage.of_objectsAgreeOffSchedulerLinks
+    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
+    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
+
 /-- A scheduling context rewritten through its witnessed lookup. -/
 theorem MappingStage.rewriteObject_schedContext {st : SystemState} {scId : SeLe4n.SchedContextId}
     {sc : SchedContext} (h : st.getSchedContext? scId = some sc) (sc' : SchedContext)
@@ -358,6 +366,7 @@ theorem schedContextBind_mappingStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n
             · split at h
               · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
                 subst h
+                refine MappingStage.trans ?_ (releasePlace_mappingStage _ _ _)
                 refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
                 split
                 · refine MappingStage.trans ?_ (runRequeueOnCore_mappingStage _ _ _ _)
@@ -419,6 +428,12 @@ theorem purgeReplenishment_mappingStage (st : SystemState) (scId : SeLe4n.SchedC
     fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
       (SchedContextOps.purgeReplenishment_agree st scId)).kindPreserving
 
+/-- The configure's resume tail writes run-queue links alone. -/
+theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadId)
+    (sc : SchedContext) : MappingStage st (SchedContextOps.configureResumeBound st t sc) :=
+  MappingStage.of_objectsAgreeOffRunLinks (SchedContextOps.configureResumeBound_objects_invExt st t sc)
+    (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks st t sc)
+
 /-- The configure purges the context's replenishment, stores the reconfigured
 context over the old one, and runs the bound-thread propagation, the key hook
 and the chain re-walk. -/
@@ -458,13 +473,14 @@ theorem schedContextConfigure_mappingStage {vScId : SeLe4n.ValidObjId}
             · rename_i boundTcb hBound _
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
-              exact hS1.trans
+              exact ((hS1.trans (releasePlace_mappingStage _ _ _)).trans
                 ((((schedContextConfigureBoundPropagate_mappingStage _ _ _ _ hBound _ _).trans
                   (markCandidacyGainFor_mappingStage _ _ _)).trans
                   (markKeyChangeFor_mappingStage _ _ _)).trans
-                  (repropagateFromWaiter_mappingStage _ _ _ _))
+                  (repropagateFromWaiter_mappingStage _ _ _ _))).trans
+                  (configureResumeBound_mappingStage _ _ _)
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2]; exact hS1
+              rw [← h.2]; exact hS1.trans (releasePlace_mappingStage _ _ _)
       · exact absurd h (by simp)
 
 /-- The unbind clears the context's bound thread and the thread's binding in
@@ -511,20 +527,19 @@ theorem schedContextUnbindOnCore_mappingStage {vScId : SeLe4n.ValidObjId} {ec : 
 /-- The affinity op: the vacate (the scheduler alone), the affinity field
 written in place, the replenishment move (replenish queues only), the run-queue
 migration and the requeue (run-queue links only). -/
-theorem setThreadCpuAffinityOnCore_mappingStage {st st' : SystemState}
-    {vTargetTid : SeLe4n.ValidThreadId} {affinity : Option CoreId} {ec : CoreId}
+theorem setThreadCpuAffinityWithMigration_mappingStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {affinity : Option CoreId} {ec : CoreId}
     {sgi? : Option (CoreId × Concurrency.SgiKind)}
-    (h : setThreadCpuAffinityOnCore st vTargetTid affinity ec = .ok (st', sgi?)) :
+    (h : setThreadCpuAffinityWithMigration st tid affinity ec = .ok (st', sgi?)) :
     MappingStage st st' := by
-  unfold setThreadCpuAffinityOnCore at h
   obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
-  have hS0 : MappingStage st (vacateForAffinityChange st vTargetTid.val
-      (determineTargetCore st vTargetTid.val) (affinity.getD Concurrency.bootCoreId)) :=
+  have hS0 : MappingStage st (vacateForAffinityChange st tid
+      (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId)) :=
     MappingStage.of_objectsAgreeOffRunLinks
       (fun hI => by rw [vacateForAffinityChange_objects]; exact hI)
       (vacateForAffinityChange_objectsAgreeOffRunLinks _ _ _ _)
-  have hS1 : MappingStage (vacateForAffinityChange st vTargetTid.val
-      (determineTargetCore st vTargetTid.val) (affinity.getD Concurrency.bootCoreId)) stSet := by
+  have hS1 : MappingStage (vacateForAffinityChange st tid
+      (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId)) stSet := by
     unfold setThreadCpuAffinity at hSet
     split at hSet
     · rename_i t hT _
@@ -541,7 +556,25 @@ theorem setThreadCpuAffinityOnCore_mappingStage {st st' : SystemState}
   · exact migrateSchedContextReplenishment_mappingStage _ _ _ _
   · exact MappingStage.refl _
 
+/-- WS-ZA ZA6.4: the SchedControl configure moves the bound thread through the
+affinity change and then configures on the moved state; both are stages. -/
+theorem schedControlConfigure_mappingStage {core : CoreId} {vScId : SeLe4n.ValidObjId}
+    {budget period priority deadline domain : Nat} {st st' : SystemState}
+    (h : SchedContextOps.schedControlConfigure core vScId budget period priority deadline domain
+      st = .ok ((), st')) : MappingStage st st' := by
+  rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
+  · exact schedContextConfigure_mappingStage h
+  · exact (setThreadCpuAffinityWithMigration_mappingStage hM).trans
+      (schedContextConfigure_mappingStage h)
+
 /-! ### The timer path -/
+
+theorem setThreadCpuAffinityOnCore_mappingStage {st st' : SystemState}
+    {vTargetTid : SeLe4n.ValidThreadId} {affinity : Option CoreId} {ec : CoreId}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (h : setThreadCpuAffinityOnCore st vTargetTid affinity ec = .ok (st', sgi?)) :
+    MappingStage st st' :=
+  setThreadCpuAffinityWithMigration_mappingStage h
 
 /-- The boost's write: one thread rewritten in place. -/
 theorem pipBoostWrite_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -713,13 +746,6 @@ theorem timeoutBlockedThreads_mappingStage (st : SystemState) (scId : SeLe4n.Sch
       · exact h
     · exact h
 
-/-- The release queue's re-placement writes contexts' release fields alone. -/
-theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n.SchedContextId) :
-    MappingStage st (st.releasePlace c scId) :=
-  MappingStage.of_objectsAgreeOffSchedulerLinks
-    (fun h => SystemState.releasePlace_objects_invExt st c scId h)
-    (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
-
 theorem sliceExpireOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
     MappingStage st (sliceExpireOnCore st c tid tcb hTcb) :=
@@ -727,7 +753,7 @@ theorem sliceExpireOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : Se
 
 theorem spendBudgetOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
-    (ticks : Nat) : MappingStage st (spendBudgetOnCore st c tid scId sc hSc ticks) := by
+    (start ticks : Nat) : MappingStage st (spendBudgetOnCore st c tid scId sc hSc start ticks) := by
   unfold spendBudgetOnCore
   refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
   exact (MappingStage.rewriteObject_schedContext hSc _
@@ -737,7 +763,7 @@ theorem budgetExhaustOnCore_mappingStage (st : SystemState) (c : CoreId) (tid : 
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
     (ticks : Nat) : MappingStage st (budgetExhaustOnCore st c tid k scId sc hSc ticks) :=
-  (((spendBudgetOnCore_mappingStage st c tid scId sc hSc ticks).trans
+  (((spendBudgetOnCore_mappingStage st c tid scId sc hSc _ ticks).trans
     (markKeyChangeFor_mappingStage _ tid k)).trans
     (timeoutBlockedThreads_mappingStage _ scId c)).trans (MappingStage.of_objects_eq rfl)
 
@@ -755,6 +781,7 @@ theorem timerTickBudgetOnCore_mappingStage {st : SystemState} {c : CoreId}
   all_goals
     split
     · rename_i sc hSc _
+      dsimp only
       split
       · exact budgetExhaustOnCore_mappingStage st c tid _ _ sc hSc 1
       · exact MappingStage.rewriteObject_schedContext hSc _
@@ -800,7 +827,7 @@ theorem yieldChargeOnCore_mappingStage {st st' : SystemState} {c : CoreId}
       split at h
       · rename_i sc hSc _
         rw [Except.ok.injEq] at h; subst h
-        exact (spendBudgetOnCore_mappingStage st c tid _ sc hSc _).trans
+        exact (spendBudgetOnCore_mappingStage st c tid _ sc hSc _ _).trans
           (markKeyChangeFor_mappingStage _ _ _)
       · cases h
 
