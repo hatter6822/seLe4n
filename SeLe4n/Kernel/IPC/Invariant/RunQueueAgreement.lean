@@ -315,7 +315,9 @@ theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurre
       (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables)
     (fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h)
     (fun h => enqueueRunnableOnCore_refillViewsKept st c tid h)
-    fun h => enqueueRunnableOnCore_yieldLinksKept st c tid h
+    (fun h => enqueueRunnableOnCore_yieldLinksKept st c tid h)
+    (by have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
+        unfold SystemState.onlyObjectsSchedulerDiffer at h; rw [h])
 
 /-- The wake marks one thread ready and moves run-queue links: every runnable
 thread stays runnable. -/
@@ -985,6 +987,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
     (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
     (fun hInv => ipcUnwrapCaps_refillViewsKept hInv h)
     (fun hInv => ipcUnwrapCaps_yieldLinksKept hInv h)
+    (hRes := by rw [ipcUnwrapCaps_preserves_machine caps root base grant st st' summary h])
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
@@ -1024,6 +1027,7 @@ theorem donateSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv => donateSchedContext_refillViewsKept st st' client server scId hInv h)
     (fun hInv => donateSchedContext_yieldLinksKept st st' client server scId hInv h)
     (by rw [hS])
+    (by rw [donateSchedContext_machine_eq st st' client server scId h])
 
 theorem applyCallDonation_runQueueStage {st st' : SystemState}
     {callerV receiverV : SeLe4n.ValidThreadId}

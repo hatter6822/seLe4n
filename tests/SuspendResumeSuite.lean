@@ -1074,6 +1074,39 @@ private def sr043_remoteYielderCompletesOnItsCore : IO Unit := do
         stF.machine.regsOnCore core1 == stV.machine.regsOnCore core1)
   | _ => throw <| IO.userError "SR-043 the yielder not found after the finalise"
 
+/-- `SystemState.yieldLinkedNotResident`, read off every core: no core's current
+or resident thread holds a yield link. -/
+private def yieldLinkedNotResidentB (st : SystemState) : Bool :=
+  let unlinked (o : Option SeLe4n.ThreadId) : Bool := match o with
+    | some tid => match st.objects[tid.toObjId]? with
+      | some (.tcb t) => t.yieldToCode == 0
+      | _ => true
+    | none => true
+  SeLe4n.Kernel.Concurrency.allCores.all fun c =>
+    unlinked (st.scheduler.currentOnCore c) && unlinked (st.machine.residentOnCore c)
+
+/-- SR-044 (the kernel-wide claim, WS-ZA ZA6.8): from a state whose yielder last
+ran on core 1 and has since been vacated there, the entry tail on either core
+(residency settle, then activation) keeps every core's current and resident
+threads unlinked; the yielder current on core 1 is the state the claim rules
+out. -/
+private def sr044_entryTailKeepsEveryCoreUnlinked : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  expect "SR-044 the checker refuses a linked current yielder"
+    (!yieldLinkedNotResidentB (yieldLinkedRemoteState false))
+  let stV := yieldLinkedRemoteState true
+  expect "SR-044 a vacated yielder is no core's current or resident thread"
+    (yieldLinkedNotResidentB stV)
+  let tail (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
+    SeLe4n.Kernel.activateThreadOnCore (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore st c) c
+  expect "SR-044 the boot core's entry tail keeps every core unlinked"
+    (yieldLinkedNotResidentB (tail stV core0))
+  expect "SR-044 core 1's entry tail keeps every core unlinked"
+    (yieldLinkedNotResidentB (tail stV core1))
+  expect "SR-044 both cores' tails in turn keep every core unlinked"
+    (yieldLinkedNotResidentB (tail (tail stV core0) core1))
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1140,4 +1173,5 @@ def main : IO Unit := do
   sr041_activationCompletesCurrentYield
   sr042_activationWithoutPendingYieldIsIdentity
   sr043_remoteYielderCompletesOnItsCore
+  sr044_entryTailKeepsEveryCoreUnlinked
   IO.println "=== All D1 suspend/resume tests passed (46 tests) ==="

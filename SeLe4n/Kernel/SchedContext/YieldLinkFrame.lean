@@ -216,7 +216,9 @@ theorem RunQueueStage.of_objectsAgreeOffYield {st st' : SystemState}
     (hA : objectsAgreeOffYield st' st) (hS : st'.scheduler = st.scheduler)
     (hI : st.objects.invExt → st'.objects.invExt)
     (hT : st'.referenceTables = st.referenceTables)
-    (hY : st.objects.invExt → st.yieldLinksAgree → st'.yieldLinksAgree) :
+    (hY : st.objects.invExt → st.yieldLinksAgree → st'.yieldLinksAgree)
+    (hU : st.objects.invExt → Kernel.YieldToCodesUnset st' st)
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' := by
   have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := by
     intro c t
@@ -236,7 +238,7 @@ theorem RunQueueStage.of_objectsAgreeOffYield {st st' : SystemState}
       fun _ _ t => hF.preserves t, fun _ _ r => hRel.refined r,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV
         (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
-      fun h _ y => hY h y⟩,
+      fun h _ y => hY h y, fun h _ => .of_unset (hU h) hRes⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
 
 /-- **The cancel is a run-queue stage**, keeping the link agreement
@@ -249,6 +251,8 @@ theorem cancelYieldTo_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId) :
       (fun h => cancelYieldTo_preserves_objects_invExt st tid h)
       (by rw [cancelYieldTo_eq_objects]; rfl)
       (fun h y => cancelYieldTo_preserves_yieldLinksAgree st tid h y)
+      (fun h => cancelYieldTo_yieldToCodesUnset st tid h)
+      (by rw [cancelYieldTo_eq_objects])
 
 /-- The consumed-count read of a context is a run-queue stage: it writes the
 count alone, outside the refill view (`updateConsumed_refillView`). -/
@@ -267,6 +271,7 @@ theorem updateConsumed_runQueueStage (st : SystemState) (s : SeLe4n.SchedContext
   · exact fun hInv => .updateSchedContext st s _ hInv (fun sc => by simp)
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st s _ hInv (fun _ => rfl)
   · rw [hU]
+  · exact congrArg MachineState.residentCode (updateSchedContext_machine st s _)
 
 /-- **`setConsumed` is a run-queue stage**: the count read off the context, then
 the thread's two return registers. -/
@@ -296,6 +301,8 @@ theorem cancelYieldFrom_runQueueStage (st : SystemState) (s : SeLe4n.SchedContex
       (fun h => cancelYieldFrom_preserves_objects_invExt st s h)
       (by rw [cancelYieldFrom_eq_objects]; rfl)
       (fun h y => cancelYieldFrom_preserves_yieldLinksAgree st s h y)
+      (fun h => cancelYieldFrom_yieldToCodesUnset st s h)
+      (by rw [cancelYieldFrom_eq_objects])
 
 theorem completeYieldFrom_runQueueStage (st : SystemState) (s : SeLe4n.SchedContextId) :
     RunQueueStage st (completeYieldFrom st s) := by

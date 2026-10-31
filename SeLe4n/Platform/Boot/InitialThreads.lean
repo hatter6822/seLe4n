@@ -575,6 +575,17 @@ theorem bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle
   proofLayerInvariantBundle_of_bootLinkedShape ist
     (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
 
+/-- WS-ZA ZA6.8: **the state the started boot installs keeps no linked thread
+current or resident** — the first entry's precondition for
+`syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its siblings. -/
+theorem bootFromPlatformCheckedStartedFor_yieldLinkedNotResident
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
+    ist.state.yieldLinkedNotResident :=
+  yieldLinkedNotResident_of_bootLinkedShape ist
+    (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
+
 /-- WS-ZA ZA5.4 part 36: **the state the started boot installs satisfies the
 untyped memory invariant.**  Every capability is a configured one at free index
 0 (`bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero`), no untyped

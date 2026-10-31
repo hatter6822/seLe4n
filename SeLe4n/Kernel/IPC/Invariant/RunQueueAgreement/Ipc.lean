@@ -105,7 +105,7 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
         (fun _ k => by
           rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
           · rw [e]
-          · rw [h0, h1]; rfl),
+          · rw [h0, h1]; rfl) (congrArg (fun x => x.machine.residentCode) hD.1),
       fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq
         (by rw [hD.scheduler_eq]) hL hM d, fun _ _ => hM⟩
 
@@ -181,6 +181,7 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
         rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
         · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
+      (by rw [spliceReplyFrameOut_machine_eq h])
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl

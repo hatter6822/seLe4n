@@ -877,7 +877,9 @@ run-queue stage: every run link, current slot and thread state reads as before. 
 theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
     (hA : objectsAgreeOffReplyLinks st' st) (hS : st'.scheduler = st.scheduler)
     (hI : st.objects.invExt → st'.objects.invExt)
-    (hT : st'.referenceTables = st.referenceTables) : RunQueueStage st st' := by
+    (hT : st'.referenceTables = st.referenceTables)
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
+    RunQueueStage st st' := by
   have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := by
     intro c t
     have e := hA.getTcb?_map (fun x => x.runLinkOn c) (t := t)
@@ -893,7 +895,7 @@ theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
       (fun _ => Kernel.RefillViewsKept.of_map KernelObject.withoutReplyLinks
         (fun o => by cases o <;> rfl) hA)
       (fun _ => Kernel.YieldLinksKept.of_map KernelObject.withoutReplyLinks
-        (fun o => by cases o <;> rfl) hA),
+        (fun o => by cases o <;> rfl) hA) hRes,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
 
 theorem linkReplyWaiter_runQueueStage (st : SystemState) (w s : ThreadId) :

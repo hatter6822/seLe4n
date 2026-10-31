@@ -1348,6 +1348,12 @@ theorem retypeFromUntyped_ok_sizeAligned
     (req : CarveRequest) : (req.scrub st ut idx).scheduler = st.scheduler := by
   cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
 
+/-- ...and no core's resident thread: the scrub writes memory alone. -/
+@[simp] theorem CarveRequest.scrub_residentCode (st : SystemState) (ut : UntypedObject) (idx : Nat)
+    (req : CarveRequest) :
+    (req.scrub st ut idx).machine.residentCode = st.machine.residentCode := by
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
+
 /-- **WS-ZA ZA5.4: what a successful carve writes** — `untypedRetypeObject`
 read back on the state it was handed: the destination admitted there, the
 carve, and the capability written into the destination slot over the scrubbed
