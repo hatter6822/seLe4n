@@ -10464,6 +10464,30 @@ run_check "INVARIANT" rg -n 'FO-048 NEGATIVE: the RETIRED fused gate moves the b
 run_check "INVARIANT" rg -n 'FO-048 control: a priority-only reconfigure re-buckets on the live side' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureDomainOnlyKeepsOrder($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureDomainOnlyKeepsOrder$' tests/FrozenOpsSuite.lean
+# WS-ZA ZA6.4 review: the frozen configure ends in the live configure's resume
+# tail (`configureResumeBound`), run over the state the propagation halves left.
+# Without it a runnable bound thread parked off every bucket stayed unselectable
+# by `frozenChooseThread` while the live scheduler placed it.  The tail asks about
+# the CURRENT thread before the bucket (frozen dispatch leaves a current thread
+# in its bucket), takes a queued thread out when the context has no budget, and
+# places a parked runnable one at its effective priority.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\| \.ok stProp => \.ok \(\(\), frozenConfigureResumeBound stProp boundTid updated\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenConfigureResumeBound[^\n]*\n[^\n]*\n  if st\.scheduler\.current == some t then st\n  else if frozenQueuedAnywhere st t then\n    if sc\.budgetRemaining\.isPositive then st else frozenRemoveRunnable st t$" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenConfigureResumeBound[^\n]*(\n([ \t][^\n]*)?)*if frozenBindPlacesParkedThread st t tcb sc then\n        frozenRebucketRunnable st t tcb\.boostedPriority$" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" rg -n 'FO-052: \.\.\.so the frozen chooser can select it' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'FO-052: \.\.\.and the frozen one takes it out of every bucket' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureResumesBound($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureResumesBound$' tests/FrozenOpsSuite.lean
+# WS-ZA ZA6.4 review: the configure's parameter word packs the priority (bits
+# 0-7) and the domain (bits 8-11).  The encoder REFUSES an out-of-range field
+# rather than masking it into another valid configuration, and the kernel's
+# checked decode refuses any word with a bit above bit 11, tested on the word.
+run_check "INVARIANT" bash -lc 'rg -U -n "pub const fn encode\(&self\) -> KernelResult<\[u64; 5\]> \{\n        if self\.priority > MAX_PRIORITY \|\| self\.domain > MAX_DOMAIN \{\n            return Err\(KernelError::InvalidSyscallArgument\);" rust/sele4n-abi/src/args/sched_context.rs'
+run_negative_check "INVARIANT" rg -n '\(self\.(priority|domain) & MAX_(PRIORITY|DOMAIN)\)' rust/sele4n-abi/src/args/sched_context.rs
+run_check "INVARIANT" bash -lc 'rg -U -n "^    let encoded = args\.encode\(\)\?;$" rust/sele4n-sys/src/sched_context.rs'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def decodeSchedContextConfigureArgsChecked [^\n]*\n[^\n]*\n  let args ← decodeSchedContextConfigureArgs decoded\n  if args\.schedParams ≥ 4096 then \.error \.invalidArgument$" SeLe4n/Kernel/Architecture/SyscallArgDecode.lean'
+run_check "INVARIANT" rg -n '^  test_t10_sc_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
+run_check "INVARIANT" rg -n '^  test_t11_sc_word_reader_rejects_high_param_bits$' tests/DecodeValidationSuite.lean
 # The bucket key is the LIVE accessor, so "which bucket does this thread belong
 # in" has no frozen-specific answer -- the rule `frozenEnsureRunnable` states and
 # the one a second reading here would break.

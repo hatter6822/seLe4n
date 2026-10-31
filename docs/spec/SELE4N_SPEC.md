@@ -5959,7 +5959,14 @@ Every kernel object has a decidable well-formedness predicate:
     CNode at slot `base + c` (`schedControlBootSlots`; RPi5 slots 12–15, QEMU
     `virt` slots 16–19).  ABI: MR0 the context's capability address, MR1
     budget, MR2 period, MR3 `priority | domain << 8`, MR4 (the IPC buffer's
-    overflow word) deadline.
+    overflow word) deadline.  MR3 holds the priority in bits 0–7 and the domain
+    in bits 8–11; the kernel refuses a word of 4096 or more
+    (`decodeSchedContextConfigureArgsChecked`, `.invalidArgument`), and the
+    Rust encoder refuses a priority above 255 or a domain above 15
+    (`InvalidSyscallArgument`) rather than masking either into another valid
+    configuration.  The frozen configure mirrors the resume tail
+    (`frozenConfigureResumeBound`), so a parked bound thread it places is one
+    `frozenChooseThread` can select.
   - **Refills.**  The charge is seL4-MCS's: `refillBudgetCheck`
     (`refill_budget_check`), `scheduleUsed` merging into the tail refill at
     capacity, so no budget is dropped (`schedule_used`), and

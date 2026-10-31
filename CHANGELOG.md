@@ -120,6 +120,52 @@ keeps the refill state sound.
   - The identifier-naming baseline's retired entries are regenerated with
     `scripts/check_identifier_naming.py`.
 
+### Review fixes
+
+- **The configure's encoder no longer truncates.**
+  `SchedContextConfigureArgs::encode` packed `priority | domain << 8` into
+  MR3 through masks, so a priority above 255 or a domain above 15 became a
+  different, valid configuration (256 encoded as priority 0, domain 16 as
+  domain 0). Before this release the two values travelled in separate words
+  and the kernel refused them. The encoder now returns
+  `KernelResult<[u64; 5]>` and refuses either field out of range with
+  `InvalidSyscallArgument`, the error the decode returns for the same word;
+  `sched_context_configure` propagates it before it writes the overflow word
+  or traps.
+- **The kernel's MR3 check is stated on the word.**
+  `decodeSchedContextConfigureArgsChecked` refuses any parameter word of 4096
+  or more (a bit set above the packed priority and domain) by testing the
+  word itself rather than its derived domain, which is the test the
+  register-routed `decodeSchedContextConfigureArgsCheckedBy` already ran.
+  `decodeSchedContextConfigureArgsChecked_invariants` now concludes
+  `schedParams < 4096` as well, and `schedParamsDomain_ge_iff` gives way to
+  `schedParams_ge_iff`.
+- **The frozen configure runs the resume tail.**
+  `frozenSchedContextConfigure` copied the live configure's refills but not
+  `configureResumeBound`, so a runnable bound thread parked off every queue
+  stayed outside every frozen bucket and `frozenChooseThread` could not
+  select it while the live scheduler could. `frozenConfigureResumeBound`
+  mirrors the tail arm for arm: a current thread is left alone, a queued one
+  leaves its bucket when the context has no budget, and a parked runnable
+  one is placed at its effective priority. It runs over the state the two
+  propagation halves leave, whether or not either wrote.
+- **Tests.**
+  - Rust: the encoder refuses priority 256 and domain 16 (unit and
+    conformance), accepts the maxima, and the wrapper refuses both before
+    any write.
+  - `DecodeValidationSuite` T10 and T11 refuse parameter words with bit 12,
+    bit 40, bit 63 or every bit set, through the checked decode and the
+    word reader.
+  - `FrozenOpsSuite` FO-052 runs the configure on both surfaces and compares
+    the states whole: a parked bound thread is placed and selectable, a
+    suspended one is not, and a queued one whose kept head is not yet
+    released leaves its queue.
+- **Debt.** The frozen surface keeps no release-queue links, so the frozen
+  configure does not mirror the live `releasePlace` and `purgeReplenishment`;
+  FO-052's removal half agrees with the live state except on the context's
+  release links. Registered in `docs/REGISTERED_DEBT.md` §C with a closure
+  target before ZA6.16.
+
 ## v0.36.166 — WS-ZA ZA6.3: the release queue links through the scheduling contexts
 
 Each core's release queue is now singly linked through its scheduling

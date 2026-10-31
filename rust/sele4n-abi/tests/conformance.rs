@@ -1367,7 +1367,7 @@ fn sched_context_configure_roundtrip() {
         deadline: 10000,
         domain: 3,
     };
-    let encoded = args.encode();
+    let encoded = args.encode().unwrap();
     let decoded = SchedContextConfigureArgs::decode(&encoded).unwrap();
     assert_eq!(decoded, args);
 }
@@ -1407,14 +1407,44 @@ fn sched_context_configure_insufficient_regs() {
 }
 
 /// AA1-F-5: SchedContextConfigureArgs — the priority is the parameter word's
-/// low byte (WS-ZA ZA6.4: priority and domain share MR3), so a priority of 256
-/// is a domain of 1, and the word it encodes to decodes to priority 0.
+/// low byte (WS-ZA ZA6.4: priority and domain share MR3), so the word 256 reads
+/// as priority 0 in domain 1.  The encoder therefore refuses a priority of 256
+/// (or a domain of 16) rather than masking it into that other configuration.
 #[test]
 fn sched_context_configure_priority_is_low_byte() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs::decode(&[7, 1000, 5000, 256, 10000]).unwrap();
     assert_eq!(args.priority, 0);
     assert_eq!(args.domain, 1);
+}
+
+/// AA1-F-5b: the encoder refuses priority 256 and domain 16 with the error the
+/// decode and the kernel return for the same word, and encodes nothing.
+#[test]
+fn sched_context_configure_encode_refuses_out_of_range() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    let valid = SchedContextConfigureArgs {
+        sched_context: CPtr::from(7u64),
+        budget: 1000,
+        period: 5000,
+        priority: 255,
+        deadline: 10000,
+        domain: 15,
+    };
+    assert!(valid.encode().is_ok());
+    let priority_256 = SchedContextConfigureArgs {
+        priority: 256,
+        ..valid
+    };
+    assert_eq!(
+        priority_256.encode(),
+        Err(KernelError::InvalidSyscallArgument)
+    );
+    let domain_16 = SchedContextConfigureArgs {
+        domain: 16,
+        ..valid
+    };
+    assert_eq!(domain_16.encode(), Err(KernelError::InvalidSyscallArgument));
 }
 
 /// AA1-F-6: SchedContextBindArgs boundary — empty registers.

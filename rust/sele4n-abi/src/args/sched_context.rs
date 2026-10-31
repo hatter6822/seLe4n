@@ -48,18 +48,25 @@ pub struct SchedContextConfigureArgs {
 }
 
 impl SchedContextConfigureArgs {
-    /// Encode into message registers.  The parameter word carries the priority's
-    /// low byte and the domain's low four bits; [`Self::decode`] and the kernel
-    /// refuse a word with any higher bit set.
-    pub const fn encode(&self) -> [u64; 5] {
-        [
+    /// Encode into message registers.  The parameter word carries the priority
+    /// in bits 0–7 and the domain in bits 8–11.
+    ///
+    /// A priority above [`MAX_PRIORITY`] or a domain above [`MAX_DOMAIN`] is
+    /// refused with `InvalidSyscallArgument` — the error [`Self::decode`] and the
+    /// kernel return for the same out-of-range word — rather than masked: a mask
+    /// would silently turn priority 256 into 0, or domain 16 into 0, which is a
+    /// different, valid configuration.
+    pub const fn encode(&self) -> KernelResult<[u64; 5]> {
+        if self.priority > MAX_PRIORITY || self.domain > MAX_DOMAIN {
+            return Err(KernelError::InvalidSyscallArgument);
+        }
+        Ok([
             self.sched_context.raw(),
             self.budget,
             self.period,
-            (self.priority & MAX_PRIORITY)
-                | ((self.domain & MAX_DOMAIN) << SCHED_PARAMS_DOMAIN_SHIFT),
+            self.priority | (self.domain << SCHED_PARAMS_DOMAIN_SHIFT),
             self.deadline,
-        ]
+        ])
     }
 
     /// Decode from message registers. Requires 5 registers.
@@ -152,7 +159,7 @@ mod tests {
             domain: 3,
         };
         assert_eq!(
-            SchedContextConfigureArgs::decode(&args.encode()).unwrap(),
+            SchedContextConfigureArgs::decode(&args.encode().unwrap()).unwrap(),
             args
         );
     }
@@ -167,7 +174,58 @@ mod tests {
             deadline: 3,
             domain: 5,
         };
-        assert_eq!(args.encode(), [7, 1, 2, 0x52a, 3]);
+        assert_eq!(args.encode(), Ok([7, 1, 2, 0x52a, 3]));
+    }
+
+    #[test]
+    fn configure_encode_refuses_priority_256() {
+        // A mask would encode priority 256 as priority 0 — a different, valid
+        // configuration.  The encoder refuses it instead.
+        let args = SchedContextConfigureArgs {
+            sched_context: CPtr::from(7u64),
+            budget: 1000,
+            period: 5000,
+            priority: MAX_PRIORITY + 1,
+            deadline: 10000,
+            domain: 3,
+        };
+        assert_eq!(args.encode(), Err(KernelError::InvalidSyscallArgument));
+    }
+
+    #[test]
+    fn configure_encode_refuses_domain_16() {
+        // A mask would encode domain 16 as domain 0.
+        let args = SchedContextConfigureArgs {
+            sched_context: CPtr::from(7u64),
+            budget: 1000,
+            period: 5000,
+            priority: 128,
+            deadline: 10000,
+            domain: MAX_DOMAIN + 1,
+        };
+        assert_eq!(args.encode(), Err(KernelError::InvalidSyscallArgument));
+        // Far out of range too: no bit of the domain reaches another field.
+        let wide = SchedContextConfigureArgs {
+            domain: u64::MAX,
+            ..args
+        };
+        assert_eq!(wide.encode(), Err(KernelError::InvalidSyscallArgument));
+    }
+
+    #[test]
+    fn configure_encode_accepts_maxima() {
+        let args = SchedContextConfigureArgs {
+            sched_context: CPtr::from(7u64),
+            budget: 1,
+            period: 2,
+            priority: MAX_PRIORITY,
+            deadline: 3,
+            domain: MAX_DOMAIN,
+        };
+        let encoded = args.encode().unwrap();
+        assert_eq!(encoded[3], 255 | (15 << 8));
+        assert!(encoded[3] < SCHED_PARAMS_LIMIT);
+        assert_eq!(SchedContextConfigureArgs::decode(&encoded).unwrap(), args);
     }
 
     #[test]
