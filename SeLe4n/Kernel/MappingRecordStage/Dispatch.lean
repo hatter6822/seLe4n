@@ -160,7 +160,9 @@ theorem dispatchCapabilityOnly_mappingStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact schedContextConfigure_mappingStage hStep
+              split at hStep
+              · exact schedControlConfigure_mappingStage hStep
+              · cases hStep
     all_goals try cases hStep
   case schedContextBind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

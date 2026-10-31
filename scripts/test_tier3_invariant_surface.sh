@@ -3209,7 +3209,7 @@ run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/SchedContex
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate \(stStored : SystemState\)\n    \(scId : SeLe4n\.SchedContextId\)\n    \(boundTid : SeLe4n\.ThreadId\) \(boundTcb : TCB\)\n    \(hBound : stStored\.getTcb\? boundTid = some boundTcb\)\n    \(priority domain : Nat\) : SystemState :=" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*        stStored\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb boundTcb2\)\n          \(SystemState\.rewriteAdmissible_tcb hBound boundTcb2\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*  match stProp\.getTcbWitnessed\? boundTid with\n  \| some ⟨currentTcb, hCurrent⟩ =>\n    if currentTcb\.domain\.val = domain ∨\n       ¬ schedContextConfigurePropagates boundTcb scId then stProp\n    else(\n([ \t][^\n]*)?)*      stProp\.rewriteObject boundTid\.toObjId \(KernelObject\.tcb currentTcb2\)\n        \(SystemState\.rewriteAdmissible_tcb hCurrent currentTcb2\)\n  \| none => stProp$" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := effectiveSchedParams st boundTcb\n                \.ok \(\(\), PriorityInheritance\.repropagateFromWaiter\n                  \(markKeyChangeFor \(markCandidacyGainFor\n                    \(schedContextConfigureBoundPropagate stStored scIdTyped\n                      boundTid boundTcb hBound priority domain\) boundTid\n                    \(hasSufficientBudget st boundTcb\)\) boundTid preKey\) boundTid\n                  \(determineTargetCore st boundTid\) st\.objectIndex\.length\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigure \(vScId[^\n]*(\n([ \t][^\n]*)?)*              match stStored\.getTcbWitnessed\? boundTid with\n              \| some ⟨boundTcb, hBound⟩ =>\n( *\n)*                let preKey := effectiveSchedParams st boundTcb\n                \.ok \(\(\), configureResumeBound \(PriorityInheritance\.repropagateFromWaiter\n                  \(markKeyChangeFor \(markCandidacyGainFor\n                    \(schedContextConfigureBoundPropagate stStored scIdTyped\n                      boundTid boundTcb hBound priority domain\) boundTid\n                    \(hasSufficientBudget st boundTcb\)\) boundTid preKey\) boundTid\n                  \(determineTargetCore st boundTid\) st\.objectIndex\.length\)\n                  boundTid updated\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # NEGATIVE: the propagation must not resolve the bound thread bare again, and
 # the domain write must not swallow its condition (a rewrite that runs on
 # every configure re-inserts an unchanged record).
@@ -4057,6 +4057,7 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_mappingStage($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem resumeThreadOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
 run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem schedControlConfigure_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
 run_check "INVARIANT" rg -n '^theorem timerTickOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
 run_check "INVARIANT" rg -n '^theorem yieldOnCore_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Scheduling.lean
 run_check "INVARIANT" rg -n '^theorem untypedRetypeFromCap_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Retype.lean
@@ -7069,8 +7070,11 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetSpace_delegates$' Se
 # would read as coverage.
 run_check "INVARIANT" rg -n '^theorem schedContextBind_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
+run_check "INVARIANT" rg -n '^theorem schedControlConfigure_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
+run_check "INVARIANT" rg -n '^theorem configureResumeBound_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBind_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem schedControlConfigure_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem storeObject_schedContext_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_negative_check "INVARIANT" rg -n 'def crossCoreRemoteWriterPendingAudit' SeLe4n/
 run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -12793,13 +12797,19 @@ run_negative_check "INVARIANT" rg -n 'schedContextSubject\?' SeLe4n/
 # The three replenish-core resolvers and the three footprints.
 run_check "INVARIANT" rg -n '^def schedContextConfigureReplenishCores \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^def schedContextUnbindReplenishCores \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
-run_check "INVARIANT" rg -n '^def schedLockSet_schedContextConfigureOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_schedControlConfigure \(' SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean
+run_check "INVARIANT" rg -n '^def schedControlConfigureWriteSet \(' SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean
+run_check "INVARIANT" rg -n '^def schedControlConfigureReplenishCores \(' SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean
 run_check "INVARIANT" rg -n '^def schedContextConfigureWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^def schedLockSet_schedContextBindOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^def schedLockSet_schedContextUnbindOnCore \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # RELATION: each footprint IS `schedFootprintOfCores` of its arm's OWN write set.
 # Mutation: keep every token and inline a write set's body at its footprint.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextConfigureOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextConfigureWriteSet st scObjId\)(\n([ \t][^\n]*)?)*\(schedContextConfigureReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedControlConfigure[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedControlConfigureWriteSet st core scObjId\)(\n([ \t][^\n]*)?)*\(schedControlConfigureReplenishCores st core scObjId\)" SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean'
+# RELATION (WS-ZA ZA6.4): on a move the control footprint names the affinity
+# change's cores, the control's core and the configure's own, read off the
+# pre-state.  Mutation: drop the control's core, which the moved thread lands on.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedControlConfigureWriteSet[^\n]*(\n([ \t][^\n]*)?)*\| some t => setThreadCpuAffinityWriteSet st t \(some core\) \+\+\n *core :: schedContextConfigureWriteSet st scObjId" SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextBindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextBindWriteSet st tid\) \(schedContextBindWriteSet st tid\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextUnbindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextUnbindOnCoreWriteSet st scObjId executingCore\)(\n([ \t][^\n]*)?)*\(schedContextUnbindReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # RELATION: the unbind's replenish segment is the purge's own resolver -- the
@@ -12823,7 +12833,8 @@ run_check "INVARIANT" rg -n '^theorem schedContextUnbind_replenishQueueOnCore_ne
 run_check "INVARIANT" rg -n '^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_link \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # ...and the declarations' own halves.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_contains_home_replenishQueue_write \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedControlConfigure_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedControlConfigure_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write$' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # The witness and its runner call.
 run_check "INVARIANT" rg -n '^private def runSchedContextFootprintScenarios : IO Unit' tests/SmpCbsSuite.lean
@@ -21393,7 +21404,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem setThreadCpuAffinityWithMigra
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ≠ SchedContextOps\.schedContextReplenishHome" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # The three coverage theorems.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedControlConfigure_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 

@@ -59,6 +59,7 @@ import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.SchedContext.Operations
+import SeLe4n.Kernel.SchedContext.SchedControl
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
@@ -1453,29 +1454,18 @@ theorem resolveSchedContextBindThread_ok_authorised
                 | exact congrArg CapTarget.object rfl
           all_goals (rw [hTgt] at h; cases h)
 
-/-- **WS-ZA ZA6.4**: whether core `core`'s scheduling control may configure `sc`:
-the core is one the kernel runs, and a bound context's thread is homed on it
-(`determineTargetCore`), so the context's refills are released on the core whose
-control configured them.  seL4-MCS's `invokeSchedControl_ConfigureFlags` moves the
-context to the control's core and migrates its bound thread with it; this kernel
-refuses the mismatch instead (`.threadOnDifferentCore`), and the thread's own
-affinity call moves it. -/
-@[inline] def schedControlCoversContext (st : SystemState) (core : Nat) (sc : SchedContext) :
-    Bool :=
-  decide (core < SeLe4n.Kernel.Concurrency.numCores) &&
-    match sc.boundThread with
-    | none => true
-    | some t => (determineTargetCore st t).val == core
-
 /-- **WS-ZA ZA6.4**: the scheduling context a configure through core `core`'s
 scheduling control names: seL4-MCS's `decodeSchedControl_ConfigureFlags` takes the
 context as an extra capability, and here, as `.schedContextBind` takes its thread,
 it is a capability at MR0 in the caller's own CSpace, resolved by
 `syscallLookupCap` requiring `.write`.  The capability must name a scheduling
 context the store holds (anything else is `.invalidCapability`, seL4's answer to
-an extra capability of the wrong type), the control's core must cover it
-(`schedControlCoversContext`), and `validateObjIdArg` promotes the id.  Every
-check reads the state handed in; nothing is written.
+an extra capability of the wrong type), the control must name a core the kernel
+runs (`.invalidCapability` otherwise; boot installs a control for each core it
+runs), and `validateObjIdArg` promotes the id.  A context homed on another core
+is not refused: the configure moves it to the control's core with its thread, as
+seL4 does (`SchedContextOps.schedControlConfigure`).  Every check reads the state
+handed in; nothing is written.
 
 **One resolver, two askers.**  The live arm (`dispatchCapabilityOnly`) and the
 scheduler-domain operand builder (`abiEntryLockOperands`) both read this
@@ -1503,15 +1493,15 @@ def resolveSchedControlConfigureTarget (callerTid : SeLe4n.ThreadId) (core : Nat
         | .object scObjId =>
           match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
           | none => .error .invalidCapability
-          | some sc =>
-            if schedControlCoversContext st core sc then validateObjIdArg scObjId
-            else .error .threadOnDifferentCore
+          | some _ =>
+            if core < SeLe4n.Kernel.Concurrency.numCores then validateObjIdArg scObjId
+            else .error .invalidCapability
         | _ => .error .invalidCapability
 
 /-- **WS-ZA ZA6.4 (the authority fact)**: a context the resolver answers is one the
 caller holds a **writable capability** to, found at `scCPtr` in the caller's own
-CSpace; the store holds it as a scheduling context, and the control's core covers
-it. -/
+CSpace; the store holds it as a scheduling context, and the control names a core
+the kernel runs. -/
 theorem resolveSchedControlConfigureTarget_ok_authorised
     (callerTid : SeLe4n.ThreadId) (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState)
     (v : SeLe4n.ValidObjId)
@@ -1526,7 +1516,7 @@ theorem resolveSchedControlConfigureTarget_ok_authorised
       scCap.hasRight .write = true ∧
       scCap.target = .object v.val ∧
       st.getSchedContext? (SchedContextId.ofObjId v.val) = some sc ∧
-      schedControlCoversContext st core sc = true := by
+      core < SeLe4n.Kernel.Concurrency.numCores := by
   unfold resolveSchedControlConfigureTarget at h
   cases hCaller : st.getTcb? callerTid with
   | none => rw [hCaller] at h; cases h
@@ -1559,7 +1549,7 @@ theorem resolveSchedControlConfigureTarget_ok_authorised
           | some sc =>
             rw [hSc] at h
             simp only at h
-            by_cases hCov : schedControlCoversContext st core sc = true
+            by_cases hCov : core < SeLe4n.Kernel.Concurrency.numCores
             · rw [if_pos hCov] at h
               have hVal : v.val = scObjId := validateObjIdArg_ok_val _ _ h
               subst hVal
@@ -2945,8 +2935,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           match resolveSchedControlConfigureTarget tid core args.scCPtr st with
           | .error e => .error e
           | .ok vScId =>
-              SchedContextOps.schedContextConfigure vScId args.budget args.period
-                args.priority args.deadline args.domain st
+              -- The configure runs on the control's core, moving a context
+              -- homed elsewhere there with its thread (seL4's
+              -- `invokeSchedControl_ConfigureFlags`).
+              if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
+                SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget
+                  args.period args.priority args.deadline args.domain st
+              else .error .invalidCapability
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext bind — the SchedContext from the capability target, the
   -- thread from a TCB CAPABILITY the caller holds (`v0.35.204`; a raw thread id
@@ -3470,8 +3465,10 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact schedContextConfigure_preserves_ipcInvariantFull st st' vScId _ _ _ _ _
-                hObjInv hInv hStep
+              split at hStep
+              · exact schedControlConfigure_preserves_ipcInvariantFull st st' _ vScId _ _ _ _ _
+                  hObjInv hInv hStep
+              · cases hStep
     all_goals try cases hStep
   case schedContextBind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

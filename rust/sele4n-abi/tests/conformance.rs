@@ -1964,16 +1964,9 @@ fn invalid_domains_rejected() {
 fn sys_sched_context_module_exports() {
     // WS-ZA ZA6.4: the configure invokes a core's scheduling control and names
     // the context by its capability, two `CPtr`s ahead of the parameters.
-    let _configure: fn(
-        CPtr,
-        CPtr,
-        u64,
-        u64,
-        u64,
-        u64,
-        u64,
-        &mut IpcBuffer,
-    ) -> KernelResult<SyscallResponse> = sele4n_sys::sched_context::sched_context_configure;
+    type ConfigureFn =
+        fn(CPtr, CPtr, u64, u64, u64, u64, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse>;
+    let _configure: ConfigureFn = sele4n_sys::sched_context::sched_context_configure;
     // `v0.35.204`: `sched_context_bind` takes the TCB **capability** (`CPtr`),
     // matching the Lean `SchedContextBindArgs.tcbCPtr` operand; the typed
     // `ThreadId` it took until then was the raw operand the kernel no longer

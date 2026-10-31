@@ -111,50 +111,6 @@ def schedContextConfigureWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
     | some tid => waiterChainWriteSet st tid (determineTargetCore st tid) st.objectIndex.length
     | none => []
 
-/-- **`v0.35.168`: the live `.schedContextConfigure` arm's scheduler-domain
-footprint.** -/
-def schedLockSet_schedContextConfigureOnCore (st : SystemState) (scObjId : SeLe4n.ObjId) :
-    List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores (schedContextConfigureWriteSet st scObjId)
-    (schedContextConfigureReplenishCores st scObjId)
-
-/-- `v0.35.168`: the footprint holds the bound thread's home core's run-queue
-write lock — the bucket propagation's own. -/
-theorem schedLockSet_schedContextConfigureOnCore_contains_home_runQueue_write
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
-    (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid) :
-    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextConfigureOnCore st scObjId :=
-  (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
-    (by unfold schedContextConfigureWriteSet schedContextWriteSet; rw [h]; simp)
-
-/-- `v0.35.168`: ...and the replenish-queue write lock of the core the SC's
-release link names, which is the purge's. -/
-theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (d : CoreId)
-    (h : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId scObjId) = some d) :
-    (LockKey.replenishQueue d, Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextConfigureOnCore st scObjId :=
-  (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr (by
-    unfold schedContextConfigureReplenishCores SchedContextOps.purgeReplenishCores
-    cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
-    | none => unfold SystemState.releaseCoreOf at h; rw [hSc] at h; cases h
-    | some _ => simp only [h]; exact List.mem_append_left _ (List.mem_singleton_self d))
-
-/-- **`v0.35.168`: and no replenish lock at all where the capability's target
-resolves to no SchedContext** — the arm refuses `.objectNotFound` there and
-writes nothing. -/
-theorem schedLockSet_schedContextConfigureOnCore_no_replenishQueue_of_absent
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (c : CoreId)
-    (h : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) = none) :
-    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_schedContextConfigureOnCore st scObjId := by
-  intro hMem
-  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem
-  unfold schedContextConfigureReplenishCores at this
-  rw [h] at this
-  exact absurd this (by simp)
-
 -- ============================================================================
 -- §5  The `.schedContextBind` arm
 -- ============================================================================
@@ -409,7 +365,7 @@ theorem schedContextConfigureBoundPropagate_replenishQueueOnCore (stStored : Sys
 /-- **`v0.35.168`: a `.schedContextConfigure` writes exactly one replenish
 queue** — the one the SC's own release link names, where its purge lands.
 
-The exactness half of `schedLockSet_schedContextConfigureOnCore`'s one-core
+The exactness half of `schedLockSet_schedControlConfigure`'s one-core
 segment: every other core's queue is untouched, so the footprint is neither
 false nor wider than the operation. -/
 theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemState)
@@ -438,7 +394,8 @@ theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemStat
         · split at h
           · rename_i boundTcb hBound _
             rw [Except.ok.injEq, Prod.mk.injEq] at h
-            rw [← h.2, PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
+            rw [← h.2, SchedContextOps.configureResumeBound_replenishQueueOnCore,
+              PriorityInheritance.repropagateFromWaiter_replenishQueueOnCore,
               markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
               schedContextConfigureBoundPropagate_replenishQueueOnCore,
               SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ c (hHome _ (by assumption)), hSched]

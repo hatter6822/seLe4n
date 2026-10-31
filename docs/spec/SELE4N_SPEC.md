@@ -5940,10 +5940,18 @@ Every kernel object has a decidable well-formedness predicate:
     seL4-MCS's `seL4_SchedControl_ConfigureFlags` is; the context is named by
     its capability address in MR0 and resolved with the write right
     (`resolveSchedControlConfigureTarget`, shared by the live arm, the fast path
-    and the lock-operand builder).  A context with a bound thread is configured
-    only through its thread's home core's control (`schedControlCoversContext`;
-    seL4 migrates the context instead, this kernel refuses with
-    `.threadOnDifferentCore`).  A configure through a scheduling-context
+    and the lock-operand builder).  The control's core is where the context
+    runs, as in seL4's `invokeSchedControl_ConfigureFlags`: a context bound to a
+    thread homed on another core moves to the control's core with its thread
+    before it is configured (`schedControlConfigure`, through the affinity
+    change's migration — `setThreadCpuAffinityWithMigration`, which vacates a
+    thread running elsewhere with a remote stall, moves its release entry and
+    requeues it on its new home), and the configure's footprint is exactly the
+    move's and the configure's (`schedControlConfigureWriteSet`).  A configure
+    then ends in seL4-MCS's resume tail (`configureResumeBound`:
+    `schedContext_resume` and `possibleSwitchTo`): a runnable bound thread whose
+    refill is ready and sufficient is enqueued on its home core, and one its
+    context cannot run is taken off its queue.  A configure through a scheduling-context
     capability is refused (`.invalidCapability`).  Bind and unbind stay on the
     context's capability.  Boot installs core `c`'s control in the root task's
     CNode at slot `base + c` (`schedControlBootSlots`; RPi5 slots 12–15, QEMU

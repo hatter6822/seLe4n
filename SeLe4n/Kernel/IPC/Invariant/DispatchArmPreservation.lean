@@ -19,6 +19,8 @@ import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
+import SeLe4n.Kernel.SchedContext.SchedControl
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.Operations.Fault
@@ -860,34 +862,33 @@ theorem migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull (st : SystemS
 conjunct reads; the replenishment and run-queue migrations that follow the
 thread to its new home core move only run-queue links, so the whole bundle
 transports. -/
-theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (affinity : Option CoreId)
+theorem setThreadCpuAffinityWithMigration_preserves_ipcInvariantFull
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : setThreadCpuAffinityOnCore st vtid affinity ec = .ok (st', sgi)) :
+    (hStep : setThreadCpuAffinityWithMigration st tid affinity ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
-  unfold setThreadCpuAffinityOnCore at hStep
   obtain ⟨tcb, stSet, hT, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape hStep
   -- WS-ZA ZA6.3: the vacate writes the scheduler alone.
   have hInvV := ipcInvariantFull_of_objectsAgreeOffRunLinks
-    (vacateForAffinityChange_objectsAgreeOffRunLinks st vtid.val
-      (determineTargetCore st vtid.val) (affinity.getD bootCoreId)) hInv
-  have hObjInvV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+    (vacateForAffinityChange_objectsAgreeOffRunLinks st tid
+      (determineTargetCore st tid) (affinity.getD bootCoreId)) hInv
+  have hObjInvV : (vacateForAffinityChange st tid (determineTargetCore st tid)
       (affinity.getD bootCoreId)).objects.invExt := by
     rw [vacateForAffinityChange_objects]; exact hObjInv
-  have hTV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
-      (affinity.getD bootCoreId)).getTcb? vtid.val = some tcb := by
+  have hTV : (vacateForAffinityChange st tid (determineTargetCore st tid)
+      (affinity.getD bootCoreId)).getTcb? tid = some tcb := by
     rw [vacateForAffinityChange_getTcb?]; exact hT
-  generalize vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+  generalize vacateForAffinityChange st tid (determineTargetCore st tid)
     (affinity.getD bootCoreId) = sv at hSet hInvV hObjInvV hTV
   have hSetEq : stSet =
-      { sv with objects := sv.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
+      { sv with objects := sv.objects.insert tid.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
     unfold setThreadCpuAffinity at hSet
     rw [SystemState.getTcbWitnessed?_eq_some hTV] at hSet
     exact (Except.ok.inj hSet).symm
   subst hSetEq
-  have hPreRaw := (SystemState.getTcb?_eq_some_iff _ vtid.val tcb).mp hTV
-  have hInvSet := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ vtid.val
+  have hPreRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hTV
+  have hInvSet := insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid
     tcb { tcb with cpuAffinity := affinity } hObjInvV hInvV hPreRaw
     rfl rfl rfl rfl rfl rfl rfl rfl rfl
   apply ipcInvariantFull_of_objectsAgreeOffRunLinks
@@ -898,6 +899,15 @@ theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
         (migrateSchedContextReplenishment_preserves_ipcInvariantFull _ _ _ _ hInvSet)
   | none =>
       exact migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull _ _ _ _ hInvSet
+
+theorem setThreadCpuAffinityOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (affinity : Option CoreId)
+    (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : setThreadCpuAffinityOnCore st vtid affinity ec = .ok (st', sgi)) :
+    ipcInvariantFull st' :=
+  setThreadCpuAffinityWithMigration_preserves_ipcInvariantFull st st' vtid.val affinity ec sgi
+    hObjInv hInv hStep
 
 -- ============================================================================
 -- §9  Capability arms (`.cspaceDelete`, `.cspaceMint`, `.cspaceCopy`,
@@ -1777,6 +1787,9 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
                 rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
                 exact SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
                   _ _ _ _ _ _ _ hObjInvStored
+              -- WS-ZA ZA6.4: the resume tail writes run-queue links alone.
+              refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+                (.of_runLinks (SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks _ _ _)) ?_
               exact PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
                 (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjP
                   (markKeyChangeFor_preserves_ipcInvariantFull _ _ _
@@ -1791,6 +1804,21 @@ theorem schedContextConfigure_preserves_ipcInvariantFull
               exact hInvStored
       · contradiction
     · contradiction
+
+/-- WS-ZA ZA6.4: `.schedContextConfigure` through a core's control: the move of
+the context's thread to the control's core, then the configure there. -/
+theorem schedControlConfigure_preserves_ipcInvariantFull
+    (st st' : SystemState) (core : CoreId) (vScId : SeLe4n.ValidObjId)
+    (budget period priority deadline domain : Nat)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
+      domain st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  rcases SchedContextOps.schedControlConfigure_ok_cases hStep with h | ⟨_, t, stM, sgi, -, -, -, hM, h⟩
+  · exact schedContextConfigure_preserves_ipcInvariantFull st st' vScId _ _ _ _ _ hObjInv hInv h
+  · exact schedContextConfigure_preserves_ipcInvariantFull stM st' vScId _ _ _ _ _
+      (setThreadCpuAffinityWithMigration_preserves_objects_invExt _ _ _ _ hObjInv _ hM)
+      (setThreadCpuAffinityWithMigration_preserves_ipcInvariantFull st stM t _ core sgi hObjInv hInv hM) h
 
 -- ============================================================================
 -- §11  Sched-context binding arms (`.schedContextBind`, `.schedContextUnbind`)

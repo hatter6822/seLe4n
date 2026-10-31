@@ -45,32 +45,6 @@ theorem slots_of_reschedulePendingCovers {e : CoreId} {pre post : SystemState}
         post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c) :=
   fun c hc => (h c hc).imp id fun hU => ⟨fun t ht => (hU.1 t ht).1, hU.2.1⟩
 
-/-- The binding pair carries over a step that moves no binding and no context's
-bound thread. -/
-theorem schedContextBindingBidirectional.of_bindings {pre post : SystemState}
-    (h : schedContextBindingBidirectional pre) (hB : bindingsAgree post pre)
-    (hS : ∀ s, (post.getSchedContext? s).map (·.boundThread) =
-      (pre.getSchedContext? s).map (·.boundThread)) :
-    schedContextBindingBidirectional post := by
-  intro t tcb s hT hs
-  have hb := hB t
-  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT] at hb
-  cases hp : pre.getTcb? t with
-  | none => rw [hp] at hb; cases hb
-  | some tcb0 =>
-    rw [hp] at hb
-    simp only [Option.map_some, Option.some.injEq] at hb
-    obtain ⟨sc0, h0, hbt⟩ := h t tcb0 s ((SystemState.getTcb?_eq_some_iff _ _ _).mp hp)
-      (by rw [← hb]; exact hs)
-    have hs' := hS s
-    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr h0] at hs'
-    cases hq : post.getSchedContext? s with
-    | none => rw [hq] at hs'; cases hs'
-    | some sc =>
-      rw [hq] at hs'
-      simp only [Option.map_some, Option.some.injEq] at hs'
-      exact ⟨sc, (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hq, hs'.trans hbt⟩
-
 /-- A run-queue placement moves no thread's key or budget eligibility: the woken
 TCB's rewrite marks it `.ready`, and its run-queue links are no key input. -/
 theorem enqueueRunnableOnCore_views (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
@@ -257,20 +231,6 @@ theorem processOneReplenishmentOnCore_preserves_bidirectional (st : SystemState)
     (fun s => ?_)
   rw [processOneReplenishmentOnCore, markRefillKeyChange_getSchedContext?, hBt s,
     refillSchedContext_boundThread st scId now hInv s]
-
-/-- A release-queue edit keeps the binding pair: it writes no TCB and no
-context's bound thread. -/
-theorem schedContextBindingBidirectional_of_agreeOffReleaseLinks {st st' : SystemState}
-    (h : st'.objectsAgreeOffReleaseLinks st) (hB : schedContextBindingBidirectional st) :
-    schedContextBindingBidirectional st' := by
-  intro t tcb scId hT hS
-  have hT' : st.getTcb? t = some tcb := by
-    rw [← h.getTcb? t]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-  obtain ⟨sc, hsc, hb⟩ := hB t tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hS
-  obtain ⟨sc', hsc', e⟩ :=
-    h.getSchedContext?_some ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hsc)
-  exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hsc',
-    (congrArg SchedContext.boundThread e).trans hb⟩
 
 /-- **The drain covers**: the replenish-queue write-back moves no view, queue,
 current slot or flag, and each due replenishment covers under the store

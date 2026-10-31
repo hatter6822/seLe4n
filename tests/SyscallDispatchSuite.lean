@@ -1786,10 +1786,12 @@ core 0's and core 1's scheduling controls at slots 1 and 2, a capability to the
 CNode at slot 3 and a writable capability to a second context, bound to a thread
 homed on core 0, at slot 4.  Through `dispatchSyscall`: the configure invoked on
 the context's own capability is refused (`.invalidCapability`) and changes
-nothing; through core 0's control it configures the context MR0 names; core 1's
-control is refused for the context whose thread is homed on core 0
-(`.threadOnDifferentCore`) and core 0's configures it; and MR0 naming anything
-but a scheduling context is `.invalidCapability`. -/
+nothing; through core 0's control it configures the context MR0 names; core 0's
+control configures the context whose thread is homed on core 0 in place; core 1's
+control configures it too, moving the context and its thread to core 1 as seL4's
+`invokeSchedControl_ConfigureFlags` does, and the runnable thread, whose fresh
+refill is ready, is queued there (`schedContext_resume`); and MR0 naming
+anything but a scheduling context is `.invalidCapability`. -/
 private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
   let caller : SeLe4n.ThreadId := ⟨1⟩
   let cnId   : SeLe4n.ObjId := ⟨50⟩
@@ -1844,16 +1846,21 @@ private def sd063_schedContextConfigure_requires_sched_control : IO Unit := do
   | .error e =>
       failLine "sd063_configure_through_sched_control_configures_mr0s_context"
         s!"unexpected refusal: {repr e}"
-  expect "sd063_other_cores_control_refused_for_a_bound_context"
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  expect "sd063_other_cores_control_moves_a_bound_context"
     (match dispatchSyscallAsCurrent (decoded 2 4) caller bootCoreId st with
-     | .error .threadOnDifferentCore => true
-     | _ => false)
-    "core 1's control must refuse a context whose thread is homed on core 0"
+     | .ok ((), st') =>
+         configured st' scBId && determineTargetCore st' tgtTid == core1
+           && st'.queuedOn core1 tgtTid && !st'.queuedOn bootCoreId tgtTid
+     | .error _ => false)
+    "core 1's control must move the context and its thread to core 1 and queue the thread there"
   expect "sd063_home_cores_control_configures_a_bound_context"
     (match dispatchSyscallAsCurrent (decoded 1 4) caller bootCoreId st with
-     | .ok ((), st') => configured st' scBId
+     | .ok ((), st') =>
+         configured st' scBId && determineTargetCore st' tgtTid == bootCoreId
+           && st'.queuedOn bootCoreId tgtTid
      | .error _ => false)
-    "core 0's control must configure the context bound to a thread homed on core 0"
+    "core 0's control must configure the context bound to a thread homed on core 0 and queue it"
   expect "sd063_mr0_naming_no_sched_context_refused"
     (match dispatchSyscallAsCurrent (decoded 1 3) caller bootCoreId st with
      | .error .invalidCapability => true

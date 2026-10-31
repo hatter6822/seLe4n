@@ -1187,7 +1187,7 @@ private def runSchedContextFootprintScenarios : IO Unit := do
               (stB.releaseEntriesOn c)
                 == (stCbs.releaseEntriesOn c)))
   -- ── (2) the configure ──
-  let fpConfigure := schedLockSet_schedContextConfigureOnCore stCbs scId0.toObjId
+  let fpConfigure := schedLockSet_schedControlConfigure stCbs core1 scId0.toObjId
   assertBool "C3b-ii: the configure declares the SC's home core's replenish write lock — the purge's"
     (hasReplenishWriteLock fpConfigure core1)
   assertBool "C3b-ii: ...and its run segment names the SAME core, so one lock covers both effects"

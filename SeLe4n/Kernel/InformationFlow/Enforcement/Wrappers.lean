@@ -246,7 +246,7 @@ def enforcementBoundary : List EnforcementClass :=
   -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "storeObject"
   -- Z8-M: SchedContext capability-only operations (authority from cap possession)
-  , .capabilityOnly "schedContextConfigure"
+  , .capabilityOnly "schedControlConfigure"
   , .capabilityOnly "schedContextBind"
   , .capabilityOnly "schedContextUnbind"
   -- D1: Thread lifecycle capability-only operations (authority from cap possession)
@@ -408,7 +408,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .notificationSignal => "notificationSignalChecked"
   | .notificationWait => "notificationWaitChecked"
   | .replyRecv => "endpointReplyRecvChecked"
-  | .schedContextConfigure => "schedContextConfigure"
+  | .schedContextConfigure => "schedControlConfigure"
   | .schedContextBind => "schedContextBind"
   | .schedContextUnbind => "schedContextUnbind"
   | .tcbSuspend => "suspendThread"

@@ -311,32 +311,31 @@ theorem requeueVacatedOnNewHome_stepCovers (e : CoreId) (st : SystemState)
       · exact hp
     · exact hp
 
-theorem setThreadCpuAffinityOnCore_stepCovers (st st' : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (affinity : Option CoreId) (e : CoreId)
+theorem setThreadCpuAffinityWithMigration_stepCovers (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (e ec : CoreId)
     (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
-    (hStep : setThreadCpuAffinityOnCore st vtid affinity e = .ok (st', sgi)) :
+    (hStep : setThreadCpuAffinityWithMigration st tid affinity ec = .ok (st', sgi)) :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold setThreadCpuAffinityOnCore at hStep
   obtain ⟨tcb, stSet, hT, -, -, -, hSet, rfl, -⟩ :=
     setThreadCpuAffinityWithMigration_ok_shape hStep
-  have hInvV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+  have hInvV : (vacateForAffinityChange st tid (determineTargetCore st tid)
       (affinity.getD Concurrency.bootCoreId)).objects.invExt := by
     rw [vacateForAffinityChange_objects]; exact hInv
-  have hTV : (vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
-      (affinity.getD Concurrency.bootCoreId)).getTcb? vtid.val = some tcb := by
+  have hTV : (vacateForAffinityChange st tid (determineTargetCore st tid)
+      (affinity.getD Concurrency.bootCoreId)).getTcb? tid = some tcb := by
     rw [vacateForAffinityChange_getTcb?]; exact hT
-  have s0 := vacateForAffinityChange_stepCovers e st vtid.val (determineTargetCore st vtid.val)
+  have s0 := vacateForAffinityChange_stepCovers e st tid (determineTargetCore st tid)
     (affinity.getD Concurrency.bootCoreId)
-  generalize vacateForAffinityChange st vtid.val (determineTargetCore st vtid.val)
+  generalize vacateForAffinityChange st tid (determineTargetCore st tid)
     (affinity.getD Concurrency.bootCoreId) = sv at hSet hInvV hTV s0
   have hSetEq : stSet =
-      { sv with objects := sv.objects.insert vtid.val.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
+      { sv with objects := sv.objects.insert tid.toObjId (.tcb { tcb with cpuAffinity := affinity }) } := by
     unfold setThreadCpuAffinity at hSet
     rw [SystemState.getTcbWitnessed?_eq_some hTV] at hSet
     exact (Except.ok.inj hSet).symm
   subst hSetEq
   have kSet := insertObjects_tcbKeyKeeping_keyFrame (tcb' := { tcb with
-    cpuAffinity := affinity }) hInvV ((SystemState.getTcb?_eq_some_iff sv vtid.val tcb).mp hTV) rfl
+    cpuAffinity := affinity }) hInvV ((SystemState.getTcb?_eq_some_iff sv tid tcb).mp hTV) rfl
   have s1 := stepCovers_trans s0 (kSet.stepCovers (e := e))
   cases tcb.schedContextBinding.scId? with
   | some scId =>
@@ -355,6 +354,13 @@ theorem setThreadCpuAffinityOnCore_stepCovers (st st' : SystemState)
         (migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _ kSet.2.2)⟩
 
 /-! ### Scheduling-context configure -/
+
+theorem setThreadCpuAffinityOnCore_stepCovers (st st' : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (affinity : Option CoreId) (e : CoreId)
+    (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityOnCore st vtid affinity e = .ok (st', sgi)) :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  setThreadCpuAffinityWithMigration_stepCovers st st' vtid.val affinity e e sgi hInv hStep
 
 /-- The effective key reads the TCB's key fields and the deadline of the one
 context its binding names. -/
@@ -552,6 +558,141 @@ theorem schedContextConfigureBoundPropagate_keyWriteSlotFrame (stStored : System
         exact keyWriteSlotFrame_insertTcb h0 hBTRaw rfl
       · exact keyWriteSlotFrame_insertTcb h0 hBTRaw rfl
 
+/-- The binding pair carries over a step that moves no binding and no context's
+bound thread. -/
+theorem schedContextBindingBidirectional.of_bindings {pre post : SystemState}
+    (h : schedContextBindingBidirectional pre) (hB : bindingsAgree post pre)
+    (hS : ∀ s, (post.getSchedContext? s).map (·.boundThread) =
+      (pre.getSchedContext? s).map (·.boundThread)) :
+    schedContextBindingBidirectional post := by
+  intro t tcb s hT hs
+  have hb := hB t
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT] at hb
+  cases hp : pre.getTcb? t with
+  | none => rw [hp] at hb; cases hb
+  | some tcb0 =>
+    rw [hp] at hb
+    simp only [Option.map_some, Option.some.injEq] at hb
+    obtain ⟨sc0, h0, hbt⟩ := h t tcb0 s ((SystemState.getTcb?_eq_some_iff _ _ _).mp hp)
+      (by rw [← hb]; exact hs)
+    have hs' := hS s
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr h0] at hs'
+    cases hq : post.getSchedContext? s with
+    | none => rw [hq] at hs'; cases hs'
+    | some sc =>
+      rw [hq] at hs'
+      simp only [Option.map_some, Option.some.injEq] at hs'
+      exact ⟨sc, (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hq, hs'.trans hbt⟩
+
+/-- A release-queue edit keeps the binding pair: it writes no TCB and no
+context's bound thread. -/
+theorem schedContextBindingBidirectional_of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffReleaseLinks st) (hB : schedContextBindingBidirectional st) :
+    schedContextBindingBidirectional st' := by
+  intro t tcb scId hT hS
+  have hT' : st.getTcb? t = some tcb := by
+    rw [← h.getTcb? t]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨sc, hsc, hb⟩ := hB t tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hS
+  obtain ⟨sc', hsc', e⟩ :=
+    h.getSchedContext?_some ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hsc)
+  exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hsc',
+    (congrArg SchedContext.boundThread e).trans hb⟩
+
+/-- WS-ZA ZA6.4: **the affinity change keeps the binding pair**: it writes a
+thread's affinity, run-queue links and the contexts' release links, none of them
+a binding or a bound thread. -/
+theorem setThreadCpuAffinityWithMigration_preserves_bidirectional {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {affinity : Option CoreId} {ec : CoreId}
+    {sgi : Option (CoreId × SgiKind)} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st)
+    (h : setThreadCpuAffinityWithMigration st tid affinity ec = .ok (st', sgi)) :
+    schedContextBindingBidirectional st' := by
+  obtain ⟨tcb, stSet, hT, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
+  have hInvV : (vacateForAffinityChange st tid (determineTargetCore st tid)
+      (affinity.getD Concurrency.bootCoreId)).objects.invExt := by
+    rw [vacateForAffinityChange_objects]; exact hInv
+  have hTV : (vacateForAffinityChange st tid (determineTargetCore st tid)
+      (affinity.getD Concurrency.bootCoreId)).getTcb? tid = some tcb := by
+    rw [vacateForAffinityChange_getTcb?]; exact hT
+  have hBiV : schedContextBindingBidirectional (vacateForAffinityChange st tid
+      (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId)) :=
+    hBi.of_bindings (bindingsAgree.of_objects_eq (vacateForAffinityChange_objects _ _ _ _))
+      (fun s => by unfold SystemState.getSchedContext?; rw [vacateForAffinityChange_objects])
+  generalize vacateForAffinityChange st tid (determineTargetCore st tid)
+    (affinity.getD Concurrency.bootCoreId) = sv at hSet hInvV hTV hBiV
+  have hSetEq : stSet = sv.updateTcb tid (fun t => { t with cpuAffinity := affinity }) := by
+    unfold setThreadCpuAffinity at hSet
+    rw [SystemState.getTcbWitnessed?_eq_some hTV] at hSet
+    rw [← (Except.ok.inj hSet)]
+    exact SystemState.rewriteObject_tcb_eq_updateTcb hTV (fun t => { t with cpuAffinity := affinity }) _
+  subst hSetEq
+  have hBiS := hBiV.of_bindings (bindingsAgree.updateTcb (tid := tid)
+    (f := fun t => { t with cpuAffinity := affinity }) hInvV (fun _ => rfl))
+    (fun s => by rw [SystemState.updateTcb_getSchedContext? _ _ _ hInvV])
+  have hRun : ∀ {a b : SystemState}, b.objectsAgreeOffRunLinks a →
+      schedContextBindingBidirectional a → schedContextBindingBidirectional b :=
+    fun hA hB => hB.of_bindings (bindingsAgree.of_objectsAgreeOffRunLinks hA)
+      (fun s => by rw [hA.getSchedContext? s])
+  refine hRun (requeueVacatedOnNewHome_objectsAgreeOffRunLinks _ _ _ _)
+    (hRun (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _) ?_)
+  split
+  · exact schedContextBindingBidirectional_of_agreeOffReleaseLinks
+      (migrateSchedContextReplenishment_agree _ _ _ _) hBiS
+  · exact hBiS
+
+/-- WS-ZA ZA6.4: **the configure's resume tail covers**: it writes run-queue
+links alone of the objects, so it moves no key input; a removal only shrinks a
+queue, and a placement or a reschedule flag lands on the thread's home with that
+core's flag raised. -/
+theorem configureResumeBound_stepCovers (e : CoreId) (st : SystemState) (t : SeLe4n.ThreadId)
+    (sc : SchedContext) : stepCovers e st (SchedContextOps.configureResumeBound st t sc) := by
+  have hA := SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks st t sc
+  apply stepCovers_of_keys_slots (schedKeyView_of_objectsAgreeOffRunLinks hA)
+    (budgetEligibleView_of_objectsAgreeOffRunLinks hA)
+  · intro c _
+    unfold SchedContextOps.configureResumeBound
+    dsimp only
+    split
+    · split
+      · exact Or.inr ⟨fun _ h => h, rfl⟩
+      · refine Or.inr ⟨fun y hy => ?_, by simp⟩
+        rw [SystemState.runRemoveOnCore_queuedOn] at hy
+        split at hy
+        · cases hy
+        · exact hy
+    · split
+      · split
+        · by_cases hc : c = determineTargetCore st t
+          · subst hc; left; simp
+          · right
+            refine ⟨fun y hy => ?_, by simp⟩
+            change (st.runEnqueueOnCore _ t _).queuedOn c y = true at hy
+            exact SystemState.runEnqueueOnCore_queuedOn_imp_ne hc hy
+        · split
+          · by_cases hc : c = determineTargetCore st t
+            · subst hc; left; simp
+            · exact Or.inr ⟨fun _ h => h, by simp⟩
+          · exact Or.inr ⟨fun _ h => h, rfl⟩
+      · exact Or.inr ⟨fun _ h => h, rfl⟩
+  · intro c _ hp
+    unfold SchedContextOps.configureResumeBound
+    dsimp only
+    split
+    · split
+      · exact hp
+      · simpa using hp
+    · split
+      · split
+        · by_cases hc : determineTargetCore st t = c
+          · subst hc; simp
+          · simp [hc, hp]
+        · split
+          · by_cases hc : determineTargetCore st t = c
+            · subst hc; simp
+            · simp [hc, hp]
+          · exact hp
+      · exact hp
+
 /-- **Configure covers.**  The context's deadline write is read only by the
 thread the context names as bound (`schedContextBindingBidirectional`), and
 that thread's key write ends in the key hook; with no live bound thread the
@@ -713,7 +854,9 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
                 (determineTargetCore st boundTid) st.objectIndex.length
                 (fun server _ => propagatePipChainCrossCore_stepCovers e _ _ _ server hX.2)
                 ⟨stepCovers_refl e _, hX.2⟩
-              exact ⟨stepCovers_trans hX.1 hRe.1, hRe.2⟩
+              exact ⟨stepCovers_trans (stepCovers_trans hX.1 hRe.1)
+                (configureResumeBound_stepCovers e _ _ _),
+                SchedContextOps.configureResumeBound_objects_invExt _ _ _ hRe.2⟩
             · rename_i hNone
               cases hStep
               refine ⟨hNoReader fun t tcb hT hB => ?_, hInvSt⟩
@@ -724,6 +867,22 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
     · contradiction
 
 /-! ### The yield -/
+
+/-- WS-ZA ZA6.4: **the SchedControl configure covers**: on a core mismatch it
+moves the bound thread to the control's core through the affinity change, which
+covers, and then configures on the moved state, which covers. -/
+theorem schedControlConfigure_stepCovers (st st' : SystemState) (core : CoreId)
+    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat) (e : CoreId)
+    (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hStep : SchedContextOps.schedControlConfigure core vScId budget period priority deadline
+      domain st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  rcases SchedContextOps.schedControlConfigure_ok_cases hStep with h | ⟨_, t, stM, sgi, -, -, -, hM, h⟩
+  · exact schedContextConfigure_stepCovers st st' vScId _ _ _ _ _ e hObjInv hBi h
+  · have hA := setThreadCpuAffinityWithMigration_stepCovers st stM t _ e core sgi hObjInv hM
+    have hC := schedContextConfigure_stepCovers stM st' vScId _ _ _ _ _ e hA.2
+      (setThreadCpuAffinityWithMigration_preserves_bidirectional hObjInv hBi hM) h
+    exact ⟨stepCovers_trans hA.1 hC.1, hC.2⟩
 
 /-- The slice expiry writes the caller's `timeSlice`, which is no key input,
 and core `e`'s queue. -/

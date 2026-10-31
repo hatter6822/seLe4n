@@ -545,6 +545,148 @@ theorem configuredSchedContext_boundThread (budget period priority deadline doma
   rw [(configuredSchedContext_binding budget period priority deadline domain timer keep sc).1]
 
 
+/-- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: a thread a bind must PLACE.
+
+seL4-MCS's `schedContext_bindTCB` ends in
+`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`
+(read at `13.0.0`); this kernel's bind re-bucketed only a thread already on a
+run queue, so a runnable thread that sat on **none** stayed off every queue with
+a reservation it could not spend.  `chooseThreadOnCore` selects exclusively from
+`runQueueOnCore` and never scans ready TCBs, so that is permanent.
+
+Reachable, and not hypothetically: WS-RR RR8.12 Cut B1 (`v0.35.158`) parks the
+holder a donation reclaim unbinds — `.ready`, `.unbound`, on no core — precisely
+so it stops running on nobody's budget, and names *"its own manager recovers it …
+or a `schedContextBind` once that arm places a parked thread"* as the recovery.
+That recovery was closed.  This predicate is what opens it.
+
+Four conjuncts, and each excludes a thread a bind must **not** place:
+
+* `placedCoreOf? st tid = none` — a thread already queued is re-bucketed by the
+  step below, and one that is **current** on some core is running, so enqueuing
+  it would put it in a run queue and on a processor at once
+  (`queueCurrentConsistent`);
+* `tcb.ipcState = .ready` — a thread blocked in IPC is owed a wake by whatever
+  it is blocked on, and the bind explicitly supports binding a blocked thread
+  (Z5-G1's own note).  Placing one would make it selectable while its rendezvous
+  is outstanding, which is `queueHeadBlockedConsistent`'s negation;
+* `tcb.threadState ≠ .Inactive` — a suspended thread is recovered by
+  `.tcbResume`, which demands exactly that flag, so a bind that placed one would
+  resurrect a thread its own manager suspended;
+* `sc.budgetRemaining.isPositive` — the reservation being bound can run the
+  thread **now** (PR #900 review, `v0.36.1`).  This is the selector's own reading:
+  for a bound thread `hasSufficientBudget` is exactly `budgetRemaining.isPositive`
+  of its reservation (`bindPlacesParkedThread_budget_eq_hasSufficientBudget`), so
+  a thread this guard admits is one `chooseBestRunnableEffective` does not skip
+  for budget.  Without it, binding an **exhausted** reservation — reachable by
+  unbinding one mid-period, which preserves `budgetRemaining = 0` and purges its
+  replenishment entry — placed the thread on a run queue it could never be chosen
+  from, with no refill ever due to change that, and the bind reported success.
+  seL4-MCS refuses the same placement: `schedContext_bindTCB` runs
+  `schedContext_resume`, which **postpones** a thread whose head refill is not
+  ready and sufficient into the release queue, and `isSchedulable` is false of a
+  thread in the release queue, so the `SCHED_ENQUEUE` above does not fire (read at
+  `13.0.0`).  WS-ZA ZA6.4: the bind postpones the same way — the reservation
+  the guard reads is the one the bind stores, its head released by now
+  (`SchedContext.releaseReadyHead`), and a head not yet released puts the
+  context on its thread's home core's release queue (`SystemState.releasePlace`),
+  so the thread left parked here is woken by the drain at its refill.
+
+The third conjunct reads the **stored** flag and deliberately not
+`inferThreadState`, which answers `.Inactive` for *any* thread that is unplaced
+and not blocked — which a parked thread is by definition, so the inferred reading
+would refuse exactly the shape this guard exists to admit.  The stored flag is
+what `.tcbSuspend` writes and `.tcbResume` reads, so it means *"its manager
+suspended it"*, and the reclaim's park leaves it alone: measured at `.Ready` on
+the live parked holder (`tests/SmpCancellationSuite.lean` §3.26b).
+
+Stated as a definition rather than inline because the footprint, the step and
+the witness all have to ask the *same* question, and because a conjunct added to
+it must reach every asker. -/
+def bindPlacesParkedThread (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (sc : SchedContext) : Bool :=
+  !isIdleThreadId tid && (placedCoreOf? st tid).isNone && tcb.isRunnable
+    && sc.budgetRemaining.isPositive
+
+/-- **WS-ZA ZA6.4: configure's resume tail**, seL4-MCS's `schedContext_resume`
+then `possibleSwitchTo` at the end of `invokeSchedControl_ConfigureFlags`, on the
+configured context `sc` and its bound thread `t`, homed on `home`
+(`determineTargetCore`):
+
+* a thread `home` queues stays queued while the context can run it now
+  (`budgetRemaining` positive), and is taken off its run queue otherwise: seL4
+  dequeues it before the refills are rewritten and `schedContext_resume`
+  postpones a context whose head refill is not ready, and a postponed thread is
+  not schedulable;
+* a runnable thread on no queue and no core (`bindPlacesParkedThread`, the
+  guard the bind's own enqueue reads) is placed on `home`'s run queue, and
+  `home` is flagged to reschedule (`possibleSwitchTo`);
+* a thread current on `home` whose context can no longer run it flags `home`
+  to reschedule (`rescheduleRequired`);
+* anything else is left as it is.
+
+The context's own release queue placement is the configure's (`releasePlace`),
+made before this tail, so a context left unready is on `home`'s release queue,
+and the drain wakes its thread at its refill. -/
+def configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : SchedContext) :
+    SystemState :=
+  let home := determineTargetCore st t
+  if st.queuedOn home t then
+    if sc.budgetRemaining.isPositive then st else st.runRemoveOnCore home t
+  else
+    match st.getTcb? t with
+    | some tcb =>
+      if bindPlacesParkedThread st t tcb sc then
+        (st.runEnqueueOnCore home t (resolveInsertPriority st t sc)).markReschedulePendingOnCore home
+      else if st.scheduler.currentOnCore home == some t && !sc.budgetRemaining.isPositive then
+        st.markReschedulePendingOnCore home
+      else st
+    | none => st
+
+/-- The resume tail writes the run-queue links alone of the object store. -/
+theorem configureResumeBound_objectsAgreeOffRunLinks (st : SystemState)
+    (t : SeLe4n.ThreadId) (sc : SchedContext) :
+    (configureResumeBound st t sc).objectsAgreeOffRunLinks st := by
+  unfold configureResumeBound
+  dsimp only
+  split
+  · split
+    · exact .refl _
+    · exact SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _
+  · split
+    · split
+      · exact (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).congr rfl rfl
+      · split
+        · exact .refl _
+        · exact .refl _
+    · exact .refl _
+
+theorem configureResumeBound_objects_invExt (st : SystemState)
+    (t : SeLe4n.ThreadId) (sc : SchedContext)
+    (h : st.objects.invExt) : (configureResumeBound st t sc).objects.invExt := by
+  unfold configureResumeBound
+  dsimp only
+  split
+  · split
+    · exact h
+    · exact SystemState.runRemoveOnCore_objects_invExt _ _ _ h
+  · split
+    · split
+      · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ h
+      · split <;> exact h
+    · exact h
+
+/-- The resume tail writes no replenish queue. -/
+theorem configureResumeBound_replenishQueueOnCore (st : SystemState)
+    (t : SeLe4n.ThreadId) (sc : SchedContext) (c : Concurrency.CoreId) :
+    (configureResumeBound st t sc).scheduler.replenishQueueOnCore c =
+      st.scheduler.replenishQueueOnCore c := by
+  unfold configureResumeBound
+  dsimp only
+  repeat' split
+  all_goals simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+    SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
+
 /-- Z5-F3: Configure a SchedContext's scheduling parameters.
 
 1. Validates parameters (period > 0, budget ≤ period, etc.)
@@ -637,13 +779,18 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                 -- candidacy gain on the cores queueing it, flagged beside the
                 -- key change (`markCandidacyGainFor`, read against the PRE-state's
                 -- budget like the key).
+                --
+                -- WS-ZA ZA6.4: then seL4-MCS's resume tail
+                -- (`configureResumeBound`): a thread the configured context can
+                -- run now is placed, one it cannot is taken off its queue.
                 let preKey := effectiveSchedParams st boundTcb
-                .ok ((), PriorityInheritance.repropagateFromWaiter
+                .ok ((), configureResumeBound (PriorityInheritance.repropagateFromWaiter
                   (markKeyChangeFor (markCandidacyGainFor
                     (schedContextConfigureBoundPropagate stStored scIdTyped
                       boundTid boundTcb hBound priority domain) boundTid
                     (hasSufficientBudget st boundTcb)) boundTid preKey) boundTid
                   (determineTargetCore st boundTid) st.objectIndex.length)
+                  boundTid updated)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
@@ -687,13 +834,15 @@ and the specification's propagation over the stored state. -/
       let stStored := stStored0.releasePlace (determineTargetCore st boundTid) scIdTyped
       match stStored.getTcbWitnessed? boundTid with
       | some ⟨boundTcb, hBound⟩ =>
-        PriorityInheritance.repropagateFromWaiter
+        configureResumeBound (PriorityInheritance.repropagateFromWaiter
           (markKeyChangeFor (markCandidacyGainFor
             (schedContextConfigureBoundPropagate stStored scIdTyped
               boundTid boundTcb hBound priority domain) boundTid
             (hasSufficientBudget st boundTcb)) boundTid
             (effectiveSchedParams st boundTcb)) boundTid
-          (determineTargetCore st boundTid) st.objectIndex.length
+          (determineTargetCore st boundTid) st.objectIndex.length)
+          boundTid
+          (configuredSchedContext budget period priority deadline domain st.machine.timer keep sc)
       | none => stStored
 
 /-- **WS-ZA ZA5.2**: the compiled `schedContextConfigurePerform`.  The bound
@@ -723,13 +872,15 @@ across it). -/
       let stStored := stStored0.releasePlace home scIdTyped
       match stStored.getTcbWitnessed? boundTid with
       | some ⟨boundTcb, hBound⟩ =>
-        PriorityInheritance.repropagateFromWaiter
+        configureResumeBound (PriorityInheritance.repropagateFromWaiter
           (markKeyChangeFor (markCandidacyGainFor
             (schedContextConfigureBoundPropagate stStored scIdTyped
               boundTid boundTcb hBound priority domain) boundTid
             (hasSufficientBudget st boundTcb)) boundTid
             (effectiveSchedParams st boundTcb)) boundTid
-          (determineTargetCore st boundTid) st.objectIndex.length
+          (determineTargetCore st boundTid) st.objectIndex.length)
+          boundTid
+          (configuredSchedContext budget period priority deadline domain st.machine.timer keep sc)
       | none => stStored
 
 @[csimp] theorem schedContextConfigurePerform_eq_impl :
@@ -823,68 +974,6 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
 -- the endpoint operations cannot import this module.  `schedContextBind` below
 -- reads it under its unqualified name through `open SeLe4n.Kernel`.
 
-/-- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: a thread a bind must PLACE.
-
-seL4-MCS's `schedContext_bindTCB` ends in
-`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`
-(read at `13.0.0`); this kernel's bind re-bucketed only a thread already on a
-run queue, so a runnable thread that sat on **none** stayed off every queue with
-a reservation it could not spend.  `chooseThreadOnCore` selects exclusively from
-`runQueueOnCore` and never scans ready TCBs, so that is permanent.
-
-Reachable, and not hypothetically: WS-RR RR8.12 Cut B1 (`v0.35.158`) parks the
-holder a donation reclaim unbinds — `.ready`, `.unbound`, on no core — precisely
-so it stops running on nobody's budget, and names *"its own manager recovers it …
-or a `schedContextBind` once that arm places a parked thread"* as the recovery.
-That recovery was closed.  This predicate is what opens it.
-
-Four conjuncts, and each excludes a thread a bind must **not** place:
-
-* `placedCoreOf? st tid = none` — a thread already queued is re-bucketed by the
-  step below, and one that is **current** on some core is running, so enqueuing
-  it would put it in a run queue and on a processor at once
-  (`queueCurrentConsistent`);
-* `tcb.ipcState = .ready` — a thread blocked in IPC is owed a wake by whatever
-  it is blocked on, and the bind explicitly supports binding a blocked thread
-  (Z5-G1's own note).  Placing one would make it selectable while its rendezvous
-  is outstanding, which is `queueHeadBlockedConsistent`'s negation;
-* `tcb.threadState ≠ .Inactive` — a suspended thread is recovered by
-  `.tcbResume`, which demands exactly that flag, so a bind that placed one would
-  resurrect a thread its own manager suspended;
-* `sc.budgetRemaining.isPositive` — the reservation being bound can run the
-  thread **now** (PR #900 review, `v0.36.1`).  This is the selector's own reading:
-  for a bound thread `hasSufficientBudget` is exactly `budgetRemaining.isPositive`
-  of its reservation (`bindPlacesParkedThread_budget_eq_hasSufficientBudget`), so
-  a thread this guard admits is one `chooseBestRunnableEffective` does not skip
-  for budget.  Without it, binding an **exhausted** reservation — reachable by
-  unbinding one mid-period, which preserves `budgetRemaining = 0` and purges its
-  replenishment entry — placed the thread on a run queue it could never be chosen
-  from, with no refill ever due to change that, and the bind reported success.
-  seL4-MCS refuses the same placement: `schedContext_bindTCB` runs
-  `schedContext_resume`, which **postpones** a thread whose head refill is not
-  ready and sufficient into the release queue, and `isSchedulable` is false of a
-  thread in the release queue, so the `SCHED_ENQUEUE` above does not fire (read at
-  `13.0.0`).  WS-ZA ZA6.4: the bind postpones the same way — the reservation
-  the guard reads is the one the bind stores, its head released by now
-  (`SchedContext.releaseReadyHead`), and a head not yet released puts the
-  context on its thread's home core's release queue (`SystemState.releasePlace`),
-  so the thread left parked here is woken by the drain at its refill.
-
-The third conjunct reads the **stored** flag and deliberately not
-`inferThreadState`, which answers `.Inactive` for *any* thread that is unplaced
-and not blocked — which a parked thread is by definition, so the inferred reading
-would refuse exactly the shape this guard exists to admit.  The stored flag is
-what `.tcbSuspend` writes and `.tcbResume` reads, so it means *"its manager
-suspended it"*, and the reclaim's park leaves it alone: measured at `.Ready` on
-the live parked holder (`tests/SmpCancellationSuite.lean` §3.26b).
-
-Stated as a definition rather than inline because the footprint, the step and
-the witness all have to ask the *same* question, and because a conjunct added to
-it must reach every asker. -/
-def bindPlacesParkedThread (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (sc : SchedContext) : Bool :=
-  !isIdleThreadId tid && (placedCoreOf? st tid).isNone && tcb.isRunnable
-    && sc.budgetRemaining.isPositive
 
 /-- A thread the bind places is no idle thread: an idle thread is never queued. -/
 theorem bindPlacesParkedThread_not_idle {st : SystemState} {tid : SeLe4n.ThreadId}

@@ -1455,8 +1455,10 @@ register file `regs` through `layout` and then the overflow word `w`
       match resolveSchedControlConfigureTarget tid core args.scCPtr st with
       | .error e => .error e
       | .ok vScId =>
-        SchedContextOps.schedContextConfigure vScId args.budget args.period
-          args.priority args.deadline args.domain st
+        if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
+          SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
+            args.priority args.deadline args.domain st
+        else .error .invalidCapability
   | _ => .error .invalidCapability
 
 theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
@@ -1477,9 +1479,9 @@ theorem dispatchWithCapChecked_eq_configureBy (ctx : LabelingContext)
   all_goals rfl
 
 /-- `dispatchConfigureBy`, refusal-carrying: the checks read first
-(`schedContextConfigureAdmitted`) and the state handed to the in-slot write
-alone (`schedContextConfigurePerform`); a refusal is in the state handed in
-(`dispatchConfigureByR_eq`). -/
+(`schedControlConfigureAdmitted`) and the state handed to the in-slot write
+alone (`schedControlConfigurePerform`), the move of a context homed on another
+core among them; a refusal is in the state handed in (`dispatchConfigureByR_eq`). -/
 @[inline] def dispatchConfigureByR (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (w : UInt64) (tid : SeLe4n.ThreadId) (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
@@ -1491,13 +1493,15 @@ alone (`schedContextConfigurePerform`); a refusal is in the state handed in
       match resolveSchedControlConfigureTarget tid core args.scCPtr st with
       | .error e => .error (e, st)
       | .ok vScId =>
-        RefusalCarrying.ofChecked
-          (SchedContextOps.schedContextConfigureAdmitted st vScId args.budget args.period
-            args.priority args.deadline args.domain)
-          (fun st => SchedContextOps.schedContextConfigurePerform st vScId args.budget
-            args.period args.priority args.deadline args.domain)
-          (SchedContextOps.schedContextConfigure vScId args.budget args.period
-            args.priority args.deadline args.domain) st
+        if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
+          RefusalCarrying.ofChecked
+            (SchedContextOps.schedControlConfigureAdmitted st ⟨core, hCore⟩ vScId args.budget
+              args.period args.priority args.deadline args.domain)
+            (fun st => SchedContextOps.schedControlConfigurePerform st ⟨core, hCore⟩ vScId
+              args.budget args.period args.priority args.deadline args.domain)
+            (SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
+              args.priority args.deadline args.domain) st
+        else .error (.invalidCapability, st)
   | _ => .error (.invalidCapability, st)
 
 theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -1517,9 +1521,12 @@ theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : Registe
       | error e => rfl
       | ok vScId =>
         dsimp only
-        rw [RefusalCarrying.ofChecked_eq _ _ _ _ (fun hA =>
-          SchedContextOps.schedContextConfigure_of_admitted _ _ _ _ _ _ _ hA)]
-        rfl
+        by_cases hCore : core < SeLe4n.Kernel.Concurrency.numCores
+        · simp only [dif_pos hCore]
+          rw [RefusalCarrying.ofChecked_eq _ _ _ _ (fun hA =>
+            SchedContextOps.schedControlConfigure_of_admitted _ _ _ _ _ _ _ _ hA)]
+          rfl
+        · simp only [dif_neg hCore]
   | _ => rfl
 
 /-- A configure's taint step leaves the state as its arm left it. -/

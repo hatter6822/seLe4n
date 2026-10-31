@@ -531,7 +531,11 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           | .ok args =>
               match resolveSchedControlConfigureTarget tid core args.scCPtr s with
               | .error _ => none
-              | .ok v => some (.ofObjectTarget tid v.val)
+              | .ok v =>
+                  if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
+                    some { SyscallLockOperands.ofObjectTarget tid v.val with
+                           controlCore := some ⟨core, hCore⟩ }
+                  else none
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
       | .schedContextBind, .object _ =>
           match resolveSchedContextBindThread tid

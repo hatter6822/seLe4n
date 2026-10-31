@@ -2049,6 +2049,33 @@ theorem pipChainWriteSet_congr (ec : CoreId) : ∀ (n : Nat) (a b : SystemState)
             updatePipBoostOnCore_preserves_blockingServer _ _ _ ha,
             updatePipBoostOnCore_preserves_blockingServer _ _ _ hb, hEdge]
 
+/-- WS-ZA ZA6.4: **the chain walk moves no home core**: each step is a boost
+on the holder's home, which rewrites no affinity. -/
+theorem propagatePipChainCrossCore_determineTargetCore (ec : CoreId) :
+    ∀ (n : Nat) (st : SystemState) (s : ThreadId), st.objects.invExt → ∀ t,
+      determineTargetCore (propagatePipChainCrossCore st s ec n).1 t = determineTargetCore st t
+  | 0, _, _, _, _ => rfl
+  | n + 1, st, s, h, t => by
+      rw [propagatePipChainCrossCore_step]
+      simp only []
+      cases blockingServer st s with
+      | none =>
+        simp only []
+        rw [pipBoostWithWake_state, updatePipBoostOnCore_preserves_determineTargetCore _ _ _ _ h]
+      | some next =>
+        simp only []
+        rw [propagatePipChainCrossCore_determineTargetCore ec n _ next
+          (pipBoostWithWake_preserves_objects_invExt st s ec h) t, pipBoostWithWake_state,
+          updatePipBoostOnCore_preserves_determineTargetCore _ _ _ _ h]
+
+/-- WS-ZA ZA6.4: the waiter-side re-walk moves no home core. -/
+theorem repropagateFromWaiter_determineTargetCore (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) (h : st.objects.invExt) (t : ThreadId) :
+    determineTargetCore (repropagateFromWaiter st tid ec fuel) t = determineTargetCore st t :=
+  repropagateFromWaiter_preserves (fun s => determineTargetCore s t = determineTargetCore st t)
+    st tid ec fuel (fun server _ => propagatePipChainCrossCore_determineTargetCore ec fuel st server h t)
+    rfl
+
 /-- The waiter-side write set under the same agreement. -/
 theorem waiterChainWriteSet_congr (a b : SystemState) (tid : ThreadId) (ec : CoreId)
     (fuel : Nat)
@@ -2061,6 +2088,59 @@ theorem waiterChainWriteSet_congr (a b : SystemState) (tid : ThreadId) (ec : Cor
   cases blockingServer b tid with
   | none => rfl
   | some server => exact pipChainWriteSet_congr ec _ a b server ha hb hHome hEdge
+
+/-- WS-ZA ZA6.4: **a chain walk over a state whose homes differ only by one
+core names that core and the other state's cores**: each step's home is either
+the other state's or the override, the boosts between steps move no home and no
+edge on either side, and the walk's state is independent of its executing core. -/
+theorem pipChainWriteSet_mem_of_homeOverride (c ec ec' : CoreId) :
+    ∀ (n : Nat) (a b : SystemState) (s : ThreadId),
+    a.objects.invExt → b.objects.invExt →
+    (∀ t, determineTargetCore a t = determineTargetCore b t ∨ determineTargetCore a t = c) →
+    (∀ t, blockingServer a t = blockingServer b t) →
+    ∀ d, d ∈ pipChainWriteSet a s ec n → d = c ∨ d ∈ pipChainWriteSet b s ec' n
+  | 0, _, _, _, _, _, _, _, _, hd => by simp [pipChainWriteSet] at hd
+  | n + 1, a, b, s, ha, hb, hHome, hEdge, d, hd => by
+      simp only [pipChainWriteSet] at hd ⊢
+      rw [hEdge s] at hd
+      rcases List.mem_cons.mp hd with hd | hd
+      · rcases hHome s with h | h
+        · exact .inr (List.mem_cons.mpr (.inl (hd.trans h)))
+        · exact .inl (hd.trans h)
+      · cases hB : blockingServer b s with
+        | none => rw [hB] at hd; simp at hd
+        | some next =>
+          rw [hB] at hd
+          simp only [] at hd ⊢
+          rcases pipChainWriteSet_mem_of_homeOverride c ec ec' n _ _ next
+            (pipBoostWithWake_preserves_objects_invExt a s ec ha)
+            (pipBoostWithWake_preserves_objects_invExt b s ec' hb)
+            (fun t => by
+              rw [pipBoostWithWake_state, pipBoostWithWake_state,
+                updatePipBoostOnCore_preserves_determineTargetCore _ _ _ _ ha,
+                updatePipBoostOnCore_preserves_determineTargetCore _ _ _ _ hb]
+              exact hHome t)
+            (fun t => by
+              rw [pipBoostWithWake_state, pipBoostWithWake_state,
+                updatePipBoostOnCore_preserves_blockingServer _ _ _ ha,
+                updatePipBoostOnCore_preserves_blockingServer _ _ _ hb, hEdge]) d hd with h | h
+          · exact .inl h
+          · exact .inr (List.mem_cons.mpr (.inr h))
+
+/-- The waiter-side write set under the same one-core override. -/
+theorem waiterChainWriteSet_mem_of_homeOverride (a b : SystemState) (tid : ThreadId)
+    (c ec ec' : CoreId) (fuel : Nat) (ha : a.objects.invExt) (hb : b.objects.invExt)
+    (hHome : ∀ t, determineTargetCore a t = determineTargetCore b t ∨ determineTargetCore a t = c)
+    (hEdge : ∀ t, blockingServer a t = blockingServer b t) (d : CoreId)
+    (hd : d ∈ waiterChainWriteSet a tid ec fuel) :
+    d = c ∨ d ∈ waiterChainWriteSet b tid ec' fuel := by
+  unfold waiterChainWriteSet at hd ⊢
+  rw [hEdge tid] at hd
+  cases hB : blockingServer b tid with
+  | none => rw [hB] at hd; simp at hd
+  | some server =>
+    rw [hB] at hd
+    exact pipChainWriteSet_mem_of_homeOverride c ec ec' _ a b server ha hb hHome hEdge d hd
 
 /-- Home cores and blocking edges read only a thread's affinity and IPC state:
 two states whose TCBs agree on those two fields agree on both. -/

@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Lifecycle.ResumeFootprint
 import SeLe4n.Kernel.SchedContext.PriorityControlFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
+import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 
@@ -132,7 +133,8 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
           LockSet.ofList? (schedLockSet_setThreadCpuAffinityOnCore st target newCore)
   | .schedContextConfigure =>
       ops.targetObject.bind fun scObjId =>
-        LockSet.ofList? (schedLockSet_schedContextConfigureOnCore st scObjId)
+        ops.controlCore.bind fun core =>
+          LockSet.ofList? (schedLockSet_schedControlConfigure st core scObjId)
   | .schedContextBind =>
       ops.targetThread.bind fun target =>
         LockSet.ofList? (schedLockSet_schedContextBindOnCore st target)
@@ -316,20 +318,28 @@ through the zombie delete. -/
     simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_capabilityDestroyOnCore,
       schedFootprintOfCores_keys_nodup]
 
-/-- The four object-directed arms declare exactly when the operand naming the
+/-- The three object-directed arms declare exactly when the operand naming the
 object is supplied. -/
 theorem schedLockSetForSyscall_objectDirected_isSome_iff
     (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (h : sid = .schedContextConfigure ∨ sid = .schedContextUnbind ∨
-         sid = .notificationSignal ∨ sid = .send) :
+    (h : sid = .schedContextUnbind ∨ sid = .notificationSignal ∨ sid = .send) :
     (schedLockSetForSyscall sid ops executingCore st).isSome ↔ ops.targetObject.isSome := by
-  rcases h with rfl | rfl | rfl | rfl <;>
+  rcases h with rfl | rfl | rfl <;>
     (unfold schedLockSetForSyscall
      cases ops.targetObject <;>
-       simp [LockSet.ofList?, schedLockSet_schedContextConfigureOnCore,
-         schedLockSet_schedContextUnbindOnCore,
+       simp [LockSet.ofList?, schedLockSet_schedContextUnbindOnCore,
          schedLockSet_notificationSignalBoundOnCore, schedLockSet_endpointSendOnCore,
          schedFootprintOfCores_keys_nodup])
+
+/-- WS-ZA ZA6.4: `.schedContextConfigure` declares exactly when the context and
+the control's core are supplied. -/
+theorem schedLockSetForSyscall_schedContextConfigure_isSome_iff (ops : SyscallLockOperands)
+    (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .schedContextConfigure ops executingCore st).isSome ↔
+      ops.targetObject.isSome ∧ ops.controlCore.isSome := by
+  unfold schedLockSetForSyscall
+  cases ops.targetObject <;> cases ops.controlCore <;>
+    simp [LockSet.ofList?, schedLockSet_schedControlConfigure, schedFootprintOfCores_keys_nodup]
 
 /-- `.receive` needs the endpoint, the receiver's slot base and the receiver's
 TCB (its CSpace root) — **WS-LS LS2.3**: its footprint re-runs the receive leg,
@@ -452,7 +462,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
     rw [LockSet.ofList?_pairs hS]
     simp only [schedLockSet_suspendThreadOnCore, schedLockSet_resumeThreadOnCore,
       schedLockSet_priorityControlOnCore, schedLockSet_setThreadCpuAffinityOnCore,
-      schedLockSet_schedContextConfigureOnCore, schedLockSet_schedContextBindOnCore,
+      schedLockSet_schedControlConfigure, schedLockSet_schedContextBindOnCore,
       schedLockSet_schedContextUnbindOnCore,
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
       schedLockSet_endpointSendOnCore, schedLockSet_endpointReceiveOnCore,
