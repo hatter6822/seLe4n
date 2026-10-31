@@ -16,25 +16,39 @@ completes it. Nothing sets a link until ZA6.8's `seL4_SchedContext_YieldTo`.
     from the thread's side; `cancelYieldFrom` clears them from the context's.
   - `setConsumed` (seL4's `setConsumed`) takes the context's consumed time
     off it (`SchedContext.updateConsumed`) and writes it to the yielder's
-    first message register, with a one-register message info.
+    first message register, with a one-register message info. seL4 writes
+    `ksCurThread`'s registers here; on a final delete that is the deleter,
+    and the write would clobber the deleter's own reply. seLe4n writes the
+    yielder's, deliberately correcting seL4.
   - `completeYieldFrom` (seL4's `if (sc->scYieldFrom)
     schedContext_completeYieldTo(sc->scYieldFrom)`) runs `setConsumed`, then
     `cancelYieldFrom`; on agreeing links it is `completeYieldTo` of the
     yielder (`completeYieldFrom_eq_completeYieldTo`).
-  - `threadFinaliseYield` completes the yield recorded by the context the
-    thread holds, then cancels the thread's own link.
+  - `completeHeldYield` completes the yield recorded by the context a thread
+    holds (none for code 0), the second half of seL4-MCS's `unbindFromSC`.
 - **Where they run.**
   - Suspend (spec, per-core and admitted fast form) ends with
     `cancelYieldTo`, as seL4-MCS's `suspend` does; its lock footprint
     declares the linked context (`yieldToContextOf?`; the bound moves from 17
-    to 18, `lockSet_tcbSuspendOnCore_size_le_eighteen`). The frozen suspend
-    mirrors it.
-  - A thread's final delete (`finaliseThread`) ends with
-    `threadFinaliseYield`; a context's final delete (`finaliseSchedContext`'s
-    cleanup) completes the yield it records.
-  - The pre-retype cleanup runs the same steps: `threadFinaliseYield` on a
-    thread target, `completeYieldFrom` after the binding release on a context
-    target.
+    to 18, `lockSet_tcbSuspendOnCore_size_le_eighteen`).
+  - A thread's final delete (`finaliseThread`) takes the steps where seL4-MCS's
+    `finaliseCap` does: `cancelYieldTo` right after the suspend, and
+    `completeHeldYield` right after the context unbind (`unbindFromSC`:
+    `unbindTCB`, then the held context's `completeYieldTo`). The held code is
+    read on the entry state, so a borrowed context's yield completes too.
+    A context's final delete (`finaliseSchedContext`'s cleanup) completes the
+    yield it records.
+  - The pre-retype cleanup takes the same two positions on a thread target
+    (`completeHeldYield` after the donation arm's unbind, `cancelYieldTo` after
+    the reference sweep's suspend), and `completeYieldFrom` after the binding
+    release on a context target.
+- **The frozen suspend matches the live one** (`SeLe4n/Kernel/FrozenOps/Operations.lean`).
+  - It had no scheduling-context step at all; the live suspend releases a
+    bound context and returns a donated one. `frozenSuspendDonation` mirrors
+    both (a bound context's `boundThreadCode`, `isActive` and
+    `donationOrigin` cleared with the thread's binding codes; a donated one
+    returned by `frozenReturnDonatedSchedContextResolved`), and the frozen
+    suspend then cancels the yield link at both ends, as the live one does.
 - **The invariant** (`SeLe4n/Kernel/SchedContext/YieldLinkInvariant.lean`).
   - `SystemState.yieldLinksAgree`: each end names the other. It is the
     proof-layer bundle's 21st conjunct, with its frame `YieldLinksKept`.
@@ -56,9 +70,11 @@ completes it. Nothing sets a link until ZA6.8's `seL4_SchedContext_YieldTo`.
   - The steps are invisible to every observer (`projectedObjectsWrite`): the
     projection erases both codes and the thread's registers, and the context
     whose consumed count changes is hidden.
-- **Tests.** `SuspendResumeSuite` SR-036 to SR-039: suspend (live and frozen)
+- **Tests.** `SuspendResumeSuite` SR-036 to SR-040: suspend (live and frozen)
   clears both ends, a context's final delete hands its yielder the consumed
-  time, a yielder's final delete clears both ends.
+  time, a yielder's final delete clears both ends, and SR-040 runs the live and
+  the frozen suspend on one bound, yield-linked thread and compares the
+  context release, the binding codes, both link ends and the thread state.
 - **Zero allocation.** Every write is a record update of an exclusive cell, which the
   generated C reuses in place. Measured on a fresh untraced archive
   (`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS, every pin unchanged; first call and steady): `tcb-suspend` 0 and 0, `tcb-suspend-bound` 0 and 0, `suspend-queued-tcb` 0 and 0, `tcb-resume` 0 and 0, `tcb-resume-bound` 0 and 0, `bound-tcb-delete` 0 and 0, `unbound-tcb-delete` 0 and 0, `inactive-tcb-delete` 0 and 0, `queued-tcb-delete` 0 and 0, `suspended-tcb-delete` 0 and 0, `spaced-tcb-delete` 0 and 0, `bound-sched-context-delete` 0 and 0, `cspace-delete` 0 and 0, `sched-context-bind` / `-unbind` / `-rebind` / `-configure` 0 and 0; the retypes keep their pins (`untyped-retype-tcb` 24 and 24, `untyped-retype-sched-context` 14 and 13, `untyped-retype-sc-thread` 24 and 24, the new objects' own cells).

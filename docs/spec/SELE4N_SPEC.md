@@ -5266,11 +5266,16 @@ completes the yield it records (`completeYieldFrom`, seL4's
 `if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`): the
 yielder is handed the context's consumed time (`setConsumed`, the consumed word
 into its first message register with a one-register message info) and both ends
-are cleared.  A thread's suspend cancels its own yield
-(`cancelYieldTo`, seL4's `schedContext_cancelYieldTo`), and so does its final
-delete (`threadFinaliseYield`, which first completes the yield recorded by the
-context the thread holds); the TCB's pre-retype cleanup runs the same step, and
-a retyped thread or context carries no link (`retypeTargetDetached.tcbYieldUnlinked`,
+are cleared.  seL4 writes the consumed time to `ksCurThread`, which on a final
+delete is the deleter, clobbering the deleter's own reply; seLe4n writes it to
+the yielder, a deliberate correction.  A thread's suspend, live and frozen,
+ends by cancelling its own yield (`cancelYieldTo`, seL4's
+`schedContext_cancelYieldTo`), and its final delete does the same inside its
+suspend step; the final delete's context unbind then completes the yield
+recorded by the context the thread held on entry (`completeHeldYield`,
+seL4-MCS's `unbindFromSC`: `unbindTCB`, then `schedContext_completeYieldTo`).
+The TCB's pre-retype cleanup takes the same two steps at the same two
+positions, and a retyped thread or context carries no link (`retypeTargetDetached.tcbYieldUnlinked`,
 `schedContextRecordReleased`).  Where they differ, the finalise follows seL4
 rather than the live unbind syscall: that syscall leaves its thread queued at
 its legacy priority, the finalise dequeues it.  A caller blocked on its reply

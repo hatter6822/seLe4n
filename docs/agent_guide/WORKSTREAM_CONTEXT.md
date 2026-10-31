@@ -478,8 +478,12 @@ is the proof-layer bundle's 21st conjunct, carried by every run-queue link stage
 (`RunQueueLinkStage.yield`, from a `YieldLinksKept` frame).  New code that
 writes either code goes through `cancelYieldTo`, `cancelYieldFrom` or
 `completeYieldFrom` (seL4's cancel and complete), and a frame that writes
-neither proves `YieldLinksKept`; a suspend and a thread's final delete cancel
-the thread's link, and a context's final delete completes the yield it records.
+neither proves `YieldLinksKept`; a suspend (live and frozen) and a thread's
+final delete cancel the thread's link at the end of their suspend step, a
+thread's final delete completes its held context's yield at its context unbind
+(`completeHeldYield`, seL4-MCS's `unbindFromSC`), and a context's final delete
+completes the yield it records.  The frozen suspend mirrors every
+scheduling-context step of the live one (`frozenSuspendDonation`).
 ZA6.7 and ZA6.8 add the rest of seL4's `seL4_SchedContext_YieldTo`: the
 activation step at entry exit, and the invocation.  ZA6.9 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference

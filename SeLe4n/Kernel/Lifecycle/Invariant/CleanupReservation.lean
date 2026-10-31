@@ -197,6 +197,17 @@ theorem cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp
   · exact fun scId => cleanupTcbReferences_boundThread_frame st tid hInv scId
   · exact fun x => cleanupTcbReferences_determineTargetCore_eq st tid hInv x
 
+/-- **WS-ZA ZA6.6: a step that writes the yield writes alone keeps the
+replenish-affinity invariant** — it moves no replenish entry (`hS`), no
+context's bound thread and no thread's home core. -/
+theorem replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield {st st' : SystemState}
+    (hA : st'.objectsAgreeOffYield st) (hS : st'.scheduler = st.scheduler)
+    (h : replenishQueueAffinityConsistent_smp st) : replenishQueueAffinityConsistent_smp st' :=
+  fun c => replenishQueueAffinityConsistentOnCore_transfer st st' c
+    (fun _ hm => by rw [hS] at hm; exact hm)
+    (fun scId => hA.getSchedContext?_map _ (fun _ => rfl) scId)
+    (fun tid => determineTargetCore_congr st st' tid (hA.getTcb?_map _ (fun _ => rfl) tid)) (h c)
+
 /-- **`v0.35.166`: the destroy path's `.tcb` arm, both steps.**
 
 `lifecyclePreRetypeCleanup`'s TCB arm is the donation teardown followed by the
@@ -208,29 +219,27 @@ on a `.donated` holder's), and the second is the one §1 exists for.
 Stated as a lemma of its own rather than inlined in the composite below, because
 the composite then has six arms each of which is one `exact` — and because a
 consumer that runs the same two steps (the suspend pipeline's G2/G3 pair is the
-same shape) has something to cite. -/
+same shape) has something to cite.
+
+**WS-ZA ZA6.6**: between the two sits the unbind's completion of the context the
+thread held (`completeHeldYield`, seL4-MCS's `unbindFromSC` →
+`schedContext_completeYieldTo`), which writes the yield writes alone
+(`replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield`). -/
 theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
-    (st stArm : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st stArm : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (held : Nat)
     (hTcb : lookupTcb st tid = some tcb)
     (hInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (hArm : cancelDonationArmOnCore st tid tcb = .ok stArm) :
-    replenishQueueAffinityConsistent_smp (cleanupTcbReferences stArm tid) :=
-  cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp stArm tid
-    (cancelDonationArmOnCore_preserves_objects_invExt st stArm tid tcb hInv hArm)
-    (cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
-      st stArm tid tcb hTcb hInv hCons hArm)
-
-/-- **WS-ZA ZA6.6: a step that writes the yield writes alone keeps the
-replenish-affinity invariant** — it moves no replenish entry (`hS`), no
-context's bound thread and no thread's home core. -/
-theorem replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield {st st' : SystemState}
-    (hA : st'.objectsAgreeOffYield st) (hS : st'.scheduler = st.scheduler)
-    (h : replenishQueueAffinityConsistent_smp st) : replenishQueueAffinityConsistent_smp st' :=
-  fun c => replenishQueueAffinityConsistentOnCore_transfer st st' c
-    (fun _ hm => by rw [hS] at hm; exact hm)
-    (fun scId => hA.getSchedContext?_map _ (fun _ => rfl) scId)
-    (fun tid => determineTargetCore_congr st st' tid (hA.getTcb?_map _ (fun _ => rfl) tid)) (h c)
+    replenishQueueAffinityConsistent_smp (cleanupTcbReferences (completeHeldYield stArm held) tid) :=
+  have hInvA := cancelDonationArmOnCore_preserves_objects_invExt st stArm tid tcb hInv hArm
+  cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp _ tid
+    (SystemState.completeHeldYield_preserves_objects_invExt stArm held hInvA)
+    (replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
+      (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
+      (SystemState.completeHeldYield_scheduler _ _)
+      (cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
+        st stArm tid tcb hTcb hInv hCons hArm))
 
 /-- ...and every binding (Z4-O reads two projections the yield writes leave). -/
 theorem schedContextBindingConsistent_of_objectsAgreeOffYield {st st' : SystemState}
@@ -326,15 +335,11 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
         have hInvH := SystemState.completeHeldYield_preserves_objects_invExt stArm
           tcb.scBindingScCode hInvA
         have hInvC := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hInvH
+        have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
+          st stArm tcb.tid tcb tcb.scBindingScCode (hTcb tcb rfl) hInv hCons hArm
         have hS := replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
           (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC)
-          (SystemState.cancelYieldTo_scheduler _ _)
-          (cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp _ tcb.tid hInvH
-            (replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
-              (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
-              (SystemState.completeHeldYield_scheduler _ _)
-              (cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
-                st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm)))
+          (SystemState.cancelYieldTo_scheduler _ _) hS
         have hA := (detachTcbSlots_agree (SystemState.cancelYieldTo_preserves_objects_invExt _
           tcb.tid hInvC) target).1
         exact fun c => (replenishQueueAffinityConsistentOnCore_congr
@@ -567,16 +572,19 @@ binding, and the reference sweep is the one §1 exists for.
 Stated as a lemma of its own rather than inlined below, so the suspend
 pipeline — whose G2/G3 pair runs the same two steps — has something to cite. -/
 theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
-    (st stArm : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st stArm : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (held : Nat)
     (hTcb : lookupTcb st tid = some tcb)
     (hInv : st.objects.invExt)
     (hCons : schedContextBindingConsistent st)
     (hArm : cancelDonationArmOnCore st tid tcb = .ok stArm) :
-    schedContextBindingConsistent (cleanupTcbReferences stArm tid) :=
-  cleanupTcbReferences_preserves_schedContextBindingConsistent stArm tid
-    (cancelDonationArmOnCore_preserves_objects_invExt st stArm tid tcb hInv hArm)
-    (cancelDonationArmOnCore_preserves_schedContextBindingConsistent st stArm tid tcb
-      (getTcb?_of_lookupTcb st tid tcb hTcb) hInv hCons hArm)
+    schedContextBindingConsistent (cleanupTcbReferences (completeHeldYield stArm held) tid) :=
+  have hInvA := cancelDonationArmOnCore_preserves_objects_invExt st stArm tid tcb hInv hArm
+  cleanupTcbReferences_preserves_schedContextBindingConsistent _ tid
+    (SystemState.completeHeldYield_preserves_objects_invExt stArm held hInvA)
+    (schedContextBindingConsistent_of_objectsAgreeOffYield
+      (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
+      (cancelDonationArmOnCore_preserves_schedContextBindingConsistent st stArm tid tcb
+        (getTcb?_of_lookupTcb st tid tcb hTcb) hInv hCons hArm))
 
 /-- **`v0.35.183` (register row 63): the destroy path's pre-retype cleanup
 preserves Z4-O, on every object kind the retype's own detachment pack admits.**
@@ -631,13 +639,10 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
         have hInvH := SystemState.completeHeldYield_preserves_objects_invExt stArm
           tcb.scBindingScCode hInvA
         have hInvC := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hInvH
+        have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
+          st stArm tcb.tid tcb tcb.scBindingScCode (hTcb tcb rfl) hInv hCons hArm
         have hS := schedContextBindingConsistent_of_objectsAgreeOffYield
-          (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC)
-          (cleanupTcbReferences_preserves_schedContextBindingConsistent _ tcb.tid hInvH
-            (schedContextBindingConsistent_of_objectsAgreeOffYield
-              (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
-              (cancelDonationArmOnCore_preserves_schedContextBindingConsistent st stArm tcb.tid tcb
-                (getTcb?_of_lookupTcb st tcb.tid tcb (hTcb tcb rfl)) hInv hCons hArm)))
+          (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC) hS
         -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
         have hA := (detachTcbSlots_agree (SystemState.cancelYieldTo_preserves_objects_invExt _
           tcb.tid hInvC) target).1
