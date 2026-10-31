@@ -160,19 +160,16 @@ def completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId) : SystemSta
     | k + 1 => cancelYieldFrom (setConsumed st s ⟨k⟩) s
   | none => st
 
-/-- **The yield steps of a thread's finalisation** (seL4-MCS's `finaliseCap` on
-a thread): the yield recorded by the context the thread holds completed
-(`if (tcb->tcbSchedContext) schedContext_completeYieldTo(tcb->tcbSchedContext->scYieldFrom)`,
-`completeYieldFrom`), then the thread's own link cancelled (its `suspend`'s
-`schedContext_cancelYieldTo`).  `held` is the code of the context the thread
-holds (`TCB.scBindingScCode`: `0` for none, `n + 1` for the context `n`), read
-by the caller before its first write.  The two steps write only the yield-link
-codes, the yielder's two return registers and the context's consumed time. -/
-def threadFinaliseYield (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) : SystemState :=
-  cancelYieldTo
-    (match held with
-     | 0 => st
-     | k + 1 => completeYieldFrom st ⟨k⟩) tid
+/-- **The completion half of seL4-MCS's `unbindFromSC`**: once a thread is
+unbound from the context it held, the yield that context records is completed
+(`if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`,
+`completeYieldFrom`).  `held` is the code of the context the thread held
+(`TCB.scBindingScCode`: `0` for none, `n + 1` for the context `n`), read by the
+caller before its first write.  The identity when the thread held none. -/
+def completeHeldYield (st : SystemState) (held : Nat) : SystemState :=
+  match held with
+  | 0 => st
+  | k + 1 => completeYieldFrom st ⟨k⟩
 
 end SeLe4n.Kernel
 
@@ -239,14 +236,13 @@ theorem completeYieldFrom_eq_objects (st : SystemState) (s : SeLe4n.SchedContext
     · rw [cancelYieldFrom_eq_objects, setConsumed_eq_objects]
   · rfl
 
-/-- A thread finalisation's yield steps write the object store alone. -/
-theorem threadFinaliseYield_eq_objects (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) :
-    threadFinaliseYield st tid held =
-      { st with objects := (threadFinaliseYield st tid held).objects } := by
-  unfold threadFinaliseYield
+/-- The completion of a held context's yield writes the object store alone. -/
+theorem completeHeldYield_eq_objects (st : SystemState) (held : Nat) :
+    completeHeldYield st held = { st with objects := (completeHeldYield st held).objects } := by
+  unfold completeHeldYield
   split
-  · exact cancelYieldTo_eq_objects _ _
-  · rw [cancelYieldTo_eq_objects, completeYieldFrom_eq_objects]
+  · rfl
+  · exact completeYieldFrom_eq_objects _ _
 
 theorem completeYieldFrom_scheduler (st : SystemState) (s : SeLe4n.SchedContextId) :
     (completeYieldFrom st s).scheduler = st.scheduler := by
@@ -256,12 +252,20 @@ theorem completeYieldFrom_tlbShootdown (st : SystemState) (s : SeLe4n.SchedConte
     (completeYieldFrom st s).tlbShootdown = st.tlbShootdown := by
   rw [completeYieldFrom_eq_objects]
 
-theorem threadFinaliseYield_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) :
-    (threadFinaliseYield st tid held).scheduler = st.scheduler := by
-  rw [threadFinaliseYield_eq_objects]
+theorem completeHeldYield_scheduler (st : SystemState) (held : Nat) :
+    (completeHeldYield st held).scheduler = st.scheduler := by
+  rw [completeHeldYield_eq_objects]
 
-theorem threadFinaliseYield_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) :
-    (threadFinaliseYield st tid held).tlbShootdown = st.tlbShootdown := by
-  rw [threadFinaliseYield_eq_objects]
+theorem completeHeldYield_tlbShootdown (st : SystemState) (held : Nat) :
+    (completeHeldYield st held).tlbShootdown = st.tlbShootdown := by
+  rw [completeHeldYield_eq_objects]
+
+theorem cancelYieldTo_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cancelYieldTo st tid).tlbShootdown = st.tlbShootdown := by
+  rw [cancelYieldTo_eq_objects]
+
+theorem cancelYieldTo_machine (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cancelYieldTo st tid).machine = st.machine := by
+  rw [cancelYieldTo_eq_objects]
 
 end SeLe4n.Model.SystemState

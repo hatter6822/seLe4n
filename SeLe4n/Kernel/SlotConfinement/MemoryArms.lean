@@ -613,22 +613,36 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
         threadOccupiedCores_congr_of_runCores_current tcb.tid
           (cancelDonationArmOnCore_runCoresAgree hInv hArm)
           (fun c => (cancelDonationArmOnCore_runQueue_current_eq st stArm tcb.tid tcb c hArm).2)
+      -- WS-ZA ZA6.6: the held context's yield completion (seL4-MCS's
+      -- `unbindFromSC`) writes objects alone, and keeps every run-core code.
+      let stC := completeHeldYield stArm tcb.scBindingScCode
+      have hInvArm := cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm
+      have hC : observableSlotsConfinedToCores stArm stC [] :=
+        observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+          (SystemState.completeHeldYield_scheduler stArm tcb.scBindingScCode)
+          (by show (completeHeldYield _ _).machine = _; rw [SystemState.completeHeldYield_eq_objects])
+      have hOccC : threadOccupiedCores stC tcb.tid = threadOccupiedCores stArm tcb.tid :=
+        threadOccupiedCores_congr_of_runCores_current tcb.tid
+          (SystemState.completeHeldYield_objectsAgreeOffYield stArm _ hInvArm).runCoresAgree
+          (fun c => by rw [SystemState.completeHeldYield_scheduler])
       have hTrans := observableSlotsConfinedToCores_trans
-        (cancelDonationArmOnCore_confinedToCores st stArm tcb.tid tcb hArm)
-        (cleanupTcbReferences_confinedToCores stArm tcb.tid)
-      -- The slot detach writes link words alone: no scheduler, no machine.
+        (observableSlotsConfinedToCores_trans
+          (cancelDonationArmOnCore_confinedToCores st stArm tcb.tid tcb hArm) hC)
+        (cleanupTcbReferences_confinedToCores stC tcb.tid)
+      -- The suspend's yield cancel (seL4-MCS's `suspend`) writes objects alone.
       have hTrans' := observableSlotsConfinedToCores_trans hTrans
         (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-          (detachTcbSlots_scheduler_eq (cleanupTcbReferences stArm tcb.tid) target)
-          (detachTcbSlots_machine_eq (cleanupTcbReferences stArm tcb.tid) target))
-      -- WS-ZA ZA6.6: the yield steps write objects alone.
+          (SystemState.cancelYieldTo_scheduler (cleanupTcbReferences stC tcb.tid) tcb.tid)
+          (SystemState.cancelYieldTo_machine (cleanupTcbReferences stC tcb.tid) tcb.tid))
+      -- The slot detach writes link words alone: no scheduler, no machine.
       have hTrans'' := observableSlotsConfinedToCores_trans hTrans'
         (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-          (SystemState.threadFinaliseYield_scheduler
-            (detachTcbSlots (cleanupTcbReferences stArm tcb.tid) target) tcb.tid tcb.scBindingScCode)
-          (by rw [SystemState.threadFinaliseYield_eq_objects]))
+          (detachTcbSlots_scheduler_eq (cancelYieldTo (cleanupTcbReferences stC tcb.tid) tcb.tid)
+            target)
+          (detachTcbSlots_machine_eq (cancelYieldTo (cleanupTcbReferences stC tcb.tid) tcb.tid)
+            target))
       simp only [List.nil_append, List.append_nil] at hTrans''
-      rw [hOcc] at hTrans''
+      rw [hOccC, hOcc] at hTrans''
       exact hTrans''
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢

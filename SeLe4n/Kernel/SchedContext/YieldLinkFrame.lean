@@ -95,6 +95,18 @@ theorem getSchedContext?_map {st st' : SystemState} (h : objectsAgreeOffYield st
     rename_i u v
     rw [← hf u, ← hf v, e]
 
+/-- A thread before is a thread after, the same off its yield writes. -/
+theorem getTcb?_some {st st' : SystemState} (h : objectsAgreeOffYield st' st)
+    {t : SeLe4n.ThreadId} {u : TCB} (hT : st.getTcb? t = some u) :
+    ∃ u', st'.getTcb? t = some u' ∧ u'.withoutYieldWrites = u.withoutYieldWrites := by
+  have e := h.getTcb?_map TCB.withoutYieldWrites (fun _ => rfl) t
+  rw [hT] at e
+  cases h' : st'.getTcb? t with
+  | none => rw [h'] at e; cases e
+  | some u' =>
+    rw [h'] at e
+    exact ⟨u', rfl, Option.some.inj e⟩
+
 /-- Every thread's run-queue core agrees. -/
 theorem runCoresAgree {st st' : SystemState} (h : objectsAgreeOffYield st' st) :
     RunCoresAgree st' st := fun y => h.getTcb?_map TCB.runCoreCode (fun _ => rfl) y
@@ -188,16 +200,13 @@ theorem completeYieldFrom_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.Sc
         (setConsumed_objectsAgreeOffYield _ _ _ hInv)
   · exact .refl st
 
-/-- **A thread finalisation's yield steps write the yield writes alone.** -/
-theorem threadFinaliseYield_objectsAgreeOffYield (st : SystemState) (tid : SeLe4n.ThreadId)
-    (held : Nat) (hInv : st.objects.invExt) :
-    objectsAgreeOffYield (threadFinaliseYield st tid held) st := by
-  unfold threadFinaliseYield
+/-- **A held context's completion writes the yield writes alone.** -/
+theorem completeHeldYield_objectsAgreeOffYield (st : SystemState) (held : Nat)
+    (hInv : st.objects.invExt) : objectsAgreeOffYield (completeHeldYield st held) st := by
+  unfold completeHeldYield
   split
-  · exact cancelYieldTo_objectsAgreeOffYield _ _ hInv
-  · exact (cancelYieldTo_objectsAgreeOffYield _ _
-      (completeYieldFrom_preserves_objects_invExt _ _ hInv)).trans
-      (completeYieldFrom_objectsAgreeOffYield _ _ hInv)
+  · exact .refl st
+  · exact completeYieldFrom_objectsAgreeOffYield _ _ hInv
 
 /-- **A step that writes only the yield link ends and no scheduler field is a
 run-queue stage**: every run link, release link, refill view, table back-link

@@ -227,14 +227,13 @@ structure FinaliseYieldStep (P : SystemState → Prop) : Prop where
   cancel : ∀ (s : SystemState) (t : SeLe4n.ThreadId), P s → P (cancelYieldTo s t)
   complete : ∀ (s : SystemState) (c : SeLe4n.SchedContextId), P s → P (completeYieldFrom s c)
 
-/-- A thread finalisation's yield steps keep what each yield step keeps. -/
-theorem FinaliseYieldStep.threadFinaliseYield {P : SystemState → Prop} (h : FinaliseYieldStep P)
-    (s : SystemState) (t : SeLe4n.ThreadId) (held : Nat) (hs : P s) :
-    P (threadFinaliseYield s t held) := by
-  unfold SeLe4n.Kernel.threadFinaliseYield
+/-- A held context's completion keeps what the completion keeps. -/
+theorem FinaliseYieldStep.completeHeldYield {P : SystemState → Prop} (h : FinaliseYieldStep P)
+    (s : SystemState) (held : Nat) (hs : P s) : P (completeHeldYield s held) := by
+  unfold SeLe4n.Kernel.completeHeldYield
   split
-  · exact h.cancel _ _ hs
-  · exact h.cancel _ _ (h.complete _ _ hs)
+  · exact hs
+  · exact h.complete _ _ hs
 
 /-- A context finalisation's destroy cleanup keeps what the completion keeps. -/
 theorem FinaliseYieldStep.schedContextCleanup {P : SystemState → Prop} (h : FinaliseYieldStep P)
@@ -932,13 +931,13 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
   split
   · rename_i hA
     obtain ⟨t, hT, hG⟩ := threadFinaliseAdmitted_notificationUnbind hA
-    refine hYield.threadFinaliseYield _ _ _ ?_
-    exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _
+    refine hYield.completeHeldYield _ _ ?_
+    exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _ (hYield.cancel _ _
       (finaliseThreadSuspend_closed P hSuspend _ _
         (finaliseThreadEndWaiters_closed P hRep hSuspend _ _
           (finaliseThreadReturnLoan_closed P hRep hSuspend _ _
             (finaliseThreadCancel_closed P hCancel hEndpoint hRep _ _
-              (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h))))))
+              (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h)))))))
   · exact h
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/

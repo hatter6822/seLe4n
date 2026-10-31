@@ -233,18 +233,18 @@ theorem completeYieldFrom (s : SystemState) (c : SeLe4n.SchedContextId)
         (cancelYieldFrom _ c (SystemState.setConsumed_preserves_objects_invExt _ _ _ hInv))
   · exact refl s
 
-/-- A thread finalisation's yield steps, the context it held hidden. -/
-theorem threadFinaliseYield (s : SystemState) (t : SeLe4n.ThreadId) (held : Nat)
+/-- A thread finalisation's completion of its held context's yield, the context
+it held hidden. -/
+theorem completeHeldYield (s : SystemState) (held : Nat)
     (hInv : s.objects.invExt)
     (hX : held ≠ 0 → objectObservable ctx observer
       (⟨held - 1⟩ : SeLe4n.SchedContextId).toObjId = false) :
-    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.threadFinaliseYield s t held) := by
-  unfold SeLe4n.Kernel.threadFinaliseYield
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.completeHeldYield s held) := by
+  unfold SeLe4n.Kernel.completeHeldYield
   split
-  · exact cancelYieldTo s t hInv
+  · exact refl s
   · rename_i k
-    exact (completeYieldFrom s ⟨k⟩ hInv (hX (Nat.succ_ne_zero k))).trans
-      (cancelYieldTo _ t (SystemState.completeYieldFrom_preserves_objects_invExt _ _ hInv))
+    exact completeYieldFrom s ⟨k⟩ hInv (hX (Nat.succ_ne_zero k))
 
 end projectedObjectsWrite
 
@@ -1710,11 +1710,19 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
         ⟨hI2, hIdx2, hSet2, rfl, t2, hT2, Or.inl rfl⟩)
     have hP3 := finaliseThreadSuspend_hidden ctx observer _ ⟨x.val⟩ hI2' hX h8
     obtain ⟨hI3, t3, hT3, f3⟩ := finaliseThreadSuspend_scBinding hI2' hTw
-    have hT4 := (finaliseThreadReleaseCores_getTcb? _ ⟨x.val⟩ ⟨x.val⟩).trans hT3
-    have hI4 := (FinaliseFrame.releaseCores _ ⟨x.val⟩ hI3).invExt
-    have hSc : t3.scBindingScCode ≠ 0 → objectObservable ctx observer
-        (⟨t3.scBindingScCode - 1⟩ : SeLe4n.SchedContextId).toObjId = false := by
-      rw [f3]
+    -- WS-ZA ZA6.6: the suspend's yield cancel, the thread hidden (`hX`).
+    have hP3y := projectedObjectsWrite.cancelYieldTo (ctx := ctx) (observer := observer) _
+      ⟨x.val⟩ hI3
+    have hI3y := SystemState.cancelYieldTo_preserves_objects_invExt _ ⟨x.val⟩ hI3
+    obtain ⟨t3y, hT3y, e3y⟩ :=
+      (SystemState.cancelYieldTo_objectsAgreeOffYield _ ⟨x.val⟩ hI3).getTcb?_some hT3
+    have f3y : t3y.scBindingScCode = t3.scBindingScCode := by
+      have e := congrArg TCB.scBindingScCode e3y; exact e
+    have hT4 := (finaliseThreadReleaseCores_getTcb? _ ⟨x.val⟩ ⟨x.val⟩).trans hT3y
+    have hI4 := (FinaliseFrame.releaseCores _ ⟨x.val⟩ hI3y).invExt
+    have hSc : t3y.scBindingScCode ≠ 0 → objectObservable ctx observer
+        (⟨t3y.scBindingScCode - 1⟩ : SeLe4n.SchedContextId).toObjId = false := by
+      rw [f3y, f3]
       rcases fw with fw | fw
       rotate_left
       · intro h; exact absurd fw h
@@ -1730,8 +1738,8 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
     have hHeld : threadHeldContextCode st ⟨x.val⟩ ≠ 0 → objectObservable ctx observer
         (⟨threadHeldContextCode st ⟨x.val⟩ - 1⟩ : SeLe4n.SchedContextId).toObjId = false := by
       unfold threadHeldContextCode; rw [hT]; exact h2
-    rw [(projectedObjectsWrite.threadFinaliseYield _ _ _ hI5 hHeld).projection,
-      hP5, finaliseThreadReleaseCores_hidden, hP3, hPW, hP2, hP1]
+    rw [(projectedObjectsWrite.completeHeldYield _ _ hI5 hHeld).projection,
+      hP5, finaliseThreadReleaseCores_hidden, hP3y.projection, hP3, hPW, hP2, hP1]
   · rfl
 
 /-- **A scheduling context's release of its holder is invisible** when the

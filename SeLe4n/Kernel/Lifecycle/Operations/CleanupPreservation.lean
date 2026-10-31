@@ -1878,16 +1878,17 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => .ok st) with
   | .error e => .error e
   | .ok st =>
-  -- A thread's two space slots leave the derivation tree as a deleted slot
-  -- does (`detachTcbSlots`), as a CNode's slots do below.
-  --
-  -- **WS-ZA ZA6.6: then its yield link**, as `finaliseThread` ends
-  -- (`threadFinaliseYield`): the yield recorded by the context the thread
-  -- held completed, its own link cancelled.  The held context's code is read
-  -- off the record the caller looked up before any write.
+  -- **WS-ZA ZA6.6: the yield link, at seL4-MCS's two places.**  The unbind
+  -- above is `unbindFromSC`'s `schedContext_unbindTCB`, which then completes
+  -- the yield the context records (`completeHeldYield`; the held context's code
+  -- is read off the record the caller looked up before any write).  The
+  -- reference sweep is the suspend's dequeue and IPC cancel, which `suspend`
+  -- ends with the thread's own `schedContext_cancelYieldTo` (`cancelYieldTo`).
+  -- A thread's two space slots then leave the derivation tree as a deleted
+  -- slot does (`detachTcbSlots`), as a CNode's slots do below.
   let st := match currentObj with
-    | .tcb tcb => threadFinaliseYield (detachTcbSlots (cleanupTcbReferences st tcb.tid) target)
-        tcb.tid tcb.scBindingScCode
+    | .tcb tcb => detachTcbSlots (cancelYieldTo
+        (cleanupTcbReferences (completeHeldYield st tcb.scBindingScCode) tcb.tid) tcb.tid) target
     | _ => st
   -- An endpoint needs no registry sweep: the retire admits only an endpoint
   -- recording no registration (`SystemState.tableBackLinksClear`), and on a
@@ -2266,12 +2267,12 @@ theorem lifecyclePreRetypeCleanup_flat_subset
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       injection hOk with hOk; subst hOk
-      rw [SystemState.threadFinaliseYield_scheduler, detachTcbSlots_scheduler_eq,
+      rw [detachTcbSlots_scheduler_eq, SystemState.cancelYieldTo_scheduler,
         cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
       -- Take the sweep off first (it handles its own per-core guard), then
       -- collapse the run-queue-preserving prefix.
       have hSub := removeRunnableFromAllCores_toList_subset _ tcb.tid x bootCoreId h
-      rw [hArmRQ] at hSub
+      rw [SystemState.completeHeldYield_scheduler, hArmRQ] at hSub
       exact hSub
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
@@ -2348,8 +2349,9 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
-      rw [← Except.ok.inj hOk, SystemState.threadFinaliseYield_tlbShootdown,
-        detachTcbSlots_tlbShootdown_eq, cleanupTcbReferences_tlbShootdown_eq]
+      rw [← Except.ok.inj hOk, detachTcbSlots_tlbShootdown_eq,
+        SystemState.cancelYieldTo_tlbShootdown, cleanupTcbReferences_tlbShootdown_eq,
+        SystemState.completeHeldYield_tlbShootdown]
       exact hArmShoot
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk

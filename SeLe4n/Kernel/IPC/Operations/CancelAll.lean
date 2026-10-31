@@ -1527,18 +1527,18 @@ waiting on it for a reply ended as `reply_remove` ends it
 (`finaliseThreadEndWaiters`: seL4 keeps those callers blocked until their reply
 objects go, and here reply authority is tied to the server, so the server's
 delete removes each caller's reply then); suspended (`.Inactive` and off the
-scheduler, a core it ran on made to choose another thread); released by every core (`fpuThreadDelete`, and the
-residency record); unbound from its scheduling context (`schedContext_unbindTCB`,
-whose own dequeue the suspend has made).  seL4 runs the context unbind before
-the suspend, and the cut runs it after, so the unbind finds the thread on no
-core, which is all the order changes: the whole finalisation is one kernel
-step.  Last, the yield link (WS-ZA ZA6.6, `threadFinaliseYield`): the yield
-recorded by the context the thread held on entry is completed
-(`schedContext_completeYieldTo` of that context's yielder) and the thread's own
-link cancelled (its `suspend`'s `schedContext_cancelYieldTo`); the held
-context is read before the first write (`threadHeldContextCode`), as seL4 reads
-`tcb->tcbSchedContext` before `unbindFromSC`.  They write only the yield-link
-codes, the yielder's two return registers and the context's consumed time.
+scheduler, a core it ran on made to choose another thread), the suspend ending
+as seL4-MCS's `suspend` ends, with the thread's own yield link cancelled
+(`schedContext_cancelYieldTo`, `cancelYieldTo`); released by every core (`fpuThreadDelete`, and the
+residency record); unbound from its scheduling context (seL4-MCS's
+`unbindFromSC`: `schedContext_unbindTCB`, whose own dequeue the suspend has
+made, then `if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`,
+`completeHeldYield`).  seL4 runs the context unbind before the suspend, and the
+cut runs it after, so the unbind finds the thread on no core, which is all the
+order changes: the whole finalisation is one kernel step.  The context the
+thread held is read before the first write (`threadHeldContextCode`), as seL4
+reads `tcb->tcbSchedContext` before `unbindFromSC`, so a context it borrowed and
+handed back is the one whose yield completes, as in seL4.
 What it leaves is read by the retire
 off the thread's own links (`threadRetirable`).  All of it runs only when the
 pre-state admits it (`threadFinaliseAdmitted`), checks before writes. -/
@@ -1546,14 +1546,15 @@ def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if threadFinaliseAdmitted st x then
     let tid : SeLe4n.ThreadId := ⟨x.val⟩
     let held := threadHeldContextCode st tid
-    threadFinaliseYield
+    completeHeldYield
       (finaliseThreadUnbindSchedContext
         (finaliseThreadReleaseCores
-          (finaliseThreadSuspend
-            (finaliseThreadEndWaiters
-              (finaliseThreadReturnLoan
-                (finaliseThreadCancel
-                  (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) tid held
+          (cancelYieldTo
+            (finaliseThreadSuspend
+              (finaliseThreadEndWaiters
+                (finaliseThreadReturnLoan
+                  (finaliseThreadCancel
+                    (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) tid) held
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:

@@ -386,15 +386,80 @@ theorem cancelYieldTo_yieldToCode_self (st : SystemState) (tid : SeLe4n.ThreadId
       cases h; rfl
   · rename_i hT; rw [hT] at h; cases h
 
-/-- After a thread finalisation's yield steps, the thread has yielded to no
-context. -/
-theorem threadFinaliseYield_yieldToCode_self (st : SystemState) (tid : SeLe4n.ThreadId)
-    (held : Nat) (hInv : st.objects.invExt) {t' : TCB}
-    (h : (threadFinaliseYield st tid held).getTcb? tid = some t') : t'.yieldToCode = 0 := by
-  unfold threadFinaliseYield at h
+/-- **A cleared yield-to code stays cleared** across a thread write that keeps
+or clears it. -/
+theorem updateTcb_yieldToCode_zero (st : SystemState) (u : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hf : ∀ x, x.yieldToCode = 0 → (f x).yieldToCode = 0) (hInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) (h0 : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) {t' : TCB}
+    (h : (st.updateTcb u f).getTcb? tid = some t') : t'.yieldToCode = 0 := by
+  by_cases e : u = tid
+  · subst e
+    rw [updateTcb_getTcb?_self _ _ _ hInv] at h
+    cases hT : st.getTcb? u with
+    | none => rw [hT] at h; cases h
+    | some t => rw [hT] at h; cases h; exact hf t (h0 t hT)
+  · rw [updateTcb_getTcb?_ne _ _ _ hInv _
+      (fun h' => e (SeLe4n.ThreadId.toObjId_injective _ _ h'))] at h
+    exact h0 _ h
+
+theorem setConsumed_yieldToCode_zero (st : SystemState) (s : SeLe4n.SchedContextId)
+    (y : SeLe4n.ThreadId) (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (h0 : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) :
+    ∀ t, (setConsumed st s y).getTcb? tid = some t → t.yieldToCode = 0 := by
+  intro t ht
+  unfold setConsumed at ht
+  split at ht
+  · rename_i sc _
+    refine updateTcb_yieldToCode_zero (st.updateSchedContext s SchedContext.updateConsumed) y
+      (TCB.withConsumed · sc.consumedReading.toUInt64) (fun x hx => hx)
+      (updateSchedContext_preserves_objects_invExt _ _ _ hInv) tid ?_ ht
+    intro t2 h2
+    rw [updateSchedContext_getTcb? _ _ _ hInv] at h2
+    exact h0 _ h2
+  · exact h0 _ ht
+
+theorem cancelYieldFrom_yieldToCode_zero (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (h0 : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) :
+    ∀ t, (cancelYieldFrom st s).getTcb? tid = some t → t.yieldToCode = 0 := by
+  intro t ht
+  unfold cancelYieldFrom at ht
+  split at ht
+  · split at ht
+    · exact h0 _ ht
+    · rename_i k _
+      refine updateTcb_yieldToCode_zero (st.updateSchedContext s SchedContext.yieldCleared) ⟨k⟩
+        TCB.yieldCleared (fun _ _ => rfl)
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv) tid ?_ ht
+      intro t2 h2
+      rw [updateSchedContext_getTcb? _ _ _ hInv] at h2
+      exact h0 _ h2
+  · exact h0 _ ht
+
+/-- **The completion of a context's recorded yield leaves a cleared yield-to
+code cleared**: a thread that has yielded to no context still has not. -/
+theorem completeYieldFrom_yieldToCode_zero (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (h0 : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) {t' : TCB}
+    (h : (completeYieldFrom st s).getTcb? tid = some t') : t'.yieldToCode = 0 := by
+  unfold completeYieldFrom at h
   split at h
-  · exact cancelYieldTo_yieldToCode_self _ _ hInv h
-  · exact cancelYieldTo_yieldToCode_self _ _ (completeYieldFrom_preserves_objects_invExt _ _ hInv) h
+  · split at h
+    · exact h0 _ h
+    · rename_i k _
+      exact cancelYieldFrom_yieldToCode_zero _ s (setConsumed_preserves_objects_invExt st s ⟨k⟩ hInv)
+        tid (setConsumed_yieldToCode_zero st s ⟨k⟩ hInv tid h0) _ h
+  · exact h0 _ h
+
+/-- ...and so does a held context's completion. -/
+theorem completeHeldYield_yieldToCode_zero (st : SystemState) (held : Nat)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (h0 : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) {t' : TCB}
+    (h : (completeHeldYield st held).getTcb? tid = some t') : t'.yieldToCode = 0 := by
+  unfold completeHeldYield at h
+  split at h
+  · exact h0 _ h
+  · exact completeYieldFrom_yieldToCode_zero _ _ hInv tid h0 h
 
 /-- After the context's end of the cancel, the context records no yielder. -/
 theorem cancelYieldFrom_yieldFromCode_self (st : SystemState) (s : SeLe4n.SchedContextId)
@@ -423,13 +488,12 @@ theorem completeYieldFrom_yieldFromCode_self (st : SystemState) (s : SeLe4n.Sche
     · exact cancelYieldFrom_yieldFromCode_self _ s (setConsumed_preserves_objects_invExt _ _ _ hInv) h
   · rename_i hS; rw [hS] at h; cases h
 
-theorem threadFinaliseYield_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
-    (held : Nat) (hInv : st.objects.invExt) : (threadFinaliseYield st tid held).objects.invExt := by
-  unfold threadFinaliseYield
+theorem completeHeldYield_preserves_objects_invExt (st : SystemState) (held : Nat)
+    (hInv : st.objects.invExt) : (completeHeldYield st held).objects.invExt := by
+  unfold completeHeldYield
   split
-  · exact cancelYieldTo_preserves_objects_invExt _ _ hInv
-  · exact cancelYieldTo_preserves_objects_invExt _ _
-      (completeYieldFrom_preserves_objects_invExt _ _ hInv)
+  · exact hInv
+  · exact completeYieldFrom_preserves_objects_invExt _ _ hInv
 
 /-- `setConsumed` writes no link. -/
 theorem setConsumed_yieldLinksKept (st : SystemState) (s : SeLe4n.SchedContextId)
@@ -544,15 +608,13 @@ theorem completeYieldFrom_preserves_yieldLinksAgree (st : SystemState) (s : SeLe
         (yieldLinksAgree_of_kept (setConsumed_yieldLinksKept _ _ _ hInv) h)
   · exact h
 
-theorem threadFinaliseYield_preserves_yieldLinksAgree (st : SystemState) (tid : SeLe4n.ThreadId)
-    (held : Nat) (hInv : st.objects.invExt) (h : st.yieldLinksAgree) :
-    (threadFinaliseYield st tid held).yieldLinksAgree := by
-  unfold threadFinaliseYield
+theorem completeHeldYield_preserves_yieldLinksAgree (st : SystemState) (held : Nat)
+    (hInv : st.objects.invExt) (h : st.yieldLinksAgree) :
+    (completeHeldYield st held).yieldLinksAgree := by
+  unfold completeHeldYield
   split
-  · exact cancelYieldTo_preserves_yieldLinksAgree _ _ hInv h
-  · exact cancelYieldTo_preserves_yieldLinksAgree _ _
-      (completeYieldFrom_preserves_objects_invExt _ _ hInv)
-      (completeYieldFrom_preserves_yieldLinksAgree _ _ hInv h)
+  · exact h
+  · exact completeYieldFrom_preserves_yieldLinksAgree _ _ hInv h
 
 /-- **On agreeing links the completion a context records is seL4-MCS's
 `schedContext_completeYieldTo` of its yielder**: the yielder names the context

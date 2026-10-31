@@ -319,25 +319,34 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
       split at h
       · exact absurd h (by simp)
       · obtain rfl := Except.ok.inj h
-        -- The yield steps write the yield writes alone (`objectsAgreeOffYield`).
-        refine replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
-          (SystemState.threadFinaliseYield_objectsAgreeOffYield _ _ _
-            (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2)
-          (SystemState.threadFinaliseYield_scheduler _ _ _) ?_
-        -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
-        have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
-          st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm
-        have hA := (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).1
+        -- The held context's completion and the thread's cancel write the yield
+        -- writes alone (`objectsAgreeOffYield`); the sweep between them keeps the
+        -- invariant on any state (§1), and the slot detach writes link words alone.
+        have hInvA := cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm
+        have hInvH := SystemState.completeHeldYield_preserves_objects_invExt stArm
+          tcb.scBindingScCode hInvA
+        have hInvC := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hInvH
+        have hS := replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
+          (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC)
+          (SystemState.cancelYieldTo_scheduler _ _)
+          (cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp _ tcb.tid hInvH
+            (replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
+              (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
+              (SystemState.completeHeldYield_scheduler _ _)
+              (cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
+                st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm)))
+        have hA := (detachTcbSlots_agree (SystemState.cancelYieldTo_preserves_objects_invExt _
+          tcb.tid hInvC) target).1
         exact fun c => (replenishQueueAffinityConsistentOnCore_congr
           (by rw [detachTcbSlots_scheduler_eq]) (fun scId => hA.getSchedContext? scId)
           (fun tid => by
             have e := TCB.map_proj_of_map_withoutLinks_eq (·.cpuAffinity) (hA.getTcb? tid)
             unfold determineTargetCore
             revert e
-            cases (detachTcbSlots (cleanupTcbReferences stArm tcb.tid) target).getTcb? tid <;>
-              cases (cleanupTcbReferences stArm tcb.tid).getTcb? tid <;>
+            cases (detachTcbSlots (cancelYieldTo (cleanupTcbReferences
+                (completeHeldYield stArm tcb.scBindingScCode) tcb.tid) tcb.tid) target).getTcb? tid <;>
+              cases (cancelYieldTo (cleanupTcbReferences
+                (completeHeldYield stArm tcb.scBindingScCode) tcb.tid) tcb.tid).getTcb? tid <;>
               simp_all)).mpr (hS c)
   | endpoint ep =>
     -- An endpoint is not swept: the state is the one the arm found.
@@ -618,17 +627,20 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
       split at h
       · exact absurd h (by simp)
       · obtain rfl := Except.ok.inj h
-        -- The yield steps write the yield writes alone (`objectsAgreeOffYield`).
-        refine schedContextBindingConsistent_of_objectsAgreeOffYield
-          (SystemState.threadFinaliseYield_objectsAgreeOffYield _ _ _
-            (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2) ?_
+        have hInvA := cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm
+        have hInvH := SystemState.completeHeldYield_preserves_objects_invExt stArm
+          tcb.scBindingScCode hInvA
+        have hInvC := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hInvH
+        have hS := schedContextBindingConsistent_of_objectsAgreeOffYield
+          (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC)
+          (cleanupTcbReferences_preserves_schedContextBindingConsistent _ tcb.tid hInvH
+            (schedContextBindingConsistent_of_objectsAgreeOffYield
+              (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
+              (cancelDonationArmOnCore_preserves_schedContextBindingConsistent st stArm tcb.tid tcb
+                (getTcb?_of_lookupTcb st tcb.tid tcb (hTcb tcb rfl)) hInv hCons hArm)))
         -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
-        have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
-          st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm
-        have hA := (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-          (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm))
-          target).1
+        have hA := (detachTcbSlots_agree (SystemState.cancelYieldTo_preserves_objects_invExt _
+          tcb.tid hInvC) target).1
         exact schedContextBindingConsistent_transfer
           (fun tid => TCB.map_proj_of_map_withoutLinks_eq _ (hA.getTcb? tid))
           (fun scId => by rw [hA.getSchedContext? scId]) hS
@@ -827,9 +839,11 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
       split at h
       · exact absurd h (by simp)
       · obtain rfl := Except.ok.inj h
-        exact SystemState.threadFinaliseYield_preserves_objects_invExt _ _ _
-          (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2
+        exact (detachTcbSlots_agree (SystemState.cancelYieldTo_preserves_objects_invExt _ tcb.tid
+          (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+            (SystemState.completeHeldYield_preserves_objects_invExt _ _
+              (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm))))
+          target).2
   | endpoint ep =>
     subst hC; simp only at h; injection h with h; subst h
     exact hInv
@@ -919,20 +933,26 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
       · obtain rfl := Except.ok.inj h
         have hArmInv : stArm.objects.invExt :=
           cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm
-        -- The yield steps write the yield writes alone (`objectsAgreeOffYield`).
-        refine retypeTargetUnpaired_of_objectsAgreeOffYield
-          (SystemState.threadFinaliseYield_objectsAgreeOffYield _ _ _
-            (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
-              hArmInv) target).2) ?_
-        -- The slot detach writes link words alone, so the sweep's reading stands.
+        -- The held context's completion writes the yield writes alone, so its
+        -- state reads every binding the arm left (`objectsAgreeOffYield`).
+        have hHInv := SystemState.completeHeldYield_preserves_objects_invExt stArm
+          tcb.scBindingScCode hArmInv
+        have hHA := SystemState.completeHeldYield_objectsAgreeOffYield stArm
+          tcb.scBindingScCode hArmInv
+        have hCInv := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hHInv
+        -- The slot detach writes link words alone and the cancel the yield
+        -- writes alone, so the sweep's reading stands.
         refine retypeTargetUnpaired_of_agree (detachTcbSlots_agree
-          (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hArmInv) target).1 ?_
-        have hFrame := cleanupTcbReferences_binding_frame stArm tcb.tid hArmInv tcb.tid
+          (SystemState.cancelYieldTo_preserves_objects_invExt _ tcb.tid hCInv) target).1 ?_
+        refine retypeTargetUnpaired_of_objectsAgreeOffYield
+          (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hCInv) ?_
+        have hFrame := (cleanupTcbReferences_binding_frame _ tcb.tid hHInv tcb.tid).trans
+          (hHA.getTcb?_map (·.schedContextBinding) (fun _ => rfl) tcb.tid)
         have hArmSome := cancelDonationArmOnCore_target_isSome st stArm tcb.tid tcb
           (hTcb tcb rfl) hInv hArm
         refine ⟨fun t hT => ?_, fun sc hS => ?_⟩
         · -- The sweep frames the binding, so the reading is the arm's.
-          have hPost : (cleanupTcbReferences stArm tcb.tid).getTcb? tcb.tid = some t :=
+          have hPost : (cleanupTcbReferences (completeHeldYield stArm tcb.scBindingScCode) tcb.tid).getTcb? tcb.tid = some t :=
             (SystemState.getTcb?_eq_some_iff _ tcb.tid t).mpr (by rw [hId]; exact hT)
           rw [hPost] at hFrame
           cases hArmRead : stArm.getTcb? tcb.tid with
@@ -946,7 +966,7 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
               (hTcb tcb rfl) hInv hArm tArm hArmRead
         · -- The key still holds a TCB, so it holds no scheduling context.
           exfalso
-          have hNone : (cleanupTcbReferences stArm tcb.tid).getTcb? tcb.tid = none := by
+          have hNone : (cleanupTcbReferences (completeHeldYield stArm tcb.scBindingScCode) tcb.tid).getTcb? tcb.tid = none := by
             unfold SystemState.getTcb?; rw [hId, hS]
           rw [hNone] at hFrame
           cases hArmRead : stArm.getTcb? tcb.tid with

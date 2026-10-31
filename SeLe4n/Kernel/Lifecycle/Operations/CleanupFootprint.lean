@@ -269,8 +269,8 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
         split at h
         · exact absurd h (by simp)
         · obtain rfl := Except.ok.inj h
-          rw [SystemState.threadFinaliseYield_scheduler, detachTcbSlots_scheduler_eq,
-            cleanupTcbReferences_replenishQueueOnCore]
+          rw [detachTcbSlots_scheduler_eq, SystemState.cancelYieldTo_scheduler,
+            cleanupTcbReferences_replenishQueueOnCore, SystemState.completeHeldYield_scheduler]
           exact cancelDonationArmOnCore_replenishQueueOnCore_ne st stArm tcb.tid tcb c hne hArm
   | schedContext sc =>
       subst hC

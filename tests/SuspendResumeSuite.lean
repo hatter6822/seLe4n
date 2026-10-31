@@ -914,6 +914,51 @@ private def sr039_threadFinaliseCancelsYield : IO Unit := do
       (sc.yieldFromCode == 0 && sc.consumed == 7)
   | _, _ => throw <| IO.userError "SR-039 objects not found after the finalise"
 
+/-- SR-040 (WS-ZA ZA6.6, the frozen suspend mirrors the live one): a thread
+bound to context 50 and yielded to context 60, suspended live and frozen from
+the same objects.  Both release the bound context (unbound, inactive, no
+origin), clear the thread's binding codes and cancel both ends of the yield
+link, and they agree field for field. -/
+private def sr040_liveFrozenSuspendAgree : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scBound : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩), isActive := true }
+  let scYield : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 60, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    yieldFromCode := 2 }
+  let tcb := { mkTcb 1 .Ready with
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound (SeLe4n.SchedContextId.ofNat 50)),
+    scBindingOwnerCode := 0, yieldToCode := 61 }
+  let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext scBound), (⟨60⟩, .schedContext scYield)]
+  let fst := mkFrozenState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext scBound),
+    (⟨60⟩, .schedContext scYield)]
+  match bootSuspendThread st ⟨tid, by decide⟩, frozenSuspendThread tid fst with
+  | .ok st', .ok ((), fst') =>
+    match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]?,
+        st'.objects[(⟨60⟩ : ObjId)]?, fst'.objects.get? (⟨1⟩ : ObjId),
+        fst'.objects.get? (⟨50⟩ : ObjId), fst'.objects.get? (⟨60⟩ : ObjId) with
+    | some (.tcb t), some (.schedContext b), some (.schedContext y),
+        some (.tcb ft), some (.schedContext fb), some (.schedContext fy) =>
+      expect "SR-040 the live suspend releases the bound context"
+        (b.boundThreadCode == 0 && !b.isActive && b.donationOrigin.isNone &&
+          t.scBindingScCode == 0 && t.scBindingOwnerCode == 0)
+      expect "SR-040 the frozen suspend releases it the same way"
+        (fb.boundThreadCode == b.boundThreadCode && fb.isActive == b.isActive &&
+          fb.donationOrigin == b.donationOrigin && ft.scBindingScCode == t.scBindingScCode &&
+          ft.scBindingOwnerCode == t.scBindingOwnerCode)
+      expect "SR-040 both cancel the yield link at both ends"
+        (t.yieldToCode == 0 && y.yieldFromCode == 0 &&
+          ft.yieldToCode == t.yieldToCode && fy.yieldFromCode == y.yieldFromCode)
+      expect "SR-040 both leave the thread Inactive and ready"
+        (t.threadState == .Inactive && ft.threadState == t.threadState &&
+          ft.ipcState == t.ipcState)
+    | _, _, _, _, _, _ => throw <| IO.userError "SR-040 objects not found after the suspends"
+  | .error e, _ => throw <| IO.userError s!"SR-040 live suspend should succeed, got {repr e}"
+  | _, .error e => throw <| IO.userError s!"SR-040 frozen suspend should succeed, got {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -976,4 +1021,5 @@ def main : IO Unit := do
   sr037_frozenSuspendCancelsYieldTo
   sr038_contextFinaliseCompletesYield
   sr039_threadFinaliseCancelsYield
-  IO.println "=== All D1 suspend/resume tests passed (40 tests) ==="
+  sr040_liveFrozenSuspendAgree
+  IO.println "=== All D1 suspend/resume tests passed (41 tests) ==="

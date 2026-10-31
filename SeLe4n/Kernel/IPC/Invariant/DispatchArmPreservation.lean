@@ -3107,7 +3107,7 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
     ∀ c : CoreId, st.machine.residentOnCore c ≠ some t.tid
   /-- **WS-ZA ZA6.6**: and the thread has yielded to no context — its suspend
       cancelled the link (seL4-MCS's `suspend` → `schedContext_cancelYieldTo`),
-      so the destroy path's own cancel (`threadFinaliseYield`) writes nothing. -/
+      so the pre-retype cleanup's own cancel (`cancelYieldTo`) writes nothing. -/
   tcbYieldUnlinked : ∀ t : TCB, st.objects[target]? = some (.tcb t) → t.yieldToCode = 0
   blockedRefsAvoid : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -4715,36 +4715,31 @@ theorem lifecyclePreRetypeCleanup_detached_frame
         | donated scId owner => exact absurd hB' (hDet.tcbNotDonated tcb hObj scId owner)
       simp only [hCur, Bool.false_eq_true, if_false,
         cancelDonationArmOnCore_of_unbound st tcb.tid tcb hB] at hStep
-      rw [cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
+      -- WS-ZA ZA6.6: the yield steps write nothing — the target holds no
+      -- context (`hB`), so the unbind completes nothing, and has yielded to
+      -- none (`tcbYieldUnlinked`), so the suspend's cancel clears nothing.
+      have h0 : tcb.scBindingScCode = 0 := by
+        rcases hc : tcb.scBindingScCode with _ | n
+        · rfl
+        · exfalso
+          simp only [TCB.schedContextBinding, hc, SeLe4n.Kernel.SchedContextBinding.ofCodes] at hB
+          split at hB <;> cases hB
+      have hC0 : completeHeldYield st tcb.scBindingScCode = st := by rw [h0]; rfl
+      rw [hC0, cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
         st rfl rfl] at hStep
+      have hY : cancelYieldTo st tcb.tid = st := by
+        unfold cancelYieldTo
+        split
+        · rename_i t hT
+          have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+          rw [hDet.tcbSelfId tcb hObj, hObj] at hT'
+          cases hT'
+          rw [hDet.tcbYieldUnlinked tcb hObj]
+        · rfl
+      rw [hY] at hStep
       split at hStep
       · contradiction
       · cases hStep
-        -- WS-ZA ZA6.6: the yield steps write nothing — the target holds no
-        -- context (`hB`) and has yielded to none (`tcbYieldUnlinked`).
-        have h0 : tcb.scBindingScCode = 0 := by
-          rcases hc : tcb.scBindingScCode with _ | n
-          · rfl
-          · exfalso
-            simp only [TCB.schedContextBinding, hc, SeLe4n.Kernel.SchedContextBinding.ofCodes] at hB
-            split at hB <;> cases hB
-        have hY : threadFinaliseYield (detachTcbSlots st target) tcb.tid tcb.scBindingScCode =
-            detachTcbSlots st target := by
-          rw [h0]
-          show cancelYieldTo _ _ = _
-          unfold cancelYieldTo
-          split
-          · rename_i t hT
-            have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-            obtain ⟨t0, hT0, e⟩ := (detachTcbSlots_agree hObjInv target).1.tcb_back hT'
-            have hY0 : t.yieldToCode = t0.yieldToCode := Option.some.inj
-              (TCB.map_proj_of_map_withoutLinks_eq TCB.yieldToCode
-                (o := some t0) (o' := some t) (by simp [e]))
-            rw [hDet.tcbSelfId tcb hObj, hObj] at hT0
-            cases hT0
-            rw [hY0, hDet.tcbYieldUnlinked tcb hObj]
-          · rfl
-        rw [hY]
         obtain ⟨cdt, hReach⟩ := detachTcbSlots_shape st target
         exact ⟨{ st with cdt := cdt }, rfl, rfl, rfl, hReach⟩
   | endpoint ep =>

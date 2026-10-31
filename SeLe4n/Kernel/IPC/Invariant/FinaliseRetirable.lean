@@ -264,8 +264,8 @@ abbrev finaliseThreadAfterCancel (st : SystemState) (tid : SeLe4n.ThreadId) : Sy
 /-- **The state a thread's finalisation unbinds its context on**: its waiters
 ended, then suspended and released by every core. -/
 abbrev finaliseThreadAfterRelease (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  finaliseThreadReleaseCores (finaliseThreadSuspend (finaliseThreadEndWaiters
-    (finaliseThreadReturnLoan (finaliseThreadAfterCancel st tid) tid) tid) tid) tid
+  finaliseThreadReleaseCores (cancelYieldTo (finaliseThreadSuspend (finaliseThreadEndWaiters
+    (finaliseThreadReturnLoan (finaliseThreadAfterCancel st tid) tid) tid) tid) tid) tid
 
 /-- **The thread finalisation's admission is carried across its own steps**
 (WS-ZA ZA5.4 part 34): on a state carrying the finalisation's invariant on which
@@ -392,12 +392,17 @@ theorem finaliseThread_admissionCarried (x : SeLe4n.ObjId) (st : SystemState)
       (finaliseCarried.suspendStep st ⟨x.val⟩) s2 ⟨x.val⟩ C2)
   generalize finaliseThreadEndWaiters (finaliseThreadReturnLoan s2 ⟨x.val⟩) ⟨x.val⟩ = s4
     at C4 hOwn4 hBB4
-  -- The suspend and the release write no binding.
+  -- The suspend, its yield cancel and the release write no binding.
   have F5 := (SchedLinkFrame.finaliseThreadSuspend s4 ⟨x.val⟩ C4.1.2.1).binding
-  have F6 : bindingLinksAgree (finaliseThreadSuspend s4 ⟨x.val⟩)
-      (finaliseThreadReleaseCores (finaliseThreadSuspend s4 ⟨x.val⟩) ⟨x.val⟩) :=
+  have C5 := finaliseThreadSuspend_closed _ (finaliseCarried.suspendStep st ⟨x.val⟩) s4 ⟨x.val⟩ C4
+  have F5y := (SchedLinkFrame.of_objectsAgreeOffYield
+    (SystemState.cancelYieldTo_objectsAgreeOffYield _ ⟨x.val⟩ C5.1.2.1)
+    (SystemState.cancelYieldTo_scheduler _ ⟨x.val⟩)).binding
+  have F6 : bindingLinksAgree (cancelYieldTo (finaliseThreadSuspend s4 ⟨x.val⟩) ⟨x.val⟩)
+      (finaliseThreadReleaseCores (cancelYieldTo (finaliseThreadSuspend s4 ⟨x.val⟩) ⟨x.val⟩)
+        ⟨x.val⟩) :=
     bindingLinksAgree.of_objects_eq (finaliseThreadReleaseCores_objects _ ⟨x.val⟩)
-  have F := bindingLinksAgree.trans F5 F6
+  have F := bindingLinksAgree.trans (bindingLinksAgree.trans F5 F5y) F6
   exact ⟨F.ownerZero hOwn4, bindingBack.transport F hBB4⟩
 
 /-- **A finalised thread's own record is quiesced** (WS-ZA ZA5.4 part 26), on a
@@ -412,10 +417,13 @@ off every endpoint queue (`finaliseThreadCancel_quiets`); the loan return and
 the walk end every waiter and keep the thread
 (`finaliseThreadEndWaiters_returnLoan_endsAll`); the suspend marks
 it `.Inactive` on no core (`finaliseThreadSuspend_quiets`, single placement from
-`currentDequeuedUnique`); the release lets every core's hold go; the context
-unbind clears the binding (`finaliseThreadUnbindSchedContext_self`); the yield
-steps write the yield writes alone and leave the thread yielded to no context
-(`threadFinaliseYield_yieldToCode_self`); and the invariant, carried along every step (`finaliseCarried`), reads every other link
+`currentDequeuedUnique`), and its yield cancel leaves the thread yielded to no
+context (`cancelYieldTo_yieldToCode_self`), writing the yield writes alone; the
+release lets every core's hold go; the context unbind clears the binding
+(`finaliseThreadUnbindSchedContext_self`) and its completion of the held
+context's yield keeps the thread yielded to none
+(`completeHeldYield_yieldToCode_zero`); and the invariant, carried along every
+step (`finaliseCarried`), reads every other link
 off a ready thread nothing waits on (`readyThread_unlinked`). -/
 theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     (hI : finaliseStepInvariant st) (hRQ : st.runQueueRefined) (hCD : st.currentDequeuedUnique)
@@ -477,24 +485,44 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
   have hNoW5 := noWaiter_of_servers (finaliseThreadSuspend_servers s4 ⟨x.val⟩ C4.1.2.1) hNoW4
   have C5 := finaliseThreadSuspend_closed _ (finaliseCarried.suspendStep st ⟨x.val⟩) s4 ⟨x.val⟩ C4
   generalize finaliseThreadSuspend s4 ⟨x.val⟩ = s5 at hX5 hCur5 hNoW5 C5 hBind
+  -- The suspend's yield cancel (seL4-MCS's `suspend` → `schedContext_cancelYieldTo`):
+  -- it writes the yield writes alone, and leaves the thread yielded to no context.
+  have A5 := SystemState.cancelYieldTo_objectsAgreeOffYield s5 ⟨x.val⟩ C5.1.2.1
+  have e5 := A5.getTcb?_map TCB.withoutYieldWrites (fun _ => rfl) ⟨x.val⟩
+  rw [hX5] at e5
+  cases hX5y : (cancelYieldTo s5 ⟨x.val⟩).getTcb? ⟨x.val⟩ with
+  | none => rw [hX5y] at e5; cases e5
+  | some t5y =>
+  rw [hX5y] at e5
+  simp only [Option.map_some, Option.some.injEq] at e5
+  have y5 := SystemState.cancelYieldTo_yieldToCode_self _ _ C5.1.2.1 hX5y
+  have kc5y : t5y.cancelKey = t5.cancelKey := by have e := congrArg TCB.cancelKey e5; exact e
+  have hz5y : t5y.runCoreCode = 0 := (congrArg TCB.runCoreCode e5).trans hz5
+  have hCur5y : ∀ c, (cancelYieldTo s5 ⟨x.val⟩).scheduler.currentOnCore c ≠ some ⟨x.val⟩ := by
+    rw [SystemState.cancelYieldTo_scheduler]; exact hCur5
+  have hNoW5y := noWaiter_of_servers (s := s5)
+    (fun y => A5.getTcb?_map TCB.blockingServer? (fun _ => rfl) y) hNoW5
+  have C5y := (finaliseCarried.yieldStep st ⟨x.val⟩).cancel s5 ⟨x.val⟩ C5
+  generalize cancelYieldTo s5 ⟨x.val⟩ = s5' at hX5y hCur5y hNoW5y C5y hBind
   -- The release.
-  have hX6 : (finaliseThreadReleaseCores s5 ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t5 := by
-    rw [finaliseThreadReleaseCores_getTcb?]; exact hX5
-  have hHeld6 : threadHeldOnSomeCore (finaliseThreadReleaseCores s5 ⟨x.val⟩) ⟨x.val⟩ = false := by
-    obtain ⟨hF, hRs⟩ := finaliseThreadReleaseCores_unheld s5 ⟨x.val⟩
+  have hX6 : (finaliseThreadReleaseCores s5' ⟨x.val⟩).getTcb? ⟨x.val⟩ = some t5y := by
+    rw [finaliseThreadReleaseCores_getTcb?]; exact hX5y
+  have hHeld6 : threadHeldOnSomeCore (finaliseThreadReleaseCores s5' ⟨x.val⟩) ⟨x.val⟩ = false := by
+    obtain ⟨hF, hRs⟩ := finaliseThreadReleaseCores_unheld s5' ⟨x.val⟩
     unfold threadHeldOnSomeCore threadCurrentOnSomeCore
     rw [hF, hRs, finaliseThreadReleaseCores_scheduler]
     simp only [Bool.or_false, List.any_eq_false, beq_iff_eq]
-    exact fun c _ => hCur5 c
-  have hNoW6 := noWaiter_of_servers (s := s5)
-    (tcbProjKept.of_objects (finaliseThreadReleaseCores_objects s5 ⟨x.val⟩)) hNoW5
-  have C6 := finaliseCarried.releaseStep st ⟨x.val⟩ s5 ⟨x.val⟩ C5
-  have hOwn6 := hBind.1 t5 hX6
-  have hBd6 := hBind.2 t5 hX6
-  generalize finaliseThreadReleaseCores s5 ⟨x.val⟩ = s6 at hX6 hHeld6 hNoW6 C6 hBd6
-  -- The context unbind.
+    exact fun c _ => hCur5y c
+  have hNoW6 := noWaiter_of_servers (s := s5')
+    (tcbProjKept.of_objects (finaliseThreadReleaseCores_objects s5' ⟨x.val⟩)) hNoW5y
+  have C6 := finaliseCarried.releaseStep st ⟨x.val⟩ s5' ⟨x.val⟩ C5y
+  have hOwn6 := hBind.1 t5y hX6
+  have hBd6 := hBind.2 t5y hX6
+  generalize finaliseThreadReleaseCores s5' ⟨x.val⟩ = s6 at hX6 hHeld6 hNoW6 C6 hBd6
+  -- The context unbind (seL4-MCS's `unbindFromSC`: `unbindTCB`, then the held
+  -- context's yield completed).
   obtain ⟨hX7, hOth7, hCur7, hM7⟩ :=
-    finaliseThreadUnbindSchedContext_self C6.1.2.1 hX6 hz5 hHeld6 hOwn6 hBd6
+    finaliseThreadUnbindSchedContext_self C6.1.2.1 hX6 hz5y hHeld6 hOwn6 hBd6
   have C7 := finaliseThreadUnbindSchedContext_closed _
     (finaliseCarried.scReleaseStep st ⟨x.val⟩).scUnbind s6 ⟨x.val⟩ C6
   have hNoW7 : ∀ v, ¬ ReplyViews.waiterOf
@@ -510,29 +538,30 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     rw [← hHeld6]
     unfold threadHeldOnSomeCore threadCurrentOnSomeCore
     rw [hM7]; simp only [hCur7]
-  -- The yield steps: they write the yield writes alone, and leave the thread
-  -- yielded to no context.
+  -- The held context's yield completion: it writes the yield writes alone, and
+  -- keeps the thread yielded to no context.
   have hInv7 := C7.1.2.1
-  have e8 := (SystemState.threadFinaliseYield_objectsAgreeOffYield _ ⟨x.val⟩ held hInv7).getTcb?_map
+  have e8 := (SystemState.completeHeldYield_objectsAgreeOffYield _ held hInv7).getTcb?_map
     TCB.withoutYieldWrites (fun _ => rfl) ⟨x.val⟩
   rw [hX7] at e8
-  cases hX8 : (threadFinaliseYield (finaliseThreadUnbindSchedContext s6 ⟨x.val⟩) ⟨x.val⟩
+  cases hX8 : (completeHeldYield (finaliseThreadUnbindSchedContext s6 ⟨x.val⟩)
       held).getTcb? ⟨x.val⟩ with
   | none => rw [hX8] at e8; cases e8
   | some t8 =>
   rw [hX8] at e8
   simp only [Option.map_some, Option.some.injEq] at e8
-  have y8 := SystemState.threadFinaliseYield_yieldToCode_self _ _ held hInv7 hX8
-  have hHeld8 : threadHeldOnSomeCore (threadFinaliseYield
-      (finaliseThreadUnbindSchedContext s6 ⟨x.val⟩) ⟨x.val⟩ held) ⟨x.val⟩ = false := by
-    rw [SystemState.threadFinaliseYield_eq_objects]; exact hHeld7
+  have y8 := SystemState.completeHeldYield_yieldToCode_zero _ held hInv7 ⟨x.val⟩
+    (fun t h => by rw [hX7] at h; cases h; exact y5) hX8
+  have hHeld8 : threadHeldOnSomeCore (completeHeldYield
+      (finaliseThreadUnbindSchedContext s6 ⟨x.val⟩) held) ⟨x.val⟩ = false := by
+    rw [SystemState.completeHeldYield_eq_objects]; exact hHeld7
   -- The record's fields.
-  have kq := kc5.trans k4
+  have kq := kc5y.trans (kc5.trans k4)
   simp only [TCB.cancelKey, TCB.quietKey, TCB.bindKey, Prod.mk.injEq] at kq
   obtain ⟨q1, q2, q3, q4, q5, q6, q7⟩ := kq
   obtain ⟨n1, n2, r1, r2, r3, r4, r5, r6⟩ := readyThread_unlinked C7.1 hX7 q2 q1 hNoW7
   refine ⟨t8, (SystemState.getTcb?_eq_some_iff _ _ _).mp hX8, ?_, ?_, hHeld8⟩
-  · have htid : t8.tid = t5.tid := by have e := congrArg TCB.tid e8; exact e
+  · have htid : t8.tid = t5y.tid := by have e := congrArg TCB.tid e8; exact e
     rw [htid]
     rw [q7]; exact hTid
   · rw [threadLinksQuiescent_eq_withoutYieldWrites y8, e8]
