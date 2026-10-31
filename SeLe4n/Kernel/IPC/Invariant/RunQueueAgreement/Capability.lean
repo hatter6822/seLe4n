@@ -812,8 +812,9 @@ release of the cores' holds on it, which writes no object and no queue, a
 context's reply-stack unlink (a reply and a context rewritten), a reply's
 caller cancel (a head reply's with its loan returned and its holder
 descheduled: `cancelIpcBlockingReclaimed_runQueueStage`) with its boost
-reverted, and a stashed reply's unlink (a stash
-field rewritten, off the run links). -/
+reverted, a stashed reply's unlink (a stash
+field rewritten, off the run links), and the yield steps (the yield-link
+codes, a context's consumed count and a yielder's return registers). -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
@@ -834,6 +835,8 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
     (finaliseReplyStep_runQueueEntryStage st)
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans
       (RunQueueStage.updateTcb s tid (f := TCB.stashCleared) (fun _ _ => rfl)).entry)
+    ⟨fun s t h => h.trans (SystemState.cancelYieldTo_runQueueStage s t).entry,
+     fun s c h => h.trans (SystemState.completeYieldFrom_runQueueStage s c).entry⟩
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}

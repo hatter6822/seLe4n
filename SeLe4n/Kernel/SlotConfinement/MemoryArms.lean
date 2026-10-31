@@ -621,8 +621,15 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
         (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
           (detachTcbSlots_scheduler_eq (cleanupTcbReferences stArm tcb.tid) target)
           (detachTcbSlots_machine_eq (cleanupTcbReferences stArm tcb.tid) target))
-      rw [List.nil_append, List.append_nil, hOcc] at hTrans'
-      exact hTrans'
+      -- WS-ZA ZA6.6: the yield steps write objects alone.
+      have hTrans'' := observableSlotsConfinedToCores_trans hTrans'
+        (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+          (SystemState.threadFinaliseYield_scheduler
+            (detachTcbSlots (cleanupTcbReferences stArm tcb.tid) target) tcb.tid tcb.scBindingScCode)
+          (by rw [SystemState.threadFinaliseYield_eq_objects]))
+      simp only [List.nil_append, List.append_nil] at hTrans''
+      rw [hOcc] at hTrans''
+      exact hTrans''
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup, preRetypeCleanupWriteSetOf] at hOk ⊢
     have hDetach : observableSlotsConfinedToCores st (detachCNodeSlots st target cn) [] :=
@@ -659,6 +666,11 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk
-      exact releaseSchedContextBinding_confinedToCores _ _ _
+      -- WS-ZA ZA6.6: then the yield it records completed, objects alone.
+      simpa only [List.append_nil] using observableSlotsConfinedToCores_trans
+        (releaseSchedContextBinding_confinedToCores _ _ _)
+        (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+          (SystemState.completeYieldFrom_scheduler _ _)
+          (by rw [SystemState.completeYieldFrom_eq_objects]))
 
 end SeLe4n.Kernel

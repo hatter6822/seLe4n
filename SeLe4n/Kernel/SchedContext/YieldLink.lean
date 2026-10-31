@@ -160,4 +160,108 @@ def completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId) : SystemSta
     | k + 1 => cancelYieldFrom (setConsumed st s ⟨k⟩) s
   | none => st
 
+/-- **The yield steps of a thread's finalisation** (seL4-MCS's `finaliseCap` on
+a thread): the yield recorded by the context the thread holds completed
+(`if (tcb->tcbSchedContext) schedContext_completeYieldTo(tcb->tcbSchedContext->scYieldFrom)`,
+`completeYieldFrom`), then the thread's own link cancelled (its `suspend`'s
+`schedContext_cancelYieldTo`).  `held` is the code of the context the thread
+holds (`TCB.scBindingScCode`: `0` for none, `n + 1` for the context `n`), read
+by the caller before its first write.  The two steps write only the yield-link
+codes, the yielder's two return registers and the context's consumed time. -/
+def threadFinaliseYield (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) : SystemState :=
+  cancelYieldTo
+    (match held with
+     | 0 => st
+     | k + 1 => completeYieldFrom st ⟨k⟩) tid
+
 end SeLe4n.Kernel
+
+namespace SeLe4n.Model.SystemState
+
+open SeLe4n.Kernel
+
+theorem cancelYieldFrom_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId) :
+    cancelYieldFrom st s = { st with objects := (cancelYieldFrom st s).objects } := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · rfl
+    · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
+  · rfl
+
+theorem cancelYieldFrom_scheduler (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (cancelYieldFrom st s).scheduler = st.scheduler := by
+  rw [cancelYieldFrom_eq_objects]
+
+/-- The cancel writes the object store alone. -/
+theorem cancelYieldTo_eq_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
+    cancelYieldTo st tid = { st with objects := (cancelYieldTo st tid).objects } := by
+  unfold cancelYieldTo
+  split
+  · split
+    · rfl
+    · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
+  · rfl
+
+theorem cancelYieldTo_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cancelYieldTo st tid).scheduler = st.scheduler := by
+  rw [cancelYieldTo_eq_objects]
+
+/-- `setConsumed` writes the object store alone. -/
+theorem setConsumed_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) :
+    setConsumed st s t = { st with objects := (setConsumed st s t).objects } := by
+  unfold setConsumed
+  split
+  · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
+  · rfl
+
+theorem setConsumed_scheduler (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) : (setConsumed st s t).scheduler = st.scheduler := by
+  rw [setConsumed_eq_objects]
+
+theorem completeYieldTo_eq_objects (st : SystemState) (y : SeLe4n.ThreadId) :
+    completeYieldTo st y = { st with objects := (completeYieldTo st y).objects } := by
+  unfold completeYieldTo
+  split
+  · split
+    · rfl
+    · rw [cancelYieldTo_eq_objects, setConsumed_eq_objects]
+  · rfl
+
+/-- The completion of a context's recorded yield writes the object store alone. -/
+theorem completeYieldFrom_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId) :
+    completeYieldFrom st s = { st with objects := (completeYieldFrom st s).objects } := by
+  unfold completeYieldFrom
+  split
+  · split
+    · rfl
+    · rw [cancelYieldFrom_eq_objects, setConsumed_eq_objects]
+  · rfl
+
+/-- A thread finalisation's yield steps write the object store alone. -/
+theorem threadFinaliseYield_eq_objects (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) :
+    threadFinaliseYield st tid held =
+      { st with objects := (threadFinaliseYield st tid held).objects } := by
+  unfold threadFinaliseYield
+  split
+  · exact cancelYieldTo_eq_objects _ _
+  · rw [cancelYieldTo_eq_objects, completeYieldFrom_eq_objects]
+
+theorem completeYieldFrom_scheduler (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (completeYieldFrom st s).scheduler = st.scheduler := by
+  rw [completeYieldFrom_eq_objects]
+
+theorem completeYieldFrom_tlbShootdown (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (completeYieldFrom st s).tlbShootdown = st.tlbShootdown := by
+  rw [completeYieldFrom_eq_objects]
+
+theorem threadFinaliseYield_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) :
+    (threadFinaliseYield st tid held).scheduler = st.scheduler := by
+  rw [threadFinaliseYield_eq_objects]
+
+theorem threadFinaliseYield_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId) (held : Nat) :
+    (threadFinaliseYield st tid held).tlbShootdown = st.tlbShootdown := by
+  rw [threadFinaliseYield_eq_objects]
+
+end SeLe4n.Model.SystemState

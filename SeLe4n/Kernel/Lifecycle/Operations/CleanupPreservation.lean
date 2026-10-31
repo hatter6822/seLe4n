@@ -1880,8 +1880,14 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   | .ok st =>
   -- A thread's two space slots leave the derivation tree as a deleted slot
   -- does (`detachTcbSlots`), as a CNode's slots do below.
+  --
+  -- **WS-ZA ZA6.6: then its yield link**, as `finaliseThread` ends
+  -- (`threadFinaliseYield`): the yield recorded by the context the thread
+  -- held completed, its own link cancelled.  The held context's code is read
+  -- off the record the caller looked up before any write.
   let st := match currentObj with
-    | .tcb tcb => detachTcbSlots (cleanupTcbReferences st tcb.tid) target
+    | .tcb tcb => threadFinaliseYield (detachTcbSlots (cleanupTcbReferences st tcb.tid) target)
+        tcb.tid tcb.scBindingScCode
     | _ => st
   -- An endpoint needs no registry sweep: the retire admits only an endpoint
   -- recording no registration (`SystemState.tableBackLinksClear`), and on a
@@ -1993,8 +1999,16 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- `schedContext_unbindAllTCBs` on a scheduling-context capability;
     -- `releaseSchedContextBinding` is that, per core, composed from
     -- `schedContextUnbind`'s own primitives.
+    --
+    -- **WS-ZA ZA6.6: and the yield it records is completed**, seL4-MCS's
+    -- `finaliseCap` ending `if (sc->scYieldFrom)
+    -- schedContext_completeYieldTo(sc->scYieldFrom)`: the yielder is handed
+    -- the context's consumed time and both ends of the link are cleared
+    -- (`completeYieldFrom`).
     if sc.scReply.isSome then .error .revocationRequired
-    else .ok (releaseSchedContextBinding st (SeLe4n.SchedContextId.ofObjId target) sc)
+    else .ok (completeYieldFrom
+      (releaseSchedContextBinding st (SeLe4n.SchedContextId.ofObjId target) sc)
+      (SeLe4n.SchedContextId.ofObjId target))
   | .frame _ =>
     -- **WS-BP BP7.1: a frame cannot be retyped in place, and that is final.**
     -- A frame *is* a page of physical memory, and a VSpace mapping of it
@@ -2252,7 +2266,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       injection hOk with hOk; subst hOk
-      rw [detachTcbSlots_scheduler_eq, cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
+      rw [SystemState.threadFinaliseYield_scheduler, detachTcbSlots_scheduler_eq,
+        cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
       -- Take the sweep off first (it handles its own per-core guard), then
       -- collapse the run-queue-preserving prefix.
       have hSub := removeRunnableFromAllCores_toList_subset _ tcb.tid x bootCoreId h
@@ -2288,7 +2303,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk
-      rw [releaseSchedContextBinding_runQueueOnCore] at h
+      rw [SystemState.completeYieldFrom_scheduler, releaseSchedContextBinding_runQueueOnCore] at h
       exact h
   | reply r =>
     -- WS-SM SM6.D (PR #822 review): an in-use reply errors (vacuous on `.ok`);
@@ -2333,8 +2348,8 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
       rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
-      rw [← Except.ok.inj hOk, detachTcbSlots_tlbShootdown_eq,
-        cleanupTcbReferences_tlbShootdown_eq]
+      rw [← Except.ok.inj hOk, SystemState.threadFinaliseYield_tlbShootdown,
+        detachTcbSlots_tlbShootdown_eq, cleanupTcbReferences_tlbShootdown_eq]
       exact hArmShoot
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
@@ -2360,6 +2375,7 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     split at hOk
     · cases hOk
     · injection hOk with hOk; subst hOk
+      rw [SystemState.completeYieldFrom_tlbShootdown]
       exact releaseSchedContextBinding_tlbShootdown _ _ _
   | reply r =>
     simp only [lifecyclePreRetypeCleanup] at hOk

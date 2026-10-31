@@ -965,6 +965,53 @@ theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
       · subst e; rw [hS] at hx; cases hx
       · exact ⟨tx, by rw [← hO k e]; exact hx, rfl, rfl, rfl, rfl, rfl⟩
 
+/-- WS-ZA ZA6.6: a thread's yield link cancelled. -/
+theorem cancelYieldTo (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    ReachFieldFrame st (SeLe4n.Kernel.cancelYieldTo st t) := by
+  unfold SeLe4n.Kernel.cancelYieldTo
+  split
+  · split
+    · exact of_objects_eq rfl
+    · rename_i k _
+      exact (updateSchedContext st ⟨k⟩ _ hInv).trans (updateTcb _ t
+        (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+        (fun _ => ⟨rfl, rfl, rfl, rfl, rfl⟩))
+  · exact of_objects_eq rfl
+
+/-- WS-ZA ZA6.6: a context's consumed time handed to a thread's registers. -/
+theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : ReachFieldFrame st (SeLe4n.Kernel.setConsumed st s t) := by
+  unfold SeLe4n.Kernel.setConsumed
+  split
+  · exact (updateSchedContext st s _ hInv).trans (updateTcb _ t
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+      (by intro; exact ⟨rfl, rfl, rfl, rfl, rfl⟩))
+  · exact of_objects_eq rfl
+
+/-- WS-ZA ZA6.6: a context's yield link cancelled. -/
+theorem cancelYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : ReachFieldFrame st (SeLe4n.Kernel.cancelYieldFrom st s) := by
+  unfold SeLe4n.Kernel.cancelYieldFrom
+  split
+  · split
+    · exact of_objects_eq rfl
+    · exact (updateSchedContext st s _ hInv).trans (updateTcb _ _
+        (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+        (by intro; exact ⟨rfl, rfl, rfl, rfl, rfl⟩))
+  · exact of_objects_eq rfl
+
+/-- WS-ZA ZA6.6: the completion of a context's recorded yield. -/
+theorem completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : ReachFieldFrame st (SeLe4n.Kernel.completeYieldFrom st s) := by
+  unfold SeLe4n.Kernel.completeYieldFrom
+  split
+  · split
+    · exact of_objects_eq rfl
+    · rename_i k _
+      exact (setConsumed st s ⟨k⟩ hInv).trans
+        (cancelYieldFrom _ s (SystemState.setConsumed_preserves_objects_invExt _ _ _ hInv))
+  · exact of_objects_eq rfl
+
 /-- **The reachable parts a frame keeps**: the notification queues, every
 budget, and the reply views. -/
 theorem parts {st st' : SystemState} (h : ReachFieldFrame st st')
@@ -1918,6 +1965,15 @@ theorem unstash {s s1 : SystemState} {tid : SeLe4n.ThreadId} {t : TCB} (x : SeLe
   exact ⟨⟨hI.1, hI.2, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
     h.chain_of_frame (FinaliseFrame.updateTcb s tid _ h.2.1), h.loan_of_frame (FinaliseFrame.updateTcb s tid _ h.2.1)⟩, q.2.1⟩
 
+/-- WS-ZA ZA6.6: a yield step carries it, and frames every budget: the yield
+codes, a context's consumed count and a yielder's two return registers. -/
+theorem yieldStep {s s' : SystemState} (h : finaliseStepInvariant s)
+    (hI : ipcInvariantFull s') (R : ReachFieldFrame s s') (F : FinaliseFrame s s') :
+    finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=
+  have q := R.parts h.2.2.1
+  ⟨⟨hI, F.invExt, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
+    h.chain_of_frame F, h.loan_of_frame F⟩, q.2.1⟩
+
 end finaliseStepInvariant
 
 /-- **The finalisation's timeout-budget checks refuse no reachable thread**: no
@@ -1975,6 +2031,14 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
     (fun _ _ x _ _ h hT hC hS =>
       have r := h.1.unstash x hT hC hS
       ⟨r.1, h.2.trans r.2⟩)
+    ⟨fun s t h =>
+      have r := h.1.yieldStep (cancelYieldTo_preserves_ipcInvariantFull s t h.1.2.1 h.1.1)
+        (ReachFieldFrame.cancelYieldTo s t h.1.2.1) (FinaliseFrame.cancelYieldTo s t h.1.2.1)
+      ⟨r.1, h.2.trans r.2⟩,
+     fun s c h =>
+      have r := h.1.yieldStep (completeYieldFrom_preserves_ipcInvariantFull s c h.1.2.1 h.1.1)
+        (ReachFieldFrame.completeYieldFrom s c h.1.2.1) (FinaliseFrame.completeYieldFrom s c h.1.2.1)
+      ⟨r.1, h.2.trans r.2⟩⟩
     target st ⟨.of_ipcReachable h hW, .refl st⟩
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC', hCh',
     ((finaliseFinalObject_runQueueEntryStage target st).1 h.2.1 h.2.2.2.2.2.1).2, hRW'⟩

@@ -21,17 +21,25 @@ namespace SeLe4n.Model
 
 open SeLe4n.Kernel
 
-/-- An object with its yield link end cleared: a thread's yield-to code and a
-context's yield-from code, every other object as it is. -/
+/-- A thread with what the yield operations write cleared: its yield-to code and
+the two return registers `setConsumed` writes. -/
+@[reducible] def TCB.withoutYieldWrites (t : TCB) : TCB :=
+  { t with yieldToCode := 0, registerContext := { t.registerContext with x1 := 0, x2 := 0 } }
+
+/-- An object with what the yield operations write cleared: a thread's yield-to
+code and the two return registers `setConsumed` writes (`x1`, `x2`), a
+context's yield-from code and its consumed count; every other object as it
+is. -/
 def KernelObject.withoutYield : KernelObject → KernelObject
-  | .tcb t => .tcb { t with yieldToCode := 0 }
-  | .schedContext sc => .schedContext { sc with yieldFromCode := 0 }
+  | .tcb t => .tcb t.withoutYieldWrites
+  | .schedContext sc => .schedContext { sc with yieldFromCode := 0, consumed := 0 }
   | o => o
 
 namespace SystemState
 
-/-- **Two stores agreeing off the yield codes**: every slot holds the same object
-once both yield link ends are cleared. -/
+/-- **Two stores agreeing off the yield writes**: every slot holds the same
+object once what the yield operations write is cleared
+(`KernelObject.withoutYield`). -/
 def objectsAgreeOffYield (st' st : SystemState) : Prop :=
   ∀ x : SeLe4n.ObjId,
     (st'.objects[x]?).map KernelObject.withoutYield = (st.objects[x]?).map KernelObject.withoutYield
@@ -44,9 +52,10 @@ theorem trans {a b c : SystemState} (h₂ : objectsAgreeOffYield c b)
     (h₁ : objectsAgreeOffYield b a) : objectsAgreeOffYield c a :=
   fun x => (h₂ x).trans (h₁ x)
 
-/-- Any reading of a thread's TCB that ignores its yield-to code agrees. -/
+/-- Any reading of a thread's TCB that ignores its yield-to code and its two
+return registers agrees. -/
 theorem getTcb?_map {st st' : SystemState} (h : objectsAgreeOffYield st' st) {α : Type _}
-    (f : TCB → α) (hf : ∀ u : TCB, f { u with yieldToCode := 0 } = f u := by intro; rfl)
+    (f : TCB → α) (hf : ∀ u : TCB, f u.withoutYieldWrites = f u := by intro; rfl)
     (t : SeLe4n.ThreadId) : (st'.getTcb? t).map f = (st.getTcb? t).map f := by
   have e := h t.toObjId
   unfold getTcb?
@@ -63,10 +72,12 @@ theorem getTcb?_map {st st' : SystemState} (h : objectsAgreeOffYield st' st) {α
     rename_i u v
     rw [← hf u, ← hf v, e]
 
-/-- Any reading of a context that ignores its yield-from code agrees. -/
+/-- Any reading of a context that ignores its yield-from code and its consumed
+count agrees. -/
 theorem getSchedContext?_map {st st' : SystemState} (h : objectsAgreeOffYield st' st)
     {α : Type _} (f : SchedContext → α)
-    (hf : ∀ u : SchedContext, f { u with yieldFromCode := 0 } = f u := by intro; rfl)
+    (hf : ∀ u : SchedContext, f { u with yieldFromCode := 0, consumed := 0 } = f u := by
+      intro; rfl)
     (s : SeLe4n.SchedContextId) :
     (st'.getSchedContext? s).map f = (st.getSchedContext? s).map f := by
   have e := h s.toObjId
@@ -154,45 +165,39 @@ theorem cancelYieldFrom_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.Sche
         (updateSchedContext_objectsAgreeOffYield _ _ SchedContext.yieldCleared hInv (fun _ => rfl))
   · exact .refl st
 
-theorem cancelYieldFrom_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId) :
-    cancelYieldFrom st s = { st with objects := (cancelYieldFrom st s).objects } := by
-  unfold cancelYieldFrom
-  split
-  · split
-    · rfl
-    · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
-  · rfl
-
-theorem cancelYieldFrom_scheduler (st : SystemState) (s : SeLe4n.SchedContextId) :
-    (cancelYieldFrom st s).scheduler = st.scheduler := by
-  rw [cancelYieldFrom_eq_objects]
-
-/-- The cancel writes the object store alone. -/
-theorem cancelYieldTo_eq_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
-    cancelYieldTo st tid = { st with objects := (cancelYieldTo st tid).objects } := by
-  unfold cancelYieldTo
-  split
-  · split
-    · rfl
-    · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
-  · rfl
-
-theorem cancelYieldTo_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cancelYieldTo st tid).scheduler = st.scheduler := by
-  rw [cancelYieldTo_eq_objects]
-
-/-- `setConsumed` writes the object store alone. -/
-theorem setConsumed_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) :
-    setConsumed st s t = { st with objects := (setConsumed st s t).objects } := by
+/-- **`setConsumed` writes the consumed count and two return registers alone.** -/
+theorem setConsumed_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    objectsAgreeOffYield (setConsumed st s t) st := by
   unfold setConsumed
   split
-  · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
-  · rfl
+  · exact (updateTcb_objectsAgreeOffYield _ t (TCB.withConsumed · _)
+      (updateSchedContext_preserves_objects_invExt _ s _ hInv) (fun _ => rfl)).trans
+      (updateSchedContext_objectsAgreeOffYield _ s SchedContext.updateConsumed hInv (fun _ => rfl))
+  · exact .refl st
 
-theorem setConsumed_scheduler (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) : (setConsumed st s t).scheduler = st.scheduler := by
-  rw [setConsumed_eq_objects]
+/-- **The completion of a context's recorded yield writes the yield writes alone.** -/
+theorem completeYieldFrom_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : objectsAgreeOffYield (completeYieldFrom st s) st := by
+  unfold completeYieldFrom
+  split
+  · split
+    · exact .refl st
+    · exact (cancelYieldFrom_objectsAgreeOffYield _ s
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)).trans
+        (setConsumed_objectsAgreeOffYield _ _ _ hInv)
+  · exact .refl st
+
+/-- **A thread finalisation's yield steps write the yield writes alone.** -/
+theorem threadFinaliseYield_objectsAgreeOffYield (st : SystemState) (tid : SeLe4n.ThreadId)
+    (held : Nat) (hInv : st.objects.invExt) :
+    objectsAgreeOffYield (threadFinaliseYield st tid held) st := by
+  unfold threadFinaliseYield
+  split
+  · exact cancelYieldTo_objectsAgreeOffYield _ _ hInv
+  · exact (cancelYieldTo_objectsAgreeOffYield _ _
+      (completeYieldFrom_preserves_objects_invExt _ _ hInv)).trans
+      (completeYieldFrom_objectsAgreeOffYield _ _ hInv)
 
 /-- **A step that writes only the yield link ends and no scheduler field is a
 run-queue stage**: every run link, release link, refill view, table back-link

@@ -3105,6 +3105,10 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
       `tcbFpReleased`, refused by the same guard for the same reason. -/
   tcbResidencyReleased : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ c : CoreId, st.machine.residentOnCore c ≠ some t.tid
+  /-- **WS-ZA ZA6.6**: and the thread has yielded to no context — its suspend
+      cancelled the link (seL4-MCS's `suspend` → `schedContext_cancelYieldTo`),
+      so the destroy path's own cancel (`threadFinaliseYield`) writes nothing. -/
+  tcbYieldUnlinked : ∀ t : TCB, st.objects[target]? = some (.tcb t) → t.yieldToCode = 0
   blockedRefsAvoid : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.ipcState ≠ .blockedOnSend target ∧ tcb.ipcState ≠ .blockedOnReceive target ∧
@@ -4034,8 +4038,8 @@ theorem retypeTargetDetached_of_absent {st : SystemState} {target : SeLe4n.ObjId
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
     fun t h => absurd h (hNo _),
-    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    by rw [hAbs]; rfl⟩
+    fun t h => absurd h (hNo _), fun t h => absurd h (hNo _), fun t h => absurd h (hNo _),
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by rw [hAbs]; rfl⟩
   · intro tid tcb hT
     have hM := hInv.ipcStateQueueMembershipConsistent tid tcb hT
     refine ⟨fun hS => ?_, fun hR => ?_, fun hC => ?_⟩
@@ -4716,6 +4720,31 @@ theorem lifecyclePreRetypeCleanup_detached_frame
       split at hStep
       · contradiction
       · cases hStep
+        -- WS-ZA ZA6.6: the yield steps write nothing — the target holds no
+        -- context (`hB`) and has yielded to none (`tcbYieldUnlinked`).
+        have h0 : tcb.scBindingScCode = 0 := by
+          rcases hc : tcb.scBindingScCode with _ | n
+          · rfl
+          · exfalso
+            simp only [TCB.schedContextBinding, hc, SeLe4n.Kernel.SchedContextBinding.ofCodes] at hB
+            split at hB <;> cases hB
+        have hY : threadFinaliseYield (detachTcbSlots st target) tcb.tid tcb.scBindingScCode =
+            detachTcbSlots st target := by
+          rw [h0]
+          show cancelYieldTo _ _ = _
+          unfold cancelYieldTo
+          split
+          · rename_i t hT
+            have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+            obtain ⟨t0, hT0, e⟩ := (detachTcbSlots_agree hObjInv target).1.tcb_back hT'
+            have hY0 : t.yieldToCode = t0.yieldToCode := Option.some.inj
+              (TCB.map_proj_of_map_withoutLinks_eq TCB.yieldToCode
+                (o := some t0) (o' := some t) (by simp [e]))
+            rw [hDet.tcbSelfId tcb hObj, hObj] at hT0
+            cases hT0
+            rw [hY0, hDet.tcbYieldUnlinked tcb hObj]
+          · rfl
+        rw [hY]
         obtain ⟨cdt, hReach⟩ := detachTcbSlots_shape st target
         exact ⟨{ st with cdt := cdt }, rfl, rfl, rfl, hReach⟩
   | endpoint ep =>
@@ -5602,6 +5631,75 @@ theorem cancelYieldTo_preserves_ipcInvariantFull (st : SystemState) (tid : SeLe4
       rw [SystemState.updateTcb_eq_of_some hT1]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t _ hO1 hInv1
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT1) rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  · exact hInv
+
+/-- A thread rewritten in its yield-to code and registers alone keeps the bundle:
+neither is a field the bundle reads. -/
+theorem updateTcb_yieldWrite_preserves_ipcInvariantFull (st : SystemState)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hf : ∀ x,
+      f x = { x with yieldToCode := (f x).yieldToCode, registerContext := (f x).registerContext }) :
+    ipcInvariantFull (st.updateTcb tid f) := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact hInv
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some hT]
+    have e := hf t
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t _ hObjInv hInv
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl)
+      (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl) (by rw [e] <;> rfl)
+      (by intro sl c b h _; rw [e] at h; exact h) (by rw [e] <;> rfl)
+
+/-- A context rewritten keeping its bound thread keeps the bundle. -/
+theorem updateSchedContext_boundKept_preserves_ipcInvariantFull (st : SystemState)
+    (s : SeLe4n.SchedContextId) (f : SchedContext → SchedContext) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) (hf : ∀ x, (f x).boundThread = x.boundThread) :
+    ipcInvariantFull (st.updateSchedContext s f) := by
+  cases hS : st.getSchedContext? s with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hS]; exact hInv
+  | some sc =>
+    rw [SystemState.updateSchedContext_eq_of_some hS]
+    exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st s sc _
+      hObjInv hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) (hf sc)
+
+/-- `setConsumed` keeps the bundle: a count and two registers. -/
+theorem setConsumed_preserves_ipcInvariantFull (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (setConsumed st s t) := by
+  unfold setConsumed
+  split
+  · exact updateTcb_yieldWrite_preserves_ipcInvariantFull _ t _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hObjInv)
+      (updateSchedContext_boundKept_preserves_ipcInvariantFull _ _ _ hObjInv hInv
+        (fun _ => rfl)) (by intro; rfl)
+  · exact hInv
+
+/-- The context's end of the cancel keeps the bundle. -/
+theorem cancelYieldFrom_preserves_ipcInvariantFull (st : SystemState)
+    (s : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (cancelYieldFrom st s) := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · exact hInv
+    · exact updateTcb_yieldWrite_preserves_ipcInvariantFull _ _ _
+        (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hObjInv)
+        (updateSchedContext_boundKept_preserves_ipcInvariantFull _ _ _ hObjInv hInv
+          (fun _ => rfl)) (by intro; rfl)
+  · exact hInv
+
+/-- The completion of a context's recorded yield keeps the bundle. -/
+theorem completeYieldFrom_preserves_ipcInvariantFull (st : SystemState)
+    (s : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (completeYieldFrom st s) := by
+  unfold completeYieldFrom
+  split
+  · split
+    · exact hInv
+    · exact cancelYieldFrom_preserves_ipcInvariantFull _ _
+        (SystemState.setConsumed_preserves_objects_invExt _ _ _ hObjInv)
+        (setConsumed_preserves_ipcInvariantFull _ _ _ hObjInv hInv)
   · exact hInv
 
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —

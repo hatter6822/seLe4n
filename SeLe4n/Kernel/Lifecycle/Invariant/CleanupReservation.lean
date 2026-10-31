@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
+import SeLe4n.Kernel.SchedContext.YieldLinkFrame
 
 /-!
 # `v0.35.166` (WS-RR RR8.12, register row 63) — the destroy path's reservation theorems
@@ -220,6 +221,55 @@ theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityC
     (cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
       st stArm tid tcb hTcb hInv hCons hArm)
 
+/-- **WS-ZA ZA6.6: a step that writes the yield writes alone keeps the
+replenish-affinity invariant** — it moves no replenish entry (`hS`), no
+context's bound thread and no thread's home core. -/
+theorem replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield {st st' : SystemState}
+    (hA : st'.objectsAgreeOffYield st) (hS : st'.scheduler = st.scheduler)
+    (h : replenishQueueAffinityConsistent_smp st) : replenishQueueAffinityConsistent_smp st' :=
+  fun c => replenishQueueAffinityConsistentOnCore_transfer st st' c
+    (fun _ hm => by rw [hS] at hm; exact hm)
+    (fun scId => hA.getSchedContext?_map _ (fun _ => rfl) scId)
+    (fun tid => determineTargetCore_congr st st' tid (hA.getTcb?_map _ (fun _ => rfl) tid)) (h c)
+
+/-- ...and every binding (Z4-O reads two projections the yield writes leave). -/
+theorem schedContextBindingConsistent_of_objectsAgreeOffYield {st st' : SystemState}
+    (hA : st'.objectsAgreeOffYield st) (h : schedContextBindingConsistent st) :
+    schedContextBindingConsistent st' :=
+  schedContextBindingConsistent_transfer (fun tid => hA.getTcb?_map _ (fun _ => rfl) tid)
+    (fun scId => hA.getSchedContext?_map _ (fun _ => rfl) scId) h
+
+/-- ...and an unpaired retype target. -/
+theorem retypeTargetUnpaired_of_objectsAgreeOffYield {st st' : SystemState}
+    {target : SeLe4n.ObjId} (hA : st'.objectsAgreeOffYield st)
+    (h : retypeTargetUnpaired st target) : retypeTargetUnpaired st' target := by
+  have e := hA target
+  refine ⟨fun t hT => ?_, fun sc hS => ?_⟩
+  · rw [hT] at e
+    cases h0 : st.objects[target]? with
+    | none => rw [h0] at e; cases e
+    | some o =>
+      rw [h0] at e
+      cases o with
+      | tcb t0 =>
+        have hB : t.schedContextBinding = t0.schedContextBinding :=
+          congrArg (fun x => match x with
+            | some (.tcb u) => u.schedContextBinding | _ => .unbound) e
+        rw [hB]; exact h.1 t0 h0
+      | _ => simp [KernelObject.withoutYield] at e
+  · rw [hS] at e
+    cases h0 : st.objects[target]? with
+    | none => rw [h0] at e; cases e
+    | some o =>
+      rw [h0] at e
+      cases o with
+      | schedContext s0 =>
+        have hB : sc.boundThread = s0.boundThread :=
+          congrArg (fun x => match x with
+            | some (.schedContext u) => u.boundThread | _ => none) e
+        rw [hB]; exact h.2 s0 h0
+      | _ => simp [KernelObject.withoutYield] at e
+
 -- ============================================================================
 -- §2  The pre-retype cleanup
 -- ============================================================================
@@ -269,6 +319,12 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
       split at h
       · exact absurd h (by simp)
       · obtain rfl := Except.ok.inj h
+        -- The yield steps write the yield writes alone (`objectsAgreeOffYield`).
+        refine replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
+          (SystemState.threadFinaliseYield_objectsAgreeOffYield _ _ _
+            (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2)
+          (SystemState.threadFinaliseYield_scheduler _ _ _) ?_
         -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
         have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
           st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm
@@ -321,8 +377,12 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
     · exact absurd h (by simp)
     · injection h with h
       subst h
-      exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp
-        st (SeLe4n.SchedContextId.ofObjId target) sc hInv hCons
+      exact replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
+        (SystemState.completeYieldFrom_objectsAgreeOffYield _ _
+          (releaseSchedContextBinding_preserves_objects_invExt _ _ sc hInv))
+        (SystemState.completeYieldFrom_scheduler _ _)
+        (releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp
+          st (SeLe4n.SchedContextId.ofObjId target) sc hInv hCons)
   | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
@@ -558,6 +618,11 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
       split at h
       · exact absurd h (by simp)
       · obtain rfl := Except.ok.inj h
+        -- The yield steps write the yield writes alone (`objectsAgreeOffYield`).
+        refine schedContextBindingConsistent_of_objectsAgreeOffYield
+          (SystemState.threadFinaliseYield_objectsAgreeOffYield _ _ _
+            (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+            (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2) ?_
         -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
         have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
           st stArm tcb.tid tcb (hTcb tcb rfl) hInv hCons hArm
@@ -762,7 +827,8 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
       split at h
       · exact absurd h (by simp)
       · obtain rfl := Except.ok.inj h
-        exact (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+        exact SystemState.threadFinaliseYield_preserves_objects_invExt _ _ _
+          (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
             (cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm)) target).2
   | endpoint ep =>
     subst hC; simp only at h; injection h with h; subst h
@@ -783,7 +849,8 @@ theorem lifecyclePreRetypeCleanup_preserves_objects_invExt
     split at h
     · exact absurd h (by simp)
     · injection h with h; subst h
-      exact releaseSchedContextBinding_preserves_objects_invExt _ _ sc hInv
+      exact SystemState.completeYieldFrom_preserves_objects_invExt _ _
+        (releaseSchedContextBinding_preserves_objects_invExt _ _ sc hInv)
   | frame _ | pageTable _ | untyped _ | vspaceRoot _ =>
     -- WS-BP BP7.1: a frame target is refused — and since slice 4a (`v0.36.8`)
     -- an untyped one — so there is no `.ok` post-state.
@@ -852,6 +919,11 @@ theorem lifecyclePreRetypeCleanup_targetUnpaired
       · obtain rfl := Except.ok.inj h
         have hArmInv : stArm.objects.invExt :=
           cancelDonationArmOnCore_preserves_objects_invExt st stArm tcb.tid tcb hInv hArm
+        -- The yield steps write the yield writes alone (`objectsAgreeOffYield`).
+        refine retypeTargetUnpaired_of_objectsAgreeOffYield
+          (SystemState.threadFinaliseYield_objectsAgreeOffYield _ _ _
+            (detachTcbSlots_agree (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid
+              hArmInv) target).2) ?_
         -- The slot detach writes link words alone, so the sweep's reading stands.
         refine retypeTargetUnpaired_of_agree (detachTcbSlots_agree
           (cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hArmInv) target).1 ?_

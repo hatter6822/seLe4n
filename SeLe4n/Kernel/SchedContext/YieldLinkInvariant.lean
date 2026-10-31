@@ -372,6 +372,14 @@ theorem completeYieldFrom_preserves_objects_invExt (st : SystemState) (s : SeLe4
         (setConsumed_preserves_objects_invExt _ _ _ hInv)
   · exact hInv
 
+theorem threadFinaliseYield_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (held : Nat) (hInv : st.objects.invExt) : (threadFinaliseYield st tid held).objects.invExt := by
+  unfold threadFinaliseYield
+  split
+  · exact cancelYieldTo_preserves_objects_invExt _ _ hInv
+  · exact cancelYieldTo_preserves_objects_invExt _ _
+      (completeYieldFrom_preserves_objects_invExt _ _ hInv)
+
 /-- `setConsumed` writes no link. -/
 theorem setConsumed_yieldLinksKept (st : SystemState) (s : SeLe4n.SchedContextId)
     (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : YieldLinksKept (setConsumed st s t) st := by
@@ -484,6 +492,16 @@ theorem completeYieldFrom_preserves_yieldLinksAgree (st : SystemState) (s : SeLe
         (setConsumed_preserves_objects_invExt _ _ _ hInv)
         (yieldLinksAgree_of_kept (setConsumed_yieldLinksKept _ _ _ hInv) h)
   · exact h
+
+theorem threadFinaliseYield_preserves_yieldLinksAgree (st : SystemState) (tid : SeLe4n.ThreadId)
+    (held : Nat) (hInv : st.objects.invExt) (h : st.yieldLinksAgree) :
+    (threadFinaliseYield st tid held).yieldLinksAgree := by
+  unfold threadFinaliseYield
+  split
+  · exact cancelYieldTo_preserves_yieldLinksAgree _ _ hInv h
+  · exact cancelYieldTo_preserves_yieldLinksAgree _ _
+      (completeYieldFrom_preserves_objects_invExt _ _ hInv)
+      (completeYieldFrom_preserves_yieldLinksAgree _ _ hInv h)
 
 /-- **On agreeing links the completion a context records is seL4-MCS's
 `schedContext_completeYieldTo` of its yielder**: the yielder names the context

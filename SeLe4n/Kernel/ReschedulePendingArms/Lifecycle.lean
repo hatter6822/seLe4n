@@ -165,7 +165,8 @@ theorem suspendRescheduleOnCore_stepCovers (e : CoreId) {st st' : SystemState}
        exact ⟨handleRescheduleSgiOnCore_stepCovers e _ _ hInv hH,
          handleRescheduleSgiOnCore_preserves_objects_invExt _ e _ hInv hH⟩)
 
-/-- WS-ZA ZA6.6: the yield-link codes are no key input. -/
+/-- WS-ZA ZA6.6: what the yield operations write (`KernelObject.withoutYield`) is
+no key input. -/
 theorem keyInputsEq_of_objectsAgreeOffYield {pre post : SystemState}
     (h : post.objectsAgreeOffYield pre) : keyInputsEq pre post := fun oid => by
   have hv : ∀ x : Option KernelObject,
