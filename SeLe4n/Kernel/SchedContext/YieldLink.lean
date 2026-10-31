@@ -27,7 +27,9 @@ link is written and cleared without a `some` cell.
   yielder is handed the consumed time of the context it yielded to, then the
   link is cancelled.  `completeYieldFrom` completes the yield a context records,
   as seL4's context finalisation (`if (sc->scYieldFrom)
-  schedContext_completeYieldTo(sc->scYieldFrom)`) and its next yieldTo do.
+  schedContext_completeYieldTo(sc->scYieldFrom)`) and its next yieldTo do; its
+  cancel is read from the context's side (`cancelYieldFrom`), which on agreeing
+  links is the yielder's `cancelYieldTo`.
 
 Until the yieldTo invocation sets a link, every link is empty and each of these
 is the identity on every reachable state.
@@ -105,17 +107,35 @@ def completeYieldTo (st : SystemState) (yielder : SeLe4n.ThreadId) : SystemState
     | k + 1 => cancelYieldTo (setConsumed st ⟨k⟩ yielder) yielder
   | none => st
 
+/-- **A context's end of the cancel**: a context naming a yielder has both
+ends cleared, its own (`scYieldFrom = NULL`) then the yielder's
+(`tcbYieldTo = NULL`), each in its slot.  On a state whose links agree
+(`SystemState.yieldLinksAgree`) the yielder names this context, so this is
+`cancelYieldTo` of the yielder; read from the context's side it clears the
+context's end on every state, which is what its finalisation needs.  The
+identity on a context with no yielder and on an absent one. -/
+def cancelYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId) : SystemState :=
+  match st.getSchedContext? s with
+  | some sc =>
+    match sc.yieldFromCode with
+    | 0 => st
+    | k + 1 => (st.updateSchedContext s SchedContext.yieldCleared).updateTcb ⟨k⟩ TCB.yieldCleared
+  | none => st
+
 /-- **The completion of the yield a context records** (seL4-MCS's
 `if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`): the
-thread the context names as its yielder is completed.  It runs on the
-context's finalisation and on its next yieldTo.  The identity on a context
-with no yielder and on an absent one. -/
+thread the context names as its yielder is handed the context's consumed time
+(`setConsumed`) and the link cancelled (`cancelYieldFrom`).  On a state whose
+links agree it is `completeYieldTo` of that yielder
+(`completeYieldFrom_eq_completeYieldTo`).  It runs on the context's
+finalisation and on its next yieldTo.  The identity on a context with no
+yielder and on an absent one. -/
 def completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId) : SystemState :=
   match st.getSchedContext? s with
   | some sc =>
     match sc.yieldFromCode with
     | 0 => st
-    | k + 1 => completeYieldTo st ⟨k⟩
+    | k + 1 => cancelYieldFrom (setConsumed st s ⟨k⟩) s
   | none => st
 
 end SeLe4n.Kernel

@@ -738,6 +738,8 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
         have hS3 := (hS1.trans hS12).trans hS23
         refine SystemState.RunQueueEntryStage.trans ?_
           (suspendRescheduleOnCore_runQueueEntryStage hStep)
+        refine SystemState.RunQueueEntryStage.trans ?_
+          (SystemState.cancelYieldTo_runQueueStage _ vtid.val).entry
         refine SystemState.RunQueueEntryStage.of_inv ?_ fun hInv hR _ => ?_
         · unfold clearPendingStateValid clearPendingState
           exact (hS3.1.trans (descheduleAt_runQueueStage s3 vtid.val _).1).trans

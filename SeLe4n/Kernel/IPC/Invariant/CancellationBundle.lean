@@ -1071,6 +1071,13 @@ theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed
   rw [replenishHomeOfSchedContext_eq_of_bound _ scId _ scPost victim hPost hBoundPost,
     cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv victim]
 
+/-- WS-ZA ZA6.6: the yield-link cancel places and unplaces no thread. -/
+theorem cancelYieldTo_threadPlacedOnSomeCore (st : SystemState) (tid u : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    threadPlacedOnSomeCore (cancelYieldTo st tid) u = threadPlacedOnSomeCore st u :=
+  threadPlacedOnSomeCore_of_scheduler_eq st _ u (SystemState.cancelYieldTo_scheduler st tid)
+    (SystemState.cancelYieldTo_objectsAgreeOffYield st tid hInv).runCoresAgree
+
 section SuspendPayoff
 open SeLe4n.Kernel.Concurrency
 open SeLe4n.Kernel.Lifecycle.Suspend
@@ -1268,9 +1275,17 @@ theorem suspendThreadOnCore_holder_unplaced
             unfold clearPendingStateValid clearPendingState
             exact SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))).trans
           (SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))
+        -- G6b — the yield-link cancel, which writes no placement.
+        have hInv6 := (hS6 hInv hR).1
+        have hP6b : threadPlacedOnSomeCore (cancelYieldTo
+            ((clearPendingStateValid (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val))
+              vtid).updateTcb vtid.val (fun t => { t with threadState := .Inactive })) vtid.val)
+            holder = false := by
+          rw [cancelYieldTo_threadPlacedOnSomeCore _ _ _ hInv6]; exact hP6
+        have hS6b := hS6.trans (SystemState.cancelYieldTo_runQueueStage _ vtid.val).1
         -- G7 — the local scheduling point.
         exact suspendRescheduleOnCore_preserves_unplaced _ st' _ executingCore
-          _ _ sgi? holder (hS6 hInv hR).1 ((hS6 hInv hR).2 executingCore) hStep hP6
+          _ _ sgi? holder (hS6b hInv hR).1 ((hS6b hInv hR).2 executingCore) hStep hP6b
 
 end SuspendPayoff
 

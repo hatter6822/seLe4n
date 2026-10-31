@@ -352,13 +352,24 @@ theorem completeYieldTo_preserves_objects_invExt (st : SystemState) (y : SeLe4n.
         (setConsumed_preserves_objects_invExt _ _ _ hInv)
   · exact hInv
 
+theorem cancelYieldFrom_preserves_objects_invExt (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : (cancelYieldFrom st s).objects.invExt := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · exact hInv
+    · exact updateTcb_preserves_objects_invExt _ _ _
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+  · exact hInv
+
 theorem completeYieldFrom_preserves_objects_invExt (st : SystemState) (s : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) : (completeYieldFrom st s).objects.invExt := by
   unfold completeYieldFrom
   split
   · split
     · exact hInv
-    · exact completeYieldTo_preserves_objects_invExt _ _ hInv
+    · exact cancelYieldFrom_preserves_objects_invExt _ _
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)
   · exact hInv
 
 /-- `setConsumed` writes no link. -/
@@ -422,6 +433,46 @@ theorem completeYieldTo_preserves_yieldLinksAgree (st : SystemState) (y : SeLe4n
         (yieldLinksAgree_of_kept (setConsumed_yieldLinksKept _ _ _ hInv) h)
   · exact h
 
+/-- **The context's end of the cancel keeps the agreement**: it clears both
+ends of the context's one link (`yieldLinksAgree_of_unlink`), the yielder's end
+found where the context's names it. -/
+theorem cancelYieldFrom_preserves_yieldLinksAgree (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (h : st.yieldLinksAgree) :
+    (cancelYieldFrom st s).yieldLinksAgree := by
+  unfold cancelYieldFrom
+  split
+  · rename_i sc hS
+    split
+    · exact h
+    · rename_i k hc
+      have hba : (objYieldCodes st.objects[s.toObjId]?).2 =
+          (⟨k⟩ : SeLe4n.ThreadId).toObjId.val + 1 := by
+        rw [objYieldCodes_of_getSchedContext? hS]; exact hc
+      have hab := (h _ _).mpr hba
+      obtain ⟨t, hT, -⟩ := getTcb?_of_objYieldCodes_fst hab
+      have hT' : st.getTcb? ⟨k⟩ = some t := hT
+      have hInv1 := updateSchedContext_preserves_objects_invExt st s SchedContext.yieldCleared hInv
+      have hne : (⟨k⟩ : SeLe4n.ThreadId).toObjId ≠ s.toObjId := fun e => by
+        have e1 := (getTcb?_eq_some_iff _ _ _).mp hT'
+        have e2 := (getSchedContext?_eq_some_iff _ _ _).mp hS
+        rw [e] at e1; rw [e1] at e2; cases e2
+      have hT1 : (st.updateSchedContext s SchedContext.yieldCleared).getTcb? ⟨k⟩ = some t := by
+        rw [updateSchedContext_getTcb? _ _ _ hInv]; exact hT'
+      have hS1 : (st.updateSchedContext s SchedContext.yieldCleared).getSchedContext? s =
+          some sc.yieldCleared := by
+        rw [updateSchedContext_getSchedContext?_self _ _ _ hInv, hS]; rfl
+      have hT2 : ((st.updateSchedContext s SchedContext.yieldCleared).updateTcb ⟨k⟩
+          TCB.yieldCleared).getTcb? ⟨k⟩ = some t.yieldCleared := by
+        rw [updateTcb_getTcb?_self _ _ _ hInv1, hT1]; rfl
+      refine yieldLinksAgree_of_unlink h hab ?_ ?_ ?_
+      · rw [objYieldCodes_of_getTcb? hT2, objYieldCodes_of_getTcb? hT']; rfl
+      · rw [updateTcb_objects_ne _ _ _ _ hne hInv1, objYieldCodes_of_getSchedContext? hS1,
+          objYieldCodes_of_getSchedContext? hS]; rfl
+      · intro x hx1 hx2
+        rw [updateTcb_objects_ne _ _ _ _ (Ne.symm hx1) hInv1,
+          updateSchedContext_objects_ne _ _ _ _ (Ne.symm hx2) hInv]
+  · exact h
+
 theorem completeYieldFrom_preserves_yieldLinksAgree (st : SystemState) (s : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) (h : st.yieldLinksAgree) :
     (completeYieldFrom st s).yieldLinksAgree := by
@@ -429,7 +480,40 @@ theorem completeYieldFrom_preserves_yieldLinksAgree (st : SystemState) (s : SeLe
   split
   · split
     · exact h
-    · exact completeYieldTo_preserves_yieldLinksAgree _ _ hInv h
+    · exact cancelYieldFrom_preserves_yieldLinksAgree _ _
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)
+        (yieldLinksAgree_of_kept (setConsumed_yieldLinksKept _ _ _ hInv) h)
   · exact h
+
+/-- **On agreeing links the completion a context records is seL4-MCS's
+`schedContext_completeYieldTo` of its yielder**: the yielder names the context
+back, so handing it the context's consumed time and cancelling its link from
+either end is one write sequence. -/
+theorem completeYieldFrom_eq_completeYieldTo (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (h : st.yieldLinksAgree) {sc : SchedContext} {k : Nat}
+    (hS : st.getSchedContext? s = some sc) (hk : sc.yieldFromCode = k + 1) :
+    completeYieldFrom st s = completeYieldTo st ⟨k⟩ := by
+  have hba : (objYieldCodes st.objects[s.toObjId]?).2 = (⟨k⟩ : SeLe4n.ThreadId).toObjId.val + 1 := by
+    rw [objYieldCodes_of_getSchedContext? hS]; exact hk
+  obtain ⟨t, hT, ht⟩ := getTcb?_of_objYieldCodes_fst ((h _ _).mpr hba)
+  have hT' : st.getTcb? ⟨k⟩ = some t := hT
+  have hK := setConsumed_yieldLinksKept st s ⟨k⟩ hInv
+  have hb' : (objYieldCodes (setConsumed st s ⟨k⟩).objects[s.toObjId]?).2 = k + 1 := by
+    rw [hK, objYieldCodes_of_getSchedContext? hS]; exact hk
+  have ha' : (objYieldCodes (setConsumed st s ⟨k⟩).objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]?).1 =
+      s.val + 1 := by
+    rw [hK, objYieldCodes_of_getTcb? hT']; exact ht
+  obtain ⟨sc', hS', hk'⟩ := getSchedContext?_of_objYieldCodes_snd hb'
+  obtain ⟨t', hT'', ht'⟩ := getTcb?_of_objYieldCodes_fst ha'
+  unfold completeYieldFrom completeYieldTo
+  rw [hS, hT']
+  simp only [hk, ht]
+  unfold cancelYieldFrom cancelYieldTo
+  have e1 : (setConsumed st s ⟨k⟩).getSchedContext? s = some sc' := hS'
+  have e2 : (setConsumed st ⟨s.toObjId.val⟩ ⟨k⟩).getTcb? ⟨k⟩ = some t' := hT''
+  have ht2 : t'.yieldToCode = s.toObjId.val + 1 := ht'
+  rw [e1, e2]
+  simp only [hk', ht2]
+  rfl
 
 end SeLe4n.Model.SystemState

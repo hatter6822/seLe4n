@@ -5576,6 +5576,34 @@ private theorem suspendDescheduleTail_shape
       run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks stD tid c) at tcbX hX'
       exact hShape tcbX ((SystemState.getTcb?_eq_some_iff stD tid tcbX).mpr hX')
 
+/-- WS-ZA ZA6.6: the yield-link cancel preserves the whole bundle: it rewrites a
+context's yield-from code, which leaves its bound thread, and a thread's
+yield-to code, which no conjunct reads. -/
+theorem cancelYieldTo_preserves_ipcInvariantFull (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (cancelYieldTo st tid) := by
+  unfold cancelYieldTo
+  split
+  · rename_i t hT
+    split
+    · exact hInv
+    · rename_i k _
+      have hInv1 : ipcInvariantFull (st.updateSchedContext ⟨k⟩ SchedContext.yieldCleared) := by
+        cases hS : st.getSchedContext? ⟨k⟩ with
+        | none => rw [SystemState.updateSchedContext_eq_self_of_none hS]; exact hInv
+        | some sc =>
+          rw [SystemState.updateSchedContext_eq_of_some hS]
+          exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st ⟨k⟩ sc _
+            hObjInv hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) rfl
+      have hO1 := SystemState.updateSchedContext_preserves_objects_invExt st ⟨k⟩
+        SchedContext.yieldCleared hObjInv
+      have hT1 : (st.updateSchedContext ⟨k⟩ SchedContext.yieldCleared).getTcb? tid = some t := by
+        rw [SystemState.updateSchedContext_getTcb? _ _ _ hObjInv]; exact hT
+      rw [SystemState.updateTcb_eq_of_some hT1]
+      exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid t _ hO1 hInv1
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT1) rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  · exact hInv
+
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
 cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`
 victim), donation cancel (all three binding arms), the placement deschedule,
@@ -5650,14 +5678,16 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
             ∀ (c2 ecX : CoreId) (wc ld : Bool) (stO : SystemState)
               (sgiO : Option (CoreId × Concurrency.SgiKind)),
             Lifecycle.Suspend.suspendRescheduleOnCore
-              ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val fun t => { t with threadState := .Inactive })
+              (cancelYieldTo ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val
+                fun t => { t with threadState := .Inactive }) vtid.val)
               c2 ecX wc ld = .ok (stO, sgiO) →
             ipcInvariantFull stO := by
           intro stD _ _ _ stR2 hObjInvR hInvR hShapeR c2 ecX wc ld stO sgiO hStepO
           obtain ⟨hInvI, hObjInvI⟩ :=
             suspendClearStore_preserves_ipcInvariantFull stR2 vtid.val hObjInvR hShapeR hInvR
           exact suspendRescheduleOnCore_preserves_ipcInvariantFull _ stO c2 ecX wc ld sgiO
-            hObjInvI hInvI hStepO
+            (SystemState.cancelYieldTo_preserves_objects_invExt _ _ hObjInvI)
+            (cancelYieldTo_preserves_ipcInvariantFull _ _ hObjInvI hInvI) hStepO
         cases hB : tcb.schedContextBinding with
         | unbound =>
             simp only [hB] at hStep

@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.IPC.Invariant.CancellationPlacementFrame
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
+import SeLe4n.Kernel.SchedContext.YieldLinkFrame
 
 /-!
 # WS-SM SM6.E — Cancellation across cores
@@ -4251,6 +4252,9 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- `suspendThread`'s G6 since `v0.35.64`, and the identity on an absent
       -- thread, exactly as the raw store's own match was.
       let st := st.updateTcb tid fun t => { t with threadState := .Inactive }
+      -- G6b (WS-ZA ZA6.6): the victim's yield link cancelled, seL4-MCS's
+      -- `schedContext_cancelYieldTo` as the last write of its `suspend`.
+      let st := cancelYieldTo st tid
       -- Local-disinheritance recheck (PR #831 review 2): the executing core's
       -- entry-time current thread is STILL current and its effective priority
       -- dropped across the pipeline (the G2b revert deboosted it) — a ready
@@ -4385,8 +4389,9 @@ def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCo
   let st1 := descheduleAt st0 tid placed
   let st2 := clearPendingStateValid st1 vtid
   let st3 := st2.updateTcb tid fun t => { t with threadState := .Inactive }
-  suspendRescheduleState st3 (runningCore?.getD executingCore) executingCore
-    runningCore?.isSome (currentDeboostedFromCode st3 executingCore curCode prioCode)
+  let st4 := cancelYieldTo st3 tid
+  suspendRescheduleState st4 (runningCore?.getD executingCore) executingCore
+    runningCore?.isSome (currentDeboostedFromCode st4 executingCore curCode prioCode)
 
 theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId) (h : suspendAdmitted st vtid.val = true) :
@@ -4968,6 +4973,26 @@ theorem suspendRescheduleOnCore_ipcInvariantStage (st st' : SystemState)
 
 
 
+/-- WS-ZA ZA6.6: a step that writes threads and contexts alone is a stage — it
+cannot invent a notification. -/
+theorem IpcInvariantStage.of_writesTcbScOnly {st st' : SystemState}
+    (hInvExt : st.objects.invExt → st'.objects.invExt)
+    (hW : st.objects.invExt → st'.writesTcbScOnly st) : IpcInvariantStage st st' :=
+  IpcInvariantStage.of_notification_backward hInvExt
+    (fun _ _ hInv hObj => (hW hInv).notification_backward hObj)
+
+/-- WS-ZA ZA6.6: the yield-link cancel is a stage. -/
+theorem cancelYieldTo_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    IpcInvariantStage st (cancelYieldTo st tid) :=
+  .of_writesTcbScOnly (SystemState.cancelYieldTo_preserves_objects_invExt st tid)
+    (SystemState.cancelYieldTo_writesTcbScOnly st tid)
+
+/-- WS-ZA ZA6.6: the completion of a context's recorded yield is a stage. -/
+theorem completeYieldFrom_ipcInvariantStage (st : SystemState) (s : SeLe4n.SchedContextId) :
+    IpcInvariantStage st (completeYieldFrom st s) :=
+  .of_writesTcbScOnly (SystemState.completeYieldFrom_preserves_objects_invExt st s)
+    (SystemState.completeYieldFrom_writesTcbScOnly st s)
+
 /-- WS-RR RR2.17 / WS-RR RR8.6: the placement removal is a stage on either
 arm — a `removeRunnableOnCore` at the resolved core, or the identity at
 `none`. -/
@@ -5046,7 +5071,8 @@ theorem suspendThreadOnCore_ipcInvariantStage
             refine IpcInvariantStage.trans
               (descheduleAt_ipcInvariantStage s3 vtid.val (placedCoreOf? st vtid.val)) ?_
             refine IpcInvariantStage.trans (clearPendingState_ipcInvariantStage _ vtid.val) ?_
-            exact updateTcb_ipcInvariantStage _ vtid.val _
+            exact (updateTcb_ipcInvariantStage _ vtid.val _).trans
+              (cancelYieldTo_ipcInvariantStage _ vtid.val)
   exact hChain
 
 /-- **WS-RR RR2.17: the live `.tcbSuspend` arm preserves the object-store

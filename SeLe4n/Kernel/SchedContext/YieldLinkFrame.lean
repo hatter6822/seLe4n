@@ -84,6 +84,10 @@ theorem getSchedContext?_map {st st' : SystemState} (h : objectsAgreeOffYield st
     rename_i u v
     rw [← hf u, ← hf v, e]
 
+/-- Every thread's run-queue core agrees. -/
+theorem runCoresAgree {st st' : SystemState} (h : objectsAgreeOffYield st' st) :
+    RunCoresAgree st' st := fun y => h.getTcb?_map TCB.runCoreCode (fun _ => rfl) y
+
 end objectsAgreeOffYield
 
 /-- A thread update that writes nothing but its yield-to code agrees off the
@@ -137,6 +141,31 @@ theorem cancelYieldTo_objectsAgreeOffYield (st : SystemState) (tid : SeLe4n.Thre
         (updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl)).trans
         (updateSchedContext_objectsAgreeOffYield _ _ SchedContext.yieldCleared hInv (fun _ => rfl))
   · exact .refl st
+
+/-- **The context's end of the cancel writes the two link ends alone.** -/
+theorem cancelYieldFrom_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : objectsAgreeOffYield (cancelYieldFrom st s) st := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · exact .refl st
+    · exact (updateTcb_objectsAgreeOffYield _ _ TCB.yieldCleared
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl)).trans
+        (updateSchedContext_objectsAgreeOffYield _ _ SchedContext.yieldCleared hInv (fun _ => rfl))
+  · exact .refl st
+
+theorem cancelYieldFrom_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId) :
+    cancelYieldFrom st s = { st with objects := (cancelYieldFrom st s).objects } := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · rfl
+    · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
+  · rfl
+
+theorem cancelYieldFrom_scheduler (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (cancelYieldFrom st s).scheduler = st.scheduler := by
+  rw [cancelYieldFrom_eq_objects]
 
 /-- The cancel writes the object store alone. -/
 theorem cancelYieldTo_eq_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -244,13 +273,145 @@ theorem completeYieldTo_runQueueStage (st : SystemState) (y : SeLe4n.ThreadId) :
     · exact (setConsumed_runQueueStage _ _ _).trans (cancelYieldTo_runQueueStage _ _)
   · exact .refl st
 
+/-- The context's end of the cancel is a run-queue stage. -/
+theorem cancelYieldFrom_runQueueStage (st : SystemState) (s : SeLe4n.SchedContextId) :
+    RunQueueStage st (cancelYieldFrom st s) :=
+  RunQueueStage.of_invExt fun hInv =>
+    RunQueueStage.of_objectsAgreeOffYield (cancelYieldFrom_objectsAgreeOffYield st s hInv)
+      (cancelYieldFrom_scheduler st s)
+      (fun h => cancelYieldFrom_preserves_objects_invExt st s h)
+      (by rw [cancelYieldFrom_eq_objects]; rfl)
+      (fun h y => cancelYieldFrom_preserves_yieldLinksAgree st s h y)
+
 theorem completeYieldFrom_runQueueStage (st : SystemState) (s : SeLe4n.SchedContextId) :
     RunQueueStage st (completeYieldFrom st s) := by
   unfold completeYieldFrom
   split
   · split
     · exact .refl st
-    · exact completeYieldTo_runQueueStage _ _
+    · exact (setConsumed_runQueueStage _ _ _).trans (cancelYieldFrom_runQueueStage _ _)
+  · exact .refl st
+
+-- ============================================================================
+-- The yield operations write threads and contexts alone
+-- ============================================================================
+
+/-- **A step that writes threads and contexts alone**: every slot is unchanged,
+or holds a thread before and after, or a context before and after.  Every other
+object kind reads back as it was, both ways. -/
+def writesTcbScOnly (st' st : SystemState) : Prop :=
+  ∀ x : SeLe4n.ObjId, st'.objects[x]? = st.objects[x]? ∨
+    (∃ a b, st.objects[x]? = some (.tcb a) ∧ st'.objects[x]? = some (.tcb b)) ∨
+    (∃ a b, st.objects[x]? = some (.schedContext a) ∧ st'.objects[x]? = some (.schedContext b))
+
+namespace writesTcbScOnly
+
+theorem refl (st : SystemState) : writesTcbScOnly st st := fun _ => Or.inl rfl
+
+theorem trans {a b c : SystemState} (h₂ : writesTcbScOnly c b) (h₁ : writesTcbScOnly b a) :
+    writesTcbScOnly c a := fun x => by
+  rcases h₁ x with e1 | ⟨p, q, e1, f1⟩ | ⟨p, q, e1, f1⟩ <;>
+  rcases h₂ x with e2 | ⟨r, u, e2, f2⟩ | ⟨r, u, e2, f2⟩
+  · exact Or.inl (e2.trans e1)
+  · exact Or.inr (Or.inl ⟨r, u, e1.symm.trans e2, f2⟩)
+  · exact Or.inr (Or.inr ⟨r, u, e1.symm.trans e2, f2⟩)
+  · exact Or.inr (Or.inl ⟨p, q, e1, e2.trans f1⟩)
+  · exact Or.inr (Or.inl ⟨p, u, e1, f2⟩)
+  · have h := f1.symm.trans e2; simp at h
+  · exact Or.inr (Or.inr ⟨p, q, e1, e2.trans f1⟩)
+  · have h := f1.symm.trans e2; simp at h
+  · exact Or.inr (Or.inr ⟨p, u, e1, f2⟩)
+
+/-- A notification the post-state holds was one in the pre-state. -/
+theorem notification_backward {st' st : SystemState} (h : writesTcbScOnly st' st)
+    {x : SeLe4n.ObjId} {n : Notification} (hx : st'.objects[x]? = some (.notification n)) :
+    st.objects[x]? = some (.notification n) := by
+  rcases h x with e | ⟨_, _, _, f⟩ | ⟨_, _, _, f⟩
+  · exact e ▸ hx
+  · rw [f] at hx; cases hx
+  · rw [f] at hx; cases hx
+
+end writesTcbScOnly
+
+theorem updateTcb_writesTcbScOnly (st : SystemState) (tid : SeLe4n.ThreadId) (g : TCB → TCB)
+    (hInv : st.objects.invExt) : writesTcbScOnly (st.updateTcb tid g) st := fun k => by
+  by_cases hk : tid.toObjId = k
+  · subst hk
+    cases hT : st.getTcb? tid with
+    | none => exact Or.inl (by rw [updateTcb_eq_self_of_none hT])
+    | some t =>
+      rw [updateTcb_eq_of_some hT]
+      have e : (st.objects.insert tid.toObjId (.tcb (g t)))[tid.toObjId]? = some (.tcb (g t)) :=
+        RobinHood.RHTable.getElem?_insert_self st.objects _ _ hInv
+      exact Or.inr (Or.inl ⟨t, g t, (getTcb?_eq_some_iff _ _ _).mp hT, e⟩)
+  · exact Or.inl (updateTcb_objects_ne _ _ _ _ hk hInv)
+
+theorem updateSchedContext_writesTcbScOnly (st : SystemState) (s : SeLe4n.SchedContextId)
+    (g : SchedContext → SchedContext) (hInv : st.objects.invExt) :
+    writesTcbScOnly (st.updateSchedContext s g) st := fun k => by
+  by_cases hk : s.toObjId = k
+  · subst hk
+    cases hS : st.getSchedContext? s with
+    | none => exact Or.inl (by rw [updateSchedContext_eq_self_of_none hS])
+    | some sc =>
+      rw [updateSchedContext_eq_of_some hS]
+      have e : (st.objects.insert s.toObjId (.schedContext (g sc)))[s.toObjId]? =
+          some (.schedContext (g sc)) :=
+        RobinHood.RHTable.getElem?_insert_self st.objects _ _ hInv
+      exact Or.inr (Or.inr ⟨sc, g sc, (getSchedContext?_eq_some_iff _ _ _).mp hS, e⟩)
+  · exact Or.inl (updateSchedContext_objects_ne _ _ _ _ hk hInv)
+
+theorem cancelYieldTo_writesTcbScOnly (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : writesTcbScOnly (cancelYieldTo st tid) st := by
+  unfold cancelYieldTo
+  split
+  · split
+    · exact .refl st
+    · exact (updateTcb_writesTcbScOnly _ _ _
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv)).trans
+        (updateSchedContext_writesTcbScOnly _ _ _ hInv)
+  · exact .refl st
+
+theorem setConsumed_writesTcbScOnly (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : writesTcbScOnly (setConsumed st s t) st := by
+  unfold setConsumed
+  split
+  · exact (updateTcb_writesTcbScOnly _ _ _
+      (updateSchedContext_preserves_objects_invExt _ _ _ hInv)).trans
+      (updateSchedContext_writesTcbScOnly _ _ _ hInv)
+  · exact .refl st
+
+theorem completeYieldTo_writesTcbScOnly (st : SystemState) (y : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : writesTcbScOnly (completeYieldTo st y) st := by
+  unfold completeYieldTo
+  split
+  · split
+    · exact .refl st
+    · exact (cancelYieldTo_writesTcbScOnly _ _
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)).trans
+        (setConsumed_writesTcbScOnly _ _ _ hInv)
+  · exact .refl st
+
+theorem cancelYieldFrom_writesTcbScOnly (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : writesTcbScOnly (cancelYieldFrom st s) st := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · exact .refl st
+    · exact (updateTcb_writesTcbScOnly _ _ _
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv)).trans
+        (updateSchedContext_writesTcbScOnly _ _ _ hInv)
+  · exact .refl st
+
+theorem completeYieldFrom_writesTcbScOnly (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : writesTcbScOnly (completeYieldFrom st s) st := by
+  unfold completeYieldFrom
+  split
+  · split
+    · exact .refl st
+    · exact (cancelYieldFrom_writesTcbScOnly _ _
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)).trans
+        (setConsumed_writesTcbScOnly _ _ _ hInv)
   · exact .refl st
 
 end SystemState
