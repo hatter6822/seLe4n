@@ -372,6 +372,57 @@ theorem completeYieldFrom_preserves_objects_invExt (st : SystemState) (s : SeLe4
         (setConsumed_preserves_objects_invExt _ _ _ hInv)
   · exact hInv
 
+/-- After the cancel, the thread has yielded to no context. -/
+theorem cancelYieldTo_yieldToCode_self (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) {t' : TCB}
+    (h : (cancelYieldTo st tid).getTcb? tid = some t') : t'.yieldToCode = 0 := by
+  unfold cancelYieldTo at h
+  split at h
+  · rename_i t hT
+    split at h
+    · rename_i h0; rw [hT] at h; cases h; exact h0
+    · rw [updateTcb_getTcb?_self _ _ _ (updateSchedContext_preserves_objects_invExt _ _ _ hInv),
+        updateSchedContext_getTcb? _ _ _ hInv, hT] at h
+      cases h; rfl
+  · rename_i hT; rw [hT] at h; cases h
+
+/-- After a thread finalisation's yield steps, the thread has yielded to no
+context. -/
+theorem threadFinaliseYield_yieldToCode_self (st : SystemState) (tid : SeLe4n.ThreadId)
+    (held : Nat) (hInv : st.objects.invExt) {t' : TCB}
+    (h : (threadFinaliseYield st tid held).getTcb? tid = some t') : t'.yieldToCode = 0 := by
+  unfold threadFinaliseYield at h
+  split at h
+  · exact cancelYieldTo_yieldToCode_self _ _ hInv h
+  · exact cancelYieldTo_yieldToCode_self _ _ (completeYieldFrom_preserves_objects_invExt _ _ hInv) h
+
+/-- After the context's end of the cancel, the context records no yielder. -/
+theorem cancelYieldFrom_yieldFromCode_self (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) {sc' : SchedContext}
+    (h : (cancelYieldFrom st s).getSchedContext? s = some sc') : sc'.yieldFromCode = 0 := by
+  unfold cancelYieldFrom at h
+  split at h
+  · rename_i sc hS
+    split at h
+    · rename_i h0; rw [hS] at h; cases h; exact h0
+    · rw [updateTcb_getSchedContext? _ _ _
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv),
+        updateSchedContext_getSchedContext?_self _ _ _ hInv, hS] at h
+      cases h; rfl
+  · rename_i hS; rw [hS] at h; cases h
+
+/-- After the completion of its recorded yield, the context records no yielder. -/
+theorem completeYieldFrom_yieldFromCode_self (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) {sc' : SchedContext}
+    (h : (completeYieldFrom st s).getSchedContext? s = some sc') : sc'.yieldFromCode = 0 := by
+  unfold completeYieldFrom at h
+  split at h
+  · rename_i sc hS
+    split at h
+    · rename_i h0; rw [hS] at h; cases h; exact h0
+    · exact cancelYieldFrom_yieldFromCode_self _ s (setConsumed_preserves_objects_invExt _ _ _ hInv) h
+  · rename_i hS; rw [hS] at h; cases h
+
 theorem threadFinaliseYield_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (held : Nat) (hInv : st.objects.invExt) : (threadFinaliseYield st tid held).objects.invExt := by
   unfold threadFinaliseYield

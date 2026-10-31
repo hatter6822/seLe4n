@@ -94,12 +94,159 @@ theorem rewriteObject (s : SystemState) (x : SeLe4n.ObjId) (o : KernelObject)
   ⟨rfl, fun k hk => SystemState.rewriteObject_objects_ne _ _ _ _ _
     (fun e => by rw [← e, hX] at hk; cases hk) hInv⟩
 
+/-- A scheduling context rewritten in its hidden slot. -/
+theorem updateSchedContext (s : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : s.objects.invExt)
+    (hX : objectObservable ctx observer scId.toObjId = false) :
+    hiddenObjectsWrite ctx observer s (s.updateSchedContext scId f) :=
+  ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
+    SystemState.updateSchedContext_objects_ne _ _ _ k
+      (fun e => by rw [← e, hX] at hk; cases hk) hInv⟩
+
 /-- Two hidden writes in sequence are one. -/
 theorem trans {a b c : SystemState} (h₁ : hiddenObjectsWrite ctx observer a b)
     (h₂ : hiddenObjectsWrite ctx observer b c) : hiddenObjectsWrite ctx observer a c :=
   ⟨h₂.1.trans (by rw [h₁.1]), fun k hk => (h₂.2 k hk).trans (h₁.2 k hk)⟩
 
 end hiddenObjectsWrite
+
+/-- **A write the observer sees nothing of** (WS-ZA ZA6.6): only the object
+table changes, and at every key the observer sees the projected object is the
+one before — what `hiddenObjectsWrite` says, with the projection's erasures
+admitted. -/
+def projectedObjectsWrite (ctx : LabelingContext) (observer : IfObserver)
+    (s s' : SystemState) : Prop :=
+  s' = { s with objects := s'.objects } ∧
+    ∀ k, objectObservable ctx observer k = true →
+      (s'.objects[k]?).map (projectKernelObject ctx observer) =
+        (s.objects[k]?).map (projectKernelObject ctx observer)
+
+namespace projectedObjectsWrite
+
+variable {ctx : LabelingContext} {observer : IfObserver}
+
+theorem projection {s s' : SystemState} (h : projectedObjectsWrite ctx observer s s') :
+    projectState ctx observer s' = projectState ctx observer s := by
+  refine projectState_of_objects_only ctx observer h.1 (funext fun k => ?_)
+  unfold projectObjects SystemState.getObject?
+  split
+  · next hk => exact h.2 k hk
+  · rfl
+
+theorem of_hidden {s s' : SystemState} (h : hiddenObjectsWrite ctx observer s s') :
+    projectedObjectsWrite ctx observer s s' :=
+  ⟨h.1, fun k hk => by rw [h.2 k hk]⟩
+
+theorem refl (s : SystemState) : projectedObjectsWrite ctx observer s s :=
+  ⟨rfl, fun _ _ => rfl⟩
+
+theorem trans {a b c : SystemState} (h₁ : projectedObjectsWrite ctx observer a b)
+    (h₂ : projectedObjectsWrite ctx observer b c) : projectedObjectsWrite ctx observer a c :=
+  ⟨h₂.1.trans (by rw [h₁.1]), fun k hk => (h₂.2 k hk).trans (h₁.2 k hk)⟩
+
+/-- A thread rewritten by an update the projection erases. -/
+theorem updateTcb (s : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : s.objects.invExt)
+    (hf : ∀ x, projectKernelObject ctx observer (.tcb (f x)) =
+      projectKernelObject ctx observer (.tcb x)) :
+    projectedObjectsWrite ctx observer s (s.updateTcb t f) := by
+  refine ⟨SystemState.updateTcb_eq_objects_update s t f, fun k _ => ?_⟩
+  by_cases e : t.toObjId = k
+  · subst e
+    cases hT : s.getTcb? t with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+    | some x =>
+      have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+      rw [updateTcb_objects_self_of_tcb f hInv hO, hO]
+      exact congrArg some (hf x)
+  · rw [SystemState.updateTcb_objects_ne _ _ _ _ e hInv]
+
+/-- A context rewritten by an update the projection erases. -/
+theorem updateSchedContext (s : SystemState) (c : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : s.objects.invExt)
+    (hf : ∀ x, projectKernelObject ctx observer (.schedContext (f x)) =
+      projectKernelObject ctx observer (.schedContext x)) :
+    projectedObjectsWrite ctx observer s (s.updateSchedContext c f) := by
+  refine ⟨SystemState.updateSchedContext_eq_objects_update s c f, fun k _ => ?_⟩
+  by_cases e : c.toObjId = k
+  · subst e
+    cases hS : s.getSchedContext? c with
+    | none => rw [SystemState.updateSchedContext_eq_self_of_none hS]
+    | some x =>
+      have hO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS
+      rw [SystemState.updateSchedContext_eq_of_some hS]
+      have e : (s.objects.insert c.toObjId (.schedContext (f x)))[c.toObjId]? =
+          some (.schedContext (f x)) := RobinHood.RHTable.getElem?_insert_self s.objects _ _ hInv
+      show ((s.objects.insert c.toObjId _)[c.toObjId]?).map _ = _
+      rw [e, hO]
+      exact congrArg some (hf x)
+  · rw [SystemState.updateSchedContext_objects_ne _ _ _ _ e hInv]
+
+/-- The thread's yield link cancelled: both ends are erased by the projection. -/
+theorem cancelYieldTo (s : SystemState) (t : SeLe4n.ThreadId) (hInv : s.objects.invExt) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.cancelYieldTo s t) := by
+  unfold SeLe4n.Kernel.cancelYieldTo
+  split
+  · split
+    · exact refl s
+    · rename_i k _
+      exact (updateSchedContext s ⟨k⟩ SeLe4n.Kernel.SchedContext.yieldCleared hInv
+        (fun _ => rfl)).trans (updateTcb _ t TCB.yieldCleared
+        (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl))
+  · exact refl s
+
+/-- The context's end of the cancel: both ends are erased by the projection. -/
+theorem cancelYieldFrom (s : SystemState) (c : SeLe4n.SchedContextId)
+    (hInv : s.objects.invExt) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.cancelYieldFrom s c) := by
+  unfold SeLe4n.Kernel.cancelYieldFrom
+  split
+  · split
+    · exact refl s
+    · rename_i k _
+      exact (updateSchedContext s c SeLe4n.Kernel.SchedContext.yieldCleared hInv
+        (fun _ => rfl)).trans (updateTcb _ ⟨k⟩ TCB.yieldCleared
+        (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl))
+  · exact refl s
+
+/-- A hidden context's consumed time handed to a thread: the count is written
+at a hidden key, the registers are erased by the projection. -/
+theorem setConsumed (s : SystemState) (c : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
+    (hInv : s.objects.invExt) (hX : objectObservable ctx observer c.toObjId = false) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.setConsumed s c t) := by
+  unfold SeLe4n.Kernel.setConsumed
+  split
+  · exact (of_hidden (hiddenObjectsWrite.updateSchedContext s c _ hInv hX)).trans (updateTcb _ t _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (by intro; rfl))
+  · exact refl s
+
+/-- The completion of a hidden context's recorded yield. -/
+theorem completeYieldFrom (s : SystemState) (c : SeLe4n.SchedContextId)
+    (hInv : s.objects.invExt) (hX : objectObservable ctx observer c.toObjId = false) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.completeYieldFrom s c) := by
+  unfold SeLe4n.Kernel.completeYieldFrom
+  split
+  · split
+    · exact refl s
+    · rename_i k _
+      exact (setConsumed s c ⟨k⟩ hInv hX).trans
+        (cancelYieldFrom _ c (SystemState.setConsumed_preserves_objects_invExt _ _ _ hInv))
+  · exact refl s
+
+/-- A thread finalisation's yield steps, the context it held hidden. -/
+theorem threadFinaliseYield (s : SystemState) (t : SeLe4n.ThreadId) (held : Nat)
+    (hInv : s.objects.invExt)
+    (hX : held ≠ 0 → objectObservable ctx observer
+      (⟨held - 1⟩ : SeLe4n.SchedContextId).toObjId = false) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.threadFinaliseYield s t held) := by
+  unfold SeLe4n.Kernel.threadFinaliseYield
+  split
+  · exact cancelYieldTo s t hInv
+  · rename_i k
+    exact (completeYieldFrom s ⟨k⟩ hInv (hX (Nat.succ_ne_zero k))).trans
+      (cancelYieldTo _ t (SystemState.completeYieldFrom_preserves_objects_invExt _ _ hInv))
+
+end projectedObjectsWrite
 
 -- ============================================================================
 -- §2  The threads that wait
@@ -1519,7 +1666,9 @@ theorem finaliseSchedContextDeschedule_hidden (ctx : LabelingContext) (observer 
   · rfl
 
 /-- **A thread's finalisation is invisible** when the thread and what its steps
-write are hidden: the unbinds keep what the cancel reads. -/
+write are hidden: the unbinds keep what the cancel reads, and the yield steps
+write the held context's consumed count (hidden) and what the projection
+erases. -/
 theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
     (hValid : LabelingContextValid ctx)
@@ -1576,24 +1725,14 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
         rw [f2, Nat.add_sub_cancel]
         rw [e7, SystemState.getObject?_eq_getElem] at hR
         exact h9 r sc (by rw [SystemState.getObject?_eq_getElem]; exact hRp _ r hR) hN
-    obtain ⟨hP5, -, -⟩ := finaliseThreadUnbindSchedContext_hidden ctx observer hI4 hT4 hX hSc
-    rw [hP5, finaliseThreadReleaseCores_hidden, hP3, hPW, hP2, hP1]
+    obtain ⟨hP5, hI5, -⟩ := finaliseThreadUnbindSchedContext_hidden ctx observer hI4 hT4 hX hSc
+    -- WS-ZA ZA6.6: the yield steps, the context the thread held hidden (`h2`).
+    have hHeld : threadHeldContextCode st ⟨x.val⟩ ≠ 0 → objectObservable ctx observer
+        (⟨threadHeldContextCode st ⟨x.val⟩ - 1⟩ : SeLe4n.SchedContextId).toObjId = false := by
+      unfold threadHeldContextCode; rw [hT]; exact h2
+    rw [(projectedObjectsWrite.threadFinaliseYield _ _ _ hI5 hHeld).projection,
+      hP5, finaliseThreadReleaseCores_hidden, hP3, hPW, hP2, hP1]
   · rfl
-
-namespace hiddenObjectsWrite
-
-variable {ctx : LabelingContext} {observer : IfObserver}
-
-/-- A scheduling context rewritten in its hidden slot. -/
-theorem updateSchedContext (s : SystemState) (scId : SeLe4n.SchedContextId)
-    (f : SchedContext → SchedContext) (hInv : s.objects.invExt)
-    (hX : objectObservable ctx observer scId.toObjId = false) :
-    hiddenObjectsWrite ctx observer s (s.updateSchedContext scId f) :=
-  ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
-    SystemState.updateSchedContext_objects_ne _ _ _ k
-      (fun e => by rw [← e, hX] at hk; cases hk) hInv⟩
-
-end hiddenObjectsWrite
 
 /-- **A scheduling context's release of its holder is invisible** when the
 context and the thread bound to it are hidden: the reservation unbind on the
@@ -1654,13 +1793,28 @@ theorem finaliseSchedContextUnstack_hidden (ctx : LabelingContext) (observer : I
     · rfl
   · rfl
 
+/-- **A hidden context's destroy cleanup is invisible** (WS-ZA ZA6.6): the
+completion of the yield it records writes its consumed count, a hidden key, and
+the yield codes and a yielder's registers, which the projection erases. -/
+theorem finaliseSchedContextCleanupImpl_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {s : SystemState} {x : SeLe4n.ObjId} (hInv : s.objects.invExt)
+    (hX : objectObservable ctx observer x = false) :
+    projectState ctx observer (finaliseSchedContextCleanupImpl s x) =
+      projectState ctx observer s := by
+  unfold finaliseSchedContextCleanupImpl
+  split
+  · split
+    · exact (projectedObjectsWrite.completeYieldFrom s _ hInv hX).projection
+    · rfl
+  · rfl
+
 /-- **A scheduling context's finalisation is invisible** when the context and
 the thread bound to it are hidden: the holder's deschedule
 (`finaliseSchedContextDeschedule_hidden`), the release (`finaliseSchedContextUnbind_hidden`),
 the reply-stack unlink (`finaliseSchedContextUnstack_hidden`, at the replies the
 pre-state indexes — the release writes a thread and a context only, and no
-index), and the destroy cleanup, the identity on the finalised context
-(`finaliseSchedContext_eq`). -/
+index), and the destroy cleanup, which completes the yield the context records
+(`finaliseSchedContextCleanupImpl_hidden`). -/
 theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
     (hIdx : SeLe4n.Model.objectIndexSetComplete st)
@@ -1679,9 +1833,13 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
     have hSet : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).objectIndexSet =
         st.objectIndexSet := by
       rw [hF.rest]
-    refine (finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX
+    rename_i hA
+    have hU := (finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
+      (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl hF.any).invExt
+    refine (finaliseSchedContextCleanupImpl_hidden ctx observer hU hX).trans
+      ((finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX
       (fun rid r hR => ?_)).trans ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX
-        hH.deschedule).trans (finaliseSchedContextDeschedule_hidden ctx observer hH))
+        hH.deschedule).trans (finaliseSchedContextDeschedule_hidden ctx observer hH)))
     rw [hSet]
     refine hIdx _ (fun e => ?_)
     have hR' := (SystemState.getReply?_eq_some_iff _ _ _).mp hR

@@ -16,7 +16,7 @@ retirable shape: nothing it holds names another object and nothing it records
 keeps it in use.
 
 * **The scheduling context** (`finaliseSchedContext_releases`): bound to no
-  thread, lent from no one, heading no reply stack.
+  thread, lent from no one, heading no reply stack, recording no yielder.
 * **The thread** (`finaliseThread_quiesces`): `.Inactive` and `.ready`, linked
   into no queue and heading none, bound to no notification and to no
   scheduling context, holding no reply link or stash and no timeout budget,
@@ -38,11 +38,11 @@ open SeLe4n.Model
 -- ============================================================================
 
 /-- **A finalised scheduling context's own record is released**: the context
-at `x` is stored, bound to no thread, lent from no one and heading no reply
-stack — the record half of `schedContextRetirable`. -/
+at `x` is stored, bound to no thread, lent from no one, heading no reply
+stack and recording no yielder — the record half of `schedContextRetirable`. -/
 def schedContextRecordReleased (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
-    sc.donationOrigin = none ∧ sc.scReply = none
+    sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.yieldFromCode = 0
 
 /-- **The holder's unbind keeps the context, its reply-stack head and every
 reply**: it rewrites the context's binding fields and the holder's TCB alone. -/
@@ -119,17 +119,57 @@ theorem finaliseSchedContextDeschedule_keeps {s : SystemState} {x k : SeLe4n.Obj
     (finaliseSchedContextDeschedule s x).objects[k]? = some o :=
   (finaliseSchedContextDeschedule_objectsAgreeOffRunLinks s x).get_of_not_tcb hNot hk
 
+/-- **The destroy cleanup releases a released context's yield** (WS-ZA ZA6.6):
+on a context bound to no thread, lent from no one and heading no reply stack,
+the cleanup completes the yield the context records
+(`finaliseSchedContextCleanupImpl`, `completeYieldFrom`), which writes the yield
+writes alone and leaves the context recording no yielder. -/
+theorem finaliseSchedContextCleanupImpl_releases {s : SystemState} {x : SeLe4n.ObjId}
+    (hInv : s.objects.invExt) {sc : SchedContext} (hO : s.objects[x]? = some (.schedContext sc))
+    (hB : sc.boundThreadCode = 0) (hD : sc.donationOrigin = none) (hR : sc.scReply = none) :
+    schedContextRecordReleased (finaliseSchedContextCleanupImpl s x) x := by
+  unfold finaliseSchedContextCleanupImpl
+  rw [SystemState.getObject?_eq_getElem, hO]
+  simp only [hB, hR, beq_self_eq_true, Option.isNone_none, Bool.and_self, ↓reduceIte]
+  have hG : s.getSchedContext? (SeLe4n.SchedContextId.ofObjId x) = some sc := by
+    rw [SystemState.getSchedContext?_eq_some_iff]; exact hO
+  have e := (SystemState.completeYieldFrom_objectsAgreeOffYield s
+    (SeLe4n.SchedContextId.ofObjId x) hInv).getSchedContext?_map
+    (fun u => (u.boundThreadCode, u.donationOrigin, u.scReply)) (fun _ => rfl)
+    (SeLe4n.SchedContextId.ofObjId x)
+  rw [hG] at e
+  cases hG' : (completeYieldFrom s (SeLe4n.SchedContextId.ofObjId x)).getSchedContext?
+      (SeLe4n.SchedContextId.ofObjId x) with
+  | none => rw [hG'] at e; cases e
+  | some sc' =>
+    rw [hG'] at e
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at e
+    obtain ⟨e1, e2, e3⟩ := e
+    exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG', e1.trans hB,
+      e2.trans hD, e3.trans hR, SystemState.completeYieldFrom_yieldFromCode_self _ _ hInv hG'⟩
+
 /-- **A finalised scheduling context's own record is released**
 (WS-ZA ZA5.4 part 26): on a state its admission admits, the finalisation
 leaves the context at `x` bound to no thread and lent from no one — the
 holder's unbind clears both (`finaliseSchedContextUnbind_released`) — and
 heading no reply stack: the head reply the admission reads still names the
 context as its head after the deschedule and the unbind, which write no reply,
-so the unstack runs and clears the head. -/
+so the unstack runs and clears the head; the destroy cleanup then completes
+the yield the context records (`finaliseSchedContextCleanupImpl_releases`). -/
 theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
     (hInv : st.objects.invExt) (hA : schedContextFinaliseAdmitted st x = true) :
     schedContextRecordReleased (finaliseSchedContext x st) x := by
   rw [finaliseSchedContext_eq, if_pos hA]
+  have hInvU := (finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
+    (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl
+    (finaliseSchedContextUnbind_closed _ (FinaliseFrameAny.scReleaseStep st) _ x
+      (finaliseSchedContextDeschedule_closed _ (FinaliseFrameAny.scDescheduleStep st) st x hA
+        (.refl hInv)))).invExt
+  suffices hU : ∃ sc, (finaliseSchedContextUnstack (finaliseSchedContextUnbind
+      (finaliseSchedContextDeschedule st x) x) x).objects[x]? = some (.schedContext sc) ∧
+      sc.boundThreadCode = 0 ∧ sc.donationOrigin = none ∧ sc.scReply = none by
+    obtain ⟨sc, h1, h2, h3, h4⟩ := hU
+    exact finaliseSchedContextCleanupImpl_releases hInvU h1 h2 h3 h4
   have hA0 := hA
   unfold schedContextFinaliseAdmitted at hA0
   obtain ⟨sc0, hO, hRep⟩ : ∃ sc0, st.objects[x]? = some (.schedContext sc0) ∧
@@ -199,6 +239,12 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
 -- ============================================================================
 -- §2  The thread
 -- ============================================================================
+
+/-- A thread yielded to no context reads as quiescent exactly when its record
+with the yield writes cleared does: the quiescence reads no register. -/
+theorem threadLinksQuiescent_eq_withoutYieldWrites {t : TCB} (h : t.yieldToCode = 0) :
+    threadLinksQuiescent t = threadLinksQuiescent t.withoutYieldWrites := by
+  unfold threadLinksQuiescent; rw [h]
 
 open SeLe4n.Kernel.Concurrency (CoreId) in
 /-- **A finalised thread's own record is quiesced**: the thread at `x` is stored
@@ -367,8 +413,9 @@ the walk end every waiter and keep the thread
 (`finaliseThreadEndWaiters_returnLoan_endsAll`); the suspend marks
 it `.Inactive` on no core (`finaliseThreadSuspend_quiets`, single placement from
 `currentDequeuedUnique`); the release lets every core's hold go; the context
-unbind clears the binding (`finaliseThreadUnbindSchedContext_self`); and the
-invariant, carried along every step (`finaliseCarried`), reads every other link
+unbind clears the binding (`finaliseThreadUnbindSchedContext_self`); the yield
+steps write the yield writes alone and leave the thread yielded to no context
+(`threadFinaliseYield_yieldToCode_self`); and the invariant, carried along every step (`finaliseCarried`), reads every other link
 off a ready thread nothing waits on (`readyThread_unlinked`). -/
 theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     (hI : finaliseStepInvariant st) (hRQ : st.runQueueRefined) (hCD : st.currentDequeuedUnique)
@@ -376,6 +423,7 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     threadRecordQuiesced (finaliseThread x st) x := by
   obtain ⟨hCancel, hWait, hBind⟩ := finaliseThread_admissionCarried x st hI hBd hA
   unfold finaliseThread; dsimp only; rw [if_pos hA]
+  generalize threadHeldContextCode st ⟨x.val⟩ = held
   unfold finaliseThreadAfterRelease at hBind
   unfold finaliseThreadAfterCancel at hWait hBind
   -- The admission's reads of the thread.
@@ -462,15 +510,34 @@ theorem finaliseThread_quiesces (x : SeLe4n.ObjId) (st : SystemState)
     rw [← hHeld6]
     unfold threadHeldOnSomeCore threadCurrentOnSomeCore
     rw [hM7]; simp only [hCur7]
+  -- The yield steps: they write the yield writes alone, and leave the thread
+  -- yielded to no context.
+  have hInv7 := C7.1.2.1
+  have e8 := (SystemState.threadFinaliseYield_objectsAgreeOffYield _ ⟨x.val⟩ held hInv7).getTcb?_map
+    TCB.withoutYieldWrites (fun _ => rfl) ⟨x.val⟩
+  rw [hX7] at e8
+  cases hX8 : (threadFinaliseYield (finaliseThreadUnbindSchedContext s6 ⟨x.val⟩) ⟨x.val⟩
+      held).getTcb? ⟨x.val⟩ with
+  | none => rw [hX8] at e8; cases e8
+  | some t8 =>
+  rw [hX8] at e8
+  simp only [Option.map_some, Option.some.injEq] at e8
+  have y8 := SystemState.threadFinaliseYield_yieldToCode_self _ _ held hInv7 hX8
+  have hHeld8 : threadHeldOnSomeCore (threadFinaliseYield
+      (finaliseThreadUnbindSchedContext s6 ⟨x.val⟩) ⟨x.val⟩ held) ⟨x.val⟩ = false := by
+    rw [SystemState.threadFinaliseYield_eq_objects]; exact hHeld7
   -- The record's fields.
   have kq := kc5.trans k4
   simp only [TCB.cancelKey, TCB.quietKey, TCB.bindKey, Prod.mk.injEq] at kq
   obtain ⟨q1, q2, q3, q4, q5, q6, q7⟩ := kq
   obtain ⟨n1, n2, r1, r2, r3, r4, r5, r6⟩ := readyThread_unlinked C7.1 hX7 q2 q1 hNoW7
-  refine ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mp hX7, ?_, ?_, hHeld7⟩
-  · show t5.tid.val = x.val
+  refine ⟨t8, (SystemState.getTcb?_eq_some_iff _ _ _).mp hX8, ?_, ?_, hHeld8⟩
+  · have htid : t8.tid = t5.tid := by have e := congrArg TCB.tid e8; exact e
+    rw [htid]
     rw [q7]; exact hTid
-  · simp only [threadLinksQuiescent, Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none]
+  · rw [threadLinksQuiescent_eq_withoutYieldWrites y8, e8]
+    simp only [threadLinksQuiescent, TCB.withoutYieldWrites, Bool.and_eq_true, beq_iff_eq,
+      Option.isNone_iff_eq_none]
     simp_all
 
 end SeLe4n.Kernel
