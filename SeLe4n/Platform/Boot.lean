@@ -6443,11 +6443,25 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.2 s cap hc
   -- 19. releaseQueueRefined (WS-ZA ZA6.3): the caller's hypothesis.
   -- 20. refillsSound (WS-ZA ZA6.4): the caller's hypothesis.
-  -- Compose all 20 components
+  -- 21. yieldLinksAgree (WS-ZA ZA6.6): no boot thread yields to a context and
+  -- no boot context is yielded from, so every code is 0 and no link is open.
+  have hYield : ist.state.yieldLinksAgree := SystemState.yieldLinksAgree_of_clear fun k => by
+    cases hO : ist.state.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | tcb t =>
+        show (t.yieldToCode, 0) = (0, 0)
+        rw [((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+      | schedContext sc =>
+        show (0, sc.yieldFromCode) = (0, 0)
+        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
+      | _ => rfl
+  -- Compose all 21 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield⟩
 
 -- ============================================================================
 -- WS-RR RR5.13 / PR #889 review: results that read the object store through

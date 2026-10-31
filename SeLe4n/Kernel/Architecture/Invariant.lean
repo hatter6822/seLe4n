@@ -185,7 +185,14 @@ capacity), no bound context's pending refill is stranded off the release
 queues (`releaseNoRefillStranded`, seL4-MCS's release-queue rule), and every
 queued context is bound.  Every kernel entry keeps it through its run-queue
 stages (`RunQueueLinkStage.refills`); it reads the contexts and the release
-queues, so the adapter transitions frame it. -/
+queues, so the adapter transitions frame it.
+
+WS-ZA ZA6.6: `yieldLinksAgree` added as the 21st component — the yield link's
+two ends name each other (a thread's yield-to context names it as its yielder,
+and a context's yielder names it), seL4-MCS's `tcbYieldTo` / `scYieldFrom`
+pairing.  Every kernel entry keeps it through its run-queue stages
+(`RunQueueLinkStage.yield`); it reads the two codes alone, so the adapter
+transitions frame it. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -206,7 +213,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     st.runQueueRefined ∧
     st.liveMappingsRecorded ∧
     st.releaseQueueRefined ∧
-    st.refillsSound
+    st.refillsSound ∧
+    st.yieldLinksAgree
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -693,7 +701,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -759,6 +767,8 @@ theorem default_system_state_proofLayerInvariantBundle :
   · exact SystemState.default_releaseQueueRefined
   -- 20. refillsSound (WS-ZA ZA6.4: no context, every queue empty)
   · exact SystemState.default_refillsSound
+  -- 21. yieldLinksAgree (WS-ZA ZA6.6: no thread, no context)
+  · exact SystemState.default_yieldLinksAgree
 
 -- ============================================================================
 -- WS-ZA ZA6.4: the refill guarantees, system-wide
@@ -770,7 +780,7 @@ every pending refill — sum to its configured budget, and fit their capacity. -
 theorem proofLayerInvariantBundle_refillsConserved {st : SystemState}
     (h : proofLayerInvariantBundle st) {s : SeLe4n.SchedContextId} {sc : SchedContext}
     (hs : st.getSchedContext? s = some sc) : refillsConserved sc :=
-  (SystemState.schedContextWellFormed_of_get h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 hs).2.2.2.2
+  (SystemState.schedContextWellFormed_of_get h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1 hs).2.2.2.2
 
 /-- WS-ZA ZA6.4: **the per-period bound, system-wide** (seL4-MCS's sporadic-server
 guarantee): for every scheduling context of a state the bundle holds of, over

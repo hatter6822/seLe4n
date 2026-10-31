@@ -788,4 +788,95 @@ theorem fpAccessEntryState_preserves_refillsSound (coreId : UInt64)
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId).refillsSound :=
   (fpAccessEntryState_runQueueEntryStage coreId frame live st).refillsSound hInv hR hRel hS
 
+/-! ### The yield link across every entry -/
+
+/-- WS-ZA ZA6.6: **a kernel entry keeps the yield link in agreement**: its link
+half carries it (`RunQueueLinkStage.yield`) — the yield, the suspend and the
+finalise steps among its arms. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.yieldLinksAgree {st st' : SystemState}
+    (h : SystemState.RunQueueEntryStage st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hY : st.yieldLinksAgree) : st'.yieldLinksAgree :=
+  h.1.yield hInv hR hY
+
+/-- **The syscall entry keeps the yield link in agreement.** -/
+theorem syscallDispatchEntryState_preserves_yieldLinksAgree (ctx : LabelingContext)
+    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (E : EntryPremises st) (hY : st.yieldLinksAgree) :
+    (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).yieldLinksAgree :=
+  (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E
+    ).yieldLinksAgree E.objInv E.refined hY
+
+/-- **The timer entry keeps the yield link in agreement.** -/
+theorem perCoreTimerTickEntryState_preserves_yieldLinksAgree (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hY : st.yieldLinksAgree)
+    (hInv' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).objects.invExt)
+    (hRef' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).releaseQueueRefined)
+    (hD' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).currentDequeuedUnique)
+    (hBi' : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
+    (hAff' : ∀ d, replenishQueueAffinityConsistentOnCore
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+        ((timerTickBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).yieldLinksAgree :=
+  (perCoreTimerTickEntryState_runQueueEntryStage coreId frame st hInv' hRef' hD' hBi' hAff'
+    ).yieldLinksAgree hInv hR hY
+
+/-- **The reschedule entry keeps the yield link in agreement.** -/
+theorem perCoreRescheduleEntryState_preserves_yieldLinksAgree (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hY : st.yieldLinksAgree) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+        ((rescheduleBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))).yieldLinksAgree :=
+  (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).yieldLinksAgree hInv hR hY
+
+/-- **The cross-core suspend keeps the yield link in agreement** — the cancel
+clears both ends of the suspended thread's link. -/
+theorem suspendThreadCrossCoreDrainedStep_preserves_yieldLinksAgree (tid : UInt64) (e : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hY : st.yieldLinksAgree) :
+    (suspendThreadCrossCoreDrainedStep tid e st).2.yieldLinksAgree :=
+  (suspendThreadCrossCoreDrainedStep_runQueueEntryStage tid e st).yieldLinksAgree hInv hR hY
+
+/-- **The fault entry keeps the yield link in agreement.** -/
+theorem faultEntryState_preserves_yieldLinksAgree (lctx : LabelingContext) (coreId : UInt64)
+    (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st)
+    (hY : st.yieldLinksAgree) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt (faultEntryStep lctx
+        (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId))).yieldLinksAgree :=
+  (faultEntryState_runQueueEntryStage lctx coreId frame ectx w st E).yieldLinksAgree
+    E.objInv E.refined hY
+
+/-- **The unknown-syscall entry keeps the yield link in agreement.** -/
+theorem unknownSyscallEntryState_preserves_yieldLinksAgree (lctx : LabelingContext)
+    (coreId : UInt64) (frame : Architecture.InFlightContext)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (st : SystemState)
+    (E : EntryPremises st) (hY : st.yieldLinksAgree) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
+        (unknownSyscallEntryStep lctx
+        (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId))).yieldLinksAgree :=
+  (unknownSyscallEntryState_runQueueEntryStage lctx coreId frame ectx w st E).yieldLinksAgree
+    E.objInv E.refined hY
+
+/-- **The FP/SIMD entry keeps the yield link in agreement.** -/
+theorem fpAccessEntryState_preserves_yieldLinksAgree (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (live : Option FpContext)
+    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hY : st.yieldLinksAgree) :
+    (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId).yieldLinksAgree :=
+  (fpAccessEntryState_runQueueEntryStage coreId frame live st).yieldLinksAgree hInv hR hY
+
 end SeLe4n.Kernel

@@ -1827,10 +1827,26 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           timeoutBudget := none
           queuePrevCode := 0
           queueNextCode := 0
-          queuePPrevCode := 0 } .ready)
-        match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
-        | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
+          queuePPrevCode := 0
+          yieldToCode := 0 } .ready)
+        -- WS-ZA ZA6.6: seL4-MCS's `suspend` cancels the thread's yield
+        -- (`schedContext_cancelYieldTo`), as the live `cancelYieldTo` does:
+        -- the context it names forgets its yielder, the thread its context.
+        let cleared : Except KernelError FrozenSystemState :=
+          match tcb.yieldToCode with
+          | 0 => .ok st
+          | k + 1 =>
+            let scId : SeLe4n.SchedContextId := ⟨k⟩
+            match st.getObject? scId.toObjId with
+            | some (.schedContext sc) =>
+              frozenWithObjectStored st scId.toObjId (.schedContext { sc with yieldFromCode := 0 })
+            | _ => .ok st
+        match cleared with
         | .error e => .error e
+        | .ok st1 =>
+          match frozenWithObjectStored st1 tid.toObjId (.tcb tcb') with
+          | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
+          | .error e => .error e
 
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
 Mirrors `resumeThread` in frozen state.

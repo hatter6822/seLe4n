@@ -5257,8 +5257,21 @@ frame's `prev` unless it heads a stack).  A thread that lent a context from the 
 stack is that context's recorded origin, and the record counts only while the
 thread's own back-link (`TCB.originScCode`) names the context, so the thread's
 delete writes no context on its behalf and the admission scans no other object
-for origins naming it.  `schedContext_completeYieldTo` has nothing to do:
-the model keeps no yield-to link.  Where they differ, the finalise follows seL4
+for origins naming it.  The yield link is kept at both ends, seL4-MCS's
+`tcbYieldTo` and `scYieldFrom` (`TCB.yieldToCode`, `SchedContext.yieldFromCode`,
+code 0 for none, `n+1` for object `n`), and the two always name each other
+(`SystemState.yieldLinksAgree`, the proof-layer bundle's 21st conjunct, carried
+by every kernel entry's stage, every frame and the boot).  A context's finalise
+completes the yield it records (`completeYieldFrom`, seL4's
+`if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`): the
+yielder is handed the context's consumed time (`setConsumed`, the consumed word
+into its first message register with a one-register message info) and both ends
+are cleared.  A thread's suspend cancels its own yield
+(`cancelYieldTo`, seL4's `schedContext_cancelYieldTo`), and so does its final
+delete (`threadFinaliseYield`, which first completes the yield recorded by the
+context the thread holds); the TCB's pre-retype cleanup runs the same step, and
+a retyped thread or context carries no link (`retypeTargetDetached.tcbYieldUnlinked`,
+`schedContextRecordReleased`).  Where they differ, the finalise follows seL4
 rather than the live unbind syscall: that syscall leaves its thread queued at
 its legacy priority, the finalise dequeues it.  A caller blocked on its reply
 is blocked on the reply object, so an endpoint only a reply-blocked caller

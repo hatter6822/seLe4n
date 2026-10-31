@@ -304,6 +304,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with yieldFromCode := 0 }` on the context, then its yielder's `yieldToCode`; `scReply` is untouched")
   , (`SeLe4n.Kernel.setConsumed,
       "`{ sc with consumed := _ }` (`SchedContext.updateConsumed`), then the thread's two return registers; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSuspendThread,
+      "the frozen twin of the suspend's `cancelYieldTo`: `{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's own record; `scReply` is untouched")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
     -- reconciliation working rather than an exemption going missing.  Its
     -- `{ sc with priority := _ }` moved into the shared `frozenWriteBasePriority`
