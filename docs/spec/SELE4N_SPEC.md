@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.167` (`lakefile.toml`) |
+| **Package version** | `0.36.168` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 542,126 across 491 Lean files |
 | **Test LoC** | 87,743 across 70 Lean test suites |
@@ -6018,8 +6018,8 @@ Every kernel object has a decidable well-formedness predicate:
     it is removed.  It was not seL4's yieldTo.  seL4-MCS's
     `seL4_SchedContext_YieldTo` is a scheduling-context capability invocation,
     and the zero-allocation plan adds it in rows ZA6.5 to ZA6.8:
-    consumed-time accounting, the yield link, the activation step and the
-    invocation.
+    consumed-time accounting (landed at `v0.36.168`, below), the yield link,
+    the activation step and the invocation.
   - **Zero allocation.**  The configure, the bind and the refill scenarios
     read 0 heap cells at first call and steady state on the QEMU exerciser.
     The configure's resolution runs in continuation form
@@ -6027,6 +6027,34 @@ Every kernel object has a decidable well-formedness predicate:
     update and a refill's release compile to in-place writes
     (`configuredSchedContextImpl`, `SchedContext.releaseOneImpl`, each an
     `@[csimp]` form proven equal to its specification).
+- **Every charge records the time it consumed** (`v0.36.168`, WS-ZA ZA6.5).
+  A scheduling context keeps seL4-MCS's consumed time (`sc->scConsumed`) as
+  `SchedContext.consumed`, a number in its own slot.
+  - **Accumulation.**  Every charge goes through `SchedContext.chargeBudget`,
+    which adds the time run, `now - start`, as seL4-MCS's `chargeBudget` adds
+    its `consumed` (`chargeBudget_consumed`).  The timer tick, per-core and
+    single-core, and its exhausting charge add the unit they ran
+    (`chargeBudget_tick_consumed`), and so does the frozen tick, through the
+    same function.  The yield's whole-head charge starts at `now` and adds
+    nothing (`chargeBudget_forfeit_consumed`): seL4-MCS's `handleYield` keeps
+    `scConsumed` at the time actually run, and this kernel charges every unit
+    at the tick that ends it.  A configure keeps the count; a boot context
+    carries none (`bootSafeSchedContextCheck`).
+  - **The read.**  `SchedContext.consumedReading` and
+    `SchedContext.updateConsumed` are seL4-MCS's `schedContext_updateConsumed`:
+    the count is returned, at most a word (`consumedReadMax`), and what was
+    returned is taken off (`consumedReading_add_updateConsumed`,
+    `updateConsumed_cases`).  The yieldTo rows (ZA6.6 to ZA6.8) return it in
+    MR0.
+  - **Outside the refill view.**  The count is in no refill invariant's view
+    (`addConsumed_refillView`, `chargeBudget_refillView`) and is erased with
+    the refills (`SchedContext.refillsErased`), so `refillsSound`, refill
+    conservation, the window bound and the run-queue stages are unchanged.
+    Its projection is decided with the per-core tick's non-interference
+    (ZA6.9); until then it is projected as the context's other budget fields
+    are.
+  - **Zero allocation.**  The count is one field written in the charge's own
+    record update, so every charge scenario still reads 0 heap cells.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
@@ -7515,7 +7543,8 @@ removal). Since `v0.36.167` (WS-ZA ZA6.4) the configure is invoked on a
 per-core SchedControl capability, not on the context's own, and the
 kernel-internal `schedContextYieldTo` budget transfer, which broke refill
 conservation, is removed (seL4's `seL4_SchedContext_YieldTo` invocation is
-planned, ZA6.5 to ZA6.8). 7
+planned, ZA6.5 to ZA6.8; ZA6.5's consumed-time accounting landed at
+`v0.36.168`). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.

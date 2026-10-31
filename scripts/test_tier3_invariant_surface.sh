@@ -1456,8 +1456,14 @@ run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4
 run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
 # The two exhaustive positional patterns keep their arity pin: a field added to
 # `SchedContext` fails these definitions rather than defaulting to "unread".
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, donationOrigin, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt⟩" SeLe4n/Platform/Boot.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _donationOrigin, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, donationOrigin, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt, _consumed⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _donationOrigin, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt, _consumed⟩" SeLe4n/Platform/Boot.lean'
+# WS-ZA ZA6.5: the consumed time takes part in structural equality (the frozen
+# differential compares it) and a boot context must carry none.
+run_check "INVARIANT" rg -n '^    a\.consumed == b\.consumed$' SeLe4n/Kernel/SchedContext/Types.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bootSafeSchedContextCheck \(sc : SchedContext\)[^\n]*(\n([ \t][^\n]*)?)*    sc\.consumed == 0$" SeLe4n/Platform/Boot.lean'
+# ...and every charge adds the time run inside the one charge function.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def SchedContext\.chargeBudget \(sc : SchedContext\) \(start usage now : Nat\) :\n    SchedContext :=\n  \(\(\(sc\.refillUnblockCheck start\)\.refillBudgetCheck usage\)\.releaseReadyHead now\)\.addConsumed\n    \(now - start\)$" SeLe4n/Kernel/SchedContext/Budget.lean'
 # A boot SchedContext heads no reply stack: every admissible boot Reply is inert
 # (`bootSafeReplyCheck` refuses a linked one), so a config-supplied head could
 # only dangle — a `donationChainWellFormed` violation installed before the first

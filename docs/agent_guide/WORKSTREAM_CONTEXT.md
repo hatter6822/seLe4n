@@ -464,9 +464,15 @@ bundle's 20th conjunct (`refillsSound`), carried by every run-queue link stage
 or is a frame off the contexts it writes, closed by the placement after it
 (`closePlace`).  A configure through another core's control moves the context
 and its thread to that core (`schedControlConfigure`) and ends in seL4's resume
-tail (`configureResumeBound`).  ZA6.5 to ZA6.8 add seL4's
-`seL4_SchedContext_YieldTo`: consumed-time accounting on every charge, the
-yield link, the activation step at entry exit, and the invocation.  ZA6.9 puts
+tail (`configureResumeBound`).  Since `v0.36.168` (ZA6.5) every charge adds
+the time it ran to the context's consumed count (`SchedContext.consumed`,
+seL4-MCS's `scConsumed`) inside `SchedContext.chargeBudget`, so a new charge
+goes through that function, never writing the count itself, and charges a
+yield-style forfeit from `now` so it adds no time; the count is read and taken
+off through `SchedContext.consumedReading` / `SchedContext.updateConsumed`
+(seL4's `schedContext_updateConsumed`), and it is outside the refill view.
+ZA6.6 to ZA6.8 add the rest of seL4's `seL4_SchedContext_YieldTo`: the yield
+link, the activation step at entry exit, and the invocation.  ZA6.9 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:
