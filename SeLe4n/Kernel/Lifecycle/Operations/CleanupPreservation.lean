@@ -3290,6 +3290,7 @@ theorem migrateSchedContextReplenishment_runQueueStage (st : SystemState)
     (migrateSchedContextReplenishment_agree st scId fromCore toCore)
     (migrateSchedContextReplenishment_preserves_objects_invExt st scId fromCore toCore)
     (fun _ h => migrateSchedContextReplenishment_refined h scId fromCore toCore)
+    (fun _ _ h s => migrateSchedContextReplenishment_refillsSoundExcept h scId fromCore toCore s)
 
 /-- The donation hand-back rebinds a context and two threads' bindings: no run
 queue, no placement field. -/
@@ -3311,6 +3312,7 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
         hInv newOwner? h))
     (fun hInv => returnDonatedSchedContext_tableReferenceFrame hInv h)
     (fun hInv => returnDonatedSchedContext_releaseStateAgree hInv h)
+    (fun hInv => returnDonatedSchedContext_refillViewsKept hInv h)
     (by rw [hS])
 
 theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
@@ -3364,22 +3366,30 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
     apply key
     have hU := SystemState.updateSchedContext_scheduler st scId
       (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
-    refine SystemState.RunQueueStage.trans ?_ (SchedContextOps.purgeReplenishment_runQueueStage _ _)
-    apply SystemState.RunQueueStage.of_placement
-    · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
-    · show (st.updateSchedContext scId _).scheduler.runQueue = _
-      rw [hU]
-    · show (st.updateSchedContext scId _).scheduler.runQueueEnds = _
-      rw [hU]
-    · intro hInv x
-      exact congrArg (Option.map TCB.placement)
-        (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
-    · exact fun hInv => SystemState.StateMono.of_getTcb
-        (SystemState.updateSchedContext_getTcb? st scId _ hInv)
-    · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
-    · exact fun hInv => .updateSchedContext st scId _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
-    · show (st.updateSchedContext scId _).scheduler.currentCode = _
-      rw [hU]
+    cases hG : st.getSchedContext? scId with
+    | none =>
+      rw [SystemState.updateSchedContext_eq_self_of_none hG]
+      exact SchedContextOps.purgeReplenishment_runQueueStage _ _ (by rw [hG]; rfl)
+    | some sc =>
+      refine SchedContextOps.schedContextUnbind_stage_close hG rfl ?_ (fun hI a ha => ?_)
+      · apply SystemState.RunQueueFrameStage.of_placement
+        · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+        · show (st.updateSchedContext scId _).scheduler.runQueue = _
+          rw [hU]
+        · show (st.updateSchedContext scId _).scheduler.runQueueEnds = _
+          rw [hU]
+        · intro hInv x
+          exact congrArg (Option.map TCB.placement)
+            (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
+        · exact fun hInv => SystemState.StateMono.of_getTcb
+            (SystemState.updateSchedContext_getTcb? st scId _ hInv)
+        · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
+        · exact fun hInv => .updateSchedContext st scId _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
+        · exact fun hInv => .updateSchedContext st scId _ hInv
+        · show (st.updateSchedContext scId _).scheduler.currentCode = _
+          rw [hU]
+      · rw [SystemState.updateSchedContext_getSchedContext?_self _ _ _ hI, hG] at ha
+        cases ha; rfl
   · cases h
 
 /-- The retype's donation arm: the identity, the in-place unbind, or the

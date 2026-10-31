@@ -6,6 +6,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.ReschedulePendingArms.Entry
 import SeLe4n.Kernel.PerCoreTimerEntry
 import SeLe4n.Kernel.PerCoreRescheduleEntry
+import SeLe4n.Kernel.ReschedulePendingArms.Tick
 
 /-!
 # Every committing entry keeps the run-queue link agreement
@@ -22,6 +23,45 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (RunQueueStage)
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
+
+/-! ### The current contexts' placement -/
+
+/-- WS-ZA ZA6.4: **every core's current context is placeable on its core** in a
+state whose current threads are homed on their cores (`currentDequeuedUnique`),
+whose bindings are paired, and whose release queues are affinity-consistent: the
+context a current thread's binding names names it back, so it is bound, and it
+is linked on its thread's home core or on none — the precondition of the
+charge's postpone (`SystemState.currentContextPlaceableOnCore`), discharged by
+the kernel's invariants. -/
+theorem currentContextPlaceableOnCore_of_invariants {st : SystemState} (c : CoreId)
+    (hRef : st.releaseQueueRefined) (hD : st.currentDequeuedUnique)
+    (hBi : schedContextBindingBidirectional st)
+    (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d) :
+    st.currentContextPlaceableOnCore c := by
+  intro tid tcb scId sc hCur hT hb hS
+  have hH := currentBoundHomedOnCore_of_placement st c hD hBi tid tcb hCur hT
+  have hB := hH.2 scId sc hb hS
+  exact ⟨by rw [hB]; rfl, releaseFreeFor_of_boundHome hRef hAff hS hB hH.1⟩
+
+/-- ...and on the tick's prepared state, after the drain: the drain moves no
+thread, no binding and no current slot, and keeps the release queues refined
+and affinity-consistent. -/
+theorem timerTickOnCorePrepared_currentContextPlaceableOnCore (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined) (hD : st.currentDequeuedUnique)
+    (hBi : schedContextBindingBidirectional st)
+    (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d) :
+    (timerTickOnCorePrepared st c).currentContextPlaceableOnCore c := by
+  intro tid tcb scId sc hCur hT hb hS
+  have hH := timerTickOnCorePrepared_currentBoundHomedOnCore st c hInv hD hBi tid tcb hCur hT
+  have hB := hH.2 scId sc hb hS
+  have hRef' : (timerTickOnCorePrepared st c).releaseQueueRefined := by
+    simp only [timerTickOnCorePrepared]
+    exact processReplenishmentsDueOnCore_preserves_releaseQueueRefined _ c _ hInv
+      (SystemState.releaseStateAgree.refined
+        (SystemState.releaseStateAgree.of_objects_eq (st := st) (by rfl) (by rfl)) hRef)
+  exact ⟨by rw [hB]; rfl, releaseFreeFor_of_boundHome hRef'
+    (timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore st c hInv hRef hAff)
+    hS hB hH.1⟩
 
 /-! ### The scheduler's own steps -/
 
@@ -94,8 +134,13 @@ theorem scheduleDomainOnCore_runQueueEntryStage {st st' : SystemState} {c : Core
       exact RunQueueStage.entry (RunQueueStage.of_frame rfl rfl rfl)
 
 /-- The per-core timer step: the boot core's clock, the tick, the domain
-accounting. -/
-theorem perCoreTimerTickStep_runQueueEntryStage (st : SystemState) (coreId : UInt64) :
+accounting.  The tick's postpone reads the kernel's placement invariants at the
+step's state (`timerTickOnCorePrepared_currentContextPlaceableOnCore`), as the
+step's reschedule coverage does (`perCoreTimerTickStep_stepCovers`). -/
+theorem perCoreTimerTickStep_runQueueEntryStage (st : SystemState) (coreId : UInt64)
+    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined) (hD : st.currentDequeuedUnique)
+    (hBi : schedContextBindingBidirectional st)
+    (hAff : ∀ d, replenishQueueAffinityConsistentOnCore st d) :
     SystemState.RunQueueEntryStage st (perCoreTimerTickStep st coreId).1 := by
   by_cases hc : coreId.toNat < Concurrency.numCores
   · rw [perCoreTimerTickStep_valid_core st coreId hc]
@@ -103,7 +148,22 @@ theorem perCoreTimerTickStep_runQueueEntryStage (st : SystemState) (coreId : UIn
       unfold tickClockedState; split
       · exact RunQueueStage.of_frame rfl rfl rfl
       · exact RunQueueStage.refl _
-    exact (hClk.entry.trans (timerTickOnCore_runQueueEntryStage _ _)).trans
+    have hCInv : (tickClockedState st ⟨coreId.toNat, hc⟩).objects.invExt := by
+      rw [tickClockedState_objects]; exact hInv
+    have hCRef : (tickClockedState st ⟨coreId.toNat, hc⟩).releaseQueueRefined := by
+      unfold tickClockedState; split <;> exact hRef
+    have hCBi : schedContextBindingBidirectional (tickClockedState st ⟨coreId.toNat, hc⟩) := by
+      unfold tickClockedState; split <;> exact hBi
+    have hCAff : ∀ d, replenishQueueAffinityConsistentOnCore
+        (tickClockedState st ⟨coreId.toNat, hc⟩) d := by
+      unfold tickClockedState; split <;> exact hAff
+    have hCD : (tickClockedState st ⟨coreId.toNat, hc⟩).currentDequeuedUnique :=
+      SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
+        (by rw [tickClockedState_scheduler])
+        (fun c t => by unfold SystemState.runLinkOn SystemState.getTcb?; rw [tickClockedState_objects])
+        (SystemState.StateMono.of_objects (tickClockedState_objects _ _)) hD
+    exact (hClk.entry.trans (timerTickOnCore_runQueueEntryStage _ _
+      (timerTickOnCorePrepared_currentContextPlaceableOnCore _ _ hCInv hCRef hCD hCBi hCAff))).trans
       (scheduleDomainOnCore_runQueueEntryStage (scheduleDomainOnCore_eq_state _ _))
   · rw [perCoreTimerTickStep_invalid_core st coreId hc]
     exact (RunQueueStage.refl _).entry
@@ -479,15 +539,22 @@ theorem suspendThreadCrossCoreDrainedStep_runQueueEntryStage (tid : UInt64) (e :
       · exact (RunQueueStage.refl _).entry
 
 /-- **The timer entry's committed state keeps the agreement**: the trap-frame
-save, the tick, the residency settlement and the ledger drains. -/
+save, the tick, the residency settlement and the ledger drains.  The tick reads
+the placement invariants at the state it runs from, the saved one. -/
 theorem perCoreTimerTickEntryState_runQueueEntryStage (coreId : UInt64)
-    (frame : Option Architecture.InFlightContext) (st : SystemState) :
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : (Concurrency.saveCapturedTrapFrameAt st coreId frame).objects.invExt)
+    (hRef : (Concurrency.saveCapturedTrapFrameAt st coreId frame).releaseQueueRefined)
+    (hD : (Concurrency.saveCapturedTrapFrameAt st coreId frame).currentDequeuedUnique)
+    (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
+    (hAff : ∀ d, replenishQueueAffinityConsistentOnCore
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
     SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (PriorityInheritance.settleResidencyAt
         ((timerTickBracket coreId).run
           (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId))) :=
   ((saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans
-    (perCoreTimerTickStep_runQueueEntryStage _ coreId)).trans
+    (perCoreTimerTickStep_runQueueEntryStage _ coreId hInv hRef hD hBi hAff)).trans
     ((settleResidencyAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry)
 
 /-- **The reschedule entry's committed state keeps the agreement** (the

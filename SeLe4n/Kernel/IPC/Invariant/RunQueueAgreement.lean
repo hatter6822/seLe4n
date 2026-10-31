@@ -72,6 +72,7 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
   exact ⟨.of_tableFrame (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
       (st' := recordSendCap st tid badge grant) rfl hL hM d, fun _ _ => hM⟩
@@ -306,7 +307,8 @@ theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurre
     enqueueRunnableOnCore_runQueueRefined c tid h r⟩)
     (fun h => .of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite st c tid h)
       (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables)
-    fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h
+    (fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h)
+    fun h => enqueueRunnableOnCore_refillViewsKept st c tid h
 
 /-- The wake marks one thread ready and moves run-queue links: every runnable
 thread stays runnable. -/
@@ -898,6 +900,36 @@ theorem ipcUnwrapCaps_releaseStateAgree {caps : Array TransferCap} {root : SeLe4
   · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
       k hk hObjInv h).releaseLinkOn c
 
+/-- The objects at a key agreeing up to derivation metadata hold the same
+refill view: a CNode and a thread hold none. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.refillView
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) :
+    objRefillView st'.objects[oid]? = objRefillView st.objects[oid]? := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]; rfl
+
+/-- The capability transfer keeps every context's refill view: every object it
+writes is a CNode or a thread's links. -/
+theorem ipcUnwrapCaps_refillViewsKept {caps : Array TransferCap} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    RefillViewsKept st' st := by
+  refine .of_eq fun k => ?_
+  by_cases hk : k = root
+  · subst hk
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
+      hObjInv h with e | ⟨cn', hc⟩
+    · rw [e]
+    · cases hC : st.getCNode? k with
+      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
+      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
+  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
+      k hk hObjInv h).refillView
+
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
 theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.ObjId}
@@ -914,6 +946,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
         (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
     (fun hInv => ipcUnwrapCaps_tableReferenceFrame hInv h)
     (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
+    (fun hInv => ipcUnwrapCaps_refillViewsKept hInv h)
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
@@ -950,6 +983,7 @@ theorem donateSchedContext_runQueueStage {st st' : SystemState}
       (donateSchedContext_kindPreservingWrite st st' client server scId hInv h)
       (donateSchedContext_referenceTables h))
     (fun hInv => donateSchedContext_releaseStateAgree st st' client server scId hInv h)
+    (fun hInv => donateSchedContext_refillViewsKept st st' client server scId hInv h)
     (by rw [hS])
 
 theorem applyCallDonation_runQueueStage {st st' : SystemState}

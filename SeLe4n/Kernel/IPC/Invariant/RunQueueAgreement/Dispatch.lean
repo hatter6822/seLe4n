@@ -33,13 +33,16 @@ theorem notificationHeadsWakeable_of {st : SystemState} (hD : st.currentDequeued
 
 /-- **A step that changes no thread's IPC blocking**: it keeps every object
 that is no TCB, every thread's IPC state and every core's current slot, and
-the object store's invariant (a register save, a ledger write). -/
+the object store's invariant (a register save, a ledger write).  Every thread
+after it was there before with the same scheduling-context binding, too, so the
+current threads' contexts stay where they were (WS-ZA ZA6.4). -/
 def IpcFrame (st st' : SystemState) : Prop :=
   st.objects.invExt → st'.objects.invExt ∧
     (∀ (k : SeLe4n.ObjId) (o : KernelObject), (∀ t : TCB, o ≠ .tcb t) →
       st'.objects[k]? = some o → st.objects[k]? = some o) ∧
     (∀ (w : SeLe4n.ThreadId) (t' : TCB), st'.getTcb? w = some t' →
-      ∃ t, st.getTcb? w = some t ∧ t.ipcState = t'.ipcState) ∧
+      ∃ t, st.getTcb? w = some t ∧ t.ipcState = t'.ipcState ∧
+        t.schedContextBinding = t'.schedContextBinding) ∧
     (∀ (w : SeLe4n.ThreadId) (t : TCB), st.getTcb? w = some t →
       ∃ t', st'.getTcb? w = some t' ∧ t'.ipcState = t.ipcState) ∧
     (∀ c : Concurrency.CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
@@ -49,7 +52,7 @@ namespace IpcFrame
 variable {st st' st'' : SystemState}
 
 theorem refl (st : SystemState) : IpcFrame st st :=
-  fun h => ⟨h, fun _ _ _ h => h, fun _ t' h => ⟨t', h, rfl⟩, fun _ t h => ⟨t, h, rfl⟩,
+  fun h => ⟨h, fun _ _ _ h => h, fun _ t' h => ⟨t', h, rfl, rfl⟩, fun _ t h => ⟨t, h, rfl⟩,
     fun _ => rfl⟩
 
 theorem trans (h1 : IpcFrame st st') (h2 : IpcFrame st' st'') : IpcFrame st st'' := fun h =>
@@ -57,9 +60,9 @@ theorem trans (h1 : IpcFrame st st') (h2 : IpcFrame st' st'') : IpcFrame st st''
   let ⟨h'', a2, b2, c2, d2⟩ := h2 h'
   ⟨h'', fun k o ho hk => a1 k o ho (a2 k o ho hk),
     fun w t'' hw =>
-      let ⟨t', ht', e2⟩ := b2 w t'' hw
-      let ⟨t, ht, e1⟩ := b1 w t' ht'
-      ⟨t, ht, e1.trans e2⟩,
+      let ⟨t', ht', e2, f2⟩ := b2 w t'' hw
+      let ⟨t, ht, e1, f1⟩ := b1 w t' ht'
+      ⟨t, ht, e1.trans e2, f1.trans f2⟩,
     fun w t hw =>
       let ⟨t', ht', e1⟩ := c1 w t hw
       let ⟨t'', ht'', e2⟩ := c2 w t' ht'
@@ -72,28 +75,38 @@ theorem of_frame (hO : st'.objects = st.objects)
     IpcFrame st st' := fun h =>
   have hT : ∀ w, st'.getTcb? w = st.getTcb? w := fun w => by
     unfold SystemState.getTcb?; rw [hO]
-  ⟨by rw [hO]; exact h, fun _ _ _ hk => hO ▸ hk, fun w t' hw => ⟨t', (hT w) ▸ hw, rfl⟩,
+  ⟨by rw [hO]; exact h, fun _ _ _ hk => hO ▸ hk, fun w t' hw => ⟨t', (hT w) ▸ hw, rfl, rfl⟩,
     fun w t hw => ⟨t, (hT w).symm ▸ hw, rfl⟩, hC⟩
 
-/-- A write to one TCB that keeps its IPC state. -/
+/-- A write to one TCB that keeps its IPC state and its binding. -/
 theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hf : ∀ x, (f x).ipcState = x.ipcState) : IpcFrame st (st.updateTcb tid f) := fun h =>
+    (hf : ∀ x, (f x).ipcState = x.ipcState)
+    (hb : ∀ x, (f x).schedContextBinding = x.schedContextBinding := by intro _; rfl) :
+    IpcFrame st (st.updateTcb tid f) := fun h =>
   ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ h,
     fun _ _ ho hk => updateTcb_objects_back_nonTcb h ho hk,
-    fun _ _ hw => updateTcb_getTcb?_back h hf hw, fun _ _ hw => updateTcb_getTcb?_fwd h hf hw,
+    fun w t' hw => by
+      rw [updateTcb_getTcb?_eq h] at hw
+      split at hw
+      · obtain ⟨t, ht, rfl⟩ := Option.map_eq_some_iff.mp hw
+        exact ⟨t, ht, (hf t).symm, (hb t).symm⟩
+      · exact ⟨t', hw, rfl, rfl⟩,
+    fun _ _ hw => updateTcb_getTcb?_fwd h hf hw,
     fun _ => by rw [SystemState.updateTcb_scheduler]⟩
 
 end IpcFrame
 
 /-- What a kernel entry reads off the state it starts from: the three placement
-properties, and the endpoint queues' heads and the notifications' head waiters
-blocked. -/
+properties, the endpoint queues' heads and the notifications' head waiters
+blocked, and every core's current context placeable on its core (WS-ZA ZA6.4:
+what the bound yield's postpone needs). -/
 structure EntryPremises (st : SystemState) : Prop where
   objInv : st.objects.invExt
   refined : st.runQueueRefined
   dequeued : st.currentDequeuedUnique
   queueHeads : queueHeadBlockedConsistent st
   ntfnHeads : notificationHeadsWakeable st
+  placeable : ∀ c, st.currentContextPlaceableOnCore c
 
 /-- What a syscall arm reads besides: the caller is core `c`'s current thread and
 no idle thread (an idle thread runs the kernel's own loop and never traps). -/
@@ -109,8 +122,9 @@ variable {st st' : SystemState}
 /-- The premises from the state's invariants. -/
 theorem of_invariants (hInv : st.objects.invExt) (hR : st.runQueueRefined)
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
-    (hNW : notificationWaiterConsistent st) : EntryPremises st :=
-  ⟨hInv, hR, hD, hQ, notificationHeadsWakeable_of hD hNW⟩
+    (hNW : notificationWaiterConsistent st) (hP : ∀ c, st.currentContextPlaceableOnCore c) :
+    EntryPremises st :=
+  ⟨hInv, hR, hD, hQ, notificationHeadsWakeable_of hD hNW, hP⟩
 
 theorem endpointHeads (E : EntryPremises st) : endpointHeadsWakeable st :=
   endpointHeadsWakeable_of E.dequeued E.queueHeads
@@ -128,7 +142,7 @@ theorem of_ipcFrame (E : EntryPremises st) (hS : RunQueueStage st st') (hF : Ipc
     queueHeads := queueHeadBlockedConsistent_of_endpoint_tcb_backward st st'
       (fun _ _ hE => hNT _ _ (fun _ h => by cases h) hE)
       (fun y t' hY =>
-        let ⟨t, ht, hs⟩ := hTB y t' ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hY)
+        let ⟨t, ht, hs, _⟩ := hTB y t' ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hY)
         ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp ht, hs⟩) E.queueHeads
     ntfnHeads := fun nid ntfn hN w hW => by
       have hN0 : st.getNotification? nid = some ntfn :=
@@ -136,7 +150,17 @@ theorem of_ipcFrame (E : EntryPremises st) (hS : RunQueueStage st st') (hF : Ipc
           ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN))
       obtain ⟨hCN, t, ht, hb⟩ := E.ntfnHeads nid ntfn hN0 w hW
       obtain ⟨t', ht', hs⟩ := hTF w t ht
-      exact ⟨fun c => by rw [hC c]; exact hCN c, t', ht', by rw [hs]; exact hb⟩ }
+      exact ⟨fun c => by rw [hC c]; exact hCN c, t', ht', by rw [hs]; exact hb⟩
+    placeable := fun c tid tcb' scId sc hCur hT hb hS => by
+      rw [hC c] at hCur
+      obtain ⟨t, ht, -, hbd⟩ := hTB tid tcb' hT
+      have hS0 : st.getSchedContext? scId = some sc :=
+        (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr (hNT _ _ (fun _ h => by cases h)
+          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS))
+      obtain ⟨h1, h2⟩ := E.placeable c tid t scId sc hCur ht (by rw [hbd]; exact hb) hS0
+      refine ⟨h1, ?_⟩
+      unfold SystemState.releaseFreeFor SystemState.releaseCoreOf at h2 ⊢
+      rw [hS]; rw [hS0] at h2; exact h2 }
 
 /-- The caller's premises: core `c`'s current thread, no idle thread. -/
 theorem arm (E : EntryPremises st) {c : Concurrency.CoreId} {tid : SeLe4n.ThreadId}
@@ -896,7 +920,7 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     · rename_i hYieldOk
       cases h
-      exact yieldOnCore_runQueueEntryStage hYieldOk
+      exact yieldOnCore_runQueueEntryStage hYieldOk (P.placeable executingCore)
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
@@ -1048,7 +1072,7 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     · cases h
     · rename_i hYieldOk
       cases h
-      exact yieldOnCore_runQueueEntryStage hYieldOk
+      exact yieldOnCore_runQueueEntryStage hYieldOk (P.placeable executingCore)
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)

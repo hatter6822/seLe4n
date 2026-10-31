@@ -204,6 +204,17 @@ theorem abortPendingIpcOnEndpoint_releaseStateAgree {epId : SeLe4n.ObjId} {isRec
   exact (SystemState.releaseStateAgree.storeObject_tcb hInv1 hStore
     (lookupTcb_some_objects _ _ _ hLook)).trans (endpointQueueRemove_releaseStateAgree hInv hRem)
 
+/-- The timeout's abort keeps every context's refill view: the splice writes
+no context and the thread is stored over a thread. -/
+theorem abortPendingIpcOnEndpoint_refillViewsKept {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    RefillViewsKept st' st := by
+  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  exact (RefillViewsKept.storeObject hInv1 hStore (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
+    (.of_schedContexts_backward (endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv hRem))
+
 /-- ...so it keeps the run queues in agreement with the links. -/
 theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState}
@@ -217,6 +228,7 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
     (fun hInv => abortPendingIpcOnEndpoint_stateMono hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_tableReferenceFrame hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_releaseStateAgree hInv hA)
+    (fun hInv => abortPendingIpcOnEndpoint_refillViewsKept hInv hA)
 
 /-- WS-RR RR8.11: the reclaim moves no thread's home core — the pop rebinds
 scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/

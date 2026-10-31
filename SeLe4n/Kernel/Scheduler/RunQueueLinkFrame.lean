@@ -498,6 +498,11 @@ theorem releaseStateAgree.of_agreeOffRunLinks {st st' : SystemState}
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots) : releaseStateAgree st' st :=
   ⟨.of_map KernelObject.withoutRunLinks (fun o _ => by cases o <;> rfl) h, hS⟩
 
+/-- A run-links-only rewrite keeps every context's refill view. -/
+theorem _root_.SeLe4n.Kernel.RefillViewsKept.of_agreeOffRunLinks {st st' : SystemState}
+    (h : objectsAgreeOffRunLinks st' st) : RefillViewsKept st' st :=
+  .of_map KernelObject.withoutRunLinks (fun o => by cases o <;> rfl) h
+
 /-- A TCB rewrite that changes only run-queue fields. -/
 def RunLinksOnly (g : TCB → TCB) : Prop := ∀ tcb, (g tcb).withoutRunLinks = tcb.withoutRunLinks
 
@@ -787,8 +792,9 @@ theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4
       (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
       (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
         (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).referenceTables)
-      fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+      (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
         (by rw [runRemoveOnCore_scheduler]; rfl))
+      fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
     (fun c' y h' => by
       rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
       exact h')
@@ -1242,8 +1248,9 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
   refine .of_tableFrame ?_ (fun _ => .of_agreeOffRunLinks
     (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
     (runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
+    (fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
+      (by rw [runRequeueOnCore_scheduler]; rfl))
     fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
-      (by rw [runRequeueOnCore_scheduler]; rfl)
   intro hInv hR
   refine ⟨runRequeueOnCore_objects_invExt st c t p hInv, ?_⟩
   obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
@@ -1291,8 +1298,9 @@ theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : 
   .of_tableFrame (fun h r => ⟨runEnqueueOnCore_objects_invExt st c t p h, runEnqueueOnCore_refined r⟩)
     (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
       (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
+    (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
+      (by rw [runEnqueueOnCore_scheduler]; split <;> rfl))
     fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
-      (by rw [runEnqueueOnCore_scheduler]; split <;> rfl)
 
 /-- The guarded enqueue of a runnable thread current on no core, on its home
 core, is a stage: every current thread stays off the queues, and every queued
@@ -1423,6 +1431,47 @@ theorem RunQueueDispatchStage.descheduleCurrent (st : SystemState) (c : CoreId)
         · cases hq
         · exact .inl hq)
       hM, fun _ _ => hM⟩
+
+/-- WS-ZA ZA6.4: the guarded enqueue after a frame stage off `P`. -/
+theorem RunQueueFrameStage.then_enqueue {P : SeLe4n.SchedContextId → Prop} {st s : SystemState}
+    {c : CoreId} {t : SeLe4n.ThreadId} {p : SeLe4n.Priority} (h1 : RunQueueFrameStage P st s)
+    (hNC : ∀ c', s.scheduler.currentOnCore c' ≠ some t) (hRun : st.runnable t)
+    (hHome : s.homedOn t c) :
+    RunQueueFrameStage P st (s.runEnqueueOnCore c t p) :=
+  ⟨h1.1.trans ((RunQueueLinkStage.runEnqueueOnCore s c t p).toFrame P), fun e h r r'' d =>
+    let ⟨h', r'⟩ := h1.1.links h r
+    (RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)
+      hHome).2.1 e h' r' r''
+      (h1.2.1 e h r r' d),
+    fun h r =>
+      let ⟨h', r'⟩ := h1.1.links h r
+      (h1.2.2 h r).trans
+        ((RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)
+          hHome).2.2 h' r')⟩
+
+/-- WS-ZA ZA6.4: the run-queue writes keep every context and every release
+queue (`RefillsKeptOff`, off any set). -/
+theorem RefillsKeptOff.runRequeueOnCore (P : SeLe4n.SchedContextId → Prop) (st : SystemState)
+    (c : CoreId) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    RefillsKeptOff P (st.runRequeueOnCore c t p) st :=
+  .of_releaseSlots (RefillViewsKept.of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
+    (by rw [runRequeueOnCore_scheduler]; rfl)
+
+theorem RefillsKeptOff.runEnqueueOnCore (P : SeLe4n.SchedContextId → Prop) (st : SystemState)
+    (c : CoreId) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    RefillsKeptOff P (st.runEnqueueOnCore c t p) st :=
+  .of_releaseSlots (RefillViewsKept.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))
+    (by rw [runEnqueueOnCore_scheduler]; split <;> rfl)
+
+theorem RefillsKeptOff.markReschedulePendingOnCore (P : SeLe4n.SchedContextId → Prop)
+    (st : SystemState) (c : CoreId) : RefillsKeptOff P (st.markReschedulePendingOnCore c) st :=
+  .of_releaseSlots (.refl st) rfl
+
+theorem RefillsKeptOff.updateTcb (P : SeLe4n.SchedContextId → Prop) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt) :
+    RefillsKeptOff P (st.updateTcb tid f) st :=
+  .of_releaseSlots (.of_getSchedContext?_eq (updateTcb_getSchedContext? st tid f hInv))
+    (by rw [updateTcb_scheduler])
 
 /-- A reschedule flag is not read by the agreement. -/
 theorem RunQueueStage.markReschedulePendingOnCore (st : SystemState) (c : CoreId) :

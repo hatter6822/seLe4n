@@ -5,6 +5,7 @@ Released under GPL-3.0-or-later license as described in the file LICENSE.
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Ipc
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.Kernel.SchedContext.Invariant.Preservation
 
 /-!
 # Scheduling-context, thread-control and retype arms keep the run-queue link agreement
@@ -104,11 +105,40 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.runRequeueOnCore_of_queued
 
 /-- The re-placement writes the contexts' release fields and the release
 queues alone. -/
-theorem releasePlace_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
-    (s : SeLe4n.SchedContextId) : RunQueueStage st (st.releasePlace c s) :=
+theorem releasePlace_runQueueFrameStage (st : SystemState) (c : Concurrency.CoreId)
+    (s : SeLe4n.SchedContextId) :
+    SystemState.RunQueueFrameStage (· = s) st (st.releasePlace c s) :=
   .of_releaseOnlyWrite (SystemState.releasePlace_releaseOnlyWrite st c s)
     (SystemState.releasePlace_agree st c s) (SystemState.releasePlace_objects_invExt st c s)
     (fun _ h => SystemState.releasePlace_refined h c s)
+    (fun _ hS _ hq r => SystemState.releasePlace_refillsSoundExcept hq c s
+      (fun hs => absurd (hS s rfl) hs) r)
+
+/-- WS-ZA ZA6.4: **a write to context `s` closed by its placement**: a frame
+stage off `s` up to `X`, in which `s` is free for core `c`, well formed, bound
+while it has a place and bound wherever it is queued, is a stage up to `s`
+placed on `c` — the bind's and the configure's shape. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.closePlace {st X : SystemState}
+    {c : Concurrency.CoreId} {s : SeLe4n.SchedContextId}
+    (hF : SystemState.RunQueueFrameStage (· = s) st X)
+    (hX : ∀ S : SeLe4n.SchedContextId → Prop, ¬ S s → st.objects.invExt → st.runQueueRefined →
+      st.releaseQueueRefined → st.refillsSoundExcept S → X.releaseQueueRefined →
+      X.releaseFreeFor c s = true ∧
+      (∀ a, X.getSchedContext? s = some a → schedContextWellFormed a) ∧
+      (∀ sc, X.getSchedContext? s = some sc → sc.releaseKey? ≠ none →
+        sc.boundThread.isSome = true) ∧
+      (∀ c e, e ∈ (X.scheduler.replenishQueueOnCore c).entries → e.1 = s →
+        ∃ a, X.getSchedContext? e.1 = some a ∧ a.boundThread.isSome = true)) :
+    RunQueueStage st (X.releasePlace c s) :=
+  have hT := hF.trans (releasePlace_runQueueFrameStage X c s)
+  ⟨⟨hT.1.links, hT.1.tables, hT.1.release, fun S hI hR hQ hS => by
+    by_cases hs : S s
+    · exact hT.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
+    · have hXR := hF.1.release hI hR hQ
+      obtain ⟨hFree, hWF, hB, hQB⟩ := hX S hs hI hR hQ hS hXR
+      exact SystemState.releasePlace_close hXR c s hFree hWF hB hQB
+        (hF.1.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx))⟩,
+    hT.2⟩
 
 /-- The bind writes the context's bound thread, the thread's binding and
 priority, re-buckets or places the thread through the link-writing queue
@@ -121,7 +151,8 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
   · rename_i sc hSc _
     split at h
     · cases h
-    · split at h
+    · rename_i hUnb
+      split at h
       · cases h
       · split at h
         · rename_i tcb hTcb
@@ -136,47 +167,68 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                   SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased st.machine.timer)
                 simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
                 subst h
-                refine RunQueueStage.trans ?_ (releasePlace_runQueueStage _ _ _)
-                refine RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
-                split
-                · rename_i hMem
-                  refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hMem)
-                  refine RunQueueStage.trans ?_ (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
-                  exact RunQueueStage.insert rfl rfl rfl
+                -- The context written bound (a frame off it: its refills may be
+                -- pending off every queue until the placement closes the write).
+                have hIns : SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vScId.val) st
+                    (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none })
+                      (SystemState.rewriteAdmissible_schedContext hSc _)) :=
+                  SystemState.RunQueueFrameStage.insert rfl rfl rfl
                     (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (SystemState.objStateMono_nonTcb
-                        (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-                      (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (hR := fun _ => by
-                        rw [show st.objects[vScId.val]? = _ from hScRaw]
-                        simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
-                          hRel2, hRel3])
-                · split
-                  · rename_i hPlace
-                    refine RunQueueStage.trans ?_
-                      (SystemState.RunQueueStage.markReschedulePendingOnCore _ _)
-                    refine RunQueueStage.then_enqueue ?_ (bindPlacesParkedThread_not_current hPlace)
-                      (bindPlacesParkedThread_runnable hPlace hTcb) (homedOn_determineTargetCore _ _)
-                    refine RunQueueStage.trans ?_ (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
-                    exact RunQueueStage.insert rfl rfl rfl
-                      (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (SystemState.objStateMono_nonTcb
-                        (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-                      (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (hR := fun _ => by
-                        rw [show st.objects[vScId.val]? = _ from hScRaw]
-                        simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
-                          hRel2, hRel3])
-                  · refine RunQueueStage.trans ?_ (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
-                    exact RunQueueStage.insert rfl rfl rfl
-                      (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (SystemState.objStateMono_nonTcb
-                        (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-                      (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-                      (hR := fun _ => by
-                        rw [show st.objects[vScId.val]? = _ from hScRaw]
-                        simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
-                          hRel2, hRel3])
+                    (SystemState.objStateMono_nonTcb
+                      (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
+                    (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+                    (hR := fun _ => by
+                      rw [show st.objects[vScId.val]? = _ from hScRaw]
+                      simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
+                        hRel2, hRel3])
+                refine SystemState.RunQueueFrameStage.closePlace ?_ (fun S hs hI _ _ hS => ?_)
+                · refine SystemState.RunQueueFrameStage.trans ?_
+                    (SystemState.RunQueueStage.toFrame (markKeyChangeFor_runQueueStage _ _ _) _)
+                  split
+                  · rename_i hMem
+                    refine SystemState.RunQueueFrameStage.trans ?_ (SystemState.RunQueueStage.toFrame
+                      (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hMem) _)
+                    exact hIns.trans (by exact (SystemState.RunQueueStage.toFrame
+                      (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _))
+                  · split
+                    · rename_i hPlace
+                      refine SystemState.RunQueueFrameStage.trans ?_ (SystemState.RunQueueStage.toFrame
+                        (SystemState.RunQueueStage.markReschedulePendingOnCore _ _) _)
+                      exact SystemState.RunQueueFrameStage.then_enqueue (hIns.trans
+                        (by exact (SystemState.RunQueueStage.toFrame (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _)))
+                        (bindPlacesParkedThread_not_current hPlace) (bindPlacesParkedThread_runnable hPlace hTcb)
+                        (homedOn_determineTargetCore _ _)
+                    · exact hIns.trans (by exact (SystemState.RunQueueStage.toFrame
+                        (RunQueueStage.updateTcb _ _ (by intro _ _; rfl)) _))
+                · -- The placement's facts: the context was unbound, so no entry
+                  -- named it, and it is written well formed and bound.
+                  have hN : ∀ c e, e ∈ (st.scheduler.replenishQueueOnCore c).entries →
+                      e.1 ≠ ⟨vScId.val.toNat⟩ := by
+                    intro c e he hes
+                    obtain ⟨a, ha, hb⟩ := hS.2.2 c e (by rw [hes]; exact hs) he
+                    rw [hes] at ha
+                    have : a = sc := Option.some.inj (ha.symm.trans hSc)
+                    subst this
+                    exact hUnb hb
+                  have hYs : (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none }) (SystemState.rewriteAdmissible_schedContext hSc _)).getSchedContext? ⟨vScId.val.toNat⟩ = some { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
+                    SystemState.rewriteObject_schedContext_getSchedContext?_self st
+                      (SchedContextId.ofObjId vScId.val) _ (SystemState.rewriteAdmissible_schedContext hSc _) hI
+                  have hWF : schedContextWellFormed { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
+                    releaseReadyHead_preserves_schedContextWellFormed sc _ (hS.1 _ sc hs hSc)
+                  split
+                  · intro hXR
+                    exact SystemState.closePlace_facts hYs hN hWF rfl
+                      ((markKeyChangeFor_refillsKeptOff _ _ _ _).trans
+                        ((SystemState.RefillsKeptOff.runRequeueOnCore _ _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI)))) hXR _
+                  · split
+                    · intro hXR
+                      exact SystemState.closePlace_facts hYs hN hWF rfl
+                        ((markKeyChangeFor_refillsKeptOff _ _ _ _).trans
+                          ((SystemState.RefillsKeptOff.markReschedulePendingOnCore _ _ _).trans
+                            ((SystemState.RefillsKeptOff.runEnqueueOnCore _ _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI))))) hXR _
+                    · intro hXR
+                      exact SystemState.closePlace_facts hYs hN hWF rfl
+                        ((markKeyChangeFor_refillsKeptOff _ _ _ _).trans (SystemState.RefillsKeptOff.updateTcb _ _ _ _ (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hI))) hXR _
               all_goals cases h
         · cases h
   · cases h
@@ -277,7 +329,8 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
     unfold SchedContextOps.schedContextConfigure at h
     split at h
     · exact absurd h (by simp)
-    · rw [hSc] at h
+    · rename_i hValid
+      rw [hSc] at h
       dsimp only at h
       split at h
       · split at h
@@ -286,33 +339,70 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
           obtain ⟨scP, hScP, -⟩ := (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
             (SchedContextOps.purgeReplenishment_agree st ⟨vScId.val.toNat⟩)).get_sc
             (show st.objects[vScId.val]? = _ from hScRaw)
-          have hS1 : RunQueueStage st stStored :=
-            (SchedContextOps.purgeReplenishment_runQueueStage st _).trans
-              (RunQueueStage.storeObject_nonTcb hStore hScP (fun _ e => KernelObject.noConfusion e)
-                (fun _ e => KernelObject.noConfusion e) (hR := fun c => by
+          -- The purge, then the store: a frame off the context, closed below by
+          -- its placement (bound) or by its being unbound and on no queue.
+          have hW : SystemState.RunQueueFrameStage (· = ⟨vScId.val.toNat⟩) st stStored :=
+            (SchedContextOps.purgeReplenishment_runQueueFrameStage st ⟨vScId.val.toNat⟩).trans
+              (SystemState.RunQueueFrameStage.storeObject hStore (fun c => by rw [hScP]; rfl)
+                (by rw [hScP]; exact SystemState.objStateMono_nonTcb rfl rfl)
+                (hB := by rw [hScP]; rfl) (hR := fun c => by
+                  change _ = SystemState.objReleaseLinkOn (SchedContextOps.purgeReplenishment st
+                    ⟨vScId.val.toNat⟩).objects[vScId.val]? c
                   have hN := (SystemState.releaseQueuedAnywhere_eq_false_iff _ _).mp
                     (SystemState.releaseRemoveAnywhere_not_queued st ⟨vScId.val.toNat⟩) c
                   rw [SystemState.releaseLinkOn_eq_obj] at hN
                   change SystemState.objReleaseLinkOn (SchedContextOps.purgeReplenishment st
                     ⟨vScId.val.toNat⟩).objects[vScId.val]? c = none at hN
                   rw [hScP] at hN
-                  rw [hN]; simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn,
+                  rw [hScP, hN]; simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn,
                     SchedContextOps.configuredSchedContext_releaseCoreCode]))
+          -- What the store leaves: the configured context, on no queue.
+          have hN : ∀ hI : st.objects.invExt, st.releaseQueueRefined → ∀ c e,
+              e ∈ (stStored.scheduler.replenishQueueOnCore c).entries →
+              e.1 ≠ ⟨vScId.val.toNat⟩ := fun hI hR c e he => by
+            rw [storeObject_scheduler_eq _ _ _ _ hStore] at he
+            exact SystemState.not_mem_entries_of_not_queued
+              (SchedContextOps.purgeReplenishment_refined hR _)
+              (SystemState.releaseRemoveAnywhere_not_queued st ⟨vScId.val.toNat⟩) c e he
+          have hYs : ∀ hI : st.objects.invExt, stStored.getSchedContext? ⟨vScId.val.toNat⟩ =
+              some (SchedContextOps.configuredSchedContext budget period priority deadline domain
+                st.machine.timer (SchedContextOps.configureKeepsHead st sc budget period) sc) := fun hI =>
+            (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+              (storeObject_objects_eq _ _ _ _ (SchedContextOps.purgeReplenishment_objects_invExt st _ hI) hStore)
+          have hWF : ∀ S : SeLe4n.SchedContextId → Prop, ¬ S ⟨vScId.val.toNat⟩ →
+              st.refillsSoundExcept S → schedContextWellFormed
+                (SchedContextOps.configuredSchedContext budget period priority deadline domain
+                  st.machine.timer (SchedContextOps.configureKeepsHead st sc budget period) sc) :=
+            fun S hs hS => SchedContextOps.configuredSchedContext_schedContextWellFormed _ _ _ _ _ _ _
+              hValid sc (schedContextWellFormed_refillsPositive (hS.1 _ sc hs hSc))
           split at h
-          · rw [Except.ok.injEq, Prod.mk.injEq] at h
-            rw [← h.2]; exact hS1
-          · split at h
+          · rename_i hUnb
+            rw [Except.ok.injEq, Prod.mk.injEq] at h
+            rw [← h.2]
+            exact hW.withRefills fun S hs hI hRq hRel _ _ h0 h4 =>
+              SystemState.refillsSoundExcept_close_unbound h4
+                (fun a ha => by rw [hYs hI] at ha; cases ha; rfl)
+                (by rw [SchedContextOps.configuredSchedContext_boundThread, hUnb]; rfl)
+                (hWF S hs h0) (hN hI hRel)
+          · rename_i boundTid hBnd
+            have hP : RunQueueStage st (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩) :=
+              SystemState.RunQueueFrameStage.closePlace hW fun S hs hI _ hRel hS hXR =>
+                SystemState.closePlace_facts (hYs hI) (hN hI hRel) (hWF S hs hS)
+                  (by rw [SchedContextOps.configuredSchedContext_boundThread, hBnd]; rfl)
+                  (.refl _ _) hXR _
+            split at h
             · rename_i boundTcb hBound _
               rw [Except.ok.injEq, Prod.mk.injEq] at h
               rw [← h.2]
-              exact (hS1.trans (releasePlace_runQueueStage _ _ _)).trans
+              exact hP.trans
                 (((((schedContextConfigureBoundPropagate_runQueueStage _ _ _ _ hBound _ _).trans
                   (markCandidacyGainFor_runQueueStage _ _ _)).trans
                   (markKeyChangeFor_runQueueStage _ _ _)).trans
                   (PriorityInheritance.repropagateFromWaiter_runQueueStage _ _ _ _)).trans
                   (configureResumeBound_runQueueStage _ _ _))
             · rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2]; exact hS1.trans (releasePlace_runQueueStage _ _ _)
+              rw [← h.2]; exact hP
       · exact absurd h (by simp)
 
 /-- The preemption saves the outgoing thread's registers (a TCB rewrite keeping
@@ -866,6 +956,9 @@ theorem migrateRunQueueOnAffinityChange_runQueueLinkStage (st : SystemState)
           ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
             (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _))
             (by rw [SystemState.runEnqueueAdmitted_scheduler, SystemState.runRemoveOnCore_scheduler]; rfl))
+          (fun _ => RefillViewsKept.of_agreeOffRunLinks
+            ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
+              (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)))
         have hS := (RunQueueStage.runRemoveOnCore st fromCore tid).1 hInv hR
         refine ⟨SystemState.runEnqueueAdmitted_objects_invExt _ _ _ _ hS.1,
           SystemState.runEnqueueAdmitted_refined hS.2 ?_ ?_⟩
@@ -1249,17 +1342,73 @@ theorem scheduleEffectiveOnCore_runQueueDispatchStage {st st' : SystemState}
       · cases h
     · cases h
 
-/-- A SchedContext rewritten through its witnessed lookup. -/
-theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_schedContext
+/-- A SchedContext rewritten through its witnessed lookup: a frame stage off it
+(WS-ZA ZA6.4: a charge writes its refills, and the charge's own end closes it). -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.rewriteObject_schedContext
     {st : SystemState} {scId : SeLe4n.SchedContextId} {sc sc' : SchedContext}
     (h : st.getSchedContext? scId = some sc) (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc'))
-    (hRL : ∀ c, sc'.releaseLinkOn c = sc.releaseLinkOn c := by intro _; rfl) :
-    RunQueueStage st (st.rewriteObject scId.toObjId (.schedContext sc') hA) :=
-  RunQueueStage.insert (st' := st.rewriteObject scId.toObjId (.schedContext sc') hA) rfl rfl rfl
+    (hRL : ∀ c, sc'.releaseLinkOn c = sc.releaseLinkOn c) :
+    SystemState.RunQueueFrameStage (· = scId) st
+      (st.rewriteObject scId.toObjId (.schedContext sc') hA) :=
+  SystemState.RunQueueFrameStage.insert (st' := st.rewriteObject scId.toObjId (.schedContext sc') hA)
+    rfl rfl rfl
     (fun c => by rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp h]; rfl)
     (SystemState.objStateMono_nonTcb
       (by rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp h]; rfl) rfl)
     (hR := fun c => by rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp h]; exact hRL c)
+
+/-- WS-ZA ZA6.4: **a context write that leaves its head holding budget is a
+stage**: the context stays well formed and bound as it was and has no place, so
+no refill of it is stranded — the tick's charge that does not use the head up. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_schedContext_keyless
+    {st : SystemState} {scId : SeLe4n.SchedContextId} {sc sc' : SchedContext}
+    (h : st.getSchedContext? scId = some sc) (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc'))
+    (hRL : ∀ c, sc'.releaseLinkOn c = sc.releaseLinkOn c)
+    (hWF : schedContextWellFormed sc → schedContextWellFormed sc')
+    (hK : sc'.releaseKey? = none) (hBT : sc'.boundThread = sc.boundThread) :
+    RunQueueStage st (st.rewriteObject scId.toObjId (.schedContext sc') hA) :=
+  (SystemState.RunQueueFrameStage.rewriteObject_schedContext h hA hRL).withRefills
+    fun S hs hI _ _ _ _ h0 h4 => SystemState.refillsSoundExcept_close_keyless (st0 := st) (fun _ => rfl) hs h0 h4
+      (SystemState.rewriteObject_schedContext_getSchedContext?_self st scId sc' hA hI) h
+      (hWF (h0.1 scId sc hs h)) hK hBT
+
+/-- The context a charge writes back names the thread it named. -/
+theorem chargedSchedContext_boundThread (sc : SchedContext) (start ticks now : Nat) :
+    (cbsUpdateDeadline (sc.chargeBudget start ticks now) now true).boundThread = sc.boundThread := by
+  unfold SchedContext.boundThread
+  rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
+    (SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased start ticks now)).2.2.2.2.2.2.1]
+
+theorem chargeBudget_boundThread (sc : SchedContext) (start ticks now : Nat) :
+    (sc.chargeBudget start ticks now).boundThread = sc.boundThread := by
+  unfold SchedContext.boundThread
+  rw [(SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased start ticks now)).2.2.2.2.2.2.1]
+
+/-- The context a refill writes back names the thread it named. -/
+theorem refilledSchedContext_boundThread (sc : SchedContext) (now : Nat) :
+    (cbsUpdateDeadline (sc.releaseReadyHead now) now true).boundThread = sc.boundThread := by
+  unfold SchedContext.boundThread
+  rw [(cbsUpdateDeadline_refills _ now true).2.2.2.2.2,
+    (SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1]
+
+/-- **A tick that does not use the head up leaves the context no place**: its
+head still holds budget (`chargeBudget_tick_pos`). -/
+theorem chargeBudget_tick_releaseKey (sc : SchedContext) (start now : Nat)
+    (h : sc.tickExhausts start = false) : (sc.chargeBudget start 1 now).releaseKey? = none := by
+  have hp := SchedContext.chargeBudget_tick_pos sc start now h
+  unfold SchedContext.releaseKey?
+  rw [if_neg (fun h' => absurd h'.1 (by omega))]
+
+/-- WS-ZA ZA6.4: **core `c`'s current thread's context can be placed on `c`**:
+the context its binding names is bound and linked on `c`'s release queue or on
+none — what a charge's postpone needs, as seL4-MCS's `postpone` of the current
+scheduling context goes on the current core's release queue.  The binding pair
+and the placement invariants give it (`currentContextPlaceableOnCore_of_invariants`). -/
+def _root_.SeLe4n.Model.SystemState.currentContextPlaceableOnCore (st : SystemState)
+    (c : Concurrency.CoreId) : Prop :=
+  ∀ tid tcb scId sc, st.scheduler.currentOnCore c = some tid → st.getTcb? tid = some tcb →
+    tcb.schedContextBinding.scId? = some scId → st.getSchedContext? scId = some sc →
+    sc.boundThread.isSome = true ∧ st.releaseFreeFor c scId = true
 
 /-- The priority-inheritance revert: one boost write per chain link. -/
 theorem revertPriorityInheritance_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1354,7 +1503,8 @@ insert and the guarded enqueue of core `c`'s current thread. -/
 theorem spendBudgetOnCore_runQueueWindowStage (st : SystemState) (c : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (start ticks : Nat)
-    (hCur : st.scheduler.currentOnCore c = some tid) :
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hP : sc.boundThread.isSome = true ∧ st.releaseFreeFor c scId = true) :
     SystemState.RunQueueWindowStage (.preempt c) st
       (spendBudgetOnCore st c tid scId sc hSc start ticks) := by
   unfold spendBudgetOnCore
@@ -1362,20 +1512,30 @@ theorem spendBudgetOnCore_runQueueWindowStage (st : SystemState) (c : Concurrenc
     (SystemState.RunQueueWindowStage.requeueCurrent _ c tid _
       (by simpa [replenishOnCore_currentOnCore, SystemState.rewriteObject_scheduler] using hCur))
   obtain ⟨h1, h2, h3⟩ := spendRecord_release sc start ticks st.machine.timer
-  exact (RunQueueStage.rewriteObject_schedContext hSc
-    (SystemState.rewriteAdmissible_schedContext hSc _)
-    (fun _ => by simp only [SchedContext.releaseLinkOn, h1, h2, h3])).trans
-    (releasePlace_runQueueStage _ c scId)
+  exact SystemState.RunQueueFrameStage.closePlace
+    (SystemState.RunQueueFrameStage.rewriteObject_schedContext hSc
+      (SystemState.rewriteAdmissible_schedContext hSc _)
+      (fun _ => by simp only [SchedContext.releaseLinkOn, h1, h2, h3]))
+    (fun S hs hI _ _ hS _ => SystemState.closePlace_facts_bound
+      (SystemState.rewriteObject_schedContext_getSchedContext?_self st scId _ _ hI)
+      (cbsUpdateDeadline_preserves_schedContextWellFormed _ _ _
+        (chargeBudget_preserves_schedContextWellFormed _ _ _ _ (hS.1 scId sc hs hSc)))
+      (by rw [chargedSchedContext_boundThread]; exact hP.1)
+      (by
+        unfold SystemState.releaseFreeFor
+        rw [SystemState.releaseCoreOf_rewriteObject_schedContext _ _ _ _ hSc hI h2]
+        exact hP.2))
 
 /-- The tick's exhausted bound arm: the spend, the timeouts and the diagnostic. -/
 theorem budgetExhaustOnCore_runQueueWindowStage (st : SystemState) (c : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) (preKey : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
-    (hCur : st.scheduler.currentOnCore c = some tid) :
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hP : sc.boundThread.isSome = true ∧ st.releaseFreeFor c scId = true) :
     SystemState.RunQueueWindowStage (.preempt c) st
       (budgetExhaustOnCore st c tid preKey scId sc hSc ticks) :=
-  (((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc _ ticks hCur).trans
+  (((spendBudgetOnCore_runQueueWindowStage st c tid scId sc hSc _ ticks hCur hP).trans
     ((markKeyChangeFor_runQueueStage _ tid preKey).window (.preempt c))).trans
     (timeoutBlockedThreads_runQueueWindowStage (fun _ h => by cases h) _ scId c)).trans
     ((RunQueueStage.of_frame
@@ -1396,7 +1556,8 @@ theorem timerTickBudgetOnCore_runQueueWindowStage {st : SystemState} {c : Concur
     {tid : SeLe4n.ThreadId} {tcb : TCB} {hTcb : st.getTcb? tid = some tcb}
     {r : SystemState × Bool}
     (h : timerTickBudgetOnCore st c tid tcb hTcb = r)
-    (hCur : st.scheduler.currentOnCore c = some tid) :
+    (hCur : st.scheduler.currentOnCore c = some tid)
+    (hH : st.currentContextPlaceableOnCore c) :
     SystemState.RunQueueWindowStage (.preempt c) st r.1 := by
   subst h
   unfold timerTickBudgetOnCore
@@ -1406,15 +1567,20 @@ theorem timerTickBudgetOnCore_runQueueWindowStage {st : SystemState} {c : Concur
     · exact (RunQueueStage.rewriteObject_tcb hTcb (fun _ => by rfl)
         (SystemState.rewriteAdmissible_tcb hTcb _)).window (.preempt c)
   all_goals
+    rename_i hBd
     split
     · rename_i sc hSc _
       dsimp only
       split
       · exact budgetExhaustOnCore_runQueueWindowStage st c tid _ _ sc hSc 1 hCur
-      · exact (RunQueueStage.rewriteObject_schedContext hSc
+          (hH tid tcb _ sc hCur hTcb (by rw [hBd]; rfl) hSc)
+      · rename_i hEx
+        exact (RunQueueStage.rewriteObject_schedContext_keyless hSc
           (SystemState.rewriteAdmissible_schedContext hSc _)
-          (SchedContext.releaseLinkOn_of_refillsErased
-            (sc.chargeBudget_refillsErased _ _ _))).window (.preempt c)
+          (SchedContext.releaseLinkOn_of_refillsErased (sc.chargeBudget_refillsErased _ _ _))
+          (chargeBudget_preserves_schedContextWellFormed _ _ _ _)
+          (chargeBudget_tick_releaseKey _ _ _ (Bool.eq_false_iff.mpr hEx))
+          (chargeBudget_boundThread _ _ _ _)).window (.preempt c)
     · exact (RunQueueStage.of_frame rfl rfl rfl).window (.preempt c)
 
 /-- A charge that does not preempt requeues nothing: a stage. -/
@@ -1436,10 +1602,14 @@ theorem timerTickBudgetOnCore_runQueueStage_of_not_preempted {st : SystemState}
       dsimp only at h
       split at h
       · simp only [Prod.mk.injEq] at h; exact absurd h.2 (by decide)
-      · simp only [Prod.mk.injEq] at h; rw [← h.1]
-        exact RunQueueStage.rewriteObject_schedContext hSc
+      · rename_i hEx
+        simp only [Prod.mk.injEq] at h; rw [← h.1]
+        exact RunQueueStage.rewriteObject_schedContext_keyless hSc
           (SystemState.rewriteAdmissible_schedContext hSc _)
           (SchedContext.releaseLinkOn_of_refillsErased (sc.chargeBudget_refillsErased _ _ _))
+          (chargeBudget_preserves_schedContextWellFormed _ _ _ _)
+          (chargeBudget_tick_releaseKey _ _ _ (Bool.eq_false_iff.mpr hEx))
+          (chargeBudget_boundThread _ _ _ _)
     · simp only [Prod.mk.injEq] at h; rw [← h.1]
       exact RunQueueStage.of_frame rfl rfl rfl
 
@@ -1447,7 +1617,8 @@ theorem timerTickBudgetOnCore_runQueueStage_of_not_preempted {st : SystemState}
 each requeueing core `c`'s current thread. -/
 theorem yieldChargeOnCore_runQueueWindowStage {st st' : SystemState} {c : Concurrency.CoreId}
     {tid : SeLe4n.ThreadId} (h : yieldChargeOnCore st c tid = .ok st')
-    (hCur : st.scheduler.currentOnCore c = some tid) : SystemState.RunQueueWindowStage (.preempt c) st st' := by
+    (hCur : st.scheduler.currentOnCore c = some tid) (hH : st.currentContextPlaceableOnCore c) :
+    SystemState.RunQueueWindowStage (.preempt c) st st' := by
   unfold yieldChargeOnCore at h
   split at h
   · cases h
@@ -1456,17 +1627,20 @@ theorem yieldChargeOnCore_runQueueWindowStage {st st' : SystemState} {c : Concur
     · rw [Except.ok.injEq] at h; subst h
       exact sliceExpireOnCore_runQueueWindowStage st c tid tcb hTcb hCur
     all_goals
+      rename_i hBd
       split at h
       · rename_i sc hSc _
         rw [Except.ok.injEq] at h; subst h
-        exact (spendBudgetOnCore_runQueueWindowStage st c tid _ sc hSc _ _ hCur).trans
+        exact (spendBudgetOnCore_runQueueWindowStage st c tid _ sc hSc _ _ hCur
+          (hH tid tcb _ sc hCur hTcb (by rw [hBd]; rfl) hSc)).trans
           ((markKeyChangeFor_runQueueStage _ _ _).window (.preempt c))
       · cases h
 
 /-- The yield: the charge opens core `c`'s scheduling point, the reschedule
 closes it — a kernel entry. -/
 theorem yieldOnCore_runQueueEntryStage {st st' : SystemState} {c : Concurrency.CoreId}
-    (h : yieldOnCore st c = .ok st') : SystemState.RunQueueEntryStage st st' := by
+    (h : yieldOnCore st c = .ok st') (hH : st.currentContextPlaceableOnCore c) :
+    SystemState.RunQueueEntryStage st st' := by
   unfold yieldOnCore at h
   split at h
   · cases h
@@ -1474,7 +1648,7 @@ theorem yieldOnCore_runQueueEntryStage {st st' : SystemState} {c : Concurrency.C
     split at h
     · cases h
     · rename_i hC
-      exact (yieldChargeOnCore_runQueueWindowStage hC hCur).dispatch
+      exact (yieldChargeOnCore_runQueueWindowStage hC hCur hH).dispatch
         (scheduleEffectiveOnCore_runQueueDispatchStage h)
 
 /-- A replenishment wakes only a runnable thread: the target test asks it. -/
@@ -1497,16 +1671,17 @@ theorem replenishWakeTarget_runnable {stPre refilled : SystemState}
   all_goals first | cases h | exact key _ h
 
 /-- One due replenishment: the refill and, for a runnable thread it makes
-eligible and no core runs, the wake, under the refill's key hook. -/
-theorem processOneReplenishmentOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
-    (scId : SeLe4n.SchedContextId) (now : Nat) :
-    RunQueueStage st (processOneReplenishmentOnCore st c scId now) := by
-  have hRefill : RunQueueStage st (refillSchedContext st scId now) := by
+eligible and no core runs, the wake, under the refill's key hook — a frame stage
+off the refilled context (WS-ZA ZA6.4), which the drain's placement closes. -/
+theorem processOneReplenishmentOnCore_runQueueFrameStage (st : SystemState)
+    (c : Concurrency.CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) :
+    SystemState.RunQueueFrameStage (· = scId) st (processOneReplenishmentOnCore st c scId now) := by
+  have hRefill : SystemState.RunQueueFrameStage (· = scId) st (refillSchedContext st scId now) := by
     unfold refillSchedContext
-    exact updateSchedContext_runQueueStage _ _ _
-      (fun sc => refillRecord_release sc now)
+    exact updateSchedContext_runQueueFrameStage _ _ _ (fun sc => refillRecord_release sc now)
   unfold processOneReplenishmentOnCore
-  refine RunQueueStage.trans ?_ (markRefillKeyChange_runQueueStage _ _ _)
+  refine SystemState.RunQueueFrameStage.trans ?_
+    (SystemState.RunQueueStage.toFrame (markRefillKeyChange_runQueueStage _ _ _) _)
   unfold refillWakeOnCore
   dsimp only
   split
@@ -1514,24 +1689,54 @@ theorem processOneReplenishmentOnCore_runQueueStage (st : SystemState) (c : Conc
     split
     · exact hRefill
     · rename_i hRun
-      exact (hRefill.trans (wakeThread_runQueueStage _ _ c
-        (currentNowhere_of_runningOnSomeCore_false (Bool.eq_false_iff.mpr hRun))
-        (replenishWakeTarget_runnable hW).activeAt)).trans (RunQueueStage.of_frame rfl rfl rfl)
+      refine hRefill.trans (SystemState.RunQueueStage.toFrame
+        ((wakeThread_runQueueStage _ _ c
+          (currentNowhere_of_runningOnSomeCore_false (Bool.eq_false_iff.mpr hRun))
+          (replenishWakeTarget_runnable hW).activeAt).trans ?_) _)
+      exact RunQueueStage.of_frame rfl rfl rfl
   · exact hRefill
 
-/-- The replenishment drain: refills and re-placements, each a stage. -/
+/-- One pass of the drain: core `c`'s head context, refilled and placed again.
+The head is queued on `c`, so it is bound (`releaseQueuedBound`) and free for
+`c`; the refill keeps it well formed and bound. -/
+theorem drainPass_runQueueStage (s : SystemState) (c : Concurrency.CoreId)
+    (x : SeLe4n.SchedContextId) (now : Nat) (h0 : s.scheduler.releaseHeadOnCore c ≠ 0)
+    (hx : ReleaseChain.decode (s.scheduler.releaseHeadOnCore c) = x) :
+    RunQueueStage s ((processOneReplenishmentOnCore s c x now).releasePlace c x) := by
+  refine SystemState.RunQueueFrameStage.closePlace
+    (processOneReplenishmentOnCore_runQueueFrameStage s c x now)
+    (fun S hs hI _ hQ hS _ => ?_)
+  have hq : s.releaseQueuedOn c x = true := ((hQ c).queued x).mpr (hx ▸ releaseHead_mem (hQ c) h0)
+  obtain ⟨b, hb, hbd⟩ := hS.2.2 c _ hs ((hQ c).mem_of_queued hq)
+  have hA := processOneReplenishmentOnCore_releaseStateAgree s c x now hI
+  refine SystemState.closePlace_facts_bound (u := cbsUpdateDeadline (b.releaseReadyHead now) now true)
+    ?_ (cbsUpdateDeadline_preserves_schedContextWellFormed _ _ _
+      (releaseReadyHead_preserves_schedContextWellFormed _ _ (hS.1 x b hs hb)))
+    (by rw [refilledSchedContext_boundThread]; exact hbd) ?_
+  · rw [processOneReplenishmentOnCore_getSchedContext? s c x now hI, refillSchedContext,
+      SystemState.updateSchedContext_getSchedContext?_self _ _ _ hI, hb]
+    rfl
+  · have hq' : (processOneReplenishmentOnCore s c x now).releaseQueuedOn c x = true := by
+      rw [hA.1.queuedOn c]; exact hq
+    unfold SystemState.releaseFreeFor
+    rw [SystemState.releaseCoreOf_of_queuedOn hq']
+    simp
+
+/-- The replenishment drain: each pass refills core `c`'s head and places it
+again, a stage. -/
 theorem processReplenishmentsDueOnCore_runQueueStage (st : SystemState) (c : Concurrency.CoreId)
     (now : Nat) : RunQueueStage st (processReplenishmentsDueOnCore st c now) := by
   unfold processReplenishmentsDueOnCore
-  exact drainDueOnCore_induction (RunQueueStage st) c now
-    (fun s scId h => h.trans (processOneReplenishmentOnCore_runQueueStage s c scId now))
-    (fun s scId h => h.trans (releasePlace_runQueueStage s c scId)) _ st (RunQueueStage.refl st)
+  exact drainDueOnCore_induction_pass (RunQueueStage st) c now
+    (fun s x h h0 hx => h.trans (drainPass_runQueueStage s c x now h0 hx)) _ st
+    (RunQueueStage.refl st)
 
 /-- The per-core timer tick: the diagnostic clear, the replenishment drain, the
 charge, and the reschedule or the local reschedule decision.  A charge that
 preempts opens core `c`'s scheduling point and the reschedule closes it, so the
 tick is a kernel entry. -/
-theorem timerTickOnCore_runQueueEntryStage (st : SystemState) (c : Concurrency.CoreId) :
+theorem timerTickOnCore_runQueueEntryStage (st : SystemState) (c : Concurrency.CoreId)
+    (hH : (timerTickOnCorePrepared st c).currentContextPlaceableOnCore c) :
     SystemState.RunQueueEntryStage st (timerTickOnCore st c) := by
   have hP : RunQueueStage st (timerTickOnCorePrepared st c) :=
     (RunQueueStage.of_frame (st := st)
@@ -1550,7 +1755,7 @@ theorem timerTickOnCore_runQueueEntryStage (st : SystemState) (c : Concurrency.C
       ⟨tid, tcb, hTcb, st3, hCur, hB, h⟩ <;> rw [h]
   · exact hR _ hP
   · exact hR _ hP
-  · exact hP.entry.trans ((timerTickBudgetOnCore_runQueueWindowStage hB hCur).dispatch
+  · exact hP.entry.trans ((timerTickBudgetOnCore_runQueueWindowStage hB hCur hH).dispatch
       (scheduleEffectiveOnCore_runQueueDispatchStage (scheduleEffectiveOnCore_eq_state st3 c)))
   · exact hR _ (hP.trans (timerTickBudgetOnCore_runQueueStage_of_not_preempted hB))
 

@@ -86,19 +86,34 @@ open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 /-- WS-ZA ZA6.3: **a release-queue edit is a run-queue stage** — it writes
 contexts' release fields and the release queues alone, so every thread's TCB,
 every slot's back-links, the run queues, their ends and every current slot are
-kept; the release queues stay refined by `hR`. -/
-theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
-    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+kept; the release queues stay refined by `hR` and the refill state sound by
+`hF`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.of_releaseOnlyWrite
+    {P : SchedContextId → Prop} {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
     (hA : st'.objectsAgreeOffReleaseLinks st) (hI : st.objects.invExt → st'.objects.invExt)
-    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined) :
-    SystemState.RunQueueStage st st' := by
+    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
+    (hF : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.releaseQueueRefined →
+      st.refillsSoundExcept S → st'.refillsSoundExcept S) :
+    SystemState.RunQueueFrameStage P st st' := by
   have hS := hW.2
-  refine SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
-    ?_ ?_ ?_ ?_ hR
+  refine SystemState.RunQueueFrameStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
+    ?_ ?_ ?_ ?_ hR hF
   · rw [hS]
   · rw [hS]
   · rw [hS]
   · rw [hW.1]; rfl
+
+/-- ...with the refill state carried off every set by `hF`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
+    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
+    (hA : st'.objectsAgreeOffReleaseLinks st) (hI : st.objects.invExt → st'.objects.invExt)
+    (hR : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
+    (hF : ∀ S, st.objects.invExt → st.releaseQueueRefined → st.refillsSoundExcept S →
+      st'.refillsSoundExcept S) :
+    SystemState.RunQueueStage st st' := by
+  have hS := hW.2
+  exact SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
+    (by rw [hS]) (by rw [hS]) (by rw [hS]) (by rw [hW.1]; rfl) hR hF
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 
