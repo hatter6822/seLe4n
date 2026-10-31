@@ -58,10 +58,29 @@ identity.
   entry-state theorem of those families is restated over the new tail.
 - **Census.** `completeYieldTo` is on an executed path now, so its entry in the
   kernel-transition reachability census's not-executed list is deleted.
+- **The yielder's saved registers are its live ones.** ZA6.6's `setConsumed`
+  writes a yielder's saved context when a context's final delete completes
+  its yield, which is sound only while no core holds the yielder's registers
+  unsaved. `SystemState.yieldLinkedNotResident` states it: no core's current
+  or resident thread has a yield link. Each entry's tail establishes it on
+  its core (`activateThreadOnCore_current_unlinked`,
+  `activateThreadOnCore_residentOnCore`,
+  `activateThreadOnCore_settle_unlinkedOnCore`: after the settle the
+  resident thread is the current one or none, and the activation unlinks the
+  current one). No path leaves a linked thread resident on another core: a
+  link is set only on a yieldTo caller, whose own trap saved its frame and
+  which the yield deschedules, so no path is rerouted through the
+  remote-stall save. The kernel-wide form is proposed as its own row ahead
+  of the yieldTo invocation.
 - **Tests.** `SuspendResumeSuite` SR-041 (a linked current thread's activation
   writes the consumed time into its context and the bank, and clears both
-  ends) and SR-042 (no link, a non-current yielder, or a core id naming no
-  core: nothing written).
+  ends), SR-042 (no link, a non-current yielder, or a core id naming no
+  core: nothing written) and SR-043 (a yielder that last ran on core 1: the
+  boot core's activation leaves it pending, core 1's completes it in core 1's
+  bank alone, core 1's entry tail leaves its current and resident threads
+  unlinked, and once core 1 has vacated it a context's final delete writes
+  its saved context and no bank). The suite's closing count is corrected to
+  the 46 tests it runs.
 - **Zero allocation.** Measured on a fresh untraced archive
   (`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS, every pin
   exact and unchanged): all 152 scenarios, 304 readings; 252 read 0 (among

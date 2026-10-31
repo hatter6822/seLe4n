@@ -1014,6 +1014,66 @@ private def sr042_activationWithoutPendingYieldIsIdentity : IO Unit := do
     expect "SR-042 a core id naming no core completes no yield" (t.yieldToCode == 51)
   | _ => throw <| IO.userError "SR-042 the yielder not found"
 
+/-- The yielder of `yieldLinkedCurrentState` last ran on core 1: current there,
+with its live frame in core 1's bank, while the boot core runs thread 2.  With
+`vacated`, core 1 has since saved its frame and holds no thread. -/
+private def yieldLinkedRemoteState (vacated : Bool) : SystemState :=
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st := yieldLinkedCurrentState ⟨2⟩
+  let regs := match st.objects[(⟨1⟩ : ObjId)]? with
+    | some (.tcb t) => t.registerContext
+    | _ => default
+  let cur : Option SeLe4n.ThreadId := if vacated then none else some ⟨1⟩
+  { st with
+    scheduler := st.scheduler.setCurrentOnCore core1 cur
+    machine := (st.machine.setRegsOnCore core1 regs).setResidentOnCore core1 cur }
+
+/-- SR-043 (a yielder that last ran on another core): the pending yield is
+completed by the activation on the yielder's own core, which writes that core's
+bank and no other; the boot core's activation leaves it pending; the entry tail
+on core 1 (residency settle, then activation) leaves neither the core's current
+nor its resident thread linked; and once core 1 has vacated the yielder, the
+context's final delete writes the yielder's saved context and no core's bank. -/
+private def sr043_remoteYielderCompletesOnItsCore : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st := yieldLinkedRemoteState false
+  let st0 := SeLe4n.Kernel.activateThreadOnCore st core0
+  match st0.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-043 the boot core's activation leaves a remote yield pending"
+      (t.yieldToCode == 51 && st0.machine.regsOnCore core1 == st.machine.regsOnCore core1)
+  | _ => throw <| IO.userError "SR-043 the yielder not found after the boot activation"
+  let st1 := SeLe4n.Kernel.activateThreadOnCore st core1
+  match st1.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-043 core 1's activation completes the yield"
+      (t.yieldToCode == 0 && t.registerContext.x2 == 7)
+    expect "SR-043 ...in core 1's bank, the yielder's live frame"
+      (st1.machine.regsOnCore core1 == t.registerContext)
+    expect "SR-043 ...and leaves the boot core's bank alone"
+      (st1.machine.regsOnCore core0 == st.machine.regsOnCore core0)
+  | _ => throw <| IO.userError "SR-043 the yielder not found after core 1's activation"
+  let stT := SeLe4n.Kernel.activateThreadOnCore
+    (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore st core1) core1
+  let unlinked (o : Option SeLe4n.ThreadId) : Bool := match o with
+    | some tid => match stT.objects[tid.toObjId]? with
+      | some (.tcb t) => t.yieldToCode == 0
+      | _ => true
+    | none => true
+  expect "SR-043 core 1's entry tail leaves its current and resident threads unlinked"
+    (unlinked (stT.scheduler.currentOnCore core1) && unlinked (stT.machine.residentOnCore core1))
+  let stV := yieldLinkedRemoteState true
+  let stF := SeLe4n.Kernel.finaliseSchedContext ⟨50⟩ stV
+  match stF.objects[(⟨1⟩ : ObjId)]? with
+  | some (.tcb t) =>
+    expect "SR-043 a vacated yielder's completion writes its saved context"
+      (t.yieldToCode == 0 && t.registerContext.x2 == 7)
+    expect "SR-043 ...and no core's bank"
+      (stF.machine.regsOnCore core0 == stV.machine.regsOnCore core0 &&
+        stF.machine.regsOnCore core1 == stV.machine.regsOnCore core1)
+  | _ => throw <| IO.userError "SR-043 the yielder not found after the finalise"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1079,4 +1139,5 @@ def main : IO Unit := do
   sr040_liveFrozenSuspendAgree
   sr041_activationCompletesCurrentYield
   sr042_activationWithoutPendingYieldIsIdentity
-  IO.println "=== All D1 suspend/resume tests passed (41 tests) ==="
+  sr043_remoteYielderCompletesOnItsCore
+  IO.println "=== All D1 suspend/resume tests passed (46 tests) ==="

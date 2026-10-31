@@ -8960,6 +8960,13 @@ run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_coversWrites($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryTail_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
 run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryTail_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+# The yielder's saved registers are its live ones when a context's final delete
+# completes its yield: no core's current or resident thread holds a link
+# after that core's entry tail (settle, then activation).
+run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SystemState\.yieldLinkedNotResident \(st : SystemState\) : Prop :=\n  ∀ \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) \(t : TCB\),\n    \(st\.scheduler\.currentOnCore c = some tid ∨ st\.machine\.residentOnCore c = some tid\) →\n    st\.getTcb\? tid = some t → t\.yieldToCode = 0$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_current_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_residentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_settle_unlinkedOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean

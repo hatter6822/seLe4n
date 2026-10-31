@@ -6131,6 +6131,23 @@ Every kernel object has a decidable well-formedness predicate:
     the boot core, the current thread
     (`activateThreadOnCore_preserves_projection`).  Its per-core
     non-interference is ZA6.9's.
+  - **The yielder's saved registers are its live ones.**  A context's final
+    delete completes its yielder's yield by writing the yielder's saved
+    context (`setConsumed`, ZA6.6), which is sound only while no core holds
+    the yielder's registers unsaved: as a current thread with its frame in
+    flight, or as a core's resident thread a remote deschedule left for
+    `saveVacatedFrameOnCore`.  The property is
+    `SystemState.yieldLinkedNotResident`: no core's current or resident
+    thread has a yield link.  Each entry's tail establishes it on its own
+    core: after the residency settle the resident thread is the current one
+    or none (`settleResidencyOnCore_resident`), and after the activation the
+    current one is unlinked (`activateThreadOnCore_current_unlinked`,
+    `activateThreadOnCore_settle_unlinkedOnCore`).  A link is set only on a
+    yieldTo caller, whose frame its own trap saved and which the yield then
+    deschedules, so no path leaves a linked thread resident elsewhere and
+    no path needs the remote-stall save first.  The kernel-wide form, an
+    entry leaving other cores' current and resident threads and their links
+    alone, is proposed as its own row ahead of the yieldTo invocation.
   - **Zero allocation.**  The unlinked path builds nothing and writes nothing:
     on the QEMU exerciser every scenario reads its pin, 0 for every syscall,
     tick and entry, at first call and steady state.

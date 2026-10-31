@@ -10,6 +10,7 @@ import SeLe4n.Kernel.SchedContext.YieldLinkFrame
 import SeLe4n.Kernel.SchedContext.YieldLinkInvariant
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.SlotConfinement.Predicate
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 
 /-! # The current thread's activation at entry exit
 
@@ -469,5 +470,93 @@ theorem activateThreadOnCore_preserves_contextMatchesCurrentOnCore (st : SystemS
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv),
       SystemState.updateSchedContext_getTcb? _ _ _ hInv, hT]
     exact beq_iff_eq.mpr hBank
+
+/-! ### No current or resident thread is left with a pending yield
+
+seL4-MCS's `setConsumed` at a context's final delete writes the yielder's saved
+registers, which is sound only while those are the yielder's live registers:
+the yielder must be neither a core's current thread with its frame in flight
+nor a core's resident thread whose frame a vacate left unsaved.  The
+activation is what keeps it so on the core an entry ran on: after the
+residency settle and the activation, that core's current and resident threads
+hold no yield link. -/
+
+/-- **No thread a core runs or holds the live registers of has a pending
+yield**: a core's current thread and its resident thread (the one whose frame
+its bank holds, `MachineState.residentOnCore`) each have yield-to code 0. -/
+def _root_.SeLe4n.Model.SystemState.yieldLinkedNotResident (st : SystemState) : Prop :=
+  ∀ (c : CoreId) (tid : SeLe4n.ThreadId) (t : TCB),
+    (st.scheduler.currentOnCore c = some tid ∨ st.machine.residentOnCore c = some tid) →
+    st.getTcb? tid = some t → t.yieldToCode = 0
+
+/-- **After the activation, core `c`'s current thread has no pending yield.** -/
+theorem activateThreadOnCore_current_unlinked (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) (t : TCB)
+    (hC : (activateThreadOnCore st c).scheduler.currentOnCore c = some tid)
+    (hT : (activateThreadOnCore st c).getTcb? tid = some t) : t.yieldToCode = 0 := by
+  rw [activateThreadOnCore_scheduler] at hC
+  cases hT0 : st.getTcb? tid with
+  | none =>
+    rcases activateThreadOnCore_cases st c with e | ⟨tid', t', k, hC', hT', _, _⟩
+    · rw [e, hT0] at hT; cases hT
+    · rw [hC] at hC'; cases hC'; rw [hT0] at hT'; cases hT'
+  | some t0 =>
+    cases hY : t0.yieldToCode with
+    | zero =>
+      have e : activateThreadOnCore st c = st :=
+        activateThreadOnCore_of_unlinked st c (fun tid' t' h1 h2 => by
+          rw [hC] at h1; cases h1; rw [hT0] at h2; cases h2; exact hY)
+      rw [e, hT0] at hT; cases hT; exact hY
+    | succ k =>
+      cases hS : st.getSchedContext? ⟨k⟩ with
+      | some sc =>
+        obtain ⟨hT', -, -⟩ := activateThreadOnCore_completes st c tid t0 k sc hInv hC hT0 hY hS
+        rw [hT'] at hT; cases hT; rfl
+      | none =>
+        rw [activateThreadOnCore_of_linked st c tid t0 k hC hT0 hY] at hT
+        unfold completeCurrentYield at hT
+        rw [hS] at hT
+        have h1 : completeYieldTo st tid =
+            (st.updateSchedContext ⟨k⟩ SchedContext.yieldCleared).updateTcb tid TCB.yieldCleared := by
+          have hC0 : setConsumed st ⟨k⟩ tid = st := by unfold setConsumed; rw [hS]
+          unfold completeYieldTo; rw [hT0]; dsimp only; rw [hY]; dsimp only
+          rw [hC0]
+          unfold cancelYieldTo; rw [hT0]; dsimp only; rw [hY]
+        rw [h1, SystemState.updateTcb_getTcb?_self _ _ _
+          (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv),
+          SystemState.updateSchedContext_getTcb? _ _ _ hInv, hT0] at hT
+        cases hT; rfl
+
+/-- The activation writes no residency record. -/
+theorem activateThreadOnCore_residentOnCore (st : SystemState) (c d : CoreId) :
+    (activateThreadOnCore st c).machine.residentOnCore d = st.machine.residentOnCore d := by
+  rcases activateThreadOnCore_machine st c with h | ⟨w, h⟩ <;> rw [h]; rfl
+
+/-- **An entry's tail leaves its core with no pending yield in reach**: after
+the residency settle and the activation on core `c`, neither the core's current
+thread nor its resident thread has a yield link — the resident thread is the
+current one, or none (`settleResidencyOnCore_resident`). -/
+theorem activateThreadOnCore_settle_unlinkedOnCore (st : SystemState) (c : CoreId)
+    (hInv : (PriorityInheritance.settleResidencyOnCore st c).objects.invExt)
+    (tid : SeLe4n.ThreadId) (t : TCB)
+    (hR : (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c
+        ).scheduler.currentOnCore c = some tid ∨
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c
+        ).machine.residentOnCore c = some tid)
+    (hT : (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c
+        ).getTcb? tid = some t) : t.yieldToCode = 0 := by
+  refine activateThreadOnCore_current_unlinked _ c hInv tid t ?_ hT
+  rcases hR with h | h
+  · exact h
+  · rw [activateThreadOnCore_residentOnCore, PriorityInheritance.settleResidencyOnCore_resident] at h
+    rw [activateThreadOnCore_scheduler]
+    have hS : (PriorityInheritance.settleResidencyOnCore st c).scheduler =
+        (PriorityInheritance.deferResidentElsewhere
+          (PriorityInheritance.dispatchVacatedCore st c) c).scheduler := by
+      simp [PriorityInheritance.settleResidencyOnCore]
+    rw [hS]
+    split at h
+    · exact h
+    · cases h
 
 end SeLe4n.Kernel
