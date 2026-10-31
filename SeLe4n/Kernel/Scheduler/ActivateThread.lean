@@ -83,8 +83,12 @@ def activateThreadOnCore (st : SystemState) (c : CoreId) : SystemState :=
 
 /-- `activateThreadOnCore` as compiled: the current thread read as its code, so
 no `some` is built, and the linked case out of line.  On the path every entry
-takes until a link is set, the step reads two codes and answers its input. -/
-@[inline] def activateThreadOnCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
+takes until a link is set, the step reads two codes and answers its input.
+Out of line itself: inlined, its branches meet in the entry's own body, and a
+join point there builds what the entry carries across it (the timer entry's
+step result pair, one cell per tick); called, it takes the state and hands it
+back, building nothing. -/
+@[noinline] def activateThreadOnCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
   match st.scheduler.currentCode.get c with
   | 0 => st
   | k + 1 =>
@@ -103,8 +107,9 @@ takes until a link is set, the step reads two codes and answers its input. -/
 
 /-- `activateThreadOnCore` for a per-core entry's raw core id: nothing when the
 id names no core, as the verified steps commit nothing for such an id
-(`PriorityInheritance.settleResidencyAt`'s guard). -/
-@[inline] def activateThreadAt (st : SystemState) (coreId : UInt64) : SystemState :=
+(`PriorityInheritance.settleResidencyAt`'s guard).  Out of line, as
+`activateThreadOnCoreImpl` is, so its branch makes no join point in an entry. -/
+@[noinline] def activateThreadAt (st : SystemState) (coreId : UInt64) : SystemState :=
   match Concurrency.coreIdOfUInt64? coreId with
   | some c => activateThreadOnCore st c
   | none => st

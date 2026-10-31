@@ -8942,11 +8942,12 @@ run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_yieldLi
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 # WS-ZA ZA6.7: seL4-MCS's `activateThread` yield completion at every entry's
 # tail.  The compiled form reads the core's current-thread code (no `some`
-# built) and keeps the linked case out of line; the completion writes the
+# built) and is out of line, the linked case too (an inlined form's join point
+# built the timer entry's step-result pair); the completion writes the
 # yielder's saved context and the core's bank alike; the tail is covered by the
 # declared footprints, and each stage family carries it.
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def completeCurrentYield \(st : SystemState\)[^\n]*\n[^\n]*\n  match st\.getSchedContext\? s with\n  \| some sc =>\n    let w := sc\.consumedReading\.toUInt64\n    let s1 := completeYieldTo st tid\n    \{ s1 with machine := s1\.machine\.modifyRegsOnCore c \(·\.withConsumed w\) \}$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def activateThreadOnCoreImpl \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  match st\.scheduler\.currentCode\.get c with\n  \| 0 => st$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def activateThreadOnCoreImpl \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  match st\.scheduler\.currentCode\.get c with\n  \| 0 => st$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem activateThreadOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_completes($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
