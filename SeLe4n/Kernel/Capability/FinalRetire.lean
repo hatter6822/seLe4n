@@ -590,7 +590,8 @@ seL4's `suspend` has nothing left to do and nothing it holds names another
 object: `.Inactive` and `.ready`, with no pending message, no stashed or
 awaited reply, no timeout budget; linked into no endpoint, notification, run or
 reply-waiter queue and heading none; bound to no notification and to no
-scheduling context.  What a thread's finalisation leaves, before the zombie
+scheduling context; and (WS-ZA ZA6.6) yielded to no context, its yield link
+cancelled as seL4's `suspend` cancels it.  What a thread's finalisation leaves, before the zombie
 loop deletes its space slots.  Of the run-queue fields only the core code is
 read: a thread whose core code is zero is on no core's queue, and its four
 neighbour codes are then masked by every reader (`TCB.runLinkOn`,
@@ -603,7 +604,7 @@ the guard does not read them; the retire erases the record with them. -/
     t.replyWaiterNextCode == 0 && t.replyWaiterPrevCode == 0 &&
     t.replyWaitersHeadCode == 0 && t.scBindingScCode == 0 && t.scBindingOwnerCode == 0 &&
     t.boundNotificationCode == 0 && t.replyObjectCode == 0 && t.pendingReceiveReplyCode == 0 &&
-    t.timeoutBudget.isNone
+    t.timeoutBudget.isNone && t.yieldToCode == 0
 
 /-- **Whether a thread's own record is quiescent**: quiescent but for its space
 slots (`threadLinksQuiescent`), and its two space slots empty. -/
@@ -640,7 +641,9 @@ on the states the delete chain carries, no object names an admitted context
 context's own links — the links seL4's `finaliseCap` clears a scheduling
 context through (`scTCB`, `scReply`): bound to no thread, lent from none and
 heading no reply stack — and (WS-ZA ZA6.3) linked into no core's release queue,
-so the erase never cuts a queue's chain.  Nothing outside the context is walked.  What makes these the whole
+so the erase never cuts a queue's chain; and (WS-ZA ZA6.6) recording no yielder,
+its yield completed as seL4's context `finaliseCap` completes it, so the erase
+never leaves a thread yielded to a context that is gone.  Nothing outside the context is walked.  What makes these the whole
 truth is the scheduling links the delete chain carries
 (`schedContextLinkInvariant`): a thread bound to a context, as its own or on
 loan, is named by it back, no thread holds a timeout budget, and every context a
@@ -651,7 +654,7 @@ replenishment queue holds is bound — so no object names an admitted context
   match st.getObject? x with
   | some (.schedContext sc) =>
     sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone &&
-      sc.releaseCoreCode == 0
+      sc.releaseCoreCode == 0 && sc.yieldFromCode == 0
   | _ => false
 
 /-- **Whether a final delete retires the thread or the scheduling context at
@@ -1786,7 +1789,8 @@ theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
 theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :
     ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
-      sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.releaseCoreCode = 0 := by
+      sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.releaseCoreCode = 0 ∧
+      sc.yieldFromCode = 0 := by
   unfold schedContextRetirable SystemState.getObject? at h
   cases hO : st.objects[x]? with
   | none => rw [hO] at h; cases h
@@ -1795,7 +1799,7 @@ theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     cases o with
     | schedContext sc =>
       simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
-      exact ⟨sc, rfl, h.1.1.1, h.1.1.2, h.1.2, h.2⟩
+      exact ⟨sc, rfl, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
     | _ => cases h
 
 /-- A thread the scan admits is the one `threadRetirable` reads. -/
@@ -1882,7 +1886,8 @@ theorem threadQuiescent_codes {t : TCB} (h : threadQuiescent t = true) :
     t.replyWaiterNextCode = 0 ∧ t.replyWaiterPrevCode = 0 ∧
     t.replyWaitersHeadCode = 0 ∧ t.scBindingScCode = 0 ∧ t.scBindingOwnerCode = 0 ∧
     t.boundNotificationCode = 0 ∧ t.replyObjectCode = 0 ∧ t.pendingReceiveReplyCode = 0 ∧
-    t.timeoutBudget = none ∧ t.spaceCells[0] = none ∧ t.spaceCells[1] = none := by
+    t.timeoutBudget = none ∧ t.yieldToCode = 0 ∧ t.spaceCells[0] = none ∧
+    t.spaceCells[1] = none := by
   unfold threadQuiescent threadLinksQuiescent at h
   simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none, and_assoc] at h
   exact h
@@ -2675,11 +2680,47 @@ theorem retireFinalObject_releaseStateAgree (ec : Concurrency.CoreId) (target re
     | schedContext sc =>
       rcases retireFinalObject_schedContext_cases ec target recorder st hInv hP with e | ⟨e, hR⟩
       · rw [e]
-      · obtain ⟨sc', hS', -, -, -, h0⟩ := schedContextRetirable_parts hR
+      · obtain ⟨sc', hS', -, -, -, h0, -⟩ := schedContextRetirable_parts hR
         rw [hP] at hS'; cases hS'
         rw [e]
         simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, h0]
     | _ => rw [← hP]; exact hNoSc (fun _ h => by rw [hP] at h; cases h)
+
+/-- An object a retire may touch holds no yield link end. -/
+theorem objYieldCodes_of_retireTouched {o : Option KernelObject} (h : retireTouched o) :
+    objYieldCodes o = (0, 0) := by
+  cases o with
+  | none => rfl
+  | some obj => cases obj <;> first | rfl | exact h.elim
+
+/-- WS-ZA ZA6.6: **the retire keeps every yield code.**  It erases a thread or
+a context only when the guard admits it, and the guard admits neither with a
+yield link end (`threadLinksQuiescent`, `schedContextRetirable`), so every key
+reads the codes it read. -/
+theorem retireFinalObject_yieldLinksKept (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    YieldLinksKept (retireFinalObject ec target recorder st) st := fun k => by
+  rcases retireFinalObject_touched ec target recorder st hInv k with e | ⟨t1, t2⟩ | ⟨hn, -, hR⟩
+  · rw [e]
+  · rw [objYieldCodes_of_retireTouched t1, objYieldCodes_of_retireTouched t2]
+  · rw [hn]
+    cases hP : st.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | tcb t =>
+        obtain ⟨t', hT', -, -, hQ, -⟩ :=
+          threadRetirable_parts (schedulingObjectRetirable_tcb hR hP)
+        rw [hP] at hT'; cases hT'
+        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, h0, -⟩ :=
+          threadQuiescent_codes hQ
+        simp [objYieldCodes, h0]
+      | schedContext sc =>
+        obtain ⟨sc', hS', -, -, -, -, h0⟩ :=
+          schedContextRetirable_parts (schedulingObjectRetirable_schedContext hR hP)
+        rw [hP] at hS'; cases hS'
+        simp [objYieldCodes, h0]
+      | _ => rfl
 
 /-- A reply linked upward is not quiescent. -/
 theorem passiveObjectQuiescent_of_next {st : SystemState} {o : SeLe4n.ObjId} {r : Reply}

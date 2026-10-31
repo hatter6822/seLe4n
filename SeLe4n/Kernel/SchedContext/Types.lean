@@ -281,6 +281,13 @@ structure SchedContext where
       own slot, as the refills are, so a charge allocates nothing.  Outside the
       refill view (`SchedContext.refillView`): no refill invariant reads it. -/
   consumed : Nat := 0
+  /-- WS-ZA ZA6.6: **the thread that has yielded to this context**, seL4-MCS's
+      `sc->scYieldFrom`, as a code (`SeLe4n.ThreadId.optCode`; `0` is none),
+      read through `SchedContext.yieldFrom`.  The thread names the context back
+      (`TCB.yieldToCode`, `tcb->tcbYieldTo`); the two ends agree kernel-wide
+      (`SystemState.yieldLinksAgree`).  A plain number in the context's own
+      slot, as `boundThreadCode` holds a binding.  Outside the refill view. -/
+  yieldFromCode : Nat := 0
 deriving Repr
 
 /-- WS-ZA ZA5.2: the thread this context is bound to, read from its code.
@@ -289,6 +296,12 @@ Reducible, so a record update that leaves the code alone reads the old value by
 @[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
     Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
+
+/-- WS-ZA ZA6.6: the thread that has yielded to this context (seL4-MCS's
+`scYieldFrom`), read from its code.  Reducible, as `boundThread` is. -/
+@[reducible, inline] def SchedContext.yieldFrom (sc : SchedContext) :
+    Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode sc.yieldFromCode
 
 /-- WS-ZA ZA6.5: the context with `t` more consumed time (seL4-MCS's
 `sc->scConsumed += consumed` in `chargeBudget`).  One field written, so a
@@ -391,8 +404,8 @@ list. -/
     (budgetRemaining : Budget) (periodStart : Nat) (boundThreadCode : Nat)
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
     (isActive : Bool) (releaseNextCode : Nat)
-    (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed).replenishments = sc.replenishments := rfl
+    (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) (yieldFromCode : Nat) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode).replenishments = sc.replenishments := rfl
 
 /-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
 @[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}
@@ -1086,6 +1099,8 @@ instance : BEq SchedContext where
     a.releaseAt == b.releaseAt &&
     -- WS-ZA ZA6.5: and the consumed time, so a charge that accumulates it
     -- differently on the frozen surface is a disagreement.
-    a.consumed == b.consumed
+    a.consumed == b.consumed &&
+    -- WS-ZA ZA6.6: and the yield link, compared as its code.
+    a.yieldFromCode == b.yieldFromCode
 
 end SeLe4n.Kernel

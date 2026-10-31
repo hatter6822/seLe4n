@@ -215,6 +215,35 @@ theorem abortPendingIpcOnEndpoint_refillViewsKept {epId : SeLe4n.ObjId} {isRecei
   exact (RefillViewsKept.storeObject hInv1 hStore (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
     (.of_schedContexts_backward (endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv hRem))
 
+/-- WS-ZA ZA6.6: the queue splice keeps every slot's yield codes: it writes
+threads over threads with their yield-to codes kept, and no context. -/
+theorem endpointQueueRemove_yieldLinksKept (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') : YieldLinksKept st' st :=
+  .of_frames
+    (fun a t ha => by
+      rw [RHTable_getElem?_eq_get?] at ha
+      obtain ⟨t', h', e⟩ := endpointQueueRemove_getTcb_upToField TCB.yieldToCode
+        (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a t ha
+      exact ⟨t', by rw [RHTable_getElem?_eq_get?]; exact h', e⟩)
+    (fun a t' ha => endpointQueueRemove_getTcb_backward_upToField TCB.yieldToCode
+      (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a t' ha)
+    (fun a sc ha => endpointQueueRemove_schedContext_forward endpointId isReceiveQ tid st st'
+      hInv h a sc ha)
+    (fun a sc ha => endpointQueueRemove_schedContext_backward endpointId isReceiveQ tid st st'
+      hInv h a sc ha)
+
+/-- ...and so does the timeout's abort: the thread is stored over itself with
+its yield-to code kept. -/
+theorem abortPendingIpcOnEndpoint_yieldLinksKept {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    YieldLinksKept st' st := by
+  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  exact (YieldLinksKept.storeObject hInv1 hStore (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
+    (endpointQueueRemove_yieldLinksKept _ _ _ _ _ hInv hRem)
+
 /-- ...so it keeps the run queues in agreement with the links. -/
 theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState}
@@ -229,6 +258,7 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
     (fun hInv => abortPendingIpcOnEndpoint_tableReferenceFrame hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_releaseStateAgree hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_refillViewsKept hInv hA)
+    (fun hInv => abortPendingIpcOnEndpoint_yieldLinksKept hInv hA)
 
 /-- WS-RR RR8.11: the reclaim moves no thread's home core — the pop rebinds
 scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
@@ -301,7 +331,7 @@ private theorem consumeCallerReply_getTcb?_backward {st st' : SystemState}
 
 /-- WS-RR RR8.11: the reply-link teardown clears one TCB field and consumes one
 Reply, so it frames every projection that ignores the reply link. -/
-private theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
+theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
     (hf : ∀ t : TCB, f { t with replyObjectCode := 0 } = f t) (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.consumeReplyLink st tid tcb).getTcb? x).map f

@@ -956,6 +956,31 @@ theorem returnDonatedSchedContext_refillViewsKept
   have a5 : RefillViewsKept st' s4 := .of_objects_eq (by rw [hEq])
   exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
 
+/-- WS-ZA ZA6.6: `returnDonatedSchedContext` keeps every yield code: the
+context store rewrites the binding only, the head pop reads no thread or
+context, and the two thread stores rewrite bindings over TCBs. -/
+theorem returnDonatedSchedContext_yieldLinksKept
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    YieldLinksKept st' st := by
+  obtain ⟨sc, _, _, _, s1, s2, s3, s4, hSc, _, _, _, h1, hClear, hL3, h3, hL4, h4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have i3 := storeObject_preserves_objects_invExt s2 s3 _ _ i2 h3
+  have a1 : YieldLinksKept s1 st := .storeObject hObjInv h1 (by rw [hSc]; rfl)
+  have a2 : YieldLinksKept s2 s1 :=
+    .of_getTcb?_eq (storeDonationHeadPop_getTcb?_eq i1 hClear)
+      (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+  have a3 : YieldLinksKept s3 s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  have a4 : YieldLinksKept s4 s3 := .storeObject i3 h4 (by
+    rw [lookupTcb_some_objects _ _ _ hL4]; rfl)
+  have a5 : YieldLinksKept st' s4 := .of_objects_eq (by rw [hEq])
+  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+
 /-- WS-RR RR2.9: `returnDonatedSchedContext` never changes any thread's
 placement (`TCB.placement`) — the mirror of `donateSchedContext_getTcb?_placement_eq`.
 

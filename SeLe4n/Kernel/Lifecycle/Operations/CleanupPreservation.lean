@@ -3313,6 +3313,7 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv => returnDonatedSchedContext_tableReferenceFrame hInv h)
     (fun hInv => returnDonatedSchedContext_releaseStateAgree hInv h)
     (fun hInv => returnDonatedSchedContext_refillViewsKept hInv h)
+    (fun hInv => returnDonatedSchedContext_yieldLinksKept hInv h)
     (by rw [hS])
 
 theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
@@ -3386,6 +3387,7 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
         · exact fun hInv => .updateSchedContext st scId _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
         · exact fun hInv => .updateSchedContext st scId _ hInv
+        · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId _ hInv (fun _ => rfl)
         · show (st.updateSchedContext scId _).scheduler.currentCode = _
           rw [hU]
       · rw [SystemState.updateSchedContext_getSchedContext?_self _ _ _ hI, hG] at ha

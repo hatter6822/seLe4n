@@ -816,6 +816,12 @@ theorem SchedContext.boundThread_of_refillsErased {sc sc' : SchedContext}
   unfold SchedContext.boundThread
   rw [(SchedContext.fields_of_refillsErased h).2.2.2.2.2.2.1]
 
+/-- WS-ZA ZA6.6: the yield-from code, read through the erasure. -/
+theorem SchedContext.yieldFromCode_of_refillsErased {sc sc' : SchedContext}
+    (h : sc'.refillsErased = sc.refillsErased) : sc'.yieldFromCode = sc.yieldFromCode := by
+  have e := congrArg SchedContext.yieldFromCode h
+  exact e
+
 theorem SchedContext.scheduleUsed_refillsErased (sc : SchedContext) (a t : Nat) :
     (sc.scheduleUsed a t).refillsErased = sc.refillsErased :=
   SchedContext.refillsErased_of_pendingErased (sc.scheduleUsed_pendingErased a t)
@@ -1984,6 +1990,41 @@ theorem cbsUpdateDeadline_release_of_refillsErased {sc x : SchedContext}
   obtain ⟨h1, h2, h3⟩ := cbsUpdateDeadline_release x now b
   obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ := SchedContext.fields_of_refillsErased h
   exact ⟨h1.trans h4, h2.trans h5, h3.trans h6⟩
+
+/-! WS-ZA ZA6.6: the refill operations and the deadline rule keep the context's
+end of the yield link. -/
+
+@[simp] theorem SchedContext.releaseReadyHead_yieldFromCode (sc : SchedContext) (now : Nat) :
+    (sc.releaseReadyHead now).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.releaseReadyHead_refillsErased now)
+
+@[simp] theorem SchedContext.releaseOne_yieldFromCode (sc : SchedContext) (now : Nat) :
+    (sc.releaseOne now).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.releaseOne_refillsErased now)
+
+@[simp] theorem SchedContext.refillNew_yieldFromCode (sc : SchedContext) (b now : Nat) :
+    (sc.refillNew b now).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.refillNew_refillsErased b now)
+
+@[simp] theorem SchedContext.refillUpdate_yieldFromCode (sc : SchedContext) (nb np now : Nat) :
+    (sc.refillUpdate nb np now).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.refillUpdate_refillsErased nb np now)
+
+@[simp] theorem SchedContext.refillBudgetCheck_yieldFromCode (sc : SchedContext) (u : Nat) :
+    (sc.refillBudgetCheck u).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.refillBudgetCheck_refillsErased u)
+
+@[simp] theorem SchedContext.refillUnblockCheck_yieldFromCode (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.refillUnblockCheck_refillsErased t)
+
+@[simp] theorem SchedContext.chargeBudget_yieldFromCode (sc : SchedContext) (a u now : Nat) :
+    (sc.chargeBudget a u now).yieldFromCode = sc.yieldFromCode :=
+  SchedContext.yieldFromCode_of_refillsErased (sc.chargeBudget_refillsErased a u now)
+
+@[simp] theorem cbsUpdateDeadline_yieldFromCode (sc : SchedContext) (now : Nat) (b : Bool) :
+    (cbsUpdateDeadline sc now b).yieldFromCode = sc.yieldFromCode := by
+  unfold cbsUpdateDeadline; split <;> rfl
 
 /-- WS-ZA ZA6.3: the budget spend's record (the charge, then the deadline rule)
 writes none of the context's release-queue fields. -/

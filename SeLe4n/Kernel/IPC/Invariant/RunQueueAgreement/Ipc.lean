@@ -24,11 +24,12 @@ theorem modifyTcbOpt_runQueueStage {st st' : SystemState} {t? : Option SeLe4n.Th
     {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) : RunQueueStage st st' := by
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) : RunQueueStage st st' := by
   unfold modifyTcbOpt at h
   split at h
   · cases h; exact RunQueueStage.refl _
-  · exact modifyTcb_runQueueStage h hf hm hW
+  · exact modifyTcb_runQueueStage h hf hm hW hY
 
 theorem linkNtfnWaiter_runQueueStage {st st' : SystemState} {w : SeLe4n.ThreadId}
     {tail : Option SeLe4n.ThreadId} (h : linkNtfnWaiter st w tail = .ok st') :
@@ -64,6 +65,7 @@ theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : S
         simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hI, hNW])
     (fun c => by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
+    (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
@@ -97,6 +99,10 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
           · rw [e]
           · rw [h0, h1]; rfl, by rw [hD.scheduler_eq]⟩)
         (fun _ => .of_eq fun k => by
+          rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+          · rw [e]
+          · rw [h0, h1]; rfl)
+        (fun _ k => by
           rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
           · rw [e]
           · rw [h0, h1]; rfl),
@@ -174,7 +180,7 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
       ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
         rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
-        · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_)
+        · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -182,6 +188,9 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
       · exact SystemState.slotStateMono.of_eq e
       · exact SystemState.slotStateMono.of_obj h2
           (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl)
+    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+      · rw [e]
+      · rw [h1, h2]; rfl
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl

@@ -25,10 +25,12 @@ theorem modifyTcb_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) : RunQueueStage st st' := by
+    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
+    RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
-    (SystemState.objStateMono_tcb (hm tcb)) (hW tcb)
+    (SystemState.objStateMono_tcb (hm tcb)) (hW tcb) (hY tcb)
 
 theorem storeTcbQueueLinks_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -73,7 +75,8 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
-      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _),
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _ fun _ => rfl),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
       (st' := recordSendCap st tid badge grant) rfl hL hM d, fun _ _ => hM⟩
 
@@ -83,11 +86,12 @@ theorem modifyTcb_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.Thread
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
     (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
-    (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl) :
+    (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl)
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueWindowStage (.block c) st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact SystemState.RunQueueWindowStage.storeObject_block hS (getTcb?_of_lookupTcb st tid tcb hL)
-    (hf tcb) (hT tcb) hCur hNI (hW tcb) (hAf tcb)
+    (hf tcb) (hT tcb) hCur hNI (hW tcb) (hAf tcb) (hY tcb)
 
 theorem storeTcbIpcState_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {s : ThreadIpcState} {c : Concurrency.CoreId} (h : storeTcbIpcState st tid s = .ok st')
@@ -110,11 +114,12 @@ theorem modifyTcb_blockedRunQueueStage {st st' : SystemState} {tid : SeLe4n.Thre
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
     (hB : ∀ x, lookupTcb st tid = some x → x.ipcState ≠ .ready)
     (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
-    (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl) : RunQueueStage st st' := by
+    (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl)
+    (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) : RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
     (SystemState.objStateMono_tcb ⟨fun hr => absurd hr (hB tcb hL),
-      fun ha => by unfold TCB.Active; rw [hT]; exact ha, hAf tcb⟩) (hW tcb)
+      fun ha => by unfold TCB.Active; rw [hT]; exact ha, hAf tcb⟩) (hW tcb) (hY tcb)
 
 theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage}
@@ -142,9 +147,10 @@ theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.T
     (hS : storeObject tid.toObjId (.tcb t) st = .ok ((), st'))
     (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
     (hm : TCB.StepMono old t := by exact ⟨id, id, by first | rfl | simp_all⟩)
-    (hW : t.taintWords = old.taintWords := by taint_words_kept) : RunQueueStage st st' :=
+    (hW : t.taintWords = old.taintWords := by taint_words_kept)
+    (hY : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject_tcb hS ((SystemState.getTcb?_eq_some_iff st tid old).mp hOld) h
-    (SystemState.objStateMono_tcb hm) hW
+    (SystemState.objStateMono_tcb hm) hW hY
 
 /-- A Reply stored over a Reply. -/
 theorem storeObject_replyOver_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -308,7 +314,8 @@ theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurre
     (fun h => .of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite st c tid h)
       (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables)
     (fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h)
-    fun h => enqueueRunnableOnCore_refillViewsKept st c tid h
+    (fun h => enqueueRunnableOnCore_refillViewsKept st c tid h)
+    fun h => enqueueRunnableOnCore_yieldLinksKept st c tid h
 
 /-- The wake marks one thread ready and moves run-queue links: every runnable
 thread stays runnable. -/
@@ -930,6 +937,36 @@ theorem ipcUnwrapCaps_refillViewsKept {caps : Array TransferCap} {root : SeLe4n.
   · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
       k hk hObjInv h).refillView
 
+/-- The objects at a key agreeing up to derivation metadata hold the same
+yield codes: a CNode holds none and a thread's links are not its yield code. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.yieldCodes
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) :
+    objYieldCodes st'.objects[oid]? = objYieldCodes st.objects[oid]? := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, e⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · have e2 := congrArg TCB.yieldToCode e
+    rw [ha, hb]; exact congrArg (fun n => (n, 0)) e2
+
+/-- The capability transfer keeps every yield code: every object it writes is
+a CNode or a thread's links. -/
+theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
+    YieldLinksKept st' st := fun k => by
+  by_cases hk : k = root
+  · subst hk
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
+      hObjInv h with e | ⟨cn', hc⟩
+    · rw [e]
+    · cases hC : st.getCNode? k with
+      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
+      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
+  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
+      k hk hObjInv h).yieldCodes
+
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
 theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.ObjId}
@@ -947,6 +984,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
     (fun hInv => ipcUnwrapCaps_tableReferenceFrame hInv h)
     (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
     (fun hInv => ipcUnwrapCaps_refillViewsKept hInv h)
+    (fun hInv => ipcUnwrapCaps_yieldLinksKept hInv h)
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
 receiver-side unwrap. -/
@@ -984,6 +1022,7 @@ theorem donateSchedContext_runQueueStage {st st' : SystemState}
       (donateSchedContext_referenceTables h))
     (fun hInv => donateSchedContext_releaseStateAgree st st' client server scId hInv h)
     (fun hInv => donateSchedContext_refillViewsKept st st' client server scId hInv h)
+    (fun hInv => donateSchedContext_yieldLinksKept st st' client server scId hInv h)
     (by rw [hS])
 
 theorem applyCallDonation_runQueueStage {st st' : SystemState}
@@ -1102,10 +1141,11 @@ theorem descheduleThenOffWrite_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st ((removeRunnableOnCore st tid c).updateTcb tid f) := by
   have hS := SystemState.RunQueueStage.runDescheduleOnCore st c tid
-  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf),
+  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hWf hYf),
     fun hInv hR _ d => ?_⟩
   obtain ⟨hInv1, hR1⟩ := hS.1 hInv hR
   refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv1
@@ -1142,11 +1182,12 @@ theorem placedThenOffWrite_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st
       ((removeRunnableOnCore st tid ((placedCoreOf? st tid).getD c₀)).updateTcb tid f) := by
   refine descheduleThenOffWrite_runQueueEntryStage st tid _ (fun d c' hq => ?_)
-    (fun d c' hc => ?_) hRdy hNI hf hReady
+    (fun d c' hc => ?_) hRdy hNI hf hReady hWf hYf
   · cases hP : placedCoreOf? st tid with
     | none => rw [((placedCoreOf?_none_iff st tid).mp hP c').1] at hq; cases hq
     | some c =>
@@ -1173,19 +1214,20 @@ theorem descheduleAtPlacedThenOffWrite_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept) :
+    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st
       ((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f) := by
   cases hP : placedCoreOf? st tid with
   | none =>
-    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf, fun hInv _ _ d => ?_⟩
+    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf hWf hYf, fun hInv _ _ d => ?_⟩
     exact SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv d
       (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).2)
       (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).1) hNI hf
       (fun x hx => .inl (hReady x (hRdy d x hx)))
   | some c =>
     have e : (placedCoreOf? st tid).getD c = c := by rw [hP]; rfl
-    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady
+    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady hWf hYf
     rw [e] at h
     exact h
 
@@ -1200,12 +1242,14 @@ theorem descheduleAtPlacedThenOffWrites_runQueueEntryStage (st : SystemState)
     (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (g (f x)).ipcState = .ready)
     (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
-    (hWg : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept) :
+    (hWg : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept)
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hYg : ∀ x, (g x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st
       (((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f).updateTcb tid g) := by
   have hW : ∀ s : SystemState, SystemState.RunQueueLinkStage s ((s.updateTcb tid f).updateTcb tid g) :=
-    fun s => (SystemState.RunQueueLinkStage.updateTcb s tid hf).trans
-      (SystemState.RunQueueLinkStage.updateTcb _ tid hg)
+    fun s => (SystemState.RunQueueLinkStage.updateTcb s tid hf hWf hYf).trans
+      (SystemState.RunQueueLinkStage.updateTcb _ tid hg hWg hYg)
   cases hP : placedCoreOf? st tid with
   | none =>
     refine ⟨hW st, fun hInv _ _ d => ?_⟩
