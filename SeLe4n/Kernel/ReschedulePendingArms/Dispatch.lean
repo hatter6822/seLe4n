@@ -242,7 +242,8 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
     | some x => exact retireFinalObject_schedKeyView ec target recorder st hObjInv hI hL hx
   refine ⟨⟨fun c _ => .inr ⟨fun t ht => ⟨(hQ c t) ▸ ht, ?_⟩, by rw [hS],
       fun t _ kq hq => ⟨kq, ((hView t kq hq).symm.trans hq), Nat.le_refl _, Nat.le_refl _, rfl⟩⟩,
-    reschedulePendingMonotone_of_scheduler_eq hS⟩,
+    reschedulePendingMonotone_of_scheduler_eq hS,
+    currentKeptOffCore_of_eq fun c _ => by rw [hS]⟩,
     (retireFinalObject_frame ec target recorder st hObjInv).1⟩
   unfold SystemState.queuedOn at ht
   cases hx : (retireFinalObject ec target recorder st).getTcb? t with
@@ -372,7 +373,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq, hAbs] at hSo; cases hSo
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
-    fun c _ hc => by rw [hSched]; exact hc⟩
+    fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched]⟩
   · have hne : t.toObjId ≠ X := fun hEq => by rw [hUnq c t hEq] at ht; cases ht
     refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
       candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
@@ -427,7 +428,7 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
     stepCovers_of_keys_sched (keyInputsEq_trans hF1.1 hK) hS
   exact stepCovers_trans h1
     ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
-      _ t hI2, enqueueRunnableOnCore_monotone e _ _ t⟩
+      _ t hI2, enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _⟩
 
 /-- WS-ZA ZA5.4 part 24: **a thread's endpoint cancel covers**: the removal
 (`endpointQueueRemoveDual_keyFrame`, through `queueRemove_inPlace`) and the
@@ -455,7 +456,7 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
   stepCovers_trans (cancelIpcBlocking_stepCovers e st t tcb hInv)
     ⟨enqueueRunnableOnCore_covers e _ _ t
       (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv),
-     enqueueRunnableOnCore_monotone e _ _ t⟩
+     enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _⟩
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
@@ -955,9 +956,10 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
   obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
     decoded.overflowCount
   rw [ht] at h
-  exact dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv
+  have hD := dispatchSyscallChecked_stepCovers (st := { st with perCoreTlb := t }) hInv
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     (fun t ht c => hAwayCur t ht c)
     h
+  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3⟩, hD.2⟩
 
 end SeLe4n.Kernel

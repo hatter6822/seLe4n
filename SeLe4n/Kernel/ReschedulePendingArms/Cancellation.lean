@@ -107,7 +107,8 @@ theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
     (hSched : m.scheduler = pre.scheduler) (hRun : SystemState.RunCoresAgree m pre) :
     stepCovers e pre (markKeyChangeFrom pre (markKeyChangeFrom pre m a) b) := by
   refine ⟨reschedulePendingCovers_of_keyChangeFlagged (fun t => ?_)
-    (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_⟩
+    (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_,
+    currentKeptOffCore_of_eq fun c _ => ?_⟩
   · by_cases hb : t = b
     · subst hb; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     by_cases ha : t = a
@@ -127,6 +128,7 @@ theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
   · apply markKeyChangeFrom_reschedulePendingOnCore_mono
     apply markKeyChangeFrom_reschedulePendingOnCore_mono
     rw [hSched]; exact h
+  · simp only [markKeyChangeFrom_currentOnCore]; rw [hSched]
 
 /-! ### The donation return -/
 
@@ -466,7 +468,8 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
       m.scheduler.reschedulePendingOnCore c = true) :
     stepCovers e pre (markKeyChangeFrom pre m a) := by
   refine ⟨reschedulePendingCovers_of_keyChangeFlagged (fun t => ?_)
-    (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_⟩
+    (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_,
+    currentKeptOffCore_of_eq fun c _ => ?_⟩
   · by_cases ha : t = a
     · subst ha; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     · left
@@ -475,6 +478,7 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
   · simp only [markKeyChangeFrom_queuedOn] at ht; rw [hRq.queuedOn] at ht; exact ht
   · simp only [markKeyChangeFrom_currentOnCore]; exact hCur c
   · exact markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ (hFl c h)
+  · simp only [markKeyChangeFrom_currentOnCore]; exact hCur c
 
 /-- A context write that keeps the deadline moves no key input. -/
 theorem updateSchedContext_keyInputsEq (st : SystemState) (scId : SeLe4n.SchedContextId)

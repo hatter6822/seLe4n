@@ -197,7 +197,14 @@ theorem processOneReplenishmentOnCore_stepCovers (st : SystemState) (e : CoreId)
     fun t hNo =>
       have hR := refillSchedContext_views_of_unbound st scId now hInv hNo
       ⟨(hV t).1.trans hR.1, (hV t).2.trans hR.2⟩
-  refine ⟨?_, fun c _ hF => processOneReplenishmentOnCore_reschedulePendingOnCore_mono st e scId now c hF⟩
+  refine ⟨?_, fun c _ hF => processOneReplenishmentOnCore_reschedulePendingOnCore_mono st e scId now c hF,
+    fun c hc t ht => ?_⟩
+  rotate_left
+  · rw [processOneReplenishmentOnCore, markRefillKeyChange_extract_frame
+      (fun s => s.scheduler.currentOnCore c) st _ scId (fun _ _ => by
+        simp [SystemState.markReschedulePendingOnCore])] at ht
+    have := hC.3 c hc t ht
+    rwa [refillSchedContext_scheduler_eq] at this
   rw [processOneReplenishmentOnCore]
   unfold markRefillKeyChange
   cases hS : st.getSchedContext? scId with

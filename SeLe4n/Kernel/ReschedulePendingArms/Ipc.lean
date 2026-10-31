@@ -210,11 +210,12 @@ theorem wakeThread_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Thre
       (wakeThread st tid executingCore).1.objects.invExt := by
   refine ⟨?_, wakeThread_preserves_objects_invExt st tid executingCore hInv⟩
   rw [wakeThread_state_eq_enqueue]
-  exact ⟨enqueueRunnableOnCore_covers e _ st tid hInv, enqueueRunnableOnCore_monotone e _ st tid⟩
+  exact ⟨enqueueRunnableOnCore_covers e _ st tid hInv, enqueueRunnableOnCore_monotone e _ st tid, enqueueRunnableOnCore_currentKept e _ _ _⟩
 
 theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
-  ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c⟩
+  ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
+    removeRunnableOnCore_currentKept e st tid c⟩
 
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/

@@ -96,6 +96,29 @@ def reschedulePendingMonotone (e : CoreId) (st st' : SystemState) : Prop :=
   ∀ c, c ≠ e → st.scheduler.reschedulePendingOnCore c = true →
     st'.scheduler.reschedulePendingOnCore c = true
 
+/-- WS-ZA ZA6.8: **the step makes no thread current on a remote core**: every
+core other than the executing core `e` keeps its current thread or loses it.
+A thread becomes current only through a scheduling point, and only the
+executing core's own scheduling point runs (a remote deschedule empties the
+remote slot and raises its flag); this is the cross-core frame that keeps a
+remote core's current thread one the pre-state already ran there. -/
+def currentKeptOffCore (e : CoreId) (pre post : SystemState) : Prop :=
+  ∀ c, c ≠ e → ∀ t, post.scheduler.currentOnCore c = some t →
+    pre.scheduler.currentOnCore c = some t
+
+theorem currentKeptOffCore_refl (e : CoreId) (st : SystemState) : currentKeptOffCore e st st :=
+  fun _ _ _ h => h
+
+theorem currentKeptOffCore_trans {e : CoreId} {a b d : SystemState}
+    (h₁ : currentKeptOffCore e a b) (h₂ : currentKeptOffCore e b d) : currentKeptOffCore e a d :=
+  fun c hc t h => h₁ c hc t (h₂ c hc t h)
+
+/-- A step that keeps every remote current slot keeps it. -/
+theorem currentKeptOffCore_of_eq {e : CoreId} {pre post : SystemState}
+    (h : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c) :
+    currentKeptOffCore e pre post :=
+  fun c hc _ ht => (h c hc).symm.trans ht
+
 /-! ### Composition laws -/
 
 theorem schedKeyNotWeakened_refl (st : SystemState) (t : SeLe4n.ThreadId) :
@@ -552,6 +575,13 @@ theorem enqueueRunnableOnCore_monotone (e c : CoreId) (st : SystemState)
     · subst hc; simp
     · simp [hc, hF]
 
+/-- WS-ZA ZA6.8: the wake makes no thread current anywhere. -/
+theorem enqueueRunnableOnCore_currentKept (e c : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : currentKeptOffCore e st (enqueueRunnableOnCore st c tid) := by
+  refine currentKeptOffCore_of_eq fun c' _ => ?_
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  simp
+
 /-- The removal covers: a queue removal stales nothing, and clearing the
 current slot raises the flag. -/
 theorem removeRunnableOnCore_covers (e : CoreId) (st : SystemState)
@@ -587,6 +617,19 @@ theorem removeRunnableOnCore_monotone (e : CoreId) (st : SystemState)
   by_cases hc : c = c'
   · subst hc; simp [removeRunnableOnCore, hF]
   · simp [removeRunnableOnCore, hc, hF]
+
+/-- WS-ZA ZA6.8: the removal keeps every current slot or empties it. -/
+theorem removeRunnableOnCore_currentKept (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    currentKeptOffCore e st (removeRunnableOnCore st tid c) := by
+  intro c' _ t ht
+  rw [removeRunnableOnCore_scheduler] at ht
+  by_cases hc : c = c'
+  · subst hc
+    by_cases hcur : st.scheduler.currentOnCore c = some tid
+    · simp [hcur] at ht
+    · simpa [hcur] using ht
+  · simpa [hc] using ht
 
 /-! ### The key-change hook -/
 
@@ -1407,17 +1450,22 @@ theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TC
 
 /-! ### Steps that cover by frame -/
 
-/-- A step covers and lowers no remote flag: the unit the arm proofs chain. -/
-def stepCovers (e : CoreId) (pre post : SystemState) : Prop :=
-  reschedulePendingCovers e pre post ∧ reschedulePendingMonotone e pre post
+/-- A step covers, lowers no remote flag and makes no thread current on a
+remote core: the unit the arm proofs chain. -/
+structure stepCovers (e : CoreId) (pre post : SystemState) : Prop where
+  covers : reschedulePendingCovers e pre post
+  mono : reschedulePendingMonotone e pre post
+  /-- WS-ZA ZA6.8: the cross-core frame of the current slots. -/
+  currentKept : currentKeptOffCore e pre post
 
 theorem stepCovers_refl (e : CoreId) (st : SystemState) : stepCovers e st st :=
-  ⟨reschedulePendingCovers_refl e st, reschedulePendingMonotone_refl e st⟩
+  ⟨reschedulePendingCovers_refl e st, reschedulePendingMonotone_refl e st,
+    currentKeptOffCore_refl e st⟩
 
 theorem stepCovers_trans {e : CoreId} {a b d : SystemState}
     (h₁ : stepCovers e a b) (h₂ : stepCovers e b d) : stepCovers e a d :=
   ⟨reschedulePendingCovers_trans h₁.1 h₂.1 h₂.2,
-   reschedulePendingMonotone_trans h₁.2 h₂.2⟩
+   reschedulePendingMonotone_trans h₁.2 h₂.2, currentKeptOffCore_trans h₁.3 h₂.3⟩
 
 theorem stepCovers_of_eq {e : CoreId} {pre post : SystemState} (h : post = pre) :
     stepCovers e pre post := h ▸ stepCovers_refl e pre
@@ -1431,7 +1479,8 @@ theorem stepCovers_of_frame {e : CoreId} {pre post : SystemState}
     (hCur : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hMono : reschedulePendingMonotone e pre post) :
     stepCovers e pre post :=
-  ⟨reschedulePendingCovers_of_frame hView hElig (fun c hc => Or.inr ⟨hRq c hc, hCur c hc⟩), hMono⟩
+  ⟨reschedulePendingCovers_of_frame hView hElig (fun c hc => Or.inr ⟨hRq c hc, hCur c hc⟩), hMono,
+    currentKeptOffCore_of_eq hCur⟩
 
 /-- The common shape: the scheduler is unchanged but for the flags, which only
 rise. -/
@@ -1467,7 +1516,7 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
     (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
       ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
-    (hMono : reschedulePendingMonotone e pre mid) :
+    (hMono : reschedulePendingMonotone e pre mid) (hKept : currentKeptOffCore e pre mid) :
     stepCovers e pre (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) :=
   ⟨markKeyChangeFor_covers hPre (fun _ ht => schedKeyView_eq_of_keyInputsEqExcept hKeys ht)
     (fun _ _ _ t _ => by
@@ -1475,7 +1524,8 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
       · subst ht; exact hSelf
       · exact candidacyNotGained_of_eq (budgetEligibleView_eq_of_keyInputsEqExcept hKeys ht).symm)
     hSlots,
-   fun c hc h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ (hMono c hc h)⟩
+   fun c hc h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ (hMono c hc h),
+   fun c hc t ht => hKept c hc t (by rwa [markKeyChangeFor_currentOnCore] at ht)⟩
 
 /-! ### The coverage reads what the chooser reads
 
