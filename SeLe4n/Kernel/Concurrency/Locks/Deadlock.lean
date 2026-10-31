@@ -1457,7 +1457,7 @@ Slack remains, which is the honest reading: this is the largest
 notification-side footprint the kernel declares, and it is *not* at the bound
 the way the widest IPC footprints are (`lockSet_replyRecv` reached the ceiling
 at WS-OD OD3.5; since WS-OD `v0.35.4` the footprint that defines the ceiling is
-the state-resolved suspend footprint, `lockSet_tcbSuspendOnCore_size_le_seventeen`
+the state-resolved suspend footprint, `lockSet_tcbSuspendOnCore_size_le_eighteen`
 in `ResolvedFootprintBounds.lean`). -/
 theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :

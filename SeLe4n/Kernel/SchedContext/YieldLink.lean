@@ -71,6 +71,28 @@ was, as seL4 writes only `msgInfoRegister` and the one message register. -/
 @[inline] def SchedContext.yieldCleared (sc : SchedContext) : SchedContext :=
   { sc with yieldFromCode := 0 }
 
+/-- The context thread `tid` has yielded to, as its yield-to code names it: the
+context a cancel of its link writes.  `none` on a thread with no link and on an
+absent one. -/
+def yieldToContextOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
+  match st.getTcb? tid with
+  | some t =>
+    match t.yieldToCode with
+    | 0 => none
+    | k + 1 => some ⟨k⟩
+  | none => none
+
+/-- The thread that yielded to context `s`, as its yield-from code names it: the
+thread a completion of its recorded yield writes.  `none` on a context with no
+yielder and on an absent one. -/
+def yieldFromThreadOf? (st : SystemState) (s : SeLe4n.SchedContextId) : Option SeLe4n.ThreadId :=
+  match st.getSchedContext? s with
+  | some sc =>
+    match sc.yieldFromCode with
+    | 0 => none
+    | k + 1 => some ⟨k⟩
+  | none => none
+
 /-- **seL4-MCS's `schedContext_cancelYieldTo`**: a thread linked to the context
 it yielded to has both ends cleared, the context's (`scYieldFrom = NULL`) then
 its own (`tcbYieldTo = NULL`), each in its slot.  The identity on a thread with

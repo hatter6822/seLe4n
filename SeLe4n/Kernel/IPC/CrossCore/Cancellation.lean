@@ -2617,13 +2617,16 @@ The CNode member is the **caller's** CSpace root, not the victim's — the
 cap-resolution root `syscallLookupCap` reads to turn the caller's capability
 pointer into the target capability.
 
-`lockSet_tcbSuspendOnCore_size_le_seventeen` is its bound
-(`Concurrency/Locks/ResolvedFootprintBounds.lean`): seventeen on the widest shape
-— a reply-arm victim owed a donation at depth ≥ 3 — inside `maxLockSetSize`,
-which the `.replyRecv` footprint sets. -/
+WS-ZA ZA6.6: the last member is the context the victim's yield link names, the
+one the suspend's yield-link cancel writes (`yieldToContextOf?`).
+
+`lockSet_tcbSuspendOnCore_size_le_eighteen` is its bound
+(`Concurrency/Locks/ResolvedFootprintBounds.lean`): eighteen on the widest shape
+— a reply-arm victim owed a donation at depth ≥ 3 and linked to a context it
+yielded to — inside `maxLockSetSize`, which the `.replyRecv` footprint sets. -/
 def lockSet_tcbSuspendOnCore (st : SystemState) (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (targetTid : SeLe4n.ThreadId) : LockSet :=
-  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSet_cancelIpcBlockingOnCore st targetTid)
       (some (tcbLock callerTid, AccessMode.read)))
@@ -2639,7 +2642,8 @@ def lockSet_tcbSuspendOnCore (st : SystemState) (callerTid : SeLe4n.ThreadId)
       ((suspendDonationCancelTailOf? st targetTid).outer?.map
         (fun ot => (tcbLock ot, AccessMode.read))))
     (if (suspendDonationCancelTailOf? st targetTid).scId?.isSome then
-       some (stateLevelLock, AccessMode.write) else none)
+       some (stateLevelLock, AccessMode.write) else none))
+    ((yieldToContextOf? st targetTid).map fun sc => (schedContextLock sc, AccessMode.write))
 
 /-- WS-OD (`v0.35.4`): the suspend footprint's kinds are all permitted for
 `.tcbSuspend` — the cancellation root's by `lockSet_cancelIpcBlockingOnCore_correct`,
@@ -2650,6 +2654,10 @@ theorem lockSet_tcbSuspendOnCore_correct (st : SystemState) (callerTid : SeLe4n.
     ∀ p ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend := by
   unfold lockSet_tcbSuspendOnCore
+  refine lockSet_consistent_extendOpt _ _ _ ?_ (fun pp hEq => by
+    cases h : yieldToContextOf? st targetTid with
+    | none => rw [h] at hEq; cases hEq
+    | some sc => rw [h] at hEq; injection hEq with h'; rw [← h']; simp; decide)
   refine lockSet_consistent_extendOpt _ _ _ (lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_extendOpt _ _ _ (lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_extendOpt _ _ _ (lockSet_consistent_extendOpt _ _ _
@@ -2698,7 +2706,7 @@ theorem lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore (st : SystemStat
     (l, AccessMode.write)
       ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs := by
   unfold lockSet_tcbSuspendOnCore
-  iterate 8 apply mem_write_lockSetExtendOpt
+  iterate 9 apply mem_write_lockSetExtendOpt
   exact hMem
 
 /-- WS-OD (`v0.35.4`): and a key the cancellation footprint holds, in any mode,
@@ -2709,7 +2717,7 @@ theorem lockSet_tcbSuspendOnCore_containsKey_of_cancelIpcBlockingOnCore (st : Sy
     (hKey : (lockSet_cancelIpcBlockingOnCore st targetTid).containsKey l = true) :
     (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).containsKey l = true := by
   unfold lockSet_tcbSuspendOnCore
-  iterate 8 apply containsKey_lockSetExtendOpt_of_containsKey
+  iterate 9 apply containsKey_lockSetExtendOpt_of_containsKey
   exact hKey
 
 /-- WS-OD (`v0.35.4`): the victim's TCB write lock — the one member every
@@ -2721,6 +2729,21 @@ theorem lockSet_tcbSuspendOnCore_covers_victim (st : SystemState)
       ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs :=
   lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore st callerTid cnodeRootObjId
     targetTid _ (lockSet_cancelIpcBlockingOnCore_covers_victim st targetTid)
+
+/-- WS-ZA ZA6.6: **the yield-link cancel's context is declared** — the context
+the victim's yield link names, whose yield-from code the suspend's last write
+clears, is under a declared write lock (the victim's own TCB is
+`lockSet_tcbSuspendOnCore_covers_victim`). -/
+theorem lockSet_tcbSuspendOnCore_covers_yieldCancel (st : SystemState)
+    (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (targetTid : SeLe4n.ThreadId) (sc : SeLe4n.SchedContextId)
+    (h : yieldToContextOf? st targetTid = some sc) :
+    (schedContextLock sc, AccessMode.write)
+      ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs := by
+  unfold lockSet_tcbSuspendOnCore
+  rw [h]
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (schedContextLock sc)
 
 /-- **WS-OD (`v0.35.4`): the tail's members are declared in the modes it names
 them** — the six facts the interpretation theorems below assemble. -/
@@ -2749,36 +2772,37 @@ theorem lockSet_tcbSuspendOnCore_covers_tail (st : SystemState)
   · intro sc h
     unfold lockSet_tcbSuspendOnCore
     rw [h]
-    iterate 5 apply mem_write_lockSetExtendOpt
+    iterate 6 apply mem_write_lockSetExtendOpt
     simp only [lockSetExtendOpt, Option.map_some]
     exact self_write_mem_insertOrMerge _ (schedContextLock sc)
   · intro ot h
     unfold lockSet_tcbSuspendOnCore
     rw [h]
-    iterate 4 apply mem_write_lockSetExtendOpt
+    iterate 5 apply mem_write_lockSetExtendOpt
     simp only [lockSetExtendOpt, Option.map_some]
     exact self_write_mem_insertOrMerge _ (tcbLock ot)
+  · intro r h
+    unfold lockSet_tcbSuspendOnCore
+    rw [h]
+    iterate 4 apply mem_write_lockSetExtendOpt
+    simp only [lockSetExtendOpt, Option.map_some]
+    exact self_write_mem_insertOrMerge _ (replyLock r)
   · intro r h
     unfold lockSet_tcbSuspendOnCore
     rw [h]
     iterate 3 apply mem_write_lockSetExtendOpt
     simp only [lockSetExtendOpt, Option.map_some]
     exact self_write_mem_insertOrMerge _ (replyLock r)
-  · intro r h
-    unfold lockSet_tcbSuspendOnCore
-    rw [h]
-    iterate 2 apply mem_write_lockSetExtendOpt
-    simp only [lockSetExtendOpt, Option.map_some]
-    exact self_write_mem_insertOrMerge _ (replyLock r)
   · intro ot h
     unfold lockSet_tcbSuspendOnCore
     rw [h]
-    apply containsKey_lockSetExtendOpt_of_containsKey
+    iterate 2 apply containsKey_lockSetExtendOpt_of_containsKey
     simp only [lockSetExtendOpt, Option.map_some]
     exact containsKey_insertOrMerge_self _ (tcbLock ot) _
   · intro sc h
     unfold lockSet_tcbSuspendOnCore
     rw [h]
+    apply mem_write_lockSetExtendOpt
     simp only [Option.isSome_some, if_true]
     exact LockSet.mem_insertOrMerge_write_self _ _
 
