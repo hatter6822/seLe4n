@@ -6013,6 +6013,13 @@ Every kernel object has a decidable well-formedness predicate:
     and the zero-allocation plan adds it in rows ZA6.5 to ZA6.8:
     consumed-time accounting, the yield link, the activation step and the
     invocation.
+  - **Zero allocation.**  The configure, the bind and the refill scenarios
+    read 0 heap cells at first call and steady state on the QEMU exerciser.
+    The configure's resolution runs in continuation form
+    (`resolveSchedControlConfigureTargetK`), and the configure's context
+    update and a refill's release compile to in-place writes
+    (`configuredSchedContextImpl`, `SchedContext.releaseOneImpl`, each an
+    `@[csimp]` form proven equal to its specification).
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
