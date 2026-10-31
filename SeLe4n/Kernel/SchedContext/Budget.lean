@@ -713,10 +713,20 @@ moved to `t`, and the pending refills it now overlaps merge into it. -/
 /-- WS-ZA ZA6.4: the charge: `usage` run from `start` to `now`.  The head is
 made ready at the run's start (`refill_unblock_check`, as seL4-MCS runs it when
 the context is switched to), charged (`refill_budget_check`), and, when used up,
-replaced by a pending refill released by `now`. -/
+replaced by a pending refill released by `now`.
+
+WS-ZA ZA6.5: the time run, `now - start`, is added to the context's consumed
+time (seL4-MCS's `chargeBudget`: `sc->scConsumed += consumed`).  It is the time
+that passed, not the refill charge: the tick charges the unit it ran, `now - 1`
+to `now`, and adds that unit; the yield charges the whole head from `now`
+(`refill_budget_check` of the head's amount) and adds nothing, as seL4-MCS's
+`handleYield` sets `scConsumed` back to the time actually consumed
+(`scConsumed + ksConsumed`), and this kernel charges every unit at the tick
+that ends it, so none is left uncharged at a yield. -/
 @[inline] def SchedContext.chargeBudget (sc : SchedContext) (start usage now : Nat) :
     SchedContext :=
-  ((sc.refillUnblockCheck start).refillBudgetCheck usage).releaseReadyHead now
+  (((sc.refillUnblockCheck start).refillBudgetCheck usage).releaseReadyHead now).addConsumed
+    (now - start)
 
 /-- WS-ZA ZA6.4: seL4-MCS's `refill_new`: the budget in one refill, released now.
 -/
@@ -760,9 +770,18 @@ with neither takes `refill_new`. -/
 
 /-- WS-ZA ZA6.4: a context with its refills erased — the head (`budgetRemaining`,
 `periodStart`, `isActive`) and the pending refills: every field the refill
-operations leave alone. -/
+operations leave alone.  WS-ZA ZA6.5: and the consumed time, which the charge
+adds to (`SchedContext.chargeBudget`). -/
 @[inline] def SchedContext.refillsErased (sc : SchedContext) : SchedContext :=
-  { sc.pendingErased with budgetRemaining := ⟨0⟩, periodStart := 0, isActive := false }
+  { sc.pendingErased with
+    budgetRemaining := ⟨0⟩
+    periodStart := 0
+    isActive := false
+    consumed := 0 }
+
+/-- WS-ZA ZA6.5: the consumed time is erased with the refills. -/
+@[simp] theorem SchedContext.addConsumed_refillsErased (sc : SchedContext) (t : Nat) :
+    (sc.addConsumed t).refillsErased = sc.refillsErased := rfl
 
 theorem SchedContext.refillsErased_of_pendingErased {sc sc' : SchedContext}
     (h : sc'.pendingErased = sc.pendingErased) : sc'.refillsErased = sc.refillsErased := by
@@ -848,8 +867,79 @@ theorem SchedContext.refillUnblockCheck_refillsErased (sc : SchedContext) (t : N
 theorem SchedContext.chargeBudget_refillsErased (sc : SchedContext) (start usage now : Nat) :
     (sc.chargeBudget start usage now).refillsErased = sc.refillsErased := by
   unfold SchedContext.chargeBudget
-  rw [SchedContext.releaseReadyHead_refillsErased, SchedContext.refillBudgetCheck_refillsErased,
+  rw [SchedContext.addConsumed_refillsErased, SchedContext.releaseReadyHead_refillsErased, SchedContext.refillBudgetCheck_refillsErased,
     SchedContext.refillUnblockCheck_refillsErased]
+
+-- ============================================================================
+-- WS-ZA ZA6.5: the consumed time every charge adds
+-- ============================================================================
+
+/-- The consumed time reads through the pending refills' erasure. -/
+theorem SchedContext.consumed_of_pendingErased {sc sc' : SchedContext}
+    (h : sc'.pendingErased = sc.pendingErased) : sc'.consumed = sc.consumed := by
+  have e := congrArg (fun s : SchedContext => s.consumed) h
+  exact e
+
+theorem SchedContext.refillBudgetCheck_consumed (sc : SchedContext) (u : Nat) :
+    (sc.refillBudgetCheck u).consumed = sc.consumed := by
+  unfold SchedContext.refillBudgetCheck
+  dsimp only
+  split
+  · rfl
+  · split
+    · exact (SchedContext.consumed_of_pendingErased (SchedContext.scheduleUsed_pendingErased _ _ _)).trans rfl
+    · exact (SchedContext.consumed_of_pendingErased (SchedContext.scheduleUsed_pendingErased _ _ _)).trans rfl
+
+theorem SchedContext.releaseOne_consumed (sc : SchedContext) (now : Nat) :
+    (sc.releaseOne now).consumed = sc.consumed := by
+  unfold SchedContext.releaseOne
+  split
+  · exact (SchedContext.consumed_of_pendingErased (sc' := sc.refillPop) sc.refillPop_pendingErased :)
+  · rfl
+
+theorem SchedContext.releaseReadyHead_consumed (sc : SchedContext) (now : Nat) :
+    (sc.releaseReadyHead now).consumed = sc.consumed :=
+  SchedContext.releaseReadyHeadN_induction (fun s => s.consumed = sc.consumed) now
+    (fun s h => (s.releaseOne_consumed now).trans h) _ sc rfl
+
+theorem SchedContext.mergeOverlapping_consumed :
+    ∀ (n : Nat) (sc : SchedContext), (SchedContext.mergeOverlapping n sc).consumed = sc.consumed
+  | 0, _ => rfl
+  | n + 1, sc => by
+    unfold SchedContext.mergeOverlapping
+    split
+    · rw [SchedContext.mergeOverlapping_consumed n]
+      exact (SchedContext.consumed_of_pendingErased (sc' := sc.refillPop) sc.refillPop_pendingErased :)
+    · rfl
+
+theorem SchedContext.refillUnblockCheck_consumed (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).consumed = sc.consumed := by
+  unfold SchedContext.refillUnblockCheck
+  split
+  · rw [SchedContext.mergeOverlapping_consumed]
+  · rfl
+
+/-- **The charge adds the time run to the consumed count** (seL4-MCS's
+`chargeBudget`: `sc->scConsumed += consumed`). -/
+theorem SchedContext.chargeBudget_consumed (sc : SchedContext) (start usage now : Nat) :
+    (sc.chargeBudget start usage now).consumed = sc.consumed + (now - start) := by
+  unfold SchedContext.chargeBudget SchedContext.addConsumed
+  dsimp only
+  rw [SchedContext.releaseReadyHead_consumed, SchedContext.refillBudgetCheck_consumed,
+    SchedContext.refillUnblockCheck_consumed]
+
+/-- The timer tick's charge (the unit run from `now - 1`, charged by `now`) adds
+that unit. -/
+theorem SchedContext.chargeBudget_tick_consumed (sc : SchedContext) (now : Nat) (h : 1 ≤ now) :
+    (sc.chargeBudget (now - 1) 1 now).consumed = sc.consumed + 1 := by
+  rw [SchedContext.chargeBudget_consumed]; omega
+
+/-- The yield's charge (the whole head, from `now`) adds nothing: seL4-MCS's
+`handleYield` keeps the consumed count at the time actually run, and this kernel
+has charged every unit run by `now` at the tick that ended it. -/
+theorem SchedContext.chargeBudget_forfeit_consumed (sc : SchedContext) (usage now : Nat) :
+    (sc.chargeBudget now usage now).consumed = sc.consumed := by
+  rw [SchedContext.chargeBudget_consumed, Nat.sub_self, Nat.add_zero]
 
 theorem SchedContext.refillNew_refillsErased (sc : SchedContext) (budget now : Nat) :
     (sc.refillNew budget now).refillsErased = sc.refillsErased := rfl
@@ -955,12 +1045,16 @@ theorem SchedContext.refillUnblockCheck_refillTotal (sc : SchedContext) (t : Nat
   · rw [SchedContext.mergeOverlapping_refillTotal]; rfl
   · rfl
 
+/-- WS-ZA ZA6.5: the consumed time holds no budget. -/
+@[simp] theorem SchedContext.addConsumed_refillTotal (sc : SchedContext) (t : Nat) :
+    (sc.addConsumed t).refillTotal = sc.refillTotal := rfl
+
 /-- **The charge keeps the total**: what it takes off the head it schedules as
 a refill, and the merges and the release move amounts between refills. -/
 theorem SchedContext.chargeBudget_refillTotal (sc : SchedContext) (start usage now : Nat) :
     (sc.chargeBudget start usage now).refillTotal = sc.refillTotal := by
   unfold SchedContext.chargeBudget
-  rw [SchedContext.releaseReadyHead_refillTotal, SchedContext.refillBudgetCheck_refillTotal,
+  rw [SchedContext.addConsumed_refillTotal, SchedContext.releaseReadyHead_refillTotal, SchedContext.refillBudgetCheck_refillTotal,
     SchedContext.refillUnblockCheck_refillTotal]
 
 theorem SchedContext.refillNew_refillTotal (sc : SchedContext) (budget now : Nat) :
@@ -1473,11 +1567,15 @@ theorem SchedContext.chargeBudget_period (sc : SchedContext) (start usage now : 
   obtain ⟨c1, c2⟩ := SchedContext.refillUnblockCheck_period sc start
   exact ⟨a1.trans (b1.trans c1), a2.trans (b2.trans c2)⟩
 
+/-- WS-ZA ZA6.5: the consumed time releases no unit. -/
+@[simp] theorem SchedContext.addConsumed_tokensBefore (sc : SchedContext) (t x : Nat) :
+    (sc.addConsumed t).tokensBefore x = sc.tokensBefore x := rfl
+
 /-- **No charge releases a unit earlier.** -/
 theorem SchedContext.chargeBudget_tokensBefore (sc : SchedContext) (start usage now x : Nat) :
     (sc.chargeBudget start usage now).tokensBefore x ≤ sc.tokensBefore x := by
   unfold SchedContext.chargeBudget
-  rw [SchedContext.releaseReadyHead_tokensBefore]
+  rw [SchedContext.addConsumed_tokensBefore, SchedContext.releaseReadyHead_tokensBefore]
   have h1 := SchedContext.refillUnblockCheck_tokensBefore sc start x
   have h2 := SchedContext.refillBudgetCheck_tokensBefore (sc.refillUnblockCheck start) usage x
   have : x - ((sc.refillUnblockCheck start).periodStart + (sc.refillUnblockCheck start).period.val) ≤
@@ -1495,7 +1593,7 @@ theorem SchedContext.chargeBudget_run_tokensBefore (sc : SchedContext) (τ x : N
     (sc.chargeBudget τ 1 (τ + 1)).tokensBefore x + min 1 (x - τ) ≤
       sc.tokensBefore x + min 1 (x - (τ + sc.period.val)) := by
   unfold SchedContext.chargeBudget
-  rw [SchedContext.releaseReadyHead_tokensBefore]
+  rw [SchedContext.addConsumed_tokensBefore, SchedContext.releaseReadyHead_tokensBefore]
   obtain ⟨hT1, hP1, -, hB1⟩ := SchedContext.refillUnblockCheck_head sc τ hB hT
   have h1 := SchedContext.refillUnblockCheck_tokensBefore sc τ x
   have h2 := SchedContext.refillBudgetCheck_tokensBefore (sc.refillUnblockCheck τ) 1 x
@@ -1752,6 +1850,7 @@ theorem SchedContext.chargeBudget_tick_pos (sc : SchedContext) (start now : Nat)
       · exact Nat.lt_of_lt_of_le (by omega) (sc.refillUnblockCheck_head start hc.1 hc.2).2.2.2
       · unfold SchedContext.refillUnblockCheck; rw [if_neg hc]; omega
   unfold SchedContext.chargeBudget
+  show 0 < (SchedContext.releaseReadyHead _ _).budgetRemaining.val
   rw [SchedContext.releaseReadyHead_of_pos _ _ (by
     rw [SchedContext.refillBudgetCheck_partial _ 1 (by decide) hu]; omega),
     SchedContext.refillBudgetCheck_partial _ 1 (by decide) hu]

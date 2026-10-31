@@ -273,6 +273,14 @@ structure SchedContext where
   releaseNextCode : Nat := 0
   releaseCoreCode : Nat := 0
   releaseAt : Nat := 0
+  /-- WS-ZA ZA6.5: the time this context has been charged for since it was
+      last read, seL4-MCS's `sc->scConsumed`.  Every charge adds the time run
+      (`SchedContext.chargeBudget`, as seL4's `chargeBudget` adds its
+      `consumed`), and the read takes it back (`SchedContext.updateConsumed`,
+      seL4's `schedContext_updateConsumed`).  A number held in the context's
+      own slot, as the refills are, so a charge allocates nothing.  Outside the
+      refill view (`SchedContext.refillView`): no refill invariant reads it. -/
+  consumed : Nat := 0
 deriving Repr
 
 /-- WS-ZA ZA5.2: the thread this context is bound to, read from its code.
@@ -281,6 +289,56 @@ Reducible, so a record update that leaves the code alone reads the old value by
 @[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
     Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
+
+/-- WS-ZA ZA6.5: the context with `t` more consumed time (seL4-MCS's
+`sc->scConsumed += consumed` in `chargeBudget`).  One field written, so a
+context held once is written in place. -/
+@[inline] def SchedContext.addConsumed (sc : SchedContext) (t : Nat) : SchedContext :=
+  { sc with consumed := sc.consumed + t }
+
+/-- WS-ZA ZA6.5: the most one read of the consumed time returns: a machine
+word, the one message register it is returned in (seL4-MCS's
+`getMaxTicksToUs()`, the most a read converts without overflow; this kernel's
+time is in ticks, so the bound is the word's). -/
+def consumedReadMax : Nat := SeLe4n.machineWordMax - 1
+
+/-- WS-ZA ZA6.5: the consumed time a read returns (seL4-MCS's
+`schedContext_updateConsumed` result): all of it, or a word's worth when more
+has accumulated. -/
+@[inline] def SchedContext.consumedReading (sc : SchedContext) : Nat :=
+  min sc.consumed consumedReadMax
+
+/-- WS-ZA ZA6.5: the context after a read of its consumed time (seL4-MCS's
+`schedContext_updateConsumed`): what the read returned is taken off, so the
+count restarts at 0, or keeps what a word could not hold. -/
+@[inline] def SchedContext.updateConsumed (sc : SchedContext) : SchedContext :=
+  { sc with consumed := sc.consumed - sc.consumedReading }
+
+/-- The read returns a word. -/
+theorem SchedContext.consumedReading_lt_word (sc : SchedContext) :
+    sc.consumedReading < SeLe4n.machineWordMax := by
+  unfold SchedContext.consumedReading consumedReadMax
+  have : 0 < SeLe4n.machineWordMax := by decide
+  omega
+
+/-- The read loses no time: what it returns and what it leaves add up to what
+had accumulated. -/
+theorem SchedContext.consumedReading_add_updateConsumed (sc : SchedContext) :
+    sc.consumedReading + sc.updateConsumed.consumed = sc.consumed := by
+  unfold SchedContext.updateConsumed SchedContext.consumedReading
+  dsimp only
+  omega
+
+/-- seL4-MCS's two cases: a count a word holds is returned whole and reset to
+0; a larger one returns a word's worth and keeps the rest. -/
+theorem SchedContext.updateConsumed_cases (sc : SchedContext) :
+    (sc.consumed < consumedReadMax ∧ sc.consumedReading = sc.consumed ∧
+        sc.updateConsumed.consumed = 0) ∨
+      (consumedReadMax ≤ sc.consumed ∧ sc.consumedReading = consumedReadMax ∧
+        sc.updateConsumed.consumed = sc.consumed - consumedReadMax) := by
+  unfold SchedContext.updateConsumed SchedContext.consumedReading
+  dsimp only
+  omega
 
 /-- WS-ZA ZA6.3: how many replenishments the context holds after its first. -/
 def refillTailCapacity : Nat := maxReplenishments - 1
@@ -333,8 +391,8 @@ list. -/
     (budgetRemaining : Budget) (periodStart : Nat) (boundThreadCode : Nat)
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
     (isActive : Bool) (releaseNextCode : Nat)
-    (releaseCoreCode : Nat) (releaseAt : Nat) :
-    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt).replenishments = sc.replenishments := rfl
+    (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) :
+    (SchedContext.mk scId budget period priority deadline domain budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed).replenishments = sc.replenishments := rfl
 
 /-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
 @[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}
@@ -1025,6 +1083,9 @@ instance : BEq SchedContext where
     -- WS-ZA ZA6.3: and the context's release-queue place, as a thread's
     -- run-queue links take part in its own.
     a.releaseNextCode == b.releaseNextCode && a.releaseCoreCode == b.releaseCoreCode &&
-    a.releaseAt == b.releaseAt
+    a.releaseAt == b.releaseAt &&
+    -- WS-ZA ZA6.5: and the consumed time, so a charge that accumulates it
+    -- differently on the frozen surface is a disagreement.
+    a.consumed == b.consumed
 
 end SeLe4n.Kernel

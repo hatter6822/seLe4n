@@ -1,3 +1,60 @@
+## v0.36.168 — WS-ZA ZA6.5: every charge records the time it consumed
+
+Each scheduling context now keeps seL4-MCS's consumed time (`scConsumed`).
+Every charge adds the time it ran, and the read returns it and takes it off,
+as seL4-MCS's `schedContext_updateConsumed` does. The yieldTo rows (ZA6.6 to
+ZA6.8) return this count.
+
+- **The count** (`SeLe4n/Kernel/SchedContext/Types.lean`).
+  - `SchedContext.consumed` is a plain number in the context's own slot, as
+    the refills are, so a charge allocates nothing.
+  - `SchedContext.addConsumed` adds to it. `consumedReading` and
+    `updateConsumed` are the read: the count is returned, at most a word
+    (`consumedReadMax`, the message register it goes in), and what was
+    returned is taken off (`consumedReading_lt_word`,
+    `consumedReading_add_updateConsumed`, `updateConsumed_cases`).
+  - The frozen differential compares it (`BEq SchedContext`).
+- **Every charge adds the time run** (`SeLe4n/Kernel/SchedContext/Budget.lean`).
+  - Every charge goes through `SchedContext.chargeBudget`, which now adds
+    `now - start` to the count, as seL4-MCS's `chargeBudget` adds its
+    `consumed` (`chargeBudget_consumed`).
+  - So each charge site accumulates with no change of its own: the per-core
+    tick's unit charge and its exhausting charge
+    (`timerTickBudgetOnCore`, `budgetExhaustOnCore`), the single-core
+    `timerTickBudget`, and the frozen copy (`frozenTimerTickBudget`). Each
+    adds the unit it ran (`chargeBudget_tick_consumed`).
+  - The yield's whole-head charge (`yieldChargeOnCore`,
+    `handleYieldWithBudget`) starts at `now` and adds nothing
+    (`chargeBudget_forfeit_consumed`). seL4-MCS's `handleYield` sets
+    `scConsumed` back to the time actually run, and this kernel charges every
+    unit at the tick that ends it, so none is uncharged at a yield.
+  - A configure keeps the count, as seL4's does.
+- **Outside the refill view** (`SeLe4n/Kernel/SchedContext/RefillState.lean`).
+  - The count is in no refill invariant's view (`addConsumed_refillView`,
+    `updateConsumed_refillView`, `chargeBudget_refillView`,
+    `objRefillView_addConsumed`). It is erased with the refills
+    (`SchedContext.refillsErased`).
+  - So `refillsSound`, refill conservation, the window bound and every
+    run-queue stage are unchanged.
+  - Its projection is decided with ZA6.9's. Until then it is projected as the
+    context's other budget fields are (`docs/REGISTERED_DEBT.md`, the per-core
+    tick's non-interference row).
+- **Boot** (`SeLe4n/Platform/Boot.lean`). A boot context must carry no
+  consumed time (`bootSafeSchedContextCheck`, and its Prop side
+  `bootSafeObject`), as seL4-MCS's boot contexts start at 0.
+- **Tests.** `SmpCbsSuite` §3.4: a tick adds one unit per charge, the bound
+  yield adds none, a read returns the count and resets it, and a read past a
+  word keeps the rest.
+- **Zero allocation.** The count is one field of the charge's own record
+  update, which the compiled charge writes in place. On a fresh untraced
+  archive (`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS,
+  every pin unchanged) every charge scenario reads 0 at first call and steady
+  state: `timer-tick`, `yield`, `refill-yield`, `refill-wait-tick`,
+  `refill-drain-tick`, `exhaust-tick`, `exhaust-drain-tick`, and the
+  configure, bind, unbind and resume scenarios. The context's retype keeps
+  its pins (`untyped-retype-sched-context` 14 and 13,
+  `untyped-retype-sc-thread` 24 and 24).
+
 ## v0.36.167 — WS-ZA ZA6.4: configure takes SchedControl authority, and budgets are charged as seL4-MCS charges them
 
 A scheduling context is now configured only through a per-core SchedControl
