@@ -7,6 +7,7 @@
 -/
 import SeLe4n.Kernel.SchedContext.ReleaseLinks
 import SeLe4n.Kernel.SchedContext.Invariant.Defs
+import SeLe4n.Kernel.SchedContext.YieldLinkInvariant
 
 /-! # The refill state every transition keeps
 
@@ -285,6 +286,12 @@ theorem of_agreeOffReleaseLinks {st st' : SystemState}
   .of_map KernelObject.withoutRelease (fun o => by cases o <;> rfl) h
 
 end RefillViewsKept
+
+/-- WS-ZA ZA6.6: a write to the release fields alone keeps every slot's yield
+codes. -/
+theorem YieldLinksKept.of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffReleaseLinks st' st) : YieldLinksKept st' st :=
+  .of_map KernelObject.withoutRelease (fun o => by cases o <;> rfl) h
 
 /-- **Every context well formed, read through the views.** -/
 theorem schedContextsWellFormed_of_kept {st st' : SystemState} (hK : RefillViewsKept st' st)

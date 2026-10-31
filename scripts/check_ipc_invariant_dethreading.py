@@ -269,7 +269,9 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "run_cmd"): 2,
     # WS-ZA ZA5.11: the `taint_words_kept` tactic, which discharges "this
     # thread write keeps the taint words"; a tactic macro mints no declaration.
-    ("SeLe4n/Model/Object/Types.lean", "macro"): 1,
+    # WS-ZA ZA6.6: the `yield_code_kept` tactic, which discharges "this thread
+    # write keeps the yield link"; a tactic macro too.
+    ("SeLe4n/Model/Object/Types.lean", "macro"): 2,
     # WS-ZA ZA4.5: the `run_queue_stage` tactic and its step rules -- each
     # `macro_rules` adds one tactic-category alternative (a step's stage) and
     # `macro` declares the driver tactics; none mints a declaration.
@@ -287,8 +289,10 @@ MACHINERY_PINS = {
     # table-reference frame (WS-ZA ZA5.4 part 31), and the `release_frame` /
     # `release_links` tactics that discharge a step's release-queue slot and
     # link frame (WS-ZA ZA6.3), and the `refill_view` tactic that discharges a
-    # store's refill-view frame (WS-ZA ZA6.4); none mints a declaration.
-    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 8,
+    # store's refill-view frame (WS-ZA ZA6.4), and the `yield_codes` tactic
+    # that discharges a store's yield-code frame (WS-ZA ZA6.6); none mints a
+    # declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 9,
     # The `table_frame` alternative over the context switch's reference-table
     # lemmas; it adds a tactic alternative and mints no declaration.
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Scheduling.lean", "macro_rules"): 1,

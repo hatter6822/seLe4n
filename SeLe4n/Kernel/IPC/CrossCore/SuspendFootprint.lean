@@ -357,8 +357,9 @@ it reclaims, and G3's donation arm moves or purges the victim's own — and the
 segment is their two resolvers concatenated, each read at the state its own step
 runs on.  Every other stage frames every replenish queue outright: G2b's chain
 revert re-buckets run queues (`propagatePipChainCrossCore_replenishQueueOnCore`),
-G4's placement dequeue is a run-queue removal, G5 and G6 write TCBs, and G7's
-scheduling point at most dispatches a successor.
+G4's placement dequeue is a run-queue removal, G5 and G6 write TCBs, G6b's
+yield-link cancel writes a thread and a context, and G7's scheduling point at
+most dispatches a successor.
 
 Read with `schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes`
 this is the pair a resolved scheduler footprint owes: the footprint names every
@@ -405,6 +406,7 @@ theorem suspendThreadOnCore_replenishQueueOnCore_ne (st st' : SystemState)
           (determineTargetCore st vtid.val) c hne.2 hArm
         -- G4..G7: every remaining stage frames every replenish queue.
         rw [suspendRescheduleOnCore_replenishQueueOnCore _ st' _ _ _ _ _ c h,
+          SystemState.cancelYieldTo_scheduler,
           SystemState.updateTcb_scheduler, Lifecycle.Suspend.clearPendingStateValid_eq,
           Lifecycle.Suspend.clearPendingState_scheduler_eq, descheduleAt_replenishQueueOnCore,
           hG3, hG2b, hG2]

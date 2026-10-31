@@ -1208,6 +1208,35 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
 -- §8  The finalisation
 -- ============================================================================
 
+/-- **WS-ZA ZA6.6: a step that writes the yield writes alone is a frame**: a
+thread's yield-to code and return registers and a context's yield-from code
+and consumed count are none of the fields the scheduling-link invariants read. -/
+theorem SchedLinkFrame.of_objectsAgreeOffYield {st st' : SystemState}
+    (hA : st'.objectsAgreeOffYield st) (hS : st'.scheduler = st.scheduler) :
+    SchedLinkFrame st st' := by
+  have key : ∀ {α : Type} (p : Option KernelObject → α),
+      (∀ o, p (some o.withoutYield) = p (some o)) →
+      ∀ oid : SeLe4n.ObjId, p st'.objects[oid]? = p st.objects[oid]? := by
+    intro α p hp oid
+    have hp' : ∀ x : Option KernelObject, p (x.map KernelObject.withoutYield) = p x := by
+      intro x; cases x
+      · rfl
+      · exact hp _
+    rw [← hp' st'.objects[oid]?, hA oid, hp']
+  exact ⟨key _ (fun o => by cases o <;> rfl), key _ (fun o => by cases o <;> rfl),
+    key _ (fun o => by cases o <;> rfl), by rw [hS]⟩
+
+/-- The yield steps of a finalisation, as the closure asks them. -/
+theorem SchedLinkFrame.yieldStep :
+    FinaliseYieldStep (fun s => s.objects.invExt ∧ schedContextLinkInvariant s) :=
+  ⟨fun s t h => ⟨SystemState.cancelYieldTo_preserves_objects_invExt _ _ h.1,
+      (SchedLinkFrame.of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield s t h.1)
+        (SystemState.cancelYieldTo_scheduler s t)).preserves h.2⟩,
+   fun s c h => ⟨SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.1,
+      (SchedLinkFrame.of_objectsAgreeOffYield
+        (SystemState.completeYieldFrom_objectsAgreeOffYield s c h.1)
+        (SystemState.completeYieldFrom_scheduler s c)).preserves h.2⟩⟩
+
 /-- **The finalisation keeps every scheduling-link invariant**, every step of
 it (`finaliseFinalObject_closed`): each step a frame (`SchedLinkFrame`) but the
 context's release of its holder
@@ -1254,7 +1283,7 @@ theorem finaliseFinalObject_preserves_schedContextLinkInvariant (target : Nat) (
     (fun s _ _ tid _ h _ _ e => e ▸
       ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ h.1,
         (SchedLinkFrame.updateTcb s tid _ h.1).preserves h.2⟩)
-    target st ⟨hInv, h⟩).2
+    SchedLinkFrame.yieldStep target st ⟨hInv, h⟩).2
 
 -- ============================================================================
 -- §9  The retire

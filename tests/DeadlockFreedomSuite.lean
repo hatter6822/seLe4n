@@ -506,7 +506,7 @@ private def runSizeBoundChecks : IO Unit := do
   -- reply-stack depth >= 3.  Exercised here at the *default* state, where the
   -- target resolves to no TCB and the set is the three-member base; the
   -- ceiling-reaching shape is the theorem
-  -- `lockSet_tcbSuspendOnCore_size_le_seventeen`, which no concrete state in a
+  -- `lockSet_tcbSuspendOnCore_size_le_eighteen`, which no concrete state in a
   -- regression suite can stand in for.  The assertion is the bound, not the
   -- equality, so it survives a ceiling change.
   let suspendSet := SeLe4n.Kernel.lockSet_tcbSuspendOnCore default (ThreadId.ofNat 1)

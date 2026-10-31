@@ -48,6 +48,45 @@ theorem updateSchedContext_mappingStage (st : SystemState) (scId : SeLe4n.SchedC
       (fun old hOld => by rw [hRaw] at hOld; cases hOld; rfl)
   · exact MappingStage.refl _
 
+/-- WS-ZA ZA6.6: the yield-link cancel rewrites a context and a thread in place. -/
+theorem cancelYieldTo_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
+    MappingStage st (cancelYieldTo st tid) := by
+  unfold cancelYieldTo
+  split
+  · split
+    · exact MappingStage.refl _
+    · exact (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)
+  · exact MappingStage.refl _
+
+/-- WS-ZA ZA6.6: `setConsumed` rewrites a context and a thread's two return
+registers in place. -/
+theorem setConsumed_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) : MappingStage st (setConsumed st s t) := by
+  unfold setConsumed
+  split
+  · exact (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)
+  · exact MappingStage.refl _
+
+/-- WS-ZA ZA6.6: the cancel from a context's end. -/
+theorem cancelYieldFrom_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId) :
+    MappingStage st (cancelYieldFrom st s) := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · exact MappingStage.refl _
+    · exact (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)
+  · exact MappingStage.refl _
+
+/-- WS-ZA ZA6.6: the completion of a context's recorded yield. -/
+theorem completeYieldFrom_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId) :
+    MappingStage st (completeYieldFrom st s) := by
+  unfold completeYieldFrom
+  split
+  · split
+    · exact MappingStage.refl _
+    · exact (setConsumed_mappingStage _ _ _).trans (cancelYieldFrom_mappingStage _ _)
+  · exact MappingStage.refl _
+
 /-! ### The suspend's teardown -/
 
 /-- One queue neighbour's links patched, its space slots kept. -/
@@ -211,7 +250,8 @@ theorem suspendThreadOnCore_mappingStage {st st' : SystemState}
         refine (show MappingStage _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
           unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
           exact updateTcb_mappingStage _ _ _).trans ?_
-        exact (updateTcb_mappingStage _ _ _).trans (suspendRescheduleOnCore_mappingStage hStep)
+        exact ((updateTcb_mappingStage _ _ _).trans (cancelYieldTo_mappingStage _ _)).trans
+          (suspendRescheduleOnCore_mappingStage hStep)
 
 /-- The resume's ready mark: two thread rewrites. -/
 theorem resumeReadyMidState_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :

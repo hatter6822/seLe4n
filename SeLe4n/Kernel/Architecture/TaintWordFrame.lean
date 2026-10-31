@@ -783,6 +783,15 @@ theorem liveMappingsRecorded_of_objectsAgreeOffTaint
   SystemState.liveMappingsRecorded.of_mappingFactsKept
     (SystemState.mappingFactsKept.of_objectsAgreeOffTaint hA) h
 
+/-- WS-ZA ZA6.6: a word write keeps every yield-link code — neither a thread's
+`yieldToCode` nor a context's `yieldFromCode` is a taint word — so the two link
+ends still agree. -/
+theorem yieldLinksAgree_of_objectsAgreeOffTaint
+    (hA : st.objectsAgreeOffTaint { st with objects := O }) (h : st.yieldLinksAgree) :
+    SystemState.yieldLinksAgree { st with objects := O } :=
+  SystemState.yieldLinksAgree_of_kept
+    (YieldLinksKept.of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA) h
+
 /-- WS-ZA ZA6.4: a word write keeps every context's refills — a context holds
 no taint word — and writes no release queue, so the refill state stays sound. -/
 theorem refillsSound_of_objectsAgreeOffTaint
@@ -846,7 +855,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     (h : proofLayerInvariantBundle st) : proofLayerInvariantBundle { st with objects := O } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield⟩ := h
   have hI' := hI bCap.2.2.2.2.1
   exact ⟨schedulerInvariantBundleFull_of_objectsAgreeOffTaint hA bSched,
     capabilityInvariantBundle_of_objectsAgreeOffTaint hA hI' bCap,
@@ -865,6 +874,7 @@ theorem proofLayerInvariantBundle_of_objectsAgreeOffTaint
     liveMappingsRecorded_of_objectsAgreeOffTaint hA bMap,
     releaseQueueRefined_of_objectsAgreeOffTaint hA bRel,
     refillsSound_of_objectsAgreeOffTaint hA (releaseQueueRefined_of_objectsAgreeOffTaint hA bRel)
-      bRefill⟩
+      bRefill,
+    yieldLinksAgree_of_objectsAgreeOffTaint hA bYield⟩
 
 end SeLe4n.Kernel.Architecture

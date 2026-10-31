@@ -985,7 +985,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
-     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[0]) ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[1]) ||
@@ -1094,7 +1094,7 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      boundThreadCode, scReply, donationOrigin, _isActive,
-     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed⟩ =>
+     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     -- **WS-ZA ZA6.3**: and its release-queue successor, which names a scheduling
     -- context by its code (`0` is none, `s + 1` is `s`).
@@ -2132,7 +2132,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
-     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated,
+     -- The yield link is empty (WS-ZA ZA6.6): a boot state has yielded to nothing.
+     _yieldToCode⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -2145,7 +2147,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
     tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
     tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear &&
-    decide (tcb.taintWords = {})
+    decide (tcb.taintWords = {}) &&
+    decide (tcb.yieldToCode = 0)
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -2161,7 +2164,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
        tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0) &&
        tcb.spaceSlotCaps.all (fun p => bootSafeCapCheck p.2) && tcb.spaceLinksClear &&
-       decide (tcb.taintWords = {})) := rfl
+       decide (tcb.taintWords = {}) &&
+       decide (tcb.yieldToCode = 0)) := rfl
 
 /-- What a boot thread's two space slots hold: every capability carries a valid
     badge, none is a reply capability and none records a mapping, as
@@ -2249,7 +2253,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      _boundThread, _scReply, _donationOrigin, _isActive,
-     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed⟩ =>
+     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -2275,7 +2279,10 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     -- **WS-ZA ZA6.5**: and no consumed time.  A boot state has charged no
     -- context (seL4-MCS's boot contexts start with `scConsumed` 0), so a
     -- config-supplied count could only report time no thread ran.
-    sc.consumed == 0
+    sc.consumed == 0 &&
+    -- **WS-ZA ZA6.6**: and no yielder.  A boot state has run no yieldTo, so a
+    -- config-supplied yielder could only name a link no thread holds.
+    sc.yieldFromCode == 0
 
 @[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
     bootSafeSchedContextCheck sc =
@@ -2291,7 +2298,8 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.releaseCoreCode == 0 &&
        decide (sc.refillTotal = sc.budget.val) &&
        decide (sc.refillSize ≤ maxReplenishments) &&
-       sc.consumed == 0) := rfl
+       sc.consumed == 0 &&
+       sc.yieldFromCode == 0) := rfl
 
 /-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
     no `prev` link.  `replyId` is pinned to the slot by
@@ -2399,7 +2407,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
       tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-      bootSpaceSlotsSafe tcb) ∧
+      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0) ∧
     -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
     -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
@@ -2409,7 +2417,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
       -- **WS-HP HP10.3**: and no recorded reservation origin.
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.yieldFromCode = 0) ∧
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
     -- reply-stack link in either direction.
     (∀ r, obj = .reply r →
@@ -2453,11 +2462,11 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
-      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
+      hWP⟩, hWN⟩, hWH⟩, hWC⟩, hSC⟩, hSL⟩, -⟩, hYield⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC, bootSpaceSlotsSafe_of_check hSC hSL⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC, bootSpaceSlotsSafe_of_check hSC hSL, hYield⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2494,8 +2503,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
@@ -2503,7 +2512,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     injection hs; subst_vars
     refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack,
             Option.eq_none_of_isNone hNoOrigin, by simpa using hNoRelease,
-            by simpa using hNoConsumed⟩
+            by simpa using hNoConsumed, by simpa using hNoYield⟩
     unfold schedContextWellFormed
     refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
             ⟨hRepLen, ?_⟩, ?_, hTot, hFit⟩
@@ -2556,12 +2565,13 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
       tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-      bootSpaceSlotsSafe tcb) ∧
+      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0) ∧
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.yieldFromCode = 0) ∧
     (∀ r, obj = .reply r →
       r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
     (∀ ut, obj = .untyped ut →
@@ -4342,7 +4352,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
-     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true
@@ -5457,7 +5467,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
     tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
     -- and its space slots hold safe capabilities and no link.
-    bootSpaceSlotsSafe tcb) ∧
+    bootSpaceSlotsSafe tcb ∧
+    -- WS-ZA ZA6.6: and it has yielded to no context.
+    tcb.yieldToCode = 0) ∧
   -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
   -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
@@ -5477,7 +5489,8 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- WS-ZA ZA6.5: and no consumed time, as the executable check refuses one.
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.yieldFromCode = 0) ∧
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
   -- link in either direction.
   (∀ r, obj = .reply r →
@@ -5545,7 +5558,7 @@ def bootTcbShape (tcb : TCB) : Prop :=
   tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
   tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
   tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-  bootSpaceSlotCapsSafe tcb
+  bootSpaceSlotCapsSafe tcb ∧ tcb.yieldToCode = 0
 
 /-- **The boot shape off the derivation links**: what the proof-layer bundle
     reads of an object, none of it a link word — so it holds of the linked boot
@@ -5564,7 +5577,8 @@ def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
     SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0) ∧
+      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.yieldFromCode = 0) ∧
   (∀ r, obj = .reply r →
     r.caller = none ∧ r.prev = none ∧ r.next = none)
 
@@ -5628,13 +5642,13 @@ theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject 
       let r := t.2.2.2.2.2.2.2.2.2.2.2.2
       ⟨t.1, t.2.1, t.2.2.1, t.2.2.2.1, t.2.2.2.2.1, t.2.2.2.2.2.1, t.2.2.2.2.2.2.1,
        t.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.2.2.2.1,
-       r.1, r.2.1, r.2.2.1, r.2.2.2.1, r.2.2.2.2.1, r.2.2.2.2.2.1⟩,
+       r.1, r.2.1, r.2.2.1, r.2.2.2.1, r.2.2.2.2.1, r.2.2.2.2.2.1.1, r.2.2.2.2.2.2⟩,
     fun vs hEq =>
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
         (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
     h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩,
    fun cn hEq => (h.2.2.1 cn hEq).2.2.2.2,
-   fun tcb hEq => (h.2.2.2.1 tcb hEq).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+   fun tcb hEq => (h.2.2.2.1 tcb hEq).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2⟩
 
 /-- **WS-BP BP3.5**: the binding's boot root has the boot shape — every arm
     but the VSpace one is vacuous, and that one is its checks read per
@@ -5652,7 +5666,7 @@ theorem readyIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (readyIdleThread c)) := by
   refine ⟨⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;> intro x hx <;> cases hx
   · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-      (bootSpaceSlotsSafe_of_check rfl rfl).1⟩
+      (bootSpaceSlotsSafe_of_check rfl rfl).1, rfl⟩
   · rfl
 
 -- ============================================================================
@@ -5982,7 +5996,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       | cnode cn => exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2 slot cap rid hLookupSlot)
       | tcb t =>
         exact absurd hTgt
-          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 slot cap rid hLookupSlot)
+          (((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.1 slot cap rid hLookupSlot)
       | _ => simp [KernelObject.slotCap] at hLookupSlot
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle ist.state :=
@@ -6065,7 +6079,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         cases o with
         | cnode cn => exact ((hBS oid _ hObj).2.2.1 cn rfl).2.2.1 slot cap badge hSlotLookup hBadge
         | tcb t =>
-          exact ((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+          exact ((hBS oid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
             slot cap badge hSlotLookup hBadge
         | _ => simp [KernelObject.slotCap] at hSlotLookup
     · -- blockedThreadsPendingMessageConsistent
@@ -6426,14 +6440,28 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     SystemState.liveMappingsRecorded_of_epochsVacant
       (fun rid root hObj => ((hBS rid _ hObj).2.2.2.2.1 root rfl).2.2.2)
       fun tid t s cap hObj hc =>
-        ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 s cap hc
+        ((hBS tid _ hObj).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.2.2 s cap hc
   -- 19. releaseQueueRefined (WS-ZA ZA6.3): the caller's hypothesis.
   -- 20. refillsSound (WS-ZA ZA6.4): the caller's hypothesis.
-  -- Compose all 20 components
+  -- 21. yieldLinksAgree (WS-ZA ZA6.6): no boot thread yields to a context and
+  -- no boot context is yielded from, so every code is 0 and no link is open.
+  have hYield : ist.state.yieldLinksAgree := SystemState.yieldLinksAgree_of_clear fun k => by
+    cases hO : ist.state.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | tcb t =>
+        show (t.yieldToCode, 0) = (0, 0)
+        rw [((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2]
+      | schedContext sc =>
+        show (0, sc.yieldFromCode) = (0, 0)
+        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
+      | _ => rfl
+  -- Compose all 21 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield⟩
 
 -- ============================================================================
 -- WS-RR RR5.13 / PR #889 review: results that read the object store through
@@ -6783,7 +6811,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
       tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
       tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 ∧
-      bootSpaceSlotsSafe tcb := by
+      bootSpaceSlotsSafe tcb ∧ tcb.yieldToCode = 0 := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
@@ -8011,7 +8039,7 @@ theorem bootSafeObjectCheck_taintWords {obj : KernelObject}
   | tcb t =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    exact h.2
+    exact h.1.2
   | _ => rfl
 
 /-- **Every object the checked boot holds that holds a table back-link is a
@@ -8551,7 +8579,7 @@ theorem bootSafeObjectCheck_slotCap_freeIndex {obj : KernelObject}
   | tcb t =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true] at h
     obtain ⟨_, hm⟩ := TCB.mem_spaceSlotCaps hs
-    have hc := (List.all_eq_true.mp h.1.1.2) _ hm
+    have hc := (List.all_eq_true.mp h.1.1.1.2) _ hm
     simp only at hc
     unfold bootSafeCapCheck at hc
     simp only [Bool.and_eq_true, beq_iff_eq] at hc

@@ -137,8 +137,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.closePlace {st X : Sy
     · have hXR := hF.1.release hI hR hQ
       obtain ⟨hFree, hWF, hB, hQB⟩ := hX S hs hI hR hQ hS hXR
       exact SystemState.releasePlace_close hXR c s hFree hWF hB hQB
-        (hF.1.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx))⟩,
-    hT.2⟩
+        (hF.1.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx)),
+    hT.1.yield⟩, hT.2⟩
 
 /-- The bind writes the context's bound thread, the thread's binding and
 priority, re-buckets or places the thread through the link-writing queue
@@ -177,6 +177,7 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                     (SystemState.objStateMono_nonTcb
                       (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
                     (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+                    (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; simp [objYieldCodes])
                     (hR := fun _ => by
                       rw [show st.objects[vScId.val]? = _ from hScRaw]
                       simp only [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, hRel1,
@@ -238,11 +239,13 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_tcb {st : Sy
     {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
     (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
     (hm : TCB.StepMono t t' := by exact ⟨id, id, by first | rfl | simp_all⟩)
-    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept)
+    (hY : t'.yieldToCode = t.yieldToCode := by first | rfl | simp_all) :
     RunQueueStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
   RunQueueStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
     (fun c => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact hL c)
     (by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact SystemState.objStateMono_tcb hm)
+    (hY := by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; simp only [objYieldCodes, hY])
     (hB := by
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
       simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])
@@ -336,16 +339,20 @@ theorem schedContextConfigure_runQueueStage {vScId : SeLe4n.ValidObjId}
       · split at h
         · exact absurd h (by simp)
         · rename_i stStored hStore
-          obtain ⟨scP, hScP, -⟩ := (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+          obtain ⟨scP, hScP, hScPw⟩ := (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
             (SchedContextOps.purgeReplenishment_agree st ⟨vScId.val.toNat⟩)).get_sc
             (show st.objects[vScId.val]? = _ from hScRaw)
+          have hScPy : scP.yieldFromCode = sc.yieldFromCode := by
+            have e := congrArg SchedContext.yieldFromCode hScPw
+            exact e
           -- The purge, then the store: a frame off the context, closed below by
           -- its placement (bound) or by its being unbound and on no queue.
           have hW : SystemState.RunQueueFrameStage (· = ⟨vScId.val.toNat⟩) st stStored :=
             (SchedContextOps.purgeReplenishment_runQueueFrameStage st ⟨vScId.val.toNat⟩).trans
               (SystemState.RunQueueFrameStage.storeObject hStore (fun c => by rw [hScP]; rfl)
                 (by rw [hScP]; exact SystemState.objStateMono_nonTcb rfl rfl)
-                (hB := by rw [hScP]; rfl) (hR := fun c => by
+                (hB := by rw [hScP]; rfl)
+                (hY := by rw [hScP]; simp [objYieldCodes, hScPy]) (hR := fun c => by
                   change _ = SystemState.objReleaseLinkOn (SchedContextOps.purgeReplenishment st
                     ⟨vScId.val.toNat⟩).objects[vScId.val]? c
                   have hN := (SystemState.releaseQueuedAnywhere_eq_false_iff _ _).mp
@@ -731,6 +738,8 @@ theorem suspendThreadOnCore_runQueueEntryStage {st st' : SystemState}
         have hS3 := (hS1.trans hS12).trans hS23
         refine SystemState.RunQueueEntryStage.trans ?_
           (suspendRescheduleOnCore_runQueueEntryStage hStep)
+        refine SystemState.RunQueueEntryStage.trans ?_
+          (SystemState.cancelYieldTo_runQueueStage _ vtid.val).entry
         refine SystemState.RunQueueEntryStage.of_inv ?_ fun hInv hR _ => ?_
         · unfold clearPendingStateValid clearPendingState
           exact (hS3.1.trans (descheduleAt_runQueueStage s3 vtid.val _).1).trans
@@ -916,10 +925,12 @@ run-queue fields, whatever it writes to its state fields and affinity. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueLinkStage.rewriteObject_tcb {st : SystemState}
     {tid : SeLe4n.ThreadId} {t t' : TCB} (h : st.getTcb? tid = some t)
     (hL : ∀ c, t'.runLinkOn c = t.runLinkOn c) (hA : st.rewriteAdmissible tid.toObjId (.tcb t'))
-    (hW : t'.taintWords = t.taintWords := by taint_words_kept) :
+    (hW : t'.taintWords = t.taintWords := by taint_words_kept)
+    (hY : t'.yieldToCode = t.yieldToCode := by first | rfl | simp_all) :
     SystemState.RunQueueLinkStage st (st.rewriteObject tid.toObjId (.tcb t') hA) :=
   SystemState.RunQueueLinkStage.insert (st' := st.rewriteObject tid.toObjId (.tcb t') hA) rfl rfl rfl
     (fun c => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; exact hL c)
+    (hY := by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]; simp only [objYieldCodes, hY])
     (hB := by
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp h]
       simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])
@@ -957,6 +968,9 @@ theorem migrateRunQueueOnAffinityChange_runQueueLinkStage (st : SystemState)
             (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _))
             (by rw [SystemState.runEnqueueAdmitted_scheduler, SystemState.runRemoveOnCore_scheduler]; rfl))
           (fun _ => RefillViewsKept.of_agreeOffRunLinks
+            ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
+              (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)))
+          (fun _ => YieldLinksKept.of_agreeOffRunLinks
             ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
               (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)))
         have hS := (RunQueueStage.runRemoveOnCore st fromCore tid).1 hInv hR
@@ -1347,10 +1361,12 @@ theorem scheduleEffectiveOnCore_runQueueDispatchStage {st st' : SystemState}
 theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.rewriteObject_schedContext
     {st : SystemState} {scId : SeLe4n.SchedContextId} {sc sc' : SchedContext}
     (h : st.getSchedContext? scId = some sc) (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc'))
-    (hRL : ∀ c, sc'.releaseLinkOn c = sc.releaseLinkOn c) :
+    (hRL : ∀ c, sc'.releaseLinkOn c = sc.releaseLinkOn c)
+    (hY : sc'.yieldFromCode = sc.yieldFromCode := by first | rfl | simp_all) :
     SystemState.RunQueueFrameStage (· = scId) st
       (st.rewriteObject scId.toObjId (.schedContext sc') hA) :=
   SystemState.RunQueueFrameStage.insert (st' := st.rewriteObject scId.toObjId (.schedContext sc') hA)
+    (hY := by rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp h]; simp only [objYieldCodes, hY])
     rfl rfl rfl
     (fun c => by rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp h]; rfl)
     (SystemState.objStateMono_nonTcb
@@ -1365,9 +1381,10 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.rewriteObject_schedContext
     (h : st.getSchedContext? scId = some sc) (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc'))
     (hRL : ∀ c, sc'.releaseLinkOn c = sc.releaseLinkOn c)
     (hWF : schedContextWellFormed sc → schedContextWellFormed sc')
-    (hK : sc'.releaseKey? = none) (hBT : sc'.boundThread = sc.boundThread) :
+    (hK : sc'.releaseKey? = none) (hBT : sc'.boundThread = sc.boundThread)
+    (hY : sc'.yieldFromCode = sc.yieldFromCode := by first | rfl | simp_all) :
     RunQueueStage st (st.rewriteObject scId.toObjId (.schedContext sc') hA) :=
-  (SystemState.RunQueueFrameStage.rewriteObject_schedContext h hA hRL).withRefills
+  (SystemState.RunQueueFrameStage.rewriteObject_schedContext h hA hRL hY).withRefills
     fun S hs hI _ _ _ _ h0 h4 => SystemState.refillsSoundExcept_close_keyless (st0 := st) (fun _ => rfl) hs h0 h4
       (SystemState.rewriteObject_schedContext_getSchedContext?_self st scId sc' hA hI) h
       (hWF (h0.1 scId sc hs h)) hK hBT

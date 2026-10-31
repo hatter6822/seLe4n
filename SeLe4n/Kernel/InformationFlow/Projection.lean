@@ -246,7 +246,12 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- the table they mirror is never projected.
                        taintTag0 := 0, taintTag1 := 0, taintTag2 := 0, taintTag3 := 0,
                        taintTag4 := 0, taintTag5 := 0, taintTag6 := 0, taintTag7 := 0,
-                       taintCount := 0, taintSaturated := false }
+                       taintCount := 0, taintSaturated := false,
+                       -- WS-ZA ZA6.6: the yield link (seL4-MCS's `tcbYieldTo`)
+                       -- names the context the thread yielded to, whatever its
+                       -- domain; erased as the binding codes are, and the
+                       -- context's own end (`yieldFromCode`) below.
+                       yieldToCode := 0 }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -286,7 +291,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- sees of it only what the scheduler's own projection carries.
       .schedContext { sc with boundThreadCode := 0, scReply := none,
                               donationOrigin := none,
-                              releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0 }
+                              releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0,
+                              -- WS-ZA ZA6.6: the yield link's context end
+                              -- (seL4-MCS's `scYieldFrom`) names the thread that
+                              -- yielded to this context — a possibly-high
+                              -- thread, as `boundThread` is — so it is erased
+                              -- with the thread's end, in the cut that adds both.
+                              yieldFromCode := 0 }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
       -- cross-domain linkage — `caller` (the back-link to the blocked caller

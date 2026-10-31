@@ -574,6 +574,13 @@ branch's updates out of line. -/
     configuredSchedContextFresh
   cases keep <;> rfl
 
+/-- WS-ZA ZA6.6: the configure keeps the context's end of the yield link. -/
+@[simp] theorem configuredSchedContext_yieldFromCode (budget period priority deadline domain
+    timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period priority deadline domain timer keep sc).yieldFromCode =
+      sc.yieldFromCode := by
+  unfold configuredSchedContext; cases keep <;> simp
+
 /-- The configured context reads nothing of the stored one's release fields. -/
 theorem configuredSchedContext_withoutRelease (budget period priority deadline domain timer : Nat)
     (keep : Bool) (sc : SchedContext) :
@@ -2264,6 +2271,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
               (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
                 (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+              (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
           have hNC : ∀ c, ({ st with scheduler := match runningCoreOf? st tid with
               | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
               | none => st.scheduler } : SystemState).scheduler.currentOnCore c ≠ some tid := by
@@ -2300,6 +2308,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
               (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+              (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
           case hRun =>
             obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
             have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
@@ -2328,6 +2337,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
           (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
           (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+              (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
   · contradiction
 
 end SeLe4n.Kernel.SchedContextOps

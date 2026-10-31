@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.Scheduler.SchedulerLinkFrame
+import SeLe4n.Kernel.SchedContext.YieldLink
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -1625,9 +1626,10 @@ def currentDeboostedFrom (post : SystemState) (ec : CoreId)
 
 Validates the target thread exists and is not already Inactive, then
 performs the full cleanup pipeline: IPC blocking cancellation, donation
-cleanup, run queue removal, pending state clearing, and thread state
-transition to Inactive. If the suspended thread was the current thread,
-triggers a reschedule.
+cleanup, run queue removal, pending state clearing, thread state
+transition to Inactive, and the cancel of its yield link (`cancelYieldTo`,
+seL4-MCS's `schedContext_cancelYieldTo`). If the suspended thread was the
+current thread, triggers a reschedule.
 
 Returns `invalidArgument` if the target is not a TCB, `invalidState` if
 the thread is already Inactive.
@@ -1737,6 +1739,9 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
       let st := st.updateTcb tid fun tcb'' => { tcb'' with threadState := .Inactive }
+      -- G6b: the victim's yield link cancelled, seL4-MCS's
+      -- `schedContext_cancelYieldTo` as the last step of its `suspend`.
+      let st := cancelYieldTo st tid
       -- G7: If suspended thread was current, trigger reschedule.
       -- WS-SM SM6.E fix: dispatch on the G7-precapture (entry-time) value —
       -- the post-G4 current slot never holds the victim (see the precapture

@@ -1255,6 +1255,20 @@ theorem suspendInactiveStore_confinedToCores (s : SystemState) (tid : SeLe4n.Thr
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (SystemState.updateTcb_scheduler _ _ _) (SystemState.updateTcb_machine _ _ _)
 
+/-- WS-ZA ZA6.6: the yield-link cancel writes a thread and a context, no
+per-core slot. -/
+theorem cancelYieldTo_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores s (cancelYieldTo s tid) [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (SystemState.cancelYieldTo_scheduler _ _) (by rw [SystemState.cancelYieldTo_eq_objects])
+
+/-- WS-ZA ZA6.6: the suspend's `.Inactive` store, then its yield-link cancel. -/
+theorem suspendInactiveCancelYield_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores s
+      (cancelYieldTo (s.updateTcb tid fun t => { t with threadState := .Inactive }) tid) [] := by
+  simpa only [List.nil_append] using observableSlotsConfinedToCores_trans
+    (suspendInactiveStore_confinedToCores s tid) (cancelYieldTo_confinedToCores _ tid)
+
 /-- SM8.B.2: whichever donation-cancellation arm the victim's binding selects,
 the step is per-core silent. -/
 theorem suspendDonationArms_confinedToCores (s sD : SystemState) (tid : SeLe4n.ThreadId)
@@ -1362,7 +1376,7 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
                   (descheduleAtPlacementCores_eq_toList st vtid.val ▸
                     descheduleAt_confinedToCores stD vtid.val (placedCoreOf? st vtid.val)))
                 (clearPendingState_confinedToCores _ vtid.val))
-              (suspendInactiveStore_confinedToCores _ vtid.val))
+              (suspendInactiveCancelYield_confinedToCores _ vtid.val))
             (suspendRescheduleOnCore_confinedToCores _ st' _ executingCore _ _ sgi hStep))
 
 -- ============================================================================

@@ -165,10 +165,28 @@ theorem suspendRescheduleOnCore_stepCovers (e : CoreId) {st st' : SystemState}
        exact ⟨handleRescheduleSgiOnCore_stepCovers e _ _ hInv hH,
          handleRescheduleSgiOnCore_preserves_objects_invExt _ e _ hInv hH⟩)
 
+/-- WS-ZA ZA6.6: what the yield operations write (`KernelObject.withoutYield`) is
+no key input. -/
+theorem keyInputsEq_of_objectsAgreeOffYield {pre post : SystemState}
+    (h : post.objectsAgreeOffYield pre) : keyInputsEq pre post := fun oid => by
+  have hv : ∀ x : Option KernelObject,
+      keyInputsOf (x.map KernelObject.withoutYield) = keyInputsOf x := by
+    intro x; rcases x with _ | o
+    · rfl
+    · cases o <;> rfl
+  rw [← hv post.objects[oid]?, h oid, hv]
+
+/-- WS-ZA ZA6.6: the yield-link cancel moves no key and writes no scheduler state. -/
+theorem cancelYieldTo_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : stepCovers e st (cancelYieldTo st tid) :=
+  stepCovers_of_keys_sched
+    (keyInputsEq_of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield st tid hInv))
+    (SystemState.cancelYieldTo_scheduler st tid)
+
 /-- **Suspend covers.**  The IPC teardown, the PIP revert, the donation
 cancellation (each key write hooked), the deschedule (a cleared current slot
-flags its core), two key-free TCB writes and the executing core's own
-scheduling point. -/
+flags its core), two key-free TCB writes, the key-free yield-link cancel and the
+executing core's own scheduling point. -/
 theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     (e : CoreId) (sgi : Option (CoreId × SgiKind)) (hInv : st.objects.invExt)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid e = .ok (st', sgi)) :
@@ -224,8 +242,10 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
         (SystemState.updateTcb_scheduler _ _ _))
       have h6Inv := SystemState.updateTcb_preserves_objects_invExt _ vtid.val
         (fun t => { t with threadState := .Inactive }) h5Inv
-      obtain ⟨h7, h7Inv⟩ := suspendRescheduleOnCore_stepCovers e h6Inv hStep
-      exact ⟨stepCovers_trans h6 h7, h7Inv⟩
+      have h6b := stepCovers_trans h6 (cancelYieldTo_stepCovers e _ vtid.val h6Inv)
+      have h6bInv := SystemState.cancelYieldTo_preserves_objects_invExt _ vtid.val h6Inv
+      obtain ⟨h7, h7Inv⟩ := suspendRescheduleOnCore_stepCovers e h6bInv hStep
+      exact ⟨stepCovers_trans h6b h7, h7Inv⟩
   · contradiction
 
 end SeLe4n.Kernel

@@ -503,6 +503,11 @@ theorem _root_.SeLe4n.Kernel.RefillViewsKept.of_agreeOffRunLinks {st st' : Syste
     (h : objectsAgreeOffRunLinks st' st) : RefillViewsKept st' st :=
   .of_map KernelObject.withoutRunLinks (fun o => by cases o <;> rfl) h
 
+/-- A run-links-only rewrite keeps every slot's yield codes (WS-ZA ZA6.6). -/
+theorem _root_.SeLe4n.Kernel.YieldLinksKept.of_agreeOffRunLinks {st st' : SystemState}
+    (h : objectsAgreeOffRunLinks st' st) : YieldLinksKept st' st :=
+  .of_map KernelObject.withoutRunLinks (fun o => by cases o <;> rfl) h
+
 /-- A TCB rewrite that changes only run-queue fields. -/
 def RunLinksOnly (g : TCB → TCB) : Prop := ∀ tcb, (g tcb).withoutRunLinks = tcb.withoutRunLinks
 
@@ -794,6 +799,7 @@ theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4
         (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).referenceTables)
       (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
         (by rw [runRemoveOnCore_scheduler]; rfl))
+      (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
       fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
     (fun c' y h' => by
       rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
@@ -1250,6 +1256,7 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
     (runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
     (fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runRequeueOnCore_scheduler]; rfl))
+    (fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
     fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
   intro hInv hR
   refine ⟨runRequeueOnCore_objects_invExt st c t p hInv, ?_⟩
@@ -1300,6 +1307,7 @@ theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : 
       (runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
     (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runEnqueueOnCore_scheduler]; split <;> rfl))
+    (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))
     fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
 
 /-- The guarded enqueue of a runnable thread current on no core, on its home

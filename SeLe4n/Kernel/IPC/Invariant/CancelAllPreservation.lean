@@ -754,6 +754,10 @@ theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : Sy
     (fun s s1 x tid t h hT hC e =>
       have hI := finaliseUnstashStep_keepsIpcInvariantFull s s1 x tid t ⟨h.1, h.2.1⟩ hT hC e
       ⟨hI.1, hI.2, h.2.2.of_loanWrite (e ▸ (FinaliseFrame.updateTcb s tid _ h.2.1).loan)⟩)
+    ⟨fun s t h => h.of_frame (cancelYieldTo_preserves_ipcInvariantFull s t h.2.1 h.1)
+        (FinaliseFrame.cancelYieldTo s t h.2.1),
+     fun s c h => h.of_frame (completeYieldFrom_preserves_ipcInvariantFull s c h.2.1 h.1)
+        (FinaliseFrame.completeYieldFrom s c h.2.1)⟩
     target st h
 
 /-- **The finalisation keeps the IPC bundle**, on a state where every lent

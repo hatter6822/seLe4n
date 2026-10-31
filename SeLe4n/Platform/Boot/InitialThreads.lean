@@ -341,7 +341,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev he).trans t10,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11, r1, r2, r3, r4,
         bootSpaceSlotCapsSafe_of_cells_eq (TCB.proj_eq_of_withoutRunLinks_eq TCB.spaceCells he)
-          t15.2⟩
+          t15.2.1, (TCB.proj_eq_of_withoutRunLinks_eq TCB.yieldToCode he).trans t15.2.2⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)
