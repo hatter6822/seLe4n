@@ -220,6 +220,32 @@ def FinaliseUnstashStep (P : SystemState → Prop) : Prop :=
     s.getTcb? tid = some t → t.pendingReceiveReplyCode = x.val + 1 →
     s1 = s.updateTcb tid TCB.stashCleared → P s1
 
+/-- **The yield steps a thread's and a context's finalisation take** (WS-ZA
+ZA6.6): a thread's yield link cancelled (`cancelYieldTo`), and the yield a
+context records completed (`completeYieldFrom`). -/
+structure FinaliseYieldStep (P : SystemState → Prop) : Prop where
+  cancel : ∀ (s : SystemState) (t : SeLe4n.ThreadId), P s → P (cancelYieldTo s t)
+  complete : ∀ (s : SystemState) (c : SeLe4n.SchedContextId), P s → P (completeYieldFrom s c)
+
+/-- A held context's completion keeps what the completion keeps. -/
+theorem FinaliseYieldStep.completeHeldYield {P : SystemState → Prop} (h : FinaliseYieldStep P)
+    (s : SystemState) (held : Nat) (hs : P s) : P (completeHeldYield s held) := by
+  unfold SeLe4n.Kernel.completeHeldYield
+  split
+  · exact hs
+  · exact h.complete _ _ hs
+
+/-- A context finalisation's destroy cleanup keeps what the completion keeps. -/
+theorem FinaliseYieldStep.schedContextCleanup {P : SystemState → Prop} (h : FinaliseYieldStep P)
+    (s : SystemState) (x : SeLe4n.ObjId) (hs : P s) :
+    P (finaliseSchedContextCleanupImpl s x) := by
+  unfold finaliseSchedContextCleanupImpl
+  split
+  · split
+    · exact h.complete _ _ hs
+    · exact hs
+  · exact hs
+
 /-- A thread whose owner code is already clear is its own owner-cleared view. -/
 theorem TCB.ownerCleared_of_zero {t : TCB} (h : t.scBindingOwnerCode = 0) :
     ({ t with scBindingOwnerCode := 0 } : TCB) = t := by
@@ -684,13 +710,15 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
 the scheduling-context finalisation.** -/
 theorem finaliseSchedContext_closed (P : SystemState → Prop) (hDes : FinaliseScDescheduleStep P)
     (hRel : FinaliseScReleaseStep P)
-    (hUn : FinaliseUnstackStep P) (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
+    (hUn : FinaliseUnstackStep P) (hYield : FinaliseYieldStep P) (x : SeLe4n.ObjId)
+    (st : SystemState) (h : P st) :
     P (finaliseSchedContext x st) := by
   rw [finaliseSchedContext_eq]
   split
   · rename_i hA
-    exact finaliseSchedContextUnstack_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
-      (finaliseSchedContextDeschedule_closed P hDes st x hA h))
+    exact hYield.schedContextCleanup _ x
+      (finaliseSchedContextUnstack_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
+        (finaliseSchedContextDeschedule_closed P hDes st x hA h)))
   · exact h
 
 /-- **A property the suspend keeps holds after `finaliseThreadSuspend`.** -/
@@ -896,19 +924,20 @@ theorem finaliseThread_closed (P : SystemState → Prop) (hUnbind : FinaliseUnbi
     (hSc : FinaliseScUnbindStep P) (hCancel : FinaliseNotificationCancelStep P)
     (hEndpoint : FinaliseEndpointCancelStep P)
     (hSuspend : FinaliseSuspendStep P) (hRelease : FinaliseReleaseStep P)
-    (hRep : FinaliseReplyStep P)
+    (hRep : FinaliseReplyStep P) (hYield : FinaliseYieldStep P)
     (x : SeLe4n.ObjId) (st : SystemState) (h : P st) :
     P (finaliseThread x st) := by
   unfold finaliseThread; dsimp only
   split
   · rename_i hA
     obtain ⟨t, hT, hG⟩ := threadFinaliseAdmitted_notificationUnbind hA
-    exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _
+    refine hYield.completeHeldYield _ _ ?_
+    exact finaliseThreadUnbindSchedContext_closed P hSc _ _ (hRelease _ _ (hYield.cancel _ _
       (finaliseThreadSuspend_closed P hSuspend _ _
         (finaliseThreadEndWaiters_closed P hRep hSuspend _ _
           (finaliseThreadReturnLoan_closed P hRep hSuspend _ _
             (finaliseThreadCancel_closed P hCancel hEndpoint hRep _ _
-              (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h))))))
+              (finaliseThreadUnbindNotification_closed P hUnbind _ _ hT hG h)))))))
   · exact h
 
 /-- **A property the stash clear keeps holds after `finaliseReplyUnstash`.** -/
@@ -1019,7 +1048,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     (hCancel : FinaliseNotificationCancelStep P) (hEndpoint : FinaliseEndpointCancelStep P)
     (hSuspend : FinaliseSuspendStep P)
     (hRelease : FinaliseReleaseStep P) (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
-    (hSt : FinaliseUnstashStep P)
+    (hSt : FinaliseUnstashStep P) (hYield : FinaliseYieldStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -1032,8 +1061,8 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
         (unbindMaybeNotification_closed P _ (hUnbind _) st h)
     · exact finaliseThread_closed P hUnbind hRel.scUnbind hCancel hEndpoint hSuspend hRelease hRep
-        _ st h
-    · exact finaliseSchedContext_closed P hDes hRel hUn _ st h
+        hYield _ st h
+    · exact finaliseSchedContext_closed P hDes hRel hUn hYield _ st h
     · exact finaliseReply_closed P hRep hSuspend hSt _ st h
     · exact h
   · exact h
@@ -1834,6 +1863,50 @@ theorem finaliseReplyRevert (st : SystemState) (server? : Option SeLe4n.ThreadId
   | none => exact .refl hInv
   | some s => exact propagatePip st s _ _ hInv
 
+/-- A thread's yield link cancelled: its context's end then its own cleared. -/
+theorem cancelYieldTo (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    FinaliseFrame st (SeLe4n.Kernel.cancelYieldTo st t) := by
+  unfold SeLe4n.Kernel.cancelYieldTo
+  split
+  · split
+    · exact .refl hInv
+    · rename_i k _
+      have h1 := updateSchedContext st ⟨k⟩ SeLe4n.Kernel.SchedContext.yieldCleared hInv (fun _ => rfl)
+      exact h1.trans (updateTcb _ t _ h1.invExt)
+  · exact .refl hInv
+
+/-- A context's consumed time handed to a thread's registers. -/
+theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.setConsumed st s t) := by
+  unfold SeLe4n.Kernel.setConsumed
+  split
+  · have h1 := updateSchedContext st s SchedContext.updateConsumed hInv (fun _ => rfl)
+    exact h1.trans (updateTcb _ t _ h1.invExt)
+  · exact .refl hInv
+
+/-- A context's yield link cancelled: its own end then its yielder's cleared. -/
+theorem cancelYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.cancelYieldFrom st s) := by
+  unfold SeLe4n.Kernel.cancelYieldFrom
+  split
+  · split
+    · exact .refl hInv
+    · rename_i k _
+      have h1 := updateSchedContext st s SeLe4n.Kernel.SchedContext.yieldCleared hInv (fun _ => rfl)
+      exact h1.trans (updateTcb _ ⟨k⟩ _ h1.invExt)
+  · exact .refl hInv
+
+/-- The completion of the yield a context records. -/
+theorem completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.completeYieldFrom st s) := by
+  unfold SeLe4n.Kernel.completeYieldFrom
+  split
+  · split
+    · exact .refl hInv
+    · rename_i k _
+      have h1 := setConsumed st s ⟨k⟩ hInv
+      exact h1.trans (cancelYieldFrom _ s h1.invExt)
+  · exact .refl hInv
 end FinaliseFrame
 
 namespace FinaliseFrameAny
@@ -2093,6 +2166,11 @@ theorem replyStep (st : SystemState) : FinaliseReplyStep (FinaliseFrameAny st) :
   have h1 := FinaliseFrameAny.cancelIpcBlockingReclaimed s c t h.invExt hB
   exact h.trans (h1.trans (FinaliseFrame.finaliseReplyRevert _ _ h1.invExt).any)
 
+/-- The yield steps, as the closure asks them. -/
+theorem yieldStep (st : SystemState) : FinaliseYieldStep (FinaliseFrameAny st) :=
+  ⟨fun s t h => h.trans (FinaliseFrame.cancelYieldTo s t h.invExt).any,
+   fun s c h => h.trans (FinaliseFrame.completeYieldFrom s c h.invExt).any⟩
+
 end FinaliseFrameAny
 
 /-- **The finalisation's write frame.** -/
@@ -2110,7 +2188,7 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
     (FinaliseFrameAny.releaseStep st) (FinaliseFrameAny.unstackStep st)
     (FinaliseFrameAny.replyStep st)
     (fun s _ _ tid _ h _ _ e => e ▸ h.trans (FinaliseFrame.updateTcb s tid _ h.invExt).any)
-    target st (.refl hInv)
+    (FinaliseFrameAny.yieldStep st) target st (.refl hInv)
 
 /-- **The finalisation keeps the derivation tree**, on any state. -/
 theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
@@ -2184,6 +2262,8 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     (fun s t h => (onlyObjectsSchedulerCoreHoldsDiffer.releaseCores s t).cdt.trans h)
     (fun s s1 x _ _ _ h _ _ _ _ hSt1 _ _ _ _ => ?_)
     (fun s x r c t h hX hCc _ hG => ?_) (fun s _ _ tid _ h _ _ e => e ▸ (hC (hU s tid _)).trans h)
+    ⟨fun s t h => by rw [SystemState.cancelYieldTo_eq_objects]; exact h,
+     fun s c h => by rw [SystemState.completeYieldFrom_eq_objects]; exact h⟩
     target st rfl
   · unfold storeEndpointWaiterCancelled wakeCancelledWaiter
     exact (hC ((enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).trans

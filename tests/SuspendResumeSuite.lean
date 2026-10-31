@@ -839,6 +839,126 @@ private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
           == (st.releaseEntriesOn c)))
   | .error e => throw <| IO.userError s!"SR-035 live resume should succeed, got {repr e}"
 
+/-- SR-036 (seL4-MCS `suspend` → `schedContext_cancelYieldTo`): suspending a
+thread that yielded to a context clears both link ends — the thread's
+`yieldToCode` and the context's `yieldFromCode`. -/
+private def sr036_suspendCancelsYieldTo : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨1000⟩, yieldFromCode := 2 }
+  let tcb := { mkTcb 1 .Ready with yieldToCode := 51 }
+  let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
+  match bootSuspendThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]?, st'.objects[(⟨50⟩ : ObjId)]? with
+    | some (.tcb tcb'), some (.schedContext sc') =>
+      expect "SR-036 suspended thread's yield-to link is cleared" (tcb'.yieldToCode == 0)
+      expect "SR-036 the context forgets its yielder" (sc'.yieldFromCode == 0)
+    | _, _ => throw <| IO.userError "SR-036 objects not found after suspend"
+  | .error e => throw <| IO.userError s!"SR-036 suspend should succeed, got {repr e}"
+
+/-- SR-037: the frozen suspend mirrors the live one's yield cancel. -/
+private def sr037_frozenSuspendCancelsYieldTo : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨1000⟩, yieldFromCode := 2 }
+  let fst := mkFrozenState [(⟨1⟩, .tcb { mkTcb 1 .Ready with yieldToCode := 51 }),
+    (⟨50⟩, .schedContext sc)]
+  match frozenSuspendThread tid fst with
+  | .ok ((), fst') =>
+    match fst'.objects.get? tid.toObjId, fst'.objects.get? (⟨50⟩ : ObjId) with
+    | some (.tcb tcb), some (.schedContext sc') =>
+      expect "SR-037 frozen suspend clears the thread's yield-to link" (tcb.yieldToCode == 0)
+      expect "SR-037 ...and the context's yield-from link" (sc'.yieldFromCode == 0)
+    | _, _ => throw <| IO.userError "SR-037 frozen objects not found"
+  | .error e => throw <| IO.userError s!"SR-037 frozen suspend should succeed, got {repr e}"
+
+/-- A yielder (thread 1) linked to context 50, which has consumed 7 units. -/
+private def yieldLinkedState : SystemState :=
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨1000⟩, consumed := 7, yieldFromCode := 2 }
+  mkState [(⟨1⟩, .tcb { mkTcb 1 .Ready with yieldToCode := 51 }), (⟨50⟩, .schedContext sc)]
+
+/-- SR-038 (seL4-MCS `finaliseCap` on a context →
+`schedContext_completeYieldTo(sc->scYieldFrom)`): the context's final delete
+hands its yielder the consumed time (`setConsumed`: the one-register message
+info in `x1`, the count in `x2`) and clears both link ends. -/
+private def sr038_contextFinaliseCompletesYield : IO Unit := do
+  let st' := SeLe4n.Kernel.finaliseSchedContext ⟨50⟩ yieldLinkedState
+  match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+  | some (.tcb t), some (.schedContext sc) =>
+    expect "SR-038 the yielder's MR0 holds the consumed time" (t.registerContext.x2 == 7)
+    expect "SR-038 ...with a one-register message info"
+      (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+    expect "SR-038 the yielder's link is cleared" (t.yieldToCode == 0)
+    expect "SR-038 the context's link is cleared and its count taken off"
+      (sc.yieldFromCode == 0 && sc.consumed == 0)
+  | _, _ => throw <| IO.userError "SR-038 objects not found after the finalise"
+
+/-- SR-039 (seL4-MCS `finaliseCap` on a thread → `suspend` →
+`schedContext_cancelYieldTo`): the yielder's final delete clears both link
+ends and writes no consumed time anywhere. -/
+private def sr039_threadFinaliseCancelsYield : IO Unit := do
+  let st' := SeLe4n.Kernel.finaliseThread ⟨1⟩ yieldLinkedState
+  match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+  | some (.tcb t), some (.schedContext sc) =>
+    expect "SR-039 the finalised thread's link is cleared" (t.yieldToCode == 0)
+    expect "SR-039 the context forgets its yielder, keeping its count"
+      (sc.yieldFromCode == 0 && sc.consumed == 7)
+  | _, _ => throw <| IO.userError "SR-039 objects not found after the finalise"
+
+/-- SR-040 (WS-ZA ZA6.6, the frozen suspend mirrors the live one): a thread
+bound to context 50 and yielded to context 60, suspended live and frozen from
+the same objects.  Both release the bound context (unbound, inactive, no
+origin), clear the thread's binding codes and cancel both ends of the yield
+link, and they agree field for field. -/
+private def sr040_liveFrozenSuspendAgree : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scBound : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩), isActive := true }
+  let scYield : SeLe4n.Kernel.SchedContext := {
+    scId := SeLe4n.SchedContextId.ofNat 60, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    yieldFromCode := 2 }
+  let tcb := { mkTcb 1 .Ready with
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound (SeLe4n.SchedContextId.ofNat 50)),
+    scBindingOwnerCode := 0, yieldToCode := 61 }
+  let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext scBound), (⟨60⟩, .schedContext scYield)]
+  let fst := mkFrozenState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext scBound),
+    (⟨60⟩, .schedContext scYield)]
+  match bootSuspendThread st ⟨tid, by decide⟩, frozenSuspendThread tid fst with
+  | .ok st', .ok ((), fst') =>
+    match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]?,
+        st'.objects[(⟨60⟩ : ObjId)]?, fst'.objects.get? (⟨1⟩ : ObjId),
+        fst'.objects.get? (⟨50⟩ : ObjId), fst'.objects.get? (⟨60⟩ : ObjId) with
+    | some (.tcb t), some (.schedContext b), some (.schedContext y),
+        some (.tcb ft), some (.schedContext fb), some (.schedContext fy) =>
+      expect "SR-040 the live suspend releases the bound context"
+        (b.boundThreadCode == 0 && !b.isActive && b.donationOrigin.isNone &&
+          t.scBindingScCode == 0 && t.scBindingOwnerCode == 0)
+      expect "SR-040 the frozen suspend releases it the same way"
+        (fb.boundThreadCode == b.boundThreadCode && fb.isActive == b.isActive &&
+          fb.donationOrigin == b.donationOrigin && ft.scBindingScCode == t.scBindingScCode &&
+          ft.scBindingOwnerCode == t.scBindingOwnerCode)
+      expect "SR-040 both cancel the yield link at both ends"
+        (t.yieldToCode == 0 && y.yieldFromCode == 0 &&
+          ft.yieldToCode == t.yieldToCode && fy.yieldFromCode == y.yieldFromCode)
+      expect "SR-040 both leave the thread Inactive and ready"
+        (t.threadState == .Inactive && ft.threadState == t.threadState &&
+          ft.ipcState == t.ipcState)
+    | _, _, _, _, _, _ => throw <| IO.userError "SR-040 objects not found after the suspends"
+  | .error e, _ => throw <| IO.userError s!"SR-040 live suspend should succeed, got {repr e}"
+  | _, .error e => throw <| IO.userError s!"SR-040 frozen suspend should succeed, got {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -896,4 +1016,10 @@ def main : IO Unit := do
   sr034_frozenResumePreemptsOnEffectivePriority
   IO.println "--- v0.35.167: the .tcbResume arm's resolved scheduler footprint ---"
   sr035_resumeFootprintNamesHomeAndExecutingCores
-  IO.println "=== All D1 suspend/resume tests passed (36 tests) ==="
+  IO.println "--- ZA6.6: suspend cancels the yield link ---"
+  sr036_suspendCancelsYieldTo
+  sr037_frozenSuspendCancelsYieldTo
+  sr038_contextFinaliseCompletesYield
+  sr039_threadFinaliseCancelsYield
+  sr040_liveFrozenSuspendAgree
+  IO.println "=== All D1 suspend/resume tests passed (41 tests) ==="

@@ -293,6 +293,21 @@ def chainNeutralConstructors : List (Name × String) :=
       "the register-path receive block: the endpoint enqueue, the receiver's block, and the Reply's `{ r with stasherCode := _ }` (`storeReplyStasher`); no chain field")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
+    -- WS-ZA ZA6.6: the yield link (seL4-MCS's `tcbYieldTo` / `scYieldFrom`).
+    -- Each writes a context through `SchedContext.yieldCleared`
+    -- (`{ sc with yieldFromCode := 0 }`) or `SchedContext.updateConsumed`
+    -- (`{ sc with consumed := _ }`), and a thread's yield code or return
+    -- registers; `scReply` is in neither assignment list.
+  , (`SeLe4n.Kernel.cancelYieldTo,
+      "`{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's `yieldToCode`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.cancelYieldFrom,
+      "`{ sc with yieldFromCode := 0 }` on the context, then its yielder's `yieldToCode`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.setConsumed,
+      "`{ sc with consumed := _ }` (`SchedContext.updateConsumed`), then the thread's two return registers; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSuspendThread,
+      "the frozen twin of the suspend's `cancelYieldTo`: `{ sc with yieldFromCode := 0 }` on the context the thread yielded to, then the thread's own record; `scReply` is untouched (the reservation step is `frozenSuspendDonation`'s)")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSuspendDonation,
+      "the frozen twin of the suspend's G3: `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` on a bound context, then the thread's binding codes; a loaned context goes back through `frozenReturnDonatedSchedContextResolved`, the registered chain writer, whose pop is its own; `scReply` is not in either assignment list")
     -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
     -- reconciliation working rather than an exemption going missing.  Its
     -- `{ sc with priority := _ }` moved into the shared `frozenWriteBasePriority`

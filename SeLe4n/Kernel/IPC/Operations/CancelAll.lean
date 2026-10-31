@@ -1449,6 +1449,7 @@ def finaliseSchedContextUnstack (st : SystemState) (x : SeLe4n.ObjId) : SystemSt
 /-- **The destroy cleanup of a finalised scheduling context**
 (`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
 bound to no thread and heads no reply stack, so its release finds no binding
+and what it does is complete the yield the context records
 (`lifecyclePreRetypeCleanup_of_schedContextFree`). -/
 def finaliseSchedContextCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
   match st.getObject? x with
@@ -1465,21 +1466,35 @@ def finaliseSchedContextCleanup (st : SystemState) (x : SeLe4n.ObjId) : SystemSt
 -- ============================================================================
 
 /-- **The destroy cleanup of a scheduling context bound to nothing and heading
-no reply stack is the identity**: its release finds no binding. -/
+no reply stack completes the yield it records**: its release finds no binding
+(WS-ZA ZA6.6: before, it was the identity). -/
 theorem lifecyclePreRetypeCleanup_of_schedContextFree (st : SystemState) (x : SeLe4n.ObjId)
     (sc : SeLe4n.Kernel.SchedContext) (hB : sc.boundThreadCode = 0) (hR : sc.scReply = none) :
-    lifecyclePreRetypeCleanup st x (.schedContext sc) (.schedContext sc) = .ok st := by
+    lifecyclePreRetypeCleanup st x (.schedContext sc) (.schedContext sc) =
+      .ok (completeYieldFrom st (SeLe4n.SchedContextId.ofObjId x)) := by
   unfold lifecyclePreRetypeCleanup
   simp only [hR, Option.isSome_none, Bool.false_eq_true, if_false]
   rw [releaseSchedContextBinding_of_unbound _ _ _
     (by unfold SeLe4n.Kernel.SchedContext.boundThread; rw [hB]; rfl)]
 
-/-- **A finalised scheduling context's destroy cleanup leaves the state as it
-is**: it runs only on a context bound to nothing and heading no reply stack
-(`lifecyclePreRetypeCleanup_of_schedContextFree`). -/
+/-- The compiled destroy cleanup of a finalised scheduling context
+(`finaliseSchedContextCleanup_eq`): the completion of the yield a context bound
+to nothing and heading no reply stack records. -/
+@[inline] def finaliseSchedContextCleanupImpl (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState :=
+  match st.getObject? x with
+  | some (.schedContext sc) =>
+    if sc.boundThreadCode == 0 && sc.scReply.isNone then
+      completeYieldFrom st (SeLe4n.SchedContextId.ofObjId x)
+    else st
+  | _ => st
+
+/-- **A finalised scheduling context's destroy cleanup completes the yield the
+context records**: it runs only on a context bound to nothing and heading no
+reply stack (`lifecyclePreRetypeCleanup_of_schedContextFree`). -/
 theorem finaliseSchedContextCleanup_eq (st : SystemState) (x : SeLe4n.ObjId) :
-    finaliseSchedContextCleanup st x = st := by
-  unfold finaliseSchedContextCleanup
+    finaliseSchedContextCleanup st x = finaliseSchedContextCleanupImpl st x := by
+  unfold finaliseSchedContextCleanup finaliseSchedContextCleanupImpl
   split
   · rename_i sc _
     split
@@ -1489,17 +1504,19 @@ theorem finaliseSchedContextCleanup_eq (st : SystemState) (x : SeLe4n.ObjId) :
     · rfl
   · rfl
 
-/-- The compiled destroy cleanup of a finalised scheduling context
-(`finaliseSchedContextCleanup_eq`). -/
-@[inline] def finaliseSchedContextCleanupImpl (st : SystemState) (_x : SeLe4n.ObjId) :
-    SystemState := st
-
 @[csimp] theorem finaliseSchedContextCleanup_eq_impl :
     @finaliseSchedContextCleanup = @finaliseSchedContextCleanupImpl := by
   funext st x; exact finaliseSchedContextCleanup_eq st x
 
 -- The scheduling-context finalisation is defined after its cleanup's `@[csimp]`
 -- theorem, so its compiled code takes the compiled cleanup.
+
+/-- The code of the context thread `tid` holds (`TCB.scBindingScCode`: its own
+or on loan; `0` for none and for an absent thread). -/
+@[inline] def threadHeldContextCode (st : SystemState) (tid : SeLe4n.ThreadId) : Nat :=
+  match st.getTcb? tid with
+  | some t => t.scBindingScCode
+  | none => 0
 
 /-- **seL4's `finaliseCap` on the final capability to a thread**: unbound from
 its notification (`unbindNotification`); its blocked IPC cancelled (`suspend` →
@@ -1510,34 +1527,45 @@ waiting on it for a reply ended as `reply_remove` ends it
 (`finaliseThreadEndWaiters`: seL4 keeps those callers blocked until their reply
 objects go, and here reply authority is tied to the server, so the server's
 delete removes each caller's reply then); suspended (`.Inactive` and off the
-scheduler, a core it ran on made to choose another thread); released by every core (`fpuThreadDelete`, and the
-residency record); unbound from its scheduling context (`schedContext_unbindTCB`,
-whose own dequeue the suspend has made).  seL4 runs the context unbind before
-the suspend, and the cut runs it after, so the unbind finds the thread on no
-core, which is all the order changes: the whole finalisation is one kernel
-step.  What it leaves is read by the retire off the thread's own links
-(`threadRetirable`).  All of it runs only when the pre-state admits it
-(`threadFinaliseAdmitted`), checks before writes. -/
+scheduler, a core it ran on made to choose another thread), the suspend ending
+as seL4-MCS's `suspend` ends, with the thread's own yield link cancelled
+(`schedContext_cancelYieldTo`, `cancelYieldTo`); released by every core (`fpuThreadDelete`, and the
+residency record); unbound from its scheduling context (seL4-MCS's
+`unbindFromSC`: `schedContext_unbindTCB`, whose own dequeue the suspend has
+made, then `if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`,
+`completeHeldYield`).  seL4 runs the context unbind before the suspend, and the
+cut runs it after, so the unbind finds the thread on no core, which is all the
+order changes: the whole finalisation is one kernel step.  The context the
+thread held is read before the first write (`threadHeldContextCode`), as seL4
+reads `tcb->tcbSchedContext` before `unbindFromSC`, so a context it borrowed and
+handed back is the one whose yield completes, as in seL4.
+What it leaves is read by the retire
+off the thread's own links (`threadRetirable`).  All of it runs only when the
+pre-state admits it (`threadFinaliseAdmitted`), checks before writes. -/
 def finaliseThread (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if threadFinaliseAdmitted st x then
     let tid : SeLe4n.ThreadId := ⟨x.val⟩
-    finaliseThreadUnbindSchedContext
-      (finaliseThreadReleaseCores
-        (finaliseThreadSuspend
-          (finaliseThreadEndWaiters
-            (finaliseThreadReturnLoan
-              (finaliseThreadCancel
-                (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid
+    let held := threadHeldContextCode st tid
+    completeHeldYield
+      (finaliseThreadUnbindSchedContext
+        (finaliseThreadReleaseCores
+          (cancelYieldTo
+            (finaliseThreadSuspend
+              (finaliseThreadEndWaiters
+                (finaliseThreadReturnLoan
+                  (finaliseThreadCancel
+                    (finaliseThreadUnbindNotification st tid) tid) tid) tid) tid) tid) tid) tid) held
   else st
 
 /-- **seL4's `finaliseCap` on the final capability to a scheduling context**:
 its ready holder taken off the scheduler and unbound from it
 (`schedContext_unbindAllTCBs`, `finaliseSchedContextDeschedule` then
 `finaliseSchedContextUnbind`), its reply stack let go
-(`schedContext_unbindReply`), then the destroy cleanup, when the pre-state admits
-it (`schedContextFinaliseAdmitted`).  seL4's `schedContext_unbindNtfn` and
-`schedContext_completeYieldTo` have nothing to do here: this model's context is
-bound to no notification and records no yield. -/
+(`schedContext_unbindReply`), then the destroy cleanup, which completes the yield
+the context records (`schedContext_completeYieldTo` of its `scYieldFrom`,
+`completeYieldFrom`), when the pre-state admits it
+(`schedContextFinaliseAdmitted`).  seL4's `schedContext_unbindNtfn` has nothing
+to do here: this model's context is bound to no notification. -/
 def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if schedContextFinaliseAdmitted st x then
     finaliseSchedContextCleanup (finaliseSchedContextUnstack
@@ -1549,8 +1577,8 @@ is.** -/
 theorem finaliseSchedContext_eq (x : SeLe4n.ObjId) (st : SystemState) :
     finaliseSchedContext x st =
       if schedContextFinaliseAdmitted st x then
-        finaliseSchedContextUnstack
-          (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x
+        finaliseSchedContextCleanupImpl (finaliseSchedContextUnstack
+          (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x
       else st := by
   unfold finaliseSchedContext; rw [finaliseSchedContextCleanup_eq]
 

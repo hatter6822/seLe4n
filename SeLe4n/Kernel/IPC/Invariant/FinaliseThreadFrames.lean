@@ -540,6 +540,26 @@ theorem scReleaseStep : FinaliseScReleaseStep (finaliseCarried st y) :=
       FinaliseFrameAny.scReleaseStep st s s' t tcb sc x hF hT hS hSc hBd hOk,
       runCodeBounded.of_runCoresAgree (cancelBoundDonationOnCore_runCoresAgree hI.2.1 hOk) hB⟩
 
+/-- WS-ZA ZA6.6: the yield steps — the suspend's cancel and the unbind's
+completion — carry it: each keeps the invariant (`finaliseStepInvariant.yieldStep`),
+is a run-queue stage, a finalisation frame, and keeps every run-core code. -/
+theorem yieldStep : FinaliseYieldStep (finaliseCarried st y) :=
+  ⟨fun s t ⟨hI, hR, hF, hB⟩ =>
+    ⟨(hI.yieldStep (cancelYieldTo_preserves_ipcInvariantFull s t hI.2.1 hI.1)
+        (ReachFieldFrame.cancelYieldTo s t hI.2.1) (FinaliseFrame.cancelYieldTo s t hI.2.1)).1,
+      hR.trans (SystemState.cancelYieldTo_runQueueStage s t).entry,
+      (FinaliseFrameAny.yieldStep st).cancel s t hF,
+      runCodeBounded.of_runCoresAgree
+        (SystemState.cancelYieldTo_objectsAgreeOffYield s t hI.2.1).runCoresAgree hB⟩,
+   fun s c ⟨hI, hR, hF, hB⟩ =>
+    ⟨(hI.yieldStep (completeYieldFrom_preserves_ipcInvariantFull s c hI.2.1 hI.1)
+        (ReachFieldFrame.completeYieldFrom s c hI.2.1)
+        (FinaliseFrame.completeYieldFrom s c hI.2.1)).1,
+      hR.trans (SystemState.completeYieldFrom_runQueueStage s c).entry,
+      (FinaliseFrameAny.yieldStep st).complete s c hF,
+      runCodeBounded.of_runCoresAgree
+        (SystemState.completeYieldFrom_objectsAgreeOffYield s c hI.2.1).runCoresAgree hB⟩⟩
+
 theorem replyStep : FinaliseReplyStep (finaliseCarried st y) := by
   intro s x r c t ⟨hI, hR, hF, hB⟩ hX hC hT hG
   refine ⟨(hI.reply hX hC hT hG).1, finaliseReplyStep_runQueueEntryStage st s x r c t hR hX hC hT hG,

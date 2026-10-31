@@ -607,6 +607,80 @@ theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadI
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
       spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
 
+/-- WS-ZA ZA6.6: the restore writes one thread's IPC fields and frame, not its
+yield code. -/
+theorem restoreToReadyStaging_yieldLinksKept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
+    YieldLinksKept (Lifecycle.Suspend.restoreToReadyStaging st tid frame) st := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  exact .updateTcb st tid _ hInv fun _ => by cases frame <;> rfl
+
+/-- WS-ZA ZA6.6: the cancelled caller's donation return keeps every yield code
+(`returnDonatedSchedContext_yieldLinksKept`). -/
+theorem returnDonationToCancelledCaller_yieldLinksKept (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
+    YieldLinksKept (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st := by
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none =>
+    rw [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD]; exact .refl st
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+    rw [hD]
+    cases hT : st.getTcb? v with
+    | none => exact .refl st
+    | some _ =>
+      dsimp only
+      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      | error _ => exact .refl st
+      | ok st' =>
+        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+        exact returnDonatedSchedContext_yieldLinksKept hInv hPop
+
+/-- WS-ZA ZA6.6: **the teardown keeps every yield code** — it patches queue
+links, IPC fields, bindings and the reply link, never a yield end. -/
+theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) :
+    YieldLinksKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
+  have hEp : YieldLinksKept (removeFromAllEndpointQueues st v) st :=
+    .of_tcbMap (fun t => by
+        rw [removeFromAllEndpointQueues_getTcb?_eq_splice st v hInv t]
+        exact spliceOutMidQueueNode_tcbField_frame TCB.yieldToCode
+          (fun _ _ _ _ _ _ => rfl) st v hInv t)
+      (removeFromAllEndpointQueues_getSchedContext?_eq st v hInv)
+  have hEpR := (restoreToReadyStaging_yieldLinksKept _ v (some Architecture.cancelledIpcFrame)
+    (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv)).trans hEp
+  unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
+  cases hIp : tcbV.ipcState with
+  | ready => exact .refl _
+  | blockedOnSend _ => exact hEpR
+  | blockedOnReceive _ => exact hEpR
+  | blockedOnCall _ => exact hEpR
+  | blockedOnNotification _ =>
+    exact (restoreToReadyStaging_yieldLinksKept _ v _
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv)).trans
+      (.of_tcbMap (fun t => removeFromNotificationWaitQueue_tcbField_frame TCB.yieldToCode
+          (fun _ _ _ _ _ _ => rfl) st v hInv t)
+        (removeFromNotificationWaitQueue_getSchedContext?_eq st v hInv))
+  | blockedOnReply ep rt =>
+    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st v tcbV hInv
+    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+    have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
+      (some Architecture.cancelledIpcFrame) hS
+    dsimp only
+    refine YieldLinksKept.trans (.of_map KernelObject.withoutReplyLinks
+      (fun o => by cases o <;> rfl)
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ v _)) ?_
+    refine YieldLinksKept.trans (.of_tcbMap
+      (consumeReplyLink_map_frame TCB.yieldToCode (fun _ => rfl) _ v tcbV hU)
+      (consumeReplyLink_getSchedContext?_eq _ v tcbV hU)) ?_
+    refine YieldLinksKept.trans (restoreToReadyStaging_yieldLinksKept _ v _ hS) ?_
+    exact (YieldLinksKept.of_getTcb?_eq (spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR)
+      (spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)).trans
+      (returnDonationToCancelledCaller_yieldLinksKept st v tcbV hInv)
+
 /-- WS-SM SM6.E (resolution frame) / **WS-RR RR8.11**: the teardown never moves
 **any** thread's home core.
 
@@ -842,6 +916,7 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv => cancelIpcBlocking_tableReferenceFrame st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
 
 /-- ...and so does the teardown with its replenishment migration. -/
 theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
@@ -995,6 +1070,13 @@ theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed
   dsimp only
   rw [replenishHomeOfSchedContext_eq_of_bound _ scId _ scPost victim hPost hBoundPost,
     cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv victim]
+
+/-- WS-ZA ZA6.6: the yield-link cancel places and unplaces no thread. -/
+theorem cancelYieldTo_threadPlacedOnSomeCore (st : SystemState) (tid u : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    threadPlacedOnSomeCore (cancelYieldTo st tid) u = threadPlacedOnSomeCore st u :=
+  threadPlacedOnSomeCore_of_scheduler_eq st _ u (SystemState.cancelYieldTo_scheduler st tid)
+    (SystemState.cancelYieldTo_objectsAgreeOffYield st tid hInv).runCoresAgree
 
 section SuspendPayoff
 open SeLe4n.Kernel.Concurrency
@@ -1193,9 +1275,17 @@ theorem suspendThreadOnCore_holder_unplaced
             unfold clearPendingStateValid clearPendingState
             exact SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))).trans
           (SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))
+        -- G6b — the yield-link cancel, which writes no placement.
+        have hInv6 := (hS6 hInv hR).1
+        have hP6b : threadPlacedOnSomeCore (cancelYieldTo
+            ((clearPendingStateValid (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val))
+              vtid).updateTcb vtid.val (fun t => { t with threadState := .Inactive })) vtid.val)
+            holder = false := by
+          rw [cancelYieldTo_threadPlacedOnSomeCore _ _ _ hInv6]; exact hP6
+        have hS6b := hS6.trans (SystemState.cancelYieldTo_runQueueStage _ vtid.val).1
         -- G7 — the local scheduling point.
         exact suspendRescheduleOnCore_preserves_unplaced _ st' _ executingCore
-          _ _ sgi? holder (hS6 hInv hR).1 ((hS6 hInv hR).2 executingCore) hStep hP6
+          _ _ sgi? holder (hS6b hInv hR).1 ((hS6b hInv hR).2 executingCore) hStep hP6b
 
 end SuspendPayoff
 

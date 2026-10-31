@@ -1805,6 +1805,37 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- D1: Frozen thread suspension and resumption
 -- ============================================================================
 
+/-- **The frozen mirror of the suspend's reservation step** (the live
+suspend's G3, `cancelDonationArmOnCore`'s three arms).  A context bound to the
+thread is released as `suspendReleasePerform` releases it: the context unbound,
+made inactive and its reservation origin cleared, and the thread's two binding
+codes cleared.  A context the thread holds on loan is handed back to its lender
+as the live `cleanupDonatedSchedContext` hands it (`returnDonatedSchedContextResolved`,
+mirrored by `frozenReturnDonatedSchedContextResolved`), with its refusals.  The
+frozen surface keeps no release-queue links, so the live purge and the
+replenishment migration have nothing to write here. -/
+def frozenSuspendDonation (st : FrozenSystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    Except KernelError FrozenSystemState :=
+  match tcb.schedContextBinding with
+  | .unbound => .ok st
+  | .bound scId =>
+    let released : Except KernelError FrozenSystemState :=
+      match st.getSchedContext? scId with
+      | some sc =>
+        frozenWithObjectStored st scId.toObjId (.schedContext
+          { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      | none => .ok st
+    match released with
+    | .error e => .error e
+    | .ok st1 =>
+      match frozenLookupTcb st1 tid with
+      | some t =>
+        frozenWithObjectStored st1 tid.toObjId (.tcb
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
+      | none => .ok st1
+  | .donated scId originalOwner =>
+    frozenReturnDonatedSchedContextResolved st tid scId originalOwner
+
 /-- D1: Frozen thread suspend — transition a thread from any non-Inactive state
 to Inactive. Mirrors `suspendThread` in frozen state.
 
@@ -1813,7 +1844,16 @@ run-queue manipulation was skipped because the membership set is fixed — true 
 `membership`, whose `FrozenSet` keys cannot change, but not of `byPriority`,
 which is the field `frozenChooseThread` actually selects from.  So a suspended
 thread stayed in its bucket carrying `ipcState := .ready` and the frozen
-scheduler would still pick it: suspended in name, runnable in fact. -/
+scheduler would still pick it: suspended in name, runnable in fact.
+
+WS-ZA ZA6.6: **and its reservation and yield link go as the live suspend's
+do**.  The context bound to it is released and a context it holds on loan is
+handed back (`frozenSuspendDonation`, the live G3), and the suspend ends as
+seL4-MCS's `suspend` ends, with the thread's yield cancelled
+(`schedContext_cancelYieldTo`, the live `cancelYieldTo`): the context it names
+forgets its yielder and the thread its context.  The thread's record is read
+again after the reservation step, so the binding codes that step clears are not
+written back. -/
 def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1821,16 +1861,34 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
     | some tcb =>
       if tcb.threadState == .Inactive then .error .illegalState
       else
-        let tcb' := (TCB.setIpcState { tcb with
-          threadState := .Inactive
-          pendingMessage := none
-          timeoutBudget := none
-          queuePrevCode := 0
-          queueNextCode := 0
-          queuePPrevCode := 0 } .ready)
-        match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
-        | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
+        match frozenSuspendDonation st tid tcb with
         | .error e => .error e
+        | .ok st0 =>
+          let tcb0 := (frozenLookupTcb st0 tid).getD tcb
+          let tcb' := (TCB.setIpcState { tcb0 with
+            threadState := .Inactive
+            pendingMessage := none
+            timeoutBudget := none
+            queuePrevCode := 0
+            queueNextCode := 0
+            queuePPrevCode := 0
+            yieldToCode := 0 } .ready)
+          let cleared : Except KernelError FrozenSystemState :=
+            match tcb0.yieldToCode with
+            | 0 => .ok st0
+            | k + 1 =>
+              let scId : SeLe4n.SchedContextId := ⟨k⟩
+              match st0.getObject? scId.toObjId with
+              | some (.schedContext sc) =>
+                frozenWithObjectStored st0 scId.toObjId
+                  (.schedContext { sc with yieldFromCode := 0 })
+              | _ => .ok st0
+          match cleared with
+          | .error e => .error e
+          | .ok st1 =>
+            match frozenWithObjectStored st1 tid.toObjId (.tcb tcb') with
+            | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
+            | .error e => .error e
 
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
 Mirrors `resumeThread` in frozen state.

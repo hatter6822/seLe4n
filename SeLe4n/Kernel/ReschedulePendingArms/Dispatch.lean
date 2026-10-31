@@ -531,6 +531,15 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
     (fun s _ _ tid _ h _ _ e => e ▸
       stepCoversInv_trans h.1 (updateTcb_keyFrame s tid (f := TCB.stashCleared) (fun _ => rfl)
         h.2).stepCoversInv)
+    ⟨fun s t h => ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched
+        (keyInputsEq_of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield s t h.2))
+        (SystemState.cancelYieldTo_scheduler s t)),
+        SystemState.cancelYieldTo_preserves_objects_invExt _ _ h.2⟩,
+     fun s c h => ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched
+        (keyInputsEq_of_objectsAgreeOffYield
+          (SystemState.completeYieldFrom_objectsAgreeOffYield s c h.2))
+        (SystemState.completeYieldFrom_scheduler s c)),
+        SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2⟩⟩
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the
