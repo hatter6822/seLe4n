@@ -5920,7 +5920,7 @@ Every kernel object has a decidable well-formedness predicate:
   (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`);
   the per-core tick, the drain and the yield's charge are outside the per-core
   non-interference step relation, as before this cut (`docs/REGISTERED_DEBT.md`,
-  ZA6.5).  The compiled link edits, the re-placement and the charge each read
+  ZA6.9).  The compiled link edits, the re-placement and the charge each read
   what they need before they write and write through one call
   (`releaseUnlinkWrite`, `releaseLinkWrite`, `releasePlaceImpl`,
   `spendBudgetWrite`), and a refill behind the first is one straight-line
@@ -5990,9 +5990,27 @@ Every kernel object has a decidable well-formedness predicate:
     `configuredSchedContext_schedContextWellFormed`).  The window bound: a
     context runs at most its budget in any window of one period
     (`refill_window_bound`, `rpi5_cbs_window_budget_bounded`).
-  - **Retired.**  The kernel-internal `schedContextYieldTo` budget transfer
-    (wired to no syscall; it wrote `budgetRemaining` on two contexts outside
-    every refill rule) is deleted with its traces and tests.
+  - **Kernel-wide.**  The refill state's soundness (`SystemState.refillsSound`:
+    every context well formed, `releaseNoRefillStranded`, and every queued
+    context bound) is the proof-layer bundle's 20th conjunct, carried as
+    `releaseQueueRefined` is.  Every run-queue link stage keeps it off a set of
+    contexts (`RunQueueLinkStage.refills`, `refillsSoundExcept`); a step that
+    writes a context's refills is a frame off that context, closed by the
+    placement after it (`closePlace`).  The default state and boot establish
+    it (`default_refillsSound`, `refillsSound_of_empty`), and every kernel
+    entry keeps it (`syscallDispatchEntryState_preserves_refillsSound` and its
+    timer, reschedule, cross-core suspend, fault, unknown-syscall and FP/SIMD
+    siblings).  At system level, conservation and the window bound are read
+    off the bundle (`proofLayerInvariantBundle_refillsConserved`,
+    `proofLayerInvariantBundle_refill_window_bound`).
+  - **The removed budget transfer.**  The kernel-internal `schedContextYieldTo`
+    was a budget transfer wired to no syscall.  It wrote `budgetRemaining` on
+    two contexts outside every refill rule, so it broke refill conservation, and
+    it is removed.  It was not seL4's yieldTo.  seL4-MCS's
+    `seL4_SchedContext_YieldTo` is a scheduling-context capability invocation,
+    and the zero-allocation plan adds it in rows ZA6.5 to ZA6.8:
+    consumed-time accounting, the yield link, the activation step and the
+    invocation.
 - **Thread and notification invocations write in place** (`v0.36.97`, WS-ZA
   ZA5.2 part 1).  Priority, maximum priority, affinity, fault handler, IPC
   buffer, CSpace and VSpace, suspend and resume run every check before any
@@ -6017,7 +6035,7 @@ Every kernel object has a decidable well-formedness predicate:
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
   five scheduling-context scenarios reads 0 allocations.  The suspend of a
   thread blocked in IPC or holding a donated context keeps the general path
-  (`docs/REGISTERED_DEBT.md`, ZA6.8).
+  (`docs/REGISTERED_DEBT.md`, ZA6.12).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
@@ -7479,7 +7497,9 @@ re-insertion + domain consistency enforcement: `tcb.domain == sc.domain`
 required), `schedContextUnbind` (unbind + preemption guard + RunQueue
 removal). Since `v0.36.167` (WS-ZA ZA6.4) the configure is invoked on a
 per-core SchedControl capability, not on the context's own, and the
-kernel-internal `schedContextYieldTo` budget transfer is retired. 7
+kernel-internal `schedContextYieldTo` budget transfer, which broke refill
+conservation, is removed (seL4's `seL4_SchedContext_YieldTo` invocation is
+planned, ZA6.5 to ZA6.8). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.
