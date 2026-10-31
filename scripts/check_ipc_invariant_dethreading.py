@@ -290,9 +290,10 @@ MACHINERY_PINS = {
     # `release_links` tactics that discharge a step's release-queue slot and
     # link frame (WS-ZA ZA6.3), and the `refill_view` tactic that discharges a
     # store's refill-view frame (WS-ZA ZA6.4), and the `yield_codes` tactic
-    # that discharges a store's yield-code frame (WS-ZA ZA6.6); none mints a
-    # declaration.
-    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 9,
+    # that discharges a store's yield-code frame (WS-ZA ZA6.6), and the
+    # `resident_frame` tactic that discharges a step's resident-thread frame
+    # (WS-ZA ZA6.8); none mints a declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 10,
     # The `table_frame` alternative over the context switch's reference-table
     # lemmas; it adds a tactic alternative and mints no declaration.
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Scheduling.lean", "macro_rules"): 1,
@@ -319,8 +320,10 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "syntax"): 1,
     # WS-ZA ZA4.5: the `run_links_back` / `run_links_fwd` tactics -- two
-    # tactic-category macros; they mint no declaration.
-    ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "macro_rules"): 2,
+    # tactic-category macros -- and (WS-ZA ZA6.8) two `resident_frame`
+    # alternatives over the run-queue writers' machine frames; they mint no
+    # declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "macro_rules"): 4,
     ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "syntax"): 2,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     # PR #889 review round 17: the boot entry's contract, decided over the
