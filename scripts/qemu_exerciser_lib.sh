@@ -345,8 +345,9 @@ for driver in drivers:
             "refill-drain-tick", "refill-unbind-root",
             # WS-ZA ZA6.3: the bound yield's forfeit and an exhausting tick
             # link the context into the release queue in place and write its
-            # refill in its own fields; the tick after waits, the next drains.
-            "refill-yield", "exhaust-tick", "exhaust-wait-tick", "exhaust-drain-tick")}
+            # refill in its own fields; the next tick drains it (ZA6.4: seL4's
+            # used refill is due one period on, which is that tick).
+            "refill-yield", "exhaust-tick", "exhaust-drain-tick")}
         # WS-ZA ZA5.1: the memory invocations' readings today, each the
         # operation's own cells (object writes, the store's copy); the rows
         # that bring them to zero lower these pins.

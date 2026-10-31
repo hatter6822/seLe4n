@@ -526,6 +526,54 @@ is left off every release queue; the configure then places it. -/
       releaseAt := 0 }
   if keep then base.refillUpdate budget period timer else base.refillNew budget timer
 
+/-- `configuredSchedContext`'s fresh branch (`refill_new`), out of line: its
+updates then reuse the context's cell when the store holds the only reference,
+where inlined into the branch on `keep` they sit in a join point that drops the
+reuse and allocates the context and its object on every configure. -/
+@[noinline] def configuredSchedContextFresh (budget period priority deadline domain timer : Nat)
+    (sc : SchedContext) : SchedContext :=
+  let base : SchedContext :=
+    { sc with
+      budget := ⟨budget⟩
+      period := ⟨period⟩
+      priority := ⟨priority⟩
+      deadline := ⟨deadline⟩
+      domain := ⟨domain⟩
+      releaseNextCode := 0
+      releaseCoreCode := 0
+      releaseAt := 0 }
+  base.refillNew budget timer
+
+/-- `configuredSchedContext`'s kept-head branch (`refill_update`), out of line. -/
+@[noinline] def configuredSchedContextKept (budget period priority deadline domain timer : Nat)
+    (sc : SchedContext) : SchedContext :=
+  let base : SchedContext :=
+    { sc with
+      budget := ⟨budget⟩
+      period := ⟨period⟩
+      priority := ⟨priority⟩
+      deadline := ⟨deadline⟩
+      domain := ⟨domain⟩
+      releaseNextCode := 0
+      releaseCoreCode := 0
+      releaseAt := 0 }
+  base.refillUpdate budget period timer
+
+/-- The compiled `configuredSchedContext`: the branch on `keep` first, each
+branch's updates out of line. -/
+@[inline] def configuredSchedContextImpl (budget period priority deadline domain timer : Nat)
+    (keep : Bool) (sc : SchedContext) : SchedContext :=
+  if keep then configuredSchedContextKept budget period priority deadline domain timer sc
+  else configuredSchedContextFresh budget period priority deadline domain timer sc
+
+/-- The compiled configured context is the configured context. -/
+@[csimp] theorem configuredSchedContext_eq_impl :
+    @configuredSchedContext = @configuredSchedContextImpl := by
+  funext budget period priority deadline domain timer keep sc
+  unfold configuredSchedContext configuredSchedContextImpl configuredSchedContextKept
+    configuredSchedContextFresh
+  cases keep <;> rfl
+
 /-- The configured context reads nothing of the stored one's release fields. -/
 theorem configuredSchedContext_withoutRelease (budget period priority deadline domain timer : Nat)
     (keep : Bool) (sc : SchedContext) :

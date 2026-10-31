@@ -1857,6 +1857,68 @@ theorem resolveCallerCapObjectK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
   | error e => rfl
   | ok r => obtain ⟨_, _, _⟩ := r; rfl
 
+/-- WS-ZA ZA6.4: `resolveSchedControlConfigureTarget` in continuation form,
+through `resolveCallerCapObjectK`: no gate, slot reference, capability pair or
+result cell is built, so the configure's resolution allocates nothing
+(`resolveSchedControlConfigureTargetK_eq`). -/
+@[inline] def resolveSchedControlConfigureTargetK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) (onErr : KernelError → α)
+    (onOk : SeLe4n.ValidObjId → α) : α :=
+  resolveCallerCapObjectK callerTid scCPtr .write st onErr (fun _ scObjId =>
+    match st.getSchedContext? (SchedContextId.ofObjId scObjId) with
+    | none => onErr .invalidCapability
+    | some _ =>
+      if core < SeLe4n.Kernel.Concurrency.numCores then
+        match validateObjIdArg scObjId with
+        | .error e => onErr e
+        | .ok v => onOk v
+      else onErr .invalidCapability)
+
+theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (core : Nat) (scCPtr : SeLe4n.CPtr) (st : SystemState) (onErr : KernelError → α)
+    (onOk : SeLe4n.ValidObjId → α) :
+    resolveSchedControlConfigureTargetK callerTid core scCPtr st onErr onOk =
+      match resolveSchedControlConfigureTarget callerTid core scCPtr st with
+      | .error e => onErr e
+      | .ok v => onOk v := by
+  unfold resolveSchedControlConfigureTargetK
+  rw [resolveCallerCapObjectK_eq]
+  unfold resolveCallerCapObject resolveCallerCapSlot resolveSchedControlConfigureTarget
+    syscallLookupCap syscallResolveCap
+  cases st.getTcb? callerTid with
+  | none => rfl
+  | some callerTcb =>
+    dsimp only
+    cases st.getCNode? callerTcb.cspaceRoot with
+    | none => rfl
+    | some rootCn =>
+      dsimp only
+      cases resolveCapAddress callerTcb.cspaceRoot scCPtr rootCn.depth st with
+      | error e => rfl
+      | ok ref =>
+        dsimp only
+        cases SystemState.lookupSlotCap st ref with
+        | none => rfl
+        | some cap =>
+          dsimp only
+          by_cases hI : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+          · simp only [hI, if_true]
+          · simp only [hI, Bool.false_eq_true, ↓reduceIte]
+            by_cases hR : cap.hasRight .write = true
+            · simp only [hR, ↓reduceIte]
+              cases cap.target with
+              | object oid =>
+                dsimp only
+                cases st.getSchedContext? (SchedContextId.ofObjId oid) with
+                | none => rfl
+                | some _ =>
+                  dsimp only
+                  split
+                  · cases validateObjIdArg oid <;> rfl
+                  · rfl
+              | _ => rfl
+            · simp [hR]
+
 /-- WS-ZA ZA5.2: `resolveSetSpace` in continuation form, through
 `resolveCallerCapSlotK`, the two source slots handed on as words
 (`resolveSetSpaceK_eq`). -/

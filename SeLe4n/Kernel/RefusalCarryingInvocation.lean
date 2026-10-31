@@ -1438,8 +1438,10 @@ slot 0 of the caller's IPC buffer, read at the entry (`ipcBufferReadMrK`) and
 handed here as the word `w`.  Its taint step is the identity and its rights are
 checked in the classic order, as a routed invocation's are.  WS-ZA ZA6.4: the
 invoked capability is a core's scheduling control and the context is the
-capability at MR0 (`resolveSchedControlConfigureTarget`), resolved before any
-write. -/
+capability at MR0 (`resolveSchedControlConfigureTarget`, resolved by the
+refusal-carrying form through its continuation form
+`resolveSchedControlConfigureTargetK`, which allocates nothing), resolved before
+any write. -/
 
 /-- `dispatchWithCapChecked`'s configure arm, its arguments read from the
 register file `regs` through `layout` and then the overflow word `w`
@@ -1490,9 +1492,8 @@ core among them; a refusal is in the state handed in (`dispatchConfigureByR_eq`)
     match decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) with
     | .error e => .error (e, st)
     | .ok args =>
-      match resolveSchedControlConfigureTarget tid core args.scCPtr st with
-      | .error e => .error (e, st)
-      | .ok vScId =>
+      resolveSchedControlConfigureTargetK tid core args.scCPtr st (fun e => .error (e, st))
+        (fun vScId =>
         if hCore : core < SeLe4n.Kernel.Concurrency.numCores then
           RefusalCarrying.ofChecked
             (SchedContextOps.schedControlConfigureAdmitted st ⟨core, hCore⟩ vScId args.budget
@@ -1501,7 +1502,7 @@ core among them; a refusal is in the state handed in (`dispatchConfigureByR_eq`)
               args.budget args.period args.priority args.deadline args.domain)
             (SchedContextOps.schedControlConfigure ⟨core, hCore⟩ vScId args.budget args.period
               args.priority args.deadline args.domain) st
-        else .error (.invalidCapability, st)
+        else .error (.invalidCapability, st))
   | _ => .error (.invalidCapability, st)
 
 theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : RegisterFile)
@@ -1517,6 +1518,7 @@ theorem dispatchConfigureByR_eq (layout : SyscallRegisterLayout) (regs : Registe
     | error e => rfl
     | ok args =>
       dsimp only
+      rw [resolveSchedControlConfigureTargetK_eq]
       cases resolveSchedControlConfigureTarget tid core args.scCPtr st with
       | error e => rfl
       | ok vScId =>

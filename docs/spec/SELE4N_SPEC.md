@@ -5926,8 +5926,10 @@ Every kernel object has a decidable well-formedness predicate:
   `spendBudgetWrite`), and a refill behind the first is one straight-line
   record (`SchedContext.appendTailRecord`).  The exerciser reads the bound
   yield (`refill-yield`, 11 at ZA6.2), the refilling tick
-  (`refill-drain-tick`) and three exhausting ticks (`exhaust-tick`,
-  `exhaust-wait-tick`, `exhaust-drain-tick`) at 0, first call and steady.
+  (`refill-drain-tick`), the exhausting tick and the tick that drains its
+  refill (`exhaust-tick`, `exhaust-drain-tick`) at 0, first call and steady;
+  the waiting tick between those two went in ZA6.4, whose seL4 refill
+  semantics make the used refill due on the next tick.
 - **Configure takes seL4's SchedControl authority, and budgets are charged as
   seL4-MCS charges them** (`v0.36.167`, WS-ZA ZA6.4; a security fix).  Before
   this cut a configure was an invocation of the scheduling context's own

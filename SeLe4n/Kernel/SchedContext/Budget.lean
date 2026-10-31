@@ -610,6 +610,60 @@ head refill, made ready, which `awaken` releases).  Otherwise nothing changes. -
     { sc.refillPop with budgetRemaining := ⟨a⟩, periodStart := t, isActive := decide (0 < a) }
   else sc
 
+/-- Whether a pop takes a pending refill into the head: the head is present and
+a slot behind it is in use.  A scalar helper kept out of line so that the
+compiled release is one straight-line record update. -/
+@[noinline] def refillPopTakes (present : Bool) (count : Nat) : Bool :=
+  present && decide (0 < min count refillTailCapacity)
+
+/-- The slots in use behind the head after a pop that takes one. -/
+@[noinline] def refillPopCount (count : Nat) : Nat := min count refillTailCapacity - 1
+
+/-- One of two slot values, chosen by `c`. -/
+@[noinline] def refillSlotSelect (c : Bool) (a b : Nat) : Nat := if c then a else b
+
+/-- The compiled `SchedContext.releaseOne`: the pop's choice is made per field
+by the scalar helpers above, so the update has no branch inside it and Lean
+writes the context in place when it holds the only reference (a branch inside
+the update makes a join point that drops the reuse and allocates a context
+on every release). -/
+@[inline] def SchedContext.releaseOneImpl (sc : SchedContext) (now : Nat) : SchedContext :=
+  if sc.budgetRemaining.val = 0 ∧ sc.refillHeadPresent = true ∧ sc.refillHeadEligibleAt ≤ now then
+    let a := sc.refillHeadAmount
+    let t := sc.refillHeadEligibleAt
+    let c := refillPopTakes sc.refillHeadPresent sc.refillTailCount
+    { sc with
+      refillHeadPresent := c
+      refillHeadAmount := refillSlotSelect c sc.refillSlot1Amount sc.refillHeadAmount
+      refillHeadEligibleAt := refillSlotSelect c sc.refillSlot1EligibleAt sc.refillHeadEligibleAt
+      refillSlot1Amount := refillSlotSelect c sc.refillSlot2Amount sc.refillSlot1Amount
+      refillSlot1EligibleAt := refillSlotSelect c sc.refillSlot2EligibleAt sc.refillSlot1EligibleAt
+      refillSlot2Amount := refillSlotSelect c sc.refillSlot3Amount sc.refillSlot2Amount
+      refillSlot2EligibleAt := refillSlotSelect c sc.refillSlot3EligibleAt sc.refillSlot2EligibleAt
+      refillSlot3Amount := refillSlotSelect c sc.refillSlot4Amount sc.refillSlot3Amount
+      refillSlot3EligibleAt := refillSlotSelect c sc.refillSlot4EligibleAt sc.refillSlot3EligibleAt
+      refillSlot4Amount := refillSlotSelect c sc.refillSlot5Amount sc.refillSlot4Amount
+      refillSlot4EligibleAt := refillSlotSelect c sc.refillSlot5EligibleAt sc.refillSlot4EligibleAt
+      refillSlot5Amount := refillSlotSelect c sc.refillSlot6Amount sc.refillSlot5Amount
+      refillSlot5EligibleAt := refillSlotSelect c sc.refillSlot6EligibleAt sc.refillSlot5EligibleAt
+      refillSlot6Amount := refillSlotSelect c sc.refillSlot7Amount sc.refillSlot6Amount
+      refillSlot6EligibleAt := refillSlotSelect c sc.refillSlot7EligibleAt sc.refillSlot6EligibleAt
+      refillTailCount := refillSlotSelect c (refillPopCount sc.refillTailCount) 0
+      budgetRemaining := ⟨a⟩, periodStart := t, isActive := decide (0 < a) }
+  else sc
+
+/-- The compiled release is the release. -/
+@[csimp] theorem SchedContext.releaseOne_eq_impl :
+    @SchedContext.releaseOne = @SchedContext.releaseOneImpl := by
+  funext sc now
+  unfold SchedContext.releaseOne SchedContext.releaseOneImpl SchedContext.refillPop
+    refillPopTakes refillPopCount refillSlotSelect SchedContext.tailUsed
+  split
+  · rename_i h
+    obtain ⟨-, hP, -⟩ := h
+    by_cases hc : 0 < min sc.refillTailCount refillTailCapacity <;> simp [hP, hc]
+  · rfl
+
 /-- WS-ZA ZA6.4: whether a release has a refill to take. -/
 @[inline] def SchedContext.releaseDue (sc : SchedContext) (now : Nat) : Bool :=
   sc.budgetRemaining.val == 0 && sc.refillHeadPresent && decide (sc.refillHeadEligibleAt ≤ now)
