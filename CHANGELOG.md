@@ -4,7 +4,7 @@ seL4-MCS completes a pending yield when the yielder next runs: `activateThread`
 begins with `if (ksCurThread->tcbYieldTo) schedContext_completeYieldTo(ksCurThread)`.
 This kernel restores the committed state at exit without writing it and picks a
 core's current thread at many sites, so the completion is now one write step at
-the tail of every kernel entry. Nothing sets a link until ZA6.8's
+the tail of every kernel entry. Nothing sets a link until ZA6.9's
 `seL4_SchedContext_YieldTo`, so on every reachable state the step is still the
 identity.
 
@@ -70,8 +70,16 @@ identity.
   current one). No path leaves a linked thread resident on another core: a
   link is set only on a yieldTo caller, whose own trap saved its frame and
   which the yield deschedules, so no path is rerouted through the
-  remote-stall save. The kernel-wide form is proposed as its own row ahead
-  of the yieldTo invocation.
+  remote-stall save. The kernel-wide form is registered as ZA6.8, ahead of
+  the yieldTo invocation (ZA6.9).
+- **Plan.** ZA6.8 is inserted: a thread with a yield link is never current or
+  resident with unsaved registers, kernel-wide (a run-queue link-stage field
+  saying no step sets a yield code, a cross-core frame saying an entry makes
+  no thread current or resident on another core, and the invariant carried
+  at every entry boundary). The yieldTo invocation becomes ZA6.9 and consumes
+  it; every later row moves up one (ZA6.10 to ZA6.17), with every citation in
+  the plans, the debt register, the workstream context, the spec and the
+  source comments swept.
 - **Tests.** `SuspendResumeSuite` SR-041 (a linked current thread's activation
   writes the consumed time into its context and the bank, and clears both
   ends), SR-042 (no link, a non-current yielder, or a core id naming no

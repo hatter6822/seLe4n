@@ -98,7 +98,7 @@ demostración de Lean 4:
 |----------|-------|
 | **Versión** | `0.36.170` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 546.120 en 495 archivos |
+| **LoC de producción en Lean** | 546.122 en 495 archivos |
 | **LoC de pruebas en Lean** | 88.022 en 70 suites de pruebas |
 | **Declaraciones demostradas** | 20.729 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Crates de Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) en 80 archivos fuente |

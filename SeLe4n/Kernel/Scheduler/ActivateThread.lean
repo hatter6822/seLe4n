@@ -43,7 +43,7 @@ so here the thread the consumed time is for and the thread whose registers are
 written are one thread, with no correction needed (ZA6.6's `setConsumed` writes
 the yielder by construction).
 
-Until the yieldTo invocation (ZA6.8) sets a link, no thread has one, and the
+Until the yieldTo invocation (ZA6.9) sets a link, no thread has one, and the
 step is the identity (`activateThreadOnCore_of_unlinked`). -/
 
 namespace SeLe4n.Kernel
@@ -483,7 +483,9 @@ hold no yield link. -/
 
 /-- **No thread a core runs or holds the live registers of has a pending
 yield**: a core's current thread and its resident thread (the one whose frame
-its bank holds, `MachineState.residentOnCore`) each have yield-to code 0. -/
+its bank holds, `MachineState.residentOnCore`) each have yield-to code 0.
+The lemmas below establish it on the core an entry ran on; carrying it across
+every entry for every core is WS-ZA ZA6.8. -/
 def _root_.SeLe4n.Model.SystemState.yieldLinkedNotResident (st : SystemState) : Prop :=
   ∀ (c : CoreId) (tid : SeLe4n.ThreadId) (t : TCB),
     (st.scheduler.currentOnCore c = some tid ∨ st.machine.residentOnCore c = some tid) →

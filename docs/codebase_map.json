@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/za54-part57",
-      "commit_sha": "2040f642e4dac06d063fcbd7a6a81b62053605d3",
-      "tree_sha": "4a1df1551ff3edeb8f537502a7d2405f3808c830",
-      "committed_at_utc": "2026-10-31T19:35:47+00:00"
+      "commit_sha": "6f399de12a373d294f413228dcb7be972818978d",
+      "tree_sha": "34a7a0feb0896ee81878d9b69c07581a366cb92d",
+      "committed_at_utc": "2026-10-31T19:38:27+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7a6e5fc647c8f49bf12c002c17bb7c918b21549e10edc2bb280e1f13b9a756e8"
+    "source_digest": "47bb42d9cec545720a82484ceb0e17001e9a0ea69750e5aeaf5e8beb6d0ab5da"
   },
   "summary": {
     "module_count": 565,
@@ -27,7 +27,7 @@
     "version": "0.36.170",
     "lean_toolchain": "v4.28.0",
     "production_files": 495,
-    "production_loc": 546120,
+    "production_loc": 546122,
     "test_files": 70,
     "test_loc": 88022,
     "proved_theorem_lemma_decls": 20729,
@@ -292999,7 +292999,7 @@
           "kind": "def",
           "name": "SeLe4n.Model.SystemState.yieldLinkedNotResident",
           "full_name": "SeLe4n.Model.SystemState.yieldLinkedNotResident",
-          "line": 487,
+          "line": 489,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.residentOnCore",
@@ -293014,7 +293014,7 @@
           "kind": "theorem",
           "name": "activateThreadOnCore_current_unlinked",
           "full_name": "SeLe4n.Kernel.activateThreadOnCore_current_unlinked",
-          "line": 493,
+          "line": 495,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -293046,7 +293046,7 @@
           "kind": "theorem",
           "name": "activateThreadOnCore_residentOnCore",
           "full_name": "SeLe4n.Kernel.activateThreadOnCore_residentOnCore",
-          "line": 531,
+          "line": 533,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.activateThreadOnCore",
@@ -293058,7 +293058,7 @@
           "kind": "theorem",
           "name": "activateThreadOnCore_settle_unlinkedOnCore",
           "full_name": "SeLe4n.Kernel.activateThreadOnCore_settle_unlinkedOnCore",
-          "line": 539,
+          "line": 541,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.deferResidentElsewhere",
