@@ -503,6 +503,39 @@ private def runBudgetScenarios : IO Unit := do
   let spent := sc0.chargeBudget 0 50 50
   assertBool "a whole-head charge leaves the head used up and the total kept"
     (spent.budgetRemaining.val == 0 && spent.refillTotal == sc0.refillTotal)
+  -- WS-ZA ZA6.5: every charge adds the time run to the consumed count
+  -- (seL4-MCS's `scConsumed += consumed`); the yield's whole-head charge, from
+  -- `now`, adds none (seL4-MCS's `handleYield` keeps the time actually run).
+  assertBool "a one-tick charge adds one unit of consumed time (0 → 1)"
+    (charged.consumed == 1)
+  assertBool "a 50-tick run adds 50 units of consumed time"
+    (spent.consumed == 50)
+  let forfeit := sc0.chargeBudget 7 100 7
+  assertBool "the yield's whole-head charge uses the head up and adds no consumed time"
+    (forfeit.budgetRemaining.val == 0 && forfeit.consumed == sc0.consumed)
+  -- The kernel's charges: the per-core tick and the yield on core 1.
+  let stTimed : SystemState := { stCbsRunnable with machine := { stCbsRunnable.machine with timer := 10 } }
+  let consumedIn := fun (st : SystemState) =>
+    match st.getSchedContext? scId0 with | some sc => sc.consumed | none => 999
+  let ticked1 := (timerTickChargeCurrentOnCore stTimed core1 tid0).1
+  let ticked2 := (timerTickChargeCurrentOnCore ticked1 core1 tid0).1
+  assertBool "the per-core tick adds the unit it charged (0 → 1 → 2)"
+    (consumedIn ticked1 == 1 && consumedIn ticked2 == 2)
+  assertBool "the bound yield's charge keeps the consumed time (2 → 2)"
+    (match yieldChargeOnCore ticked2 core1 tid0 with
+     | .ok st => consumedIn st == 2
+     | .error _ => false)
+  -- The read (seL4-MCS's `schedContext_updateConsumed`): all of it, reset to 0;
+  -- past a word, a word's worth, the rest kept.
+  let read7 : SchedContext := { sc0 with consumed := 7 }
+  assertBool "a read returns the consumed time and resets it (7 → 0)"
+    (read7.consumedReading == 7 && read7.updateConsumed.consumed == 0)
+  let readBig : SchedContext := { sc0 with consumed := consumedReadMax + 5 }
+  assertBool "a read past a word returns a word's worth and keeps the rest"
+    (readBig.consumedReading == consumedReadMax && readBig.updateConsumed.consumed == 5)
+  assertBool "a read leaves the refills as they were"
+    (read7.updateConsumed.refillTotal == read7.refillTotal &&
+      read7.updateConsumed.budgetRemaining.val == read7.budgetRemaining.val)
 
 /-- §3.5 SM5.H.5: the affinity-consistency invariant's *decidable* witnesses on the
 default (boot) and the CBS fixture states. -/

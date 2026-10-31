@@ -98,6 +98,26 @@ theorem SchedContext.boundReleaseKey?_refillView (sc : SchedContext) :
   rw [SchedContext.boundThread_isSome_refillView, SchedContext.releaseKey?_refillView]
 
 
+/-- WS-ZA ZA6.5: the consumed time is outside the refill view: adding to it
+leaves the view as it was, so no refill invariant reads it. -/
+@[simp] theorem SchedContext.addConsumed_refillView (sc : SchedContext) (t : Nat) :
+    (sc.addConsumed t).refillView = sc.refillView := rfl
+
+/-- WS-ZA ZA6.5: and so is its read (`SchedContext.updateConsumed`). -/
+@[simp] theorem SchedContext.updateConsumed_refillView (sc : SchedContext) :
+    sc.updateConsumed.refillView = sc.refillView := rfl
+
+/-- WS-ZA ZA6.5: the read writes nothing the refill operations keep either. -/
+@[simp] theorem SchedContext.updateConsumed_refillsErased (sc : SchedContext) :
+    sc.updateConsumed.refillsErased = sc.refillsErased := rfl
+
+/-- WS-ZA ZA6.5: the charge's refill view is the refill charge's alone: the time
+it adds to the consumed count is outside it. -/
+theorem SchedContext.chargeBudget_refillView (sc : SchedContext) (start usage now : Nat) :
+    (sc.chargeBudget start usage now).refillView =
+      (((sc.refillUnblockCheck start).refillBudgetCheck usage).releaseReadyHead now).refillView :=
+  rfl
+
 /-- A slot's refill view: a context's, none for any other object or an empty
 slot. -/
 def objRefillView : Option KernelObject → Option SchedContext
@@ -127,6 +147,16 @@ theorem objRefillView_eq_getSchedContext? (st : SystemState) (k : SeLe4n.ObjId) 
   rcases st.objects[k]? with _ | o
   · rfl
   · cases o <;> rfl
+
+/-- WS-ZA ZA6.5: a slot's refill view is kept when its context's consumed time
+is added to or read. -/
+theorem objRefillView_addConsumed (sc : SchedContext) (t : Nat) :
+    objRefillView (some (.schedContext (sc.addConsumed t))) =
+      objRefillView (some (.schedContext sc)) := rfl
+
+theorem objRefillView_updateConsumed (sc : SchedContext) :
+    objRefillView (some (.schedContext sc.updateConsumed)) =
+      objRefillView (some (.schedContext sc)) := rfl
 
 namespace RefillViewsKept
 
