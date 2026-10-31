@@ -8963,10 +8963,30 @@ run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_preserves_projection(
 # The yielder's saved registers are its live ones when a context's final delete
 # completes its yield: no core's current or resident thread holds a link
 # after that core's entry tail (settle, then activation).
-run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SystemState\.yieldLinkedNotResident \(st : SystemState\) : Prop :=\n  ∀ \(c : CoreId\) \(tid : SeLe4n\.ThreadId\) \(t : TCB\),\n    \(st\.scheduler\.currentOnCore c = some tid ∨ st\.machine\.residentOnCore c = some tid\) →\n    st\.getTcb\? tid = some t → t\.yieldToCode = 0$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SystemState\.yieldLinkedNotResident \(st : SystemState\) : Prop :=\n  ∀ \(c : Concurrency\.CoreId\) \(tid : SeLe4n\.ThreadId\) \(t : TCB\),\n    \(st\.scheduler\.currentOnCore c = some tid ∨ st\.machine\.residentOnCore c = some tid\) →\n    st\.getTcb\? tid = some t → t\.yieldToCode = 0$' SeLe4n/Kernel/SchedContext/YieldLinkInvariant.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_current_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_residentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_settle_unlinkedOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+# ...and kernel-wide (WS-ZA ZA6.8): every run-queue link stage links no thread
+# and makes no linked thread resident (its `live` field), the residency record
+# is a stage only with the activation after it, and every committing entry
+# carries the invariant from boot.
+run_check "INVARIANT" rg -n -U '^  live : st\.objects\.invExt → st\.runQueueRefined → YieldLinkLiveFrame st'"'"' st$' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U '^structure YieldLinkLiveFrame \(st'"'"' st : SystemState\) : Prop where\n  unset : YieldToCodesUnset st'"'"' st\n  residents : ResidentsRecordUnlinked st'"'"' st$' SeLe4n/Kernel/SchedContext/YieldLinkInvariant.lean
+run_check "INVARIANT" rg -n '^theorem RunQueueEntryStage\.of_frameThen($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n '^theorem recordResidentThenActivate_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem yieldLinkedNotResident_of_live($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.default_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/YieldLinkInvariant.lean
+run_negative_check "INVARIANT" rg -n '^theorem settleResidency(OnCore|At)_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean

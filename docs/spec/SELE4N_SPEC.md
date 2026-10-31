@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.170` (`lakefile.toml`) |
+| **Package version** | `0.36.171` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 546,122 across 495 Lean files |
 | **Test LoC** | 88,022 across 70 Lean test suites |
@@ -6145,10 +6145,23 @@ Every kernel object has a decidable well-formedness predicate:
     `activateThreadOnCore_settle_unlinkedOnCore`).  A link is set only on a
     yieldTo caller, whose frame its own trap saved and which the yield then
     deschedules, so no path leaves a linked thread resident elsewhere and
-    no path needs the remote-stall save first.  The kernel-wide form, an
-    entry leaving other cores' current and resident threads and their links
-    alone, carried at every entry boundary, is registered as ZA6.8, ahead of
-    the yieldTo invocation (ZA6.9).
+    no path needs the remote-stall save first.
+  - **Kernel-wide** (`v0.36.171`, WS-ZA ZA6.8).  Every run-queue link stage
+    carries `live` (`YieldLinkLiveFrame`): the step sets no yield-to code
+    (`YieldToCodesUnset`) and makes no linked thread resident
+    (`ResidentsRecordUnlinked`), proven at every producer.  The residency
+    record, the one write that sets a resident, is a stage only with the
+    activation after it (`settleThenActivateOnCore_runQueueEntryStage`).  With
+    the coverage relation's remote current-slot frame (`currentKeptOffCore`)
+    this carries `yieldLinkedNotResident` across the syscall, timer tick,
+    reschedule SGI and secondary entry, cross-core suspend, fault,
+    unknown-syscall and FP/SIMD entries for every core
+    (`syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its
+    siblings, `IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean`).
+    Boot establishes it, every code being 0
+    (`bootFromPlatformCheckedStartedFor_yieldLinkedNotResident`), as does the
+    default state.  ZA6.9's yieldTo, the one step that sets a code, sets it
+    on its caller (`YieldToCodesSetOnly`).
   - **Zero allocation.**  The unlinked path builds nothing and writes nothing:
     on the QEMU exerciser every scenario reads its pin, 0 for every syscall,
     tick and entry, at first call and steady state.

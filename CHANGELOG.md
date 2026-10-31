@@ -1,3 +1,75 @@
+## v0.36.171 — WS-ZA ZA6.8: no core's current or resident thread holds a yield link, kernel-wide
+
+ZA6.6's `setConsumed` writes a yielder's saved register context when a
+context's final delete completes its yield. That write is sound only while the
+saved context is the live one: the yielder must be no core's current thread
+(its frame in flight) and no core's resident thread (its frame left in that
+core's bank). ZA6.7 proved this on the core an entry ran on. This version
+carries `SystemState.yieldLinkedNotResident` across every committing entry for
+every core, and from boot. Proofs only: no executable change.
+
+- **The stage field** (`SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean`,
+  `SeLe4n/Kernel/SchedContext/YieldLinkInvariant.lean`).
+  - `RunQueueLinkStage` and `RunQueueLinkFrame` gain `live`: the step links no
+    thread and makes no linked thread resident (`YieldLinkLiveFrame`:
+    `unset`, every slot's yield-to code is 0 or the one it had,
+    `YieldToCodesUnset`; `residents`, every resident is the one the core had
+    or holds no link, `ResidentsRecordUnlinked`).
+  - The frame is transitive and holds for the cancel and complete paths
+    (`cancelYieldTo_yieldToCodesUnset` and its siblings). It is shaped for
+    ZA6.9: `YieldToCodesSetOnly L` lets a step set a code on the slots `L`
+    (the yieldTo caller), with `refl`, `trans` and `mono`.
+  - Every producer discharges it. The base producers take a resident-frame
+    premise, filled by the `resident_frame` tactic. Producers over an
+    abstract state now take it from their callers: the VSpace map and unmap,
+    the final-delete finalisation, the service registry, the reply splice and
+    the notification-link rewrite.
+  - New machine frames for those callers:
+    `vspaceMapPageCheckedWithShootdownFromStatePerCore_framed`,
+    `vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed`,
+    `registerService_preserves_machine`, `revokeService_preserves_machine`,
+    `CarveRequest.scrub_residentCode`,
+    `restoreIncomingContextOnCore_residentCode`.
+  - The thread release of a final delete clears residents and sets none
+    (`RunQueueStage.of_frameLive`).
+- **The residency record and the activation are one stage.** The record is the
+  one write that sets a resident, and it may make a linked current thread
+  resident until the activation completes the link.
+  `settleResidencyOnCore_runQueueEntryStage` and
+  `settleResidencyAt_runQueueEntryStage` are retired. Their replacements,
+  `settleThenActivateOnCore_runQueueEntryStage` and
+  `settleThenActivateAt_runQueueEntryStage`, cover the settle with the
+  activation after it, through `RunQueueEntryStage.of_frameThen`. Every entry
+  composition uses them.
+- **The cross-core frame.** ZA6.8's WIP 1 added `stepCovers.currentKept`:
+  off the executing core, every current thread was current before
+  (`currentKeptOffCore`).
+- **The payoff**
+  (`SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean`,
+  new).
+  - `yieldLinkedNotResident_of_live` combines the stage's `live` field and
+    the record of new current threads (`currentsRecordUnlinked`).
+  - It is restated at every entry:
+    `syscallDispatchEntryState_preserves_yieldLinkedNotResident`,
+    `perCoreTimerTickEntryState_…`, `perCoreRescheduleEntryState_…` (also the
+    secondary core's first entry), `suspendThreadCrossCoreDrainedStep_…`,
+    `faultEntryState_…`, `unknownSyscallEntryState_…` and
+    `fpAccessEntryState_…`.
+- **Boot and the default state.**
+  - `yieldLinkedNotResident_of_codesClear`, `default_yieldLinkedNotResident`.
+  - `yieldLinkedNotResident_of_bootShape`, `_of_bootLinkedShape` and
+    `bootFromPlatformCheckedStartedFor_yieldLinkedNotResident`: no boot thread
+    yields, so every code is 0.
+  - The invariant's definition moves to `YieldLinkInvariant.lean`, upstream of
+    the boot.
+- **Tests.** SR-044 (`tests/SuspendResumeSuite.lean`) checks the claim on
+  every core. A yielder that last ran on core 1 and has since been vacated
+  there stays no core's current or resident thread through either core's
+  entry tail. The checker refuses the linked-current state.
+- **No remote-stall save needed.** A link is set only on a yieldTo caller.
+  Every entry keeps the yielder off every core's current and resident slots.
+  So `setConsumed`'s write stays as it is.
+
 ## v0.36.170 — WS-ZA ZA6.7: the current thread's activation at every entry's tail
 
 seL4-MCS completes a pending yield when the yielder next runs: `activateThread`
