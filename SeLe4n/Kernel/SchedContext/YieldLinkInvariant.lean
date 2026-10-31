@@ -79,10 +79,10 @@ theorem objYieldCodes_eq_lookups (st : SystemState) (k : SeLe4n.ObjId) :
       (((st.getTcb? (SeLe4n.ThreadId.ofObjId k)).map TCB.yieldToCode).getD 0,
         ((st.getSchedContext? (SeLe4n.SchedContextId.ofObjId k)).map
           SchedContext.yieldFromCode).getD 0) := by
+  have e1 : (SeLe4n.ThreadId.ofObjId k).toObjId = k := rfl
+  have e2 : (SeLe4n.SchedContextId.ofObjId k).toObjId = k := rfl
   unfold SystemState.getTcb? SystemState.getSchedContext?
-  show _ = (((match st.objects[k]? with | some (.tcb t) => some t | _ => none).map
-      TCB.yieldToCode).getD 0, ((match st.objects[k]? with
-      | some (.schedContext sc) => some sc | _ => none).map SchedContext.yieldFromCode).getD 0)
+  rw [e1, e2]
   rcases st.objects[k]? with _ | o
   · rfl
   · cases o <;> rfl

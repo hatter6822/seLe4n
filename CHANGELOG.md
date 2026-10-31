@@ -59,7 +59,9 @@ completes it. Nothing sets a link until ZA6.8's `seL4_SchedContext_YieldTo`.
 - **Tests.** `SuspendResumeSuite` SR-036 to SR-039: suspend (live and frozen)
   clears both ends, a context's final delete hands its yielder the consumed
   time, a yielder's final delete clears both ends.
-- **Zero allocation.** MEASURED_PLACEHOLDER
+- **Zero allocation.** Every write is a record update of an exclusive cell, which the
+  generated C reuses in place. Measured on a fresh untraced archive
+  (`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS, every pin unchanged; first call and steady): `tcb-suspend` 0 and 0, `tcb-suspend-bound` 0 and 0, `suspend-queued-tcb` 0 and 0, `tcb-resume` 0 and 0, `tcb-resume-bound` 0 and 0, `bound-tcb-delete` 0 and 0, `unbound-tcb-delete` 0 and 0, `inactive-tcb-delete` 0 and 0, `queued-tcb-delete` 0 and 0, `suspended-tcb-delete` 0 and 0, `spaced-tcb-delete` 0 and 0, `bound-sched-context-delete` 0 and 0, `cspace-delete` 0 and 0, `sched-context-bind` / `-unbind` / `-rebind` / `-configure` 0 and 0; the retypes keep their pins (`untyped-retype-tcb` 24 and 24, `untyped-retype-sched-context` 14 and 13, `untyped-retype-sc-thread` 24 and 24, the new objects' own cells).
 
 ## v0.36.168 — WS-ZA ZA6.5: every charge records the time it consumed
 
