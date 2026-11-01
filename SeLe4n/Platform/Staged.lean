@@ -237,6 +237,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.CurrentNotResidentElsewhere
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.EntryContextMatches
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.RemoteSave
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegisters
 -- WS-SM SM5.I: the per-core invariant suite theorem inventory — a 39-entry typed
 -- inventory (3 categories: structural / preservation / suite) with the `pcist!`
 -- compile-time identifier-validation macro + per-category count witnesses +
