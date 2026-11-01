@@ -1482,9 +1482,9 @@ theorem scheduleLocalSuccessor_of_pre_idle (pre post : SystemState) (execCore : 
 /-- WS-SM SM8.B: and inert when the transition **left a thread running** on the
 executing core.
 
-This is what makes it safe to apply the rule at *every* entry, including
-`suspendThreadCrossCoreEntry`, whose transition already runs its own scheduling
-point (`suspendRescheduleOnCore`): where a transition rescheduled the core
+This is what makes it safe to apply the rule at *every* entry, including the
+`.tcbSuspend` arm, whose transition already runs its own scheduling point
+(`suspendRescheduleOnCore`): where a transition rescheduled the core
 itself, the post-state slot is populated and this rule does not fire.  The two
 mechanisms cannot both dispatch. -/
 theorem scheduleLocalSuccessor_of_post_running (pre post : SystemState) (execCore : CoreId)

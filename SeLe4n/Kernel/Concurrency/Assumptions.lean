@@ -116,8 +116,8 @@ def lifecyclePreRetypeCleanup_smpLatent : SmpLatentAssumption :=
       "Single-core: cleanup walks endpoint queues / TCB IPC fields in a \
        fixed order with no concurrent mutation."
     smpDischarge      :=
-      "SMP: AN9-D's `sele4n_suspend_thread` FFI bracket idiom is reused — \
-       cleanup runs interrupts-disabled on the calling core."
+      "SMP: cleanup runs interrupts-disabled on the calling core, inside the \
+       syscall trap handler, which runs with IRQs masked."
     sourceTheorem     := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
     auditReference    := "C-M04 / AN9-D" }
 
@@ -344,9 +344,9 @@ def lifecyclePreRetypeCleanup_smpRetired : SmpRetiredAssumption :=
   { identifier     := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
     status         := .perCoreBracketGated
     retirement     :=
-      "Per-core: cleanup runs interrupts-disabled on the calling core via the \
-       `sele4n_suspend_thread` FFI bracket idiom. Cross-core retirement \
-       tracked against SM5."
+      "Per-core: cleanup runs interrupts-disabled on the calling core, inside \
+       the syscall trap handler, which runs with IRQs masked. Cross-core \
+       retirement tracked against SM5."
     anchor         := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
     auditReference := "C-M04 / AN9-D" }
 

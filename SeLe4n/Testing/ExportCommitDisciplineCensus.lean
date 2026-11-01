@@ -89,9 +89,8 @@ LS2.2): a seam that reaches it runs a `BracketSpec`, which cannot be built
 without the proof that its declared footprint covers its step's writes, so the
 type answers "is a footprint declared" and "is it proved to cover" by
 construction — the three per-core scheduler entries reach it through
-`timerTickBracket` / `rescheduleBracket`, the syscall seam through
-`syscallDispatchBracket` and the raw suspend seam through
-`suspendThreadBracket` (WS-LS LS2.4).  It is the only form: the two word-level
+`timerTickBracket` / `rescheduleBracket` and the syscall seam through
+`syscallDispatchBracket` (WS-LS LS2.4).  It is the only form: the two word-level
 brackets the syscall seams ran until LS2.4 (`runUnderDeclaredLockSet`, RR7.12's
 revalidated bracket over `Concurrency.runBracketed`, and SM3's plain
 `Concurrency.withLockSet`) are deleted there, so a seam that reaches
@@ -215,19 +214,16 @@ addition to the unbracketed majority. -/
 
 /-- Every state-committing `@[export]` of this kernel, with how it commits.
 
-**Five of eight bracket** since WS-BP BP4.1 (five of seven from WS-RR RR7.39,
-two before it): the two syscall seams and the three per-core scheduler entries.
-The three that do not are the two fault-delivery seams and the boot install,
-and each names why, so this list is the project's honest
+**Four of ten bracket** since WS-ZA ZA6.10 retired the raw suspend seam (five
+of eleven before it): the syscall seam and the three per-core scheduler entries.
+The six that do not are the two fault-delivery seams, the FP/SIMD access and
+the three boot installs, and each names why, so this list is the project's honest
 statement of how much of the kernel the fine-lock discipline actually covers —
 the figure a release claim has to quote. -/
 def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
-  [ -- SM3.C.9's first bracketed seam: resolves `lockSetForSyscall .tcbSuspend`
-    -- and runs `suspendThreadOnCore` inside it.
-    (`SeLe4n.Kernel.suspendThreadCrossCoreEntry, .bracketed)
-    -- WS-RR RR7.12: the ABI seam, revalidated.  Bracketed for the eight
+  [ -- WS-RR RR7.12: the ABI seam, revalidated.  Bracketed for the eight
     -- declared arms and falling back — bit-identically — for the rest.
-  , (`SeLe4n.Kernel.syscallDispatchCrossCoreEntry, .bracketed)
+    (`SeLe4n.Kernel.syscallDispatchCrossCoreEntry, .bracketed)
     -- WS-RR RR7.39: the three per-core scheduler entries.  They commit run-queue
     -- and replenish-queue state, which lives in the `LockKey` domain rather
     -- than the object-lock domain a `LockSet` names — so RR7.39 gave that domain

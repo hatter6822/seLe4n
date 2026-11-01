@@ -36,9 +36,8 @@ into a kernel object on the executed path.
   `runGhost` have one answer.
 * `withLockSet` — the ghost form of `withLockSet`: the same shape with
   the lock trace applied to the table instead of to the objects.  The
-  word-level `withLockSet` stays until LS2.4 switches the syscall seams (it
-  is still executed at `SyscallDispatchEntry.lean`'s suspend seam); LS3.1 renames
-  this one to `withLockSet` with its anchors.
+  word-level `withLockSet` stayed until LS2.4 switched the syscall seams;
+  LS3.1 renames this one to `withLockSet` with its anchors.
 * `BracketSpec`, `run`, `runGhost`, `runGhost_kernel` (O1),
   `runGhost_locks_of_unheld` (O3), `guard` (O4, Track D's hypothesis).
 
@@ -262,9 +261,8 @@ objects.  The action runs on `s.kernel`: the growing phase changes only
 `locks`, by type, which is the fact the word-level bracket's re-resolution
 guarded by computation.
 
-The word-level `withLockSet` stays beside this until LS2.4 switches the syscall
-seams (the suspend seam still executes it); LS3.1 renames this one to `withLockSet`
-with its anchors.  Every theorem the 2PL, serializability and observer files
+The word-level `withLockSet` stayed beside this until LS2.4 switched the syscall
+seams; LS3.1 renames this one to `withLockSet` with its anchors.  Every theorem the 2PL, serializability and observer files
 state over the word-level bracket is restated over this one in LS2.1, with
 the lock-write-invisibility hypotheses gone: here the kernel half of the
 result *is* the action's, by `rfl`. -/
@@ -330,8 +328,8 @@ for the syscall seam, whose arms' confinement theorems are stated under them);
 theorem (`perCoreTimerTickStep_coversWrites` and
 `perCoreRescheduleStep_coversWrites` for `timerTickBracket` /
 `rescheduleBracket` since LS2.2; `syscallDispatchCrossCoreStep_coversWrites`
-and `suspendSeamAction_coversWrites` for the syscall and suspend seams since
-LS2.3, and LS2.4 builds their specs and points the exported bodies at `run`).
+for the syscall seam since LS2.3, and LS2.4 builds its spec and points the
+exported body at `run`).
 
 **WS-LS LS2.3**: `inv` is a field rather than a hypothesis of `covers` alone
 because the ghost obligations (`runGhost_locks_of_unheld`, the serialisation

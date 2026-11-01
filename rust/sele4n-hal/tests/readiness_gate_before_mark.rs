@@ -13,45 +13,23 @@
 //! core.  That makes the refusal arms observable end to end rather than only at
 //! the helper that implements them.
 //!
-//! What is pinned:
-//!
-//! * the cross-core suspend seam refuses with `KernelError::IllegalState`
-//!   rather than entering a runtime this PE has not initialized, and refuses
-//!   *without* dispatching (the stand-in returns `NotImplemented = 17`, so the
-//!   two outcomes are distinguishable); and
-//! * the SVC seam halts, which on the host lane is a panic — caught here rather
-//!   than aborting the run.
+//! What is pinned: the SVC seam halts, which on the host lane is a panic —
+//! caught here rather than aborting the run.  (The raw cross-core suspend seam
+//! this binary also pinned was retired at WS-ZA ZA6.10.)
 //!
 //! **PR #889 review**: the gate precedes the SVC seam's prefilters, not the
 //! other way round.  The halt exists because a thread on a not-ready core is
 //! never preempted again, so *any* frame returned to it is the CPU forever —
 //! an `invalidSyscallNumber` or `invalidArgument` frame from a prefilter as
-//! much as a dispatched one.  The third and fourth cases pin that an
+//! much as a dispatched one.  The second and third cases pin that an
 //! out-of-range id and a short message halt on a not-ready core rather than
 //! being refused as frames.
 
-use sele4n_hal::ffi::{sele4n_suspend_thread, SUSPEND_BEFORE_LEAN_READY_STATUS};
 use sele4n_hal::svc_dispatch::{dispatch_svc, SyscallArgs, SyscallId};
 
 /// The zero-argument frame the seam tests dispatch with.
 fn zero_args() -> SyscallArgs {
     SyscallArgs { msg_info: 0 }
-}
-
-#[test]
-fn suspend_seam_refuses_before_any_core_is_ready() {
-    let status = sele4n_suspend_thread(42);
-    assert_eq!(
-        status, SUSPEND_BEFORE_LEAN_READY_STATUS,
-        "a suspend on a core whose Lean runtime is not initialized must be \
-         refused with IllegalState"
-    );
-    assert_ne!(
-        status, 17,
-        "the refusal must happen INSTEAD of the dispatch, not after it \
-         (17 is the stand-in's own NotImplemented)"
-    );
-    assert_ne!(status, 0, "the refusal must not decode as success");
 }
 
 #[test]

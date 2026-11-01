@@ -1481,7 +1481,7 @@ private def runPipDonationDropChecks : IO Unit := do
             (decide ((st'.queuedPriorityOn core2 serverTid)
               = some ⟨50⟩))
           -- (iii) the review fix: the diff seam derives the core-2
-          -- re-bucketing poke the FFI suspend entry now fires.
+          -- re-bucketing poke the syscall entry fires.
           assertBool "diff seam pokes core 2 for the server re-bucketing"
             ((PriorityInheritance.computeCrossCoreSgis stPipDonation st' bootCoreId).any
               (fun p => p.1 == core2 && p.2 == SgiKind.reschedule))
@@ -2330,8 +2330,7 @@ core-2 thread"
 
 WS-OD OD1.7's holder wake and WS-RR RR7.22/RR8.11's replenishment migration were
 both added to `cancelIpcBlockingOnCore`, a composite that has never had a
-production caller — the live `.tcbSuspend` arm and the `suspend_thread_cross_core`
-seam both run `suspendThreadOnCore`, which performs its own placement removal at
+production caller — the live `.tcbSuspend` arm runs `suspendThreadOnCore`, which performs its own placement removal at
 G4 and so took the teardown's bare form at G2.  Neither fix was therefore on the
 path a syscall takes.  Kept beside the live reading so the assertions below are
 known to discriminate rather than merely to pass. -/

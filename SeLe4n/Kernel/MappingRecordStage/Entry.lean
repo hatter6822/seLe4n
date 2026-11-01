@@ -15,7 +15,7 @@ import SeLe4n.Kernel.PerCoreRescheduleEntry
 
 /-! # Every committing entry keeps the mappings recorded
 
-The pure step each state-committing entry runs (the syscall, the suspend, the
+The pure step each state-committing entry runs (the syscall, the
 timer tick, the reschedule interrupt, the two fault entries and the FP/SIMD
 access) is a `MappingStage`: the trap-frame save, the step itself, the local
 scheduling point, the residency settlement and the ledger drains, each a stage.
@@ -414,26 +414,7 @@ theorem syscallDispatchEntryState_preserves_liveMappingsRecorded (ctx : Labeling
     (objects_invExt_of_capabilityInvariantBundle _ hB.2.1)
     hB.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-! ### The suspend, timer, reschedule, fault and FP/SIMD entries -/
-
-theorem suspendThreadCrossCoreDrainedStep_mappingStage (tid : UInt64) (e : CoreId)
-    (st : SystemState) :
-    MappingStage st (suspendThreadCrossCoreDrainedStep tid e st).2 := by
-  unfold suspendThreadCrossCoreDrainedStep suspendThreadCrossCoreStep
-  dsimp only
-  refine MappingStage.trans ?_ (clearLedgers_mappingStage _)
-  split
-  · exact MappingStage.refl _
-  · split
-    · exact MappingStage.refl _
-    · unfold Concurrency.BracketSpec.run suspendThreadBracket
-      dsimp only
-      split
-      · rename_i s' sgi hS
-        exact ((suspendThreadOnCore_mappingStage hS).trans
-          (scheduleLocalSuccessorFrom_mappingStage _ _ e)).trans
-          (activateThreadOnCore_mappingStage _ e)
-      · exact MappingStage.refl _
+/-! ### The timer, reschedule, fault and FP/SIMD entries -/
 
 /-- **The timer entry's committed state keeps the mappings recorded**: the
 trap-frame save, the tick, the residency settlement, the activation and the

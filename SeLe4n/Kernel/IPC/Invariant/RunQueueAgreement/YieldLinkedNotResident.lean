@@ -355,31 +355,6 @@ theorem fpAccessEntryState_preserves_yieldLinkedNotResident (coreId : UInt64)
     unfold fpAccessEntryStep
     rw [hc, saveCapturedTrapFrameAt_scheduler]
 
-/-- **The cross-core suspend keeps no linked thread current or resident**: it
-runs on the executing core and activates the thread the core is left running. -/
-theorem suspendThreadCrossCoreDrainedStep_preserves_yieldLinkedNotResident (tid : UInt64)
-    (e : CoreId) (st : SystemState) (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined)
-    (hY : st.yieldLinkedNotResident) :
-    (suspendThreadCrossCoreDrainedStep tid e st).2.yieldLinkedNotResident := by
-  refine yieldLinkedNotResident_of_live hY
-    ((suspendThreadCrossCoreDrainedStep_runQueueEntryStage tid e st).1.live hInv0 hR0) ?_
-  unfold suspendThreadCrossCoreDrainedStep suspendThreadCrossCoreStep
-  dsimp only
-  refine currentsRecordUnlinked.clearLedgers ?_
-  split
-  · exact currentsRecordUnlinked_of_scheduler_eq rfl
-  · split
-    · exact currentsRecordUnlinked_of_scheduler_eq rfl
-    · unfold Concurrency.BracketSpec.run suspendThreadBracket
-      dsimp only
-      split
-      · rename_i s' sgi hS
-        obtain ⟨-, hSInv⟩ := suspendThreadOnCore_stepCovers st s' _ e sgi hInv0 hS
-        exact currentsRecordUnlinked_of_kept (suspendThenScheduleLocal_stepCovers hInv0 hS).currentKept
-          (activateThreadOnCore_currentUnlinkedOn _ e
-            (scheduleLocalSuccessorFrom_preserves_objects_invExt e _ s' hSInv))
-      · exact currentsRecordUnlinked_of_scheduler_eq rfl
-
 /-- **The syscall entry keeps no linked thread current or resident.**  The
 dispatch's coverage reads its premises at the state the dispatch runs from —
 the saved state with the entry's IPC-buffer words handed to it — as the seam's
