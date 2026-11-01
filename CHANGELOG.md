@@ -29,6 +29,11 @@ Proofs only for the kernel; one fix to the pre-commit hook.
   1-second bound reports `TIMED OUT` and blocks, and a staged `sorry` is still
   rejected. Tier 3 anchors pin the bound, the status capture and both blocking
   branches, and `docs/DEVELOPMENT.md` documents the variable.
+  A build that fails with no `error:` line now reaches the fallback that prints
+  its exit status and log tail: the hook runs under `pipefail`, and the
+  error-line listing's `grep` (and the tail's) no longer ends the hook on a
+  no-match (Codex review on #1032). A negative anchor forbids an unguarded
+  `grep`/`tail` pipeline in the hook.
 - **The plan.** The preservation row is split:
   - ZA6.17, this decomposition;
   - ZA6.18, the two halves at every committing entry.
