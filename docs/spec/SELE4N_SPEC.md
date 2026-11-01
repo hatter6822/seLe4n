@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.182` (`lakefile.toml`) |
+| **Package version** | `0.36.183` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 551,131 across 501 Lean files |
 | **Test LoC** | 88,173 across 70 Lean test suites |
@@ -6236,8 +6236,12 @@ Every kernel object has a decidable well-formedness predicate:
     unknown-syscall entries carry it
     (`perCoreTimerTickEntryState_preserves_blockedNotResident`,
     `faultEntryState_preserves_blockedNotResident`,
-    `unknownSyscallEntryState_preserves_blockedNotResident`); ZA6.20 carries
-    it across the syscall entry; ZA6.21 to ZA6.23 prove the census over the dispatch's arms; ZA6.24 reads the syscall's id and argument
+    `unknownSyscallEntryState_preserves_blockedNotResident`); since
+    `v0.36.183` (ZA6.20) every syscall dispatch arm blocks at most its
+    caller (`dispatchSyscallChecked_readyKeptStage`,
+    `syscallDispatchFromAbi_readyKeptStage`) and the syscall entry carries
+    it (`syscallDispatchEntryState_preserves_blockedNotResident`), so every
+    entry does; ZA6.21 to ZA6.23 prove the census over the dispatch's arms; ZA6.24 reads the syscall's id and argument
     registers from the entry's saved frame; ZA6.25 composes the syscall
     entry's and every other core's match.
   - **The remote stall waits for the remote save** (`v0.36.174`, WS-ZA
