@@ -9023,6 +9023,15 @@ run_check "INVARIANT" rg -n '^theorem settleResidencyOnCore_preserves_contextMat
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
+# WS-ZA ZA6.12: the fault and unknown-syscall entries' bank match.  Their
+# shared delivery vacates the executing core and makes no thread current on any
+# core, so the successor's switch establishes the match.
+run_check "INVARIANT" rg -n '^theorem faultDeliveredState_currentKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliveredState_vacates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean

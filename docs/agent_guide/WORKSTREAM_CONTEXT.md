@@ -521,8 +521,11 @@ the stall samples each changed core's epoch, and the exit gate waits for the
 saves outside the lock.  A new invocation that reads or writes another
 thread's registers must first wait on the target's save epoch (refuse with a
 restart while the target is current or resident on another core); one that
-touches no registers needs no stall.  ZA6.12 proves the fault and
-unknown-syscall entries' bank match, and ZA6.13 is the register census
+touches no registers needs no stall.  Since `v0.36.175`, ZA6.12 proves the
+fault and unknown-syscall entries' bank match: the fault delivery vacates the
+executing core and makes no thread current on any core, so a new delivery
+form keeps that shape (no scheduling point inside it) or proves its own match.
+ZA6.13 is the register census
 (`stepCovers` gains a register-context conjunct; a new arm proves that it
 writes no other core's current thread's registers).  ZA6.14 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
 the stage's `live` field generalised to `YieldToCodesSetOnly L` across the

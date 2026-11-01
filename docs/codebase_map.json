@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "backup/za54-part62",
-      "commit_sha": "cb16cfec5fd1deb2503ef90a428c66ef8292e3be",
-      "tree_sha": "46ff0d4f947bcb686969c31e7a9c8d514674181b",
-      "committed_at_utc": "2026-11-01T09:18:09+00:00"
+      "branch": "backup/za54-part63",
+      "commit_sha": "bc79a2c161df0c9ff73e8773089d45dde8aa735a",
+      "tree_sha": "eec07cbf8d212648d81e4f53f1d1563ab18e340a",
+      "committed_at_utc": "2026-11-01T10:38:25+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ecc5564c9ef9c1fa60f4480b5ab11af110bdcbe770e91289220904d6adcac33e"
+    "source_digest": "25a6ed332b1099fdaeb15b9d317564d36539eef1e7a0c7d3a62e4e4c5dc7806a"
   },
   "summary": {
     "module_count": 569,
-    "declaration_count": 32217
+    "declaration_count": 32226
   },
   "readme_sync": {
-    "version": "0.36.174",
+    "version": "0.36.175",
     "lean_toolchain": "v4.28.0",
     "production_files": 499,
-    "production_loc": 549416,
+    "production_loc": 549595,
     "test_files": 70,
     "test_loc": 88173,
-    "proved_theorem_lemma_decls": 20932,
+    "proved_theorem_lemma_decls": 20941,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -164341,13 +164341,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.EntryContextMatches",
       "path": "SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean",
-      "declaration_count": 19,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "theorem",
           "name": "dispatchVacatedCore_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.dispatchVacatedCore_preserves_contextMatchesCurrentOnCore",
-          "line": 28,
+          "line": 34,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.dispatchVacatedCore",
@@ -164361,7 +164361,7 @@
           "kind": "theorem",
           "name": "deferResidentElsewhere_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.deferResidentElsewhere_preserves_contextMatchesCurrentOnCore",
-          "line": 41,
+          "line": 47,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.deferResidentElsewhere",
@@ -164375,7 +164375,7 @@
           "kind": "theorem",
           "name": "settleResidencyOnCore_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.settleResidencyOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 57,
+          "line": 63,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.pokeReleasedResident_machine",
@@ -164395,7 +164395,7 @@
           "kind": "theorem",
           "name": "contextMatchesCurrentOnCore_of_none",
           "full_name": "SeLe4n.Kernel.contextMatchesCurrentOnCore_of_none",
-          "line": 69,
+          "line": 75,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.contextMatchesCurrentOnCore",
@@ -164407,7 +164407,7 @@
           "kind": "theorem",
           "name": "saveVacatedFrameOnCore_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.saveVacatedFrameOnCore_preserves_objects_invExt",
-          "line": 74,
+          "line": 80,
           "called": [
             "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -164421,7 +164421,7 @@
           "kind": "theorem",
           "name": "saveVacatedFrameOnCore_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.saveVacatedFrameOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 88,
+          "line": 94,
           "called": [
             "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore",
             "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore_of_current",
@@ -164438,7 +164438,7 @@
           "kind": "theorem",
           "name": "saveCapturedTrapFrame_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.saveCapturedTrapFrame_preserves_objects_invExt",
-          "line": 98,
+          "line": 104,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext",
             "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
@@ -164453,7 +164453,7 @@
           "kind": "theorem",
           "name": "saveCapturedTrapFrame_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.saveCapturedTrapFrame_preserves_contextMatchesCurrentOnCore",
-          "line": 109,
+          "line": 115,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext",
             "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
@@ -164469,7 +164469,7 @@
           "kind": "theorem",
           "name": "settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 121,
+          "line": 127,
           "called": [
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance_frame",
@@ -164490,7 +164490,7 @@
           "kind": "theorem",
           "name": "perCoreRescheduleEntryState_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.perCoreRescheduleEntryState_preserves_contextMatchesCurrentOnCore",
-          "line": 135,
+          "line": 141,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext",
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
@@ -164517,7 +164517,7 @@
           "kind": "theorem",
           "name": "scheduleDomainOnCoreState_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.scheduleDomainOnCoreState_preserves_contextMatchesCurrentOnCore",
-          "line": 167,
+          "line": 173,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -164535,7 +164535,7 @@
           "kind": "theorem",
           "name": "tickClockedState_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.tickClockedState_preserves_contextMatchesCurrentOnCore",
-          "line": 180,
+          "line": 186,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.contextMatchesCurrentOnCore",
@@ -164548,7 +164548,7 @@
           "kind": "theorem",
           "name": "perCoreTimerTickEntryState_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.perCoreTimerTickEntryState_preserves_contextMatchesCurrentOnCore",
-          "line": 190,
+          "line": 196,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext",
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
@@ -164587,7 +164587,7 @@
           "kind": "theorem",
           "name": "contextMatchesCurrentOnCore_of_regContext",
           "full_name": "SeLe4n.Kernel.contextMatchesCurrentOnCore_of_regContext",
-          "line": 228,
+          "line": 234,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.contextMatchesCurrentOnCore",
@@ -164601,7 +164601,7 @@
           "kind": "theorem",
           "name": "updateTcb_registerContext_back",
           "full_name": "SeLe4n.Kernel.updateTcb_registerContext_back",
-          "line": 251,
+          "line": 257,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Model.SystemState",
@@ -164619,7 +164619,7 @@
           "kind": "theorem",
           "name": "writeFpContextToTcb_registerContext_back",
           "full_name": "SeLe4n.Kernel.writeFpContextToTcb_registerContext_back",
-          "line": 268,
+          "line": 274,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.writeFpContextToTcb",
@@ -164635,7 +164635,7 @@
           "kind": "theorem",
           "name": "fpAccessOnCore_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.fpAccessOnCore_preserves_objects_invExt",
-          "line": 276,
+          "line": 282,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.fpAccessOnCore",
@@ -164649,7 +164649,7 @@
           "kind": "theorem",
           "name": "fpAccessOnCore_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.fpAccessOnCore_preserves_contextMatchesCurrentOnCore",
-          "line": 287,
+          "line": 293,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.fpAccessOnCore",
@@ -164670,7 +164670,7 @@
           "kind": "theorem",
           "name": "fpAccessEntryState_preserves_contextMatchesCurrentOnCore",
           "full_name": "SeLe4n.Kernel.fpAccessEntryState_preserves_contextMatchesCurrentOnCore",
-          "line": 304,
+          "line": 310,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.InFlightContext",
@@ -164694,6 +164694,189 @@
             "SeLe4n.Kernel.saveCapturedTrapFrame_preserves_objects_invExt",
             "SeLe4n.Kernel.settleResidencyOnCore_preserves_contextMatchesCurrentOnCore",
             "SeLe4n.Kernel.settleResidencyOnCore_preserves_objects_invExt",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "exists_core_ne",
+          "full_name": "SeLe4n.Kernel.exists_core_ne",
+          "line": 343,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultDeliveredState_currentKept",
+          "full_name": "SeLe4n.Kernel.faultDeliveredState_currentKept",
+          "line": 349,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.exists_core_ne",
+            "SeLe4n.Kernel.faultDeliveredState",
+            "SeLe4n.Kernel.faultDeliveredState_stepCovers",
+            "SeLe4n.Model.Fault",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultDeliveredState_vacates",
+          "full_name": "SeLe4n.Kernel.faultDeliveredState_vacates",
+          "line": 361,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.faultDeliverOnCoreChecked_leaves_thread_not_runnable",
+            "SeLe4n.Kernel.faultDeliveredState",
+            "SeLe4n.Kernel.faultDeliveredState_currentKept",
+            "SeLe4n.Model.Fault",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryDeliver_preserves_objects_invExt",
+          "full_name": "SeLe4n.Kernel.faultEntryDeliver_preserves_objects_invExt",
+          "line": 375,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.dispatchVacatedCore_preserves_objects_invExt",
+            "SeLe4n.Kernel.faultDeliveredState_stepCovers",
+            "SeLe4n.Kernel.faultEntryDeliver",
+            "SeLe4n.Kernel.scheduleLocalSuccessorFrom_preserves_objects_invExt",
+            "SeLe4n.Model.Fault",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryDeliver_preserves_contextMatchesCurrentOnCore",
+          "full_name": "SeLe4n.Kernel.faultEntryDeliver_preserves_contextMatchesCurrentOnCore",
+          "line": 393,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorFrom",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.contextMatchesCurrentOnCore_of_none",
+            "SeLe4n.Kernel.dispatchVacatedCore_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.faultDeliveredState",
+            "SeLe4n.Kernel.faultDeliveredState_stepCovers",
+            "SeLe4n.Kernel.faultDeliveredState_vacates",
+            "SeLe4n.Kernel.faultEntryDeliver",
+            "SeLe4n.Kernel.handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Model.Fault",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrame_preserves_objects_invExt",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrame_preserves_objects_invExt",
+          "line": 419,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore_preserves_objects_invExt",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.saveVacatedFrameOnCore_preserves_objects_invExt",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore",
+          "line": 431,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.saveVacatedFrameOnCore_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryState_preserves_contextMatchesCurrentOnCore",
+          "full_name": "SeLe4n.Kernel.faultEntryState_preserves_contextMatchesCurrentOnCore",
+          "line": 443,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.coreIdOfUInt64?_some",
+            "SeLe4n.Kernel.faultEntryDeliver_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.faultEntryDeliver_preserves_objects_invExt",
+            "SeLe4n.Kernel.faultEntryStep",
+            "SeLe4n.Kernel.saveCapturedTrapFrame_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.saveCapturedTrapFrame_preserves_objects_invExt",
+            "SeLe4n.Kernel.settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore",
+          "full_name": "SeLe4n.Kernel.unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore",
+          "line": 477,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedSyscallFrameAt",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.coreIdOfUInt64?_some",
+            "SeLe4n.Kernel.faultEntryDeliver_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.faultEntryDeliver_preserves_objects_invExt",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_preserves_objects_invExt",
+            "SeLe4n.Kernel.settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore",
+            "SeLe4n.Kernel.unknownSyscallEntryStep",
+            "SeLe4n.Model.FaultRegisterWindow",
             "SeLe4n.Model.SystemState"
           ]
         }
