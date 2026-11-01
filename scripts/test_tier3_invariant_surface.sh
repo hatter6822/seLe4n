@@ -21197,7 +21197,9 @@ run_check "INVARIANT" rg -F -n 'case "${_f}" in .lake/*) ;; *) STAGED_LEAN_FILES
 # WS-ZA ZA6.17: the hook's module build is bounded for a whole dependency rebuild
 # (overridable), and a build the bound kills is reported as a timeout and still
 # blocks the commit, never as a failure with no errors.
+# shellcheck disable=SC2016
 run_check "INVARIANT" rg -F -n 'PRECOMMIT_BUILD_TIMEOUT="${SELE4N_PRECOMMIT_BUILD_TIMEOUT:-3600}"' scripts/pre-commit-lean-build.sh
+# shellcheck disable=SC2016
 run_check "INVARIANT" rg -F -n 'timeout "${PRECOMMIT_BUILD_TIMEOUT}" lake build "$MODULE" > "${BUILD_LOG}" 2>&1 || BUILD_RC=$?' scripts/pre-commit-lean-build.sh
 run_check "INVARIANT" rg -n -U 'if \[ "\$\{BUILD_RC\}" -eq 124 \]; then\n        BUILD_ERRORS=\$\(\(BUILD_ERRORS \+ 1\)\)' scripts/pre-commit-lean-build.sh
 run_check "INVARIANT" rg -n -U 'elif \[ "\$\{BUILD_RC\}" -ne 0 \]; then\n        BUILD_ERRORS=\$\(\(BUILD_ERRORS \+ 1\)\)' scripts/pre-commit-lean-build.sh
