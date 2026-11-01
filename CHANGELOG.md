@@ -1,3 +1,64 @@
+## v0.36.185 — WS-ZA ZA6.22: a cancelled fault IPC retires the fault
+
+Security fix. Found while auditing the capability-only dispatch's census.
+
+- **The defect.** Every cancellation restore cleared a thread's IPC fields
+  but not its fault record. A fault-blocked thread whose fault IPC was
+  cancelled (the fault endpoint deleted, the handler suspended, the reply
+  revoked) returned to `.ready` still carrying `pendingFault`.
+  - Its next ordinary Call was answered through the reply seam's fault
+    branch (`threadHasPendingFault`). For an unknown-syscall or
+    user-exception fault, the server it called could set its PC, stack
+    pointer, link register and `x0`–`x7`, or abandon it to `.Inactive`.
+    For a VM or capability fault, the reply rewound it to the old fault
+    window.
+  - A later `tcbResume` rewound it the same way.
+  - Across cores, after a remote suspend left the thread resident on its
+    old core, a resume on a third core wrote the restart frame into it.
+    That core's save then overwrote the frame, after the record had
+    already been cleared.
+- **The fix, following seL4's `cancelIPC`, which resets `tcbFault`.**
+  - The shared clear `TCB.restoredToReady` now retires `pendingFault`.
+    This covers every `restoreToReadyStaging` caller: `cancelIpcBlocking`'s
+    arms, the in-place cancels and the suspend's reclaim.
+  - The endpoint walk's `cancelledEndpointWaiterTcb` retires it too.
+  - The suspend keeps the record only for a fault-suspended thread, as
+    seL4's `suspend` keeps `tcbFault` outside `cancelIPC`.
+  - `ipcFaultSend` is left as it is: it is read only together with the
+    record, and the next blocking send rewrites it.
+- **The resume.** `retirePendingFaultForResume` writes the restart frame
+  only into a thread that no core holds resident. For a thread some core
+  holds, it retires the record alone (`discardPendingFault`).
+  `retirePendingFaultForResume_savedRegsKeptOffCore` proves the write is
+  confined.
+- **The guard.**
+  - New invariant `SystemState.faultRecordParked`: a fault record is held
+    only by a thread blocked on a call or a reply, or `.Inactive`.
+  - Every cancellation restore keeps it
+    (`faultRecordParked_restoreToReadyStaging`).
+  - A cancelled thread carries no fault
+    (`threadHasPendingFault_restoreToReadyStaging`).
+  - Under the invariant, a thread blocked on nothing and not `.Inactive`
+    carries no fault (`threadHasPendingFault_eq_false_of_faultRecordParked`).
+  - Carrying the invariant from boot across every committing entry is
+    registered debt (`docs/REGISTERED_DEBT.md`).
+- **Proofs adjusted to the wider clear.**
+  - The resume's restore is inert only on a thread carrying no fault, so
+    `resumeThreadOnCore_preserves_ipcInvariantFull` takes that fact, and
+    the `.tcbResume` arm supplies it from the retire
+    (`retirePendingFaultForResume_noFault`).
+  - The endpoint walk's cancel is read as three stores.
+  - The restore's shape lemmas are stated over `TCB.restoredToReady`.
+- **Tests.** The fault suite's `runCancelledFaultChecks` cancels a delivered
+  faulter and checks that the reply can no longer take the fault branch. It
+  also resumes a faulted thread that another core holds and checks that no
+  restart frame is written.
+- **Plan.** `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` gains ZA6.22.
+  The rows after it move up one (ZA6.22 to ZA6.34 become ZA6.23 to ZA6.35),
+  and the citations in the plans, the spec, the claim index,
+  `WORKSTREAM_CONTEXT.md`, `docs/REGISTERED_DEBT.md`, the Lean docstrings and
+  `trap.rs` follow.
+
 ## v0.36.184 — WS-ZA ZA6.21: every core's resident thread has a TCB
 
 Proofs only.
