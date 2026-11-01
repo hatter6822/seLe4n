@@ -403,7 +403,10 @@ syndrome words (`ESR_EL1`, `FAR_EL1`) — three scalars; the fault window
 `SPSR_EL1` are decoded from the one published trap context
 (`faultEntryFrame?`), read once.  Reads the deployment labeling context,
 atomically commits `faultEntryStep` against the live kernel state, then fires
-the cross-core SGIs the diff surfaced — the same read-context / read-frame /
+the cross-core SGIs the diff surfaced and a `.reschedule` SGI at every core
+whose flag the residency settle raised (WS-ZA ZA6.10: a resident this entry
+released, queued on another core, wakes that core —
+`PriorityInheritance.pokeReleasedResident`) — the same read-context / read-frame /
 commit / fire-SGIs shape `syscallDispatchCrossCoreEntry` has, and for the
 same reason: the context read is a pure read of a boot-installed value, so it
 need not be inside the commit closure, while the delivery must be.  An entry
@@ -447,7 +450,8 @@ the per-core `lean_ready` gate — when `dispatch_svc` rejects the syscall
 number, instead of publishing an `invalidSyscallNumber` error frame: the
 thread is delivered to its fault handler as seL4's `UnknownSyscall`, or
 suspended fail-closed.  Same three scalars and the same one-frame decode as
-`lean_handle_fault`; the syscall number rides in the window's `x7`. -/
+`lean_handle_fault`; the syscall number rides in the window's `x7`.  It fires
+the same SGIs, the delivery's and the residency settle's (WS-ZA ZA6.10). -/
 @[export lean_handle_unknown_syscall]
 def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
@@ -509,8 +513,10 @@ core resumes — the faulting thread, whose `ELR_EL1` still names the FP/SIMD
 instruction, so it re-executes with its own FP state.  On `.retry` nothing is
 loaded and the restore leaves the trap armed, so the thread traps again until the
 core holding its live values has released them.  On a core that runs a thread
-nothing here schedules, so no SGI is fired and no successor is chosen
-(`fpAccessEntryStep_scheduler`).
+the step schedules nothing (`fpAccessEntryStep_scheduler`); the only SGI the
+entry fires is the residency settle's (WS-ZA ZA6.10), at a core whose flag the
+settle raised because this entry released a resident queued there
+(`PriorityInheritance.pokeReleasedResident`).
 
 **`v0.36.40`**: on a core another core has vacated, the step dispatches a
 successor (`PriorityInheritance.dispatchVacatedCore`), so the restore has

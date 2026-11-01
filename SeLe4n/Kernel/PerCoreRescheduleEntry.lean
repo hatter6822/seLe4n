@@ -139,7 +139,10 @@ Atomically runs the verified `perCoreRescheduleStep` against the live kernel
 state (committing `handleRescheduleSgiOnCore`'s result) **through the bracket
 this core declares** (**WS-RR RR7.39** / **WS-LS LS2.2** — `rescheduleBracket`:
 the object-store table write lock and this core's run-queue write lock, with
-`perCoreRescheduleStep_coversWrites` as the record's proof field), then records
+`perCoreRescheduleStep_coversWrites` as the record's proof field), fires a
+`.reschedule` SGI at every core whose flag the residency settle raised
+(**WS-ZA ZA6.10**: a resident this entry released, queued on another core,
+wakes that core — `PriorityInheritance.pokeReleasedResident`), then records
 the thread that step left running on this core in the HAL's per-core mirror
 (**WS-RR RR7.26**).  Both reads of the post-state happen inside the one atomic
 step, so the value recorded is the value committed.

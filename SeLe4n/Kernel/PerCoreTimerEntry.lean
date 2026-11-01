@@ -142,7 +142,9 @@ clock** (the flag is definitionally the `machine.timer` delta —
 `perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot drift
 from the model on any arm; PR #880 follow-up closing the invocation-coupled
 residual), then fires a `.reschedule` SGI at every core whose flag the step
-raised.  See the module docstring. -/
+raised, or the residency settle raised (WS-ZA ZA6.10: a resident this core's
+entry released, queued on another core, wakes that core —
+`PriorityInheritance.pokeReleasedResident`).  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
   -- **WS-ZA ZA6.1**: the raw id is decoded once, here; an id naming no core
