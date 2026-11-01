@@ -43,7 +43,7 @@ so here the thread the consumed time is for and the thread whose registers are
 written are one thread, with no correction needed (ZA6.6's `setConsumed` writes
 the yielder by construction).
 
-Until the yieldTo invocation (ZA6.17) sets a link, no thread has one, and the
+Until the yieldTo invocation (ZA6.20) sets a link, no thread has one, and the
 step is the identity (`activateThreadOnCore_of_unlinked`). -/
 
 namespace SeLe4n.Kernel

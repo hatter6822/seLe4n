@@ -4318,6 +4318,18 @@ run_check "INVARIANT" rg -n '^theorem saveCapturedSyscallFrame_saves_resident($|
 run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+# WS-ZA ZA6.14: the saved-register census -- every thread current or resident on
+# a core other than the executing one keeps its saved registers -- composes
+# through the later step's currentKept and residentKept, and the executing
+# core's own writes name a thread no other core holds.
+run_check "INVARIANT" rg -n -U '^def savedRegsKeptOffCore \(e : CoreId\) \(pre post : SystemState\) : Prop :=\n  ∀ d, d ≠ e → ∀ t, \(post\.scheduler\.currentOnCore d = some t ∨\n      post\.machine\.residentOnCore d = some t\) →\n    post\.savedRegs t = pre\.savedRegs t$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n -U '^theorem savedRegsKeptOffCore_trans \{e : CoreId\} \{a b c : SystemState\}\n    \(h₁ : savedRegsKeptOffCore e a b\) \(h₂ : savedRegsKeptOffCore e b c\)\n    \(hK : currentKeptOffCore e b c\) \(hR : residentKeptOffCore e b c\) :$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem savedRegsKeptOffCore_trans_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem savedRegsKeptOffCore_of_writes($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem offCoreFree_of_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem stageCallerReturnFor_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem saveOutgoingContextOnCore_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
