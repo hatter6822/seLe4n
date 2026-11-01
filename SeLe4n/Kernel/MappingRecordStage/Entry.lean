@@ -140,7 +140,9 @@ theorem settleResidencyOnCore_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (PriorityInheritance.settleResidencyOnCore st c) := by
   unfold PriorityInheritance.settleResidencyOnCore
   exact ((dispatchVacatedCore_mappingStage st c).trans
-    (deferResidentElsewhere_mappingStage _ c)).trans (MappingStage.of_objects_eq rfl)
+    (deferResidentElsewhere_mappingStage _ c)).trans
+    ((MappingStage.of_objects_eq rfl).trans
+      (MappingStage.of_objects_eq (PriorityInheritance.pokeReleasedResident_objects _ _ _ _)))
 
 theorem settleResidencyAt_mappingStage (st : SystemState) (coreId : UInt64) :
     MappingStage st (PriorityInheritance.settleResidencyAt st coreId) := by

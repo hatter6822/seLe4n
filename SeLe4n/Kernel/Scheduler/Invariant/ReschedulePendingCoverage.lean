@@ -119,6 +119,115 @@ theorem currentKeptOffCore_of_eq {e : CoreId} {pre post : SystemState}
     currentKeptOffCore e pre post :=
   fun c hc _ ht => (h c hc).symm.trans ht
 
+/-- WS-ZA ZA6.10: **the step makes no thread resident on a remote core**: every
+core other than the executing core `e` keeps its resident thread or loses it.
+A core's resident thread (`MachineState.residentOnCore`) is recorded only by
+that core's own residency settle at its entry's tail; a final delete's core
+release only clears one.  With `currentKeptOffCore` this is the cross-core
+frame that keeps a remote core's resident thread one the pre-state already
+held there. -/
+def residentKeptOffCore (e : CoreId) (pre post : SystemState) : Prop :=
+  ∀ c, c ≠ e → ∀ t, post.machine.residentOnCore c = some t →
+    pre.machine.residentOnCore c = some t
+
+theorem residentKeptOffCore_refl (e : CoreId) (st : SystemState) : residentKeptOffCore e st st :=
+  fun _ _ _ h => h
+
+theorem residentKeptOffCore_trans {e : CoreId} {a b d : SystemState}
+    (h₁ : residentKeptOffCore e a b) (h₂ : residentKeptOffCore e b d) : residentKeptOffCore e a d :=
+  fun c hc t h => h₁ c hc t (h₂ c hc t h)
+
+/-- The register-bank and FP-owner writes leave the residency record alone
+(`resident_frame` closes the record's equation through them by `simp`). -/
+@[simp] theorem MachineState.setRegsOnCore_residentCode (ms : MachineState) (c : CoreId)
+    (v : RegisterFile) : (ms.setRegsOnCore c v).residentCode = ms.residentCode := rfl
+@[simp] theorem MachineState.modifyRegsOnCore_residentCode (ms : MachineState) (c : CoreId)
+    (f : RegisterFile → RegisterFile) :
+    (ms.modifyRegsOnCore c f).residentCode = ms.residentCode := rfl
+@[simp] theorem MachineState.setFpOwnerOnCore_residentCode (ms : MachineState) (c : CoreId)
+    (t? : Option SeLe4n.ThreadId) : (ms.setFpOwnerOnCore c t?).residentCode = ms.residentCode := rfl
+
+/-- The idle dispatch and the idle fallback write a register bank and core
+slots, never a residency record. -/
+@[simp] theorem dispatchIdleOnCore_residentCode (st : SystemState) (c : CoreId) :
+    (dispatchIdleOnCore st c).machine.residentCode = st.machine.residentCode := by
+  simp [dispatchIdleOnCore]
+
+@[simp] theorem idleFallbackOnCore_residentCode (st : SystemState) (c : CoreId) :
+    (idleFallbackOnCore st c).machine.residentCode = st.machine.residentCode := by
+  unfold idleFallbackOnCore; split
+  · exact dispatchIdleOnCore_residentCode st c
+  · rfl
+
+@[simp] theorem saveOutgoingContextOnCore_residentCode (st : SystemState) (c : CoreId) :
+    (saveOutgoingContextOnCore st c).machine.residentCode = st.machine.residentCode := by
+  unfold saveOutgoingContextOnCore; split
+  · rfl
+  · rw [SystemState.updateTcb_machine]
+
+/-- A step that keeps every core's residency record keeps it. -/
+theorem residentKeptOffCore_of_eq {e : CoreId} {pre post : SystemState}
+    (h : post.machine.residentCode = pre.machine.residentCode) :
+    residentKeptOffCore e pre post :=
+  fun _ _ _ ht => by unfold MachineState.residentOnCore at ht ⊢; rw [← h]; exact ht
+
+/-- The object writes set no core's resident thread (`resident_frame`), through
+any run-queue, key-hook or reschedule-flag write around them. -/
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  (simp [SystemState.rewriteObject_machine, SystemState.updateTcb_machine,
+    SystemState.updateSchedContext_machine]; done))
+
+/-- ...and through the branches of a step's body, case by case. -/
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  ((repeat' split) <;> (simp [SystemState.rewriteObject_machine, SystemState.updateTcb_machine,
+    SystemState.updateSchedContext_machine]) <;> done))
+
+@[simp] theorem sliceExpireOnCore_residentCode (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    (sliceExpireOnCore st c tid tcb hTcb).machine.residentCode = st.machine.residentCode := by
+  simp [sliceExpireOnCore, SystemState.rewriteObject_machine]
+
+/-- Closes `post.machine = pre.machine` along a chain of writes that keep the
+machine: each step is a write named in the context's successful-step
+hypotheses (`h : op … st = .ok …`) or a write the goal names, its own machine
+equation composed by transitivity.  The arm files register their writes'
+equations with further `macro_rules`. -/
+syntax "machine_chain" : tactic
+
+macro_rules | `(tactic| machine_chain) => `(tactic| rfl)
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine Eq.trans (by assumption) ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeObject_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (markKeyChangeFrom_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (markKeyChangeFor_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (SystemState.updateTcb_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (SystemState.updateSchedContext_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (SystemState.rewriteObject_machine _ _ _ _).trans ?_; machine_chain))
+
+/-- ...and along a chain of machine-keeping writes (`machine_chain`). -/
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  (apply congrArg MachineState.residentCode; machine_chain))
+
+/-- Closes `residentKeptOffCore e pre post` for a step that writes no core's
+residency record (`resident_frame` on the record's equation). -/
+macro "resident_kept" : tactic =>
+  `(tactic| first
+    | exact residentKeptOffCore_refl _ _
+    | exact residentKeptOffCore_of_eq (by resident_frame))
+
+/-- Recording the executing core's resident thread keeps every other core's. -/
+theorem residentKeptOffCore_of_setResidentOnCore {e : CoreId} {pre post : SystemState}
+    {t? : Option SeLe4n.ThreadId} (h : post.machine = pre.machine.setResidentOnCore e t?) :
+    residentKeptOffCore e pre post :=
+  fun c hc _ ht => by
+    rw [h, MachineState.residentOnCore_setResidentOnCore_ne _ e c _ (Ne.symm hc)] at ht; exact ht
+
 /-! ### Composition laws -/
 
 theorem schedKeyNotWeakened_refl (st : SystemState) (t : SeLe4n.ThreadId) :
@@ -1450,22 +1559,25 @@ theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TC
 
 /-! ### Steps that cover by frame -/
 
-/-- A step covers, lowers no remote flag and makes no thread current on a
-remote core: the unit the arm proofs chain. -/
+/-- A step covers, lowers no remote flag and makes no thread current or
+resident on a remote core: the unit the arm proofs chain. -/
 structure stepCovers (e : CoreId) (pre post : SystemState) : Prop where
   covers : reschedulePendingCovers e pre post
   mono : reschedulePendingMonotone e pre post
   /-- WS-ZA ZA6.8: the cross-core frame of the current slots. -/
   currentKept : currentKeptOffCore e pre post
+  /-- WS-ZA ZA6.10: the cross-core frame of the residency records. -/
+  residentKept : residentKeptOffCore e pre post
 
 theorem stepCovers_refl (e : CoreId) (st : SystemState) : stepCovers e st st :=
   ⟨reschedulePendingCovers_refl e st, reschedulePendingMonotone_refl e st,
-    currentKeptOffCore_refl e st⟩
+    currentKeptOffCore_refl e st, residentKeptOffCore_refl e st⟩
 
 theorem stepCovers_trans {e : CoreId} {a b d : SystemState}
     (h₁ : stepCovers e a b) (h₂ : stepCovers e b d) : stepCovers e a d :=
   ⟨reschedulePendingCovers_trans h₁.1 h₂.1 h₂.2,
-   reschedulePendingMonotone_trans h₁.2 h₂.2, currentKeptOffCore_trans h₁.3 h₂.3⟩
+   reschedulePendingMonotone_trans h₁.2 h₂.2, currentKeptOffCore_trans h₁.3 h₂.3,
+   residentKeptOffCore_trans h₁.4 h₂.4⟩
 
 theorem stepCovers_of_eq {e : CoreId} {pre post : SystemState} (h : post = pre) :
     stepCovers e pre post := h ▸ stepCovers_refl e pre
@@ -1477,10 +1589,11 @@ theorem stepCovers_of_frame {e : CoreId} {pre post : SystemState}
     (hElig : ∀ t, budgetEligibleView post t = budgetEligibleView pre t)
     (hRq : ∀ c, c ≠ e → ∀ t, post.queuedOn c t = true → pre.queuedOn c t = true)
     (hCur : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
-    (hMono : reschedulePendingMonotone e pre post) :
+    (hMono : reschedulePendingMonotone e pre post)
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre post :=
   ⟨reschedulePendingCovers_of_frame hView hElig (fun c hc => Or.inr ⟨hRq c hc, hCur c hc⟩), hMono,
-    currentKeptOffCore_of_eq hCur⟩
+    currentKeptOffCore_of_eq hCur, residentKeptOffCore_of_eq hRes⟩
 
 /-- The common shape: the scheduler is unchanged but for the flags, which only
 rise. -/
@@ -1488,11 +1601,13 @@ theorem stepCovers_of_scheduler_eq_except_reschedule {e : CoreId} {pre post : Sy
     (hKeys : keyInputsEq pre post)
     (hSched : post.scheduler =
       { pre.scheduler with reschedulePending := post.scheduler.reschedulePending })
-    (hMono : reschedulePendingMonotone e pre post) :
+    (hMono : reschedulePendingMonotone e pre post)
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre post :=
   stepCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
     (budgetEligibleView_eq_of_keyInputsEq hKeys)
     (fun c _ t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht) (fun c _ => by rw [hSched]; rfl) hMono
+    hRes
 
 theorem reschedulePendingMonotone_of_scheduler_eq {e : CoreId} {pre post : SystemState}
     (h : post.scheduler = pre.scheduler) : reschedulePendingMonotone e pre post :=
@@ -1500,10 +1615,23 @@ theorem reschedulePendingMonotone_of_scheduler_eq {e : CoreId} {pre post : Syste
 
 /-- A scheduler-silent step moving no key input covers. -/
 theorem stepCovers_of_scheduler_eq {e : CoreId} {pre post : SystemState}
-    (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler) :
+    (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler)
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre post :=
   stepCovers_of_scheduler_eq_except_reschedule hKeys (by rw [hSched])
-    (reschedulePendingMonotone_of_scheduler_eq hSched)
+    (reschedulePendingMonotone_of_scheduler_eq hSched) hRes
+
+/-- A scheduler-silent step moving no key input and no remote residency record
+covers: the residency settle's record on the executing core. -/
+theorem stepCovers_of_scheduler_eq_residentKept {e : CoreId} {pre post : SystemState}
+    (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler)
+    (hResK : residentKeptOffCore e pre post) :
+    stepCovers e pre post :=
+  ⟨reschedulePendingCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
+    (budgetEligibleView_eq_of_keyInputsEq hKeys)
+    (fun c _ => Or.inr ⟨fun t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht, by rw [hSched]⟩),
+   reschedulePendingMonotone_of_scheduler_eq hSched,
+   currentKeptOffCore_of_eq fun c _ => by rw [hSched], hResK⟩
 
 /-- **A key write on `tid` followed by the key hook covers**: the write moved no
 other key input, did not make `tid` budget-eligible, every remote core is
@@ -1516,7 +1644,8 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
     (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
       ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
-    (hMono : reschedulePendingMonotone e pre mid) (hKept : currentKeptOffCore e pre mid) :
+    (hMono : reschedulePendingMonotone e pre mid) (hKept : currentKeptOffCore e pre mid)
+    (hResK : residentKeptOffCore e pre mid := by resident_kept) :
     stepCovers e pre (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) :=
   ⟨markKeyChangeFor_covers hPre (fun _ ht => schedKeyView_eq_of_keyInputsEqExcept hKeys ht)
     (fun _ _ _ t _ => by
@@ -1525,7 +1654,8 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
       · exact candidacyNotGained_of_eq (budgetEligibleView_eq_of_keyInputsEqExcept hKeys ht).symm)
     hSlots,
    fun c hc h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ (hMono c hc h),
-   fun c hc t ht => hKept c hc t (by rwa [markKeyChangeFor_currentOnCore] at ht)⟩
+   fun c hc t ht => hKept c hc t (by rwa [markKeyChangeFor_currentOnCore] at ht),
+   fun c hc t ht => hResK c hc t (by rwa [markKeyChangeFor_machine] at ht)⟩
 
 /-! ### The coverage reads what the chooser reads
 

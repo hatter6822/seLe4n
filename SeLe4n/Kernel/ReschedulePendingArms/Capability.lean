@@ -117,8 +117,10 @@ theorem cdtRecord_keyFrame (stM : SystemState) (src dst : CSpaceAddr)
   capabilityKeyFrame_of_withCdt_linkReach (SystemState.cdtAddChild_reach stM src dst kind) hObjInv
 
 theorem capabilityKeyFrame.stepCovers {e : CoreId} {st st' : SystemState}
-    (h : capabilityKeyFrame st st') : stepCovers e st st' :=
-  stepCovers_of_scheduler_eq h.1 h.2.1
+    (h : capabilityKeyFrame st st')
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
+    stepCovers e st st' :=
+  stepCovers_of_scheduler_eq h.1 h.2.1 hRes
 
 theorem cspaceDeleteSlot_keyInputsEq (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)

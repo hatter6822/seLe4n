@@ -1599,6 +1599,74 @@ def deferResidentElsewhere (st : SystemState) (c : CoreId) : SystemState :=
     else st
   | none => st
 
+/-- WS-ZA ZA6.10: **a resident released by core `c`'s settle wakes the core
+that queued it.**  `oldCode` is the thread code (`ThreadId.optCode`) of `c`'s
+resident before the settle and `newCode` the one the settle records.  When the
+settle moves the record off a thread `t` — `c` has now entered the kernel, and
+the entry's save (`Architecture.saveVacatedFrameOnCore`) wrote `t`'s live
+registers into its TCB — and `t` sits on another core `q`'s run queue (its
+links name `q`, `TCB.runCoreCode`), `q` may have passed `t` over while it was
+resident here (`deferResidentElsewhere`), so `q`'s scheduling decision is
+stale: its reschedule flag is raised, and the entry's flag-derived SGIs poke
+it, as every cross-core wake does.  seL4 never reaches the deferral (its
+`remoteTCBStall` holds the remote core's registers in the TCB before another
+core can choose the thread); this is the poke that keeps the deferral from
+costing `q` its idle thread's whole time slice.  The identity otherwise.  Read
+off codes and the thread's own TCB, so it builds nothing. -/
+def pokeReleasedResident (st : SystemState) (c : CoreId) (oldCode newCode : Nat) : SystemState :=
+  if oldCode = 0 ∨ oldCode = newCode then st
+  else
+    match st.getTcb? ⟨oldCode - 1⟩ with
+    | some tcb =>
+      if h : 0 < tcb.runCoreCode ∧ tcb.runCoreCode - 1 < Concurrency.numCores ∧
+          tcb.runCoreCode - 1 ≠ c.val then
+        st.markReschedulePendingOnCore ⟨tcb.runCoreCode - 1, h.2.1⟩
+      else st
+    | none => st
+
+/-- The poke writes one reschedule flag, if any, and nothing else. -/
+theorem pokeReleasedResident_cases (st : SystemState) (c : CoreId) (oldCode newCode : Nat) :
+    pokeReleasedResident st c oldCode newCode = st ∨
+      ∃ q, q ≠ c ∧ pokeReleasedResident st c oldCode newCode = st.markReschedulePendingOnCore q := by
+  unfold pokeReleasedResident
+  split
+  · exact Or.inl rfl
+  · split
+    · split
+      · rename_i h
+        exact Or.inr ⟨_, fun hq => h.2.2 (congrArg Fin.val hq ▸ rfl), rfl⟩
+      · exact Or.inl rfl
+    · exact Or.inl rfl
+
+@[simp] theorem pokeReleasedResident_machine (st : SystemState) (c : CoreId) (o n : Nat) :
+    (pokeReleasedResident st c o n).machine = st.machine := by
+  rcases pokeReleasedResident_cases st c o n with h | ⟨q, -, h⟩ <;> rw [h]; rfl
+
+@[simp] theorem pokeReleasedResident_objects (st : SystemState) (c : CoreId) (o n : Nat) :
+    (pokeReleasedResident st c o n).objects = st.objects := by
+  rcases pokeReleasedResident_cases st c o n with h | ⟨q, -, h⟩ <;> rw [h]; rfl
+
+/-- The poke keeps the scheduler but for one raised flag. -/
+theorem pokeReleasedResident_scheduler (st : SystemState) (c : CoreId) (o n : Nat) :
+    (pokeReleasedResident st c o n).scheduler =
+      { st.scheduler with
+        reschedulePending := (pokeReleasedResident st c o n).scheduler.reschedulePending } := by
+  rcases pokeReleasedResident_cases st c o n with h | ⟨q, -, h⟩ <;> rw [h]; rfl
+
+@[simp] theorem pokeReleasedResident_currentOnCore (st : SystemState) (c d : CoreId) (o n : Nat) :
+    (pokeReleasedResident st c o n).scheduler.currentOnCore d = st.scheduler.currentOnCore d := by
+  rw [pokeReleasedResident_scheduler]; rfl
+
+/-- The poke lowers no flag. -/
+theorem pokeReleasedResident_flag_mono (st : SystemState) (c d : CoreId) (o n : Nat)
+    (h : st.scheduler.reschedulePendingOnCore d = true) :
+    (pokeReleasedResident st c o n).scheduler.reschedulePendingOnCore d = true := by
+  rcases pokeReleasedResident_cases st c o n with e | ⟨q, -, e⟩ <;> rw [e]
+  · exact h
+  · by_cases hq : q = d
+    · subst hq; simp [SystemState.markReschedulePendingOnCore]
+    · simp [SystemState.markReschedulePendingOnCore, hq, h]
+
 /-- **PR #904 review (`v0.36.41`): settle what core `c` resumes, and record it.**
 
 The last step of every state-committing entry, after its transition and before
@@ -1612,14 +1680,17 @@ its restore target is read:
 3. the thread the core will resume at EL0 becomes its resident thread
    (`MachineState.residentOnCore`), and a core resuming its idle loop or nothing
    holds none — which is what the next exception's save reads when a remote
-   deschedule has emptied the slot (`Architecture.saveVacatedFrameOnCore`). -/
+   deschedule has emptied the slot (`Architecture.saveVacatedFrameOnCore`);
+4. a thread the record releases that another core has queued wakes that core
+   (`pokeReleasedResident`, WS-ZA ZA6.10). -/
 def settleResidencyOnCore (st : SystemState) (c : CoreId) : SystemState :=
   let st2 := deferResidentElsewhere (dispatchVacatedCore st c) c
   let resident : Option SeLe4n.ThreadId :=
     match Architecture.restoreTargetOnCore st2 c with
     | .user .. => st2.scheduler.currentOnCore c
     | _ => none
-  { st2 with machine := st2.machine.setResidentOnCore c resident }
+  pokeReleasedResident { st2 with machine := st2.machine.setResidentOnCore c resident } c
+    (st2.machine.residentCode.get c) (SeLe4n.ThreadId.optCode resident)
 
 /-- The code of the thread `settleResidencyOnCore` records as core `c`'s
 resident: read in a call of its own, so the settled state is not held while
@@ -1640,7 +1711,9 @@ as its code before the machine is rewritten, so the write finds the state
 exclusive and stores a scalar. -/
 def settleResidencyOnCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
   let st2 := deferResidentElsewhere (dispatchVacatedCore st c) c
-  writeResidentCode st2 c (settledResidentCode st2 c)
+  let oldCode := st2.machine.residentCode.get c
+  let code := settledResidentCode st2 c
+  pokeReleasedResident (writeResidentCode st2 c code) c oldCode code
 
 @[csimp] theorem settleResidencyOnCore_eq_impl :
     @settleResidencyOnCore = @settleResidencyOnCoreImpl := by
@@ -1664,6 +1737,37 @@ theorem settleResidencyOnCore_resident (st : SystemState) (c : CoreId) :
       | .user .. => (deferResidentElsewhere (dispatchVacatedCore st c) c).scheduler.currentOnCore c
       | _ => none := by
   simp [settleResidencyOnCore]
+
+/-- The settle writes no current slot: its scheduler is the deferral's, with at
+most one flag raised (`pokeReleasedResident`). -/
+@[simp] theorem settleResidencyOnCore_currentOnCore (st : SystemState) (c d : CoreId) :
+    (settleResidencyOnCore st c).scheduler.currentOnCore d =
+      (deferResidentElsewhere (dispatchVacatedCore st c) c).scheduler.currentOnCore d := by
+  simp only [settleResidencyOnCore, pokeReleasedResident_currentOnCore]
+
+/-- The settle records core `c`'s resident alone: every other core keeps the
+deferral's record. -/
+theorem settleResidencyOnCore_residentOnCore_ne (st : SystemState) (c d : CoreId) (h : c ≠ d) :
+    (settleResidencyOnCore st c).machine.residentOnCore d =
+      (deferResidentElsewhere (dispatchVacatedCore st c) c).machine.residentOnCore d := by
+  simp only [settleResidencyOnCore, pokeReleasedResident_machine]
+  exact MachineState.residentOnCore_setResidentOnCore_ne _ c d _ h
+
+/-- The settle's record and poke write the machine's residency slot and one
+reschedule flag: the store, the run queues, the current slots, the reference
+tables and the release slots are the deferral's. -/
+theorem settleResidencyOnCore_frame (st : SystemState) (c : CoreId) :
+    let y := deferResidentElsewhere (dispatchVacatedCore st c) c
+    let m := settleResidencyOnCore st c
+    m.objects = y.objects ∧ m.scheduler.runQueue = y.scheduler.runQueue ∧
+      m.scheduler.runQueueEnds = y.scheduler.runQueueEnds ∧
+      m.scheduler.currentCode = y.scheduler.currentCode ∧
+      m.referenceTables = y.referenceTables ∧
+      m.scheduler.releaseSlots = y.scheduler.releaseSlots := by
+  intro y m
+  simp only [m, settleResidencyOnCore, pokeReleasedResident]
+  repeat' split
+  all_goals exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **No thread runs on two cores**: a non-idle thread the core is left running
 after the deferral is resident on no other core. -/

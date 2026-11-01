@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Lifecycle.Invariant.CleanupReservation
+import SeLe4n.Kernel.SlotConfinement.MemoryArms
 
 /-!
 # The checked dispatcher's own arms cover
@@ -82,6 +83,297 @@ theorem revokeServiceByRecordedRegistration_keyFrame {epId : SeLe4n.ObjId} {st s
   obtain ⟨_, h⟩ := revokeServiceByRecordedRegistration_revokeService h
   exact revokeService_keyFrame hInv h
 
+/-! ### The dispatch's writes keep the machine
+
+What `resident_frame` reads through the dispatch arms' writes
+(`machine_chain`): each keeps the machine, so no core's residency record moves. -/
+
+theorem storeTcbWith_machine (st : SystemState) (id : SeLe4n.ObjId) (f : TCB → TCB) :
+    (st.storeTcbWith id f).machine = st.machine := by
+  unfold SystemState.storeTcbWith
+  split
+  · split
+    · rfl
+    · split
+      · rename_i h; exact storeObject_machine_eq _ _ _ _ h
+      · rfl
+  · rfl
+
+theorem threadSlotCopied_machine (st : SystemState) (tid : SeLe4n.ThreadId) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) :
+    (threadSlotCopied st tid slot srcCNode srcSlot rights).machine = st.machine := by
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights with ⟨-, e⟩ | ⟨cap, -, e⟩ <;>
+    rw [e] <;>
+    simp [threadSlotCleared, storeTcbWith_machine, SystemState.updateTcb_machine]
+
+theorem setThreadFaultHandlerOp_machine_eq {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {cptr : SeLe4n.CPtr} (hStep : setThreadFaultHandlerOp st vtid cptr = .ok st') :
+    st'.machine = st.machine := by
+  cases hT : st.getTcb? vtid.val with
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
+  | some tcb =>
+      cases hR : resolveFaultHandlerCPtr st tcb cptr with
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
+      | ok tgt =>
+          rw [setThreadFaultHandlerOp_ok_eq st vtid cptr tcb tgt hT hR] at hStep
+          cases hStep
+          rfl
+
+theorem setConsumed_machine (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    (setConsumed st s t).machine = st.machine := by
+  unfold setConsumed
+  split <;> simp [SystemState.updateTcb_machine, SystemState.updateSchedContext_machine]
+
+theorem cancelYieldFrom_machine (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (cancelYieldFrom st s).machine = st.machine := by
+  unfold cancelYieldFrom
+  repeat' split
+  all_goals simp [SystemState.updateTcb_machine, SystemState.updateSchedContext_machine]
+
+theorem completeYieldFrom_machine (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (completeYieldFrom st s).machine = st.machine := by
+  unfold completeYieldFrom
+  repeat' split
+  all_goals first | rfl | rw [cancelYieldFrom_machine, setConsumed_machine]
+
+theorem storeUnbindNotification_machine (st : SystemState) (t : SeLe4n.ThreadId)
+    (n : SeLe4n.ObjId) : (storeUnbindNotification st t n).machine = st.machine := by
+  simp [storeUnbindNotification, SystemState.modifyObject, SystemState.updateTcb_machine]
+
+theorem bindNotification_machine_eq {st st' : SystemState} {nid : SeLe4n.ObjId}
+    {tcbId : SeLe4n.ThreadId} (hStep : bindNotification nid tcbId st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold bindNotification at hStep
+  split at hStep
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · contradiction
+      · split at hStep
+        · contradiction
+        · rename_i hStore1
+          split at hStep
+          · contradiction
+          · rename_i hStore2
+            cases hStep
+            rw [storeObject_machine_eq _ _ _ _ hStore2, storeObject_machine_eq _ _ _ _ hStore1]
+  · split at hStep <;> contradiction
+
+theorem unbindNotification_machine_eq {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
+    (hStep : unbindNotification tcbId st = .ok ((), st')) : st'.machine = st.machine := by
+  unfold unbindNotification at hStep
+  split at hStep
+  · contradiction
+  · split at hStep
+    · contradiction
+    · split at hStep
+      · contradiction
+      · rename_i hStore1
+        split at hStep
+        · split at hStep
+          · contradiction
+          · rename_i hStore2
+            cases hStep
+            rw [storeObject_machine_eq _ _ _ _ hStore2, storeObject_machine_eq _ _ _ _ hStore1]
+        · cases hStep
+          exact storeObject_machine_eq _ _ _ _ hStore1
+
+theorem pageTableMap_machine_eq {tableId rootId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState} (hStep : Architecture.pageTableMap tableId rootId vaddr st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  obtain ⟨_, _, _, _, -, -, -, -, -, -, hS1, hS2⟩ :=
+    Architecture.pageTableMap_ok tableId rootId vaddr st st' hStep
+  rw [storeObject_machine_eq _ _ _ _ hS2, Architecture.recordPhysicalWrites_machine,
+    storeObject_machine_eq _ _ _ _ hS1]
+
+theorem pageTableUnmap_machine_eq {tableId : SeLe4n.ObjId} {st st' : SystemState}
+    (hStep : Architecture.pageTableUnmap tableId st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold Architecture.pageTableUnmap at hStep
+  cases hT : st.getPageTable? tableId with
+  | none => rw [hT] at hStep; cases hStep
+  | some table =>
+    rw [hT] at hStep
+    simp only at hStep
+    cases hI : table.installedIn with
+    | none => rw [hI] at hStep; cases hStep; rfl
+    | some inst =>
+      rw [hI] at hStep
+      simp only at hStep
+      cases hR : st.getVSpaceRoot? inst.root with
+      | none => rw [hR] at hStep; exact storeObject_machine_eq _ _ _ _ hStep
+      | some root =>
+        rw [hR] at hStep
+        simp only at hStep
+        split at hStep
+        · split at hStep
+          · cases hStep
+          · cases hS1 : storeObject tableId _ st with
+            | error e => rw [hS1] at hStep; cases hStep
+            | ok p =>
+              obtain ⟨⟨⟩, st1⟩ := p
+              rw [hS1] at hStep
+              rw [storeObject_machine_eq _ _ _ _ hStep, Architecture.recordPhysicalWrites_machine,
+                storeObject_machine_eq _ _ _ _ hS1]
+        · exact storeObject_machine_eq _ _ _ _ hStep
+
+theorem revokeServiceByRecordedRegistration_machine_eq {epId : SeLe4n.ObjId} {st st' : SystemState}
+    (h : revokeServiceByRecordedRegistration epId st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  obtain ⟨_, h⟩ := revokeServiceByRecordedRegistration_revokeService h
+  exact revokeService_preserves_machine _ _ _ h
+
+theorem mintReplyCapWithCdt_machine_eq {st st' : SystemState} {src dst : CSpaceAddr}
+    (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) : st'.machine = st.machine := by
+  unfold mintReplyCapWithCdt at hStep
+  split at hStep
+  · contradiction
+  · rename_i stM hMint
+    cases hStep
+    rw [SystemState.cdtAddChild_machine]
+    unfold mintReplyCap at hMint
+    split at hMint
+    · contradiction
+    · rename_i parent stMid hLk
+      have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src parent hLk
+      subst hMid
+      split at hMint
+      · dsimp only [] at hMint
+        split at hMint
+        · exact cspaceInsertSlot_preserves_machine _ _ _ _ hMint
+        · contradiction
+      · contradiction
+
+theorem untypedResetFromCap_machine_eq {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
+    {st st' : SystemState} (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
+  rw [untypedResetSlot_ok_frame hS, setCapFreeIndex_machine]
+
+theorem releaseFinalRegistration_machine (target : Nat) (st : SystemState) :
+    (releaseFinalRegistration target st).machine = st.machine := by
+  unfold releaseFinalRegistration
+  repeat' split
+  all_goals first | rfl | (rename_i h; exact revokeService_preserves_machine _ _ _ h)
+
+theorem cspaceMint_machine_eq {st st' : SystemState} {src dst : CSpaceAddr}
+    {rights : AccessRightSet} {badge : Option SeLe4n.Badge}
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) : st'.machine = st.machine := by
+  unfold cspaceMint at hStep
+  split at hStep
+  · contradiction
+  · rename_i parent stMid hLk
+    have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src parent hLk
+    subst hMid
+    split at hStep
+    · contradiction
+    · split at hStep
+      · contradiction
+      · exact cspaceInsertSlot_preserves_machine _ _ _ _ hStep
+
+theorem cspaceMintWithCdt_machine_eq {st st' : SystemState} {src dst : CSpaceAddr}
+    {rights : AccessRightSet} {badge : Option SeLe4n.Badge}
+    (hStep : cspaceMintWithCdt src dst rights badge st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  obtain ⟨_, stM, hMint, -, -, rfl⟩ := cspaceMintWithCdt_ok_decompose hStep
+  rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine, cspaceMint_machine_eq hMint]
+
+theorem cspaceCopy_machine_eq {st st' : SystemState} {src dst : CSpaceAddr}
+    (hStep : cspaceCopy src dst st = .ok ((), st')) : st'.machine = st.machine := by
+  obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine,
+    cspaceInsertSlot_preserves_machine _ _ _ _ hIns]
+
+theorem cspaceMove_machine_eq {st st' : SystemState} {src dst : CSpaceAddr}
+    (hStep : cspaceMove src dst st = .ok ((), st')) : st'.machine = st.machine := by
+  unfold cspaceMove at hStep
+  split at hStep
+  · contradiction
+  · split at hStep
+    · contradiction
+    · rename_i cap stMid hLk
+      have hMid : stMid = st := cspaceLookupSlot_state_eq st stMid src cap hLk
+      subst hMid
+      split at hStep
+      · contradiction
+      · split at hStep
+        · contradiction
+        · rename_i st2 hIns
+          split at hStep
+          · contradiction
+          · rename_i st3 hDel
+            cases hStep
+            rw [SystemState.cdtMove_machine,
+              (cspaceDeleteSlotCore_scheduler_machine src st2 st3 hDel).2,
+              cspaceInsertSlot_preserves_machine _ _ _ _ hIns]
+
+theorem retirePendingFaultForResume_machine (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (retirePendingFaultForResume st tid).machine = st.machine := by
+  unfold retirePendingFaultForResume
+  repeat' split
+  all_goals simp [applyFaultRestart_machine_eq]
+
+theorem vspaceMapFromFrameCap_machine_eq {tid : SeLe4n.ThreadId} {ec : CoreId}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
+    (h : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) : st'.machine = st.machine := by
+  obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid ec args st st' h
+  obtain ⟨_, _, _, _, hStore⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  exact (storeObject_machine_eq _ _ _ _ hStore).trans
+    ((tagFrameMapping_scheduler_machine _ _ _ st1 st2 epoch hT).2.trans
+      (vspaceMapPageCheckedWithShootdownFromStatePerCore_framed _ _ _ _ _ st st1 hMap).2)
+
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq {ec : CoreId}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
+    (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) : st'.machine = st.machine :=
+  (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed ec asid vaddr st st' h).2
+
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (completeYieldFrom_machine _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeUnbindNotification_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Architecture.writeReturnFrameToTcb_machine_eq _ _ _).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (bindNotification_machine_eq (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (unbindNotification_machine_eq (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (pageTableMap_machine_eq (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (pageTableUnmap_machine_eq (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (revokeServiceByRecordedRegistration_machine_eq (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (vspaceMapFromFrameCap_machine_eq (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine
+    (vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq (by assumption)).trans ?_;
+   machine_chain))
+
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (threadSlotCopied_machine _ _ _ _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (setThreadFaultHandlerOp_machine_eq (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (setIPCBufferOp_machine_eq _ _ _ _ (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (setConsumed_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (SystemState.cancelYieldTo_machine _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (clearWokenReceiverStash_machine_eq _ _ _ (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbWith_machine _ _ _).trans ?_; machine_chain))
+
 /-- The declassified signal covers: the bound signal, then the audit records,
 which touch the trail alone. -/
 theorem notificationSignalDeclassifiedOnCore_stepCovers (e : CoreId)
@@ -119,8 +411,10 @@ theorem notificationSignalDeclassifiedOnCore_stepCovers (e : CoreId)
 
 /-- A key frame covers and keeps the store invariant. -/
 theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
-    (h : capabilityKeyFrame st st') : SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
-  ⟨h.stepCovers, h.2.2⟩
+    (h : capabilityKeyFrame st st')
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
+    SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
+  ⟨h.stepCovers hRes, h.2.2⟩
 
 /-- Coverage composes, the invariant read off the second leg. -/
 theorem stepCoversInv_trans {e : CoreId} {a b d : SystemState} (h₁ : stepCovers e a b)
@@ -243,7 +537,8 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
   refine ⟨⟨fun c _ => .inr ⟨fun t ht => ⟨(hQ c t) ▸ ht, ?_⟩, by rw [hS],
       fun t _ kq hq => ⟨kq, ((hView t kq hq).symm.trans hq), Nat.le_refl _, Nat.le_refl _, rfl⟩⟩,
     reschedulePendingMonotone_of_scheduler_eq hS,
-    currentKeptOffCore_of_eq fun c _ => by rw [hS]⟩,
+    currentKeptOffCore_of_eq fun c _ => by rw [hS],
+    residentKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2])⟩,
     (retireFinalObject_frame ec target recorder st hObjInv).1⟩
   unfold SystemState.queuedOn at ht
   cases hx : (retireFinalObject ec target recorder st).getTcb? t with
@@ -364,7 +659,8 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     (hAbs : pre.objects[X]? = none)
     (hUnq : ∀ c (t : SeLe4n.ThreadId), t.toObjId = X → post.queuedOn c t = false)
     (hSched : post.scheduler = pre.scheduler)
-    (hBi : schedContextBindingBidirectional pre) (hPlaced : placedThreadsHaveTcbs pre) :
+    (hBi : schedContextBindingBidirectional pre) (hPlaced : placedThreadsHaveTcbs pre)
+    (hRes : post.machine.residentCode = pre.machine.residentCode) :
     stepCovers e pre post := by
   have hKeyNe : ∀ t, t.toObjId ≠ X → schedKeyView post t = schedKeyView pre t := by
     intro t ht
@@ -373,7 +669,8 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq, hAbs] at hSo; cases hSo
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
-    fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched]⟩
+    fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched],
+    residentKeptOffCore_of_eq hRes⟩
   · have hne : t.toObjId ≠ X := fun hEq => by rw [hUnq c t hEq] at ht; cases ht
     refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
       candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
@@ -386,6 +683,19 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
     rw [hEq, hAbs] at hTo; cases hTo
 
+/-- The carve writes objects, the CDT and frame memory, no residency record. -/
+theorem untypedRetypeObject_residentCode {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
+    {req : CarveRequest} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    st'.machine.residentCode = st.machine.residentCode := by
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+    untypedRetypeObject_ok_decompose src dst childId req st st' hInv h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hStUt, hStCh, _, hStIdx⟩ :=
+    retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hInv hRt
+  rw [SystemState.cdtAddChild_machine, cspaceInsertSlot_preserves_machine _ _ _ _ hIns,
+    CarveRequest.scrub_residentCode, storeObject_machine_eq _ _ _ _ hStIdx,
+    storeObject_machine_eq _ _ _ _ hStCh, storeObject_machine_eq _ _ _ _ hStUt]
+
 /-- **The carve covers** (WS-ZA ZA5.4 part 14), for every kind it makes: the
 child's slot was empty and the object stored there is queued nowhere — a carved
 TCB is inactive with empty links — and no other key input moved. -/
@@ -397,7 +707,8 @@ theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨hFrame, hAbs, hUnq, hSched, hInv'⟩ :=
     untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
-  exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced, hInv'⟩
+  exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced
+    (untypedRetypeObject_residentCode hInv h), hInv'⟩
 
 /-! ### The finalising destroyers -/
 
@@ -428,7 +739,8 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
     stepCovers_of_keys_sched (keyInputsEq_trans hF1.1 hK) hS
   exact stepCovers_trans h1
     ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
-      _ t hI2, enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _⟩
+      _ t hI2, enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _,
+      residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
 
 /-- WS-ZA ZA5.4 part 24: **a thread's endpoint cancel covers**: the removal
 (`endpointQueueRemoveDual_keyFrame`, through `queueRemove_inPlace`) and the
@@ -456,7 +768,9 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
   stepCovers_trans (cancelIpcBlocking_stepCovers e st t tcb hInv)
     ⟨enqueueRunnableOnCore_covers e _ _ t
       (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv),
-     enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _⟩
+     enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _,
+     residentKeptOffCore_of_eq (by
+       unfold wakeCancelledWaiter; rw [enqueueRunnableOnCore_machineEq])⟩
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
@@ -505,8 +819,15 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
         (f := finalisedSuspendMark) (fun _ => rfl) d.2).stepCoversInv)
     (fun s t h => by
       have hO := finaliseThreadReleaseCores_objects s t
-      refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq hO)
-        (finaliseThreadReleaseCores_scheduler s t)), ?_⟩
+      refine ⟨stepCovers_trans h.1 (stepCovers_of_scheduler_eq_residentKept
+        (keyInputsEq_of_objects_eq hO) (finaliseThreadReleaseCores_scheduler s t)
+        (fun c _ u hU => by
+          rw [finaliseThreadReleaseCores_machine] at hU
+          unfold MachineState.releaseThread at hU
+          rw [MachineState.releaseThreadOnCores_residentOnCore] at hU
+          split at hU
+          · cases hU
+          · exact hU)), ?_⟩
       rw [hO]; exact h.2)
     (fun s s1 x _ _ r h _ _ hR _ hS _ _ _ _ => by
       have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
@@ -530,16 +851,18 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
         exact ⟨stepCovers_trans h1 (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).1,
           (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).2⟩)
     (fun s _ _ tid _ h _ _ e => e ▸
-      stepCoversInv_trans h.1 (updateTcb_keyFrame s tid (f := TCB.stashCleared) (fun _ => rfl)
-        h.2).stepCoversInv)
+      stepCoversInv_trans h.1 ((updateTcb_keyFrame s tid (f := TCB.stashCleared) (fun _ => rfl)
+        h.2).stepCoversInv (hRes := by rw [SystemState.updateTcb_machine])))
     ⟨fun s t h => ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched
         (keyInputsEq_of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield s t h.2))
-        (SystemState.cancelYieldTo_scheduler s t)),
+        (SystemState.cancelYieldTo_scheduler s t)
+        (hRes := by rw [SystemState.cancelYieldTo_machine])),
         SystemState.cancelYieldTo_preserves_objects_invExt _ _ h.2⟩,
      fun s c h => ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched
         (keyInputsEq_of_objectsAgreeOffYield
           (SystemState.completeYieldFrom_objectsAgreeOffYield s c h.2))
-        (SystemState.completeYieldFrom_scheduler s c)),
+        (SystemState.completeYieldFrom_scheduler s c)
+        (hRes := by rw [completeYieldFrom_machine])),
         SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2⟩⟩
     target st ⟨stepCovers_refl e st, hInv⟩
 
@@ -564,7 +887,12 @@ theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr
       (fun _ _ _ hs hR => revokeService_preserves_finalisingDeleteBundle hs hR)
       (slotRetireTarget st addr.cnode addr.slot) st2
       (cspaceDeleteSlotTeardown_preserves_finalisingDeleteBundle hB hD hF))
-  exact stepCoversInv_trans (stepCovers_trans h2.stepCovers h3.1)
+  have hM2 : (releaseFinalRegistration (slotRetireTarget st addr.cnode addr.slot) st2).machine =
+      st.machine := by
+    rw [releaseFinalRegistration_machine,
+      (finaliseDestroyedCapabilities_framed ec _ _ st1 st2 hF).2,
+      (cspaceDeleteSlot_scheduler_machine addr st st1 hD).2]
+  exact stepCoversInv_trans (stepCovers_trans (h2.stepCovers (hRes := by rw [hM2])) h3.1)
     (retireFinalObject_stepCovers e ec _ _ _ h3.2 hB3.1.1 hB3.2)
 
 /-- What the delete loops carry: coverage from the start state, and the bundle
@@ -661,13 +989,16 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
+        (hRes := by rw [mintReplyCapWithCdt_machine_eq h])
     | exact (untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv
+        (hRes := by rw [untypedResetFromCap_machine_eq h])
     | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceRootOnlyWrite_keyFrame
         (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
+        (hRes := by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1])
     | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
     | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
@@ -677,19 +1008,24 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | (cases h; rename_i hU
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
-           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv)
+           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
+             (hRes := by rw [Architecture.writeReturnFrameToTcb_machine_eq]))
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
+            (hRes := by rw [unbindNotification_machine_eq hU])
         | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU)
-        | exact stepCoversInv_trans (retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
+        | exact stepCoversInv_trans ((retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
+              (hRes := by rw [retirePendingFaultForResume_machine]))
             (resumeThreadOnCore_stepCovers _ _ _ _ _
               (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU)
         | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
+            (hRes := by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU])
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
+            (hRes := by rw [setThreadFaultHandlerOp_machine_eq hU])
         | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ hB hU)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
@@ -713,14 +1049,17 @@ theorem stepCovers_clearStash_stage {e : CoreId} {st s st' : SystemState}
     (hStage : ∀ x, x.objects.invExt → capabilityKeyFrame x (stage x))
     (h : (match clearWokenReceiverStash woken? s with
       | .error e => .error e
-      | .ok ((), s') => .ok ((), stage s')) = (.ok ((), st') : Except KernelError (Unit × SystemState))) :
+      | .ok ((), s') => .ok ((), stage s')) = (.ok ((), st') : Except KernelError (Unit × SystemState)))
+    (hStageM : ∀ x, (stage x).machine.residentCode = x.machine.residentCode := by
+      intro x; resident_frame) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   split at h
   · cases h
   · rename_i s3 hClr
     cases h
     have hF := clearWokenReceiverStash_keyFrame woken? hInv hClr
-    exact stepCoversInv_trans (stepCovers_trans hS hF.stepCovers) (hStage _ hF.2.2).stepCoversInv
+    exact stepCoversInv_trans (stepCovers_trans hS hF.stepCovers)
+      ((hStage _ hF.2.2).stepCoversInv (hRes := hStageM _))
 
 /-- The two badge stagings a signal arm ends with. -/
 theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
@@ -766,7 +1105,9 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · cases hA
       refine stepCoversInv_trans (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl) ?_
       apply capabilityKeyFrame.stepCoversInv
-      exact writeReturnFrameToTcb_keyFrame _ _ _ (by exact hInv)
+      all_goals first
+        | exact writeReturnFrameToTcb_keyFrame _ _ _ (by exact hInv)
+        | rw [Architecture.writeReturnFrameToTcb_machine_eq]
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
@@ -812,6 +1153,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       dsimp only at h
       split at h
       · exact (cspaceMintWithCdt_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv
+          (hRes := by rw [cspaceMintWithCdt_machine_eq h])
       · cases h
   case none.cspaceCopy.object cnodeId =>
     repeat' split at h
@@ -820,6 +1162,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     dsimp only at h
     split at h
     · exact (cspaceCopy_keyFrame _ _ _ _ hInv h).stepCoversInv
+        (hRes := by rw [cspaceCopy_machine_eq h])
     · cases h
   case none.cspaceMove.object cnodeId =>
     repeat' split at h
@@ -828,6 +1171,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     dsimp only at h
     split at h
     · exact (cspaceMove_keyFrame _ _ _ _ hInv h).stepCoversInv
+        (hRes := by rw [cspaceMove_machine_eq h])
     · cases h
   case none.serviceRegister.object epId =>
     repeat' split at h
@@ -835,6 +1179,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold registerServiceChecked at h
     split at h
     · exact (registerService_keyFrame hInv h).stepCoversInv
+        (hRes := by rw [registerService_preserves_machine _ _ _ h])
     · cases h
   case none.notificationSignal.object notifId =>
     split at h
@@ -973,6 +1318,6 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     (fun t ht c => hAwayCur t ht c)
     h
-  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3⟩, hD.2⟩
+  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3, hD.1.4⟩, hD.2⟩
 
 end SeLe4n.Kernel

@@ -241,22 +241,25 @@ theorem recordResidentThenActivate_runQueueEntryStage (st : SystemState) (c : Co
       (PriorityInheritance.deferResidentElsewhere (PriorityInheritance.dispatchVacatedCore st c) c)
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c) := by
   have A := (activateThreadOnCore_runQueueStage (PriorityInheritance.settleResidencyOnCore st c) c).entry
+  obtain ⟨hO, hQ, hE, hC, hT, hS⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
   refine SystemState.RunQueueEntryStage.of_frameThen
-    (m := PriorityInheritance.settleResidencyOnCore st c) rfl rfl rfl rfl rfl rfl A fun h r =>
-    ⟨(A.1.live h (SystemState.runQueueRefined_of_frame
-      (fun c t => SystemState.runLinkOn_of_objects rfl c t) rfl rfl r)).unset, fun d tid hR => ?_⟩
+    (m := PriorityInheritance.settleResidencyOnCore st c) hO hQ hE hC hT hS A fun h r =>
+    ⟨fun k hk => by
+      rw [← hO]
+      exact (A.1.live (hO ▸ h) (SystemState.runQueueRefined_of_frame
+        (fun c t => SystemState.runLinkOn_of_objects hO c t) hQ hE r)).unset k hk,
+      fun d tid hR => ?_⟩
   rw [activateThreadOnCore_residentOnCore] at hR
   by_cases hd : d = c
   · rw [hd] at hR
     exact Or.inr (objYieldCodes_fst_zero_of_getTcb? fun t hT =>
-      activateThreadOnCore_settle_unlinkedOnCore st c h tid t
+      activateThreadOnCore_settle_unlinkedOnCore st c (hO ▸ h) tid t
         (Or.inr (by rw [activateThreadOnCore_residentOnCore]; exact hR)) hT)
   · refine Or.inl ?_
     have e : (PriorityInheritance.settleResidencyOnCore st c).machine.residentOnCore d =
         (PriorityInheritance.deferResidentElsewhere
-          (PriorityInheritance.dispatchVacatedCore st c) c).machine.residentOnCore d := by
-      simp only [PriorityInheritance.settleResidencyOnCore]
-      exact MachineState.residentOnCore_setResidentOnCore_ne _ _ _ _ (Ne.symm hd)
+          (PriorityInheritance.dispatchVacatedCore st c) c).machine.residentOnCore d :=
+      PriorityInheritance.settleResidencyOnCore_residentOnCore_ne st c d (Ne.symm hd)
     rw [← e]; exact hR
 
 /-- **Residency settlement and the activation**: the vacated core's dispatch,

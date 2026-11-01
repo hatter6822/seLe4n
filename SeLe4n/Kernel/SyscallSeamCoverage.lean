@@ -136,8 +136,20 @@ theorem deferResidentElsewhere_coversWrites (S : LockSet) (e : CoreId) (st : Sys
     · exact footprintCoversWrites_refl S st
   · exact footprintCoversWrites_refl S st
 
+/-- A step that writes only reschedule-pending flags, on any core, is covered by
+every footprint: no clause of the coverage reads the flags (the cross-core
+poke raises another core's flag as the KSC-1 accumulator's remote write). -/
+theorem footprintCoversWrites_of_objects_reschedule_eq (S : LockSet) {st st' : SystemState}
+    {flags : PerCoreFlags}
+    (hObj : st'.objects = st.objects)
+    (hSched : st'.scheduler = { st.scheduler with reschedulePending := flags }) :
+    footprintCoversWrites S st st' :=
+  ⟨fun _ oid _ => by rw [hObj], fun d _ => by rw [hSched]; exact ⟨rfl, rfl, rfl⟩,
+   fun d _ => by rw [hSched]; rfl⟩
+
 /-- The residency settling: the dispatch and the deferral are scheduling points
-on the executing core, and the residency record is a machine write. -/
+on the executing core, the residency record is a machine write, and the poke of
+the released thread's queue core writes only that core's reschedule flag. -/
 theorem settleResidencyOnCore_coversWrites (S : LockSet) (e : CoreId) (st : SystemState)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
     (hRun : (LockKey.runQueue e, AccessMode.write) ∈ S.pairs) :
@@ -146,7 +158,10 @@ theorem settleResidencyOnCore_coversWrites (S : LockSet) (e : CoreId) (st : Syst
   exact footprintCoversWrites_trans S
     (footprintCoversWrites_trans S (dispatchVacatedCore_coversWrites S e st hTable hRun)
       (deferResidentElsewhere_coversWrites S e _ hTable hRun))
-    (footprintCoversWrites_of_objects_scheduler_eq S rfl rfl)
+    (footprintCoversWrites_trans S (footprintCoversWrites_of_objects_scheduler_eq S rfl rfl)
+      (footprintCoversWrites_of_objects_reschedule_eq S
+        (PriorityInheritance.pokeReleasedResident_objects _ _ _ _)
+        (PriorityInheritance.pokeReleasedResident_scheduler _ _ _ _)))
 
 /-- WS-ZA ZA6.7: **the activation is covered by every footprint naming the table
 write lock.**  It writes the executing core's current thread and the context its

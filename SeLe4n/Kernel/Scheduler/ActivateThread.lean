@@ -541,12 +541,7 @@ theorem activateThreadOnCore_settle_unlinkedOnCore (st : SystemState) (c : CoreI
   rcases hR with h | h
   · exact h
   · rw [activateThreadOnCore_residentOnCore, PriorityInheritance.settleResidencyOnCore_resident] at h
-    rw [activateThreadOnCore_scheduler]
-    have hS : (PriorityInheritance.settleResidencyOnCore st c).scheduler =
-        (PriorityInheritance.deferResidentElsewhere
-          (PriorityInheritance.dispatchVacatedCore st c) c).scheduler := by
-      simp [PriorityInheritance.settleResidencyOnCore]
-    rw [hS]
+    rw [activateThreadOnCore_scheduler, PriorityInheritance.settleResidencyOnCore_currentOnCore]
     split at h
     · exact h
     · cases h
