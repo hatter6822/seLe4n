@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "backup/za54-part61",
-      "commit_sha": "f371160d1e28788b565b4670417b0b6363405c26",
-      "tree_sha": "e2bd056d95a9fda433a042dccaac9fe431747b5a",
-      "committed_at_utc": "2026-11-01T06:40:13+00:00"
+      "branch": "backup/za54-part62",
+      "commit_sha": "cb16cfec5fd1deb2503ef90a428c66ef8292e3be",
+      "tree_sha": "46ff0d4f947bcb686969c31e7a9c8d514674181b",
+      "committed_at_utc": "2026-11-01T09:18:09+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3684e0e7ae8ea6b3ee0a8a602cce8a256618d6439b3178a5ed79de4854bd7e6d"
+    "source_digest": "ecc5564c9ef9c1fa60f4480b5ab11af110bdcbe770e91289220904d6adcac33e"
   },
   "summary": {
-    "module_count": 568,
-    "declaration_count": 32184
+    "module_count": 569,
+    "declaration_count": 32217
   },
   "readme_sync": {
     "version": "0.36.174",
     "lean_toolchain": "v4.28.0",
-    "production_files": 498,
-    "production_loc": 549003,
+    "production_files": 499,
+    "production_loc": 549416,
     "test_files": 70,
-    "test_loc": 88117,
-    "proved_theorem_lemma_decls": 20906,
+    "test_loc": 88173,
+    "proved_theorem_lemma_decls": 20932,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -77186,7 +77186,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Runtime",
       "path": "SeLe4n/Kernel/Concurrency/Runtime.lean",
-      "declaration_count": 114,
+      "declaration_count": 119,
       "declarations": [
         {
           "kind": "def",
@@ -77975,7 +77975,7 @@
           "kind": "def",
           "name": "stallChangedOver",
           "full_name": "SeLe4n.Kernel.Concurrency.stallChangedOver",
-          "line": 911,
+          "line": 913,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -77986,7 +77986,7 @@
           "kind": "def",
           "name": "stallChangedCores",
           "full_name": "SeLe4n.Kernel.Concurrency.stallChangedCores",
-          "line": 923,
+          "line": 925,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -77998,7 +77998,7 @@
           "kind": "theorem",
           "name": "stallChangedOver_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.stallChangedOver_eq",
-          "line": 926,
+          "line": 928,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -78010,7 +78010,7 @@
           "kind": "theorem",
           "name": "stallChangedCores_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.stallChangedCores_eq",
-          "line": 942,
+          "line": 944,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -78022,9 +78022,75 @@
         },
         {
           "kind": "def",
+          "name": "stallsOn",
+          "full_name": "SeLe4n.Kernel.Concurrency.stallsOn",
+          "line": 956,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.numCores",
+            "SeLe4n.Model.SchedulerState",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentCode_get",
+          "full_name": "SeLe4n.Kernel.Concurrency.currentCode_get",
+          "line": 961,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Model.SchedulerState",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.ThreadId.optCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stallsOn_of_taken",
+          "full_name": "SeLe4n.Kernel.Concurrency.stallsOn_of_taken",
+          "line": 967,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.currentCode_get",
+            "SeLe4n.Kernel.Concurrency.numCores",
+            "SeLe4n.Kernel.Concurrency.stallsOn",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.optCode",
+            "SeLe4n.ThreadId.optCode_injective"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stallsOn_of_unchanged",
+          "full_name": "SeLe4n.Kernel.Concurrency.stallsOn_of_unchanged",
+          "line": 980,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.numCores",
+            "SeLe4n.Kernel.Concurrency.stallsOn",
+            "SeLe4n.Model.SchedulerState",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "stallsOn_self",
+          "full_name": "SeLe4n.Kernel.Concurrency.stallsOn_self",
+          "line": 986,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.numCores",
+            "SeLe4n.Kernel.Concurrency.stallsOn",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "shootdownAckRound",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownAckRound",
-          "line": 966,
+          "line": 1008,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Platform.FFI.ffiShootdownAckRound"
@@ -78034,7 +78100,7 @@
           "kind": "def",
           "name": "shootdownAckedGeneration",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownAckedGeneration",
-          "line": 973,
+          "line": 1015,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Platform.FFI.ffiShootdownAckedGeneration"
@@ -78044,7 +78110,7 @@
           "kind": "def",
           "name": "shootdownAllAckedForRound",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownAllAckedForRound",
-          "line": 986,
+          "line": 1028,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound"
@@ -78054,7 +78120,7 @@
           "kind": "def",
           "name": "shootdownSelfServiceRound",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound",
-          "line": 1001,
+          "line": 1043,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Platform.FFI.ffiShootdownSelfServiceRound"
@@ -78064,7 +78130,7 @@
           "kind": "def",
           "name": "shootdownRoundLockTryAcquire",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownRoundLockTryAcquire",
-          "line": 1010,
+          "line": 1052,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire"
           ]
@@ -78073,7 +78139,7 @@
           "kind": "def",
           "name": "shootdownAllocateRoundGeneration",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownAllocateRoundGeneration",
-          "line": 1036,
+          "line": 1078,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownAllocateRoundGeneration"
           ]
@@ -78082,7 +78148,7 @@
           "kind": "def",
           "name": "shootdownRoundLockRelease",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownRoundLockRelease",
-          "line": 1047,
+          "line": 1089,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease"
           ]
@@ -78091,7 +78157,7 @@
           "kind": "def",
           "name": "fatalHalt",
           "full_name": "SeLe4n.Kernel.Concurrency.fatalHalt",
-          "line": 1055,
+          "line": 1097,
           "called": [
             "SeLe4n.Platform.FFI.ffiFatalHalt"
           ]
@@ -78100,7 +78166,7 @@
           "kind": "def",
           "name": "fatalHaltAll",
           "full_name": "SeLe4n.Kernel.Concurrency.fatalHaltAll",
-          "line": 1061,
+          "line": 1103,
           "called": [
             "SeLe4n.Platform.FFI.ffiFatalHaltAll"
           ]
@@ -78109,7 +78175,7 @@
           "kind": "def",
           "name": "shootdownWaitAllAcked",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownWaitAllAcked",
-          "line": 1068,
+          "line": 1110,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked"
@@ -78119,7 +78185,7 @@
           "kind": "def",
           "name": "shootdownOnlineMask",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownOnlineMask",
-          "line": 1086,
+          "line": 1128,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownOnlineMask"
           ]
@@ -78128,7 +78194,7 @@
           "kind": "def",
           "name": "coreOnlineInMask",
           "full_name": "SeLe4n.Kernel.Concurrency.coreOnlineInMask",
-          "line": 1090,
+          "line": 1132,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId"
           ]
@@ -78137,7 +78203,7 @@
           "kind": "def",
           "name": "shootdownCoreOnline",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownCoreOnline",
-          "line": 1096,
+          "line": 1138,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.coreOnlineInMask",
@@ -78148,7 +78214,7 @@
           "kind": "theorem",
           "name": "shootdownCoreOnline_eq_mask_test",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownCoreOnline_eq_mask_test",
-          "line": 1103,
+          "line": 1145,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.coreOnlineInMask",
@@ -78160,7 +78226,7 @@
           "kind": "def",
           "name": "tlbiLocalFullFlush",
           "full_name": "SeLe4n.Kernel.Concurrency.tlbiLocalFullFlush",
-          "line": 1127,
+          "line": 1169,
           "called": [
             "SeLe4n.Platform.FFI.ffiTlbiAll"
           ]
@@ -78169,7 +78235,7 @@
           "kind": "def",
           "name": "shootdownPublishBegin",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownPublishBegin",
-          "line": 1134,
+          "line": 1176,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownPublishBegin"
           ]
@@ -78178,7 +78244,7 @@
           "kind": "def",
           "name": "shootdownPublishSlot",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownPublishSlot",
-          "line": 1140,
+          "line": 1182,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownPublishSlot"
           ]
@@ -78187,7 +78253,7 @@
           "kind": "def",
           "name": "shootdownPublishCommit",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownPublishCommit",
-          "line": 1149,
+          "line": 1191,
           "called": [
             "SeLe4n.Platform.FFI.ffiShootdownPublishCommit"
           ]
@@ -78196,7 +78262,7 @@
           "kind": "theorem",
           "name": "shootdownAckRound_eq_ffi",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownAckRound_eq_ffi",
-          "line": 1155,
+          "line": 1197,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.shootdownAckRound",
@@ -78207,7 +78273,7 @@
           "kind": "theorem",
           "name": "shootdownSelfServiceRound_eq_ffi",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound_eq_ffi",
-          "line": 1162,
+          "line": 1204,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.shootdownSelfServiceRound",
@@ -78218,7 +78284,7 @@
           "kind": "theorem",
           "name": "shootdownAck_ffi_core_in_range",
           "full_name": "SeLe4n.Kernel.Concurrency.shootdownAck_ffi_core_in_range",
-          "line": 1173,
+          "line": 1215,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores"
@@ -78228,14 +78294,14 @@
           "kind": "def",
           "name": "perCoreStatsRefused",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsRefused",
-          "line": 1184,
+          "line": 1226,
           "called": []
         },
         {
           "kind": "def",
           "name": "perCoreStatsSelect",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect",
-          "line": 1200,
+          "line": 1242,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsPlausible",
@@ -78246,7 +78312,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_irqs",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_irqs",
-          "line": 1209,
+          "line": 1251,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsSelect"
@@ -78256,7 +78322,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_timerTicks",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_timerTicks",
-          "line": 1212,
+          "line": 1254,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsSelect"
@@ -78266,7 +78332,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_sgis",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_sgis",
-          "line": 1215,
+          "line": 1257,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsSelect"
@@ -78276,7 +78342,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_syscalls",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_syscalls",
-          "line": 1218,
+          "line": 1260,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsSelect"
@@ -78286,7 +78352,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_plausible",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_plausible",
-          "line": 1221,
+          "line": 1263,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsPlausible",
@@ -78297,7 +78363,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_plausible_iff",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_plausible_iff",
-          "line": 1226,
+          "line": 1268,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsPlausible",
@@ -78309,7 +78375,7 @@
           "kind": "theorem",
           "name": "perCoreStatsSelect_refused",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsSelect_refused",
-          "line": 1232,
+          "line": 1274,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.perCoreStatsRefused",
@@ -78320,7 +78386,7 @@
           "kind": "theorem",
           "name": "perCoreStatsRefused_ne_zero",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsRefused_ne_zero",
-          "line": 1237,
+          "line": 1279,
           "called": [
             "SeLe4n.Kernel.Concurrency.perCoreStatsRefused"
           ]
@@ -78329,7 +78395,7 @@
           "kind": "theorem",
           "name": "perCoreStatsRefused_ne_one",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsRefused_ne_one",
-          "line": 1239,
+          "line": 1281,
           "called": [
             "SeLe4n.Kernel.Concurrency.perCoreStatsRefused"
           ]
@@ -78338,7 +78404,7 @@
           "kind": "def",
           "name": "perCoreStatsComponent",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsComponent",
-          "line": 1246,
+          "line": 1288,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.perCoreStats",
@@ -78349,7 +78415,7 @@
           "kind": "theorem",
           "name": "perCoreStatsComponent_def",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsComponent_def",
-          "line": 1253,
+          "line": 1295,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.perCoreStats",
@@ -78361,7 +78427,7 @@
           "kind": "theorem",
           "name": "perCoreStatsComponent_plausible",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsComponent_plausible",
-          "line": 1258,
+          "line": 1300,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.perCoreStats",
@@ -78373,7 +78439,7 @@
           "kind": "def",
           "name": "perCoreStatsComponentExport",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsComponentExport",
-          "line": 1276,
+          "line": 1318,
           "called": [
             "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
             "SeLe4n.Kernel.Concurrency.perCoreStatsComponent",
@@ -78384,7 +78450,7 @@
           "kind": "theorem",
           "name": "perCoreStatsComponentExport_of_core",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsComponentExport_of_core",
-          "line": 1282,
+          "line": 1324,
           "called": [
             "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?_eq_some",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -78396,7 +78462,7 @@
           "kind": "theorem",
           "name": "perCoreStatsComponentExport_refused",
           "full_name": "SeLe4n.Kernel.Concurrency.perCoreStatsComponentExport_refused",
-          "line": 1290,
+          "line": 1332,
           "called": [
             "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?_eq_none",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -165345,6 +165411,467 @@
             "SeLe4n.ObjId",
             "SeLe4n.ReplyId",
             "SeLe4n.Slot",
+            "SeLe4n.ThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.RemoteSave",
+      "path": "SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean",
+      "declaration_count": 26,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "SeLe4n.Model.SystemState.vacatedHolding",
+          "full_name": "SeLe4n.Model.SystemState.vacatedHolding",
+          "line": 47,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "keptOnCore",
+          "full_name": "SeLe4n.Kernel.keptOnCore",
+          "line": 53,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keptOnCore_refl",
+          "full_name": "SeLe4n.Kernel.keptOnCore_refl",
+          "line": 57,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.keptOnCore",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keptOnCore_trans",
+          "full_name": "SeLe4n.Kernel.keptOnCore_trans",
+          "line": 60,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.keptOnCore",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keptOnCore_of_stepCovers",
+          "full_name": "SeLe4n.Kernel.keptOnCore_of_stepCovers",
+          "line": 66,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.keptOnCore",
+            "SeLe4n.Kernel.stepCovers",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vacatedHolding_of_keptOnCore",
+          "full_name": "SeLe4n.Kernel.vacatedHolding_of_keptOnCore",
+          "line": 72,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.keptOnCore",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.vacatedHolding",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedTrapFrame_saves_resident",
+          "full_name": "SeLe4n.Kernel.saveCapturedTrapFrame_saves_resident",
+          "line": 91,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
+            "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
+            "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore_of_idle",
+            "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore_saves",
+            "SeLe4n.Kernel.Architecture.trapFromEl0",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrame_saves_resident",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrame_saves_resident",
+          "line": 104,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
+            "SeLe4n.Kernel.Architecture.restartAtSvc",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Architecture.saveTrapFrameOnCore_of_idle",
+            "SeLe4n.Kernel.Architecture.saveVacatedFrameOnCore_saves",
+            "SeLe4n.Kernel.Architecture.trapFromEl0",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedTrapFrameAt_saves_resident",
+          "full_name": "SeLe4n.Kernel.saveCapturedTrapFrameAt_saves_resident",
+          "line": 116,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
+            "SeLe4n.Kernel.Architecture.trapFromEl0",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.saveCapturedTrapFrame_saves_resident",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveCapturedSyscallFrameAt_saves_resident",
+          "full_name": "SeLe4n.Kernel.saveCapturedSyscallFrameAt_saves_resident",
+          "line": 127,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
+            "SeLe4n.Kernel.Architecture.restartAtSvc",
+            "SeLe4n.Kernel.Architecture.trapFromEl0",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedSyscallFrameAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_saves_resident",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "SeLe4n.Model.SystemState.holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Model.SystemState.holdsOnlyCurrentOn",
+          "line": 143,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SeLe4n.Model.SystemState.holdsOnlyCurrentOn_of_frame",
+          "full_name": "SeLe4n.Model.SystemState.holdsOnlyCurrentOn_of_frame",
+          "line": 147,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.MachineState",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "settleResidencyOnCore_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.settleResidencyOnCore_holdsOnlyCurrentOn",
+          "line": 158,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore_currentOnCore",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore_resident",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "activateThreadOnCore_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.activateThreadOnCore_holdsOnlyCurrentOn",
+          "line": 168,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.activateThreadOnCore",
+            "SeLe4n.Kernel.activateThreadOnCore_machine_eq_regs",
+            "SeLe4n.Kernel.activateThreadOnCore_scheduler",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn_of_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "entryTailAt_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.entryTailAt_holdsOnlyCurrentOn",
+          "line": 174,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.activateThreadOnCore_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.settleResidencyOnCore_holdsOnlyCurrentOn",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "entryTailAt_cleared_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.entryTailAt_cleared_holdsOnlyCurrentOn",
+          "line": 182,
+          "called": [
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.entryTailAt_holdsOnlyCurrentOn",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn_of_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreTimerTickEntryState_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.perCoreTimerTickEntryState_holdsOnlyCurrentOn",
+          "line": 189,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.entryTailAt_cleared_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.timerTickBracket",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreRescheduleEntryState_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.perCoreRescheduleEntryState_holdsOnlyCurrentOn",
+          "line": 201,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.entryTailAt_cleared_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.rescheduleBracket",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultEntryState_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.faultEntryState_holdsOnlyCurrentOn",
+          "line": 211,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.entryTailAt_cleared_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.faultEntryStep",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unknownSyscallEntryState_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.unknownSyscallEntryState_holdsOnlyCurrentOn",
+          "line": 224,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ExceptionContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedSyscallFrameAt",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.entryTailAt_cleared_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.unknownSyscallEntryStep",
+            "SeLe4n.Model.FaultRegisterWindow",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fpAccessEntryState_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.fpAccessEntryState_holdsOnlyCurrentOn",
+          "line": 236,
+          "called": [
+            "SeLe4n.FpContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
+            "SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt",
+            "SeLe4n.Kernel.PriorityInheritance.settleResidencyAt",
+            "SeLe4n.Kernel.activateThreadAt",
+            "SeLe4n.Kernel.entryTailAt_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.fpAccessEntryStep",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "holdsOnlyCurrentOn_clearLedgers",
+          "full_name": "SeLe4n.Kernel.holdsOnlyCurrentOn_clearLedgers",
+          "line": 246,
+          "called": [
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn_of_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchEntryState_holdsOnlyCurrentOn",
+          "full_name": "SeLe4n.Kernel.syscallDispatchEntryState_holdsOnlyCurrentOn",
+          "line": 253,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.clearUserWords",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords_scheduler",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.activateThreadOnCore_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.holdsOnlyCurrentOn_clearLedgers",
+            "SeLe4n.Kernel.settleResidencyOnCore_holdsOnlyCurrentOn",
+            "SeLe4n.Kernel.syncUserWords_residentCode",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStepWords",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep_of_ok",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn",
+            "SeLe4n.Model.SystemState.holdsOnlyCurrentOn_of_frame",
+            "SeLe4n.Platform.FFI.syscallDispatchFromAbi_total"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "RemoteSaveObligation",
+          "full_name": "SeLe4n.Kernel.RemoteSaveObligation",
+          "line": 307,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
+            "SeLe4n.Kernel.Architecture.trapFromEl0",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.numCores",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.keptOnCore",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.optCode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RemoteSaveObligation.stalled",
+          "full_name": "SeLe4n.Kernel.RemoteSaveObligation.stalled",
+          "line": 329,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.stallsOn",
+            "SeLe4n.Kernel.Concurrency.stallsOn_of_taken",
+            "SeLe4n.Kernel.RemoteSaveObligation",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RemoteSaveObligation.saved",
+          "full_name": "SeLe4n.Kernel.RemoteSaveObligation.saved",
+          "line": 339,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
+            "SeLe4n.Kernel.Architecture.restartAtSvc",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RemoteSaveObligation",
+            "SeLe4n.Kernel.saveCapturedSyscallFrame_saves_resident",
+            "SeLe4n.Kernel.saveCapturedTrapFrame_saves_resident",
+            "SeLe4n.Kernel.vacatedHolding_of_keptOnCore",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.vacatedHolding",
             "SeLe4n.ThreadId"
           ]
         }
@@ -313514,7 +314041,7 @@
           "kind": "def",
           "name": "vacateForAffinityChange",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange",
-          "line": 3969,
+          "line": 3972,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SchedulerState.currentOnCore",
@@ -313528,7 +314055,7 @@
           "kind": "def",
           "name": "requeueVacatedOnNewHome",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome",
-          "line": 3980,
+          "line": 3983,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SchedulerState.markReschedulePendingOnCore",
@@ -313542,7 +314069,7 @@
           "kind": "def",
           "name": "affinityRunningElsewhere",
           "full_name": "SeLe4n.Kernel.affinityRunningElsewhere",
-          "line": 3994,
+          "line": 3997,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Model.SchedulerState",
@@ -313554,7 +314081,7 @@
           "kind": "theorem",
           "name": "affinityRunningElsewhere_eq",
           "full_name": "SeLe4n.Kernel.affinityRunningElsewhere_eq",
-          "line": 4001,
+          "line": 4004,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.affinityRunningElsewhere",
@@ -313568,7 +314095,7 @@
           "kind": "theorem",
           "name": "affinityRunningElsewhere_false",
           "full_name": "SeLe4n.Kernel.affinityRunningElsewhere_false",
-          "line": 4012,
+          "line": 4015,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -313583,7 +314110,7 @@
           "kind": "def",
           "name": "setThreadCpuAffinityWithMigration",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityWithMigration",
-          "line": 4056,
+          "line": 4059,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -313610,7 +314137,7 @@
           "kind": "def",
           "name": "affinityUnbindMarker",
           "full_name": "SeLe4n.Kernel.affinityUnbindMarker",
-          "line": 4095,
+          "line": 4098,
           "called": [
             "SeLe4n.Kernel.Concurrency.numCores"
           ]
@@ -313619,7 +314146,7 @@
           "kind": "def",
           "name": "decodeAffinity",
           "full_name": "SeLe4n.Kernel.decodeAffinity",
-          "line": 4098,
+          "line": 4101,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -313631,7 +314158,7 @@
           "kind": "def",
           "name": "setThreadCpuAffinityOnCore",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityOnCore",
-          "line": 4122,
+          "line": 4125,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -313645,7 +314172,7 @@
           "kind": "def",
           "name": "setThreadCpuAffinityOp",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityOp",
-          "line": 4137,
+          "line": 4140,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -313659,7 +314186,7 @@
           "kind": "theorem",
           "name": "setThreadCpuAffinityOnCore_state_core_independent",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityOnCore_state_core_independent",
-          "line": 4146,
+          "line": 4149,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.setThreadCpuAffinityOnCore",
@@ -313672,7 +314199,7 @@
           "kind": "theorem",
           "name": "setThreadCpuAffinityOp_eq_onCore_state",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityOp_eq_onCore_state",
-          "line": 4156,
+          "line": 4159,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -313687,7 +314214,7 @@
           "kind": "def",
           "name": "nthCoreSome",
           "full_name": "SeLe4n.Kernel.nthCoreSome",
-          "line": 4172,
+          "line": 4175,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId"
           ]
@@ -313696,7 +314223,7 @@
           "kind": "theorem",
           "name": "nthCoreSome_allCoresSome",
           "full_name": "SeLe4n.Kernel.nthCoreSome_allCoresSome",
-          "line": 4177,
+          "line": 4180,
           "called": [
             "SeLe4n.Kernel.Concurrency.numCores",
             "SeLe4n.Kernel.allCoresSome",
@@ -313707,7 +314234,7 @@
           "kind": "def",
           "name": "decodeAffinityK",
           "full_name": "SeLe4n.Kernel.decodeAffinityK",
-          "line": 4190,
+          "line": 4193,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -313721,7 +314248,7 @@
           "kind": "theorem",
           "name": "decodeAffinityK_eq",
           "full_name": "SeLe4n.Kernel.decodeAffinityK_eq",
-          "line": 4196,
+          "line": 4199,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -313735,7 +314262,7 @@
           "kind": "def",
           "name": "setAffinityAdmitted",
           "full_name": "SeLe4n.Kernel.setAffinityAdmitted",
-          "line": 4213,
+          "line": 4216,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -313754,7 +314281,7 @@
           "kind": "def",
           "name": "setAffinityPerform",
           "full_name": "SeLe4n.Kernel.setAffinityPerform",
-          "line": 4231,
+          "line": 4234,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -313774,7 +314301,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_objects",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_objects",
-          "line": 4248,
+          "line": 4251,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313786,7 +314313,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_machine",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_machine",
-          "line": 4253,
+          "line": 4256,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313798,7 +314325,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_getTcb?",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_getTcb?",
-          "line": 4258,
+          "line": 4261,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313812,7 +314339,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_replenishQueueOnCore",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_replenishQueueOnCore",
-          "line": 4264,
+          "line": 4267,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313825,7 +314352,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_replenishQueueOnCore",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_replenishQueueOnCore",
-          "line": 4270,
+          "line": 4273,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.requeueVacatedOnNewHome",
@@ -313840,7 +314367,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_objectsAgreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_objectsAgreeOffRunLinks",
-          "line": 4284,
+          "line": 4287,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.requeueVacatedOnNewHome",
@@ -313854,7 +314381,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_preserves_objects_invExt",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_preserves_objects_invExt",
-          "line": 4294,
+          "line": 4297,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -313868,7 +314395,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_machine",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_machine",
-          "line": 4304,
+          "line": 4307,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.requeueVacatedOnNewHome",
@@ -313880,7 +314407,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_objectsAgreeOffRunLinks",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_objectsAgreeOffRunLinks",
-          "line": 4314,
+          "line": 4317,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313894,7 +314421,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_determineTargetCore",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_determineTargetCore",
-          "line": 4319,
+          "line": 4322,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.determineTargetCore",
@@ -313909,7 +314436,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_getSchedContext?",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_getSchedContext?",
-          "line": 4326,
+          "line": 4329,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313924,7 +314451,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_runQueueOnCore",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_runQueueOnCore",
-          "line": 4333,
+          "line": 4336,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313937,7 +314464,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_runQueueRefined",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_runQueueRefined",
-          "line": 4340,
+          "line": 4343,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -313953,7 +314480,7 @@
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_currentOnCore",
           "full_name": "SeLe4n.Kernel.migrateRunQueueOnAffinityChange_currentOnCore",
-          "line": 4349,
+          "line": 4352,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.migrateRunQueueOnAffinityChange",
@@ -313966,7 +314493,7 @@
           "kind": "theorem",
           "name": "migrateRunQueueOnAffinityChange_queuedOn",
           "full_name": "SeLe4n.Kernel.migrateRunQueueOnAffinityChange_queuedOn",
-          "line": 4362,
+          "line": 4365,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.migrateRunQueueOnAffinityChange",
@@ -313984,7 +314511,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_currentOnCore",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_currentOnCore",
-          "line": 4393,
+          "line": 4396,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.requeueVacatedOnNewHome",
@@ -313997,7 +314524,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_queuedOn_ne",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_queuedOn_ne",
-          "line": 4405,
+          "line": 4408,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.requeueVacatedOnNewHome",
@@ -314012,7 +314539,7 @@
           "kind": "theorem",
           "name": "requeueVacatedOnNewHome_queuedOn_self",
           "full_name": "SeLe4n.Kernel.requeueVacatedOnNewHome_queuedOn_self",
-          "line": 4418,
+          "line": 4421,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.requeueVacatedOnNewHome",
@@ -314027,7 +314554,7 @@
           "kind": "theorem",
           "name": "vacateForAffinityChange_currentOnCore",
           "full_name": "SeLe4n.Kernel.vacateForAffinityChange_currentOnCore",
-          "line": 4435,
+          "line": 4438,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.vacateForAffinityChange",
@@ -314043,7 +314570,7 @@
           "kind": "theorem",
           "name": "setThreadCpuAffinity_getTcb?_view",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinity_getTcb?_view",
-          "line": 4453,
+          "line": 4456,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -314062,7 +314589,7 @@
           "kind": "theorem",
           "name": "affinityChange_placement_of_mid",
           "full_name": "SeLe4n.Kernel.affinityChange_placement_of_mid",
-          "line": 4472,
+          "line": 4475,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.migrateRunQueueOnAffinityChange",
@@ -314089,7 +314616,7 @@
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_ok_shape",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityWithMigration_ok_shape",
-          "line": 4532,
+          "line": 4535,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.SgiKind",
@@ -314116,7 +314643,7 @@
           "kind": "theorem",
           "name": "setThreadCpuAffinityOnCore_of_admitted",
           "full_name": "SeLe4n.Kernel.setThreadCpuAffinityOnCore_of_admitted",
-          "line": 4587,
+          "line": 4590,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -362897,7 +363424,7 @@
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
           "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreEntry_def",
-          "line": 890,
+          "line": 892,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.clearUserWords",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
@@ -362931,7 +363458,7 @@
           "kind": "theorem",
           "name": "vacatedCore_next_syscall_rejected",
           "full_name": "SeLe4n.Kernel.vacatedCore_next_syscall_rejected",
-          "line": 945,
+          "line": 947,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -362947,7 +363474,7 @@
           "kind": "theorem",
           "name": "rescheduleSgisFromFlags_recordSyscallRefusal_eq",
           "full_name": "SeLe4n.Kernel.rescheduleSgisFromFlags_recordSyscallRefusal_eq",
-          "line": 978,
+          "line": 980,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -415268,189 +415795,189 @@
           "kind": "opaque",
           "name": "ffiStallIfChanged",
           "full_name": "SeLe4n.Platform.FFI.ffiStallIfChanged",
-          "line": 321,
+          "line": 324,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownAckRound",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownAckRound",
-          "line": 351,
+          "line": 354,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownAckedGeneration",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownAckedGeneration",
-          "line": 359,
+          "line": 362,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownAllAckedForRound",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound",
-          "line": 368,
+          "line": 371,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownSelfServiceRound",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownSelfServiceRound",
-          "line": 383,
+          "line": 386,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownRoundLockTryAcquire",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownRoundLockTryAcquire",
-          "line": 386,
+          "line": 389,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownAllocateRoundGeneration",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownAllocateRoundGeneration",
-          "line": 398,
+          "line": 401,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownRoundLockRelease",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease",
-          "line": 418,
+          "line": 421,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiFatalHalt",
           "full_name": "SeLe4n.Platform.FFI.ffiFatalHalt",
-          "line": 435,
+          "line": 438,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiFatalHaltAll",
           "full_name": "SeLe4n.Platform.FFI.ffiFatalHaltAll",
-          "line": 451,
+          "line": 454,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiExtendBootRamMap",
           "full_name": "SeLe4n.Platform.FFI.ffiExtendBootRamMap",
-          "line": 465,
+          "line": 468,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownWaitAllAcked",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownWaitAllAcked",
-          "line": 476,
+          "line": 479,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownOnlineMask",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownOnlineMask",
-          "line": 491,
+          "line": 494,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownPublishBegin",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownPublishBegin",
-          "line": 500,
+          "line": 503,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownPublishSlot",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownPublishSlot",
-          "line": 509,
+          "line": 512,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiShootdownPublishCommit",
           "full_name": "SeLe4n.Platform.FFI.ffiShootdownPublishCommit",
-          "line": 520,
+          "line": 523,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiSyscallReturnFrame",
           "full_name": "SeLe4n.Platform.FFI.ffiSyscallReturnFrame",
-          "line": 540,
+          "line": 543,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioRead32",
           "full_name": "SeLe4n.Platform.FFI.ffiMmioRead32",
-          "line": 550,
+          "line": 553,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioWrite32",
           "full_name": "SeLe4n.Platform.FFI.ffiMmioWrite32",
-          "line": 555,
+          "line": 558,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioRead64",
           "full_name": "SeLe4n.Platform.FFI.ffiMmioRead64",
-          "line": 560,
+          "line": 563,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioWrite64",
           "full_name": "SeLe4n.Platform.FFI.ffiMmioWrite64",
-          "line": 565,
+          "line": 568,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiUartPutc",
           "full_name": "SeLe4n.Platform.FFI.ffiUartPutc",
-          "line": 574,
+          "line": 577,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiDisableInterrupts",
           "full_name": "SeLe4n.Platform.FFI.ffiDisableInterrupts",
-          "line": 583,
+          "line": 586,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRestoreInterrupts",
           "full_name": "SeLe4n.Platform.FFI.ffiRestoreInterrupts",
-          "line": 588,
+          "line": 591,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiEnableInterrupts",
           "full_name": "SeLe4n.Platform.FFI.ffiEnableInterrupts",
-          "line": 593,
+          "line": 596,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiCurrentCoreId",
           "full_name": "SeLe4n.Platform.FFI.ffiCurrentCoreId",
-          "line": 615,
+          "line": 618,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTrapContext",
           "full_name": "SeLe4n.Platform.FFI.ffiTrapContext",
-          "line": 639,
+          "line": 642,
           "called": [
             "SeLe4n.Kernel.Architecture.InFlightContext"
           ]
@@ -415459,217 +415986,217 @@
           "kind": "opaque",
           "name": "ffiIdleWait",
           "full_name": "SeLe4n.Platform.FFI.ffiIdleWait",
-          "line": 660,
+          "line": 663,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIdleWaitBounded",
           "full_name": "SeLe4n.Platform.FFI.ffiIdleWaitBounded",
-          "line": 674,
+          "line": 677,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreIrqCount",
           "full_name": "SeLe4n.Platform.FFI.ffiPerCoreIrqCount",
-          "line": 693,
+          "line": 696,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreTimerTickCount",
           "full_name": "SeLe4n.Platform.FFI.ffiPerCoreTimerTickCount",
-          "line": 701,
+          "line": 704,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreSgiCount",
           "full_name": "SeLe4n.Platform.FFI.ffiPerCoreSgiCount",
-          "line": 709,
+          "line": 712,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreSyscallCount",
           "full_name": "SeLe4n.Platform.FFI.ffiPerCoreSyscallCount",
-          "line": 715,
+          "line": 718,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiSwitchToThread",
           "full_name": "SeLe4n.Platform.FFI.ffiSwitchToThread",
-          "line": 733,
+          "line": 736,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiPerCoreCurrentThread",
           "full_name": "SeLe4n.Platform.FFI.ffiPerCoreCurrentThread",
-          "line": 743,
+          "line": 746,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockStaticHandle",
           "full_name": "SeLe4n.Platform.FFI.ffiTicketLockStaticHandle",
-          "line": 774,
+          "line": 777,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockAcquire",
           "full_name": "SeLe4n.Platform.FFI.ffiTicketLockAcquire",
-          "line": 786,
+          "line": 789,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockRelease",
           "full_name": "SeLe4n.Platform.FFI.ffiTicketLockRelease",
-          "line": 797,
+          "line": 800,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockPeekHolder",
           "full_name": "SeLe4n.Platform.FFI.ffiTicketLockPeekHolder",
-          "line": 815,
+          "line": 818,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockAcquireCount",
           "full_name": "SeLe4n.Platform.FFI.ffiTicketLockAcquireCount",
-          "line": 826,
+          "line": 829,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTicketLockReleaseCount",
           "full_name": "SeLe4n.Platform.FFI.ffiTicketLockReleaseCount",
-          "line": 832,
+          "line": 835,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockStaticHandle",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockStaticHandle",
-          "line": 839,
+          "line": 842,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireRead",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockAcquireRead",
-          "line": 846,
+          "line": 849,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseRead",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockReleaseRead",
-          "line": 853,
+          "line": 856,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockEnqueue",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockEnqueue",
-          "line": 869,
+          "line": 872,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockIsServed",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockIsServed",
-          "line": 876,
+          "line": 879,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockCompleteRead",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockCompleteRead",
-          "line": 883,
+          "line": 886,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockCompleteWrite",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockCompleteWrite",
-          "line": 890,
+          "line": 893,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockCancel",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockCancel",
-          "line": 906,
+          "line": 909,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockCancelCount",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockCancelCount",
-          "line": 912,
+          "line": 915,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireWrite",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockAcquireWrite",
-          "line": 920,
+          "line": 923,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseWrite",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockReleaseWrite",
-          "line": 927,
+          "line": 930,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockSnapshot",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockSnapshot",
-          "line": 942,
+          "line": 945,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireReadCount",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockAcquireReadCount",
-          "line": 948,
+          "line": 951,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseReadCount",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockReleaseReadCount",
-          "line": 954,
+          "line": 957,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockAcquireWriteCount",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockAcquireWriteCount",
-          "line": 960,
+          "line": 963,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRwLockReleaseWriteCount",
           "full_name": "SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount",
-          "line": 966,
+          "line": 969,
           "called": []
         },
         {
           "kind": "def",
           "name": "KernelError.toUInt32",
           "full_name": "SeLe4n.Platform.FFI.KernelError.toUInt32",
-          "line": 1002,
+          "line": 1005,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.toDiscriminant"
@@ -415679,7 +416206,7 @@
           "kind": "theorem",
           "name": "KernelError.toUInt32_eq_toDiscriminant",
           "full_name": "SeLe4n.Platform.FFI.KernelError.toUInt32_eq_toDiscriminant",
-          "line": 1007,
+          "line": 1010,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.KernelError.toDiscriminant",
@@ -415690,7 +416217,7 @@
           "kind": "initialize",
           "name": "kernelStateRef",
           "full_name": "SeLe4n.Platform.FFI.kernelStateRef",
-          "line": 1041,
+          "line": 1044,
           "called": [
             "SeLe4n.Model.SystemState"
           ]
@@ -415699,7 +416226,7 @@
           "kind": "initialize",
           "name": "kernelLabelingContextRef",
           "full_name": "SeLe4n.Platform.FFI.kernelLabelingContextRef",
-          "line": 1066,
+          "line": 1069,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.defaultLabelingContext"
@@ -415709,7 +416236,7 @@
           "kind": "def",
           "name": "initialiseKernelState",
           "full_name": "SeLe4n.Platform.FFI.initialiseKernelState",
-          "line": 1082,
+          "line": 1085,
           "called": [
             "SeLe4n.Kernel.Architecture.withShootdownSparesSeeded",
             "SeLe4n.Model.SystemState",
@@ -415722,7 +416249,7 @@
           "kind": "def",
           "name": "getKernelState",
           "full_name": "SeLe4n.Platform.FFI.getKernelState",
-          "line": 1089,
+          "line": 1092,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.FFI.kernelStateRef"
@@ -415732,7 +416259,7 @@
           "kind": "def",
           "name": "updateKernelState",
           "full_name": "SeLe4n.Platform.FFI.updateKernelState",
-          "line": 1094,
+          "line": 1097,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.FFI.kernelStateRef"
@@ -415742,7 +416269,7 @@
           "kind": "def",
           "name": "modifyGetKernelState",
           "full_name": "SeLe4n.Platform.FFI.modifyGetKernelState",
-          "line": 1153,
+          "line": 1156,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.FFI.kernelStateRef"
@@ -415752,7 +416279,7 @@
           "kind": "def",
           "name": "initialiseKernelLabelingContext",
           "full_name": "SeLe4n.Platform.FFI.initialiseKernelLabelingContext",
-          "line": 1160,
+          "line": 1163,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Platform.FFI.kernelLabelingContextRef"
@@ -415762,7 +416289,7 @@
           "kind": "def",
           "name": "getKernelLabelingContext",
           "full_name": "SeLe4n.Platform.FFI.getKernelLabelingContext",
-          "line": 1164,
+          "line": 1167,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Platform.FFI.kernelLabelingContextRef"
@@ -415772,21 +416299,21 @@
           "kind": "def",
           "name": "insecureLabelingContextBootError",
           "full_name": "SeLe4n.Platform.FFI.insecureLabelingContextBootError",
-          "line": 1173,
+          "line": 1176,
           "called": []
         },
         {
           "kind": "def",
           "name": "uninstalledSeparationWitnessBootError",
           "full_name": "SeLe4n.Platform.FFI.uninstalledSeparationWitnessBootError",
-          "line": 1180,
+          "line": 1183,
           "called": []
         },
         {
           "kind": "def",
           "name": "bootAndInitialiseFromPlatformOn",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseFromPlatformOn",
-          "line": 1196,
+          "line": 1199,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -415805,7 +416332,7 @@
           "kind": "def",
           "name": "declaredCoresOfConfig",
           "full_name": "SeLe4n.Platform.FFI.declaredCoresOfConfig",
-          "line": 1231,
+          "line": 1234,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -415817,7 +416344,7 @@
           "kind": "theorem",
           "name": "declaredCoresOfConfig_allCores",
           "full_name": "SeLe4n.Platform.FFI.declaredCoresOfConfig_allCores",
-          "line": 1237,
+          "line": 1240,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.Concurrency.allCores_length",
@@ -415831,7 +416358,7 @@
           "kind": "theorem",
           "name": "declaredCoresOfConfig_length_le",
           "full_name": "SeLe4n.Platform.FFI.declaredCoresOfConfig_length_le",
-          "line": 1244,
+          "line": 1247,
           "called": [
             "SeLe4n.Kernel.Concurrency.allCores_length",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -415843,7 +416370,7 @@
           "kind": "def",
           "name": "bootAndInitialiseFromPlatform",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform",
-          "line": 1316,
+          "line": 1319,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Model.SystemState",
@@ -415856,7 +416383,7 @@
           "kind": "def",
           "name": "bindPlatformConfig",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig",
-          "line": 1356,
+          "line": 1359,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.PlatformBinding",
@@ -415867,7 +416394,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_machineConfig",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_machineConfig",
-          "line": 1364,
+          "line": 1367,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415878,7 +416405,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_declaredCoreCount",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_declaredCoreCount",
-          "line": 1372,
+          "line": 1375,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415889,7 +416416,7 @@
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_checked_declaredCoreCount",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialisePlatform_checked_declaredCoreCount",
-          "line": 1385,
+          "line": 1388,
           "called": [
             "SeLe4n.MachineState",
             "SeLe4n.Model.IntermediateState",
@@ -415910,7 +416437,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_initialInterfaces",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_initialInterfaces",
-          "line": 1398,
+          "line": 1401,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415921,7 +416448,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_initialThreads",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_initialThreads",
-          "line": 1405,
+          "line": 1408,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415933,7 +416460,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_bootVSpaceRoot",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_bootVSpaceRoot",
-          "line": 1410,
+          "line": 1413,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415944,7 +416471,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_initialObjects",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_initialObjects",
-          "line": 1415,
+          "line": 1418,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415955,7 +416482,7 @@
           "kind": "theorem",
           "name": "bindPlatformConfig_irqTable",
           "full_name": "SeLe4n.Platform.FFI.bindPlatformConfig_irqTable",
-          "line": 1419,
+          "line": 1422,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -415966,7 +416493,7 @@
           "kind": "def",
           "name": "bootAndInitialisePlatform",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialisePlatform",
-          "line": 1462,
+          "line": 1465,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.Boot.PlatformConfig",
@@ -415981,7 +416508,7 @@
           "kind": "def",
           "name": "bootAndInitialiseRPi5",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5",
-          "line": 1479,
+          "line": 1482,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.Boot.PlatformConfig",
@@ -415993,7 +416520,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_eq",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5_eq",
-          "line": 1485,
+          "line": 1488,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bootAndInitialisePlatform",
@@ -416005,7 +416532,7 @@
           "kind": "def",
           "name": "bootAndInitialiseRPi5OrHalt",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5OrHalt",
-          "line": 1507,
+          "line": 1510,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bootAndInitialiseRPi5",
@@ -416016,7 +416543,7 @@
           "kind": "inductive",
           "name": "DeviceTreeBootRefusal",
           "full_name": "SeLe4n.Platform.FFI.DeviceTreeBootRefusal",
-          "line": 1533,
+          "line": 1536,
           "called": [
             "SeLe4n.Platform.DeviceTreeParseError"
           ]
@@ -416025,7 +416552,7 @@
           "kind": "def",
           "name": "rpi5PlatformConfigFromDtb",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb",
-          "line": 1576,
+          "line": 1579,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416048,7 +416575,7 @@
           "kind": "def",
           "name": "extendBootRamMap",
           "full_name": "SeLe4n.Platform.FFI.extendBootRamMap",
-          "line": 1606,
+          "line": 1609,
           "called": [
             "SeLe4n.Platform.FFI.ffiExtendBootRamMap"
           ]
@@ -416057,7 +416584,7 @@
           "kind": "def",
           "name": "bootAndInitialiseRPi5FromDtbOrHalt",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt",
-          "line": 1635,
+          "line": 1638,
           "called": [
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
             "SeLe4n.Platform.Boot.IrqEntry",
@@ -416074,7 +416601,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5FromDtbOrHalt_unparseable",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_unparseable",
-          "line": 1648,
+          "line": 1651,
           "called": [
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
             "SeLe4n.Platform.Boot.IrqEntry",
@@ -416090,7 +416617,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5FromDtbOrHalt_accepted",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_accepted",
-          "line": 1664,
+          "line": 1667,
           "called": [
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
             "SeLe4n.Platform.Boot.IrqEntry",
@@ -416108,7 +416635,7 @@
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_refuses_foreign_board",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb_refuses_foreign_board",
-          "line": 1680,
+          "line": 1683,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416127,7 +416654,7 @@
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_refuses_uncovered_family",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb_refuses_uncovered_family",
-          "line": 1702,
+          "line": 1705,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416152,7 +416679,7 @@
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_refuses_missing_mmio",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb_refuses_missing_mmio",
-          "line": 1730,
+          "line": 1733,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416171,7 +416698,7 @@
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree",
-          "line": 1753,
+          "line": 1756,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416190,7 +416717,7 @@
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_ok_machineConfig",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb_ok_machineConfig",
-          "line": 1783,
+          "line": 1786,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416213,7 +416740,7 @@
           "kind": "theorem",
           "name": "rpi5PlatformConfigFromDtb_ok_binds_detected_variant",
           "full_name": "SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb_ok_binds_detected_variant",
-          "line": 1811,
+          "line": 1814,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.BootVSpaceRootEntry",
@@ -416239,7 +416766,7 @@
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_eq_checked_boot",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialisePlatform_eq_checked_boot",
-          "line": 1851,
+          "line": 1854,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor",
@@ -416260,7 +416787,7 @@
           "kind": "theorem",
           "name": "bootAndInitialisePlatform_rpi5_all_cores",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialisePlatform_rpi5_all_cores",
-          "line": 1874,
+          "line": 1877,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads",
@@ -416275,7 +416802,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config",
-          "line": 1888,
+          "line": 1891,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -416288,7 +416815,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config_mem_family",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config_mem_family",
-          "line": 1901,
+          "line": 1904,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -416301,7 +416828,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config_canonical",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config_canonical",
-          "line": 1910,
+          "line": 1913,
           "called": [
             "SeLe4n.Platform.Boot.PlatformConfig",
             "SeLe4n.Platform.FFI.bindPlatformConfig",
@@ -416316,7 +416843,7 @@
           "kind": "theorem",
           "name": "bootAndInitialiseRPi5_bound_config_declaredCoreCount",
           "full_name": "SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config_declaredCoreCount",
-          "line": 1921,
+          "line": 1924,
           "called": [
             "SeLe4n.MachineConfig",
             "SeLe4n.Platform.Boot.PlatformConfig",
@@ -416328,7 +416855,7 @@
           "kind": "def",
           "name": "writeFfiRegistersToTcb",
           "full_name": "SeLe4n.Platform.FFI.writeFfiRegistersToTcb",
-          "line": 1950,
+          "line": 1953,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb",
@@ -416341,7 +416868,7 @@
           "kind": "def",
           "name": "ffiRegisterSpill",
           "full_name": "SeLe4n.Platform.FFI.ffiRegisterSpill",
-          "line": 1971,
+          "line": 1974,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.arm64DefaultLayout",
@@ -416352,7 +416879,7 @@
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_eq_updateTcb",
           "full_name": "SeLe4n.Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb",
-          "line": 1983,
+          "line": 1986,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb",
@@ -416365,7 +416892,7 @@
           "kind": "def",
           "name": "ffiRegistersHeld",
           "full_name": "SeLe4n.Platform.FFI.ffiRegistersHeld",
-          "line": 1990,
+          "line": 1993,
           "called": [
             "SeLe4n.RegisterFile"
           ]
@@ -416374,7 +416901,7 @@
           "kind": "theorem",
           "name": "ffiRegisterSpill_of_held",
           "full_name": "SeLe4n.Platform.FFI.ffiRegisterSpill_of_held",
-          "line": 1996,
+          "line": 1999,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.Platform.FFI.ffiRegisterSpill",
@@ -416392,7 +416919,7 @@
           "kind": "def",
           "name": "writeFfiRegistersToTcbImpl",
           "full_name": "SeLe4n.Platform.FFI.writeFfiRegistersToTcbImpl",
-          "line": 2016,
+          "line": 2019,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Model.SystemState",
@@ -416407,7 +416934,7 @@
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_eq_impl",
           "full_name": "SeLe4n.Platform.FFI.writeFfiRegistersToTcb_eq_impl",
-          "line": 2025,
+          "line": 2028,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
             "SeLe4n.Kernel.RobinHood.RHTable.insert_eq_self_of_get?",
@@ -416424,7 +416951,7 @@
           "kind": "def",
           "name": "readReturnValue",
           "full_name": "SeLe4n.Platform.FFI.readReturnValue",
-          "line": 2065,
+          "line": 2068,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -416436,7 +416963,7 @@
           "kind": "theorem",
           "name": "readReturnValue_eq_readReturnFrame_x0",
           "full_name": "SeLe4n.Platform.FFI.readReturnValue_eq_readReturnFrame_x0",
-          "line": 2090,
+          "line": 2093,
           "called": [
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Model.SystemState",
@@ -416450,7 +416977,7 @@
           "kind": "def",
           "name": "syscallReturnOutcome",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome",
-          "line": 2106,
+          "line": 2109,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.frameForShape",
@@ -416467,7 +416994,7 @@
           "kind": "def",
           "name": "syscallReturnOutcomeImpl",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcomeImpl",
-          "line": 2123,
+          "line": 2126,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.frameForShape",
@@ -416484,7 +417011,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_eq_impl",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_eq_impl",
-          "line": 2136,
+          "line": 2139,
           "called": [
             "SeLe4n.Kernel.Architecture.syscallReturnShape",
             "SeLe4n.Kernel.Architecture.tcbBlocksReturn_eq",
@@ -416498,7 +417025,7 @@
           "kind": "def",
           "name": "syscallReturnOutcomeFrame",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcomeFrame",
-          "line": 2174,
+          "line": 2177,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.frameForShape",
@@ -416513,7 +417040,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_of_getTcb?",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_of_getTcb?",
-          "line": 2182,
+          "line": 2185,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Model.SystemState",
@@ -416529,7 +417056,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_of_getTcb?_none",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_of_getTcb?_none",
-          "line": 2193,
+          "line": 2196,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -416542,7 +417069,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocks_of_ipcBlocked",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_blocks_of_ipcBlocked",
-          "line": 2205,
+          "line": 2208,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Model.SystemState",
@@ -416558,7 +417085,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_returns_of_not_ipcBlocked",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_returns_of_not_ipcBlocked",
-          "line": 2216,
+          "line": 2219,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Model.SystemState",
@@ -416576,7 +417103,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocks_iff",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_blocks_iff",
-          "line": 2232,
+          "line": 2235,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Model.SystemState",
@@ -416594,7 +417121,7 @@
           "kind": "theorem",
           "name": "blockingArm_returns_no_frame",
           "full_name": "SeLe4n.Platform.FFI.blockingArm_returns_no_frame",
-          "line": 2259,
+          "line": 2262,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
@@ -416611,7 +417138,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocked_independent_of_id",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_blocked_independent_of_id",
-          "line": 2274,
+          "line": 2277,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Model.SystemState",
@@ -416627,7 +417154,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_blocked_ignores_staged_registers",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_blocked_ignores_staged_registers",
-          "line": 2288,
+          "line": 2291,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
@@ -416648,7 +417175,7 @@
           "kind": "theorem",
           "name": "syscallReturnOutcome_ne_faulted",
           "full_name": "SeLe4n.Platform.FFI.syscallReturnOutcome_ne_faulted",
-          "line": 2308,
+          "line": 2311,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -416662,7 +417189,7 @@
           "kind": "def",
           "name": "refusedSignalReceiver?",
           "full_name": "SeLe4n.Platform.FFI.refusedSignalReceiver?",
-          "line": 2366,
+          "line": 2369,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.declassifiedSignalReceiver?",
@@ -416675,7 +417202,7 @@
           "kind": "theorem",
           "name": "refusedSignalReceiver?_resolves",
           "full_name": "SeLe4n.Platform.FFI.refusedSignalReceiver?_resolves",
-          "line": 2384,
+          "line": 2387,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.declassifiedSignalReceiver?",
@@ -416699,7 +417226,7 @@
           "kind": "def",
           "name": "refusalReceiverFor",
           "full_name": "SeLe4n.Platform.FFI.refusalReceiverFor",
-          "line": 2404,
+          "line": 2407,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.KernelError",
@@ -416713,7 +417240,7 @@
           "kind": "theorem",
           "name": "refusalReceiverFor_receiver_hop",
           "full_name": "SeLe4n.Platform.FFI.refusalReceiverFor_receiver_hop",
-          "line": 2411,
+          "line": 2414,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Model.SystemState",
@@ -416726,7 +417253,7 @@
           "kind": "theorem",
           "name": "refusalReceiverFor_other",
           "full_name": "SeLe4n.Platform.FFI.refusalReceiverFor_other",
-          "line": 2418,
+          "line": 2421,
           "called": [
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SyscallId",
@@ -416739,7 +417266,7 @@
           "kind": "def",
           "name": "recordSyscallRefusal",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal",
-          "line": 2439,
+          "line": 2442,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -416758,7 +417285,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_exempt",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_exempt",
-          "line": 2463,
+          "line": 2466,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416775,7 +417302,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_undecodable",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_undecodable",
-          "line": 2475,
+          "line": 2478,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416790,7 +417317,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_records",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_records",
-          "line": 2486,
+          "line": 2489,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -416811,7 +417338,7 @@
           "kind": "theorem",
           "name": "refusalRecord_names_failed_hop",
           "full_name": "SeLe4n.Platform.FFI.refusalRecord_names_failed_hop",
-          "line": 2523,
+          "line": 2526,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -416848,7 +417375,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_frame",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_frame",
-          "line": 2569,
+          "line": 2572,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416863,7 +417390,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_preserves_proofLayerInvariantBundle",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_preserves_proofLayerInvariantBundle",
-          "line": 2597,
+          "line": 2600,
           "called": [
             "SeLe4n.Kernel.Architecture.proofLayerInvariantBundle",
             "SeLe4n.Kernel.Architecture.proofLayerInvariantBundle_setDeclassificationRefusals",
@@ -416880,7 +417407,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_objects_eq",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_objects_eq",
-          "line": 2611,
+          "line": 2614,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416894,7 +417421,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_scheduler_eq",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_scheduler_eq",
-          "line": 2622,
+          "line": 2625,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416908,7 +417435,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_machine_eq",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_machine_eq",
-          "line": 2633,
+          "line": 2636,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416922,7 +417449,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_readReturnFrame_eq",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_readReturnFrame_eq",
-          "line": 2649,
+          "line": 2652,
           "called": [
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -416939,7 +417466,7 @@
           "kind": "theorem",
           "name": "refusalRecord_domain_is_seam_resolved_at_seam",
           "full_name": "SeLe4n.Platform.FFI.refusalRecord_domain_is_seam_resolved_at_seam",
-          "line": 2668,
+          "line": 2671,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.DeclassificationRefusal",
@@ -416962,7 +417489,7 @@
           "kind": "theorem",
           "name": "recordSyscallRefusal_ledger_congr",
           "full_name": "SeLe4n.Platform.FFI.recordSyscallRefusal_ledger_congr",
-          "line": 2707,
+          "line": 2710,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -416982,7 +417509,7 @@
           "kind": "theorem",
           "name": "refusalWrite_declassificationAuditLog_eq",
           "full_name": "SeLe4n.Platform.FFI.refusalWrite_declassificationAuditLog_eq",
-          "line": 2744,
+          "line": 2747,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -416998,7 +417525,7 @@
           "kind": "theorem",
           "name": "refusalWrite_cannot_exhaust_trail",
           "full_name": "SeLe4n.Platform.FFI.refusalWrite_cannot_exhaust_trail",
-          "line": 2765,
+          "line": 2768,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.DeclassificationEvent",
@@ -417014,21 +417541,21 @@
           "kind": "def",
           "name": "syscallWindow",
           "full_name": "SeLe4n.Platform.FFI.syscallWindow",
-          "line": 2785,
+          "line": 2788,
           "called": []
         },
         {
           "kind": "def",
           "name": "svcFaultIP",
           "full_name": "SeLe4n.Platform.FFI.svcFaultIP",
-          "line": 2793,
+          "line": 2796,
           "called": []
         },
         {
           "kind": "def",
           "name": "capFaultReceivePhase?",
           "full_name": "SeLe4n.Platform.FFI.capFaultReceivePhase?",
-          "line": 2822,
+          "line": 2825,
           "called": [
             "SeLe4n.Model.SyscallId"
           ]
@@ -417037,7 +417564,7 @@
           "kind": "theorem",
           "name": "capFaultReceivePhase?_none_iff_records_or_capabilityFree",
           "full_name": "SeLe4n.Platform.FFI.capFaultReceivePhase?_none_iff_records_or_capabilityFree",
-          "line": 2873,
+          "line": 2876,
           "called": [
             "SeLe4n.Kernel.refusalSeamClass",
             "SeLe4n.Model.SyscallId",
@@ -417048,7 +417575,7 @@
           "kind": "def",
           "name": "syscallCapFaultOf",
           "full_name": "SeLe4n.Platform.FFI.syscallCapFaultOf",
-          "line": 2910,
+          "line": 2913,
           "called": [
             "SeLe4n.CPtr.toNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
@@ -417069,7 +417596,7 @@
           "kind": "def",
           "name": "deliverSyscallCapFault",
           "full_name": "SeLe4n.Platform.FFI.deliverSyscallCapFault",
-          "line": 2944,
+          "line": 2947,
           "called": [
             "SeLe4n.Kernel.Architecture.faultContextOfThread",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417087,7 +417614,7 @@
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_no_fault_phase",
           "full_name": "SeLe4n.Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase",
-          "line": 2955,
+          "line": 2958,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Model.KernelError",
@@ -417105,7 +417632,7 @@
           "kind": "theorem",
           "name": "syscallCapFaultOf_none_of_resolve_ok",
           "full_name": "SeLe4n.Platform.FFI.syscallCapFaultOf_none_of_resolve_ok",
-          "line": 2968,
+          "line": 2971,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.syscallRequiredRight",
@@ -417128,7 +417655,7 @@
           "kind": "def",
           "name": "syscallDispatchFromAbi",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi",
-          "line": 3032,
+          "line": 3035,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.errorFrame",
@@ -417150,7 +417677,7 @@
           "kind": "def",
           "name": "syscallDispatchFromAbiImpl",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbiImpl",
-          "line": 3094,
+          "line": 3097,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.errorFrame",
@@ -417172,7 +417699,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_eq_impl",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_eq_impl",
-          "line": 3122,
+          "line": 3125,
           "called": [
             "SeLe4n.Kernel.syscallEntryCheckedR_eq",
             "SeLe4n.Model.RefusalCarrying.ofKernel",
@@ -417186,7 +417713,7 @@
           "kind": "def",
           "name": "returnOutcomeWords",
           "full_name": "SeLe4n.Platform.FFI.returnOutcomeWords",
-          "line": 3140,
+          "line": 3143,
           "called": [
             "SeLe4n.Kernel.Architecture.syscallReturnShape",
             "SeLe4n.Kernel.Architecture.tcbBlocksReturn",
@@ -417200,7 +417727,7 @@
           "kind": "theorem",
           "name": "returnOutcomeWords_eq",
           "full_name": "SeLe4n.Platform.FFI.returnOutcomeWords_eq",
-          "line": 3154,
+          "line": 3157,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome.mailboxFrame",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
@@ -417227,7 +417754,7 @@
           "kind": "def",
           "name": "syscallDispatchFromAbiWords",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbiWords",
-          "line": 3184,
+          "line": 3187,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.words",
@@ -417251,7 +417778,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbiWords_eq",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbiWords_eq",
-          "line": 3213,
+          "line": 3216,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.SyscallOutcome.words",
@@ -417270,7 +417797,7 @@
           "kind": "def",
           "name": "suspendThreadInner",
           "full_name": "SeLe4n.Platform.FFI.suspendThreadInner",
-          "line": 3277,
+          "line": 3280,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore",
@@ -417286,21 +417813,21 @@
           "kind": "opaque",
           "name": "ffiIcIalluIs",
           "full_name": "SeLe4n.Platform.FFI.ffiIcIalluIs",
-          "line": 3312,
+          "line": 3315,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcMaintenance",
           "full_name": "SeLe4n.Platform.FFI.ffiIcMaintenance",
-          "line": 3349,
+          "line": 3352,
           "called": []
         },
         {
           "kind": "def",
           "name": "icMaintenanceBroadcast",
           "full_name": "SeLe4n.Platform.FFI.icMaintenanceBroadcast",
-          "line": 3401,
+          "line": 3404,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Kernel.Architecture.ICacheInvalidation.toOpTag",
@@ -417313,28 +417840,28 @@
           "kind": "opaque",
           "name": "ffiApplyPhysicalWrite",
           "full_name": "SeLe4n.Platform.FFI.ffiApplyPhysicalWrite",
-          "line": 3416,
+          "line": 3419,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiEntryWordBuffer",
           "full_name": "SeLe4n.Platform.FFI.ffiEntryWordBuffer",
-          "line": 3428,
+          "line": 3431,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiCaptureUserWords",
           "full_name": "SeLe4n.Platform.FFI.ffiCaptureUserWords",
-          "line": 3447,
+          "line": 3450,
           "called": []
         },
         {
           "kind": "def",
           "name": "physicalWriteApply",
           "full_name": "SeLe4n.Platform.FFI.physicalWriteApply",
-          "line": 3450,
+          "line": 3453,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Kernel.Architecture.PhysicalWrite.addr",
@@ -417347,7 +417874,7 @@
           "kind": "def",
           "name": "performPhysicalWrites",
           "full_name": "SeLe4n.Platform.FFI.performPhysicalWrites",
-          "line": 3475,
+          "line": 3478,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Platform.FFI.physicalWriteApply"
@@ -417357,7 +417884,7 @@
           "kind": "theorem",
           "name": "performPhysicalWrites_nil",
           "full_name": "SeLe4n.Platform.FFI.performPhysicalWrites_nil",
-          "line": 3479,
+          "line": 3482,
           "called": [
             "SeLe4n.Platform.FFI.performPhysicalWrites"
           ]
@@ -417366,7 +417893,7 @@
           "kind": "theorem",
           "name": "performPhysicalWrites_cons",
           "full_name": "SeLe4n.Platform.FFI.performPhysicalWrites_cons",
-          "line": 3484,
+          "line": 3487,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
             "SeLe4n.Platform.FFI.performPhysicalWrites",
@@ -417377,7 +417904,7 @@
           "kind": "def",
           "name": "applyLedgerFrom",
           "full_name": "SeLe4n.Platform.FFI.applyLedgerFrom",
-          "line": 3490,
+          "line": 3493,
           "called": [
             "SeLe4n.Kernel.Architecture.ledgerEntryAt",
             "SeLe4n.Platform.FFI.ffiApplyPhysicalWrite"
@@ -417387,7 +417914,7 @@
           "kind": "theorem",
           "name": "applyLedgerFrom_eq",
           "full_name": "SeLe4n.Platform.FFI.applyLedgerFrom_eq",
-          "line": 3497,
+          "line": 3500,
           "called": [
             "SeLe4n.Kernel.Architecture.decodeLedgerFrom",
             "SeLe4n.Platform.FFI.applyLedgerFrom",
@@ -417398,7 +417925,7 @@
           "kind": "def",
           "name": "completePhysicalWrites",
           "full_name": "SeLe4n.Platform.FFI.completePhysicalWrites",
-          "line": 3508,
+          "line": 3511,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWriteLedger",
             "SeLe4n.Platform.FFI.applyLedgerFrom"
@@ -417408,7 +417935,7 @@
           "kind": "theorem",
           "name": "completePhysicalWrites_eq",
           "full_name": "SeLe4n.Platform.FFI.completePhysicalWrites_eq",
-          "line": 3511,
+          "line": 3514,
           "called": [
             "SeLe4n.Kernel.Architecture.PhysicalWrite.words",
             "SeLe4n.Kernel.Architecture.PhysicalWriteLedger",
@@ -417425,7 +417952,7 @@
           "kind": "def",
           "name": "completeIcacheMaintenance",
           "full_name": "SeLe4n.Platform.FFI.completeIcacheMaintenance",
-          "line": 3565,
+          "line": 3568,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Platform.FFI.icMaintenanceBroadcast"
@@ -417435,7 +417962,7 @@
           "kind": "theorem",
           "name": "completeIcacheMaintenance_nil",
           "full_name": "SeLe4n.Platform.FFI.completeIcacheMaintenance_nil",
-          "line": 3573,
+          "line": 3576,
           "called": [
             "SeLe4n.Platform.FFI.completeIcacheMaintenance"
           ]
@@ -417444,7 +417971,7 @@
           "kind": "theorem",
           "name": "completeIcacheMaintenance_singleton",
           "full_name": "SeLe4n.Platform.FFI.completeIcacheMaintenance_singleton",
-          "line": 3579,
+          "line": 3582,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Platform.FFI.completeIcacheMaintenance",
@@ -417455,7 +417982,7 @@
           "kind": "theorem",
           "name": "completeIcacheMaintenance_cons",
           "full_name": "SeLe4n.Platform.FFI.completeIcacheMaintenance_cons",
-          "line": 3587,
+          "line": 3590,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Platform.FFI.completeIcacheMaintenance",
@@ -417466,14 +417993,14 @@
           "kind": "opaque",
           "name": "ffiInstallTranslation",
           "full_name": "SeLe4n.Platform.FFI.ffiInstallTranslation",
-          "line": 3599,
+          "line": 3602,
           "called": []
         },
         {
           "kind": "def",
           "name": "installThreadTranslation",
           "full_name": "SeLe4n.Platform.FFI.installThreadTranslation",
-          "line": 3604,
+          "line": 3607,
           "called": [
             "SeLe4n.Kernel.Architecture.threadTranslationOperands",
             "SeLe4n.Model.SystemState",
@@ -417485,7 +418012,7 @@
           "kind": "opaque",
           "name": "ffiRestoreStageContext",
           "full_name": "SeLe4n.Platform.FFI.ffiRestoreStageContext",
-          "line": 3614,
+          "line": 3617,
           "called": [
             "SeLe4n.RegisterFile"
           ]
@@ -417494,14 +418021,14 @@
           "kind": "opaque",
           "name": "ffiRestoreCommit",
           "full_name": "SeLe4n.Platform.FFI.ffiRestoreCommit",
-          "line": 3633,
+          "line": 3636,
           "called": []
         },
         {
           "kind": "def",
           "name": "restoreTrapFrame",
           "full_name": "SeLe4n.Platform.FFI.restoreTrapFrame",
-          "line": 3640,
+          "line": 3643,
           "called": [
             "SeLe4n.Kernel.Architecture.RestoreTarget",
             "SeLe4n.Platform.FFI.ffiRestoreCommit",
@@ -417512,7 +418039,7 @@
           "kind": "def",
           "name": "restoreTrapFrameParts",
           "full_name": "SeLe4n.Platform.FFI.restoreTrapFrameParts",
-          "line": 3653,
+          "line": 3656,
           "called": [
             "SeLe4n.Platform.FFI.ffiRestoreCommit",
             "SeLe4n.Platform.FFI.ffiRestoreStageContext",
@@ -417523,7 +418050,7 @@
           "kind": "theorem",
           "name": "restoreTrapFrameParts_eq",
           "full_name": "SeLe4n.Platform.FFI.restoreTrapFrameParts_eq",
-          "line": 3661,
+          "line": 3664,
           "called": [
             "SeLe4n.Kernel.Architecture.RestoreTarget",
             "SeLe4n.Kernel.Architecture.RestoreTarget.asid",
@@ -417538,7 +418065,7 @@
           "kind": "theorem",
           "name": "restoreTrapFrameParts_onCore",
           "full_name": "SeLe4n.Platform.FFI.restoreTrapFrameParts_onCore",
-          "line": 3670,
+          "line": 3673,
           "called": [
             "SeLe4n.Kernel.Architecture.restoreAsidOnCore",
             "SeLe4n.Kernel.Architecture.restoreAsidOnCore_eq",
@@ -417560,7 +418087,7 @@
           "kind": "opaque",
           "name": "ffiFpCapture",
           "full_name": "SeLe4n.Platform.FFI.ffiFpCapture",
-          "line": 3694,
+          "line": 3697,
           "called": [
             "SeLe4n.FpContext"
           ]
@@ -417569,7 +418096,7 @@
           "kind": "opaque",
           "name": "ffiFpStageContext",
           "full_name": "SeLe4n.Platform.FFI.ffiFpStageContext",
-          "line": 3702,
+          "line": 3705,
           "called": [
             "SeLe4n.FpContext"
           ]
@@ -417578,14 +418105,14 @@
           "kind": "opaque",
           "name": "ffiFpLoadCommit",
           "full_name": "SeLe4n.Platform.FFI.ffiFpLoadCommit",
-          "line": 3711,
+          "line": 3714,
           "called": []
         },
         {
           "kind": "def",
           "name": "captureLiveFp",
           "full_name": "SeLe4n.Platform.FFI.captureLiveFp",
-          "line": 3715,
+          "line": 3718,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Platform.FFI.ffiFpCapture"
@@ -417595,7 +418122,7 @@
           "kind": "def",
           "name": "loadFpContext",
           "full_name": "SeLe4n.Platform.FFI.loadFpContext",
-          "line": 3720,
+          "line": 3723,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Platform.FFI.ffiFpLoadCommit",
@@ -417606,7 +418133,7 @@
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_iallu_encoding",
           "full_name": "SeLe4n.Platform.FFI.icMaintenanceBroadcast_iallu_encoding",
-          "line": 3725,
+          "line": 3728,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Kernel.Architecture.ICacheInvalidation.toOpTag",
@@ -417617,7 +418144,7 @@
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_ivauPage_encoding",
           "full_name": "SeLe4n.Platform.FFI.icMaintenanceBroadcast_ivauPage_encoding",
-          "line": 3732,
+          "line": 3735,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Kernel.Architecture.ICacheInvalidation.toOpTag",
@@ -417630,7 +418157,7 @@
           "kind": "theorem",
           "name": "icMaintenanceBroadcast_cleanRangeIallu_encoding",
           "full_name": "SeLe4n.Platform.FFI.icMaintenanceBroadcast_cleanRangeIallu_encoding",
-          "line": 3741,
+          "line": 3744,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Kernel.Architecture.ICacheInvalidation.toOpTag",
@@ -417644,21 +418171,21 @@
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
           "full_name": "SeLe4n.Platform.FFI.ffiCacheCleanPagetableRange",
-          "line": 3776,
+          "line": 3779,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
           "full_name": "SeLe4n.Platform.FFI.ffiIcIallu",
-          "line": 3789,
+          "line": 3792,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_total",
-          "line": 3805,
+          "line": 3808,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.errorFrame",
@@ -417682,7 +418209,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ne_error",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_ne_error",
-          "line": 3849,
+          "line": 3852,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -417696,7 +418223,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 3870,
+          "line": 3873,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -417715,7 +418242,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_blocks_of_ipcBlocked",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_blocks_of_ipcBlocked",
-          "line": 3897,
+          "line": 3900,
           "called": [
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417739,7 +418266,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_blocked_returns_no_frame",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_blocked_returns_no_frame",
-          "line": 3920,
+          "line": 3923,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallReturnFrame",
             "SeLe4n.Kernel.Architecture.ipcStateBlocksReturn",
@@ -417763,7 +418290,7 @@
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_scheduler",
           "full_name": "SeLe4n.Platform.FFI.writeFfiRegistersToTcb_scheduler",
-          "line": 3949,
+          "line": 3952,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb_scheduler",
@@ -417775,7 +418302,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_implies_capability_held",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_implies_capability_held",
-          "line": 3980,
+          "line": 3983,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417804,7 +418331,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 4042,
+          "line": 4045,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417826,7 +418353,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_faulted",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_capFault_faulted",
-          "line": 4071,
+          "line": 4074,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -417849,7 +418376,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_stages_no_frame",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_error_stages_no_frame",
-          "line": 4107,
+          "line": 4110,
           "called": [
             "SeLe4n.Kernel.Architecture.readReturnFrame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417873,7 +418400,7 @@
           "kind": "theorem",
           "name": "refusalLedger_write_is_caller_invisible",
           "full_name": "SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible",
-          "line": 4148,
+          "line": 4151,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417895,7 +418422,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_records_refusal",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_records_refusal",
-          "line": 4176,
+          "line": 4179,
           "called": [
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417926,7 +418453,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_exempt_refusal_frames_ledger",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_exempt_refusal_frames_ledger",
-          "line": 4223,
+          "line": 4226,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -417951,7 +418478,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
           "full_name": "SeLe4n.Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 4253,
+          "line": 4256,
           "called": [
             "SeLe4n.Kernel.Architecture.errorFrame",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -417965,7 +418492,7 @@
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
           "full_name": "SeLe4n.Platform.FFI.writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 4272,
+          "line": 4275,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -417980,7 +418507,7 @@
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
           "full_name": "SeLe4n.Platform.FFI.readReturnValue_zero_when_not_tcb",
-          "line": 4300,
+          "line": 4303,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -425238,7 +425765,7 @@
           "kind": "def",
           "name": "stagedBuildAnchor",
           "full_name": "SeLe4n.Platform.Staged.stagedBuildAnchor",
-          "line": 716,
+          "line": 717,
           "called": []
         }
       ]
@@ -490071,7 +490598,7 @@
     {
       "module": "tests.SuspendResumeSuite",
       "path": "tests/SuspendResumeSuite.lean",
-      "declaration_count": 68,
+      "declaration_count": 70,
       "declarations": [
         {
           "kind": "def",
@@ -491167,9 +491694,42 @@
         },
         {
           "kind": "def",
+          "name": "holdsOnlyCurrentOnB",
+          "full_name": "SeLe4n.Testing.SuspendResumeSuite.holdsOnlyCurrentOnB",
+          "line": 1235,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
+          "name": "sr048_stallWaitsForTheRemoteSave",
+          "full_name": "SeLe4n.Testing.SuspendResumeSuite.sr048_stallWaitsForTheRemoteSave",
+          "line": 1247,
+          "called": [
+            "SeLe4n.Kernel.Architecture.InFlightContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Architecture.saveCapturedTrapFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.allCores",
+            "SeLe4n.Kernel.Concurrency.bootCoreId",
+            "SeLe4n.Kernel.Concurrency.stallsOn",
+            "SeLe4n.Testing.SuspendResumeSuite.entryTail",
+            "SeLe4n.Testing.SuspendResumeSuite.expect",
+            "SeLe4n.Testing.SuspendResumeSuite.holdsOnlyCurrentOnB",
+            "SeLe4n.Testing.SuspendResumeSuite.residentMigrantState"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1237,
+          "line": 1291,
           "called": [
             "SeLe4n.Testing.SuspendResumeSuite.sr001_suspendReady",
             "SeLe4n.Testing.SuspendResumeSuite.sr002_suspendInactive",
@@ -491220,7 +491780,8 @@
             "SeLe4n.Testing.SuspendResumeSuite.sr044_entryTailKeepsEveryCoreUnlinked",
             "SeLe4n.Testing.SuspendResumeSuite.sr045_consumedInvocationReadsAndResets",
             "SeLe4n.Testing.SuspendResumeSuite.sr046_migrantRunsOnlyOnceSaved",
-            "SeLe4n.Testing.SuspendResumeSuite.sr047_releaseWakesTheDeferringCore"
+            "SeLe4n.Testing.SuspendResumeSuite.sr047_releaseWakesTheDeferringCore",
+            "SeLe4n.Testing.SuspendResumeSuite.sr048_stallWaitsForTheRemoteSave"
           ]
         }
       ]
