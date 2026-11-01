@@ -4401,6 +4401,21 @@ run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_residen
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_check "INVARIANT" rg -n -U '^    \(hT : st\.residentsHaveTcbs\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+# WS-ZA ZA6.22: every cancellation restore retires the fault record, as seL4's
+# cancelIPC resets tcbFault; the resume writes its restart frame only into a
+# thread no core holds resident, and retires a held thread's record alone.
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "pendingFault := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def cancelledEndpointWaiterTcb[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/IPC/Operations/CancelAll.lean | rg -F "pendingFault := none"'
+run_check "INVARIANT" rg -n -U '^          if st\.machine\.residentOnSomeCore tid then discardPendingFault st tid\n          else applyFaultRestart st tid \(faultRestartFrameOfContext tf\.context\)$' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n -U '^def discardPendingFault \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  st\.updateTcb tid fun tcb => \{ tcb with pendingFault := none \}$' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_noFault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem threadHasPendingFault_restoreToReadyStaging($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def _root_\.SeLe4n\.Model\.SystemState\.faultRecordParked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem threadHasPendingFault_eq_false_of_faultRecordParked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultRecordParked_restoreToReadyStaging($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^private def runCancelledFaultChecks($|[ ({:\[\]])' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^  runCancelledFaultChecks$' tests/FaultHandlingSuite.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

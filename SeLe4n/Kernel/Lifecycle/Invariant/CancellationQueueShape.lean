@@ -303,11 +303,7 @@ theorem sweptQueue_wellFormed
 /-- **WS-RR RR7.22 (residual)**: the TCB `restoreToReadyStaging` installs, named
 so proofs can quantify over it. -/
 def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : TCB :=
-  let cleared : TCB := (TCB.setIpcState { tcb with
-      queuePrevCode := 0
-      queueNextCode := 0
-      queuePPrevCode := 0
-      pendingReceiveReplyCode := 0 } .ready)
+  let cleared : TCB := tcb.restoredToReady
   match frame with
   | some f => cleared.withReturnFrame f
   | none => cleared
@@ -328,8 +324,9 @@ theorem restoreToReadyStaging_eq (st : SystemState) (tid : SeLe4n.ThreadId)
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]
 
 /-- **The complete description**: the restored TCB is the original with exactly
-six fields rewritten — the five the clear names, and `registerContext`, which the
-staged frame owns and which no invariant conjunct reads.  Stated as one record
+seven fields rewritten — the six the clear names (WS-ZA ZA6.22 added the fault
+record), and `registerContext`, which the staged frame owns and which no
+invariant conjunct reads.  Stated as one record
 update rather than as a list of fields that agree, so a field added to `TCB` is
 covered by construction. -/
 theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) :
@@ -339,6 +336,7 @@ theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFra
           queueNextCode := 0
           queuePPrevCode := 0
           pendingReceiveReplyCode := 0
+          pendingFault := none
           registerContext := (restoredTcb tcb frame).registerContext } .ready) := by
   unfold restoredTcb; cases frame <;> rfl
 

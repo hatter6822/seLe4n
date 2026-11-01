@@ -108,9 +108,13 @@ theorem retirePendingFaultForResume_keyFrame (st : SystemState) (tid : SeLe4n.Th
   unfold retirePendingFaultForResume
   split
   · split
-    · unfold applyFaultRestart
-      exact ⟨keyInputsEq_updateTcb hInv (fun _ => rfl), SystemState.updateTcb_scheduler _ _ _,
-        SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
+    · split
+      · unfold discardPendingFault
+        exact ⟨keyInputsEq_updateTcb hInv (fun _ => rfl), SystemState.updateTcb_scheduler _ _ _,
+          SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
+      · unfold applyFaultRestart
+        exact ⟨keyInputsEq_updateTcb hInv (fun _ => rfl), SystemState.updateTcb_scheduler _ _ _,
+          SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
     · exact ⟨keyInputsEq_refl st, rfl, hInv⟩
   · exact ⟨keyInputsEq_refl st, rfl, hInv⟩
 

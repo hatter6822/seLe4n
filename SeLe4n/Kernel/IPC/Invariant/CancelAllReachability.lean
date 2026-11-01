@@ -281,7 +281,10 @@ theorem storeEndpointWaiterCancelled_preserves_reachableParts (st : SystemState)
   have hI2 := SystemState.updateTcb_preserves_objects_invExt s1 t cancelledEndpointWaiterTcb hI1
   have hReady : (cancelledEndpointWaiterTcb (tcbOffQueue tcb)).ipcState = .ready :=
     TCB.ipcState_setIpcState
-      { tcbOffQueue tcb with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
+      { tcbOffQueue tcb with
+          pendingMessage := none
+          pendingReceiveReplyCode := 0
+          pendingFault := none } .ready
   have hN2 : notificationWaiterConsistent (s1.updateTcb t cancelledEndpointWaiterTcb) :=
     notificationWaiterConsistent_of_unblocked_tcb_write hN1 ⟨_, hT1, hNotNtfn⟩
       ⟨_, hS2, fun oid h => by rw [hReady] at h; cases h⟩
@@ -459,7 +462,10 @@ theorem storeEndpointBlockedCancelled_preserves_reachableParts (st : SystemState
   have hS2 := updateTcb_objects_self_of_tcb cancelledEndpointWaiterTcb hI1 hT1
   have hReady : (cancelledEndpointWaiterTcb (tcbOffQueue tcb)).ipcState = .ready :=
     TCB.ipcState_setIpcState
-      { tcbOffQueue tcb with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
+      { tcbOffQueue tcb with
+          pendingMessage := none
+          pendingReceiveReplyCode := 0
+          pendingFault := none } .ready
   refine ⟨notificationWaiterConsistent_of_unblocked_tcb_write hN1 ⟨_, hT1, hNotNtfn⟩
       ⟨_, hS2, fun oid h => by rw [hReady] at h; cases h⟩
       (fun t0 t1 h0 h1 => by rw [hT1] at h0; rw [hS2] at h1; cases h0; cases h1; exact ⟨rfl, rfl⟩)

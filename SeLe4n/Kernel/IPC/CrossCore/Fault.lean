@@ -565,6 +565,76 @@ theorem threadHasPendingFault_eq_false_iff (st : SystemState) (tid : SeLe4n.Thre
       | none => simp [hF]
       | some tf => simp [hF]
 
+/-- WS-ZA ZA6.22: **a thread whose blocking IPC is cancelled carries no fault.**
+Every cancellation restore is `restoreToReadyStaging`'s field clear
+(`TCB.restoredToReady`), which retires the fault record as seL4's `cancelIPC`
+resets `tcbFault`.  So a fault-blocked thread whose fault IPC is destroyed
+leaves the cancellation unfaulted, and the reply seam never answers its later
+ordinary Call through the fault branch (`replyTransferOnCore_of_no_fault`). -/
+theorem threadHasPendingFault_restoreToReadyStaging (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) :
+    threadHasPendingFault (Lifecycle.Suspend.restoreToReadyStaging st tid frame) tid = false := by
+  rw [threadHasPendingFault_eq_false_iff]
+  intro tcb h
+  unfold Lifecycle.Suspend.restoreToReadyStaging at h
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv] at h
+  cases hT : st.getTcb? tid with
+  | none => rw [hT] at h; cases h
+  | some t => rw [hT] at h; cases h; cases frame <;> rfl
+
+/-- WS-ZA ZA6.22: **a thread carrying a fault record is fault-blocked or
+`.Inactive`.**  A fault is recorded on the faulting thread as its fault IPC
+blocks it on the handler's endpoint (`.blockedOnCall`) or in the handler's
+reply (`.blockedOnReply`); a fault with no handler leaves it `.Inactive`
+(`faultSuspendOnCore`).  It is retired by the handler's reply
+(`applyFaultRestart`, `faultAbandon`), by every cancellation restore
+(`TCB.restoredToReady`) and by a resume (`retirePendingFaultForResume`), each
+before the thread runs again.  So a thread that runs, and in particular one
+that issues an ordinary Call, carries none
+(`threadHasPendingFault_eq_false_of_faultRecordParked`). -/
+def _root_.SeLe4n.Model.SystemState.faultRecordParked (st : SystemState) : Prop :=
+  ∀ t tcb, st.getTcb? t = some tcb → tcb.pendingFault.isSome →
+    tcb.threadState = .Inactive ∨ (∃ e, tcb.ipcState = .blockedOnCall e) ∨
+      (∃ e r, tcb.ipcState = .blockedOnReply e r)
+
+/-- WS-ZA ZA6.22 (**the fault-reply guard**): under `faultRecordParked`, a
+thread that is not `.Inactive` and is blocked on nothing carries no fault, so
+the Call it issues is answered through the reply seam's ordinary branch. -/
+theorem threadHasPendingFault_eq_false_of_faultRecordParked {st : SystemState}
+    {t : SeLe4n.ThreadId} {tcb : TCB} (h : st.faultRecordParked)
+    (hT : st.getTcb? t = some tcb) (hReady : tcb.ipcState = .ready)
+    (hAct : tcb.threadState ≠ .Inactive) :
+    threadHasPendingFault st t = false := by
+  rw [threadHasPendingFault_eq_false_iff]
+  intro tcb' hT'
+  rw [hT] at hT'; cases hT'
+  cases hF : tcb.pendingFault with
+  | none => rfl
+  | some _ =>
+    rcases h t tcb hT (by rw [hF]; rfl) with hI | ⟨_, hC⟩ | ⟨_, _, hR⟩
+    · exact absurd hI hAct
+    · rw [hReady] at hC; cases hC
+    · rw [hReady] at hR; cases hR
+
+/-- WS-ZA ZA6.22: **every cancellation restore keeps `faultRecordParked`**: the
+restored thread leaves it with no fault record, and no other thread is
+written. -/
+theorem faultRecordParked_restoreToReadyStaging {st : SystemState}
+    (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (h : st.faultRecordParked) :
+    (Lifecycle.Suspend.restoreToReadyStaging st tid frame).faultRecordParked := by
+  intro t tcb hT hF
+  by_cases hEq : t = tid
+  · subst hEq
+    have hNo := (threadHasPendingFault_eq_false_iff _ _).mp
+      (threadHasPendingFault_restoreToReadyStaging st t frame hInv) tcb hT
+    rw [hNo] at hF; cases hF
+  · unfold Lifecycle.Suspend.restoreToReadyStaging at hT
+    rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv t
+      (fun h => hEq (SeLe4n.ThreadId.toObjId_injective _ _ h.symm))] at hT
+    exact h t tcb hT hF
+
 /-- WS-RR RR4.14/RR4.15 (**the reply seam**): seL4's `doReplyTransfer`, whose
 first act is to ask whether the thread being answered is faulted.
 

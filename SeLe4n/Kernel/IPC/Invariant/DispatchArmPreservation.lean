@@ -4800,7 +4800,8 @@ cleared field to the value it already holds — the write is pointwise inert. -/
 private theorem restoreToReady_getElem_eq_of_quiescent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hQ : threadIpcFieldsQuiescent st tid) :
+    (hQ : threadIpcFieldsQuiescent st tid)
+    (hNoFault : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingFault = none) :
     ∀ oid : SeLe4n.ObjId,
       (Lifecycle.Suspend.restoreToReady st tid).objects[oid]? = st.objects[oid]? := by
   intro oid
@@ -4819,6 +4820,7 @@ private theorem restoreToReady_getElem_eq_of_quiescent
         have h3 := hQ.noPrev tcb hLk
         have h4 := hQ.noPPrev tcb hLk
         have h5 := hQ.noStash tcb hLk
+        have h6 := hNoFault tcb hLk
         cases tcb
         simp_all [ThreadIpcState.objectCode, ThreadIpcState.stateCode]
       rw [hSame]
@@ -4847,9 +4849,10 @@ private theorem resumeReadyMidState_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hQ : threadIpcFieldsQuiescent st tid)
+    (hNoFault : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingFault = none)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (Lifecycle.Suspend.resumeReadyMidState st tid) := by
-  have hEq := restoreToReady_getElem_eq_of_quiescent st tid hObjInv hQ
+  have hEq := restoreToReady_getElem_eq_of_quiescent st tid hObjInv hQ hNoFault
   have hObjInv1 := restoreToReady_objects_invExt st tid hObjInv
   have hInv1 : ipcInvariantFull (Lifecycle.Suspend.restoreToReady st tid) :=
     ipcInvariantFull_of_getElem_eq hEq hInv
@@ -4898,11 +4901,12 @@ private theorem resumeReadyMidState_objects_invExt
 private theorem resumeReadyMidState_getTcb_ready
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hQ : threadIpcFieldsQuiescent st tid) :
+    (hQ : threadIpcFieldsQuiescent st tid)
+    (hNoFault : ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.pendingFault = none) :
     ∀ tcb : TCB, (Lifecycle.Suspend.resumeReadyMidState st tid).getTcb? tid = some tcb →
       tcb.ipcState = .ready := by
   intro tcb hT
-  have hEq := restoreToReady_getElem_eq_of_quiescent st tid hObjInv hQ
+  have hEq := restoreToReady_getElem_eq_of_quiescent st tid hObjInv hQ hNoFault
   have hObjInv1 := restoreToReady_objects_invExt st tid hObjInv
   unfold Lifecycle.Suspend.resumeReadyMidState at hT
   dsimp only [] at hT
@@ -4931,6 +4935,7 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt)
     (hQ : threadIpcFieldsQuiescent st vtid.val)
+    (hNoFault : ∀ tcb : TCB, st.getTcb? vtid.val = some tcb → tcb.pendingFault = none)
     (hInv : ipcInvariantFull st)
     (hStep : Lifecycle.Suspend.resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
@@ -4944,7 +4949,7 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
       split at hStep
       · cases hStep
       · have hMid := markKeyChangeFrom_preserves_ipcInvariantFull st _ vtid.val
-          (resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hInv)
+          (resumeReadyMidState_preserves_ipcInvariantFull st vtid.val hObjInv hQ hNoFault hInv)
         have hMidInv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
             vtid.val).objects.invExt := by
           rw [markKeyChangeFrom_objects]; exact resumeReadyMidState_objects_invExt st vtid.val hObjInv
@@ -4952,7 +4957,7 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
           (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
           (determineTargetCore st vtid.val) vtid.val hMidInv
           (by rw [markKeyChangeFrom_getTcb?]
-              exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
+              exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ hNoFault) hMid
         have hEnqInv := enqueueRunnableOnCore_preserves_objects_invExt
           (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
           (determineTargetCore st vtid.val) vtid.val hMidInv
@@ -4982,13 +4987,21 @@ theorem retirePendingFaultForResume_preserves_ipcInvariantFull
       cases hF : tcb.pendingFault with
       | none => simp only [retirePendingFaultForResume, hT, hF]; exact hInv
       | some tf =>
-          simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
-          rw [SystemState.updateTcb_eq_of_some hT]
-          exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-            { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context) with
-                pendingFault := none } hObjInv hInv
-            ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
-            rfl rfl rfl rfl rfl rfl rfl rfl rfl
+          simp only [retirePendingFaultForResume, hT, hF]
+          split
+          · unfold discardPendingFault
+            rw [SystemState.updateTcb_eq_of_some hT]
+            exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
+              { tcb with pendingFault := none } hObjInv hInv
+              ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
+              rfl rfl rfl rfl rfl rfl rfl rfl rfl
+          · unfold applyFaultRestart
+            rw [SystemState.updateTcb_eq_of_some hT]
+            exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
+              { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context) with
+                  pendingFault := none } hObjInv hInv
+              ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
+              rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
 /-- Review round (PR #887): and the object-store invariant. -/
 theorem retirePendingFaultForResume_preserves_objects_invExt
@@ -5000,8 +5013,10 @@ theorem retirePendingFaultForResume_preserves_objects_invExt
       cases hF : tcb.pendingFault with
       | none => simp only [retirePendingFaultForResume, hT, hF]; exact hObjInv
       | some tf =>
-          simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
-          exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+          simp only [retirePendingFaultForResume, hT, hF]
+          split
+          · exact discardPendingFault_preserves_objects_invExt st tid hObjInv
+          · exact applyFaultRestart_preserves_objects_invExt st tid _ hObjInv
 
 /-- Review round (PR #887): the retire step rewrites none of the fields the
 quiescence pack reads, so the pack transports to the state the resume runs
@@ -5017,17 +5032,21 @@ theorem threadIpcFieldsQuiescent_retirePendingFaultForResume
       | none => simp only [retirePendingFaultForResume, hT, hF]; exact hQ
       | some tf =>
           simp only [retirePendingFaultForResume, hT, hF]
-          have hPost := applyFaultRestart_pc st tid
-            (Architecture.faultRestartFrameOfContext tf.context) tcb hT hObjInv
+          have hPost : (if st.machine.residentOnSomeCore tid then discardPendingFault st tid
+              else applyFaultRestart st tid
+                (Architecture.faultRestartFrameOfContext tf.context)).getTcb? tid =
+              some (if st.machine.residentOnSomeCore tid then { tcb with pendingFault := none }
+                else { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context)
+                  with pendingFault := none }) := by
+            split
+            · exact discardPendingFault_getTcb?_self st tid tcb hT hObjInv
+            · exact applyFaultRestart_pc st tid _ tcb hT hObjInv
           refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro tcb' hT' <;> rw [hPost] at hT' <;>
-            cases hT'
-          · exact hQ.ready tcb hT
-          · exact hQ.noNext tcb hT
-          · exact hQ.noPrev tcb hT
-          · exact hQ.noPPrev tcb hT
-          · exact hQ.noStash tcb hT
-          · exact hQ.noPendingMsg tcb hT
-          · exact hQ.noBudget tcb hT
+            cases hT' <;> split <;>
+            first
+              | exact hQ.ready tcb hT | exact hQ.noNext tcb hT | exact hQ.noPrev tcb hT
+              | exact hQ.noPPrev tcb hT | exact hQ.noStash tcb hT
+              | exact hQ.noPendingMsg tcb hT | exact hQ.noBudget tcb hT
 
 /-- Review round (PR #887): **configuring a fault handler preserves the
 bundle** — a one-TCB rewrite of `faultHandler`, a field no conjunct reads. -/

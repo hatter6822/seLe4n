@@ -120,7 +120,9 @@ theorem retirePendingFaultForResume_mappingStage (st : SystemState) (tid : SeLe4
   unfold retirePendingFaultForResume
   split
   · split
-    · unfold applyFaultRestart; exact updateTcb_mappingStage _ _ _
+    · split
+      · unfold discardPendingFault; exact updateTcb_mappingStage _ _ _
+      · unfold applyFaultRestart; exact updateTcb_mappingStage _ _ _
     · exact MappingStage.refl _
   · exact MappingStage.refl _
 
