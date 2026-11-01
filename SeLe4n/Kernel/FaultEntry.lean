@@ -388,6 +388,19 @@ theorem faultEntryFrame?_some (esr far : UInt64) (c : Architecture.InFlightConte
             { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
               sp := c.sp, lr := c.x30 }) := rfl
 
+/-- WS-ZA ZA6.12: **the decoded window is the saved frame's own.**  The window
+is read from the same context the entry saves (`saveCapturedTrapFrameAt`), so
+the delivery's spill of it into the faulting thread
+(`writeFaultRegistersToTcb`) writes back what the save wrote: spilling the
+window into the frame's register file changes nothing. -/
+theorem faultEntryFrame?_window_spill (esr far : UInt64) (c frame : Architecture.InFlightContext)
+    (ectx : ExceptionContext) (w : FaultRegisterWindow)
+    (h : faultEntryFrame? esr far (some c) = some (frame, ectx, w)) :
+    w.spill frame.snapshot = frame.snapshot := by
+  rw [faultEntryFrame?_some] at h
+  cases h
+  rfl
+
 /-- …and the arm no hardware path reaches decodes nothing, so the entries
 commit nothing. -/
 theorem faultEntryFrame?_none (esr far : UInt64) :

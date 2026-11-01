@@ -15,7 +15,13 @@ module proves the settle keeps `contextMatchesCurrentOnCore` on the executing
 core — the switch establishes the match, the vacating fallback leaves no
 current thread, and the record and the poke touch neither the bank nor the
 store — and composes it with the save, the step and the activation into the
-entry-level theorems for the timer and reschedule entries.
+entry-level theorems for the timer, reschedule and FP/SIMD entries.
+
+WS-ZA ZA6.12 adds the fault and unknown-syscall entries.  Their shared delivery
+writes saved registers (the faulting thread's spilled window, the woken
+handler's return frame), but it vacates the executing core and makes no thread
+current on any core (`faultDeliveredState_vacates`), so the successor's switch
+establishes the match whatever those writes held.
 -/
 
 namespace SeLe4n.Kernel
@@ -322,5 +328,178 @@ theorem fpAccessEntryState_preserves_contextMatchesCurrentOnCore (coreId : UInt6
   exact activateThreadOnCore_preserves_contextMatchesCurrentOnCore _ c
     (settleResidencyOnCore_preserves_objects_invExt c M hDI)
     (settleResidencyOnCore_preserves_contextMatchesCurrentOnCore M c hDI hD)
+
+/-! ## The fault and unknown-syscall entries
+
+WS-ZA ZA6.12.  The delivery the two entries share (`faultEntryDeliver`) spills
+the trap's register window into the faulting thread and, through the Call it
+composes, writes the woken handler's return frame.  Neither write can break the
+executing core's match: the delivery takes the faulting thread off the core and
+makes no thread current anywhere (only a scheduling point does), so the core
+comes out of it with no current thread, and the successor's switch establishes
+the match. -/
+
+/-- Every core has another: the model has more than one. -/
+theorem exists_core_ne : ∀ d : CoreId, ∃ e : CoreId, e ≠ d := by decide
+
+/-- **The fault delivery makes no thread current on any core.**  Its coverage
+holds whichever core is named the executing one (`faultDeliveredState_stepCovers`),
+so its cross-core frame of the current slots holds at every core: name a core
+other than `d`. -/
+theorem faultDeliveredState_currentKept (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c d : CoreId)
+    (tid t : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : (faultDeliveredState lctx st f ectx w c tid).scheduler.currentOnCore d = some t) :
+    st.scheduler.currentOnCore d = some t := by
+  obtain ⟨e, he⟩ := exists_core_ne d
+  exact (faultDeliveredState_stepCovers e (lctx := lctx) (f := f) (ectx := ectx) (w := w)
+    (c := c) (tid := tid) hInv).1.currentKept d (Ne.symm he) t h
+
+/-- **The fault delivery vacates the faulting core**: it makes no thread current
+there, and it takes the faulting thread off it, blocked on its handler or
+suspended (`faultDeliverOnCoreChecked_leaves_thread_not_runnable`). -/
+theorem faultDeliveredState_vacates (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hCur : st.scheduler.currentOnCore c = some tid) :
+    (faultDeliveredState lctx st f ectx w c tid).scheduler.currentOnCore c = none := by
+  cases hP : (faultDeliveredState lctx st f ectx w c tid).scheduler.currentOnCore c with
+  | none => rfl
+  | some t =>
+    have hT := faultDeliveredState_currentKept lctx st f ectx w c c tid t hInv hP
+    rw [hCur] at hT
+    cases hT
+    exact absurd hP (faultDeliverOnCoreChecked_leaves_thread_not_runnable lctx _ tid f _ c).2
+
+/-- The shared fault delivery keeps the store's table invariant. -/
+theorem faultEntryDeliver_preserves_objects_invExt (lctx : LabelingContext) (st : SystemState)
+    (f : Fault) (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
+    (hInv : st.objects.invExt) : (faultEntryDeliver lctx st f ectx w c).2.objects.invExt := by
+  unfold faultEntryDeliver
+  split
+  · exact dispatchVacatedCore_preserves_objects_invExt c st hInv
+  · rename_i tid _
+    split
+    · exact hInv
+    · exact scheduleLocalSuccessorFrom_preserves_objects_invExt c (some tid) _
+        (faultDeliveredState_stepCovers c (lctx := lctx) (f := f) (ectx := ectx) (w := w)
+          (c := c) (tid := tid) hInv).2
+
+/-- **The shared fault delivery keeps the executing core's bank its current
+thread's context**: a vacated core's dispatch keeps the match, an idle thread's
+trap commits nothing, and a delivery vacates the core (whatever it wrote into
+the faulting thread and the handler), so the successor's switch establishes the
+match, or the core is left with no current thread. -/
+theorem faultEntryDeliver_preserves_contextMatchesCurrentOnCore (lctx : LabelingContext)
+    (st : SystemState) (f : Fault) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (c : CoreId) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (faultEntryDeliver lctx st f ectx w c).2 c := by
+  unfold faultEntryDeliver
+  split
+  · exact dispatchVacatedCore_preserves_contextMatchesCurrentOnCore st c hInv h
+  · rename_i tid hCur
+    split
+    · exact h
+    · have hDI := (faultDeliveredState_stepCovers c (lctx := lctx) (f := f) (ectx := ectx)
+        (w := w) (c := c) (tid := tid) hInv).2
+      have hV := faultDeliveredState_vacates lctx st f ectx w c tid hInv hCur
+      generalize faultDeliveredState lctx st f ectx w c tid = D at hDI hV
+      dsimp only
+      unfold PriorityInheritance.scheduleLocalSuccessorFrom
+      split
+      · split
+        · rename_i st' hR
+          exact handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore D c st' hDI
+            (contextMatchesCurrentOnCore_of_none hV) hR
+        · exact contextMatchesCurrentOnCore_of_none hV
+      · exact contextMatchesCurrentOnCore_of_none hV
+
+/-- The syscall entry's save keeps the store's table invariant. -/
+theorem saveCapturedSyscallFrame_preserves_objects_invExt (st : SystemState) (c : CoreId)
+    (frame : Option Architecture.InFlightContext) (hInv : st.objects.invExt) :
+    (Architecture.saveCapturedSyscallFrame st c frame).objects.invExt := by
+  cases frame with
+  | none => exact hInv
+  | some ic =>
+    exact saveVacatedFrameOnCore_preserves_objects_invExt _ c _ _
+      (Architecture.saveTrapFrameOnCore_preserves_objects_invExt st c _ hInv)
+
+/-- **The syscall entry's save establishes the executing core's match** (or
+keeps it): the vacated core's rewound frame goes to its resident thread, never
+to its bank or its current thread. -/
+theorem saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (c : CoreId) (frame : Option Architecture.InFlightContext) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (Architecture.saveCapturedSyscallFrame st c frame) c := by
+  cases frame with
+  | none => exact h
+  | some ic =>
+    exact saveVacatedFrameOnCore_preserves_contextMatchesCurrentOnCore _ c _ _
+      (Architecture.saveTrapFrameOnCore_contextMatchesCurrentOnCore st c _ hInv h)
+
+/-- **The fault entry keeps the executing core's bank its current thread's
+context.** -/
+theorem faultEntryState_preserves_contextMatchesCurrentOnCore (lctx : LabelingContext)
+    (coreId : UInt64) (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c)
+    (frame : Option Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (st : SystemState) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) ectx w
+          coreId).2 coreId) coreId))) c := by
+  obtain ⟨hlt, rfl⟩ := coreIdOfUInt64?_some hc
+  simp only [activateThreadAt, PriorityInheritance.settleResidencyAt,
+    Concurrency.saveCapturedTrapFrameAt, hc]
+  have hSv := saveCapturedTrapFrame_preserves_objects_invExt st ⟨coreId.toNat, hlt⟩ frame hInv
+  have hSc := saveCapturedTrapFrame_preserves_contextMatchesCurrentOnCore st ⟨coreId.toNat, hlt⟩
+    frame hInv h
+  generalize Architecture.saveCapturedTrapFrame st ⟨coreId.toNat, hlt⟩ frame = S at hSv hSc
+  refine settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore _ _ ?_ ?_
+  · unfold faultEntryStep
+    rw [dif_pos hlt]
+    split
+    · split
+      · exact hSv
+      · exact faultEntryDeliver_preserves_objects_invExt lctx S _ ectx w _ hSv
+    · exact hSv
+  · unfold faultEntryStep
+    rw [dif_pos hlt]
+    split
+    · split
+      · exact hSc
+      · exact faultEntryDeliver_preserves_contextMatchesCurrentOnCore lctx S _ ectx w _ hSv hSc
+    · exact hSc
+
+/-- **The unknown-syscall entry keeps the executing core's bank its current
+thread's context.** -/
+theorem unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore (lctx : LabelingContext)
+    (coreId : UInt64) (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c)
+    (frame : Option Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (st : SystemState) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (unknownSyscallEntryStep lctx (Concurrency.saveCapturedSyscallFrameAt st coreId frame)
+          ectx w coreId).2 coreId) coreId))) c := by
+  obtain ⟨hlt, rfl⟩ := coreIdOfUInt64?_some hc
+  simp only [activateThreadAt, PriorityInheritance.settleResidencyAt,
+    Concurrency.saveCapturedSyscallFrameAt, hc]
+  have hSv := saveCapturedSyscallFrame_preserves_objects_invExt st ⟨coreId.toNat, hlt⟩ frame hInv
+  have hSc := saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore st
+    ⟨coreId.toNat, hlt⟩ frame hInv h
+  generalize Architecture.saveCapturedSyscallFrame st ⟨coreId.toNat, hlt⟩ frame = S at hSv hSc
+  refine settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore _ _ ?_ ?_
+  · unfold unknownSyscallEntryStep
+    rw [dif_pos hlt]
+    split
+    · exact faultEntryDeliver_preserves_objects_invExt lctx S _ ectx w _ hSv
+    · exact hSv
+  · unfold unknownSyscallEntryStep
+    rw [dif_pos hlt]
+    split
+    · exact faultEntryDeliver_preserves_contextMatchesCurrentOnCore lctx S _ ectx w _ hSv hSc
+    · exact hSc
 
 end SeLe4n.Kernel
