@@ -207,6 +207,18 @@ fi
 RUSTFLAGS="--cfg loom" \
     cargo test -p sele4n-hal --lib queued_rw_lock::loom_model -- --test-threads=1
 
+# WS-ZA ZA6.11: the remote stall's protocol (`remote_stall.rs`'s loom
+# module): an initiator's stall under the kernel-entry lock and its save wait
+# outside it, against the target's exception entry, locked entry and exit
+# gate.  Two models are unbounded (one initiator; two initiators against
+# each other); the three-core ring is bounded at three preemptions, stated
+# where it applies.  Each checks that no schedule deadlocks or times out and
+# that an initiator's wait ends only after the target saved the thread.
+echo "loom: exploring the remote stall's save wait (remote_stall)..."
+RUSTFLAGS="--cfg loom" \
+    cargo test -p sele4n-hal --lib remote_stall::loom_model -- --test-threads=1
+
 echo "loom: PASS — every explored interleaving upholds mutual exclusion,"
 echo "loom:        writer-readers exclusion, reader concurrency and the"
-echo "loom:        ticket-interval invariant."
+echo "loom:        ticket-interval invariant; the remote stall's initiators"
+echo "loom:        never deadlock and return only after the target saved."
