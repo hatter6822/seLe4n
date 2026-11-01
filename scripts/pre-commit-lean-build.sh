@@ -149,6 +149,9 @@ ERRORS=0
 
 # Secure temp file for build output (M-NEW-12: eliminates symlink race with PID-based names)
 BUILD_LOG="$(mktemp)"
+# Per-module build bound in seconds (see the build loop): sized for a full
+# dependency rebuild of the kernel's deepest modules.
+PRECOMMIT_BUILD_TIMEOUT="${SELE4N_PRECOMMIT_BUILD_TIMEOUT:-3600}"
 trap 'rm -f "${BUILD_LOG}"' EXIT
 
 # --- Check 1: No sorry in staged content ---
@@ -198,8 +201,23 @@ for file in "${STAGED_LEAN_FILES[@]}"; do
     MODULES_CHECKED=$((MODULES_CHECKED + 1))
     echo "  Building $MODULE ..."
 
-    # Build with timeout (5 minutes per module)
-    if ! timeout 300 lake build "$MODULE" > "${BUILD_LOG}" 2>&1; then
+    # Build under a bound.  The bound covers the module's whole dependency
+    # rebuild, not only the module: a staged edit low in the import graph (a
+    # docstring in a widely imported file) makes the next staged module
+    # rebuild hundreds of dependents first.  A fixed 5-minute bound killed
+    # those rebuilds (`timeout` exits 124) and the kill was reported as a build
+    # failure with "0 errors", which no log line explained.  The bound is now
+    # sized for a dependency rebuild and overridable, and a kill is reported as
+    # what it is.  Either way the commit is blocked: a build that did not
+    # finish proved nothing.
+    BUILD_RC=0
+    timeout "${PRECOMMIT_BUILD_TIMEOUT}" lake build "$MODULE" > "${BUILD_LOG}" 2>&1 || BUILD_RC=$?
+    if [ "${BUILD_RC}" -eq 124 ]; then
+        BUILD_ERRORS=$((BUILD_ERRORS + 1))
+        echo "  TIMED OUT: $MODULE (the build, with its dependency rebuild, ran past ${PRECOMMIT_BUILD_TIMEOUT}s)"
+        echo "    Build the module once (lake build $MODULE) and commit again, or raise"
+        echo "    SELE4N_PRECOMMIT_BUILD_TIMEOUT (seconds)."
+    elif [ "${BUILD_RC}" -ne 0 ]; then
         BUILD_ERRORS=$((BUILD_ERRORS + 1))
         # `grep -c` prints `0` and exits 1 when nothing matches, so a
         # `|| echo "?"` appended a second line and `ERROR_COUNT` held `0\n?` —
@@ -219,6 +237,12 @@ for file in "${STAGED_LEAN_FILES[@]}"; do
         grep "^error:" "${BUILD_LOG}" 2>/dev/null | head -5 | sed 's/^/    /'
         if [ "$ERROR_COUNT" != "?" ] && [ "$ERROR_COUNT" -gt 5 ]; then
             echo "    ... and $((ERROR_COUNT - 5)) more"
+        fi
+        # A failure with no `error:` line (a signal, a crashed toolchain, a
+        # full disk) still says why somewhere: show the log's tail.
+        if [ "$ERROR_COUNT" = "0" ]; then
+            echo "    (no error: line; exit status ${BUILD_RC}; the log ends:)"
+            tail -n 5 "${BUILD_LOG}" 2>/dev/null | sed 's/^/    /'
         fi
     else
         echo "  OK: $MODULE"
