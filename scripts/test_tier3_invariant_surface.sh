@@ -7874,7 +7874,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 50' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 51' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -8245,7 +8245,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -9153,7 +9153,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification

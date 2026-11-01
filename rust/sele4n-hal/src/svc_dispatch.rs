@@ -1219,8 +1219,11 @@ mod tests {
         assert_eq!(SyscallId::Yield.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(41), Some(SyscallId::Yield));
         assert_eq!(SyscallId::SchedContextConsumed.min_inline_args(), 0);
-        assert_eq!(SyscallId::from_u32(42), Some(SyscallId::SchedContextConsumed));
-        assert_eq!(SyscallId::from_u32(42), None);
+        assert_eq!(
+            SyscallId::from_u32(42),
+            Some(SyscallId::SchedContextConsumed)
+        );
+        assert_eq!(SyscallId::from_u32(43), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

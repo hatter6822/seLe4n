@@ -1399,12 +1399,12 @@ def runInformationFlowChecks : IO Unit := do
   -- `lifecycleRevokeDeleteRetype` removed with the in-place retype.
   -- 33 → 32 and read-only 4 → 3: `revokeService` and
   -- `lookupServiceByRecordedRegistration` are replaced by their policy-gated wrappers.
-  expect "enforcement boundary has 32 capability-only"
-    (coCount = 32)
+  expect "enforcement boundary has 33 capability-only"
+    (coCount = 33)
   expect "enforcement boundary has 3 read-only"
     (roCount = 3)
-  expect "enforcement boundary total is 50"
-    (boundary.length = 50)
+  expect "enforcement boundary total is 51"
+    (boundary.length = 51)
 
   IO.println "enforcement boundary completeness verified"
 

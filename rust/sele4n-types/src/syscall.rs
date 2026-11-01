@@ -499,7 +499,10 @@ mod tests {
         // WS-ZA ZA4.3: the yield, appended the same way.
         assert_eq!(SyscallId::from_u64(41), Some(SyscallId::Yield));
         // WS-ZA ZA6.9: the Consumed invocation, appended the same way.
-        assert_eq!(SyscallId::from_u64(42), Some(SyscallId::SchedContextConsumed));
+        assert_eq!(
+            SyscallId::from_u64(42),
+            Some(SyscallId::SchedContextConsumed)
+        );
         assert_eq!(SyscallId::from_u64(43), None);
         assert_eq!(SyscallId::COUNT, 42);
         assert_eq!(SyscallId::ENCODING_BOUND, 43);

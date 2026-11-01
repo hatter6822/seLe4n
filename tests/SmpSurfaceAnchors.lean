@@ -1206,7 +1206,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- Both syscalls are in the ABI and value-returning.
      decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
        ∧ SeLe4n.Model.SyscallId.auditDrain.toNat = 32
-       ∧ SeLe4n.Model.SyscallId.count = 41
+       ∧ SeLe4n.Model.SyscallId.count = 42
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditRead = .word
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditDrain = .word))
 
@@ -1398,7 +1398,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- file's import set; `SmpInformationFlowSuite` §11.6 checks it.)
      decide (SeLe4n.Kernel.refusalSeamClass .declassifySignal = .records
        ∧ SeLe4n.Model.SyscallId.declassifySignal.toNat = 33
-       ∧ SeLe4n.Model.SyscallId.count = 41
+       ∧ SeLe4n.Model.SyscallId.count = 42
        ∧ SeLe4n.Kernel.syscallRequiredRight .declassifySignal = .write
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .declassifySignal = .unit))
 
