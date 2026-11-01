@@ -35,6 +35,17 @@ Proofs only for the kernel; one fix to the pre-commit hook.
 
   The rows after them move up one (ZA6.18 to ZA6.31 become ZA6.19 to ZA6.32),
   and every citation is swept.
+- **CI action pins (folds in dependabot #898, #902 and #931).** Each new pin
+  was checked against its upstream ref:
+  - `dtolnay/rust-toolchain` moves to `683b588c` (`master`). That is newer than
+    #898's `02cb101e`, and it carries upstream's input-quoting hardening
+    ("Safely handle action inputs") and the rustup checksum retry.
+  - `github/codeql-action` `init` and `analyze` move to v4.39.1 (`9b325408`).
+  - `actions/upload-artifact` moves to v7.0.2 (`cf430e03`).
+- **The naming gate skips pinned action SHAs (from #898).** A 40-hex `uses:`
+  ref is an upstream content address, and one can spell a workstream code
+  (`02cb1…`). `strip_config` now blanks only that hex payload; the action's
+  name is still scanned. Three self-tests cover it.
 
 ## v0.36.179 — WS-ZA ZA6.16: a thread blocked in IPC is resident on no core
 
