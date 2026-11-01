@@ -4359,6 +4359,21 @@ run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_blockedNotResiden
 run_check "INVARIANT" rg -n '^theorem settleThenActivateAt_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+# WS-ZA ZA6.19: a preemption window keeps StateMono, the fault delivery blocks
+# only the executing core's current thread, and the timer, fault and
+# unknown-syscall entries carry the invariant.
+run_check "INVARIANT" rg -n -U "^    st\.currentDequeuedUniqueExcept \(some p\) → st'\.currentDequeuedUniqueExcept \(some p\)\) ∧\n  \(∀ c, p = \.preempt c → st\.objects\.invExt → st\.runQueueRefined → StateMono st st'\)$" SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U "^def readyKeptStage \(S : SeLe4n\.ThreadId → Prop\) \(st st' : SystemState\) : Prop :=\n  st\.objects\.invExt → st\.runQueueRefined → readyKeptExcept S st st'$" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n -U "^    \(h : storeTcbIpcStateAndMessage st tid s m = \.ok st'\) :\n    readyKeptStage \(· = tid\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n -U '^    readyKeptStage \(fun t => st\.scheduler\.currentOnCore c = some t\) st\n      \(faultEntryDeliver lctx st f ectx w c\)\.2 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem windowDispatch_stateMono($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCore_stateMono($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_readyKeptStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_readyKeptStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem faultSuspendOnCore_readyKeptStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

@@ -1380,7 +1380,8 @@ theorem RunQueueWindowStage.requeueCurrent (st : SystemState) (c : CoreId)
         · rename_i h; obtain ⟨rfl, hA⟩ := h
           exact .inr ⟨hCur, of_decide_eq_true hq, runEnqueueAdmits_not_idle hA⟩
         · exact .inl hq)
-      (StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))⟩
+      (StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)),
+    fun _ _ _ _ => StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)⟩
 
 /-- The deschedule empties core `c`'s slot if it held `t`, and keeps every other
 slot. -/
