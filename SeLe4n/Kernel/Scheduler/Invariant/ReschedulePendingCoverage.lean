@@ -228,6 +228,112 @@ theorem residentKeptOffCore_of_setResidentOnCore {e : CoreId} {pre post : System
   fun c hc _ ht => by
     rw [h, MachineState.residentOnCore_setResidentOnCore_ne _ e c _ (Ne.symm hc)] at ht; exact ht
 
+/-- WS-ZA ZA6.13: **the step writes no remote core's register bank**: every
+core other than the executing core `e` holds the register file it held.  A
+core's bank (`MachineState.regsOnCore`) is written only by that core's own
+entry: its trap-frame save, its caller's return staging and its scheduling
+point's restore.  With `currentKeptOffCore` this is the half of a remote core's
+bank match (`contextMatchesCurrentOnCore`) that its bank supplies; the other
+half is the remote current thread's saved registers. -/
+def banksKeptOffCore (e : CoreId) (pre post : SystemState) : Prop :=
+  ∀ c, c ≠ e → post.machine.regsOnCore c = pre.machine.regsOnCore c
+
+theorem banksKeptOffCore_refl (e : CoreId) (st : SystemState) : banksKeptOffCore e st st :=
+  fun _ _ => rfl
+
+theorem banksKeptOffCore_trans {e : CoreId} {a b d : SystemState}
+    (h₁ : banksKeptOffCore e a b) (h₂ : banksKeptOffCore e b d) : banksKeptOffCore e a d :=
+  fun c hc => (h₂ c hc).trans (h₁ c hc)
+
+/-- The residency-record and FP-owner writes leave every bank alone
+(`bank_frame` closes the banks' equation through them by `simp`). -/
+@[simp] theorem MachineState.setResidentOnCore_coreRegs (ms : MachineState) (c : CoreId)
+    (t? : Option SeLe4n.ThreadId) : (ms.setResidentOnCore c t?).coreRegs = ms.coreRegs := rfl
+@[simp] theorem MachineState.setFpOwnerOnCore_coreRegs (ms : MachineState) (c : CoreId)
+    (t? : Option SeLe4n.ThreadId) : (ms.setFpOwnerOnCore c t?).coreRegs = ms.coreRegs := rfl
+
+@[simp] theorem saveOutgoingContextOnCore_coreRegs (st : SystemState) (c : CoreId) :
+    (saveOutgoingContextOnCore st c).machine.coreRegs = st.machine.coreRegs := by
+  unfold saveOutgoingContextOnCore; split
+  · rfl
+  · rw [SystemState.updateTcb_machine]
+
+@[simp] theorem sliceExpireOnCore_coreRegs (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    (sliceExpireOnCore st c tid tcb hTcb).machine.coreRegs = st.machine.coreRegs := by
+  simp [sliceExpireOnCore, SystemState.rewriteObject_machine]
+
+/-- A step that keeps every core's bank keeps it. -/
+theorem banksKeptOffCore_of_eq {e : CoreId} {pre post : SystemState}
+    (h : post.machine.coreRegs = pre.machine.coreRegs) : banksKeptOffCore e pre post :=
+  fun _ _ => by unfold MachineState.regsOnCore; rw [h]
+
+/-- Writing the executing core's bank keeps every other core's. -/
+theorem banksKeptOffCore_of_setRegsOnCore {e : CoreId} {pre post : SystemState}
+    {v : SeLe4n.RegisterFile} (h : post.machine.coreRegs = (pre.machine.setRegsOnCore e v).coreRegs) :
+    banksKeptOffCore e pre post :=
+  fun c hc => by
+    have := MachineState.regsOnCore_setRegsOnCore_ne pre.machine e c v (Ne.symm hc)
+    unfold MachineState.regsOnCore at this ⊢; rw [h]; exact this
+
+/-- Closes `post.machine.coreRegs = pre.machine.coreRegs` for a step that writes
+no core's register bank: by definition, from a hypothesis that equates the
+machines, through the object writes by `simp`, case by case through a step's
+branches, or along a chain of machine-keeping writes (`machine_chain`).  The arm
+files register further alternatives with `macro_rules`. -/
+syntax "bank_frame" : tactic
+
+macro_rules | `(tactic| bank_frame) => `(tactic|
+  (first
+    | rfl
+    | assumption
+    | exact congrArg MachineState.coreRegs (by assumption)
+    | (rw [‹SystemState.machine _ = _›])
+    | (simp [SystemState.rewriteObject_machine, SystemState.updateTcb_machine,
+        SystemState.updateSchedContext_machine]; done)
+    | (simp_all only [SystemState.machine]; done)))
+macro_rules | `(tactic| bank_frame) => `(tactic|
+  ((repeat' split) <;> (simp [SystemState.rewriteObject_machine, SystemState.updateTcb_machine,
+    SystemState.updateSchedContext_machine]) <;> done))
+macro_rules | `(tactic| bank_frame) => `(tactic|
+  (apply congrArg MachineState.coreRegs; machine_chain))
+
+/-- The idle dispatch and the idle fallback write the bank of the core they
+dispatch, and no other. -/
+@[simp] theorem dispatchIdleOnCore_regsOnCore_ne (st : SystemState) (c d : CoreId) (h : c ≠ d) :
+    (dispatchIdleOnCore st c).machine.regsOnCore d = st.machine.regsOnCore d := by
+  simp only [dispatchIdleOnCore]
+  rw [restoreIncomingContextOnCore_regsOnCore_ne _ c d _ h, SystemState.runRemoveOnCore_machine]
+
+@[simp] theorem idleFallbackOnCore_regsOnCore_ne (st : SystemState) (c d : CoreId) (h : c ≠ d) :
+    (idleFallbackOnCore st c).machine.regsOnCore d = st.machine.regsOnCore d := by
+  unfold idleFallbackOnCore; split
+  · exact dispatchIdleOnCore_regsOnCore_ne st c d h
+  · rfl
+
+/-- Closes `banksKeptOffCore e pre post` for a step that writes no core's bank
+(`bank_frame` on the banks' equation), or only the executing core's (`simp`
+through the bank writes' frames, case by case).  The arm files register further
+alternatives with `macro_rules`. -/
+syntax "bank_kept" : tactic
+
+macro_rules | `(tactic| bank_kept) => `(tactic|
+  (first
+    | exact banksKeptOffCore_refl _ _
+    | (apply banksKeptOffCore_of_eq; bank_frame)
+    | (intro _c hc; have hc' := Ne.symm hc;
+       simp [hc, hc', SystemState.rewriteObject_machine,
+         SystemState.updateTcb_machine, SystemState.updateSchedContext_machine,
+         restoreIncomingContextOnCore_regsOnCore_ne,
+         restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_ne,
+         MachineState.regsOnCore_setRegsOnCore_ne]; done)
+    | (intro _c hc; have hc' := Ne.symm hc;
+       (repeat' split) <;> (simp [hc, hc', SystemState.rewriteObject_machine,
+         SystemState.updateTcb_machine, SystemState.updateSchedContext_machine,
+         restoreIncomingContextOnCore_regsOnCore_ne,
+         restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_ne,
+         MachineState.regsOnCore_setRegsOnCore_ne]) <;> done)))
+
 /-! ### Composition laws -/
 
 theorem schedKeyNotWeakened_refl (st : SystemState) (t : SeLe4n.ThreadId) :
@@ -1568,16 +1674,18 @@ structure stepCovers (e : CoreId) (pre post : SystemState) : Prop where
   currentKept : currentKeptOffCore e pre post
   /-- WS-ZA ZA6.10: the cross-core frame of the residency records. -/
   residentKept : residentKeptOffCore e pre post
+  /-- WS-ZA ZA6.13: the cross-core frame of the register banks. -/
+  banksKept : banksKeptOffCore e pre post
 
 theorem stepCovers_refl (e : CoreId) (st : SystemState) : stepCovers e st st :=
   ⟨reschedulePendingCovers_refl e st, reschedulePendingMonotone_refl e st,
-    currentKeptOffCore_refl e st, residentKeptOffCore_refl e st⟩
+    currentKeptOffCore_refl e st, residentKeptOffCore_refl e st, banksKeptOffCore_refl e st⟩
 
 theorem stepCovers_trans {e : CoreId} {a b d : SystemState}
     (h₁ : stepCovers e a b) (h₂ : stepCovers e b d) : stepCovers e a d :=
   ⟨reschedulePendingCovers_trans h₁.1 h₂.1 h₂.2,
    reschedulePendingMonotone_trans h₁.2 h₂.2, currentKeptOffCore_trans h₁.3 h₂.3,
-   residentKeptOffCore_trans h₁.4 h₂.4⟩
+   residentKeptOffCore_trans h₁.4 h₂.4, banksKeptOffCore_trans h₁.5 h₂.5⟩
 
 theorem stepCovers_of_eq {e : CoreId} {pre post : SystemState} (h : post = pre) :
     stepCovers e pre post := h ▸ stepCovers_refl e pre
@@ -1590,10 +1698,11 @@ theorem stepCovers_of_frame {e : CoreId} {pre post : SystemState}
     (hRq : ∀ c, c ≠ e → ∀ t, post.queuedOn c t = true → pre.queuedOn c t = true)
     (hCur : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hMono : reschedulePendingMonotone e pre post)
-    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   ⟨reschedulePendingCovers_of_frame hView hElig (fun c hc => Or.inr ⟨hRq c hc, hCur c hc⟩), hMono,
-    currentKeptOffCore_of_eq hCur, residentKeptOffCore_of_eq hRes⟩
+    currentKeptOffCore_of_eq hCur, residentKeptOffCore_of_eq hRes, hBank⟩
 
 /-- The common shape: the scheduler is unchanged but for the flags, which only
 rise. -/
@@ -1602,12 +1711,13 @@ theorem stepCovers_of_scheduler_eq_except_reschedule {e : CoreId} {pre post : Sy
     (hSched : post.scheduler =
       { pre.scheduler with reschedulePending := post.scheduler.reschedulePending })
     (hMono : reschedulePendingMonotone e pre post)
-    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   stepCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
     (budgetEligibleView_eq_of_keyInputsEq hKeys)
     (fun c _ t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht) (fun c _ => by rw [hSched]; rfl) hMono
-    hRes
+    hRes hBank
 
 theorem reschedulePendingMonotone_of_scheduler_eq {e : CoreId} {pre post : SystemState}
     (h : post.scheduler = pre.scheduler) : reschedulePendingMonotone e pre post :=
@@ -1616,22 +1726,24 @@ theorem reschedulePendingMonotone_of_scheduler_eq {e : CoreId} {pre post : Syste
 /-- A scheduler-silent step moving no key input covers. -/
 theorem stepCovers_of_scheduler_eq {e : CoreId} {pre post : SystemState}
     (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler)
-    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   stepCovers_of_scheduler_eq_except_reschedule hKeys (by rw [hSched])
-    (reschedulePendingMonotone_of_scheduler_eq hSched) hRes
+    (reschedulePendingMonotone_of_scheduler_eq hSched) hRes hBank
 
 /-- A scheduler-silent step moving no key input and no remote residency record
 covers: the residency settle's record on the executing core. -/
 theorem stepCovers_of_scheduler_eq_residentKept {e : CoreId} {pre post : SystemState}
     (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler)
-    (hResK : residentKeptOffCore e pre post) :
+    (hResK : residentKeptOffCore e pre post)
+    (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   ⟨reschedulePendingCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
     (budgetEligibleView_eq_of_keyInputsEq hKeys)
     (fun c _ => Or.inr ⟨fun t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht, by rw [hSched]⟩),
    reschedulePendingMonotone_of_scheduler_eq hSched,
-   currentKeptOffCore_of_eq fun c _ => by rw [hSched], hResK⟩
+   currentKeptOffCore_of_eq fun c _ => by rw [hSched], hResK, hBank⟩
 
 /-- **A key write on `tid` followed by the key hook covers**: the write moved no
 other key input, did not make `tid` budget-eligible, every remote core is
@@ -1645,7 +1757,8 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
       ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
     (hMono : reschedulePendingMonotone e pre mid) (hKept : currentKeptOffCore e pre mid)
-    (hResK : residentKeptOffCore e pre mid := by resident_kept) :
+    (hResK : residentKeptOffCore e pre mid := by resident_kept)
+    (hBank : banksKeptOffCore e pre mid := by bank_kept) :
     stepCovers e pre (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) :=
   ⟨markKeyChangeFor_covers hPre (fun _ ht => schedKeyView_eq_of_keyInputsEqExcept hKeys ht)
     (fun _ _ _ t _ => by
@@ -1655,7 +1768,8 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
     hSlots,
    fun c hc h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ (hMono c hc h),
    fun c hc t ht => hKept c hc t (by rwa [markKeyChangeFor_currentOnCore] at ht),
-   fun c hc t ht => hResK c hc t (by rwa [markKeyChangeFor_machine] at ht)⟩
+   fun c hc t ht => hResK c hc t (by rwa [markKeyChangeFor_machine] at ht),
+   fun c hc => by rw [markKeyChangeFor_machine]; exact hBank c hc⟩
 
 /-! ### The coverage reads what the chooser reads
 

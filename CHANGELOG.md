@@ -1,3 +1,47 @@
+## v0.36.176 — WS-ZA ZA6.13: the register banks' cross-core frame
+
+A core's register bank is written only by that core's own entry. This version
+makes that a conjunct of the coverage relation and proves it at every arm.
+Proofs only; no executable code changes.
+
+- **The frame.** `stepCovers e pre post` gains a fifth field beside
+  `currentKept` and `residentKept`: `banksKept : banksKeptOffCore e pre post`.
+  It says every core other than the executing core `e` keeps its bank
+  (`MachineState.regsOnCore`). With `currentKept`, this is the half of another
+  core's bank match that the bank supplies.
+- **The automation.** Each arm lemma takes `hBank := by bank_kept` as a default
+  argument beside `hRes := by resident_frame`. `bank_kept` tries three cases in
+  turn:
+  - the identity step;
+  - a step whose banks are unchanged (`banksKeptOffCore_of_eq`, closed by
+    `bank_frame`, which each arm family extends with `macro_rules` over its
+    machine writers);
+  - a step that writes only the executing core's bank.
+
+  A few arms state it explicitly: the caller's return staging, the preempt
+  path and the finalise's core release.
+- **The activation is stated on its own core.**
+  `activateThreadOnCore_stepCovers c` now covers only on core `c`, the one bank
+  the activation writes (`activateThreadOnCore_regsOnCore_ne`).
+  `activateThreadAt_stepCovers` no longer held at an arbitrary core. Nothing
+  used it, so it is removed.
+- **Dropped from the row.** The second conjunct first planned here was that no
+  step changes the saved registers of a thread current on another core. It is
+  not a frame of every step: it holds only under the syscall arm's premises. So
+  it moves to the census row.
+- **The plan.** The register census's row is split into four rows:
+  - ZA6.13, this frame;
+  - ZA6.14, the census per arm under `SyscallArmPremises`;
+  - ZA6.15, the syscall's id and argument registers read from the entry's saved
+    frame (this row also records that the TCB-only x7 write is not observable);
+  - ZA6.16, the entry-level composition, which closes the bank-match debt row.
+
+  Every later row moves up three (ZA6.14 to ZA6.22 become ZA6.17 to ZA6.25),
+  and every citation is swept.
+- Tier 3 anchors pin the frame, the field, the two tactics, the default
+  argument and the activation's own-core statement. The de-threading gate's
+  macro allowlist counts the new `syntax` and `macro_rules` forms.
+
 ## v0.36.175 — WS-ZA ZA6.12: the bank match at the fault and unknown-syscall entries
 
 ZA6.10 proved that the executing core's register bank is its current thread's

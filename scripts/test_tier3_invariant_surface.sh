@@ -7665,6 +7665,16 @@ run_check "INVARIANT" rg -n '^theorem currentBoundHomedOnCore_of_placement($|[ (
 run_check "INVARIANT" rg -n -U '^theorem yieldCharge_requeue_releaseFreeFor[^\n]*(\n([ \t][^\n]*)?)*  spendBudget_requeue_releaseFreeFor _ _ hInv hRef hAff\n    \(currentBoundHomedOnCore_of_placement st c hD hBi\) hc hT hb hSc$' SeLe4n/Kernel/ReschedulePendingArms/Tick.lean
 run_check "INVARIANT" rg -n '^theorem chooseBestRunnableEffective_eq_of_views($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
 run_check "INVARIANT" rg -n '^def candidacyNotGained($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+# WS-ZA ZA6.13: the coverage relation carries the cross-core frame of the
+# register banks -- every core but the executing one keeps its bank -- and the
+# activation, the one exit stage that writes a bank, covers only on its own core.
+run_check "INVARIANT" rg -n -U '^def banksKeptOffCore \(e : CoreId\) \(pre post : SystemState\) : Prop :=\n  ∀ c, c ≠ e → post\.machine\.regsOnCore c = pre\.machine\.regsOnCore c$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^  banksKept : banksKeptOffCore e pre post$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^theorem banksKeptOffCore_trans($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^syntax "bank_kept" : tactic$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^syntax "bank_frame" : tactic$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^    \(hBank : banksKeptOffCore e pre post := by bank_kept\)' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n -U '^theorem activateThreadOnCore_stepCovers \(c : CoreId\) \(st : SystemState\)\n    \(hInv : st\.objects\.invExt\) : stepCovers c st \(activateThreadOnCore st c\) :=$' SeLe4n/Kernel/ReschedulePendingArms/Entry.lean
 run_check "INVARIANT" rg -n '^def markCandidacyGainFor($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^theorem scheduleEffectiveOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^theorem scheduleDomainOnCore_eq_state($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
