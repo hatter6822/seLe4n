@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.174` (`lakefile.toml`) |
+| **Package version** | `0.36.175` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 549,416 across 499 Lean files |
 | **Test LoC** | 88,173 across 70 Lean test suites |
@@ -6191,9 +6191,15 @@ Every kernel object has a decidable well-formedness predicate:
     executing core's bank its current thread's context
     (`settleResidencyOnCore_preserves_contextMatchesCurrentOnCore`), carried
     across the timer, reschedule and FP/SIMD entries
-    (`IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean`); the fault
-    and unknown-syscall entries' match is ZA6.12, and the syscall entry's and
-    every other core's is ZA6.13's register census.
+    (`IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean`), and since
+    `v0.36.175` (ZA6.12) across the fault and unknown-syscall entries
+    (`faultEntryState_preserves_contextMatchesCurrentOnCore`,
+    `unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore`): the
+    shared delivery vacates the executing core and makes no thread current on
+    any core (`faultDeliveredState_vacates`), so the successor's switch
+    establishes the match whatever the spill and the handler's return frame
+    wrote.  The syscall entry's and every other core's match is ZA6.13's
+    register census.
   - **The remote stall waits for the remote save** (`v0.36.174`, WS-ZA
     ZA6.11), as seL4's `remoteTCBStall` waits for the remote core to
     reschedule.  Each core's entry advances a save epoch inside the

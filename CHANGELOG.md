@@ -1,3 +1,42 @@
+## v0.36.175 — WS-ZA ZA6.12: the bank match at the fault and unknown-syscall entries
+
+ZA6.10 proved that the executing core's register bank is its current thread's
+saved context (`contextMatchesCurrentOnCore`) across the timer, reschedule and
+FP/SIMD entries. This version proves it across the fault and unknown-syscall
+entries too. Proofs only; no executable code changes.
+
+- **Why the delivery's register writes cannot break the match.** The shared
+  delivery (`faultEntryDeliver`) writes saved registers twice: it spills the
+  trap's window into the faulting thread, and the Call it composes writes the
+  woken handler's return frame. The registered reason for the gap was that the
+  spill needs the window to agree with the saved frame. The proof does not need
+  that. The delivery takes the faulting thread off the executing core, and it
+  makes no thread current on any core, so the core comes out of it with no
+  current thread. The successor's switch then establishes the match, whatever
+  the two writes held.
+- **The proofs** (`IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean`).
+  - `faultDeliveredState_currentKept`: the delivery makes no thread current on
+    any core. Its coverage (`faultDeliveredState_stepCovers`) holds whichever
+    core is named the executing one, so its cross-core frame of the current
+    slots holds at every core.
+  - `faultDeliveredState_vacates`: with the faulting thread off the core
+    (`faultDeliverOnCoreChecked_leaves_thread_not_runnable`), the core is left
+    empty.
+  - `faultEntryDeliver_preserves_contextMatchesCurrentOnCore`, with the
+    vacated-core and idle-thread arms.
+  - `faultEntryState_preserves_contextMatchesCurrentOnCore` and
+    `unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore` carry it
+    across the whole entries, for any frame, exception context and window. The
+    unknown-syscall entry's save is the syscall form
+    (`saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore`).
+- **The window lemma** (`FaultEntry.lean`). `faultEntryFrame?_window_spill`:
+  the decoded window is the saved frame's own, so spilling it into the frame's
+  register file changes nothing. The entry theorems do not consume it; it pins
+  the single-frame decode the exports rely on.
+- Tier 3 anchors pin the new theorems.
+- The bank-match debt row now covers only ZA6.13: the syscall entry and every
+  other core's match.
+
 ## v0.36.174 — WS-ZA ZA6.11: the remote stall waits for the remote save
 
 When a committing core changes the current thread of another core, that core's
