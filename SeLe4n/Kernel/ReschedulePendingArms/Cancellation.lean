@@ -80,6 +80,15 @@ theorem keyInputsEqExcept_storeObject_tcb {st st' : SystemState} {tid : SeLe4n.T
    fun sc h => (by rw [hPre] at h; cases h),
    fun sc h => (by rw [storeObject_objects_eq st st' _ _ hInv hStore] at h; cases h)⟩
 
+/-- A TCB stored over `tid` keeps every TCB a TCB. -/
+theorem tcbsKept_storeObject_tcb {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {t t' : TCB} (hInv : st.objects.invExt)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb t))
+    (hStore : storeObject tid.toObjId (.tcb t') st = .ok ((), st')) : tcbsKept st st' :=
+  tcbsKept.of_keysExcept (keyInputsEqExcept_storeObject_tcb hInv hPre hStore)
+    (by rw [(SystemState.getTcb?_eq_some_iff _ _ t').mpr
+      (storeObject_objects_eq st st' _ _ hInv hStore)]; rfl)
+
 /-- A TCB stored over `tid`'s TCB with the same run-queue core moves no
 thread's run-queue core. -/
 theorem runCoresAgree_storeObject_tcb {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -105,6 +114,7 @@ theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
     (hKeys : ∀ t, t ≠ a → t ≠ b → schedKeyView m t = schedKeyView pre t ∧
       budgetEligibleView m t = budgetEligibleView pre t)
     (hSched : m.scheduler = pre.scheduler) (hRun : SystemState.RunCoresAgree m pre)
+    (hTcbs : tcbsKept pre m)
     (hRes : m.machine.residentCode = pre.machine.residentCode := by resident_frame)
     (hBank : banksKeptOffCore e pre m := by bank_kept) :
     stepCovers e pre (markKeyChangeFrom pre (markKeyChangeFrom pre m a) b) := by
@@ -112,7 +122,9 @@ theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_,
     currentKeptOffCore_of_eq fun c _ => ?_,
     residentKeptOffCore_of_eq (by simp only [markKeyChangeFrom_machine]; exact hRes),
-    fun c hc => by simp only [markKeyChangeFrom_machine]; exact hBank c hc⟩
+    fun c hc => by simp only [markKeyChangeFrom_machine]; exact hBank c hc,
+    (hTcbs.trans ((tcbsKept.of_objects_eq (markKeyChangeFrom_objects _ _ _)).trans
+      (tcbsKept.of_objects_eq (markKeyChangeFrom_objects _ _ _)))).residentTcbKept⟩
   · by_cases hb : t = b
     · subst hb; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     by_cases ha : t = a
@@ -167,7 +179,8 @@ theorem returnStoreChain_keys {st s1 s2 s3 s4 : SystemState} {scId : SeLe4n.Sche
     (hc3 : ct'.runCoreCode = ct.runCoreCode) (hc4 : stcb'.runCoreCode = stcb.runCoreCode) :
     (∀ t, t ≠ owner → t ≠ server → schedKeyView s4 t = schedKeyView st t ∧
       budgetEligibleView s4 t = budgetEligibleView st t) ∧
-      s4.scheduler = st.scheduler ∧ s4.objects.invExt ∧ SystemState.RunCoresAgree s4 st := by
+      s4.scheduler = st.scheduler ∧ s4.objects.invExt ∧ SystemState.RunCoresAgree s4 st ∧
+      tcbsKept st s4 := by
   have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
   have hInv3 := storeObject_preserves_objects_invExt _ _ _ _ hInv2 hS3
@@ -179,7 +192,10 @@ theorem returnStoreChain_keys {st s1 s2 s3 s4 : SystemState} {scId : SeLe4n.Sche
   refine ⟨fun t ho hs => ?_, ?_, storeObject_preserves_objects_invExt _ _ _ _ hInv3 hS4,
     ((runCoresAgree_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2) hS4 hc4).trans
       (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1) hS3 hc3)).trans
-      k2.runCoresAgree⟩
+      k2.runCoresAgree,
+    ((tcbsKept.of_keyInputsEq k2).trans
+      (tcbsKept_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1) hS3)).trans
+      (tcbsKept_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2) hS4)⟩
   · exact ⟨by rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
         schedKeyView_eq_of_keyInputsEqExcept k3 ho, schedKeyView_eq_of_keyInputsEq k2],
       by rw [budgetEligibleView_eq_of_keyInputsEqExcept k4 hs,
@@ -251,7 +267,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                     simp only []
                     intro h
                     cases h
-                    obtain ⟨hK, hS, hI, hR⟩ := returnStoreChain_keys
+                    obtain ⟨hK, hS, hI, hR, hTk⟩ := returnStoreChain_keys
                       (sc' := donationReturnSchedContext sc originalOwner
                         (head?.bind (fun p => p.2.prev)) newOwner?)
                       (ct' := { clientTcb with
@@ -259,7 +275,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                       (stcb' := { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv hObj rfl rfl
                       (by rw [← hS1]) hS2 hL1 (by rw [← hS3]) hL2 (by rw [← hS4]) rfl rfl
                     exact ⟨stepCovers_markKeyChangeFrom_pair
-                      (fun t ho hs => hK t ho hs) hS hR
+                      (fun t ho hs => hK t ho hs) hS hR hTk
                       (by simpa only [markKeyChangeFrom_machine] using hM)
                       (banksKeptOffCore_of_eq (by simpa only [markKeyChangeFrom_machine] using hMB)),
                       by simp only [markKeyChangeFrom_objects]; exact hI⟩
@@ -492,6 +508,7 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
     (hCur : ∀ c, m.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hFl : ∀ c, pre.scheduler.reschedulePendingOnCore c = true →
       m.scheduler.reschedulePendingOnCore c = true)
+    (hTcbs : tcbsKept pre m)
     (hRes : m.machine.residentCode = pre.machine.residentCode := by resident_frame)
     (hBank : banksKeptOffCore e pre m := by bank_kept) :
     stepCovers e pre (markKeyChangeFrom pre m a) := by
@@ -499,7 +516,8 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_,
     currentKeptOffCore_of_eq fun c _ => ?_,
     residentKeptOffCore_of_eq (by simp only [markKeyChangeFrom_machine]; exact hRes),
-    fun c hc => by simp only [markKeyChangeFrom_machine]; exact hBank c hc⟩
+    fun c hc => by simp only [markKeyChangeFrom_machine]; exact hBank c hc,
+    (hTcbs.trans (tcbsKept.of_objects_eq (markKeyChangeFrom_objects _ _ _))).residentTcbKept⟩
   · by_cases ha : t = a
     · subst ha; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     · left
@@ -570,7 +588,8 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
       ((SystemState.RunCoresAgree.updateTcb (tid := tid)
         (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (by exact hInvP)
           (fun _ => rfl)).trans k.runCoresAgree)
-      (fun c => ?_) (fun c hc => ?_), ?_⟩
+      (fun c => ?_) (fun c hc => ?_)
+      ((tcbsKept.of_keyInputsEq k).trans (tcbsKept.updateTcb _ tid _ hInvP)), ?_⟩
     · refine ⟨?_, ?_⟩
       · rw [schedKeyView_updateTcb_ne _ tid _ ?_ ht]
         · exact schedKeyView_eq_of_keyInputsEq k t

@@ -201,7 +201,10 @@ theorem processOneReplenishmentOnCore_stepCovers (st : SystemState) (e : CoreId)
     fun c hc t ht => ?_, residentKeptOffCore_of_eq
       (congrArg MachineState.residentCode (processOneReplenishmentOnCore_machine_eq st e scId now)),
     banksKeptOffCore_of_eq
-      (congrArg MachineState.coreRegs (processOneReplenishmentOnCore_machine_eq st e scId now))⟩
+      (congrArg MachineState.coreRegs (processOneReplenishmentOnCore_machine_eq st e scId now)),
+    (((tcbsKept.of_getTcb? (refillSchedContext_getTcb?_eq st scId now hInv)).trans
+      (tcbsKept.of_views fun t => (hV t).1)).trans
+      (tcbsKept.of_objects_eq (markRefillKeyChange_objects _ _ _))).residentTcbKept⟩
   rotate_left
   · rw [processOneReplenishmentOnCore, markRefillKeyChange_extract_frame
       (fun s => s.scheduler.currentOnCore c) st _ scId (fun _ _ => by

@@ -228,6 +228,34 @@ theorem residentKeptOffCore_of_setResidentOnCore {e : CoreId} {pre post : System
   fun c hc _ ht => by
     rw [h, MachineState.residentOnCore_setResidentOnCore_ne _ e c _ (Ne.symm hc)] at ht; exact ht
 
+/-- WS-ZA ZA6.21: **the step erases the TCB of no remote core's resident**:
+every thread resident on a core other than the executing core `e` after the
+step, which had a TCB before it, still has one.  A TCB leaves the store only
+through the final retire, which admits a thread resident on no core
+(`threadRetirable`); with `residentKeptOffCore` this is the cross-core frame
+that keeps every core's resident thread resolving to a TCB
+(`SystemState.residentsHaveTcbs`). -/
+def residentTcbKeptOffCore (e : CoreId) (pre post : SystemState) : Prop :=
+  ∀ c, c ≠ e → ∀ t, post.machine.residentOnCore c = some t →
+    (pre.getTcb? t).isSome → (post.getTcb? t).isSome
+
+theorem residentTcbKeptOffCore_refl (e : CoreId) (st : SystemState) :
+    residentTcbKeptOffCore e st st :=
+  fun _ _ _ _ h => h
+
+/-- The frame composes: a remote resident after the second step was resident
+there after the first (the second step's `residentKeptOffCore`). -/
+theorem residentTcbKeptOffCore_trans {e : CoreId} {a b d : SystemState}
+    (h₁ : residentTcbKeptOffCore e a b) (h₂ : residentTcbKeptOffCore e b d)
+    (hR : residentKeptOffCore e b d) : residentTcbKeptOffCore e a d :=
+  fun c hc t ht hT => h₂ c hc t ht (h₁ c hc t (hR c hc t ht) hT)
+
+/-- A step that keeps every TCB a TCB keeps it. -/
+theorem residentTcbKeptOffCore_of_present {e : CoreId} {pre post : SystemState}
+    (h : ∀ t, (pre.getTcb? t).isSome → (post.getTcb? t).isSome) :
+    residentTcbKeptOffCore e pre post :=
+  fun _ _ t _ hT => h t hT
+
 /-- WS-ZA ZA6.13: **the step writes no remote core's register bank**: every
 core other than the executing core `e` holds the register file it held.  A
 core's bank (`MachineState.regsOnCore`) is written only by that core's own
@@ -1665,6 +1693,89 @@ theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TC
 
 /-! ### Steps that cover by frame -/
 
+/-! ### Steps that keep every TCB a TCB -/
+
+/-- **Every TCB of `pre` is a TCB of `post`**: what every step but the final
+retire does to the store, the source of `residentTcbKeptOffCore`. -/
+def tcbsKept (pre post : SystemState) : Prop :=
+  ∀ t, (pre.getTcb? t).isSome → (post.getTcb? t).isSome
+
+namespace tcbsKept
+
+theorem refl (st : SystemState) : tcbsKept st st := fun _ h => h
+
+theorem trans {a b d : SystemState} (h₁ : tcbsKept a b) (h₂ : tcbsKept b d) : tcbsKept a d :=
+  fun t h => h₂ t (h₁ t h)
+
+theorem of_objects_eq {pre post : SystemState} (h : post.objects = pre.objects) :
+    tcbsKept pre post := fun t ht => by unfold SystemState.getTcb? at ht ⊢; rw [h]; exact ht
+
+theorem of_getTcb? {pre post : SystemState} (h : ∀ t, post.getTcb? t = pre.getTcb? t) :
+    tcbsKept pre post := fun t ht => by rw [h t]; exact ht
+
+/-- Equal key views: the view is `none` exactly when no TCB is stored. -/
+theorem of_view {pre post : SystemState} {t : SeLe4n.ThreadId}
+    (h : schedKeyView post t = schedKeyView pre t) (hT : (pre.getTcb? t).isSome) :
+    (post.getTcb? t).isSome := by
+  have := congrArg Option.isSome h
+  simp only [schedKeyView, Option.isSome_map] at this
+  rw [this]; exact hT
+
+theorem of_views {pre post : SystemState} (h : ∀ t, schedKeyView post t = schedKeyView pre t) :
+    tcbsKept pre post := fun t => of_view (h t)
+
+theorem of_views_except {pre post : SystemState} (tid : SeLe4n.ThreadId)
+    (h : ∀ t, t ≠ tid → schedKeyView post t = schedKeyView pre t)
+    (hTid : (post.getTcb? tid).isSome) : tcbsKept pre post := fun t hT => by
+  by_cases ht : t = tid
+  · subst ht; exact hTid
+  · exact of_view (h t ht) hT
+
+theorem of_keyInputsEq {pre post : SystemState} (h : keyInputsEq pre post) : tcbsKept pre post :=
+  of_views (schedKeyView_eq_of_keyInputsEq h)
+
+theorem of_keysExcept {tid : SeLe4n.ThreadId} {pre post : SystemState}
+    (h : keyInputsEqExcept tid pre post) (hTid : (post.getTcb? tid).isSome) : tcbsKept pre post :=
+  of_views_except tid (fun _ ht => schedKeyView_eq_of_keyInputsEqExcept h ht) hTid
+
+theorem of_runLinks {pre post : SystemState} (h : post.objectsAgreeOffRunLinks pre) :
+    tcbsKept pre post := of_views (schedKeyView_of_objectsAgreeOffRunLinks h)
+
+/-- A write to one thread's TCB. -/
+theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : tcbsKept st (st.updateTcb tid f) := fun t hT => by
+  by_cases h : t.toObjId = tid.toObjId
+  · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+    have ht : t = tid := SeLe4n.ThreadId.toObjId_injective _ _ h
+    subst ht
+    rw [SystemState.updateTcb_getTcb?_self st t f hInv, hx]; rfl
+  · rw [SystemState.updateTcb_getTcb?_ne st tid f hInv t fun h' => h h'.symm]; exact hT
+
+/-- A TCB stored over a slot. -/
+theorem rewriteObject_tcb (st : SystemState) (x : SeLe4n.ObjId) (t' : TCB)
+    (h : st.rewriteAdmissible x (.tcb t')) (hInv : st.objects.invExt) :
+    tcbsKept st (st.rewriteObject x (.tcb t') h) := fun t hT => by
+  by_cases hx : x = t.toObjId
+  · subst hx; unfold SystemState.getTcb?
+    rw [SystemState.rewriteObject_objects_self st _ _ h hInv]; rfl
+  · rw [SystemState.rewriteObject_getTcb?_ne st x _ h hInv t hx]; exact hT
+
+/-- An object other than a TCB stored over a slot holding none. -/
+theorem rewriteObject_nonTcb (st : SystemState) (x : SeLe4n.ObjId) (o : KernelObject)
+    (h : st.rewriteAdmissible x o) (hInv : st.objects.invExt)
+    (hx : ∀ t, x = t.toObjId → st.getTcb? t = none) :
+    tcbsKept st (st.rewriteObject x o h) := fun t hT => by
+  by_cases hxt : x = t.toObjId
+  · rw [hx t hxt] at hT; cases hT
+  · rw [SystemState.rewriteObject_getTcb?_ne st x _ h hInv t hxt]; exact hT
+
+/-- The frame a step keeps for the residents of the other cores. -/
+theorem residentTcbKept {e : CoreId} {pre post : SystemState} (h : tcbsKept pre post) :
+    residentTcbKeptOffCore e pre post :=
+  residentTcbKeptOffCore_of_present h
+
+end tcbsKept
+
 /-- A step covers, lowers no remote flag and makes no thread current or
 resident on a remote core: the unit the arm proofs chain. -/
 structure stepCovers (e : CoreId) (pre post : SystemState) : Prop where
@@ -1676,16 +1787,20 @@ structure stepCovers (e : CoreId) (pre post : SystemState) : Prop where
   residentKept : residentKeptOffCore e pre post
   /-- WS-ZA ZA6.13: the cross-core frame of the register banks. -/
   banksKept : banksKeptOffCore e pre post
+  /-- WS-ZA ZA6.21: the cross-core frame of the residents' TCBs. -/
+  residentTcbKept : residentTcbKeptOffCore e pre post
 
 theorem stepCovers_refl (e : CoreId) (st : SystemState) : stepCovers e st st :=
   ⟨reschedulePendingCovers_refl e st, reschedulePendingMonotone_refl e st,
-    currentKeptOffCore_refl e st, residentKeptOffCore_refl e st, banksKeptOffCore_refl e st⟩
+    currentKeptOffCore_refl e st, residentKeptOffCore_refl e st, banksKeptOffCore_refl e st,
+    residentTcbKeptOffCore_refl e st⟩
 
 theorem stepCovers_trans {e : CoreId} {a b d : SystemState}
     (h₁ : stepCovers e a b) (h₂ : stepCovers e b d) : stepCovers e a d :=
   ⟨reschedulePendingCovers_trans h₁.1 h₂.1 h₂.2,
    reschedulePendingMonotone_trans h₁.2 h₂.2, currentKeptOffCore_trans h₁.3 h₂.3,
-   residentKeptOffCore_trans h₁.4 h₂.4, banksKeptOffCore_trans h₁.5 h₂.5⟩
+   residentKeptOffCore_trans h₁.4 h₂.4, banksKeptOffCore_trans h₁.5 h₂.5,
+   residentTcbKeptOffCore_trans h₁.6 h₂.6 h₂.4⟩
 
 theorem stepCovers_of_eq {e : CoreId} {pre post : SystemState} (h : post = pre) :
     stepCovers e pre post := h ▸ stepCovers_refl e pre
@@ -1702,7 +1817,8 @@ theorem stepCovers_of_frame {e : CoreId} {pre post : SystemState}
     (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   ⟨reschedulePendingCovers_of_frame hView hElig (fun c hc => Or.inr ⟨hRq c hc, hCur c hc⟩), hMono,
-    currentKeptOffCore_of_eq hCur, residentKeptOffCore_of_eq hRes, hBank⟩
+    currentKeptOffCore_of_eq hCur, residentKeptOffCore_of_eq hRes, hBank,
+    (tcbsKept.of_views hView).residentTcbKept⟩
 
 /-- The common shape: the scheduler is unchanged but for the flags, which only
 rise. -/
@@ -1743,7 +1859,16 @@ theorem stepCovers_of_scheduler_eq_residentKept {e : CoreId} {pre post : SystemS
     (budgetEligibleView_eq_of_keyInputsEq hKeys)
     (fun c _ => Or.inr ⟨fun t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht, by rw [hSched]⟩),
    reschedulePendingMonotone_of_scheduler_eq hSched,
-   currentKeptOffCore_of_eq fun c _ => by rw [hSched], hResK, hBank⟩
+   currentKeptOffCore_of_eq fun c _ => by rw [hSched], hResK, hBank,
+   (tcbsKept.of_keyInputsEq hKeys).residentTcbKept⟩
+
+/-- Equal eligibility views keep a TCB a TCB. -/
+theorem getTcb?_isSome_of_budgetEligibleView {pre post : SystemState} {t : SeLe4n.ThreadId}
+    (h : budgetEligibleView post t = budgetEligibleView pre t) {x : TCB}
+    (hT : pre.getTcb? t = some x) : (post.getTcb? t).isSome := by
+  have := congrArg Option.isSome h
+  simp only [budgetEligibleView, Option.isSome_map, hT] at this
+  rw [this]; rfl
 
 /-- **A key write on `tid` followed by the key hook covers**: the write moved no
 other key input, did not make `tid` budget-eligible, every remote core is
@@ -1757,6 +1882,7 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
       ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
     (hMono : reschedulePendingMonotone e pre mid) (hKept : currentKeptOffCore e pre mid)
+    (hTid : (mid.getTcb? tid).isSome)
     (hResK : residentKeptOffCore e pre mid := by resident_kept)
     (hBank : banksKeptOffCore e pre mid := by bank_kept) :
     stepCovers e pre (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) :=
@@ -1769,7 +1895,10 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
    fun c hc h => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ (hMono c hc h),
    fun c hc t ht => hKept c hc t (by rwa [markKeyChangeFor_currentOnCore] at ht),
    fun c hc t ht => hResK c hc t (by rwa [markKeyChangeFor_machine] at ht),
-   fun c hc => by rw [markKeyChangeFor_machine]; exact hBank c hc⟩
+   fun c hc => by rw [markKeyChangeFor_machine]; exact hBank c hc,
+   fun c hc t ht hT => by
+     rw [markKeyChangeFor_getTcb?]
+     exact tcbsKept.of_keysExcept hKeys hTid t hT⟩
 
 /-! ### The coverage reads what the chooser reads
 
