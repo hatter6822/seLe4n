@@ -230,8 +230,8 @@ theorem residentKeptOffCore_of_setResidentOnCore {e : CoreId} {pre post : System
 
 /-- WS-ZA ZA6.21: **the step erases the TCB of no remote core's resident**:
 every thread resident on a core other than the executing core `e` after the
-step, which had a TCB before it, still has one.  A TCB leaves the store only
-through the final retire, which admits a thread resident on no core
+step, which had a TCB before it, still has one.  Of the covering steps only the
+final retire removes a TCB, and it admits only a thread held on no core
 (`threadRetirable`); with `residentKeptOffCore` this is the cross-core frame
 that keeps every core's resident thread resolving to a TCB
 (`SystemState.residentsHaveTcbs`). -/
@@ -249,12 +249,6 @@ theorem residentTcbKeptOffCore_trans {e : CoreId} {a b d : SystemState}
     (h₁ : residentTcbKeptOffCore e a b) (h₂ : residentTcbKeptOffCore e b d)
     (hR : residentKeptOffCore e b d) : residentTcbKeptOffCore e a d :=
   fun c hc t ht hT => h₂ c hc t ht (h₁ c hc t (hR c hc t ht) hT)
-
-/-- A step that keeps every TCB a TCB keeps it. -/
-theorem residentTcbKeptOffCore_of_present {e : CoreId} {pre post : SystemState}
-    (h : ∀ t, (pre.getTcb? t).isSome → (post.getTcb? t).isSome) :
-    residentTcbKeptOffCore e pre post :=
-  fun _ _ t _ hT => h t hT
 
 /-- WS-ZA ZA6.13: **the step writes no remote core's register bank**: every
 core other than the executing core `e` holds the register file it held.  A
@@ -1691,8 +1685,6 @@ theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TC
     simp only [tcbKeyFields, Prod.mk.injEq] at this
     simp only [keyInputsOf, this, hR t]
 
-/-! ### Steps that cover by frame -/
-
 /-! ### Steps that keep every TCB a TCB -/
 
 /-- **Every TCB of `pre` is a TCB of `post`**: what every step but the final
@@ -1751,30 +1743,14 @@ theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
     rw [SystemState.updateTcb_getTcb?_self st t f hInv, hx]; rfl
   · rw [SystemState.updateTcb_getTcb?_ne st tid f hInv t fun h' => h h'.symm]; exact hT
 
-/-- A TCB stored over a slot. -/
-theorem rewriteObject_tcb (st : SystemState) (x : SeLe4n.ObjId) (t' : TCB)
-    (h : st.rewriteAdmissible x (.tcb t')) (hInv : st.objects.invExt) :
-    tcbsKept st (st.rewriteObject x (.tcb t') h) := fun t hT => by
-  by_cases hx : x = t.toObjId
-  · subst hx; unfold SystemState.getTcb?
-    rw [SystemState.rewriteObject_objects_self st _ _ h hInv]; rfl
-  · rw [SystemState.rewriteObject_getTcb?_ne st x _ h hInv t hx]; exact hT
-
-/-- An object other than a TCB stored over a slot holding none. -/
-theorem rewriteObject_nonTcb (st : SystemState) (x : SeLe4n.ObjId) (o : KernelObject)
-    (h : st.rewriteAdmissible x o) (hInv : st.objects.invExt)
-    (hx : ∀ t, x = t.toObjId → st.getTcb? t = none) :
-    tcbsKept st (st.rewriteObject x o h) := fun t hT => by
-  by_cases hxt : x = t.toObjId
-  · rw [hx t hxt] at hT; cases hT
-  · rw [SystemState.rewriteObject_getTcb?_ne st x _ h hInv t hxt]; exact hT
-
 /-- The frame a step keeps for the residents of the other cores. -/
 theorem residentTcbKept {e : CoreId} {pre post : SystemState} (h : tcbsKept pre post) :
     residentTcbKeptOffCore e pre post :=
-  residentTcbKeptOffCore_of_present h
+  fun _ _ t _ hT => h t hT
 
 end tcbsKept
+
+/-! ### Steps that cover by frame -/
 
 /-- A step covers, lowers no remote flag and makes no thread current or
 resident on a remote core: the unit the arm proofs chain. -/

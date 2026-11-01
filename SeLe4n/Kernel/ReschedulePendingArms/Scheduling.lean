@@ -682,7 +682,7 @@ theorem tcbsKept_insertTcb (st : SystemState) (x : SeLe4n.ObjId) (t' : TCB)
   rw [RHTable_getElem?_insert st.objects x (.tcb t') hInv t.toObjId]
   by_cases hk : x == t.toObjId
   · simp only [hk, if_pos]; rfl
-  · simp only [hk, if_neg, Bool.not_eq_true, Bool.false_eq_true, ↓reduceIte]; exact hT
+  · simp only [hk, Bool.false_eq_true, ↓reduceIte]; exact hT
 
 /-- Configure's bound-thread propagation rewrites the bound thread's TCB in
 place and re-buckets it: every TCB stays a TCB. -/
