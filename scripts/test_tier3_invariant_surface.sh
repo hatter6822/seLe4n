@@ -4344,6 +4344,9 @@ run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SystemState\.blocked
 run_check "INVARIANT" rg -n '^theorem of_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem offCoreFree_of_blocked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+# WS-ZA ZA6.17: the preservation across an entry decomposes into the other cores'
+# residents kept ready and the executing core's own resident ready.
+run_check "INVARIANT" rg -n -U '^theorem of_entry \{e : CoreId\} \{pre post : SystemState\} \(h : pre\.blockedNotResident\)\n    \(hRK : residentKeptOffCore e pre post\)' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
@@ -21191,6 +21194,19 @@ run_check "INVARIANT" rg -F -n 'done < <(git diff --cached -z --name-only --diff
 # stream: piping a NUL-framed listing through a line filter undoes the framing.
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -F -n 'case "${_f}" in .lake/*) ;; *) STAGED_LEAN_FILES+=("${_f}") ;; esac' scripts/pre-commit-lean-build.sh
+# WS-ZA ZA6.17: the hook's module build is bounded for a whole dependency rebuild
+# (overridable), and a build the bound kills is reported as a timeout and still
+# blocks the commit, never as a failure with no errors.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -F -n 'PRECOMMIT_BUILD_TIMEOUT="${SELE4N_PRECOMMIT_BUILD_TIMEOUT:-3600}"' scripts/pre-commit-lean-build.sh
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -F -n 'timeout "${PRECOMMIT_BUILD_TIMEOUT}" lake build "$MODULE" > "${BUILD_LOG}" 2>&1 || BUILD_RC=$?' scripts/pre-commit-lean-build.sh
+run_check "INVARIANT" rg -n -U 'if \[ "\$\{BUILD_RC\}" -eq 124 \]; then\n        BUILD_ERRORS=\$\(\(BUILD_ERRORS \+ 1\)\)' scripts/pre-commit-lean-build.sh
+run_check "INVARIANT" rg -n -U 'elif \[ "\$\{BUILD_RC\}" -ne 0 \]; then\n        BUILD_ERRORS=\$\(\(BUILD_ERRORS \+ 1\)\)' scripts/pre-commit-lean-build.sh
+run_negative_check "INVARIANT" rg -F -n 'timeout 300 lake build' scripts/pre-commit-lean-build.sh
+# A failed build's report pipes `grep`/`tail` into `sed`; under `pipefail` an
+# unguarded no-match would end the hook before its no-error-line fallback.
+run_negative_check "INVARIANT" rg -n '^\s*(grep|tail) [^|]*\|' scripts/pre-commit-lean-build.sh
 run_negative_check "INVARIANT" rg -F -n "mapfile -t STAGED_LEAN_FILES" scripts/pre-commit-lean-build.sh
 #
 # ...and the rule gets a CHECK rather than a third telling: `v0.35.150` found
