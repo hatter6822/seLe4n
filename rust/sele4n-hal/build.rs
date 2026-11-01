@@ -2376,20 +2376,13 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
         "lean_per_core_stats_component",
     ),
     // WS-RR RR5.6: the SVC dispatch seam — the highest-traffic route into the
-    // Lean runtime, and one of the two `kernel_entry.rs`'s five-entry table
-    // claimed consulted the gate while neither did.
+    // Lean runtime, and one of the two `kernel_entry.rs`'s entry table claimed
+    // consulted the gate while neither did.  (The other, the raw cross-core
+    // suspend seam, was retired at WS-ZA ZA6.10.)
     (
         "src/svc_dispatch.rs",
         "dispatch_svc",
         "lean_syscall_dispatch_cross_core",
-    ),
-    // WS-RR RR5.7: the cross-core suspend seam.  It reaches Lean through
-    // `sele4n_suspend_thread` rather than a `lean_*` symbol, which is why the
-    // derived scan — over the Lean tree's `@[export]`s — is what finds it.
-    (
-        "src/ffi.rs",
-        "sele4n_suspend_thread",
-        "suspend_thread_cross_core",
     ),
 ];
 
@@ -2466,8 +2459,8 @@ const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
          the same guard, before any Lean definition is used",
     ),
     // WS-RR RR5.6/RR5.7 shrank this table from three entries to one: the SVC
-    // dispatch seam and the cross-core suspend seam now consult the gate and
-    // have moved to `LEAN_READY_GATED_SEAMS`.  What remained was the boot
+    // dispatch seam and the cross-core suspend seam (retired since) consulted
+    // the gate and moved to `LEAN_READY_GATED_SEAMS`.  What remained was the boot
     // install; WS-BP BP2.3 split the library initializer out of it, so the
     // table holds the two calls that precede the boot core being ready.
 ];

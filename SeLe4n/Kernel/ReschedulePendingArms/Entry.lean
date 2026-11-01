@@ -48,6 +48,45 @@ theorem writeFaultRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.Threa
   updateTcb_keyFrame st tid (f := fun tcb => { tcb with registerContext := w.spill tcb.registerContext })
     (fun _ => rfl) hInv
 
+/-! ### The entry's writes keep the residency record
+
+What `resident_frame` reads through the fault and ABI entries' writes
+(`machine_chain`): each rewrites a TCB or the refusal ledger, never a core's
+residency record. -/
+
+theorem recordPendingFault_machine (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault) :
+    (recordPendingFault st tid tf).machine = st.machine :=
+  SystemState.updateTcb_machine _ _ _
+
+theorem writeFaultRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : FaultRegisterWindow) : (writeFaultRegistersToTcb st tid w).machine = st.machine :=
+  SystemState.updateTcb_machine _ _ _
+
+theorem writeFfiRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) :
+    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).machine =
+      st.machine := by
+  rw [Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb, SystemState.updateTcb_machine]
+
+/-- The activation writes core `c`'s bank at most: no residency record moves. -/
+theorem activateThreadOnCore_residentCode (st : SystemState) (c : CoreId) :
+    (activateThreadOnCore st c).machine.residentCode = st.machine.residentCode := by
+  rcases activateThreadOnCore_machine st c with h | ⟨w, h⟩ <;> rw [h]
+  exact MachineState.modifyRegsOnCore_residentCode _ _ _
+
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (recordPendingFault_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (writeFaultRegistersToTcb_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (writeFfiRegistersToTcb_machine _ _ _ _ _ _ _ _ _).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Platform.FFI.recordSyscallRefusal_machine_eq _ _ _ _ _ _ _).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  (rw [activateThreadOnCore_residentCode]))
+
 /-- The suspend-and-record disposition covers. -/
 theorem faultSuspendRecord_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (tf : ThreadFault) (hInv : st.objects.invExt) :
@@ -268,18 +307,6 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
   exact stepCovers_trans (stepCovers_trans hD
     (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv))
     (activateThreadOnCore_stepCovers e e _ hSInv)
-
-/-- **The suspend seam covers** on the executing core: the suspend, then the
-core's own scheduling point and the activation. -/
-theorem suspendThenScheduleLocal_stepCovers {s s' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {e : CoreId} {sgi : Option (CoreId × SgiKind)} (hInv : s.objects.invExt)
-    (h : Lifecycle.Suspend.suspendThreadOnCore s vtid e = .ok (s', sgi)) :
-    stepCovers e s (activateThreadOnCore (PriorityInheritance.scheduleLocalSuccessor s s' e) e) := by
-  obtain ⟨hS, hSInv⟩ := suspendThreadOnCore_stepCovers s s' vtid e sgi hInv h
-  exact stepCovers_trans (stepCovers_trans hS
-    (scheduleLocalSuccessorFrom_stepCovers e (s.scheduler.currentOnCore e) s' hSInv))
-    (activateThreadOnCore_stepCovers e e _
-      (scheduleLocalSuccessorFrom_preserves_objects_invExt e _ s' hSInv))
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 

@@ -43,7 +43,7 @@ so here the thread the consumed time is for and the thread whose registers are
 written are one thread, with no correction needed (ZA6.6's `setConsumed` writes
 the yielder by construction).
 
-Until the yieldTo invocation (ZA6.10) sets a link, no thread has one, and the
+Until the yieldTo invocation (ZA6.12) sets a link, no thread has one, and the
 step is the identity (`activateThreadOnCore_of_unlinked`). -/
 
 namespace SeLe4n.Kernel
@@ -541,12 +541,7 @@ theorem activateThreadOnCore_settle_unlinkedOnCore (st : SystemState) (c : CoreI
   rcases hR with h | h
   · exact h
   · rw [activateThreadOnCore_residentOnCore, PriorityInheritance.settleResidencyOnCore_resident] at h
-    rw [activateThreadOnCore_scheduler]
-    have hS : (PriorityInheritance.settleResidencyOnCore st c).scheduler =
-        (PriorityInheritance.deferResidentElsewhere
-          (PriorityInheritance.dispatchVacatedCore st c) c).scheduler := by
-      simp [PriorityInheritance.settleResidencyOnCore]
-    rw [hS]
+    rw [activateThreadOnCore_scheduler, PriorityInheritance.settleResidencyOnCore_currentOnCore]
     split at h
     · exact h
     · cases h

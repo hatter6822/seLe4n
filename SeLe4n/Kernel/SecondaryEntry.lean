@@ -110,7 +110,8 @@ on RPi5); the verified step decodes it fail-closed
 nothing.
 
 The body is definitionally the per-core reschedule entry — bring-up is the
-core's first reschedule (see the module docstring). -/
+core's first reschedule (see the module docstring), the residency settle's
+`.reschedule` SGIs included (WS-ZA ZA6.10). -/
 @[export lean_secondary_kernel_main]
 def secondaryKernelMain (coreId : UInt64) : BaseIO Unit :=
   perCoreRescheduleEntry coreId
@@ -158,16 +159,18 @@ theorem secondaryKernelMain_def (coreId : UInt64) :
       | none => pure ()
       | some c => do
         let frame ← Platform.FFI.ffiTrapContext
-        let (kind, context, tableBase, asid, code, writes, icache) ←
+        let (pokes, kind, context, tableBase, asid, code, writes, icache) ←
           Platform.FFI.modifyGetKernelState (fun st =>
-            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-              ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
-            ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+            let mid := ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2
+            let pending := mid.scheduler.reschedulePending
+            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
+            ((pending.raised post.scheduler.reschedulePending, Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
               post.pendingIcacheMaintenance),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
         Platform.FFI.completePhysicalWrites writes
+        Concurrency.fireRaisedReschedules pokes
         Platform.FFI.completeIcacheMaintenance icache
         Concurrency.releaseSwitchedFpOwnerOnCore c
         Platform.FFI.restoreTrapFrameParts kind context tableBase asid

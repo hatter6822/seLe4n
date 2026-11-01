@@ -67,8 +67,7 @@ exclusion as of SM5.I (v0.32.142)**: `timer::per_core_timer_tick_isr` (reached
 from `trap.rs::handle_irq_per_core`'s timer branch) runs this entry inside
 `kernel_entry::with_kernel_entry`, so the read-tick-commit is one critical
 section against every other kernel entry — the syscall dispatch, the
-`.reschedule` SGI receiver, the secondary bring-up reschedule and the
-cross-core suspend included.  The lock is the SM2 verified `TicketLock` (FIFO,
+`.reschedule` SGI receiver and the secondary bring-up reschedule included.  The lock is the SM2 verified `TicketLock` (FIFO,
 so a tick cannot be starved by a neighbour's syscall loop), it is acquired
 outside `SHOOTDOWN_ROUND_LOCK`, and its spin self-services this core's pending
 shootdown obligation so a holder blocked on our acknowledgment cannot deadlock
@@ -143,7 +142,9 @@ clock** (the flag is definitionally the `machine.timer` delta —
 `perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot drift
 from the model on any arm; PR #880 follow-up closing the invocation-coupled
 residual), then fires a `.reschedule` SGI at every core whose flag the step
-raised.  See the module docstring. -/
+raised, or the residency settle raised (WS-ZA ZA6.10: a resident this core's
+entry released, queued on another core, wakes that core —
+`PriorityInheritance.pokeReleasedResident`).  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
   -- **WS-ZA ZA6.1**: the raw id is decoded once, here; an id naming no core
@@ -159,8 +160,10 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
       Platform.FFI.modifyGetKernelState (fun st =>
         let (raisedAndFlag, post) := (timerTickBracket coreId).run
           (Architecture.saveCapturedTrapFrame st c frame)
+        let pending := post.scheduler.reschedulePending
         let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore post c) c
-        ((raisedAndFlag.1, raisedAndFlag.2,
+        ((raisedAndFlag.1.union (pending.raised post.scheduler.reschedulePending),
+          raisedAndFlag.2,
           Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
           post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
@@ -204,8 +207,10 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
           Platform.FFI.modifyGetKernelState (fun st =>
             let (raisedAndFlag, post) := (timerTickBracket coreId).run
               (Architecture.saveCapturedTrapFrame st c frame)
+            let pending := post.scheduler.reschedulePending
             let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore post c) c
-            ((raisedAndFlag.1, raisedAndFlag.2,
+            ((raisedAndFlag.1.union (pending.raised post.scheduler.reschedulePending),
+              raisedAndFlag.2,
               Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,

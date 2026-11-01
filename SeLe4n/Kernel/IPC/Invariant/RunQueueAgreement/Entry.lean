@@ -12,7 +12,7 @@ import SeLe4n.Kernel.ReschedulePendingArms.Tick
 # Every committing entry keeps the run-queue link agreement
 
 WS-ZA ZA4.5 part 2.  The pure step each state-committing entry runs — the
-syscall, the suspend, the timer tick, the reschedule interrupt, the two fault
+syscall, the timer tick, the reschedule interrupt, the two fault
 entries and the FP/SIMD access — is a `RunQueueStage`: the trap-frame save, the
 step itself, the local scheduling point, the residency settlement and the
 ledger drains, each a stage.  So a state the boot left in agreement stays in
@@ -241,22 +241,25 @@ theorem recordResidentThenActivate_runQueueEntryStage (st : SystemState) (c : Co
       (PriorityInheritance.deferResidentElsewhere (PriorityInheritance.dispatchVacatedCore st c) c)
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c) := by
   have A := (activateThreadOnCore_runQueueStage (PriorityInheritance.settleResidencyOnCore st c) c).entry
+  obtain ⟨hO, hQ, hE, hC, hT, hS⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
   refine SystemState.RunQueueEntryStage.of_frameThen
-    (m := PriorityInheritance.settleResidencyOnCore st c) rfl rfl rfl rfl rfl rfl A fun h r =>
-    ⟨(A.1.live h (SystemState.runQueueRefined_of_frame
-      (fun c t => SystemState.runLinkOn_of_objects rfl c t) rfl rfl r)).unset, fun d tid hR => ?_⟩
+    (m := PriorityInheritance.settleResidencyOnCore st c) hO hQ hE hC hT hS A fun h r =>
+    ⟨fun k hk => by
+      rw [← hO]
+      exact (A.1.live (hO ▸ h) (SystemState.runQueueRefined_of_frame
+        (fun c t => SystemState.runLinkOn_of_objects hO c t) hQ hE r)).unset k hk,
+      fun d tid hR => ?_⟩
   rw [activateThreadOnCore_residentOnCore] at hR
   by_cases hd : d = c
   · rw [hd] at hR
     exact Or.inr (objYieldCodes_fst_zero_of_getTcb? fun t hT =>
-      activateThreadOnCore_settle_unlinkedOnCore st c h tid t
+      activateThreadOnCore_settle_unlinkedOnCore st c (hO ▸ h) tid t
         (Or.inr (by rw [activateThreadOnCore_residentOnCore]; exact hR)) hT)
   · refine Or.inl ?_
     have e : (PriorityInheritance.settleResidencyOnCore st c).machine.residentOnCore d =
         (PriorityInheritance.deferResidentElsewhere
-          (PriorityInheritance.dispatchVacatedCore st c) c).machine.residentOnCore d := by
-      simp only [PriorityInheritance.settleResidencyOnCore]
-      exact MachineState.residentOnCore_setResidentOnCore_ne _ _ _ _ (Ne.symm hd)
+          (PriorityInheritance.dispatchVacatedCore st c) c).machine.residentOnCore d :=
+      PriorityInheritance.settleResidencyOnCore_residentOnCore_ne st c d (Ne.symm hd)
     rw [← e]; exact hR
 
 /-- **Residency settlement and the activation**: the vacated core's dispatch,
@@ -568,27 +571,7 @@ theorem syscallDispatchEntryState_preserves_tableReferencesRecorded (ctx : Label
   (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E).tableReferencesRecorded
     hInv hR hT
 
-/-! ### The suspend, timer, reschedule, fault and FP/SIMD entries -/
-
-theorem suspendThreadCrossCoreDrainedStep_runQueueEntryStage (tid : UInt64) (e : CoreId)
-    (st : SystemState) :
-    SystemState.RunQueueEntryStage st (suspendThreadCrossCoreDrainedStep tid e st).2 := by
-  unfold suspendThreadCrossCoreDrainedStep suspendThreadCrossCoreStep
-  dsimp only
-  refine SystemState.RunQueueEntryStage.trans ?_ (clearLedgers_runQueueStage _).entry
-  split
-  · exact (RunQueueStage.refl _).entry
-  · split
-    · exact (RunQueueStage.refl _).entry
-    · rename_i hIdle
-      unfold Concurrency.BracketSpec.run suspendThreadBracket
-      dsimp only
-      split
-      · rename_i s' sgi hS
-        exact ((suspendThreadOnCore_runQueueEntryStage (by simpa using hIdle) hS).trans
-          (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
-          (activateThreadOnCore_runQueueStage _ e).entry
-      · exact (RunQueueStage.refl _).entry
+/-! ### The timer, reschedule, fault and FP/SIMD entries -/
 
 /-- **The timer entry's committed state keeps the agreement**: the trap-frame
 save, the tick, the residency settlement and the ledger drains.  The tick reads
@@ -801,13 +784,6 @@ theorem perCoreRescheduleEntryState_preserves_refillsSound (coreId : UInt64)
           (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).refillsSound :=
   (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).refillsSound hInv hR hRel hS
 
-/-- **The cross-core suspend keeps the refill state sound.** -/
-theorem suspendThreadCrossCoreDrainedStep_preserves_refillsSound (tid : UInt64) (e : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
-    (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
-    (suspendThreadCrossCoreDrainedStep tid e st).2.refillsSound :=
-  (suspendThreadCrossCoreDrainedStep_runQueueEntryStage tid e st).refillsSound hInv hR hRel hS
-
 /-- **The fault entry keeps the refill state sound.** -/
 theorem faultEntryState_preserves_refillsSound (lctx : LabelingContext) (coreId : UInt64)
     (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
@@ -891,14 +867,6 @@ theorem perCoreRescheduleEntryState_preserves_yieldLinksAgree (coreId : UInt64)
         ((rescheduleBracket coreId).run
           (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).yieldLinksAgree :=
   (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).yieldLinksAgree hInv hR hY
-
-/-- **The cross-core suspend keeps the yield link in agreement** — the cancel
-clears both ends of the suspended thread's link. -/
-theorem suspendThreadCrossCoreDrainedStep_preserves_yieldLinksAgree (tid : UInt64) (e : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
-    (hY : st.yieldLinksAgree) :
-    (suspendThreadCrossCoreDrainedStep tid e st).2.yieldLinksAgree :=
-  (suspendThreadCrossCoreDrainedStep_runQueueEntryStage tid e st).yieldLinksAgree hInv hR hY
 
 /-- **The fault entry keeps the yield link in agreement.** -/
 theorem faultEntryState_preserves_yieldLinksAgree (lctx : LabelingContext) (coreId : UInt64)

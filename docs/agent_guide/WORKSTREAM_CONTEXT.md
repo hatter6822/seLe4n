@@ -426,7 +426,7 @@ it named, as the removal clears both of the cut frame's links; notification
 bindings and endpoint-queue links are likewise held reciprocal by
 `ipcInvariantFull`, so a writer of either side writes both.  Since `v0.36.149` the untyped reset is seL4's (plan row 36): it refuses while the invoked slot has a derivation child or the untyped's child list records a carved object, and otherwise rewinds the capability's free index in place (`untypedResetSlot`), so new code must not make the reset read the store beyond that slot and that untyped, and an object leaves the store only by its final delete.  Since `v0.36.150` every live mapping is recorded on a capability to its frame (plan row 37, `SystemState.liveMappingsRecorded`, the 18th `proofLayerInvariantBundle` conjunct), so new code that adds a translation with a mapping epoch must record it on a frame capability in the same step, and new code that clears a capability's record or erases a frame must first remove the translation it witnesses; a new arm proves the invariant kept, or keeps every object's kind and mapping view (`kindPreservingWrite`).  Since `v0.36.151` the steps of the IPC, thread, scheduling-context, notification, service, audit, declassification, scheduling, timer, fault and retype arms are each a `MappingStage` (plan row 38, `Kernel/MappingRecordStage/*.lean`), so a new step of those arms states its stage and composes it with `MappingStage.trans`.  Since `v0.36.152` the invariant also says no thread's space slot holds a capability recording a mapping (plan row 39, `SystemState.threadSlotsRecordNoMapping`, its second half), so new code must not write a capability recording a mapping into a thread's space slot (the set-space copy overwrites a slot's old capability without unmapping, sound only through that half), and a new step proves every thread slot's capability after it was that slot's before or records nothing (`SystemState.threadSlotsDrawnFrom`).  Since `v0.36.153` the dispatchers and every committing kernel entry are `MappingStage`s (plan row 40, `Kernel/MappingRecordStage/Dispatch.lean`, `Entry.lean`), so a new dispatcher arm or entry step states its stage and is composed into its dispatcher's and entry's theorem, and an arm that reads more than the store's table invariant takes `MappingArmPremises` on the state it runs on, which every syscall entry carries across the writes it makes before the dispatch (a new such write must keep the capability invariants and the teardown's well-formedness).  Since `v0.36.154` the carve resets a capability with no derivation child (plan row 41, `retypeFreeIndex`): it starts at 0 through a childless slot and refuses, as the reset does, while the untyped records a carved object (`retypeResetAdmitted`), so new code that reads a carve's index reads `retypeFreeIndex`, never the capability's free index alone, and a new carve path makes the same decision before its first write.  Every row of `UNTYPED_RESET_PLAN.md` has landed.  Since `v0.36.155` (ZA5.5) a registered endpoint's final delete revokes its registration before the finalisation (`releaseFinalRegistration`), so new code that adds a table naming an object outside every slot makes that object's final delete drop the reference too, or the object is held for good; the boot installs the configured service interfaces (`PlatformConfig.initialInterfaces`, from `PlatformBinding.serviceInterfaces`), the only writer of the interface registry; and the configure and the service register share the register route's one-overflow-word arm (`routedOverflowOne`), so a new invocation with one argument word past the message registers joins that set rather than adding an arm.  ZA5.6 (a service's identity is its endpoint's), ZA5.7 (the endpoint's registration flag), ZA5.8 (the registration's words on the endpoint), ZA5.9 (the registry table retired), ZA5.10 (the audit ring) and ZA5.11 (the declassification and audit routing) are new rows.  Since `v0.36.156` a service's identity is its endpoint's id: `ServiceRegistration` carries no `sid` of its own (`ServiceRegistration.sid` is derived from the capability it keeps), so new code that builds a registration names its endpoint, not an identity.  Since `v0.36.157` the endpoint records only that a service is registered on it (`Endpoint.serviceRegistered : Bool`), so new code that needs the service an endpoint carries names it by the endpoint's id (`ServiceId.ofNat e.toNat`), never by a number read from the endpoint.  Since `v0.36.158` the endpoint also holds the registration's words (`Endpoint.service`), so new code that reads a registration reads the endpoint.  Since `v0.36.159` (ZA5.9) the registry table is deleted: the endpoint's record is the registration's only home, so new code that writes one writes the endpoint's slot alone and must not add a second copy.  The suspend of a thread blocked in IPC or
 holding a donated context is the one syscall arm left on the general path
-(ZA6.14).  Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
+(ZA6.16).  Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,
 `scheduleDomainOnCore_eq_state`), and new per-core state built from a
@@ -502,10 +502,20 @@ resident); a new producer over an abstract state takes the resident frame
 step that sets a resident proves the frame with the activation after it
 (`RunQueueEntryStage.of_frameThen`).  Since `v0.36.172`, ZA6.9 has
 landed seL4's `seL4_SchedContext_Consumed` (`schedContextConsumedOnCore`,
-syscall 42).  ZA6.10 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
+syscall 42).  Since `v0.36.173`, ZA6.10 carries
+`SystemState.currentNotResidentElsewhere` kernel-wide: a core's non-idle
+current thread is resident on no other core.  The coverage relation
+`stepCovers` has a `residentKept` field (an entry makes no thread resident on
+another core); a new arm proves it, usually by the `resident_frame` and
+`machine_chain` automation from its machine frame.  A new committing entry
+runs the residency settle and the activation, reads the reschedule flags
+before the settle, and fires those the settle raised
+(`pokeReleasedResident`).  The raw cross-core suspend seam is retired; there
+is no committing path that skips the settle.  ZA6.11 makes the remote stall
+wait for the remote save.  ZA6.12 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
 the stage's `live` field generalised to `YieldToCodesSetOnly L` across the
 dispatch chain (its linked branch sets the caller's yield-to code), the
-invocation and its live-link tests.  ZA6.11 puts
+invocation and its live-link tests.  ZA6.13 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:
@@ -2624,7 +2634,8 @@ code may assume:
   recorded unbracketed because a fault is not a syscall and `lockSetForSyscall`
   declares no footprint for one.
 - **SM3.C.9's `@[export]` body migration is otherwise deferred**: outside the
-  syscall seam and the raw `suspend_thread_cross_core` entry, the bodies are not
+  syscall seam (and, until its retirement at `v0.36.173`, the raw
+  `suspend_thread_cross_core` entry), the bodies are not
   wrapped in `withLockSet`, so the per-object fine locks remain a model-level
   discipline there.  **Eight of the
   thirty-five arms are declared** since WS-RR RR7.11 (v0.34.64) — that suspend
@@ -6529,10 +6540,11 @@ code may assume:
   `dispatchCapabilityOnly_schedContextBind_idle_capability_refused`).  `.lifecycleRetype`'s
   raw `targetObj` needs no separate guard: `lifecycleRetypeAuthority` binds it
   to the capability.  The
-  one live seam that takes a **raw** id, `suspend_thread_cross_core`,
-  refuses an idle id itself (round 8): its whole step is the pure
+  one seam that took a **raw** id, `suspend_thread_cross_core` (retired at
+  `v0.36.173`, WS-ZA ZA6.10, so no committing seam now takes one), refused
+  an idle id itself (round 8): its whole step was the pure
   `suspendThreadCrossCoreStep`, and `suspendThreadCrossCoreStep_idle_refused`
-  proves the refusal — the sentinel's `.invalidArgument` — commits nothing,
+  proved the refusal — the sentinel's `.invalidArgument` — commits nothing,
   where before it ran `suspendThreadOnCore`, which dequeues an idle TCB like
   any other.
   The boot queue is **characterised, not bounded**: on every

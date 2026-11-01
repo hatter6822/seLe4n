@@ -372,17 +372,20 @@ example (coreId : UInt64) :
         | none => pure ()
         | some c => do
           let frame ← SeLe4n.Platform.FFI.ffiTrapContext
-          let (kind, context, tableBase, asid, code, writes, icache) ←
+          let (pokes, kind, context, tableBase, asid, code, writes, icache) ←
             SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
               -- PR #904 review (`v0.36.41`): the core's residency settles on
               -- the successor the reschedule staged; WS-ZA ZA6.1: the
               -- restore target and the current thread cross as words.
               -- WS-ZA ZA6.7: then the current thread's activation.
+              -- WS-ZA ZA6.10: the flags the settle raised cross too.
+              let mid := ((SeLe4n.Kernel.rescheduleBracket coreId).run
+                (SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st c frame)).2
+              let pending := mid.scheduler.reschedulePending
               let post := SeLe4n.Kernel.activateThreadOnCore
-                (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore
-                  ((SeLe4n.Kernel.rescheduleBracket coreId).run
-                    (SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st c frame)).2 c) c
-              ((SeLe4n.Kernel.Architecture.restoreCommitKindOnCore post c,
+                (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore mid c) c
+              ((pending.raised post.scheduler.reschedulePending,
+                SeLe4n.Kernel.Architecture.restoreCommitKindOnCore post c,
                 SeLe4n.Kernel.Architecture.restoreContextOnCore post c,
                 SeLe4n.Kernel.Architecture.restoreTableBaseOnCore post c,
                 SeLe4n.Kernel.Architecture.restoreAsidOnCore post c,
@@ -391,6 +394,7 @@ example (coreId : UInt64) :
                 SeLe4n.Kernel.Architecture.clearIcacheMaintenance
                   (SeLe4n.Kernel.Architecture.clearPhysicalWrites post)))
           SeLe4n.Platform.FFI.completePhysicalWrites writes
+          SeLe4n.Kernel.Concurrency.fireRaisedReschedules pokes
           SeLe4n.Platform.FFI.completeIcacheMaintenance icache
           SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwnerOnCore c
           SeLe4n.Platform.FFI.restoreTrapFrameParts kind context tableBase asid

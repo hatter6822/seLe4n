@@ -5297,6 +5297,47 @@ theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldInterfaces_machine, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default, MachineState.regs, MachineState.regsOnCore])
 
+/-- WS-ZA ZA6.10: **the boot records no core's resident thread**: no stage
+    writes a residency code, so every core's is the default `0`. -/
+theorem bootFromPlatform_machine_residentCode (config : PlatformConfig) :
+    (bootFromPlatform config).state.machine.residentCode =
+      (default : SystemState).machine.residentCode := by
+  unfold bootFromPlatform
+  simp [applyMachineConfig, foldInterfaces_machine, foldObjects_machine, foldIrqs_machine,
+    mkEmpty_state_eq_default]
+
+/-- ...and so does the checked boot: the boot root's install is one object
+    store, the interrupt enable one machine flag. -/
+theorem bootFromPlatformChecked_ok_residentCode (config : PlatformConfig)
+    (ist : IntermediateState) (hOk : bootFromPlatformChecked config = .ok ist) :
+    ist.state.machine.residentCode = (default : SystemState).machine.residentCode := by
+  unfold bootFromPlatformChecked at hOk
+  repeat' split at hOk
+  all_goals first | (cases hOk; done) | skip
+  all_goals
+    cases hOk
+    simp [bootEnableInterruptsOp, enableInterrupts, installBootVSpaceRoot,
+      bootFromPlatform_machine_residentCode]
+
+/-- ...and so does the idle store on every core. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_residentCode
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    ist.state.machine.residentCode = (default : SystemState).machine.residentCode := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+  cases hB : bootFromPlatformChecked config with
+  | error e => rw [hB] at h; cases h
+  | ok base =>
+    rw [hB] at h
+    simp only [Except.bind] at h
+    split at h
+    · split at h
+      · cases h
+        rw [foldl_storeIdleThread_machine]
+        exact bootFromPlatformChecked_ok_residentCode config base hB
+      · cases h
+    · cases h
+
 /-- **WS-SM SM4.G**: the idle-thread boot state's boot-core current thread is in
     the active domain — the idle thread's domain `⟨0⟩` equals the boot active
     domain `⟨0⟩` (so the idle thread is legitimately schedulable, not stranded
