@@ -1,52 +1,54 @@
-## v0.36.172 — WS-ZA ZA6.9 (part): the Consumed invocation and seL4's head enqueue
+## v0.36.172 — WS-ZA ZA6.9: the `seL4_SchedContext_Consumed` invocation
 
-This version lands two parts of ZA6.9: seL4-MCS's
-`seL4_SchedContext_Consumed` invocation, and the head enqueue that
-`seL4_SchedContext_YieldTo` needs (seL4's `tcbSchedEnqueue`). The YieldTo
-invocation itself is not wired yet. Its linked branch needs the run-queue
-stage's `live` field generalised to `YieldToCodesSetOnly L` across the dispatch
-chain.
+seL4-MCS's `seL4_SchedContext_Consumed` returns a scheduling context's consumed
+time and resets it. This version adds it as syscall 42. The plan's yieldTo row
+is split: ZA6.9 is this invocation, and ZA6.10 is the
+`seL4_SchedContext_YieldTo` invocation. Every later row moves up one (ZA6.11 to
+ZA6.18), with every citation swept.
 
-- **The Consumed invocation** (`SeLe4n/Kernel/SchedContext/YieldLink.lean`).
-  - `.schedContextConsumed` is syscall 42. It takes a scheduling-context
-    capability with write right.
+- **The invocation** (`SeLe4n/Kernel/SchedContext/YieldLink.lean`).
+  - `.schedContextConsumed` takes a scheduling-context capability with write
+    right.
   - `schedContextConsumedOnCore` returns the context's consumed time and resets
-    it through `setConsumed`: the caller's `x1` gets the consumed-info word and
+    it through `setConsumed`. The caller's `x1` gets the consumed-info word and
     `x2` gets the time.
   - Checks come before writes (`schedContextConsumedAdmitted`,
     `schedContextConsumedPerform`, `schedContextConsumedOnCore_of_admitted`).
     No current thread is refused with `.illegalState`, standing for seL4's
-    `seL4_IllegalOperation`. A capability that names no context is refused
-    with `.invalidCapability`.
-  - The arm is wired into both dispatchers and the refusal-carrying form, with
-    a proof for each family:
-    - `schedContextConsumedOnCore_preserves_ipcInvariantFull`;
-    - the run-queue entry stage, from `setConsumed_runQueueStage`;
-    - `schedContextConsumedOnCore_mappingStage` and
-      `schedContextConsumedOnCore_stepCovers`;
-    - `schedContextConsumedOnCore_confinedToCores`;
-    - `schedContextConsumedOnCore_crossCoreNonInterference`, delegation-backed
-      by `syscallDelegates_schedContextConsumed`. This is the 35th cross-core
-      transition and the 20th delegation-backed one.
+    `seL4_IllegalOperation`. A capability that names no context is refused with
+    `.invalidCapability`.
+- **The arm and its proofs.** The arm is wired into both dispatchers and the
+  refusal-carrying form, with a proof for each family:
+  - `schedContextConsumedOnCore_preserves_ipcInvariantFull`;
+  - the run-queue entry stage, from `setConsumed_runQueueStage`;
+  - `schedContextConsumedOnCore_mappingStage` and
+    `schedContextConsumedOnCore_stepCovers`;
+  - `schedContextConsumedOnCore_confinedToCores`;
+  - `schedContextConsumedOnCore_crossCoreNonInterference`, delegation-backed by
+    `syscallDelegates_schedContextConsumed`. It is the 35th cross-core
+    transition and the 20th delegation-backed one.
+- **Footprint and classification.**
   - Its lock footprint is `lockSet_schedContextConsumed`: the caller's TCB, the
-    CSpace root and the context. It comes with `lockSet_consistent_schedContextConsumed`
-    and `lockSet_schedContextConsumed_size_le`.
-  - It writes no scheduler slot (footprint `none`). Taint is `.inert` and the
-    return shape is `.message`.
+    CSpace root and the context. It has
+    `lockSet_consistent_schedContextConsumed` and
+    `lockSet_schedContextConsumed_size_le`.
+  - It writes no scheduler slot (footprint `none`). Its taint is `.inert` and
+    its return shape is `.message`.
   - The enforcement boundary grows to 51 entries (65 per core).
-- **The head enqueue** (`SeLe4n/Kernel/Scheduler/RunQueueHeadEnqueue.lean`,
-  plus `RunQueue.insertHead` and `LinkedQueue.isQueue_cons`).
-  `runEnqueueHeadOnCore` is refined against the abstract queue
-  (`runEnqueueHeadOnCore_refined`) and staged (`RunQueueLinkStage` /
-  `RunQueueStage.runEnqueueHeadOnCore`, `RunQueueStage.then_enqueueHead`).
 - **Rust ABI.**
   - `SyscallId::SchedContextConsumed = 42` in `sele4n-types` and the HAL mirror.
   - `sele4n_sys::sched_context::sched_context_consumed`.
   - Conformance: the round trip, the return-shape mirror and the fixture.
-  - The exerciser adds the `sched-context-consumed` scenario.
+- **Exerciser.** Round trips can now check their returned words, so a refusal
+  or a wrong word fails the scenario.
+  - The `sched-context-consumed` scenario checks the consumed-info word in
+    `x1`.
+  - `sched-context-consumed-reset` checks that a second call reads 0.
+  - Both read 0 allocations at first call and in steady state.
 - **Tests.**
-  - SR-045 reads and resets the consumed time and checks both refusals.
-  - The lock-set, phase-manifest and enforcement counts are updated.
+  - SR-045 checks the reading, the reset and both refusals.
+  - The lock-set, phase-manifest, enforcement and syscall counts follow, as do
+    the trace fixtures.
 
 ## v0.36.171 — WS-ZA ZA6.8: no core's current or resident thread holds a yield link, kernel-wide
 

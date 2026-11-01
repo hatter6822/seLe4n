@@ -1484,6 +1484,9 @@ struct RoundTrip {
     /// Whether the caller blocks: the dispatch answers `Blocked` and restores
     /// the other thread, instead of a frame to the caller.
     blocks: bool,
+    /// The success frame's `x1` and, when known, its `x2` that the round trip
+    /// must return; `None` checks only that the call succeeded.
+    returns: Option<(u64, Option<u64>)>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1602,6 +1605,7 @@ const fn kernel_step(name: &'static str, syscall: u64) -> RoundTrip {
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     }
 }
 
@@ -1748,6 +1752,7 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
         msg: [badge, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     }
 }
 
@@ -1768,6 +1773,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         msg: [0, 0, 0, 0],
         primed: Some(1),
         blocks: false,
+        returns: None,
     },
     RoundTrip {
         name: "yield",
@@ -1777,6 +1783,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     },
 ];
 
@@ -1799,6 +1806,7 @@ const fn partner_step(
         msg: [msg[0], msg[1], 0, 0],
         primed: None,
         blocks,
+        returns: None,
     }
 }
 
@@ -2020,6 +2028,28 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         msg,
         primed: None,
         blocks: false,
+        returns: None,
+    }
+}
+
+/// The Consumed invocation's success word in `x1`: `MessageInfo` length 1,
+/// label 0 (Lean's `consumedInfoWord`).
+#[cfg(feature = "hw_target")]
+const CONSUMED_INFO_WORD: u64 = 1;
+
+/// The Consumed invocation on the context capability: it must succeed with
+/// `x1` the consumed-info word and, when `reading` is given, `x2` that reading.
+#[cfg(feature = "hw_target")]
+const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall: SCHED_CONTEXT_CONSUMED,
+        cptr: SCHED_CONTEXT_CAP,
+        msg_len: 0,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        returns: Some((CONSUMED_INFO_WORD, reading)),
     }
 }
 
@@ -2038,6 +2068,7 @@ const fn configure(name: &'static str, msg: [u64; 4]) -> RoundTrip {
         msg,
         primed: None,
         blocks: false,
+        returns: None,
     }
 }
 
@@ -2054,6 +2085,7 @@ const fn service_register(name: &'static str, cptr: u64, msg: [u64; 4]) -> Round
         msg,
         primed: None,
         blocks: false,
+        returns: None,
     }
 }
 
@@ -2537,6 +2569,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            returns: None,
         },
         kernel_step("refill-wait-tick", TIMER_TICK_STEP),
         kernel_step("refill-drain-tick", TIMER_TICK_STEP),
@@ -2581,13 +2614,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             [0; 4],
         ),
         // WS-ZA ZA6.9: the Consumed invocation reads the context's consumed
-        // time into the caller's saved registers and resets it in place.
-        invocation(
-            "sched-context-consumed",
-            SCHED_CONTEXT_CONSUMED,
-            SCHED_CONTEXT_CAP,
-            [0; 4],
-        ),
+        // time into the caller's saved registers and resets it in place.  The
+        // first reading is whatever the context accrued; the second, with the
+        // context unbound and nothing charged between them, must read 0.
+        consumed("sched-context-consumed", None),
+        consumed("sched-context-consumed-reset", Some(0)),
         invocation(
             "sched-context-rebind",
             SCHED_CONTEXT_BIND,
@@ -2918,6 +2949,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         msg: [0; 4],
         primed: None,
         blocks: false,
+        returns: None,
     },
     RoundTrip {
         name: "declassified-signal",
@@ -2927,6 +2959,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         msg: [1, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     },
     partner_step(
         "send-tainted-blocks",
@@ -2945,6 +2978,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     },
     // Opcode 7: the target object of entry 0, chunk 0.
     RoundTrip {
@@ -2955,6 +2989,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         msg: [7, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     },
     RoundTrip {
         name: "audit-drain",
@@ -2964,6 +2999,7 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 8] = [
         msg: [256, 0, 0, 0],
         primed: None,
         blocks: false,
+        returns: None,
     },
     invocation(
         "upper-notification-delete",
@@ -3419,6 +3455,17 @@ fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
         );
         return Some(false);
     };
+    if let (Dispatched::Returned(regs), Some((x1, x2))) = (&outcome, trip.returns) {
+        if regs[1] != x1 || x2.is_some_and(|x2| regs[2] != x2) {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: returned x1={:#x} x2={:#x}, \
+                 expected x1={x1:#x} x2={x2:?}",
+                regs[1],
+                regs[2]
+            );
+            return Some(false);
+        }
+    }
     match outcome {
         Dispatched::Returned(regs) if !trip.blocks => crate::kprintln!(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",

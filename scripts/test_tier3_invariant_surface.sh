@@ -22782,8 +22782,4 @@ run_check "INVARIANT" rg -n '^theorem schedContextConsumedOnCore_crossCoreNonInt
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_schedContextConsumed($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_schedContextConsumed($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_schedContextConsumed_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-# seL4's tcbSchedEnqueue: a head enqueue on a core's run queue, refined and staged.
-run_check "INVARIANT" rg -n '^def runEnqueueHeadOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueHeadEnqueue.lean
-run_check "INVARIANT" rg -n '^theorem runEnqueueHeadOnCore_refined($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueHeadEnqueue.lean
-run_check "INVARIANT" rg -n '^theorem RunQueueStage\.runEnqueueHeadOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueHeadEnqueue.lean
 finalize_report

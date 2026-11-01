@@ -5938,7 +5938,7 @@ Every kernel object has a decidable well-formedness predicate:
   (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`);
   the per-core tick, the drain and the yield's charge are outside the per-core
   non-interference step relation, as before this cut (`docs/REGISTERED_DEBT.md`,
-  ZA6.10).  The compiled link edits, the re-placement and the charge each read
+  ZA6.11).  The compiled link edits, the re-placement and the charge each read
   what they need before they write and write through one call
   (`releaseUnlinkWrite`, `releaseLinkWrite`, `releasePlaceImpl`,
   `spendBudgetWrite`), and a refill behind the first is one straight-line
@@ -6035,10 +6035,11 @@ Every kernel object has a decidable well-formedness predicate:
     two contexts outside every refill rule, so it broke refill conservation, and
     it is removed.  It was not seL4's yieldTo.  seL4-MCS's
     `seL4_SchedContext_YieldTo` is a scheduling-context capability invocation,
-    and the zero-allocation plan adds it in rows ZA6.5 to ZA6.9:
+    and the zero-allocation plan adds it in rows ZA6.5 to ZA6.10:
     consumed-time accounting (landed at `v0.36.168`, below), the yield link
-    (`v0.36.169`), the activation step (`v0.36.170`, below) and the
-    invocation.
+    (`v0.36.169`), the activation step (`v0.36.170`, below), the live-register
+    invariant (`v0.36.171`), the Consumed invocation (ZA6.9, `v0.36.172`) and
+    the YieldTo invocation (ZA6.10).
   - **Zero allocation.**  The configure, the bind and the refill scenarios
     read 0 heap cells at first call and steady state on the QEMU exerciser.
     The configure's resolution runs in continuation form
@@ -6063,14 +6064,14 @@ Every kernel object has a decidable well-formedness predicate:
     `SchedContext.updateConsumed` are seL4-MCS's `schedContext_updateConsumed`:
     the count is returned, at most a word (`consumedReadMax`), and what was
     returned is taken off (`consumedReading_add_updateConsumed`,
-    `updateConsumed_cases`).  The yieldTo rows (ZA6.6 to ZA6.9) return it in
-    MR0.
+    `updateConsumed_cases`).  The Consumed invocation (ZA6.9, `v0.36.172`)
+    and the yieldTo invocation (ZA6.10) return it in MR0.
   - **Outside the refill view.**  The count is in no refill invariant's view
     (`addConsumed_refillView`, `chargeBudget_refillView`) and is erased with
     the refills (`SchedContext.refillsErased`), so `refillsSound`, refill
     conservation, the window bound and the run-queue stages are unchanged.
     Its projection is decided with the per-core tick's non-interference
-    (ZA6.10); until then it is projected as the context's other budget fields
+    (ZA6.11); until then it is projected as the context's other budget fields
     are.
   - **Zero allocation.**  The count is one field written in the charge's own
     record update, so every charge scenario still reads 0 heap cells.
@@ -6097,7 +6098,7 @@ Every kernel object has a decidable well-formedness predicate:
     (`activateThreadOnCore_preserves_contextMatchesCurrentOnCore`), as a
     still-current caller's result is staged into both.  What it does is
     `activateThreadOnCore_completes`.  With no link it is the identity
-    (`activateThreadOnCore_of_unlinked`); the yieldTo invocation (ZA6.9) is
+    (`activateThreadOnCore_of_unlinked`); the yieldTo invocation (ZA6.10) is
     the first transition that sets one.
   - **Compiled form.**  `activateThreadOnCoreImpl`, the `@[csimp]` form
     (`activateThreadOnCore_eq_impl`), reads the core's current-thread code, so
@@ -6130,7 +6131,7 @@ Every kernel object has a decidable well-formedness predicate:
     and invisible to an observer who sees neither the linked context nor, on
     the boot core, the current thread
     (`activateThreadOnCore_preserves_projection`).  Its per-core
-    non-interference is ZA6.10's.
+    non-interference is ZA6.11's.
   - **The yielder's saved registers are its live ones.**  A context's final
     delete completes its yielder's yield by writing the yielder's saved
     context (`setConsumed`, ZA6.6), which is sound only while no core holds
@@ -6160,7 +6161,7 @@ Every kernel object has a decidable well-formedness predicate:
     siblings, `IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean`).
     Boot establishes it, every code being 0
     (`bootFromPlatformCheckedStartedFor_yieldLinkedNotResident`), as does the
-    default state.  ZA6.9's yieldTo, the one step that sets a code, sets it
+    default state.  ZA6.10's yieldTo, the one step that sets a code, sets it
     on its caller (`YieldToCodesSetOnly`).
   - **Zero allocation.**  The unlinked path builds nothing and writes nothing:
     on the QEMU exerciser every scenario reads its pin, 0 for every syscall,
@@ -6189,7 +6190,7 @@ Every kernel object has a decidable well-formedness predicate:
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
   five scheduling-context scenarios reads 0 allocations.  The suspend of a
   thread blocked in IPC or holding a donated context keeps the general path
-  (`docs/REGISTERED_DEBT.md`, ZA6.13).
+  (`docs/REGISTERED_DEBT.md`, ZA6.14).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
@@ -6683,12 +6684,10 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `schedContextConsumedOnCore_confinedToCores`,
   `schedContextConsumedOnCore_crossCoreNonInterference`
   (`syscallDelegates_schedContextConsumed`), `lockSet_schedContextConsumed`.
-  The exerciser's `sched-context-consumed` scenario reads 0 allocations.  The
-  head enqueue `seL4_SchedContext_YieldTo` needs (seL4's `tcbSchedEnqueue`) is
-  `runEnqueueHeadOnCore` (`Scheduler/RunQueueHeadEnqueue.lean`), refined
-  against the abstract queue (`runEnqueueHeadOnCore_refined`) and staged
-  (`RunQueueStage.runEnqueueHeadOnCore`); the YieldTo invocation itself is not
-  yet wired.
+  The exerciser's `sched-context-consumed` scenario checks the call succeeded
+  with the consumed-info word in `x1`, and `sched-context-consumed-reset`
+  checks that a second call reads 0; both read 0 allocations.  seL4's `seL4_SchedContext_YieldTo` is the
+  zero-allocation plan's row ZA6.10.
 - **Every configured address space owns a table page** (`v0.36.13`).  The
   binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
   RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's
@@ -7674,7 +7673,7 @@ removal). Since `v0.36.167` (WS-ZA ZA6.4) the configure is invoked on a
 per-core SchedControl capability, not on the context's own, and the
 kernel-internal `schedContextYieldTo` budget transfer, which broke refill
 conservation, is removed (seL4's `seL4_SchedContext_YieldTo` invocation is
-planned, ZA6.5 to ZA6.9; ZA6.5's consumed-time accounting landed at
+planned, ZA6.5 to ZA6.10; ZA6.5's consumed-time accounting landed at
 `v0.36.168`). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
