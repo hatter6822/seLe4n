@@ -234,7 +234,10 @@ for file in "${STAGED_LEAN_FILES[@]}"; do
             ERROR_COUNT=0
         fi
         echo "  FAILED: $MODULE ($ERROR_COUNT errors)"
-        grep "^error:" "${BUILD_LOG}" 2>/dev/null | head -5 | sed 's/^/    /'
+        # `grep` exits 1 when the log has no `error:` line; under `pipefail`
+        # that would end the hook here, before the fallback below explains the
+        # failure.  The braces keep a no-match from failing the pipeline.
+        { grep "^error:" "${BUILD_LOG}" 2>/dev/null || true; } | head -5 | sed 's/^/    /'
         if [ "$ERROR_COUNT" != "?" ] && [ "$ERROR_COUNT" -gt 5 ]; then
             echo "    ... and $((ERROR_COUNT - 5)) more"
         fi
@@ -242,7 +245,7 @@ for file in "${STAGED_LEAN_FILES[@]}"; do
         # full disk) still says why somewhere: show the log's tail.
         if [ "$ERROR_COUNT" = "0" ]; then
             echo "    (no error: line; exit status ${BUILD_RC}; the log ends:)"
-            tail -n 5 "${BUILD_LOG}" 2>/dev/null | sed 's/^/    /'
+            { tail -n 5 "${BUILD_LOG}" 2>/dev/null || true; } | sed 's/^/    /'
         fi
     else
         echo "  OK: $MODULE"

@@ -21204,6 +21204,9 @@ run_check "INVARIANT" rg -F -n 'timeout "${PRECOMMIT_BUILD_TIMEOUT}" lake build 
 run_check "INVARIANT" rg -n -U 'if \[ "\$\{BUILD_RC\}" -eq 124 \]; then\n        BUILD_ERRORS=\$\(\(BUILD_ERRORS \+ 1\)\)' scripts/pre-commit-lean-build.sh
 run_check "INVARIANT" rg -n -U 'elif \[ "\$\{BUILD_RC\}" -ne 0 \]; then\n        BUILD_ERRORS=\$\(\(BUILD_ERRORS \+ 1\)\)' scripts/pre-commit-lean-build.sh
 run_negative_check "INVARIANT" rg -F -n 'timeout 300 lake build' scripts/pre-commit-lean-build.sh
+# A failed build's report pipes `grep`/`tail` into `sed`; under `pipefail` an
+# unguarded no-match would end the hook before its no-error-line fallback.
+run_negative_check "INVARIANT" rg -n '^\s*(grep|tail) [^|]*\|' scripts/pre-commit-lean-build.sh
 run_negative_check "INVARIANT" rg -F -n "mapfile -t STAGED_LEAN_FILES" scripts/pre-commit-lean-build.sh
 #
 # ...and the rule gets a CHECK rather than a third telling: `v0.35.150` found
