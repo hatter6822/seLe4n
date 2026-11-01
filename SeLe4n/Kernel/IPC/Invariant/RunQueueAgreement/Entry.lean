@@ -248,9 +248,9 @@ theorem recordResidentThenActivate_runQueueEntryStage (st : SystemState) (c : Co
   rw [activateThreadOnCore_residentOnCore] at hR
   by_cases hd : d = c
   · rw [hd] at hR
-    exact Or.inr (objYieldCodes_fst_zero_of_getTcb? fun t hT =>
+    exact Or.inr (Or.inl (objYieldCodes_fst_zero_of_getTcb? fun t hT =>
       activateThreadOnCore_settle_unlinkedOnCore st c h tid t
-        (Or.inr (by rw [activateThreadOnCore_residentOnCore]; exact hR)) hT)
+        (Or.inr (by rw [activateThreadOnCore_residentOnCore]; exact hR)) hT))
   · refine Or.inl ?_
     have e : (PriorityInheritance.settleResidencyOnCore st c).machine.residentOnCore d =
         (PriorityInheritance.deferResidentElsewhere

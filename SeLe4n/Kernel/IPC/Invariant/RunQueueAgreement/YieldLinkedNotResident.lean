@@ -84,9 +84,10 @@ theorem yieldLinkedNotResident_of_live {pre post : SystemState}
   · rcases hC d tid h with h' | h'
     · exact post0 (hL.unset.zero (fun h => h) (pre0 (Or.inl h')))
     · exact h' t hT
-  · rcases hL.residents d tid h with h' | h'
+  · rcases hL.residents d tid h with h' | h' | h'
     · exact post0 (hL.unset.zero (fun h => h) (pre0 (Or.inr h')))
     · exact post0 h'
+    · exact h'.elim
 
 theorem currentsRecordUnlinked.clearLedgers {pre X : SystemState}
     (h : currentsRecordUnlinked X pre) : currentsRecordUnlinked

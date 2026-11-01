@@ -2852,7 +2852,7 @@ stage read as a function) — **and keeps the table references recorded**
 is built from proves both (its table half a `TableReferenceFrame`, or a
 registry writer's preservation theorem), so every kernel entry's stage proof is
 also its proof that the references stay recorded. -/
-structure RunQueueLinkStage (st st' : SystemState) : Prop where
+structure RunQueueLinkStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState) : Prop where
   links : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
   tables : st.objects.invExt → st.runQueueRefined → st.tableReferencesRecorded →
     st'.tableReferencesRecorded
@@ -2868,9 +2868,14 @@ structure RunQueueLinkStage (st st' : SystemState) : Prop where
   /-- WS-ZA ZA6.6: the yield link stays in agreement (`yieldLinksAgree`): each
   end names the other. -/
   yield : st.objects.invExt → st.runQueueRefined → st.yieldLinksAgree → st'.yieldLinksAgree
-  /-- WS-ZA ZA6.8: the step links no thread and makes no linked thread
-  resident (`YieldLinkLiveFrame`). -/
-  live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrame st' st
+  /-- WS-ZA ZA6.8: the step links no thread off `L` and makes no linked thread
+  off `L` resident (`YieldLinkLiveFrameOn`); `L` is empty but for the yieldTo
+  invocation's link of its caller (WS-ZA ZA6.10). -/
+  live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrameOn L st' st
+
+/-- A link stage that links no thread: `RunQueueLinkStageOn` with `L` empty. -/
+abbrev RunQueueLinkStage (st st' : SystemState) : Prop :=
+  RunQueueLinkStageOn (fun _ => False) st st'
 
 /-- WS-ZA ZA6.4: **a link stage off the contexts `P`** — the link agreement,
 the table references and the release queues, with the refill state kept sound
@@ -2879,8 +2884,8 @@ later step re-places it (the charge, then the postpone) is a frame off `s` and
 a stage only with the step after it: frames compose
 (`RunQueueLinkFrame.trans`), and the composite is closed once
 (`RunQueueLinkFrame.withRefills`). -/
-structure RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : SystemState) :
-    Prop where
+structure RunQueueLinkFrameOn (L : SeLe4n.ObjId → Prop) (P : SeLe4n.SchedContextId → Prop)
+    (st st' : SystemState) : Prop where
   links : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
   tables : st.objects.invExt → st.runQueueRefined → st.tableReferencesRecorded →
     st'.tableReferencesRecorded
@@ -2889,9 +2894,13 @@ structure RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : Syste
   refills : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.runQueueRefined →
     st.releaseQueueRefined → st.refillsSoundExcept S → st'.refillsSoundExcept S
   yield : st.objects.invExt → st.runQueueRefined → st.yieldLinksAgree → st'.yieldLinksAgree
-  /-- WS-ZA ZA6.8: the step links no thread and makes no linked thread
-  resident (`YieldLinkLiveFrame`). -/
-  live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrame st' st
+  /-- WS-ZA ZA6.8: the step links no thread off `L` and makes no linked thread
+  off `L` resident (`YieldLinkLiveFrameOn`). -/
+  live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrameOn L st' st
+
+/-- A link frame that links no thread: `RunQueueLinkFrameOn` with `L` empty. -/
+abbrev RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : SystemState) : Prop :=
+  RunQueueLinkFrameOn (fun _ => False) P st st'
 
 /-- A link stage is a frame off any contexts. -/
 theorem RunQueueLinkStage.toFrame {st st' : SystemState} (h : RunQueueLinkStage st st')
@@ -2935,12 +2944,12 @@ theorem RunQueueLinkFrame.trans {P : SeLe4n.SchedContextId → Prop} {st st' st'
 
 instance {st st' : SystemState} : CoeFun (RunQueueLinkStage st st')
     (fun _ => st.objects.invExt → st.runQueueRefined →
-      st'.objects.invExt ∧ st'.runQueueRefined) := ⟨RunQueueLinkStage.links⟩
+      st'.objects.invExt ∧ st'.runQueueRefined) := ⟨RunQueueLinkStageOn.links⟩
 
 instance {P : SeLe4n.SchedContextId → Prop} {st st' : SystemState} :
     CoeFun (RunQueueLinkFrame P st st')
     (fun _ => st.objects.invExt → st.runQueueRefined →
-      st'.objects.invExt ∧ st'.runQueueRefined) := ⟨RunQueueLinkFrame.links⟩
+      st'.objects.invExt ∧ st'.runQueueRefined) := ⟨RunQueueLinkFrameOn.links⟩
 
 /-- WS-ZA ZA4.5: **a step that keeps the run-queue placement invariants** —
 the link agreement, `currentDequeuedUniqueExcept` whichever scheduling point
