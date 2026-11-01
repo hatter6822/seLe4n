@@ -4363,6 +4363,17 @@ def lockSet_schedContextUnbind (callerTid : ThreadId)
        (stateLevelLock, .write)])
     (queueOwnerMember queueOwner)
 
+/-- WS-ZA ZA6.9: `lockSet` for `schedContextConsumed`.  `setConsumed` writes
+the invoked SchedContext (its consumed time is reset) and the caller's TCB (the
+reading lands in its saved registers); the CSpace root is read for the
+capability resolution. -/
+def lockSet_schedContextConsumed (callerTid : ThreadId) (cnodeRootObjId : ObjId)
+    (scid : SchedContextId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .write),
+     (cnodeLock cnodeRootObjId, .read),
+     (schedContextLock scid, .write)]
+
 /-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
 `boundNotification`) and the notification (write — `boundTCB`) both mutate; the
 caller TCB is read (identity) and the CSpace root read (cap resolution). -/
@@ -5066,6 +5077,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .schedContext, .endpoint, .notification, .objStore]
   | .schedContextConfigure =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
+  -- WS-ZA ZA6.9: the Consumed invocation writes the invoked SchedContext and the
+  -- caller's TCB and reads the CSpace root.
+  | .schedContextConsumed =>
+      [.tcb, .cnode, .schedContext]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
@@ -5153,7 +5168,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
@@ -6905,6 +6920,21 @@ theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
           · rw [h]; simp [stateLevelLock]; decide
           exact absurd hMem (by intro h; cases h)))
     (queueOwnerMember_kind queueOwner _ (by decide) (by decide))
+
+/-- WS-ZA ZA6.9: SM3.B.4 for `.schedContextConsumed`. -/
+theorem lockSet_consistent_schedContextConsumed (callerTid : ThreadId) (cnRoot : ObjId)
+    (scid : SchedContextId) :
+    ∀ p ∈ (lockSet_schedContextConsumed callerTid cnRoot scid).pairs,
+      p.fst.kind ∈ permittedKinds .schedContextConsumed :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM6.B.4 for `.tcbBindNotification`. -/
 theorem lockSet_consistent_tcbBindNotification (callerTid : ThreadId)

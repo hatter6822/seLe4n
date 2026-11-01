@@ -993,6 +993,10 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- `dispatchSyscallChecked` run it before any gate is built — so no right is
   -- ever checked for it.  `.read`, the weakest, is the value a gate would carry.
   | .yield                 => .read
+  -- WS-ZA ZA6.9: the Consumed invocation writes the context (its consumed time
+  -- is reset), so it carries the write right Bind and Unbind carry; seL4's
+  -- scheduling-context capability has no rights of its own to check.
+  | .schedContextConsumed  => .write
 
 /-- PR #870 round 5: **which syscalls validate the capability's target before
 its rights.**
@@ -1055,6 +1059,7 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .pageTableMap          => false
   | .pageTableUnmap        => false
   | .yield                 => false
+  | .schedContextConsumed  => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -3052,6 +3057,20 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- WS-ZA ZA6.9: seL4-MCS's `seL4_SchedContext_Consumed` — no arguments; the
+  -- context from the capability target, the caller the executing core's
+  -- current thread (`schedContextConsumedOnCore`).
+  | .schedContextConsumed =>
+    some <| match cap.target with
+    | .object scId =>
+      fun st => match validateObjIdArg scId with
+      | .error e => .error e
+      | .ok vScId =>
+          match schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val)
+              executingCore st with
+          | .ok st' => .ok ((), st')
+          | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
   -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
   -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
   | .tcbBindNotification =>
@@ -3571,6 +3590,22 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
                     hR hUn
+    all_goals try cases hStep
+  case schedContextConsumed =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hVal : validateObjIdArg scId with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hC : schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val)
+              executingCore st with
+          | error e => simp only [hC] at hStep; cases hStep
+          | ok stC =>
+              simp only [hC] at hStep
+              cases hStep
+              exact schedContextConsumedOnCore_preserves_ipcInvariantFull hObjInv hInv hC
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -5754,7 +5789,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
-            .pageTableMap, .pageTableUnmap, .yield] : List SyscallId) := by
+            .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -5777,7 +5812,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
-            .pageTableMap, .pageTableUnmap, .yield] : List SyscallId) := by
+            .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -8636,12 +8671,31 @@ def syscallDelegates : SyscallId → Prop
         st.scheduler.currentOnCore executingCore = some tid →
         dispatchSyscall decoded tid executingCore st = dispatchYield executingCore st ∧
         dispatchSyscallChecked ctx decoded tid executingCore st = dispatchYield executingCore st
+  -- WS-ZA ZA6.9: the Consumed arm IS the Consumed invocation of the context the
+  -- capability names, on the executing core.
+  | .schedContextConsumed =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
+        (st : SystemState),
+        decoded.syscallId = .schedContextConsumed →
+        cap.target = .object scId →
+        validateObjIdArg scId = .ok vScId →
+        dispatchWithCap decoded tid executingCore gate cap st =
+          (match schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val)
+                  executingCore st with
+           | .ok st' => .ok ((), st')
+           | .error e => .error e)
   | _ => False
 
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
 theorem syscallDelegates_yield : syscallDelegates .yield := by
   intro ctx decoded tid executingCore st hSyscall hCur
   exact ⟨by simp [dispatchSyscall, hSyscall, hCur], by simp [dispatchSyscallChecked, hSyscall, hCur]⟩
+
+/-- WS-ZA ZA6.9: the `.schedContextConsumed` obligation, discharged. -/
+theorem syscallDelegates_schedContextConsumed : syscallDelegates .schedContextConsumed := by
+  intro decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hValid]
 
 /-- The `.receive` obligation, discharged. -/
 theorem syscallDelegates_receive : syscallDelegates .receive := by

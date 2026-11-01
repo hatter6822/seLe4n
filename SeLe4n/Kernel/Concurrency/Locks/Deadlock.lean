@@ -1587,6 +1587,13 @@ theorem lockSet_schedContextUnbind_size_le (a : ThreadId) (b : ObjId)
   unfold lockSet_schedContextUnbind maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
+/-- WS-ZA ZA6.9: `seL4_SchedContext_Consumed`'s footprint is three fixed locks. -/
+theorem lockSet_schedContextConsumed_size_le (a : ThreadId) (b : ObjId)
+    (c : SchedContextId) :
+    (lockSet_schedContextConsumed a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_schedContextConsumed maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
 -- WS-OD (`v0.35.4`): `lockSet_tcbSuspend_size_le` retired with its footprint;
 -- the `.tcbSuspend` syscall's bound is `lockSet_tcbSuspendOnCore_size_le`
 -- (`ResolvedFootprintBounds.lean`), stated over the state-resolved footprint
@@ -1740,6 +1747,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d q, (lockSet_schedContextConfigure a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextBind a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextUnbind a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_schedContextConsumed a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c q, (lockSet_tcbResume a b c q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize) ∧
@@ -1769,6 +1777,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,
+   lockSet_schedContextConsumed_size_le,
    lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
    lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le,

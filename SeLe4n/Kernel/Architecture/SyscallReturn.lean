@@ -332,6 +332,10 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .pageTableMap          => .unit
   | .pageTableUnmap        => .unit
   | .yield                 => .unit
+  -- WS-ZA ZA6.9: the Consumed invocation returns the consumed time `setConsumed`
+  -- wrote into the caller's first message register, with its message info in
+  -- `x1`: the frame passes the staged registers through.
+  | .schedContextConsumed  => .message
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit
@@ -358,12 +362,13 @@ theorem syscallReturnShape_total (sid : SyscallId) :
   ⟨_, rfl⟩
 
 /-- The value-returning surface, pinned by enumeration over the ABI's own
-`SyscallId.all` (plan §1.3): seven syscalls return a value — the five WS-RA
-classified, plus WS-SM SM9.A's two audit reads. -/
+`SyscallId.all` (plan §1.3): eight syscalls return a value — the five WS-RA
+classified, WS-SM SM9.A's two audit reads, and WS-ZA ZA6.9's Consumed
+invocation. -/
 theorem syscallReturnShape_value_returning :
     SyscallId.all.filter (fun sid => syscallReturnShape sid != .unit) =
       [.receive, .call, .serviceQuery, .notificationWait, .replyRecv,
-       .auditRead, .auditDrain] := by
+       .auditRead, .auditDrain, .schedContextConsumed] := by
   decide
 
 /-- The refuted design, kept refuted (plan §3.4): a hand-maintained list of

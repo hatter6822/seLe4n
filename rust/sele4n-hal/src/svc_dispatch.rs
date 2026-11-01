@@ -171,14 +171,17 @@ pub enum SyscallId {
     /// WS-ZA ZA4.3: give up the rest of the caller's budget or time slice
     /// (`seL4_Yield`); invokes no capability, no message registers.
     Yield = 41,
+    /// WS-ZA ZA6.9: read and reset a scheduling context's consumed time
+    /// (`seL4_SchedContext_Consumed`); no message registers.
+    SchedContextConsumed = 42,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 41;
+    pub const COUNT: u32 = 42;
 
     /// One past the largest syscall number (must match `sele4n-types`).
-    pub const ENCODING_BOUND: u32 = 42;
+    pub const ENCODING_BOUND: u32 = 43;
 
     /// Retired syscall numbers, reserved and never reassigned (must match
     /// `sele4n-types`): `8`, the in-place lifecycle retype.
@@ -229,6 +232,7 @@ impl SyscallId {
             39 => Some(Self::PageTableMap),
             40 => Some(Self::PageTableUnmap),
             41 => Some(Self::Yield),
+            42 => Some(Self::SchedContextConsumed),
             _ => None,
         }
     }
@@ -279,6 +283,9 @@ impl SyscallId {
             Self::PageTableUnmap => 0,
             // WS-ZA ZA4.3: yield takes no operand at all.
             Self::Yield => 0,
+            // WS-ZA ZA6.9: the Consumed invocation's only operand is the invoked
+            // capability.
+            Self::SchedContextConsumed => 0,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
@@ -1211,7 +1218,12 @@ mod tests {
         // WS-ZA ZA4.3: the yield takes no operand at all.
         assert_eq!(SyscallId::Yield.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(41), Some(SyscallId::Yield));
-        assert_eq!(SyscallId::from_u32(42), None);
+        assert_eq!(SyscallId::SchedContextConsumed.min_inline_args(), 0);
+        assert_eq!(
+            SyscallId::from_u32(42),
+            Some(SyscallId::SchedContextConsumed)
+        );
+        assert_eq!(SyscallId::from_u32(43), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

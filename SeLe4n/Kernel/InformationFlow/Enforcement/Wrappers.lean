@@ -290,6 +290,8 @@ def enforcementBoundary : List EnforcementClass :=
   -- writes the timer tick makes when that allotment runs out, and carries no
   -- data across a label boundary.
   , .capabilityOnly "yieldOnCore"
+  -- WS-ZA ZA6.9: the Consumed invocation, a SchedContext capability's.
+  , .capabilityOnly "schedContextConsumedOnCore"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -422,6 +424,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .pageTableMap => "pageTableMap"
   | .pageTableUnmap => "pageTableUnmap"
   | .yield => "yieldOnCore"
+  | .schedContextConsumed => "schedContextConsumedOnCore"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"

@@ -903,4 +903,15 @@ theorem schedContextUnbindOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
       (schedContextUnbind_confinedToCores vScId st stMid hUnbind)
       (priorityRescheduleOnCore_confinedToCores stMid st' _ executingCore true sgi hStep)
 
+/-- WS-ZA ZA6.9 (**the live `.schedContextConsumed` bound**): the Consumed
+invocation writes no core's observable slot — `setConsumed` writes a context's
+count and its caller's saved registers, both in the object store. -/
+theorem schedContextConsumedOnCore_confinedToCores (s : SeLe4n.SchedContextId)
+    (executingCore : CoreId) (st st' : SystemState)
+    (hStep : schedContextConsumedOnCore s executingCore st = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok hStep
+  rw [SystemState.setConsumed_eq_objects]
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq rfl rfl
+
 end SeLe4n.Kernel

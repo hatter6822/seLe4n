@@ -512,6 +512,18 @@ theorem yieldOnCore_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
     (yieldOnCore_confinedToCores st st' executingCore hStep) hShared
 
+/-- WS-ZA ZA6.9 (**the live `.schedContextConsumed` arm, cross-core**): the
+Consumed invocation is invisible to every core — it writes no per-core slot —
+with the shared half as the only premise. -/
+theorem schedContextConsumedOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (s : SeLe4n.SchedContextId) (executingCore c : CoreId)
+    (st st' : SystemState)
+    (hStep : schedContextConsumedOnCore s executingCore st = .ok st')
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simp)
+    (schedContextConsumedOnCore_confinedToCores s executingCore st st' hStep) hShared
+
 /-- SM8.B.2 (SM6.A, **the two-core case**): a cross-core endpoint call is
 invisible to any core that is neither the receiver's home core nor the caller's
 own core. -/
@@ -1291,6 +1303,10 @@ inductive CrossCoreTransition where
   ahead of the caller's CSpace lookup. Takes the executing core and writes only
   that core: the caller's charge and re-enqueue and the scheduling point there. -/
   | yieldDispatch
+  /-- WS-ZA ZA6.9 — the **live** `.schedContextConsumed` arm. Takes the
+  executing core (its current thread is the caller) and writes no core: its
+  whole effect is the context's count and the caller's saved registers. -/
+  | schedContextConsumedDispatch
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
@@ -1306,7 +1322,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
    .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch, .tcbSetSpaceDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
-   .auditReadDispatch, .auditDrainDispatch, .yieldDispatch]
+   .auditReadDispatch, .auditDrainDispatch, .yieldDispatch, .schedContextConsumedDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -1388,8 +1404,10 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .auditDrainDispatch =>
       niName! auditDrainDispatch_crossCoreNonInterference
   | .yieldDispatch => niName! yieldOnCore_crossCoreNonInterference
+  | .schedContextConsumedDispatch =>
+      niName! schedContextConsumedOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 34 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 35 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1465,9 +1483,10 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .untypedRetypeDispatch => true
   | .tcbSetSpaceDispatch => true
   | .yieldDispatch => true
+  | .schedContextConsumedDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 27 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 28 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1566,6 +1585,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .untypedRetypeDispatch => some .untypedRetype
   | .tcbSetSpaceDispatch => some .tcbSetSpace
   | .yieldDispatch => some .yield
+  | .schedContextConsumedDispatch => some .schedContextConsumed
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
 def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
@@ -1617,6 +1637,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .untypedRetype syscallDelegates_untypedRetype
   | .tcbSetSpaceDispatch => .delegationProof .tcbSetSpace syscallDelegates_tcbSetSpace
   | .yieldDispatch => .delegationProof .yield syscallDelegates_yield
+  | .schedContextConsumedDispatch =>
+      .delegationProof .schedContextConsumed syscallDelegates_schedContextConsumed
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
 names the syscall its own transition belongs to. Round 11's example — the
@@ -1653,7 +1675,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 19 := by decide
+    crossCoreLiveArmDelegationBacked.length = 20 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -1720,6 +1742,8 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .auditDrainDispatch => false
   -- WS-ZA ZA4.3: the yield writes only the core it runs on
   | .yieldDispatch => false
+  -- WS-ZA ZA6.9: the Consumed invocation writes no core at all
+  | .schedContextConsumedDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
     (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 25 := by decide

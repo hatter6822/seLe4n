@@ -762,12 +762,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 99 := by decide
+example : lockSetTheorems.length = 101 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 40 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 39 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 40 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1719,8 +1719,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 99"
-    (decide (lockSetTheorems.length = 99))
+  assertBool "lockSetTheorems.length = 101"
+    (decide (lockSetTheorems.length = 101))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so

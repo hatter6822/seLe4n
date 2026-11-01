@@ -1085,6 +1085,34 @@ private def yieldLinkedNotResidentB (st : SystemState) : Bool :=
   SeLe4n.Kernel.Concurrency.allCores.all fun c =>
     unlinked (st.scheduler.currentOnCore c) && unlinked (st.machine.residentOnCore c)
 
+/-- SR-045 (WS-ZA ZA6.9, seL4-MCS `invokeSchedContext_Consumed`): the Consumed
+invocation, on the core whose current thread is the caller, writes the invoked
+context's consumed time into the caller's first message register with the
+one-register message info, and resets the count; the context's yield link is
+not touched.  On a core with no current thread, and on an object that is no
+context, it refuses before any write. -/
+private def sr045_consumedInvocationReadsAndResets : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  let st := yieldLinkedCurrentState ⟨2⟩
+  match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 50) core st with
+  | .ok st' =>
+    match st'.objects[(⟨2⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+    | some (.tcb t), some (.schedContext sc) =>
+      expect "SR-045 the caller's MR0 holds the consumed time" (t.registerContext.x2 == 7)
+      expect "SR-045 ...with a one-register message info"
+        (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+      expect "SR-045 the count is taken off and the yield link kept"
+        (sc.consumed == 0 && sc.yieldFromCode == 2)
+    | _, _ => throw <| IO.userError "SR-045 objects not found after the invocation"
+  | .error e => throw <| IO.userError s!"SR-045 Consumed should succeed, got {repr e}"
+  expect "SR-045 an object that is no context is refused"
+    (match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 2) core st with
+     | .error .invalidCapability => true | _ => false)
+  expect "SR-045 a core with no current thread is refused"
+    (match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 50) core
+        yieldLinkedState with
+     | .error .illegalState => true | _ => false)
+
 /-- SR-044 (the kernel-wide claim, WS-ZA ZA6.8): from a state whose yielder last
 ran on core 1 and has since been vacated there, the entry tail on either core
 (residency settle, then activation) keeps every core's current and resident
@@ -1174,4 +1202,6 @@ def main : IO Unit := do
   sr042_activationWithoutPendingYieldIsIdentity
   sr043_remoteYielderCompletesOnItsCore
   sr044_entryTailKeepsEveryCoreUnlinked
-  IO.println "=== All D1 suspend/resume tests passed (46 tests) ==="
+  IO.println "--- ZA6.9: the Consumed invocation ---"
+  sr045_consumedInvocationReadsAndResets
+  IO.println "=== All D1 suspend/resume tests passed (47 tests) ==="

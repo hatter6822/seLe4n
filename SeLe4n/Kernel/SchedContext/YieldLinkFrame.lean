@@ -282,6 +282,14 @@ theorem setConsumed_runQueueStage (st : SystemState) (s : SeLe4n.SchedContextId)
   · exact (updateConsumed_runQueueStage st s).trans (RunQueueStage.updateTcb _ t (fun _ _ => rfl))
   · exact .refl st
 
+/-- WS-ZA ZA6.9: the Consumed invocation is a run-queue stage that closes as an
+entry — it opens no scheduling point. -/
+theorem schedContextConsumedOnCore_runQueueEntryStage {s : SeLe4n.SchedContextId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : schedContextConsumedOnCore s c st = .ok st') : RunQueueEntryStage st st' := by
+  obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
+  exact (setConsumed_runQueueStage st s caller).entry
+
 /-- **The completion is a run-queue stage**: `setConsumed`, then the cancel. -/
 theorem completeYieldTo_runQueueStage (st : SystemState) (y : SeLe4n.ThreadId) :
     RunQueueStage st (completeYieldTo st y) := by

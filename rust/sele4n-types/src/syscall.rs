@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 41 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 42 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 /// Number 8, the retired in-place `lifecycleRetype`, is reserved: no variant
@@ -159,15 +159,21 @@ pub enum SyscallId {
     /// time slice and goes behind the threads of its priority.  Invokes no
     /// capability: x0 and the message registers are ignored.
     Yield = 41,
+    /// WS-ZA ZA6.9: read and reset a scheduling context's consumed time —
+    /// seL4's `seL4_SchedContext_Consumed`.  Invoked on the scheduling-context
+    /// capability (`Write` right), with no message registers; the consumed time
+    /// returns in the first message register (x2) with a one-register
+    /// `MessageInfo` in x1.
+    SchedContextConsumed = 42,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 41;
+    pub const COUNT: usize = 42;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
-    pub const ENCODING_BOUND: u64 = 42;
+    pub const ENCODING_BOUND: u64 = 43;
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
@@ -219,6 +225,7 @@ impl SyscallId {
             39 => Some(Self::PageTableMap),
             40 => Some(Self::PageTableUnmap),
             41 => Some(Self::Yield),
+            42 => Some(Self::SchedContextConsumed),
             _ => None,
         }
     }
@@ -295,6 +302,9 @@ impl SyscallId {
             // checked for it (the kernel dispatches it before the capability
             // gate).  `Read` is the value the Lean `syscallRequiredRight` gives.
             Self::Yield => AccessRight::Read,
+            // WS-ZA ZA6.9: the Consumed invocation resets the context's consumed
+            // time, so it carries the write right Bind and Unbind carry.
+            Self::SchedContextConsumed => AccessRight::Write,
         }
     }
 }
@@ -488,9 +498,14 @@ mod tests {
         assert_eq!(SyscallId::from_u64(40), Some(SyscallId::PageTableUnmap));
         // WS-ZA ZA4.3: the yield, appended the same way.
         assert_eq!(SyscallId::from_u64(41), Some(SyscallId::Yield));
-        assert_eq!(SyscallId::from_u64(42), None);
-        assert_eq!(SyscallId::COUNT, 41);
-        assert_eq!(SyscallId::ENCODING_BOUND, 42);
+        // WS-ZA ZA6.9: the Consumed invocation, appended the same way.
+        assert_eq!(
+            SyscallId::from_u64(42),
+            Some(SyscallId::SchedContextConsumed)
+        );
+        assert_eq!(SyscallId::from_u64(43), None);
+        assert_eq!(SyscallId::COUNT, 42);
+        assert_eq!(SyscallId::ENCODING_BOUND, 43);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype
