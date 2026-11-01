@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "backup/za54-part65",
-      "commit_sha": "dfcffb808ee0b23fc4ded23b03d09fea9325d02d",
-      "tree_sha": "4e59e5a8f8c791dbb4557be3e79ef81e4262d1a2",
-      "committed_at_utc": "2026-11-01T15:01:58+00:00"
+      "branch": "backup/za54-part66",
+      "commit_sha": "4c7d1ab16f9acf90da77b48cc602fd1e516bb0c0",
+      "tree_sha": "01bffa654f493a46c9256ec7b9596464e7554081",
+      "committed_at_utc": "2026-11-01T15:41:31+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4fb8b13664f473a1eab5ee3a5bca79bf4777e20ad5e74275459e46c6fb7431ef"
+    "source_digest": "fc946b40a206b01cda157246ef6c71fa3cea3ada4c9bd83754ed8855c0954afb"
   },
   "summary": {
     "module_count": 570,
-    "declaration_count": 32258
+    "declaration_count": 32263
   },
   "readme_sync": {
     "version": "0.36.178",
     "lean_toolchain": "v4.28.0",
     "production_files": 500,
-    "production_loc": 550029,
+    "production_loc": 550126,
     "test_files": 70,
     "test_loc": 88173,
-    "proved_theorem_lemma_decls": 20969,
+    "proved_theorem_lemma_decls": 20974,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -166063,13 +166063,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegisters",
       "path": "SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean",
-      "declaration_count": 14,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "def",
           "name": "SeLe4n.Model.SystemState.savedRegs",
           "full_name": "SeLe4n.Model.SystemState.savedRegs",
-          "line": 44,
+          "line": 48,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -166082,7 +166082,7 @@
           "kind": "def",
           "name": "offCoreFree",
           "full_name": "SeLe4n.Kernel.offCoreFree",
-          "line": 50,
+          "line": 54,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.residentOnCore",
@@ -166095,7 +166095,7 @@
           "kind": "def",
           "name": "savedRegsKeptOffCore",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore",
-          "line": 56,
+          "line": 60,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.residentOnCore",
@@ -166108,7 +166108,7 @@
           "kind": "theorem",
           "name": "savedRegsKeptOffCore_refl",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore_refl",
-          "line": 61,
+          "line": 65,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.savedRegsKeptOffCore",
@@ -166119,7 +166119,7 @@
           "kind": "theorem",
           "name": "savedRegsKeptOffCore_trans",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore_trans",
-          "line": 68,
+          "line": 72,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.currentKeptOffCore",
@@ -166132,7 +166132,7 @@
           "kind": "theorem",
           "name": "savedRegsKeptOffCore_trans_stepCovers",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore_trans_stepCovers",
-          "line": 75,
+          "line": 79,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.savedRegsKeptOffCore",
@@ -166145,7 +166145,7 @@
           "kind": "theorem",
           "name": "savedRegsKeptOffCore_of_writes",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore_of_writes",
-          "line": 84,
+          "line": 88,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.currentKeptOffCore",
@@ -166161,7 +166161,7 @@
           "kind": "theorem",
           "name": "savedRegsKeptOffCore_of_savedRegs_eq",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore_of_savedRegs_eq",
-          "line": 96,
+          "line": 100,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.savedRegsKeptOffCore",
@@ -166173,7 +166173,7 @@
           "kind": "theorem",
           "name": "offCoreFree_of_current",
           "full_name": "SeLe4n.Kernel.offCoreFree_of_current",
-          "line": 104,
+          "line": 108,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.currentsUnique",
@@ -166189,7 +166189,7 @@
           "kind": "theorem",
           "name": "savedRegs_updateTcb_ne",
           "full_name": "SeLe4n.Kernel.savedRegs_updateTcb_ne",
-          "line": 113,
+          "line": 117,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
             "SeLe4n.Model.SystemState",
@@ -166205,7 +166205,7 @@
           "kind": "theorem",
           "name": "savedRegsKeptOffCore_updateTcb",
           "full_name": "SeLe4n.Kernel.savedRegsKeptOffCore_updateTcb",
-          "line": 123,
+          "line": 127,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -166225,7 +166225,7 @@
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_savedRegsKeptOffCore",
           "full_name": "SeLe4n.Kernel.writeFfiRegistersToTcb_savedRegsKeptOffCore",
-          "line": 137,
+          "line": 141,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -166248,7 +166248,7 @@
           "kind": "theorem",
           "name": "stageCallerReturnFor_savedRegsKeptOffCore",
           "full_name": "SeLe4n.Kernel.stageCallerReturnFor_savedRegsKeptOffCore",
-          "line": 153,
+          "line": 157,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.stageCallerReturnFor",
@@ -166275,7 +166275,7 @@
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_savedRegsKeptOffCore",
           "full_name": "SeLe4n.Kernel.saveOutgoingContextOnCore_savedRegsKeptOffCore",
-          "line": 179,
+          "line": 183,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -166294,6 +166294,108 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb_machine",
             "SeLe4n.Model.SystemState.updateTcb_scheduler"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "offCoreFree_of_yieldCode",
+          "full_name": "SeLe4n.Kernel.offCoreFree_of_yieldCode",
+          "line": 204,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.objYieldCodes",
+            "SeLe4n.Kernel.objYieldCodes_fst_zero_of_getTcb?",
+            "SeLe4n.Kernel.offCoreFree",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.yieldLinkedNotResident",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "yieldCode_of_yieldFrom",
+          "full_name": "SeLe4n.Kernel.yieldCode_of_yieldFrom",
+          "line": 212,
+          "called": [
+            "SeLe4n.Kernel.SchedContext",
+            "SeLe4n.Kernel.objYieldCodes",
+            "SeLe4n.Kernel.objYieldCodes_of_getSchedContext?",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getSchedContext?",
+            "SeLe4n.Model.SystemState.yieldLinksAgree",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "yieldCode_of_unset",
+          "full_name": "SeLe4n.Kernel.yieldCode_of_unset",
+          "line": 222,
+          "called": [
+            "SeLe4n.Kernel.YieldToCodesUnset",
+            "SeLe4n.Kernel.objYieldCodes",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "completeYieldFrom_savedRegsKeptOffCore",
+          "full_name": "SeLe4n.Kernel.completeYieldFrom_savedRegsKeptOffCore",
+          "line": 233,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.SchedContext",
+            "SeLe4n.Kernel.SchedContext.consumedReading",
+            "SeLe4n.Kernel.SchedContext.updateConsumed",
+            "SeLe4n.Kernel.SchedContext.yieldCleared",
+            "SeLe4n.Kernel.cancelYieldFrom",
+            "SeLe4n.Kernel.completeYieldFrom",
+            "SeLe4n.Kernel.currentKeptOffCore",
+            "SeLe4n.Kernel.offCoreFree",
+            "SeLe4n.Kernel.residentKeptOffCore",
+            "SeLe4n.Kernel.savedRegsKeptOffCore",
+            "SeLe4n.Kernel.savedRegsKeptOffCore_of_writes",
+            "SeLe4n.Kernel.savedRegsKeptOffCore_refl",
+            "SeLe4n.Kernel.savedRegs_updateTcb_ne",
+            "SeLe4n.Kernel.setConsumed",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getSchedContext?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.savedRegs",
+            "SeLe4n.Model.SystemState.updateSchedContext",
+            "SeLe4n.Model.SystemState.updateSchedContext_getSchedContext?_self",
+            "SeLe4n.Model.SystemState.updateSchedContext_getTcb?",
+            "SeLe4n.Model.SystemState.updateSchedContext_preserves_objects_invExt",
+            "SeLe4n.Model.SystemState.updateTcb",
+            "SeLe4n.Model.SystemState.updateTcb_getSchedContext?",
+            "SeLe4n.Model.SystemState.updateTcb_getTcb?_ne",
+            "SeLe4n.Model.SystemState.updateTcb_preserves_objects_invExt",
+            "SeLe4n.Model.TCB.withConsumed",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.ThreadId.toObjId_injective"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreToReadyCancelled_savedRegsKeptOffCore",
+          "full_name": "SeLe4n.Kernel.restoreToReadyCancelled_savedRegsKeptOffCore",
+          "line": 282,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyCancelled",
+            "SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyStaging",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Kernel.currentKeptOffCore",
+            "SeLe4n.Kernel.offCoreFree",
+            "SeLe4n.Kernel.residentKeptOffCore",
+            "SeLe4n.Kernel.savedRegsKeptOffCore",
+            "SeLe4n.Kernel.savedRegsKeptOffCore_updateTcb",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
           ]
         }
       ]
