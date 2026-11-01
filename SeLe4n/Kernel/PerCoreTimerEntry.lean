@@ -158,8 +158,10 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit :=
       Platform.FFI.modifyGetKernelState (fun st =>
         let (raisedAndFlag, post) := (timerTickBracket coreId).run
           (Architecture.saveCapturedTrapFrame st c frame)
+        let pending := post.scheduler.reschedulePending
         let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore post c) c
-        ((raisedAndFlag.1, raisedAndFlag.2,
+        ((raisedAndFlag.1.union (pending.raised post.scheduler.reschedulePending),
+          raisedAndFlag.2,
           Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
           post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
@@ -203,8 +205,10 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
           Platform.FFI.modifyGetKernelState (fun st =>
             let (raisedAndFlag, post) := (timerTickBracket coreId).run
               (Architecture.saveCapturedTrapFrame st c frame)
+            let pending := post.scheduler.reschedulePending
             let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore post c) c
-            ((raisedAndFlag.1, raisedAndFlag.2,
+            ((raisedAndFlag.1.union (pending.raised post.scheduler.reschedulePending),
+              raisedAndFlag.2,
               Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,

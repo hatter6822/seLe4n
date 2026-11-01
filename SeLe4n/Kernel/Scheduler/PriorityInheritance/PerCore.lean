@@ -1667,6 +1667,34 @@ theorem pokeReleasedResident_flag_mono (st : SystemState) (c d : CoreId) (o n : 
     · subst hq; simp [SystemState.markReschedulePendingOnCore]
     · simp [SystemState.markReschedulePendingOnCore, hq, h]
 
+/-- WS-ZA ZA6.10: **the poke wakes the queueing core**: a released resident `t`
+(the old code names it, the new one does not) whose run-queue links name a core
+`q` other than `c` has `q`'s reschedule flag raised. -/
+theorem pokeReleasedResident_raises (st : SystemState) (c q : CoreId) (t : SeLe4n.ThreadId)
+    (n : Nat) (tcb : TCB) (hN : n ≠ t.val + 1) (hT : st.getTcb? t = some tcb)
+    (hq : tcb.runCoreCode = q.val + 1) (hqc : q ≠ c) :
+    (pokeReleasedResident st c (t.val + 1) n).scheduler.reschedulePendingOnCore q = true := by
+  have hlt : tcb.runCoreCode - 1 < Concurrency.numCores := by rw [hq]; simp
+  have hne : tcb.runCoreCode - 1 ≠ c.val := by
+    rw [hq]; simp only [Nat.add_sub_cancel]; exact fun h => hqc (Fin.ext h)
+  have hQ : (⟨tcb.runCoreCode - 1, hlt⟩ : CoreId) = q := Fin.ext (by simp [hq])
+  unfold pokeReleasedResident
+  rw [if_neg (by omega)]
+  simp only [Nat.add_sub_cancel]
+  rw [show (⟨t.val⟩ : SeLe4n.ThreadId) = t from rfl, hT]
+  simp only
+  rw [dif_pos ⟨by omega, hlt, hne⟩, hQ]
+  simp [SystemState.markReschedulePendingOnCore]
+
+/-- The flags up in either word: an entry's own raised flags and the ones its
+settle raised (`settleRaisedOnCore`), fired together. -/
+def _root_.SeLe4n.Model.PerCoreFlags.union (a b : PerCoreFlags) : PerCoreFlags :=
+  ⟨a.bits ||| b.bits⟩
+
+@[simp] theorem _root_.SeLe4n.Model.PerCoreFlags.get_union (a b : PerCoreFlags) (c : CoreId) :
+    (a.union b).get c = (a.get c || b.get c) := by
+  simp [PerCoreFlags.get, PerCoreFlags.union]
+
 /-- **PR #904 review (`v0.36.41`): settle what core `c` resumes, and record it.**
 
 The last step of every state-committing entry, after its transition and before
@@ -1752,6 +1780,28 @@ theorem settleResidencyOnCore_residentOnCore_ne (st : SystemState) (c d : CoreId
       (deferResidentElsewhere (dispatchVacatedCore st c) c).machine.residentOnCore d := by
   simp only [settleResidencyOnCore, pokeReleasedResident_machine]
   exact MachineState.residentOnCore_setResidentOnCore_ne _ c d _ h
+
+/-- WS-ZA ZA6.10: **the settle wakes the core that queued the thread it
+releases**: when core `c`'s record moves off a thread `t` resident here after
+the deferral, and `t`'s run-queue links name another core `q`, `q`'s reschedule
+flag is up after the settle — so the entry that ran it fires `q` its SGI
+(`PerCoreFlags.raised`, `Concurrency.fireRaisedReschedules`). -/
+theorem settleResidencyOnCore_pokes (st : SystemState) (c q : CoreId) (t : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hR : (deferResidentElsewhere (dispatchVacatedCore st c) c).machine.residentOnCore c = some t)
+    (hNew : (settleResidencyOnCore st c).machine.residentOnCore c ≠ some t)
+    (hT : (deferResidentElsewhere (dispatchVacatedCore st c) c).getTcb? t = some tcb)
+    (hq : tcb.runCoreCode = q.val + 1) (hqc : q ≠ c) :
+    (settleResidencyOnCore st c).scheduler.reschedulePendingOnCore q = true := by
+  simp only [settleResidencyOnCore] at hNew ⊢
+  rw [pokeReleasedResident_machine, MachineState.residentOnCore_setResidentOnCore_self] at hNew
+  have hCode : (deferResidentElsewhere (dispatchVacatedCore st c) c).machine.residentCode.get c =
+      t.val + 1 := by
+    have := congrArg SeLe4n.ThreadId.optCode hR
+    simpa [MachineState.residentOnCore, SeLe4n.ThreadId.optCode_some] using this
+  rw [hCode]
+  exact pokeReleasedResident_raises _ c q t _ tcb
+    (fun h => hNew (SeLe4n.ThreadId.optCode_injective (by rw [h]; rfl))) hT hq hqc
 
 /-- The settle's record and poke write the machine's residency slot and one
 reschedule flag: the store, the run queues, the current slots, the reference

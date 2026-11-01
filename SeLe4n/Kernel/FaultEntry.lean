@@ -425,15 +425,17 @@ def faultEntry (coreId esr far : UInt64) : BaseIO Unit := do
     let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
       let st := Concurrency.saveCapturedTrapFrameAt st0 coreId (some frame)
       let (sgis, st') := faultEntryStep lctx st ectx w coreId
+      let pending := st'.scheduler.reschedulePending
       let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-      ((sgis,
+      (((sgis, pending.raised st'.scheduler.reschedulePending),
         (Concurrency.coreIdOfUInt64? coreId).map
           (fun c => (c, st'.scheduler.currentOnCore c)),
         Concurrency.restoreTargetAt st' coreId,
         (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
         Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
     Platform.FFI.completePhysicalWrites r.2.2.2.1
-    Concurrency.fireCrossCoreSgis r.1
+    Concurrency.fireCrossCoreSgis r.1.1
+    Concurrency.fireRaisedReschedules r.1.2
     Platform.FFI.completeIcacheMaintenance r.2.2.2.2
     Concurrency.releaseSwitchedFpOwner coreId
     Platform.FFI.restoreTrapFrame r.2.2.1
@@ -455,15 +457,17 @@ def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit := do
     let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
       let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId (some frame)
       let (sgis, st') := unknownSyscallEntryStep lctx st ectx w coreId
+      let pending := st'.scheduler.reschedulePending
       let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-      ((sgis,
+      (((sgis, pending.raised st'.scheduler.reschedulePending),
         (Concurrency.coreIdOfUInt64? coreId).map
           (fun c => (c, st'.scheduler.currentOnCore c)),
         Concurrency.restoreTargetAt st' coreId,
         (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
         Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
     Platform.FFI.completePhysicalWrites r.2.2.2.1
-    Concurrency.fireCrossCoreSgis r.1
+    Concurrency.fireCrossCoreSgis r.1.1
+    Concurrency.fireRaisedReschedules r.1.2
     Platform.FFI.completeIcacheMaintenance r.2.2.2.2
     Concurrency.releaseSwitchedFpOwner coreId
     Platform.FFI.restoreTrapFrame r.2.2.1
@@ -521,12 +525,15 @@ def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
     let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let res := fpAccessEntryStep st coreId live
+    let pending := res.2.scheduler.reschedulePending
     let res := (res.1,
       activateThreadAt (PriorityInheritance.settleResidencyAt res.2 coreId) coreId)
-    ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+    (((res.1, pending.raised res.2.scheduler.reschedulePending),
+      Concurrency.restoreTargetAt res.2 coreId,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
-  applyFpAccessOutcome r.1
+  applyFpAccessOutcome r.1.1
+  Concurrency.fireRaisedReschedules r.1.2
   Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.2
@@ -543,12 +550,15 @@ theorem fpAccessEntry_def (coreId : UInt64) :
         let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
           let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let res := fpAccessEntryStep st coreId live
+          let pending := res.2.scheduler.reschedulePending
           let res := (res.1,
             activateThreadAt (PriorityInheritance.settleResidencyAt res.2 coreId) coreId)
-          ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+          (((res.1, pending.raised res.2.scheduler.reschedulePending),
+            Concurrency.restoreTargetAt res.2 coreId,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
-        applyFpAccessOutcome r.1
+        applyFpAccessOutcome r.1.1
+        Concurrency.fireRaisedReschedules r.1.2
         Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.2) := rfl
@@ -618,15 +628,17 @@ theorem faultEntry_def (coreId esr far : UInt64) :
           let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
             let st := Concurrency.saveCapturedTrapFrameAt st0 coreId (some frame)
             let (sgis, st') := faultEntryStep lctx st ectx w coreId
+            let pending := st'.scheduler.reschedulePending
             let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-            ((sgis,
+            (((sgis, pending.raised st'.scheduler.reschedulePending),
               (Concurrency.coreIdOfUInt64? coreId).map
                 (fun c => (c, st'.scheduler.currentOnCore c)),
               Concurrency.restoreTargetAt st' coreId,
               (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
           Platform.FFI.completePhysicalWrites r.2.2.2.1
-          Concurrency.fireCrossCoreSgis r.1
+          Concurrency.fireCrossCoreSgis r.1.1
+          Concurrency.fireRaisedReschedules r.1.2
           Platform.FFI.completeIcacheMaintenance r.2.2.2.2
           Concurrency.releaseSwitchedFpOwner coreId
           Platform.FFI.restoreTrapFrame r.2.2.1
@@ -643,15 +655,17 @@ theorem unknownSyscallEntry_def (coreId esr far : UInt64) :
           let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
             let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId (some frame)
             let (sgis, st') := unknownSyscallEntryStep lctx st ectx w coreId
+            let pending := st'.scheduler.reschedulePending
             let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-            ((sgis,
+            (((sgis, pending.raised st'.scheduler.reschedulePending),
               (Concurrency.coreIdOfUInt64? coreId).map
                 (fun c => (c, st'.scheduler.currentOnCore c)),
               Concurrency.restoreTargetAt st' coreId,
               (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
           Platform.FFI.completePhysicalWrites r.2.2.2.1
-          Concurrency.fireCrossCoreSgis r.1
+          Concurrency.fireCrossCoreSgis r.1.1
+          Concurrency.fireRaisedReschedules r.1.2
           Platform.FFI.completeIcacheMaintenance r.2.2.2.2
           Concurrency.releaseSwitchedFpOwner coreId
           Platform.FFI.restoreTrapFrame r.2.2.1
