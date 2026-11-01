@@ -4374,6 +4374,14 @@ run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_readyKeptSta
 run_check "INVARIANT" rg -n '^theorem faultSuspendOnCore_readyKeptStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+# WS-ZA ZA6.20: every syscall dispatch arm blocks at most its caller, the
+# executing core's current thread, and the syscall entry carries the invariant.
+run_check "INVARIANT" rg -n -U "^    \(h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = \.ok \(\(\), st'\)\) :\n    readyKeptStage \(· = tid\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n -U "^    \(h : dispatchSyscallChecked ctx decoded tid executingCore st = \.ok \(\(\), st'\)\) :\n    readyKeptStage \(· = tid\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n -U "^      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st'\)\) :\n    readyKeptStage \(fun t => st\.scheduler\.currentOnCore e = some t\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n -U '^    \(hC : st\.currentNotResidentElsewhere\) \(hBNR : st\.blockedNotResident\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n '^theorem schedContextUnbind_runQueueStage_of_dequeued($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
