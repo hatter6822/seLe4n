@@ -32,8 +32,12 @@ the register spill of the syscall's arguments (`writeFfiRegistersToTcb`), the
 caller's return staging (`stageCallerReturnFor`) and the scheduling point's
 save of the core's outgoing thread (`saveOutgoingContextOnCore`).
 
-The arms' writes are the next rows' (ZA6.15 to ZA6.17), which consume these
-lemmas.
+WS-ZA ZA6.15 adds the final delete's two kinds of write: the yield completion
+(`completeYieldFrom`, whose yielder is linked, so no core holds it at an entry
+boundary: `offCoreFree_of_yieldCode`) and the cancellation restore
+(`restoreToReadyCancelled`, of a thread blocked in IPC).  The dispatch's arms
+are ZA6.17 to ZA6.19, which consume these lemmas, with ZA6.16's invariant that
+a thread blocked in IPC is resident on no core.
 -/
 
 namespace SeLe4n.Kernel
@@ -190,5 +194,98 @@ theorem saveOutgoingContextOnCore_savedRegsKeptOffCore {e : CoreId} {base st : S
         (currentKeptOffCore_of_eq fun _ _ => by rw [SystemState.updateTcb_scheduler]))
       (residentKeptOffCore_trans hR
         (residentKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine])))
+
+
+/-! ### The yield completion's write -/
+
+/-- **A thread linked at `base` is held by no core**: no core's current or
+resident thread holds a yield link at an entry boundary
+(`yieldLinkedNotResident`). -/
+theorem offCoreFree_of_yieldCode {e : CoreId} {base : SystemState} {t : SeLe4n.ThreadId}
+    (hY : base.yieldLinkedNotResident) (hL : (objYieldCodes base.objects[t.toObjId]?).1 ≠ 0) :
+    offCoreFree e base t := fun d _ =>
+  ⟨fun h => hL (objYieldCodes_fst_zero_of_getTcb? fun x hx => hY d t x (Or.inl h) hx),
+   fun h => hL (objYieldCodes_fst_zero_of_getTcb? fun x hx => hY d t x (Or.inr h) hx)⟩
+
+/-- **A context's recorded yielder is linked**: on a state whose links agree, the
+thread a context names as its yielder holds a yield-to code. -/
+theorem yieldCode_of_yieldFrom {st : SystemState} {s : SeLe4n.SchedContextId}
+    {sc : SchedContext} {k : Nat} (hA : st.yieldLinksAgree)
+    (hS : st.getSchedContext? s = some sc) (hC : sc.yieldFromCode = k + 1) :
+    (objYieldCodes st.objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]?).1 ≠ 0 := by
+  have h := (hA (⟨k⟩ : SeLe4n.ThreadId).toObjId s.toObjId).mpr
+    (by rw [objYieldCodes_of_getSchedContext? hS]; exact hC)
+  rw [h]; exact Nat.succ_ne_zero _
+
+/-- A thread linked now was linked at `base`, when no step since set a yield-to
+code (`YieldToCodesUnset`, the run-queue stage's `live` field). -/
+theorem yieldCode_of_unset {st base : SystemState} {k : SeLe4n.ObjId}
+    (hU : YieldToCodesUnset st base) (hL : (objYieldCodes st.objects[k]?).1 ≠ 0) :
+    (objYieldCodes base.objects[k]?).1 ≠ 0 := by
+  rcases hU k id with h | h
+  · exact absurd h hL
+  · rw [← h]; exact hL
+
+/-- **The yield completion names a linked thread**: `completeYieldFrom` writes
+the saved registers of the context's recorded yielder alone (`setConsumed`'s
+consumed-time words; the link clear writes no register), a thread no other core
+held at `base`. -/
+theorem completeYieldFrom_savedRegsKeptOffCore {e : CoreId} {base st : SystemState}
+    {s : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (hFree : ∀ sc k, st.getSchedContext? s = some sc → sc.yieldFromCode = k + 1 →
+      offCoreFree e base ⟨k⟩)
+    (hK : currentKeptOffCore e base (completeYieldFrom st s))
+    (hR : residentKeptOffCore e base (completeYieldFrom st s)) :
+    savedRegsKeptOffCore e st (completeYieldFrom st s) := by
+  revert hK hR
+  unfold completeYieldFrom
+  split
+  · rename_i sc hS
+    split
+    · intro _ _; exact savedRegsKeptOffCore_refl e st
+    · rename_i k hC
+      intro hK hR
+      refine savedRegsKeptOffCore_of_writes (· = ⟨k⟩) (fun t hNe => ?_)
+        (fun _ h => h ▸ hFree sc k hS hC) hK hR
+      have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st s
+        SchedContext.updateConsumed hInv
+      unfold setConsumed cancelYieldFrom
+      simp only [hS]
+      have hS1 : ((st.updateSchedContext s SchedContext.updateConsumed).updateTcb ⟨k⟩
+          (TCB.withConsumed · sc.consumedReading.toUInt64)).getSchedContext? s =
+          some (SchedContext.updateConsumed sc) := by
+        rw [SystemState.updateTcb_getSchedContext? _ _ _ hInv1,
+          SystemState.updateSchedContext_getSchedContext?_self _ _ _ hInv, hS]; rfl
+      have hC1 : (SchedContext.updateConsumed sc).yieldFromCode = k + 1 := hC
+      simp only [hS1, hC1]
+      have hInv2 := SystemState.updateTcb_preserves_objects_invExt _ ⟨k⟩
+        (TCB.withConsumed · sc.consumedReading.toUInt64) hInv1
+      have hInv3 := SystemState.updateSchedContext_preserves_objects_invExt _ s
+        SchedContext.yieldCleared hInv2
+      rw [savedRegs_updateTcb_ne hInv3 hNe]
+      unfold SystemState.savedRegs
+      rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv2]
+      rw [show ((st.updateSchedContext s SchedContext.updateConsumed).updateTcb ⟨k⟩
+          (TCB.withConsumed · sc.consumedReading.toUInt64)).getTcb? t =
+          (st.updateSchedContext s SchedContext.updateConsumed).getTcb? t from
+        SystemState.updateTcb_getTcb?_ne _ _ _ hInv1 t
+          (fun h => hNe (SeLe4n.ThreadId.toObjId_injective _ _ h.symm)),
+        SystemState.updateSchedContext_getTcb? _ _ _ hInv]
+  · intro _ _; exact savedRegsKeptOffCore_refl e st
+
+
+/-! ### The cancellation's write -/
+
+/-- **The cancellation restore names the cancelled thread**: a blocking IPC
+destroyed under a thread restores it to ready with the cancellation frame staged
+(`restoreToReadyCancelled`), writing that thread's saved registers alone. -/
+theorem restoreToReadyCancelled_savedRegsKeptOffCore {e : CoreId} {base st : SystemState}
+    {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt) (hFree : offCoreFree e base tid)
+    (hK : currentKeptOffCore e base (Lifecycle.Suspend.restoreToReadyCancelled st tid))
+    (hR : residentKeptOffCore e base (Lifecycle.Suspend.restoreToReadyCancelled st tid)) :
+    savedRegsKeptOffCore e st (Lifecycle.Suspend.restoreToReadyCancelled st tid) := by
+  revert hK hR
+  unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+  exact savedRegsKeptOffCore_updateTcb hInv hFree
 
 end SeLe4n.Kernel
