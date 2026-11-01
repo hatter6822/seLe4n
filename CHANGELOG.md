@@ -1,3 +1,33 @@
+## v0.36.178 — WS-ZA ZA6.15: the census of the final delete's writes
+
+A final delete writes saved registers in two ways: the scheduling-context
+finalise completes the yield the context records, and the endpoint and
+notification cancellations restore each blocked thread with the cancellation
+frame. This version censuses both writes. Proofs only; no executable code
+changes.
+
+- **The yield completion** (`completeYieldFrom_savedRegsKeptOffCore`). The
+  completion writes the saved registers of the context's recorded yielder
+  alone: `setConsumed`'s consumed-time words. The link clear writes no
+  register. The yielder is held by no core:
+  - on a state whose links agree, the yielder is linked
+    (`yieldCode_of_yieldFrom`);
+  - a link set now was set when the entry began, because no stage sets a
+    yield-to code (`yieldCode_of_unset`);
+  - at an entry boundary no core holds a linked thread, current or resident
+    (`offCoreFree_of_yieldCode`, from `yieldLinkedNotResident`).
+- **The cancellation restore** (`restoreToReadyCancelled_savedRegsKeptOffCore`)
+  writes the cancelled thread alone. That thread is blocked in IPC, so it is
+  current nowhere. Its being resident nowhere is the new ZA6.16.
+- **The plan.** The capability-only dispatch's row is split into three:
+  - ZA6.15, this row;
+  - ZA6.16, a thread blocked in IPC is resident on no core, kernel-wide;
+  - ZA6.17, the capability-only dispatch's census.
+
+  The rows after them move up two (ZA6.16 to ZA6.28 become ZA6.18 to ZA6.30),
+  and every citation is swept.
+- Tier 3 anchors pin the five lemmas.
+
 ## v0.36.177 — WS-ZA ZA6.14: the saved-register census's relation and the caller's writes
 
 Another core holds a thread's registers in two ways. Either the thread is that
