@@ -29,10 +29,6 @@ entries too. Proofs only; no executable code changes.
     across the whole entries, for any frame, exception context and window. The
     unknown-syscall entry's save is the syscall form
     (`saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore`).
-- **The window lemma** (`FaultEntry.lean`). `faultEntryFrame?_window_spill`:
-  the decoded window is the saved frame's own, so spilling it into the frame's
-  register file changes nothing. The entry theorems do not consume it; it pins
-  the single-frame decode the exports rely on.
 - Tier 3 anchors pin the new theorems.
 - The bank-match debt row now covers only ZA6.13: the syscall entry and every
   other core's match.

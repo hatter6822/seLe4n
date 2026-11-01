@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/za54-part63",
-      "commit_sha": "3f76bbeec678937303577ce028126c0f020c9791",
-      "tree_sha": "cb4a5b979506aa85d658c2f41db9da811c8ab1c0",
-      "committed_at_utc": "2026-11-01T10:22:50+00:00"
+      "commit_sha": "bc79a2c161df0c9ff73e8773089d45dde8aa735a",
+      "tree_sha": "eec07cbf8d212648d81e4f53f1d1563ab18e340a",
+      "committed_at_utc": "2026-11-01T10:38:25+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c322449abb8c8c8a8c6ce89195e55f03e139c8d2a96a40d3ffd7d221bb773f3a"
+    "source_digest": "25a6ed332b1099fdaeb15b9d317564d36539eef1e7a0c7d3a62e4e4c5dc7806a"
   },
   "summary": {
     "module_count": 569,
-    "declaration_count": 32227
+    "declaration_count": 32226
   },
   "readme_sync": {
     "version": "0.36.175",
     "lean_toolchain": "v4.28.0",
     "production_files": 499,
-    "production_loc": 549608,
+    "production_loc": 549595,
     "test_files": 70,
     "test_loc": 88173,
-    "proved_theorem_lemma_decls": 20942,
+    "proved_theorem_lemma_decls": 20941,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -82322,7 +82322,7 @@
     {
       "module": "SeLe4n.Kernel.FaultEntry",
       "path": "SeLe4n/Kernel/FaultEntry.lean",
-      "declaration_count": 35,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "def",
@@ -82586,24 +82586,9 @@
         },
         {
           "kind": "theorem",
-          "name": "faultEntryFrame?_window_spill",
-          "full_name": "SeLe4n.Kernel.faultEntryFrame?_window_spill",
-          "line": 396,
-          "called": [
-            "SeLe4n.Kernel.Architecture.ExceptionContext",
-            "SeLe4n.Kernel.Architecture.InFlightContext",
-            "SeLe4n.Kernel.Architecture.InFlightContext.snapshot",
-            "SeLe4n.Kernel.faultEntryFrame?",
-            "SeLe4n.Kernel.faultEntryFrame?_some",
-            "SeLe4n.Model.FaultRegisterWindow",
-            "SeLe4n.Model.FaultRegisterWindow.spill"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "faultEntryFrame?_none",
           "full_name": "SeLe4n.Kernel.faultEntryFrame?_none",
-          "line": 406,
+          "line": 393,
           "called": [
             "SeLe4n.Kernel.faultEntryFrame?"
           ]
@@ -82612,7 +82597,7 @@
           "kind": "def",
           "name": "faultEntry",
           "full_name": "SeLe4n.Kernel.faultEntry",
-          "line": 436,
+          "line": 423,
           "called": [
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
             "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
@@ -82639,7 +82624,7 @@
           "kind": "def",
           "name": "unknownSyscallEntry",
           "full_name": "SeLe4n.Kernel.unknownSyscallEntry",
-          "line": 469,
+          "line": 456,
           "called": [
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
             "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
@@ -82666,7 +82651,7 @@
           "kind": "def",
           "name": "fpAccessEntryStep",
           "full_name": "SeLe4n.Kernel.fpAccessEntryStep",
-          "line": 499,
+          "line": 486,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.FpAccessOutcome",
@@ -82680,7 +82665,7 @@
           "kind": "def",
           "name": "applyFpAccessOutcome",
           "full_name": "SeLe4n.Kernel.applyFpAccessOutcome",
-          "line": 512,
+          "line": 499,
           "called": [
             "SeLe4n.Kernel.Architecture.FpAccessOutcome",
             "SeLe4n.Platform.FFI.loadFpContext"
@@ -82690,7 +82675,7 @@
           "kind": "def",
           "name": "fpAccessEntry",
           "full_name": "SeLe4n.Kernel.fpAccessEntry",
-          "line": 541,
+          "line": 528,
           "called": [
             "SeLe4n.Kernel.Concurrency.captureOwnedFp",
             "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
@@ -82712,7 +82697,7 @@
           "kind": "theorem",
           "name": "fpAccessEntry_def",
           "full_name": "SeLe4n.Kernel.fpAccessEntry_def",
-          "line": 564,
+          "line": 551,
           "called": [
             "SeLe4n.Kernel.Concurrency.captureOwnedFp",
             "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
@@ -82735,7 +82720,7 @@
           "kind": "theorem",
           "name": "fpAccessEntryStep_scheduler",
           "full_name": "SeLe4n.Kernel.fpAccessEntryStep_scheduler",
-          "line": 589,
+          "line": 576,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.fpAccessOnCore_scheduler",
@@ -82752,7 +82737,7 @@
           "kind": "theorem",
           "name": "fpAccessEntryStep_vacated",
           "full_name": "SeLe4n.Kernel.fpAccessEntryStep_vacated",
-          "line": 606,
+          "line": 593,
           "called": [
             "SeLe4n.FpContext",
             "SeLe4n.Kernel.Architecture.fpAccessOnCore",
@@ -82769,7 +82754,7 @@
           "kind": "theorem",
           "name": "faultEntry_def",
           "full_name": "SeLe4n.Kernel.faultEntry_def",
-          "line": 640,
+          "line": 627,
           "called": [
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
             "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
@@ -82797,7 +82782,7 @@
           "kind": "theorem",
           "name": "unknownSyscallEntry_def",
           "full_name": "SeLe4n.Kernel.unknownSyscallEntry_def",
-          "line": 667,
+          "line": 654,
           "called": [
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
             "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
@@ -82825,7 +82810,7 @@
           "kind": "theorem",
           "name": "faultEntryDeliver_not_dispatchable",
           "full_name": "SeLe4n.Kernel.faultEntryDeliver_not_dispatchable",
-          "line": 704,
+          "line": 691,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -82852,7 +82837,7 @@
           "kind": "theorem",
           "name": "faultEntryStep_not_dispatchable",
           "full_name": "SeLe4n.Kernel.faultEntryStep_not_dispatchable",
-          "line": 731,
+          "line": 718,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.ExceptionContext.takenFromEl0",
@@ -82877,7 +82862,7 @@
           "kind": "theorem",
           "name": "unknownSyscallEntryStep_not_dispatchable",
           "full_name": "SeLe4n.Kernel.unknownSyscallEntryStep_not_dispatchable",
-          "line": 748,
+          "line": 735,
           "called": [
             "SeLe4n.Kernel.Architecture.ExceptionContext",
             "SeLe4n.Kernel.Architecture.ExceptionContext.takenFromEl0",
@@ -82901,7 +82886,7 @@
           "kind": "theorem",
           "name": "syscallCapFault_not_dispatchable",
           "full_name": "SeLe4n.Kernel.syscallCapFault_not_dispatchable",
-          "line": 767,
+          "line": 754,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -82918,7 +82903,7 @@
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_capFault_not_dispatchable",
           "full_name": "SeLe4n.Kernel.syscallDispatchFromAbi_capFault_not_dispatchable",
-          "line": 781,
+          "line": 768,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",

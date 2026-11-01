@@ -9032,7 +9032,6 @@ run_check "INVARIANT" rg -n '^theorem faultEntryDeliver_preserves_contextMatches
 run_check "INVARIANT" rg -n '^theorem saveCapturedSyscallFrame_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean
-run_check "INVARIANT" rg -n '^theorem faultEntryFrame\?_window_spill($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
