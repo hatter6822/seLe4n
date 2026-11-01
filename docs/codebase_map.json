@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "backup/za54-part59",
-      "commit_sha": "20833fcf82ff5d30aa05b0cd67bf9aeb6ad7ec4c",
-      "tree_sha": "e5f2c2b196b876e423f6543dced009f1961b1a3b",
-      "committed_at_utc": "2026-11-01T01:51:54+00:00"
+      "commit_sha": "ed47069baa67e1e54b0147b55f09f13fc3529c94",
+      "tree_sha": "eb742618ea1131f8044f12f3a7d37a09a5b49bc8",
+      "committed_at_utc": "2026-11-01T02:44:12+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b952dfc6d9c08188beac70ab8482ecaaed8d7f32f70eee66eea9ec58648ed2f6"
+    "source_digest": "a77c23e4478def7f369cd945a31c3c2113535c60a4bc304d0109e9279560f8b1"
   },
   "summary": {
-    "module_count": 567,
-    "declaration_count": 32149
+    "module_count": 566,
+    "declaration_count": 32079
   },
   "readme_sync": {
     "version": "0.36.172",
     "lean_toolchain": "v4.28.0",
-    "production_files": 497,
-    "production_loc": 548420,
+    "production_files": 496,
+    "production_loc": 547539,
     "test_files": 70,
     "test_loc": 88092,
-    "proved_theorem_lemma_decls": 20862,
+    "proved_theorem_lemma_decls": 20807,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -306054,7 +306054,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.LinkedQueue",
       "path": "SeLe4n/Kernel/Scheduler/LinkedQueue.lean",
-      "declaration_count": 36,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "def",
@@ -306309,32 +306309,9 @@
         },
         {
           "kind": "theorem",
-          "name": "isQueue_reverse",
-          "full_name": "SeLe4n.Kernel.LinkedQueue.isQueue_reverse",
-          "line": 188,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.IsQueue",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isQueue_cons",
-          "full_name": "SeLe4n.Kernel.LinkedQueue.isQueue_cons",
-          "line": 198,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.IsQueue",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.LinkedQueue.isQueue_append",
-            "SeLe4n.Kernel.LinkedQueue.isQueue_reverse",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "linked_unlink",
           "full_name": "SeLe4n.Kernel.LinkedQueue.linked_unlink",
-          "line": 212,
+          "line": 188,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.Linked",
             "SeLe4n.Kernel.LinkedQueue.linked_append",
@@ -306346,7 +306323,7 @@
           "kind": "theorem",
           "name": "linked_mid",
           "full_name": "SeLe4n.Kernel.LinkedQueue.linked_mid",
-          "line": 227,
+          "line": 203,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.Linked",
             "SeLe4n.Kernel.LinkedQueue.lastCode",
@@ -306358,7 +306335,7 @@
           "kind": "theorem",
           "name": "code_ne_lastCode",
           "full_name": "SeLe4n.Kernel.LinkedQueue.code_ne_lastCode",
-          "line": 233,
+          "line": 209,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.code_inj",
@@ -306371,7 +306348,7 @@
           "kind": "theorem",
           "name": "isQueue_unlink",
           "full_name": "SeLe4n.Kernel.LinkedQueue.isQueue_unlink",
-          "line": 244,
+          "line": 220,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.IsQueue",
             "SeLe4n.Kernel.LinkedQueue.Linked",
@@ -306392,7 +306369,7 @@
           "kind": "def",
           "name": "walk",
           "full_name": "SeLe4n.Kernel.LinkedQueue.walk",
-          "line": 318,
+          "line": 294,
           "called": [
             "SeLe4n.ThreadId"
           ]
@@ -306401,7 +306378,7 @@
           "kind": "theorem",
           "name": "walk_zero_code",
           "full_name": "SeLe4n.Kernel.LinkedQueue.walk_zero_code",
-          "line": 323,
+          "line": 299,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.walk",
             "SeLe4n.ThreadId"
@@ -306411,7 +306388,7 @@
           "kind": "theorem",
           "name": "walk_succ_code",
           "full_name": "SeLe4n.Kernel.LinkedQueue.walk_succ_code",
-          "line": 326,
+          "line": 302,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.walk",
@@ -306422,7 +306399,7 @@
           "kind": "theorem",
           "name": "walk_of_linked",
           "full_name": "SeLe4n.Kernel.LinkedQueue.walk_of_linked",
-          "line": 331,
+          "line": 307,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.Linked",
             "SeLe4n.Kernel.LinkedQueue.lastCode",
@@ -306437,7 +306414,7 @@
           "kind": "theorem",
           "name": "IsQueue.walk_eq",
           "full_name": "SeLe4n.Kernel.LinkedQueue.IsQueue.walk_eq",
-          "line": 342,
+          "line": 318,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.IsQueue",
             "SeLe4n.Kernel.LinkedQueue.walk",
@@ -306449,7 +306426,7 @@
           "kind": "theorem",
           "name": "IsQueue.head_eq_zero_iff",
           "full_name": "SeLe4n.Kernel.LinkedQueue.IsQueue.head_eq_zero_iff",
-          "line": 346,
+          "line": 322,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.IsQueue",
             "SeLe4n.Kernel.LinkedQueue.lastCode_eq_zero_iff",
@@ -306460,7 +306437,7 @@
           "kind": "theorem",
           "name": "IsQueue.tail_eq_zero_iff",
           "full_name": "SeLe4n.Kernel.LinkedQueue.IsQueue.tail_eq_zero_iff",
-          "line": 350,
+          "line": 326,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.IsQueue",
             "SeLe4n.Kernel.LinkedQueue.lastCode_eq_zero_iff",
@@ -344269,7 +344246,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.RunQueue",
       "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
-      "declaration_count": 206,
+      "declaration_count": 191,
       "declarations": [
         {
           "kind": "structure",
@@ -345114,115 +345091,10 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "prependLinks",
-          "full_name": "SeLe4n.Kernel.RunQueue.prependLinks",
-          "line": 539,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RobinHood.RHTable",
-            "SeLe4n.Kernel.RunQueue.setLink",
-            "SeLe4n.Kernel.RunQueue.setLinkAt",
-            "SeLe4n.Kernel.RunQueueLink",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "prependLinks_invExtK",
-          "full_name": "SeLe4n.Kernel.RunQueue.prependLinks_invExtK",
-          "line": 546,
-          "called": [
-            "SeLe4n.Kernel.RobinHood.RHTable",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
-            "SeLe4n.Kernel.RunQueue.prependLinks",
-            "SeLe4n.Kernel.RunQueue.setLinkAt_invExtK",
-            "SeLe4n.Kernel.RunQueue.setLink_invExtK",
-            "SeLe4n.Kernel.RunQueueLink",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "linkOf_prependLinks",
-          "full_name": "SeLe4n.Kernel.RunQueue.linkOf_prependLinks",
-          "line": 552,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RobinHood.RHTable",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
-            "SeLe4n.Kernel.RunQueue.linkOf",
-            "SeLe4n.Kernel.RunQueue.linkOf_setLink",
-            "SeLe4n.Kernel.RunQueue.linkOf_setLinkAt",
-            "SeLe4n.Kernel.RunQueue.prependLinks",
-            "SeLe4n.Kernel.RunQueue.setLinkAt_invExtK",
-            "SeLe4n.Kernel.RunQueue.setLink_invExtK",
-            "SeLe4n.Kernel.RunQueueLink",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "prependEnds",
-          "full_name": "SeLe4n.Kernel.RunQueue.prependEnds",
-          "line": 578,
-          "called": [
-            "SeLe4n.Kernel.BucketEnds",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "code_ne_head",
-          "full_name": "SeLe4n.Kernel.RunQueue.code_ne_head",
-          "line": 582,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.LinkedQueue.lastCode",
-            "SeLe4n.Kernel.RunQueue.code_ne_end",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "layout_prepend",
-          "full_name": "SeLe4n.Kernel.RunQueue.layout_prepend",
-          "line": 587,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
-            "SeLe4n.Kernel.LinkedQueue.decode_code",
-            "SeLe4n.Kernel.LinkedQueue.isQueue_congr",
-            "SeLe4n.Kernel.LinkedQueue.isQueue_cons",
-            "SeLe4n.Kernel.LinkedQueue.lastCode",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.code_ne_head",
-            "SeLe4n.Kernel.RunQueue.decode_lastCode_mem",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.endsOf_setEnds",
-            "SeLe4n.Kernel.RunQueue.linkOf",
-            "SeLe4n.Kernel.RunQueue.linkOf_prependLinks",
-            "SeLe4n.Kernel.RunQueue.maxPrioCode_congr",
-            "SeLe4n.Kernel.RunQueue.maxPrioCode_cons",
-            "SeLe4n.Kernel.RunQueue.nodup_filter",
-            "SeLe4n.Kernel.RunQueue.prependEnds",
-            "SeLe4n.Kernel.RunQueue.prependLinks",
-            "SeLe4n.Kernel.RunQueue.setEnds",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "le_maxPrioCode",
           "full_name": "SeLe4n.Kernel.RunQueue.le_maxPrioCode",
-          "line": 656,
+          "line": 536,
           "called": [
             "SeLe4n.Kernel.RunQueue.maxPrioCode",
             "SeLe4n.Kernel.RunQueue.maxPrioCode_cons",
@@ -345235,7 +345107,7 @@
           "kind": "def",
           "name": "unlinkLinks",
           "full_name": "SeLe4n.Kernel.RunQueue.unlinkLinks",
-          "line": 671,
+          "line": 551,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RunQueue.setLink",
@@ -345248,7 +345120,7 @@
           "kind": "theorem",
           "name": "unlinkLinks_invExtK",
           "full_name": "SeLe4n.Kernel.RunQueue.unlinkLinks_invExtK",
-          "line": 679,
+          "line": 559,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
@@ -345263,7 +345135,7 @@
           "kind": "theorem",
           "name": "linkOf_unlinkLinks",
           "full_name": "SeLe4n.Kernel.RunQueue.linkOf_unlinkLinks",
-          "line": 685,
+          "line": 565,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.RobinHood.RHTable",
@@ -345281,7 +345153,7 @@
           "kind": "def",
           "name": "unlinkEnds",
           "full_name": "SeLe4n.Kernel.RunQueue.unlinkEnds",
-          "line": 714,
+          "line": 594,
           "called": [
             "SeLe4n.Kernel.BucketEnds"
           ]
@@ -345290,7 +345162,7 @@
           "kind": "def",
           "name": "unlinkEndsImpl",
           "full_name": "SeLe4n.Kernel.RunQueue.unlinkEndsImpl",
-          "line": 719,
+          "line": 599,
           "called": [
             "SeLe4n.Kernel.BucketEnds"
           ]
@@ -345299,7 +345171,7 @@
           "kind": "theorem",
           "name": "unlinkEnds_eq_impl",
           "full_name": "SeLe4n.Kernel.RunQueue.unlinkEnds_eq_impl",
-          "line": 724,
+          "line": 604,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.unlinkEnds",
@@ -345310,7 +345182,7 @@
           "kind": "theorem",
           "name": "IsQueue.mid",
           "full_name": "SeLe4n.Kernel.RunQueue.IsQueue.mid",
-          "line": 732,
+          "line": 612,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.IsQueue",
             "SeLe4n.Kernel.LinkedQueue.Linked",
@@ -345323,7 +345195,7 @@
           "kind": "theorem",
           "name": "filter_mid",
           "full_name": "SeLe4n.Kernel.RunQueue.filter_mid",
-          "line": 740,
+          "line": 620,
           "called": [
             "SeLe4n.ThreadId"
           ]
@@ -345332,7 +345204,7 @@
           "kind": "theorem",
           "name": "filter_mid_neg",
           "full_name": "SeLe4n.Kernel.RunQueue.filter_mid_neg",
-          "line": 744,
+          "line": 624,
           "called": [
             "SeLe4n.ThreadId"
           ]
@@ -345341,7 +345213,7 @@
           "kind": "theorem",
           "name": "layout_unlink",
           "full_name": "SeLe4n.Kernel.RunQueue.layout_unlink",
-          "line": 750,
+          "line": 630,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
@@ -345373,7 +345245,7 @@
           "kind": "theorem",
           "name": "Layout.with_maxCode",
           "full_name": "SeLe4n.Kernel.RunQueue.Layout.with_maxCode",
-          "line": 846,
+          "line": 726,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout"
@@ -345383,7 +345255,7 @@
           "kind": "def",
           "name": "insert",
           "full_name": "SeLe4n.Kernel.RunQueue.insert",
-          "line": 852,
+          "line": 732,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.RunQueue",
@@ -345404,7 +345276,7 @@
           "kind": "theorem",
           "name": "toList_insert_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_insert_not_mem",
-          "line": 867,
+          "line": 747,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -345420,7 +345292,7 @@
           "kind": "theorem",
           "name": "contains_insert",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_insert",
-          "line": 874,
+          "line": 754,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -345433,91 +345305,10 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "insertHead",
-          "full_name": "SeLe4n.Kernel.RunQueue.insertHead",
-          "line": 895,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.layout_prepend",
-            "SeLe4n.Kernel.RunQueue.prependEnds",
-            "SeLe4n.Kernel.RunQueue.prependLinks",
-            "SeLe4n.Kernel.RunQueue.prependLinks_invExtK",
-            "SeLe4n.Kernel.RunQueue.setEnds",
-            "SeLe4n.Kernel.RunQueue.setEnds_invExtK",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "toList_insertHead_not_mem",
-          "full_name": "SeLe4n.Kernel.RunQueue.toList_insertHead_not_mem",
-          "line": 910,
-          "called": [
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.insertHead",
-            "SeLe4n.Kernel.RunQueue.layout_prepend",
-            "SeLe4n.Kernel.RunQueue.toList",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "insertHead_of_mem",
-          "full_name": "SeLe4n.Kernel.RunQueue.insertHead_of_mem",
-          "line": 917,
-          "called": [
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.insertHead",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "contains_insertHead",
-          "full_name": "SeLe4n.Kernel.RunQueue.contains_insertHead",
-          "line": 921,
-          "called": [
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.code_ne_head",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.insertHead",
-            "SeLe4n.Kernel.RunQueue.linkOf_prependLinks",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "links_insertHead_of_not_contains",
-          "full_name": "SeLe4n.Kernel.RunQueue.links_insertHead_of_not_contains",
-          "line": 939,
-          "called": [
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.insertHead",
-            "SeLe4n.Kernel.RunQueue.prependLinks",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "maxPrioCode_mid",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPrioCode_mid",
-          "line": 944,
+          "line": 772,
           "called": [
             "SeLe4n.Kernel.RunQueue.maxPrioCode",
             "SeLe4n.Kernel.RunQueue.maxPrioCode_append",
@@ -345531,7 +345322,7 @@
           "kind": "theorem",
           "name": "maxCode_unlink_keep",
           "full_name": "SeLe4n.Kernel.RunQueue.maxCode_unlink_keep",
-          "line": 950,
+          "line": 778,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
@@ -345553,7 +345344,7 @@
           "kind": "theorem",
           "name": "split_of_contains",
           "full_name": "SeLe4n.Kernel.RunQueue.split_of_contains",
-          "line": 986,
+          "line": 814,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -345566,7 +345357,7 @@
           "kind": "def",
           "name": "remove",
           "full_name": "SeLe4n.Kernel.RunQueue.remove",
-          "line": 995,
+          "line": 823,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.walk",
             "SeLe4n.Kernel.RunQueue",
@@ -345594,7 +345385,7 @@
           "kind": "theorem",
           "name": "filter_ne_mid",
           "full_name": "SeLe4n.Kernel.RunQueue.filter_ne_mid",
-          "line": 1028,
+          "line": 856,
           "called": [
             "SeLe4n.ThreadId"
           ]
@@ -345603,7 +345394,7 @@
           "kind": "theorem",
           "name": "toList_remove",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_remove",
-          "line": 1039,
+          "line": 867,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.walk",
             "SeLe4n.Kernel.RunQueue",
@@ -345623,7 +345414,7 @@
           "kind": "theorem",
           "name": "contains_remove",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_remove",
-          "line": 1054,
+          "line": 882,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345637,7 +345428,7 @@
           "kind": "theorem",
           "name": "Layout.with_size",
           "full_name": "SeLe4n.Kernel.RunQueue.Layout.with_size",
-          "line": 1074,
+          "line": 902,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout"
@@ -345647,7 +345438,7 @@
           "kind": "def",
           "name": "rotateToBack",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBack",
-          "line": 1082,
+          "line": 910,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.walk",
@@ -345680,7 +345471,7 @@
           "kind": "def",
           "name": "insertFresh",
           "full_name": "SeLe4n.Kernel.RunQueue.insertFresh",
-          "line": 1137,
+          "line": 965,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.RunQueue",
@@ -345700,7 +345491,7 @@
           "kind": "def",
           "name": "insertImpl",
           "full_name": "SeLe4n.Kernel.RunQueue.insertImpl",
-          "line": 1153,
+          "line": 981,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345713,7 +345504,7 @@
           "kind": "theorem",
           "name": "insertImpl_eq",
           "full_name": "SeLe4n.Kernel.RunQueue.insertImpl_eq",
-          "line": 1156,
+          "line": 984,
           "called": [
             "SeLe4n.Kernel.RunQueue.contains",
             "SeLe4n.Kernel.RunQueue.insert",
@@ -345725,7 +345516,7 @@
           "kind": "def",
           "name": "removeQueued",
           "full_name": "SeLe4n.Kernel.RunQueue.removeQueued",
-          "line": 1160,
+          "line": 988,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345744,7 +345535,7 @@
           "kind": "def",
           "name": "removeImpl",
           "full_name": "SeLe4n.Kernel.RunQueue.removeImpl",
-          "line": 1189,
+          "line": 1017,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345756,7 +345547,7 @@
           "kind": "theorem",
           "name": "removeImpl_eq",
           "full_name": "SeLe4n.Kernel.RunQueue.removeImpl_eq",
-          "line": 1192,
+          "line": 1020,
           "called": [
             "SeLe4n.Kernel.RunQueue.contains",
             "SeLe4n.Kernel.RunQueue.remove",
@@ -345768,7 +345559,7 @@
           "kind": "def",
           "name": "rotateQueued",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateQueued",
-          "line": 1196,
+          "line": 1024,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.RunQueue",
@@ -345791,7 +345582,7 @@
           "kind": "def",
           "name": "rotateToBackImpl",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBackImpl",
-          "line": 1226,
+          "line": 1054,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345803,7 +345594,7 @@
           "kind": "theorem",
           "name": "rotateToBackImpl_eq",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBackImpl_eq",
-          "line": 1229,
+          "line": 1057,
           "called": [
             "SeLe4n.Kernel.RunQueue.contains",
             "SeLe4n.Kernel.RunQueue.rotateQueued",
@@ -345815,7 +345606,7 @@
           "kind": "theorem",
           "name": "mem_iff_contains",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_iff_contains",
-          "line": 1236,
+          "line": 1064,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345826,7 +345617,7 @@
           "kind": "theorem",
           "name": "contains_false_of_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_false_of_not_mem",
-          "line": 1239,
+          "line": 1067,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345837,7 +345628,7 @@
           "kind": "theorem",
           "name": "toList_empty",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_empty",
-          "line": 1243,
+          "line": 1071,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.toList"
@@ -345847,7 +345638,7 @@
           "kind": "theorem",
           "name": "not_mem_empty",
           "full_name": "SeLe4n.Kernel.RunQueue.not_mem_empty",
-          "line": 1246,
+          "line": 1074,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
@@ -345859,7 +345650,7 @@
           "kind": "theorem",
           "name": "not_mem_toList_of_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.not_mem_toList_of_not_mem",
-          "line": 1249,
+          "line": 1077,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
@@ -345871,7 +345662,7 @@
           "kind": "theorem",
           "name": "membership_implies_flat",
           "full_name": "SeLe4n.Kernel.RunQueue.membership_implies_flat",
-          "line": 1252,
+          "line": 1080,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
@@ -345883,7 +345674,7 @@
           "kind": "theorem",
           "name": "mem_insert",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_insert",
-          "line": 1255,
+          "line": 1083,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains_insert",
@@ -345897,7 +345688,7 @@
           "kind": "theorem",
           "name": "mem_remove",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_remove",
-          "line": 1259,
+          "line": 1087,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains_remove",
@@ -345910,7 +345701,7 @@
           "kind": "def",
           "name": "rekey",
           "full_name": "SeLe4n.Kernel.RunQueue.rekey",
-          "line": 1266,
+          "line": 1094,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345924,7 +345715,7 @@
           "kind": "theorem",
           "name": "contains_rekey",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_rekey",
-          "line": 1270,
+          "line": 1098,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345939,7 +345730,7 @@
           "kind": "theorem",
           "name": "mem_rekey",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_rekey",
-          "line": 1281,
+          "line": 1109,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains_rekey",
@@ -345953,7 +345744,7 @@
           "kind": "theorem",
           "name": "rekey_of_contains",
           "full_name": "SeLe4n.Kernel.RunQueue.rekey_of_contains",
-          "line": 1285,
+          "line": 1113,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345968,7 +345759,7 @@
           "kind": "theorem",
           "name": "not_mem_remove_self",
           "full_name": "SeLe4n.Kernel.RunQueue.not_mem_remove_self",
-          "line": 1289,
+          "line": 1117,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.mem_remove",
@@ -345980,7 +345771,7 @@
           "kind": "theorem",
           "name": "remove_of_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.remove_of_not_mem",
-          "line": 1292,
+          "line": 1120,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -345992,7 +345783,7 @@
           "kind": "theorem",
           "name": "insert_of_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.insert_of_mem",
-          "line": 1295,
+          "line": 1123,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346005,7 +345796,7 @@
           "kind": "theorem",
           "name": "toList_insert",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_insert",
-          "line": 1299,
+          "line": 1127,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.insert",
@@ -346020,7 +345811,7 @@
           "kind": "theorem",
           "name": "rotateToBack_of_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBack_of_not_mem",
-          "line": 1305,
+          "line": 1133,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346032,7 +345823,7 @@
           "kind": "theorem",
           "name": "toList_rotateToBack",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_rotateToBack",
-          "line": 1309,
+          "line": 1137,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.walk",
             "SeLe4n.Kernel.RunQueue",
@@ -346056,7 +345847,7 @@
           "kind": "theorem",
           "name": "contains_rotateToBack",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_rotateToBack",
-          "line": 1335,
+          "line": 1163,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346071,7 +345862,7 @@
           "kind": "theorem",
           "name": "mem_rotateToBack",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_rotateToBack",
-          "line": 1356,
+          "line": 1184,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains_rotateToBack",
@@ -346084,7 +345875,7 @@
           "kind": "theorem",
           "name": "prio_setLinkAt",
           "full_name": "SeLe4n.Kernel.RunQueue.prio_setLinkAt",
-          "line": 1360,
+          "line": 1188,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -346099,7 +345890,7 @@
           "kind": "theorem",
           "name": "prio_unlinkLinks",
           "full_name": "SeLe4n.Kernel.RunQueue.prio_unlinkLinks",
-          "line": 1367,
+          "line": 1195,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
@@ -346117,7 +345908,7 @@
           "kind": "theorem",
           "name": "queued_unlinkLinks",
           "full_name": "SeLe4n.Kernel.RunQueue.queued_unlinkLinks",
-          "line": 1390,
+          "line": 1218,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -346136,7 +345927,7 @@
           "kind": "theorem",
           "name": "priorityOf_remove",
           "full_name": "SeLe4n.Kernel.RunQueue.priorityOf_remove",
-          "line": 1414,
+          "line": 1242,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346152,7 +345943,7 @@
           "kind": "theorem",
           "name": "priorityOf_insert",
           "full_name": "SeLe4n.Kernel.RunQueue.priorityOf_insert",
-          "line": 1431,
+          "line": 1259,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346169,7 +345960,7 @@
           "kind": "theorem",
           "name": "priorityOf_rotateToBack",
           "full_name": "SeLe4n.Kernel.RunQueue.priorityOf_rotateToBack",
-          "line": 1447,
+          "line": 1275,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346187,7 +345978,7 @@
           "kind": "theorem",
           "name": "priorityOf_none_of_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.priorityOf_none_of_not_mem",
-          "line": 1461,
+          "line": 1289,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346199,7 +345990,7 @@
           "kind": "theorem",
           "name": "priorityOf_isSome_iff",
           "full_name": "SeLe4n.Kernel.RunQueue.priorityOf_isSome_iff",
-          "line": 1465,
+          "line": 1293,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.priorityOf",
@@ -346210,7 +346001,7 @@
           "kind": "theorem",
           "name": "priorityOf_empty",
           "full_name": "SeLe4n.Kernel.RunQueue.priorityOf_empty",
-          "line": 1469,
+          "line": 1297,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.not_mem_empty",
@@ -346223,7 +346014,7 @@
           "kind": "theorem",
           "name": "maxPrioCode_attained",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPrioCode_attained",
-          "line": 1472,
+          "line": 1300,
           "called": [
             "SeLe4n.Kernel.RunQueue.maxPrioCode",
             "SeLe4n.Kernel.RunQueue.maxPrioCode_cons",
@@ -346236,7 +346027,7 @@
           "kind": "theorem",
           "name": "maxPrioCode_eq_zero_iff",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPrioCode_eq_zero_iff",
-          "line": 1484,
+          "line": 1312,
           "called": [
             "SeLe4n.Kernel.RunQueue.maxPrioCode",
             "SeLe4n.Kernel.RunQueue.maxPrioCode_cons",
@@ -346248,7 +346039,7 @@
           "kind": "theorem",
           "name": "atPriority_eq_filter",
           "full_name": "SeLe4n.Kernel.RunQueue.atPriority_eq_filter",
-          "line": 1490,
+          "line": 1318,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.atPriority",
@@ -346264,7 +346055,7 @@
           "kind": "theorem",
           "name": "mem_atPriority",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_atPriority",
-          "line": 1497,
+          "line": 1325,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.atPriority",
@@ -346279,7 +346070,7 @@
           "kind": "theorem",
           "name": "maxPriority_eq_none_iff",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPriority_eq_none_iff",
-          "line": 1501,
+          "line": 1329,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -346294,7 +346085,7 @@
           "kind": "theorem",
           "name": "maxPriority_spec",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPriority_spec",
-          "line": 1511,
+          "line": 1339,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -346314,7 +346105,7 @@
           "kind": "theorem",
           "name": "toList_filter_insert_neg'",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'",
-          "line": 1535,
+          "line": 1363,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.insert",
@@ -346328,7 +346119,7 @@
           "kind": "theorem",
           "name": "toList_filter_insert_neg",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_filter_insert_neg",
-          "line": 1542,
+          "line": 1370,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.insert",
@@ -346342,7 +346133,7 @@
           "kind": "theorem",
           "name": "toList_filter_remove_neg",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_filter_remove_neg",
-          "line": 1547,
+          "line": 1375,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.remove",
@@ -346355,7 +346146,7 @@
           "kind": "theorem",
           "name": "toList_filter_rekey_neg",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_filter_rekey_neg",
-          "line": 1558,
+          "line": 1386,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.rekey",
@@ -346370,7 +346161,7 @@
           "kind": "theorem",
           "name": "toList_filter_rotateToBack_neg",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_filter_rotateToBack_neg",
-          "line": 1565,
+          "line": 1393,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.rotateToBack",
@@ -346383,7 +346174,7 @@
           "kind": "theorem",
           "name": "not_mem_remove_toList",
           "full_name": "SeLe4n.Kernel.RunQueue.not_mem_remove_toList",
-          "line": 1578,
+          "line": 1406,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.remove",
@@ -346396,7 +346187,7 @@
           "kind": "theorem",
           "name": "remove_preserves_toList_nodup",
           "full_name": "SeLe4n.Kernel.RunQueue.remove_preserves_toList_nodup",
-          "line": 1582,
+          "line": 1410,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.remove",
@@ -346409,7 +346200,7 @@
           "kind": "theorem",
           "name": "insert_preserves_toList_nodup",
           "full_name": "SeLe4n.Kernel.RunQueue.insert_preserves_toList_nodup",
-          "line": 1585,
+          "line": 1413,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.insert",
@@ -346423,7 +346214,7 @@
           "kind": "theorem",
           "name": "toList_rotateToBack_nodup",
           "full_name": "SeLe4n.Kernel.RunQueue.toList_rotateToBack_nodup",
-          "line": 1588,
+          "line": 1416,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.rotateToBack",
@@ -346436,7 +346227,7 @@
           "kind": "theorem",
           "name": "remove_toList_of_not_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.remove_toList_of_not_mem",
-          "line": 1592,
+          "line": 1420,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.remove",
@@ -346449,7 +346240,7 @@
           "kind": "theorem",
           "name": "rotateToBack_mem_iff",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBack_mem_iff",
-          "line": 1595,
+          "line": 1423,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.mem_rotateToBack",
@@ -346461,7 +346252,7 @@
           "kind": "theorem",
           "name": "maxPriorityBucket_subset",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPriorityBucket_subset",
-          "line": 1599,
+          "line": 1427,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.maxPriorityBucket",
@@ -346473,7 +346264,7 @@
           "kind": "theorem",
           "name": "maxPriorityBucket_priorityOf",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPriorityBucket_priorityOf",
-          "line": 1606,
+          "line": 1434,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.maxPriority",
@@ -346487,7 +346278,7 @@
           "kind": "theorem",
           "name": "mem_maxPriorityBucket_of_priorityOf",
           "full_name": "SeLe4n.Kernel.RunQueue.mem_maxPriorityBucket_of_priorityOf",
-          "line": 1614,
+          "line": 1442,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.maxPriority",
@@ -346502,7 +346293,7 @@
           "kind": "def",
           "name": "wellFormed",
           "full_name": "SeLe4n.Kernel.RunQueue.wellFormed",
-          "line": 1623,
+          "line": 1451,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.atPriority",
@@ -346514,7 +346305,7 @@
           "kind": "theorem",
           "name": "wellFormed_holds",
           "full_name": "SeLe4n.Kernel.RunQueue.wellFormed_holds",
-          "line": 1627,
+          "line": 1455,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.linkOf",
@@ -346527,7 +346318,7 @@
           "kind": "def",
           "name": "ofList",
           "full_name": "SeLe4n.Kernel.RunQueue.ofList",
-          "line": 1633,
+          "line": 1461,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.empty",
@@ -346540,7 +346331,7 @@
           "kind": "theorem",
           "name": "empty_wellFormed",
           "full_name": "SeLe4n.Kernel.RunQueue.empty_wellFormed",
-          "line": 1636,
+          "line": 1464,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.wellFormed",
@@ -346551,7 +346342,7 @@
           "kind": "theorem",
           "name": "insert_preserves_wellFormed",
           "full_name": "SeLe4n.Kernel.RunQueue.insert_preserves_wellFormed",
-          "line": 1638,
+          "line": 1466,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.insert",
@@ -346565,7 +346356,7 @@
           "kind": "theorem",
           "name": "remove_preserves_wellFormed",
           "full_name": "SeLe4n.Kernel.RunQueue.remove_preserves_wellFormed",
-          "line": 1641,
+          "line": 1469,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.remove",
@@ -346578,7 +346369,7 @@
           "kind": "theorem",
           "name": "rotateToBack_preserves_wellFormed",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBack_preserves_wellFormed",
-          "line": 1644,
+          "line": 1472,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.rotateToBack",
@@ -346591,7 +346382,7 @@
           "kind": "theorem",
           "name": "ofList_wellFormed",
           "full_name": "SeLe4n.Kernel.RunQueue.ofList_wellFormed",
-          "line": 1647,
+          "line": 1475,
           "called": [
             "SeLe4n.Kernel.RunQueue.ofList",
             "SeLe4n.Kernel.RunQueue.wellFormed",
@@ -346604,7 +346395,7 @@
           "kind": "def",
           "name": "threadPriorityTableOf",
           "full_name": "SeLe4n.Kernel.RunQueue.threadPriorityTableOf",
-          "line": 1658,
+          "line": 1486,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.empty",
@@ -346616,7 +346407,7 @@
           "kind": "def",
           "name": "membershipTableOf",
           "full_name": "SeLe4n.Kernel.RunQueue.membershipTableOf",
-          "line": 1663,
+          "line": 1491,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.empty",
@@ -346627,7 +346418,7 @@
           "kind": "def",
           "name": "byPriorityTableOf",
           "full_name": "SeLe4n.Kernel.RunQueue.byPriorityTableOf",
-          "line": 1667,
+          "line": 1495,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.empty",
@@ -346640,14 +346431,14 @@
           "kind": "theorem",
           "name": "foldl_congr_mem",
           "full_name": "SeLe4n.Kernel.RunQueue.foldl_congr_mem",
-          "line": 1674,
+          "line": 1502,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "threadPriorityTableOf_congr",
           "full_name": "SeLe4n.Kernel.RunQueue.threadPriorityTableOf_congr",
-          "line": 1681,
+          "line": 1509,
           "called": [
             "SeLe4n.Kernel.RunQueue.foldl_congr_mem",
             "SeLe4n.Kernel.RunQueue.threadPriorityTableOf",
@@ -346659,7 +346450,7 @@
           "kind": "theorem",
           "name": "byPriorityTableOf_congr",
           "full_name": "SeLe4n.Kernel.RunQueue.byPriorityTableOf_congr",
-          "line": 1686,
+          "line": 1514,
           "called": [
             "SeLe4n.Kernel.RunQueue.byPriorityTableOf",
             "SeLe4n.Kernel.RunQueue.foldl_congr_mem",
@@ -346671,7 +346462,7 @@
           "kind": "def",
           "name": "threadPriorityTable",
           "full_name": "SeLe4n.Kernel.RunQueue.threadPriorityTable",
-          "line": 1692,
+          "line": 1520,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RunQueue",
@@ -346685,7 +346476,7 @@
           "kind": "def",
           "name": "membershipTable",
           "full_name": "SeLe4n.Kernel.RunQueue.membershipTable",
-          "line": 1696,
+          "line": 1524,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RunQueue",
@@ -346697,7 +346488,7 @@
           "kind": "def",
           "name": "byPriorityTable",
           "full_name": "SeLe4n.Kernel.RunQueue.byPriorityTable",
-          "line": 1700,
+          "line": 1528,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RunQueue",
@@ -346711,7 +346502,7 @@
           "kind": "theorem",
           "name": "foldl_insert_invExtK",
           "full_name": "SeLe4n.Kernel.RunQueue.foldl_insert_invExtK",
-          "line": 1703,
+          "line": 1531,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
@@ -346723,7 +346514,7 @@
           "kind": "theorem",
           "name": "threadPriorityTable_invExtK",
           "full_name": "SeLe4n.Kernel.RunQueue.threadPriorityTable_invExtK",
-          "line": 1710,
+          "line": 1538,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
@@ -346738,7 +346529,7 @@
           "kind": "theorem",
           "name": "membershipTable_invExtK",
           "full_name": "SeLe4n.Kernel.RunQueue.membershipTable_invExtK",
-          "line": 1714,
+          "line": 1542,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
@@ -346751,7 +346542,7 @@
           "kind": "theorem",
           "name": "byPriorityTable_invExtK",
           "full_name": "SeLe4n.Kernel.RunQueue.byPriorityTable_invExtK",
-          "line": 1717,
+          "line": 1545,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -346766,7 +346557,7 @@
           "kind": "theorem",
           "name": "foldl_insert_get_key",
           "full_name": "SeLe4n.Kernel.RunQueue.foldl_insert_get_key",
-          "line": 1721,
+          "line": 1549,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -346780,7 +346571,7 @@
           "kind": "theorem",
           "name": "threadPriorityTable_get?",
           "full_name": "SeLe4n.Kernel.RunQueue.threadPriorityTable_get?",
-          "line": 1735,
+          "line": 1563,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -346799,7 +346590,7 @@
           "kind": "theorem",
           "name": "membershipTable_get?",
           "full_name": "SeLe4n.Kernel.RunQueue.membershipTable_get?",
-          "line": 1745,
+          "line": 1573,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
@@ -346816,7 +346607,7 @@
           "kind": "theorem",
           "name": "byPriorityTable_get?",
           "full_name": "SeLe4n.Kernel.RunQueue.byPriorityTable_get?",
-          "line": 1754,
+          "line": 1582,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable",
             "SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK",
@@ -346840,7 +346631,7 @@
           "kind": "def",
           "name": "queuedLink",
           "full_name": "SeLe4n.Kernel.RunQueue.queuedLink",
-          "line": 1786,
+          "line": 1614,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.RunQueueLink.none",
@@ -346853,7 +346644,7 @@
           "kind": "theorem",
           "name": "queuedLink_queued",
           "full_name": "SeLe4n.Kernel.RunQueue.queuedLink_queued",
-          "line": 1789,
+          "line": 1617,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346865,7 +346656,7 @@
           "kind": "theorem",
           "name": "queuedLink_of_contains",
           "full_name": "SeLe4n.Kernel.RunQueue.queuedLink_of_contains",
-          "line": 1796,
+          "line": 1624,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -346878,7 +346669,7 @@
           "kind": "theorem",
           "name": "queuedLink_of_not_contains",
           "full_name": "SeLe4n.Kernel.RunQueue.queuedLink_of_not_contains",
-          "line": 1800,
+          "line": 1628,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.RunQueueLink.none",
@@ -346891,7 +346682,7 @@
           "kind": "theorem",
           "name": "code_ne_tail",
           "full_name": "SeLe4n.Kernel.RunQueue.code_ne_tail",
-          "line": 1805,
+          "line": 1633,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.RunQueue",
@@ -346907,7 +346698,7 @@
           "kind": "theorem",
           "name": "code_ne_bucket_tail",
           "full_name": "SeLe4n.Kernel.RunQueue.code_ne_bucket_tail",
-          "line": 1810,
+          "line": 1638,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.RunQueue",
@@ -346925,7 +346716,7 @@
           "kind": "theorem",
           "name": "contains_of_code_eq_tail",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_of_code_eq_tail",
-          "line": 1816,
+          "line": 1644,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
@@ -346944,7 +346735,7 @@
           "kind": "theorem",
           "name": "contains_of_code_eq_bucket_tail",
           "full_name": "SeLe4n.Kernel.RunQueue.contains_of_code_eq_bucket_tail",
-          "line": 1823,
+          "line": 1651,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
@@ -346953,79 +346744,6 @@
             "SeLe4n.Kernel.RunQueue.Layout",
             "SeLe4n.Kernel.RunQueue.contains",
             "SeLe4n.Kernel.RunQueue.decode_lastCode_mem",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.layout_toList",
-            "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "contains_of_code_eq_head",
-          "full_name": "SeLe4n.Kernel.RunQueue.contains_of_code_eq_head",
-          "line": 1831,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
-            "SeLe4n.Kernel.LinkedQueue.decode_code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.decode_lastCode_mem",
-            "SeLe4n.Kernel.RunQueue.layout_toList",
-            "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
-            "SeLe4n.Kernel.RunQueue.toList",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "contains_of_code_eq_bucket_head",
-          "full_name": "SeLe4n.Kernel.RunQueue.contains_of_code_eq_bucket_head",
-          "line": 1838,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
-            "SeLe4n.Kernel.LinkedQueue.decode_code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.decode_lastCode_mem",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.layout_toList",
-            "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "code_ne_queue_head",
-          "full_name": "SeLe4n.Kernel.RunQueue.code_ne_queue_head",
-          "line": 1846,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.code_ne_head",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.layout_toList",
-            "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "code_ne_bucket_head",
-          "full_name": "SeLe4n.Kernel.RunQueue.code_ne_bucket_head",
-          "line": 1851,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.Layout",
-            "SeLe4n.Kernel.RunQueue.code_ne_head",
-            "SeLe4n.Kernel.RunQueue.contains",
             "SeLe4n.Kernel.RunQueue.endsOf",
             "SeLe4n.Kernel.RunQueue.layout_toList",
             "SeLe4n.Kernel.RunQueue.mem_toList_iff_mem",
@@ -347037,7 +346755,7 @@
           "kind": "theorem",
           "name": "walk_of_agree",
           "full_name": "SeLe4n.Kernel.RunQueue.walk_of_agree",
-          "line": 1858,
+          "line": 1660,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.isQueue_congr",
             "SeLe4n.Kernel.LinkedQueue.walk",
@@ -347056,7 +346774,7 @@
           "kind": "theorem",
           "name": "maxPrioCode_of_agree",
           "full_name": "SeLe4n.Kernel.RunQueue.maxPrioCode_of_agree",
-          "line": 1869,
+          "line": 1671,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -347075,7 +346793,7 @@
           "kind": "theorem",
           "name": "own_links",
           "full_name": "SeLe4n.Kernel.RunQueue.own_links",
-          "line": 1877,
+          "line": 1679,
           "called": [
             "SeLe4n.Kernel.LinkedQueue.code",
             "SeLe4n.Kernel.LinkedQueue.code_ne_zero",
@@ -347098,7 +346816,7 @@
           "kind": "theorem",
           "name": "remove_fields",
           "full_name": "SeLe4n.Kernel.RunQueue.remove_fields",
-          "line": 1918,
+          "line": 1720,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.contains",
@@ -347115,7 +346833,7 @@
           "kind": "theorem",
           "name": "ext_fields",
           "full_name": "SeLe4n.Kernel.RunQueue.ext_fields",
-          "line": 1935,
+          "line": 1737,
           "called": [
             "SeLe4n.Kernel.RunQueue"
           ]
@@ -347124,7 +346842,7 @@
           "kind": "theorem",
           "name": "rotateToBack_eq_remove_insert",
           "full_name": "SeLe4n.Kernel.RunQueue.rotateToBack_eq_remove_insert",
-          "line": 1942,
+          "line": 1744,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.Layout",
@@ -347153,7 +346871,7 @@
           "kind": "theorem",
           "name": "links_insert_of_not_contains",
           "full_name": "SeLe4n.Kernel.RunQueue.links_insert_of_not_contains",
-          "line": 1968,
+          "line": 1770,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueue.appendLinks",
@@ -347168,7 +346886,7 @@
           "kind": "structure",
           "name": "RunQueueEnds",
           "full_name": "SeLe4n.Kernel.RunQueueEnds",
-          "line": 1979,
+          "line": 1781,
           "called": [
             "SeLe4n.Kernel.BucketEnds",
             "SeLe4n.Kernel.RobinHood.RHTable",
@@ -347179,7 +346897,7 @@
           "kind": "def",
           "name": "ends",
           "full_name": "SeLe4n.Kernel.RunQueue.ends",
-          "line": 1989,
+          "line": 1791,
           "called": [
             "SeLe4n.Kernel.RunQueue",
             "SeLe4n.Kernel.RunQueueEnds"
@@ -347189,7 +346907,7 @@
           "kind": "def",
           "name": "empty",
           "full_name": "SeLe4n.Kernel.RunQueueEnds.empty",
-          "line": 1998,
+          "line": 1800,
           "called": [
             "SeLe4n.Kernel.RunQueue.empty",
             "SeLe4n.Kernel.RunQueue.ends",
@@ -347200,7 +346918,7 @@
           "kind": "instance",
           "name": "instInhabited",
           "full_name": "SeLe4n.Kernel.RunQueueEnds.instInhabited",
-          "line": 2000,
+          "line": 1802,
           "called": [
             "SeLe4n.Kernel.RunQueueEnds",
             "SeLe4n.Kernel.RunQueueEnds.empty"
@@ -347210,910 +346928,9 @@
           "kind": "instance",
           "name": "instRepr",
           "full_name": "SeLe4n.Kernel.RunQueueEnds.instRepr",
-          "line": 2002,
+          "line": 1804,
           "called": [
             "SeLe4n.Kernel.RunQueueEnds"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "SeLe4n.Kernel.Scheduler.RunQueueHeadEnqueue",
-      "path": "SeLe4n/Kernel/Scheduler/RunQueueHeadEnqueue.lean",
-      "declaration_count": 53,
-      "declarations": [
-        {
-          "kind": "def",
-          "name": "runPrependLinks",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks",
-          "line": 38,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace",
-            "SeLe4n.Model.SystemState.updateTcbAtCode",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "SeLe4n.Kernel.RunQueueEnds.bucketHead",
-          "full_name": "SeLe4n.Kernel.RunQueueEnds.bucketHead",
-          "line": 49,
-          "called": [
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueueEnds",
-            "SeLe4n.Priority"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "prependLinkObjects",
-          "full_name": "SeLe4n.Model.SystemState.prependLinkObjects",
-          "line": 54,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.LinkedQueue.decode",
-            "SeLe4n.Kernel.RobinHood.RHTable",
-            "SeLe4n.Kernel.RobinHood.RHTable.mapValueAt",
-            "SeLe4n.Model.KernelObject",
-            "SeLe4n.Model.KernelObject.mapTcb",
-            "SeLe4n.ObjId",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runPrependLinksImpl",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinksImpl",
-          "line": 68,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.prependLinkObjects",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_eq_impl",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_eq_impl",
-          "line": 75,
-          "called": [
-            "SeLe4n.Kernel.RunQueueEnds.bucketHead",
-            "SeLe4n.Model.SystemState.mapTcbInPlace",
-            "SeLe4n.Model.SystemState.prependLinkObjects",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.runPrependLinksImpl",
-            "SeLe4n.Model.SystemState.updateTcbAtCode"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "SeLe4n.Kernel.RunQueueEnds.prepend",
-          "full_name": "SeLe4n.Kernel.RunQueueEnds.prepend",
-          "line": 84,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.prependEnds",
-            "SeLe4n.Kernel.RunQueue.setEnds",
-            "SeLe4n.Kernel.RunQueueEnds",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "SeLe4n.Kernel.RunQueueEnds.prependImpl",
-          "full_name": "SeLe4n.Kernel.RunQueueEnds.prependImpl",
-          "line": 95,
-          "called": [
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.prependEnds",
-            "SeLe4n.Kernel.RunQueue.setEnds",
-            "SeLe4n.Kernel.RunQueueEnds",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "SeLe4n.Kernel.RunQueueEnds.prepend_eq_impl",
-          "full_name": "SeLe4n.Kernel.RunQueueEnds.prepend_eq_impl",
-          "line": 103,
-          "called": [
-            "SeLe4n.Kernel.RunQueueEnds.prepend",
-            "SeLe4n.Kernel.RunQueueEnds.prependImpl"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runPrependOnCore",
-          "full_name": "SeLe4n.Model.SystemState.runPrependOnCore",
-          "line": 109,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runPrependOnCoreImpl",
-          "full_name": "SeLe4n.Model.SystemState.runPrependOnCoreImpl",
-          "line": 116,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.modifyRunQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependOnCore_eq_impl",
-          "full_name": "SeLe4n.Model.SystemState.runPrependOnCore_eq_impl",
-          "line": 121,
-          "called": [
-            "SeLe4n.Model.SchedulerState.modifyRunQueueEndsOnCore_eq",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Model.SystemState.runPrependOnCoreImpl"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runEnqueueHeadAdmitted",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-          "line": 128,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runLinkOn",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runEnqueueHeadAdmittedImpl",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmittedImpl",
-          "line": 136,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.queuedOn",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_eq_impl",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_eq_impl",
-          "line": 142,
-          "called": [
-            "SeLe4n.Model.SystemState.queuedOn_eq_runLinkOn",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmittedImpl"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runEnqueueHeadOnCore",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-          "line": 152,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_of_admits",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_of_admits",
-          "line": 156,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_of_not_admits",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_of_not_admits",
-          "line": 161,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_scheduler",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_scheduler",
-          "line": 171,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace_scheduler",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode_scheduler",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_machine",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_machine",
-          "line": 175,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_objects_invExt",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_objects_invExt",
-          "line": 179,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace_objects_invExt",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode_objects_invExt",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_objects_invExtK",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_objects_invExtK",
-          "line": 185,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace_objects_invExtK",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode_objects_invExtK",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_objectsAgreeOffRunLinks",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_objectsAgreeOffRunLinks",
-          "line": 191,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace_objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode_objectsAgreeOffRunLinks",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_onlyObjectsSchedulerDiffer",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_onlyObjectsSchedulerDiffer",
-          "line": 199,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.mapTcbInPlace",
-            "SeLe4n.Model.SystemState.onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_objects",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_objects",
-          "line": 205,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runLinkOn",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_objectsAgreeOffRunLinks",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_objectsAgreeOffRunLinks",
-          "line": 211,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_objects",
-            "SeLe4n.Model.SystemState.runPrependLinks_objectsAgreeOffRunLinks",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_objectsAgreeOffRunLinks",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks",
-          "line": 219,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_objects_invExt",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_objects_invExt",
-          "line": 226,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_objects",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runPrependLinks_objects_invExt",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_objects_invExtK",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_objects_invExtK",
-          "line": 235,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExtK",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_objects",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runPrependLinks_objects_invExtK",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_onlyObjectsSchedulerDiffer",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_onlyObjectsSchedulerDiffer",
-          "line": 244,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runPrependLinks_onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer",
-          "line": 251,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_referenceTables",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_referenceTables",
-          "line": 258,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.referenceTables",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_machine",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_machine",
-          "line": 263,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runEnqueueHeadEnds",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadEnds",
-          "line": 269,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.RunQueueEnds",
-            "SeLe4n.Kernel.RunQueueEnds.prepend",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runLinkOn",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_scheduler",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_scheduler",
-          "line": 274,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_get",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runEnqueueHeadEnds",
-            "SeLe4n.Model.SystemState.runLinkOn",
-            "SeLe4n.Model.SystemState.runPrependLinks_scheduler",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_scheduler",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_scheduler",
-          "line": 285,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_scheduler",
-            "SeLe4n.Model.SystemState.runEnqueueHeadEnds",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_current",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_current",
-          "line": 296,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_scheduler",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_currentOnCore",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_currentOnCore",
-          "line": 302,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.currentOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_current",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependOnCore_runQueueOnCore",
-          "full_name": "SeLe4n.Model.SystemState.runPrependOnCore_runQueueOnCore",
-          "line": 311,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runPrependLinks_scheduler",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependOnCore_runQueueEndsOnCore",
-          "full_name": "SeLe4n.Model.SystemState.runPrependOnCore_runQueueEndsOnCore",
-          "line": 317,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_ne",
-            "SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_self",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runPrependLinks_scheduler",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_runLinkOn",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_runLinkOn",
-          "line": 332,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.RunQueueLink.none",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Model.RunQueueLink.withBucketPrevIfQueued",
-            "SeLe4n.Model.RunQueueLink.withBucketPrevIfQueued_none",
-            "SeLe4n.Model.RunQueueLink.withPrevIfQueued",
-            "SeLe4n.Model.RunQueueLink.withPrevIfQueued_none",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.runLinkOn_mapTcbInPlace_ne",
-            "SeLe4n.Model.SystemState.runLinkOn_mapTcbInPlace_self",
-            "SeLe4n.Model.SystemState.runLinkOn_updateTcbAtCode_map",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.TCB",
-            "SeLe4n.Model.TCB.runLinkOn_setBucketPrev",
-            "SeLe4n.Model.TCB.runLinkOn_setPrev",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependOnCore_runLinkOn",
-          "full_name": "SeLe4n.Model.SystemState.runPrependOnCore_runLinkOn",
-          "line": 355,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runLinkOn",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.runPrependOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_refined",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_refined",
-          "line": 361,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Kernel.RunQueue",
-            "SeLe4n.Kernel.RunQueue.code_ne_bucket_head",
-            "SeLe4n.Kernel.RunQueue.code_ne_queue_head",
-            "SeLe4n.Kernel.RunQueue.contains",
-            "SeLe4n.Kernel.RunQueue.contains_of_code_eq_bucket_head",
-            "SeLe4n.Kernel.RunQueue.contains_of_code_eq_head",
-            "SeLe4n.Kernel.RunQueue.endsOf",
-            "SeLe4n.Kernel.RunQueue.insertHead",
-            "SeLe4n.Kernel.RunQueue.insertHead_of_mem",
-            "SeLe4n.Kernel.RunQueue.linkOf",
-            "SeLe4n.Kernel.RunQueue.linkOf_prependLinks",
-            "SeLe4n.Kernel.RunQueue.links_insertHead_of_not_contains",
-            "SeLe4n.Kernel.RunQueue.queuedLink",
-            "SeLe4n.Kernel.RunQueue.queuedLink_of_not_contains",
-            "SeLe4n.Kernel.RunQueueEnds.prepend",
-            "SeLe4n.Model.RunQueueLink.withBucketPrevIfQueued",
-            "SeLe4n.Model.RunQueueLink.withBucketPrevIfQueued_of_not_queued",
-            "SeLe4n.Model.RunQueueLink.withPrevIfQueued",
-            "SeLe4n.Model.RunQueueLink.withPrevIfQueued_of_not_queued",
-            "SeLe4n.Model.SchedulerState.runQueueEndsOnCore",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueEndsOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runLinkOn_queued_unique",
-            "SeLe4n.Model.SystemState.runLinkOn_withScheduler",
-            "SeLe4n.Model.SystemState.runPrependLinks_runLinkOn",
-            "SeLe4n.Model.SystemState.runPrependOnCore_runLinkOn",
-            "SeLe4n.Model.SystemState.runPrependOnCore_runQueueEndsOnCore",
-            "SeLe4n.Model.SystemState.runPrependOnCore_runQueueOnCore",
-            "SeLe4n.Model.SystemState.runQueueRefined",
-            "SeLe4n.Model.TCB",
-            "SeLe4n.Model.TCB.runLink",
-            "SeLe4n.Model.TCB.runLinkOn",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_refined",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_refined",
-          "line": 463,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits_isSome",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits_not_contains",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_refined",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runQueueRefined",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_runCoreCode_ne",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_runCoreCode_ne",
-          "line": 478,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.mapTcbInPlace_runCoreCode",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode_runCoreCode",
-            "SeLe4n.Model.TCB",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runPrependLinks_runCoresAgree_self",
-          "full_name": "SeLe4n.Model.SystemState.runPrependLinks_runCoresAgree_self",
-          "line": 494,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LinkedQueue.code",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.mapTcbInPlace_getTcb?_self",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.updateTcbAtCode_runCoreCode",
-            "SeLe4n.Model.TCB",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_queuedOn",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_queuedOn",
-          "line": 508,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.queuedOn",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_runCoreCode_ne",
-            "SeLe4n.Model.SystemState.runLinkOn_queued_iff",
-            "SeLe4n.Model.SystemState.runPrependLinks",
-            "SeLe4n.Model.SystemState.runPrependLinks_runCoresAgree_self",
-            "SeLe4n.Model.TCB",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_queuedOn",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_queuedOn",
-          "line": 547,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.queuedOn",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits_isSome",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_queuedOn",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_runCoreCode_ne",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_runCoreCode_ne",
-          "line": 564,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getTcb?",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_runCoreCode_ne",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.TCB",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadAdmitted_runQueueOnCore_self",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted_runQueueOnCore_self",
-          "line": 572,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runPrependOnCore_runQueueOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runEnqueueHeadOnCore_runQueueOnCore_ne",
-          "full_name": "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_runQueueOnCore_ne",
-          "line": 583,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.runQueueOnCore",
-            "SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runEnqueueHeadAdmitted",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.runPrependOnCore_runQueueOnCore",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RunQueueLinkStage.runEnqueueHeadOnCore",
-          "full_name": "SeLe4n.Model.SystemState.RunQueueLinkStage.runEnqueueHeadOnCore",
-          "line": 600,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.RunQueueLinkStage",
-            "SeLe4n.Model.SystemState.RunQueueLinkStage.of_tableFrame",
-            "SeLe4n.Model.SystemState.referenceTables",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_objects_invExt",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_refined",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_scheduler",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RunQueueStage.runEnqueueHeadOnCore",
-          "full_name": "SeLe4n.Model.SystemState.RunQueueStage.runEnqueueHeadOnCore",
-          "line": 614,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.currentOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.RunQueueLinkStage.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.RunQueueStage",
-            "SeLe4n.Model.SystemState.RunQueueStage.of_link'",
-            "SeLe4n.Model.SystemState.StateMono.of_agreeOffRunLinks",
-            "SeLe4n.Model.SystemState.activeAt",
-            "SeLe4n.Model.SystemState.homedOn",
-            "SeLe4n.Model.SystemState.runEnqueueAdmits_not_idle",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_currentOnCore",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks",
-            "SeLe4n.Model.SystemState.runEnqueueHeadOnCore_queuedOn",
-            "SeLe4n.Model.SystemState.runnable",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RunQueueStage.then_enqueueHead",
-          "full_name": "SeLe4n.Model.SystemState.RunQueueStage.then_enqueueHead",
-          "line": 643,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SchedulerState.currentOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.RunQueueLinkStage.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.RunQueueLinkStage.trans",
-            "SeLe4n.Model.SystemState.RunQueueStage",
-            "SeLe4n.Model.SystemState.RunQueueStage.runEnqueueHeadOnCore",
-            "SeLe4n.Model.SystemState.homedOn",
-            "SeLe4n.Model.SystemState.runnable",
-            "SeLe4n.Priority",
-            "SeLe4n.ThreadId"
           ]
         }
       ]
