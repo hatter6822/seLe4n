@@ -108,7 +108,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.setSlotLinkWords (st : Sys
       rw [SystemState.setSlotLinkWords_of_cnode hcn]
       exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
         (by rw [hcn]; exact ⟨fun _ hx => by simp [SystemState.objTcb?] at hx,
-          fun _ hx _ => by simp [SystemState.objTcb?] at hx⟩)
+          fun _ hx _ => by simp [SystemState.objTcb?] at hx,
+          fun _ _ hx => by simp [SystemState.objTcb?] at hx⟩)
     | tcb t =>
       rw [SystemState.setSlotLinkWords_of_tcb hcn]
       exact RunQueueStage.insert rfl rfl rfl (fun _ => by rw [hcn]; rfl)
@@ -293,8 +294,9 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     · rw [hT _ t1, hT _ t2]
   · rcases hW oid with e | ⟨t1, t2⟩
     · exact SystemState.slotStateMono.of_eq e
-    · refine ⟨fun x hx => ?_, fun x' hx' => ?_⟩
+    · refine ⟨fun x hx => ?_, fun x' hx' => ?_, fun _ x' hx' => ?_⟩
       · first | (rw [hN _ t1] at hx; cases hx) | (rw [hN _ t2] at hx; cases hx)
+      · first | (rw [hN _ t1] at hx'; cases hx') | (rw [hN _ t2] at hx'; cases hx')
       · first | (rw [hN _ t1] at hx'; cases hx') | (rw [hN _ t2] at hx'; cases hx')
 
 /-- **The final-delete retire is a run-queue stage.** -/
@@ -1003,9 +1005,10 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
         rw [hChildNone]
         first
         | exact SystemState.objStateMono_nonTcb rfl rfl
-        | (refine ⟨fun _ h => ?_, fun _ h _ => ?_⟩
+        | (refine ⟨fun _ h => ?_, fun _ h _ => ?_, fun _ _ h => ?_⟩
            · cases h
-           · cases h; exact .inl rfl))
+           · cases h; exact .inl rfl
+           · cases h; rfl))
       (by rw [hChildNone]; rfl)
       (fun c => by rw [hChildNone]; rfl) (by rw [hChildNone]; rfl)
   have k3 := storeObject_inert_runQueueStage hStIdx hOCh (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
