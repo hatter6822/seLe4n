@@ -3962,9 +3962,12 @@ core the trap entry saved the caller's frame into its TCB
 (`Architecture.saveCapturedSyscallFrame`), and a remote core saves its own frame
 at its next entry (`Architecture.saveVacatedFrameOnCore`), which the HAL forces
 before the change returns (`Concurrency.stallChangedCores`, the HAL's
-`remote_stall`; its wait for that save, as seL4's `remoteTCBStall` waits, is
-WS-ZA ZA6.11) and before which no other core resumes the thread
-(`deferResidentElsewhere`).  The identity when the home does not move or the
+`remote_stall`): the stall samples that core's save epoch under the
+kernel-entry lock, and the changing core resumes nothing until that core has
+completed a locked entry since, whose save stage wrote the thread's frame into
+its TCB, as seL4's `remoteTCBStall` waits for the remote reschedule
+(`RemoteSaveObligation.saved`).  Before that save no other core resumes the
+thread (`deferResidentElsewhere`).  The identity when the home does not move or the
 thread is not running there. -/
 def vacateForAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
     (oldCore newCore : CoreId) : SystemState :=

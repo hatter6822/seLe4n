@@ -300,6 +300,11 @@ where
     // request against this core is met by this decision.
     crate::remote_stall::clear_stall_request(core_id);
     let out = f();
+    // The entry has committed, and its commit's first stage saved the frame
+    // this core trapped with: a remote stall waiting on this core's save
+    // (`remote_stall::await_remote_saves_in`) may now proceed.  Inside the
+    // lock, so the epoch an initiator samples under it is exact.
+    crate::remote_stall::note_locked_entry(core_id);
     release_kernel_entry();
     out
 }

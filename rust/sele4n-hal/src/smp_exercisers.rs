@@ -880,7 +880,9 @@ fn sgi_round_trip() -> bool {
 ///    ([`COMMAND_EXIT_GATE`]), so no kernel entry of the secondary can meet
 ///    the request between them;
 /// 3. on the Lean-linked image, the secondary's next kernel entry under the
-///    kernel-entry lock (its reschedule) meets the request.
+///    kernel-entry lock (its reschedule) meets the request and advances the
+///    secondary's save epoch, the count a stall's save wait reads
+///    (`remote_stall::await_remote_saves_in`).
 ///
 /// A secondary's tick may end step 1's wait before the poke does, which is
 /// the protocol too (`NotAtUser`), so step 1 is retried until the poke is what
@@ -922,14 +924,20 @@ fn remote_stall() -> bool {
             crate::kprintln!("[smp-test] remote-stall: core {core}: in the kernel, requested; its exit gate refused the return to user");
         }
         let met = if cfg!(feature = "hw_target") {
+            // WS-ZA ZA6.11: the entry that meets the request is a locked entry,
+            // so it advances the core's save epoch too — the epoch a stall's
+            // save wait reads.
+            let epoch = crate::remote_stall::SAVE_EPOCH[core].load(Ordering::Acquire);
             poke(core);
             let deadline = crate::timer::read_counter().saturating_add(command_timeout_ticks());
-            while STALL_REQUESTED[core].load(Ordering::SeqCst)
+            while (STALL_REQUESTED[core].load(Ordering::SeqCst)
+                || crate::remote_stall::SAVE_EPOCH[core].load(Ordering::Acquire) == epoch)
                 && crate::timer::read_counter() < deadline
             {
                 core::hint::spin_loop();
             }
-            let met = !STALL_REQUESTED[core].load(Ordering::SeqCst);
+            let met = !STALL_REQUESTED[core].load(Ordering::SeqCst)
+                && crate::remote_stall::SAVE_EPOCH[core].load(Ordering::Acquire) != epoch;
             if met {
                 crate::kprintln!(
                     "[smp-test] remote-stall: core {core}: its next kernel entry met the request"

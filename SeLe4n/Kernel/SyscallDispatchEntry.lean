@@ -841,7 +841,9 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- The remote-core stall (seL4's `remoteTCBStall`): a core this commit took a
   -- thread off — a final delete's finalisation or a suspend of a thread it was
   -- running — has left that thread before the syscall returns, checked for
-  -- every other core against the committed state's current threads.
+  -- every other core against the committed state's current threads; its save
+  -- epoch is sampled here, and the exit gate waits for its save outside the
+  -- lock (WS-ZA ZA6.11), so this entry stays one atomic transition.
   Concurrency.stallChangedCores committedCodes execCore
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).

@@ -1090,9 +1090,13 @@ pub extern "C" fn ffi_per_core_current_thread(core_id: u64) -> u64 {
 /// to run (its `PER_CPU_CURRENT_THREAD` record), the commit took a thread off
 /// it: the core is asked to reschedule before it next returns to EL0 and,
 /// when it is at EL0 now, poked with the `.reschedule` SGI and waited on
-/// until it has entered the kernel ([`crate::remote_stall`]).  The executing
-/// core and an out-of-range core are skipped.  A core that does not enter
-/// within the poll budget is wedged, and the system halts fail-closed.
+/// until it has entered the kernel; either way its save epoch is sampled
+/// here, under the lock, and the executing core's exit gate waits, outside
+/// the lock, until the core has completed a locked entry after the sample —
+/// the entry that saves the thread into its TCB ([`crate::remote_stall`]).
+/// The executing core and an out-of-range core are skipped.  A core that does
+/// not enter within the poll budget is wedged, and the system halts
+/// fail-closed.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiStallIfChanged`.
 #[no_mangle]
@@ -1114,6 +1118,12 @@ pub extern "C" fn ffi_stall_if_changed(
                 crate::gic::send_sgi(1u8 << (target as u8), crate::trap::RESCHEDULE_INTID);
             },
         );
+        if matches!(
+            outcome,
+            crate::remote_stall::StallOutcome::NotAtUser | crate::remote_stall::StallOutcome::Left
+        ) {
+            crate::remote_stall::record_pending_save(executing as usize, core_id as usize);
+        }
         if outcome == crate::remote_stall::StallOutcome::TimedOut {
             crate::kprintln!(
                 "[FATAL] remote stall: core {} did not leave user mode after its thread \
