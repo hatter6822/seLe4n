@@ -4299,6 +4299,25 @@ run_check "INVARIANT" rg -n '^theorem threadRetirable_currentNowhere($|[ ({:\[\]
 run_check "INVARIANT" rg -n -U '@\[extern "ffi_stall_if_changed"\]\nopaque ffiStallIfChanged ' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U 'pub extern "C" fn ffi_stall_if_changed\(\n    core_id: u64,\n    committed_code: u64,\n\)' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n -U 'let _ticket = acquire_kernel_entry\(core_id\);\n([ \t]*(//[^\n]*)?\n)*    crate::remote_stall::clear_stall_request\(core_id\);\n    let out = f\(\);' rust/sele4n-hal/src/kernel_entry.rs
+# The remote stall waits for the remote save: every locked entry advances its
+# core's save epoch after its body and before the release, the stall records
+# each stalled core's next epoch under the lock, and the exit gate waits on
+# those epochs before anything else it does, halting if the wait times out.
+run_check "INVARIANT" rg -n -U '    let out = f\(\);\n([ \t]*(//[^\n]*)?\n)*    crate::remote_stall::note_locked_entry\(core_id\);\n    release_kernel_entry\(\);\n    out\n\}' rust/sele4n-hal/src/kernel_entry.rs
+run_check "INVARIANT" rg -n -U 'pub fn note_locked_entry_in\(epochs: &CoreEpochs, core: usize\) \{\n    if let Some\(epoch\) = epochs\.get\(core\) \{\n        epoch\.fetch_add\(1, Ordering::Release\);' rust/sele4n-hal/src/remote_stall.rs
+run_check "INVARIANT" rg -n -U 'StallOutcome::NotAtUser \| crate::remote_stall::StallOutcome::Left\n        \) \{\n            crate::remote_stall::record_pending_save\(executing as usize, core_id as usize\);' rust/sele4n-hal/src/ffi.rs
+run_check "INVARIANT" rg -n -U 'pub extern "C" fn user_exit_gate\(frame: &mut TrapFrame\) \{\n    let core = crate::per_cpu::current_core_id_from_tpidr\(\);\n    let waited = crate::remote_stall::await_remote_saves_in\(\n        &crate::remote_stall::SAVE_EPOCH,\n        &crate::remote_stall::PENDING_SAVES,\n        &crate::remote_stall::STALL_REQUESTED,(\n[^\n]*){0,12}\n    if waited == crate::remote_stall::SaveWait::TimedOut \{(\n[^\n]*){0,4}\n        crate::gic::halt_all\(\)' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n -U '    loop \{\n([ \t]*(//[^\n]*)?\n)*        if requested\n            \.get\(core\)\n            \.is_some_and\(\|r\| r\.load\(Ordering::SeqCst\)\)\n        \{\n            serve_request\(core\);\n        \}\n        if saves_met\(epochs, row\) \{' rust/sele4n-hal/src/remote_stall.rs
+run_check "INVARIANT" rg -n 'cargo test -p sele4n-hal --lib remote_stall::loom_model -- --test-threads=1' scripts/test_loom_queued_rw_lock.sh
+run_check "INVARIANT" rg -n '^def stallsOn \(decided : Vector Nat numCores\) \(e : CoreId\)' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem stallsOn_of_taken($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^structure RemoteSaveObligation \(e d : CoreId\)' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem RemoteSaveObligation\.saved($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem saveCapturedTrapFrame_saves_resident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem saveCapturedSyscallFrame_saves_resident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

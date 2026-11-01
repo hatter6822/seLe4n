@@ -1230,6 +1230,60 @@ private def sr047_releaseWakesTheDeferringCore : IO Unit := do
   expect "SR-047 a settle that releases nothing raises no flag"
     (st2.scheduler.reschedulePending.raised st2'.scheduler.reschedulePending == .none)
 
+/-- `SystemState.holdsOnlyCurrentOn`, read off one core: the core holds no
+thread's live registers but its current thread's. -/
+private def holdsOnlyCurrentOnB (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
+  match st.machine.residentOnCore c with
+  | some t => st.scheduler.currentOnCore c == some t
+  | none => true
+
+/-- SR-048 (WS-ZA ZA6.11, the remote stall waits for the remote save): a commit
+on the boot core has taken the thread off core 1, whose bank still holds its
+live registers.  The HAL's check stalls core 1 and only core 1; core 1's next
+entry, the one the stall's save epoch waits for, writes the frame it trapped
+with into the thread's TCB (a syscall's rewound to its `SVC`); and its tail
+leaves core 1 holding no thread's registers but its current thread's, which
+the vacated state before it did not. -/
+private def sr048_stallWaitsForTheRemoteSave : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st0 := residentMigrantState
+  -- The HAL record: core 1 last decided the thread; every other core what
+  -- the committed state runs.
+  let decided := st0.scheduler.currentCode.set core1.val (100 + 1) core1.isLt
+  expect "SR-048 the stall set holds core 1, the core the commit took the thread off"
+    (SeLe4n.Kernel.Concurrency.stallsOn decided core0 st0 core1)
+  expect "SR-048 ...and no core whose committed thread is the one it decided"
+    (SeLe4n.Kernel.Concurrency.allCores.all fun c =>
+      c == core1 || !SeLe4n.Kernel.Concurrency.stallsOn decided core0 st0 c)
+  expect "SR-048 the vacated core holds a thread that is not its current thread"
+    (!holdsOnlyCurrentOnB st0 core1)
+  let frame : SeLe4n.Kernel.Architecture.InFlightContext :=
+    { (default : SeLe4n.Kernel.Architecture.InFlightContext) with x0 := 77, pc := 0x1004, pstate := 0 }
+  let saved := SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st0 core1 (some frame)
+  expect "SR-048 core 1's entry saves the frame it trapped with into the thread"
+    (match saved.getTcb? ⟨100⟩ with
+     | some t => t.registerContext.x0 == 77 && t.registerContext.pc == 0x1004
+     | none => false)
+  let savedSvc := SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame st0 core1 (some frame)
+  expect "SR-048 ...a syscall's frame rewound to its SVC"
+    (match savedSvc.getTcb? ⟨100⟩ with
+     | some t => t.registerContext.x0 == 77 && t.registerContext.pc == 0x1000
+     | none => false)
+  let st1 := entryTail saved core1
+  expect "SR-048 core 1's tail leaves it holding only its current thread"
+    (holdsOnlyCurrentOnB st1 core1 && st1.machine.residentOnCore core1 != some ⟨100⟩)
+  expect "SR-048 ...and the thread's saved registers are the trapped frame"
+    (match st1.getTcb? ⟨100⟩ with
+     | some t => t.registerContext.x0 == 77
+     | none => false)
+  let ignored := SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st0 core1
+    (some { frame with pstate := 0x5 })
+  expect "SR-048 a frame taken at EL1 saves nothing into the thread"
+    (match ignored.getTcb? ⟨100⟩, st0.getTcb? ⟨100⟩ with
+     | some t, some t0 => t.registerContext == t0.registerContext
+     | _, _ => false)
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1302,4 +1356,6 @@ def main : IO Unit := do
   IO.println "--- ZA6.10: a core's current thread is resident on no other core ---"
   sr046_migrantRunsOnlyOnceSaved
   sr047_releaseWakesTheDeferringCore
-  IO.println "=== All D1 suspend/resume tests passed (49 tests) ==="
+  IO.println "--- ZA6.11: the remote stall waits for the remote save ---"
+  sr048_stallWaitsForTheRemoteSave
+  IO.println "=== All D1 suspend/resume tests passed (50 tests) ==="

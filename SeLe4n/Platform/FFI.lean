@@ -312,9 +312,12 @@ opaque ffiSendSgiToAllButSelf : (intid : UInt8) → BaseIO Unit
 runs on `core`.  When that is not what `core` last decided to run, the commit
 took a thread off it: `core` is asked to reschedule before it next returns to
 EL0 and, if it is at EL0 now, poked with the `.reschedule` SGI and waited on
-until it has entered the kernel.  The executing core is skipped; a core that
-never enters halts the system fail-closed.  Called after a commit, under the
-kernel-entry lock, by `Concurrency.stallChangedCores`.
+until it has entered the kernel; either way its save epoch is sampled here,
+under the lock, and the executing core's exit gate waits outside the lock until
+`core` has completed a locked entry since, the entry whose save stage writes
+the thread into its TCB (WS-ZA ZA6.11).  The executing core is skipped; a core
+that never enters halts the system fail-closed.  Called after a commit, under
+the kernel-entry lock, by `Concurrency.stallChangedCores`.
 
     Rust: `ffi_stall_if_changed` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_stall_if_changed"]
