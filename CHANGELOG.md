@@ -1,3 +1,59 @@
+## v0.36.174 — WS-ZA ZA6.11: the remote stall waits for the remote save
+
+When a committing core changes the current thread of another core, that core's
+live registers belong to the old thread until its next locked entry saves them.
+Before this version the stall only made sure the target would enter. The
+changing core could resume first, so a TCB read or write could see the thread's
+stale saved frame. Now the changing core returns to no thread until every core
+it stalled has run a locked entry that saved, as seL4's `remoteTCBStall` does.
+The plan row is split in three: ZA6.11 is this one, ZA6.12 is the bank match at
+the fault and unknown-syscall entries, and ZA6.13 is the register census. Every
+later row moves up two (ZA6.14 to ZA6.22), and every citation is swept.
+
+- **The HAL protocol** (`rust/sele4n-hal/src/remote_stall.rs`).
+  - Each core has a save epoch. `with_kernel_entry` advances it inside the lock,
+    after the entry's body has run (`note_locked_entry`), so it counts only
+    entries that saved.
+  - `ffi_stall_if_changed` runs under the lock. For each stalled core, whether
+    it was in the kernel or at user, it records the epoch the core has to pass
+    (`record_pending_save`).
+  - `user_exit_gate` runs outside the lock. Before eret it waits until every
+    recorded epoch has been passed (`await_remote_saves_in`). Each entry stays
+    atomic.
+  - While it waits, a core serves its own `STALL_REQUESTED` and its shootdown
+    obligation, so cores stalling each other cannot deadlock. If the wait runs
+    out of fuel, the kernel halts loudly.
+  - The rule is stated in the module doc and the plan row: any future
+    invocation that reads or writes another thread's registers must wait on the
+    target's save epoch first.
+- **The model.**
+  - `Concurrency.stallsOn` names the cores a commit stalls (in production
+    `Runtime.lean`, so the suites can use it).
+  - `IPC/Invariant/RunQueueAgreement/RemoteSave.lean` (staged) proves the
+    following:
+    - every entry leaves a core holding only its current thread
+      (`*EntryState_holdsOnlyCurrentOn`);
+    - a stalled core's next EL0 entry saves the thread vacated from it
+      (`saveCapturedTrapFrame_saves_resident` and its syscall form);
+    - the obligation the wait discharges (`RemoteSaveObligation.saved`).
+- **Loom** (`scripts/test_loom_queued_rw_lock.sh` now also runs
+  `remote_stall::loom_model`). Three models:
+  - one initiator;
+  - two initiators against each other;
+  - a three-core ring of stalls.
+
+  Each asserts that the initiator sees the target's saved frame after the wait
+  and that every core finishes. The models fail when the epoch advance, the
+  sample or self-service is removed.
+- **Tests.**
+  - Rust host tests for the epoch, the sample, the wait, self-service, mutual
+    waiting and out-of-range inputs.
+  - SR-048 checks the stalled set, the save of a trapped frame at both entry
+    forms, the tail's residency, and that an EL1 frame saves nothing.
+- The open debt row for the stall's save wait closes. The bank-match row now
+  closes at ZA6.12 and ZA6.13.
+- New HAL code allocates nothing; every allocation pin is unchanged.
+
 ## v0.36.173 — WS-ZA ZA6.10: a core's current thread is resident on no other core, kernel-wide
 
 A remote deschedule empties a core's `current` slot while its thread still runs
