@@ -3698,6 +3698,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
                   (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
+                (retirePendingFaultForResume_noFault st _ hObjInv)
                 (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
     all_goals try cases hStep
   case tcbSetPriority =>

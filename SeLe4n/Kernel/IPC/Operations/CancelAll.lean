@@ -90,11 +90,17 @@ anyway, before it writes. -/
 @[inline] def endpointWaitQueue (ep : Endpoint) (isReceiveQ : Bool) : IntrusiveQueue :=
   if isReceiveQ then ep.receiveQ else ep.sendQ
 
-/-- **What a cancelled endpoint waiter becomes**: `.ready`, holding no message
-and no stashed reply (the receive completion `storeTcbReceiveComplete` writes,
-with no message), with the cancellation frame staged in its registers. -/
+/-- **What a cancelled endpoint waiter becomes**: `.ready`, holding no message,
+no stashed reply (the receive completion `storeTcbReceiveComplete` writes, with
+no message) and no fault record (WS-ZA ZA6.22: seL4's `cancelIPC` resets
+`tcbFault`, as `TCB.restoredToReady` does), with the cancellation frame staged
+in its registers. -/
 @[inline] def cancelledEndpointWaiterTcb (t : TCB) : TCB :=
-  (TCB.setIpcState { t with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
+  (TCB.setIpcState
+      { t with
+          pendingMessage := none
+          pendingReceiveReplyCode := 0
+          pendingFault := none } .ready
     ).withReturnFrame Architecture.cancelledIpcFrame
 
 /-- **Whether the head `t` of an endpoint's queue may be cancelled**: a cancel

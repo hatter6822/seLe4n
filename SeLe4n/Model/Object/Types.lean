@@ -2543,14 +2543,27 @@ What it deliberately does **not** touch is `threadState`, `pipBoost` or
 `registerContext`.  The first two are the caller's, and the callers disagree: a
 resume writes `.Ready` and recomputes the boost from the blocking graph, a
 cancellation writes neither.  The third is what `restoreToReadyStaging`'s frame
-argument stages on top, which is why that helper takes one and this does not. -/
+argument stages on top, which is why that helper takes one and this does not.
+
+WS-ZA ZA6.22: it also retires the thread's fault record (`pendingFault`), as
+seL4's `cancelIPC` resets `tcbFault` to `NullFault`.  (`ipcFaultSend` is left:
+it is read only with the record, by a blocked sender's message, and the send
+that next blocks the thread rewrites it, `TCB.setSendCap`.)  A fault-blocked
+thread whose fault IPC is cancelled is no longer awaiting its handler, so it
+must not return to `.ready` still carrying the fault: its next ordinary Call
+would be answered through the reply seam's fault branch
+(`threadHasPendingFault`), letting the server it called set its PC and stack
+pointer or abandon it, and a later resume would rewind it to the old fault
+window (`retirePendingFaultForResume`).  A resume runs that retire before this
+clear, so on its path the clear changes nothing. -/
 @[inline] def TCB.restoredToReady (tcb : TCB) : TCB :=
   TCB.setIpcState
     { tcb with
         queuePrevCode := 0
         queueNextCode := 0
         queuePPrevCode := 0
-        pendingReceiveReplyCode := 0 } .ready
+        pendingReceiveReplyCode := 0
+        pendingFault := none } .ready
 
 /-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
 proof that unfolded the inline record update reduces this exactly as it reduced
@@ -2562,7 +2575,8 @@ that, so single-sourcing the clear costs no existing proof. -/
             queuePrevCode := 0
             queueNextCode := 0
             queuePPrevCode := 0
-            pendingReceiveReplyCode := 0 } .ready := rfl
+            pendingReceiveReplyCode := 0
+            pendingFault := none } .ready := rfl
 
 /-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
 
