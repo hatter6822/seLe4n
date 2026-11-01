@@ -1,3 +1,41 @@
+## v0.36.181 — WS-ZA ZA6.18: the entries' IPC-state frame, and the entries that block no thread
+
+Proofs only.
+
+- **`StateMono` keeps each thread's readiness.** A monotone TCB step already
+  keeps a ready thread ready (`TCB.StepMono`), but the state-level relation
+  dropped it. It now has the clause: a thread ready in IPC, or with no TCB,
+  stays so (`SystemState.readyOrAbsent`, `StateMono.readyOrAbsent`). A TCB a
+  step creates must be ready: `objStateMono` and `slotStateMono` state this as
+  a third clause, and the pointwise constructors take it as a premise. The
+  retype's fresh TCB, the boot linking's agreement and the final retire supply
+  it. Every run-queue, switch and dispatch stage now keeps every thread's
+  readiness.
+- **The entry's frame** (`readyKeptExcept S`): a thread outside `S` that is
+  ready, or has no TCB, stays so. Every stage is one for every `S`.
+- **The decomposition restated, and its halves discharged.**
+  - `BlockedNotResident.of_entry` takes both halves in `readyOrAbsent`, so a
+    TCB a step creates needs no TCB before it.
+  - `BlockedNotResident.of_tail` discharges them at an entry's tail. The other
+    cores' residents come from the frame off the thread current on the
+    executing core before the entry, which is resident on no other core
+    (`currentNotResidentElsewhere`). The core's own resident comes from the
+    settle, which records only the core's current thread
+    (`settleThenActivateOnCore_residentCurrent`), runnable at the tail.
+- **The settle and the activation block no thread**
+  (`settleThenActivateOnCore_stateMono`, with the reschedule handler's, the
+  vacated core's dispatch's and the deferral's `StateMono`), so
+  `settleThenActivateAt_blockedNotResident` closes any entry whose step blocks
+  only the executing core's current thread.
+- **Carried across the reschedule entry** (the secondary core's first entry
+  with it) **and the FP/SIMD entry**
+  (`perCoreRescheduleEntryState_preserves_blockedNotResident`,
+  `fpAccessEntryState_preserves_blockedNotResident`).
+- **The plan.** The timer, fault, unknown-syscall and syscall entries are the
+  new ZA6.19. Their steps go through scheduling-point windows, which keep no
+  `StateMono`, or block their caller. The rows after it move up one (ZA6.19 to
+  ZA6.32 become ZA6.20 to ZA6.33).
+
 ## v0.36.180 — WS-ZA ZA6.17: the blocked-not-resident preservation's decomposition, and the pre-commit hook's build bound
 
 Proofs only for the kernel; one fix to the pre-commit hook.

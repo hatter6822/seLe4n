@@ -4347,6 +4347,18 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_blockedN
 # WS-ZA ZA6.17: the preservation across an entry decomposes into the other cores'
 # residents kept ready and the executing core's own resident ready.
 run_check "INVARIANT" rg -n -U '^theorem of_entry \{e : CoreId\} \{pre post : SystemState\} \(h : pre\.blockedNotResident\)\n    \(hRK : residentKeptOffCore e pre post\)' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+# WS-ZA ZA6.18: every stage keeps each thread's readiness (StateMono's IPC-state
+# clause, a created TCB ready), the entry's frame off its current thread, the
+# halves discharged at the tail, and the entries that block no thread.
+run_check "INVARIANT" rg -n -U "^      x'\.cpuAffinity = x\.cpuAffinity\) ∧\n    \(st\.readyOrAbsent t → st'\.readyOrAbsent t\)$" SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U "^  \(∀ x', objTcb\? \(some new\) = some x' → \(∀ x, objTcb\? old = some x → x\.Coherent\) → x'\.Coherent\) ∧\n  \(objTcb\? old = none → ∀ x', objTcb\? \(some new\) = some x' → x'\.ipcState = \.ready\)$" SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
+run_check "INVARIANT" rg -n -U "^def readyKeptExcept \(S : SeLe4n\.ThreadId → Prop\) \(st st' : SystemState\) : Prop :=\n  ∀ t, ¬ S t → st\.readyOrAbsent t → st'\.readyOrAbsent t$" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n -U '^    \(hKeep : ∀ d, d ≠ e → ∀ tid, post\.machine\.residentOnCore d = some tid →\n      pre\.readyOrAbsent tid → post\.readyOrAbsent tid\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem of_tail($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem settleThenActivateAt_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
