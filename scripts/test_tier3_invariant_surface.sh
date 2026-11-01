@@ -4330,6 +4330,14 @@ run_check "INVARIANT" rg -n '^theorem offCoreFree_of_current($|[ ({:\[\]])' SeLe
 run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_check "INVARIANT" rg -n '^theorem stageCallerReturnFor_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_check "INVARIANT" rg -n '^theorem saveOutgoingContextOnCore_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+# WS-ZA ZA6.15: the final delete's writes -- the yield completion names a linked
+# thread, which no core holds at an entry boundary, and the cancellation restore
+# names the cancelled thread alone.
+run_check "INVARIANT" rg -n -U '^theorem offCoreFree_of_yieldCode \{e : CoreId\} \{base : SystemState\} \{t : SeLe4n\.ThreadId\}\n    \(hY : base\.yieldLinkedNotResident\) \(hL : \(objYieldCodes base\.objects\[t\.toObjId\]\?\)\.1 ≠ 0\) :\n    offCoreFree e base t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem yieldCode_of_yieldFrom($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem yieldCode_of_unset($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem completeYieldFrom_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
