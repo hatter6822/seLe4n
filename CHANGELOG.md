@@ -1,3 +1,45 @@
+## v0.36.184 — WS-ZA ZA6.21: every core's resident thread has a TCB
+
+Proofs only.
+
+- **The gap, closed as a hazard, not deferred.** `blockedNotResident` reads a
+  resident's IPC state only when it has a TCB, so on its own it allowed a
+  resident's TCB to be removed and a blocked TCB retyped at the same id while
+  another core's bank still waited to be saved over it. No step reaches that
+  state: every path that removes a TCB requires the thread held on no core
+  (the final retire's `threadRetirable`, the retype's running-target
+  rejection; the carved erase removes no TCB). This release proves it.
+- **`stepCovers` gains a sixth field, `residentTcbKept`.**
+  `residentTcbKeptOffCore e pre post`: a thread resident on a core other than
+  the executing one after the step, with a TCB before it, still has one. It
+  composes through the later step's `residentKept`.
+  - Every construction site supplies it from `tcbsKept` (every TCB stays a
+    TCB) and its frames: equal objects or lookups, equal key views, run-link
+    and TCB writes, enqueues and removals, stored-TCB chains.
+  - The final retire supplies it from its admission
+    (`retireFinalObject_residentTcbKept`).
+  - `stepCovers_markKeyChangeFor`, `stepCovers_markKeyChangeFrom` and
+    `stepCovers_markKeyChangeFrom_pair` take the step's `tcbsKept` (or the
+    keyed thread's presence) as a premise.
+- **`SystemState.residentsHaveTcbs`**, in a new module,
+  `IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean`: every core's
+  resident thread resolves to a TCB.
+  - It holds at the started boot, where no core holds a resident
+    (`bootFromPlatformCheckedStartedFor_residentsHaveTcbs`).
+  - The timer, reschedule, fault, unknown-syscall, FP/SIMD and syscall
+    entries carry it (`…EntryState_preserves_residentsHaveTcbs`). A remote
+    resident keeps its TCB through the saves, the FP/SIMD switch and the
+    coverage relation. The executing core's resident is its current thread,
+    which is active (`ResidentsHaveTcbs.of_tail`).
+- **Plan.** ZA6.21 is the new row. The census rows merge by dispatcher:
+  ZA6.22 is `dispatchCapabilityOnly` as a whole (with its TCB and
+  scheduling-context arms), and ZA6.23 is the IPC and notification arms with
+  the dispatch's census. ZA6.25 now also checks
+  `deferResidentElsewhere`'s `.error` fallback, whose preemption saves the
+  executing core's bank into a thread another core holds as resident.
+- Tier 3 anchors pin the statement, the coverage field, the retire's frame
+  and each entry's carry.
+
 ## v0.36.183 — WS-ZA ZA6.20: blocked threads resident on no core, across the syscall entry
 
 Proofs only.
