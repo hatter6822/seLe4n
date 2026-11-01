@@ -1,3 +1,47 @@
+## v0.36.177 — WS-ZA ZA6.14: the saved-register census's relation and the caller's writes
+
+Another core holds a thread's registers in two ways. Either the thread is that
+core's current thread, or it is the core's resident thread: a remote deschedule
+left its live registers in that core's bank, and the core's next entry saves
+them over the saved context. Writing such a thread's saved registers would
+disagree with the bank the core resumes from, or be lost at that save. This
+version gives the census its relation and proves the executing core's own
+writes. Proofs only; no executable code changes.
+
+- **The relation** (`IPC/Invariant/RunQueueAgreement/SavedRegisters.lean`).
+  `savedRegsKeptOffCore e pre post` says every thread current or resident on a
+  core other than `e` after the step keeps its saved registers
+  (`SystemState.savedRegs`). It covers resident threads as well as current
+  ones.
+- **It composes.** A thread another core holds after a second step was held
+  there after the first, by the second step's `currentKept` and `residentKept`
+  (`savedRegsKeptOffCore_trans`, and `savedRegsKeptOffCore_trans_stepCovers`).
+- **A step's census is read off what it writes**
+  (`savedRegsKeptOffCore_of_writes`). The step changes only threads that no
+  other core held at an earlier state of the entry (`offCoreFree`), and nothing
+  since made a thread current or resident on another core.
+  `offCoreFree_of_current` gives that for the executing core's current thread,
+  from `currentsUnique` and `currentNotResidentElsewhere`, idle threads
+  included.
+- **The executing core's own writes:**
+  - `writeFfiRegistersToTcb_savedRegsKeptOffCore`: the argument spill;
+  - `stageCallerReturnFor_savedRegsKeptOffCore`: the caller's return staging,
+    for a caller current on `e` when the entry began;
+  - `saveOutgoingContextOnCore_savedRegsKeptOffCore`: the scheduling point's
+    save.
+- **The plan.** The census per arm is split by dispatcher:
+  - ZA6.14, this row;
+  - ZA6.15, the capability-only dispatch;
+  - ZA6.16, the IPC and notification arms;
+  - ZA6.17, the remaining arms and `syscallDispatchFromAbi_savedRegsKeptOffCore`,
+    the proof of the remote stall's rule.
+
+  Each row names the row that consumes its theorems. The rows after them move
+  up three (ZA6.15 to ZA6.25 become ZA6.18 to ZA6.28), and every citation is
+  swept.
+- Tier 3 anchors pin the relation, its composition, the per-write lemma and the
+  three writers. The new module is in the staged allowlist.
+
 ## v0.36.176 — WS-ZA ZA6.13: the register banks' cross-core frame
 
 A core's register bank is written only by that core's own entry. This version
