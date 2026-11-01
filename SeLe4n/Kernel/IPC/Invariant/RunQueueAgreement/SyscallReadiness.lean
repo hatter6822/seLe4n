@@ -13,8 +13,14 @@ link stages its run-queue proof (`RunQueueEntryStage`) already names.  The
 blocking arms block the caller with their one IPC-state store
 (`storeTcbIpcStateAndMessage_readyKeptStage`); every other step is a run-queue,
 switch or dispatch stage, which keeps `StateMono`, or a TCB write that keeps
-the IPC state.  `syscallDispatchEntryState_preserves_blockedNotResident` closes
-the entry with `BlockedNotResident.of_tail`.
+the IPC state.  The frames are a family beside the arms' entry-stage proofs,
+not a field of `RunQueueEntryStage`: a thread dispatched mid-step and blocked
+later in the same step would break a field composed stage by stage.  The
+routed dispatch, the checked entry and the ABI dispatch keep every thread but
+the executing core's current thread ready
+(`syscallDispatchFromAbi_readyKeptStage`), and
+`syscallDispatchEntryState_preserves_blockedNotResident` closes the entry with
+`settleThenActivateOnCore_blockedNotResident`.
 -/
 
 namespace SeLe4n.Kernel

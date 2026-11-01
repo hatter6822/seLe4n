@@ -28,7 +28,7 @@ entry.  ZA6.19 carries it across the timer entry, whose preemption windows keep
 `StateMono`, and the fault and unknown-syscall entries, whose delivery blocks
 only the executing core's current thread (`readyKeptStage`, the readiness frame
 a blocking arm composes beside its block window).  ZA6.20 carries it across the
-syscall entry.
+syscall entry (`SyscallReadiness.lean`, every dispatch arm's readiness frame).
 -/
 
 namespace SeLe4n.Kernel

@@ -2284,7 +2284,6 @@ theorem schedContextUnbind_runQueueLinkStage (vScId : SeLe4n.ValidObjId) (st st'
               (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
   · contradiction
 
-
 /-- Between scheduling points the unbind is a run-queue stage: its queue stage
 needs the bound thread current on at most the core that runs it. -/
 theorem schedContextUnbind_runQueueStage_of_dequeued (vScId : SeLe4n.ValidObjId) (st st' : SystemState)
