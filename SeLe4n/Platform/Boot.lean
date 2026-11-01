@@ -6463,6 +6463,23 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
          hAuditBounded, hRun, hMappings, hRel, hRefill, hYield⟩
 
+/-- WS-ZA ZA6.8: **a boot-shaped state keeps no linked thread current or
+resident** — no boot thread yields to a context, so every yield-to code is 0
+(`bootObjectShapeOffLinks`), whichever threads the cores run or hold. -/
+theorem yieldLinkedNotResident_of_bootShape (ist : IntermediateState)
+    (hShape : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      ist.state.objects[oid]? = some obj → bootObjectShapeOffLinks obj) :
+    ist.state.yieldLinkedNotResident :=
+  SystemState.yieldLinkedNotResident_of_codesClear fun k => by
+    cases hO : ist.state.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | tcb t =>
+        show t.yieldToCode = 0
+        exact ((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+      | _ => rfl
+
 -- ============================================================================
 -- WS-RR RR5.13 / PR #889 review: results that read the object store through
 -- `foldObjects_objects_reachable`, placed after it
@@ -8735,6 +8752,12 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
     obtain ⟨t, hObj, _, _, hPrio⟩ := hQueue tid hMem
     simp only [hObj]
     exact hPrio
+
+/-- WS-ZA ZA6.8: a state of linked boot shape keeps no linked thread current or
+resident. -/
+theorem yieldLinkedNotResident_of_bootLinkedShape (ist : IntermediateState)
+    (h : bootLinkedShape ist) : ist.state.yieldLinkedNotResident :=
+  yieldLinkedNotResident_of_bootShape ist h.1
 
 /-- **WS-BP BP7.11**: the checked, idle-storing boot leaves a state of boot
     shape — for any configuration the checked boot accepts and any

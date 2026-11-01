@@ -97,7 +97,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.of_releaseOnlyWrite
     SystemState.RunQueueFrameStage P st st' := by
   have hS := hW.2
   refine SystemState.RunQueueFrameStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
-    ?_ ?_ ?_ ?_ hR hF (fun _ => .of_agreeOffReleaseLinks hA)
+    ?_ ?_ ?_ ?_ hR hF (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
   · rw [hS]
   · rw [hS]
   · rw [hS]
@@ -114,7 +114,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
   have hS := hW.2
   exact SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
     (by rw [hS]) (by rw [hS]) (by rw [hS]) (by rw [hW.1]; rfl) hR hF
-    (fun _ => .of_agreeOffReleaseLinks hA)
+    (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 

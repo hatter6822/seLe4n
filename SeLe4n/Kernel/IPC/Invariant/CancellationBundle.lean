@@ -917,6 +917,7 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
+    (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
 
 /-- ...and so does the teardown with its replenishment migration. -/
 theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)

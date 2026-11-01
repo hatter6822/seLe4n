@@ -138,7 +138,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.closePlace {st X : Sy
       obtain ⟨hFree, hWF, hB, hQB⟩ := hX S hs hI hR hQ hS hXR
       exact SystemState.releasePlace_close hXR c s hFree hWF hB hQB
         (hF.1.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx)),
-    hT.1.yield⟩, hT.2⟩
+    hT.1.yield, hT.1.live⟩, hT.2⟩
 
 /-- The bind writes the context's bound thread, the thread's binding and
 priority, re-buckets or places the thread through the link-writing queue
@@ -549,7 +549,8 @@ theorem switchToThreadOnCore_runQueueSwitchStage {st st' : SystemState} {c : Con
             rw [← h]
             show (restoreIncomingContextOnCoreUnlessCurrent
               ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid) c tid).referenceTables = _
-            simp) (by rw [hS]; rfl)), ?_,
+            simp) (by rw [hS]; rfl)
+          (by rw [← h]; exact restoreIncomingContextOnCoreUnlessCurrent_residentCode _ _ _)), ?_,
         fun hInv _ => hM hInv⟩
       intro e e' he hb hInv hRf _ hD
       have hRunCur : ∀ x, st.scheduler.currentOnCore c = some x → st.runnable x := fun x hx =>
@@ -1206,11 +1207,14 @@ theorem dequeueRun_runQueueLinkStage {st st' : SystemState} {c : Concurrency.Cor
     (hE : st'.scheduler.runQueueEnds = (st.runRemoveOnCore c tid).scheduler.runQueueEnds)
     (hT : st'.referenceTables = st.referenceTables := by table_frame)
     (hS : st'.scheduler.releaseSlots = (st.runRemoveOnCore c tid).scheduler.releaseSlots := by
-      release_frame) :
+      release_frame)
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     SystemState.RunQueueLinkStage st st' :=
   (RunQueueStage.runRemoveOnCore st c tid).1.trans
     (SystemState.RunQueueLinkStage.of_frame hO hQ hE
-      (hT.trans (SystemState.runRemoveOnCore_referenceTables st c tid).symm) hS)
+      (hT.trans (SystemState.runRemoveOnCore_referenceTables st c tid).symm) hS
+      (hRes.trans (congrArg MachineState.residentCode
+        (SystemState.runRemoveOnCore_machine st c tid)).symm))
 
 /-- **A dequeue-and-run on core `c`**: `tid` leaves `c`'s queue and takes `c`'s
 current slot, every other slot kept — a dispatch on `c`.  The incoming thread is
@@ -1226,12 +1230,13 @@ theorem dequeueRun_runQueueDispatchStage {st st' : SystemState} {c : Concurrency
     (hSel : st.runQueueRefined → st.queuedOn c tid = true ∨ tid = Kernel.idleThreadId c)
     (hT : st'.referenceTables = st.referenceTables := by table_frame)
     (hS : st'.scheduler.releaseSlots = (st.runRemoveOnCore c tid).scheduler.releaseSlots := by
-      release_frame) :
+      release_frame)
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     SystemState.RunQueueDispatchStage c st st' := by
   have hM : SystemState.StateMono st st' := SystemState.StateMono.of_agreeOffRunLinks
     ((SystemState.objectsAgreeOffRunLinks.of_objects_eq hO).trans
       (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c tid))
-  refine ⟨dequeueRun_runQueueLinkStage hO hQ hE hT hS, ?_, fun _ _ => hM⟩
+  refine ⟨dequeueRun_runQueueLinkStage hO hQ hE hT hS hRes, ?_, fun _ _ => hM⟩
   intro e e' he _ hRf _ hD
   have hQ' : ∀ c' x, st'.queuedOn c' x = if x = tid ∧ c' = c then false else st.queuedOn c' x :=
     fun c' x => by
@@ -1277,9 +1282,10 @@ theorem vacateCurrent_runQueueDispatchStage {st st' : SystemState} {c : Concurre
     (hS : ∀ c', st'.scheduler.currentOnCore c' =
       if c' = c then none else st.scheduler.currentOnCore c')
     (hT : st'.referenceTables = st.referenceTables := by table_frame)
-    (hRS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame) :
+    (hRS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     SystemState.RunQueueDispatchStage c st st' :=
-  ⟨SystemState.RunQueueLinkStage.of_frame hO hQ hE hT hRS, fun _ _ he _ _ _ hD =>
+  ⟨SystemState.RunQueueLinkStage.of_frame hO hQ hE hT hRS hRes, fun _ _ he _ _ _ hD =>
     SystemState.currentDequeuedUniqueExcept_of_dispatch (c := c) (new := none) hD he hS
       (fun _ ht => by cases ht) (fun _ h0 => by cases h0)
       (fun c' x hq => .inl (by
@@ -1302,6 +1308,9 @@ theorem dispatchIdleOnCore_runQueueDispatchStage (st : SystemState) (c : Concurr
         rw [restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_current])
     (fun _ => .inr rfl)
     (hS := by unfold dispatchIdleOnCore; dsimp only; rw [restoreIncomingContextOnCore_scheduler]; rfl)
+    (hRes := by
+      unfold dispatchIdleOnCore; dsimp only
+      rw [restoreIncomingContextOnCore_residentCode, SystemState.runRemoveOnCore_machine])
 
 theorem idleFallbackOnCore_runQueueDispatchStage (st : SystemState) (c : Concurrency.CoreId) :
     SystemState.RunQueueDispatchStage c st (idleFallbackOnCore st c) := by

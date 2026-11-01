@@ -1375,6 +1375,23 @@ theorem restoreIncomingContextOnCoreUnlessCurrent_getTcb? (st : SystemState) (c 
   · rfl
   · exact restoreIncomingContextOnCore_machine_timer st c tid
 
+/-- The restore writes a register bank and no core's resident thread. -/
+@[simp] theorem restoreIncomingContextOnCore_residentCode (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCore st c tid).machine.residentCode = st.machine.residentCode := by
+  unfold restoreIncomingContextOnCore
+  split <;> rfl
+
+/-- ...with the current-thread guard. -/
+@[simp] theorem restoreIncomingContextOnCoreUnlessCurrent_residentCode (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).machine.residentCode =
+      st.machine.residentCode := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent restoreIncomingContextOnCore
+  split
+  · rfl
+  · split <;> rfl
+
 theorem restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_ne (st : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) (h : c ≠ c') :
     (restoreIncomingContextOnCoreUnlessCurrent st c tid).machine.regsOnCore c' = st.machine.regsOnCore c' := by

@@ -731,6 +731,10 @@ theorem runRemoveOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreI
   have h := runRemoveOnCore_onlyObjectsSchedulerDiffer st c t
   unfold onlyObjectsSchedulerDiffer at h; rw [h]
 
+/-- The run-queue writes set no core's resident thread (`resident_frame`). -/
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  (simp only [runEnqueueAdmitted_machine, runEnqueueOnCore_machine, runRemoveOnCore_machine]; done))
+
 -- ============================================================================
 -- What each run-queue write does to the scheduler
 -- ============================================================================
@@ -1007,6 +1011,10 @@ theorem runRequeueOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeL
     (p : SeLe4n.Priority) : (st.runRequeueOnCore c t p).machine = st.machine := by
   have h := runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p
   unfold onlyObjectsSchedulerDiffer at h; rw [h]
+
+/-- The re-key sets no core's resident thread (`resident_frame`). -/
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  (simp only [runRequeueOnCore_machine]; done))
 
 /-- The scheduler after a re-key: the ghost queue is re-keyed, and the core's
 ends are the enqueue's over the dequeued state. -/

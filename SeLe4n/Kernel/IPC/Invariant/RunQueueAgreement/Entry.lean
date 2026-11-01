@@ -213,21 +213,69 @@ theorem deferResidentElsewhere_runQueueEntryStage (st : SystemState) (c : CoreId
     · exact (RunQueueStage.refl _).entry
   · exact (RunQueueStage.refl _).entry
 
-/-- Residency settlement: the vacated core's dispatch, the deferral of a thread
-resident elsewhere, and the machine's residency record. -/
-theorem settleResidencyOnCore_runQueueEntryStage (st : SystemState) (c : CoreId) :
-    SystemState.RunQueueEntryStage st (PriorityInheritance.settleResidencyOnCore st c) := by
-  unfold PriorityInheritance.settleResidencyOnCore
-  exact ((dispatchVacatedCore_runQueueEntryStage st c).trans
-    (deferResidentElsewhere_runQueueEntryStage _ c)).trans
-      (RunQueueStage.entry (RunQueueStage.of_frame rfl rfl rfl))
+/-- A slot named by a thread whose TCB, if any, holds no yield link holds yield-to
+code `0`. -/
+theorem objYieldCodes_fst_zero_of_getTcb? {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) :
+    (objYieldCodes st.objects[tid.toObjId]?).1 = 0 := by
+  cases hT : st.getTcb? tid with
+  | some t => rw [objYieldCodes_of_getTcb? hT]; exact h t hT
+  | none =>
+    cases hF : (objYieldCodes st.objects[tid.toObjId]?).1 with
+    | zero => rfl
+    | succ n =>
+      obtain ⟨t, hT', -⟩ := getTcb?_of_objYieldCodes_fst hF
+      rw [SeLe4n.ThreadId.toObjId_injective _ _ (SeLe4n.ThreadId.toObjId_ofObjId _), hT] at hT'
+      cases hT'
 
-theorem settleResidencyAt_runQueueEntryStage (st : SystemState) (coreId : UInt64) :
-    SystemState.RunQueueEntryStage st (PriorityInheritance.settleResidencyAt st coreId) := by
-  unfold PriorityInheritance.settleResidencyAt
-  split
-  · exact settleResidencyOnCore_runQueueEntryStage st _
-  · exact (RunQueueStage.refl _).entry
+/-- WS-ZA ZA6.8: **the residency record and the activation after it are one
+stage**.  The record makes core `c`'s current thread (or none) its resident,
+and that thread may hold a yield link until the activation completes it; the
+activation writes no residency record (`activateThreadOnCore_residentOnCore`)
+and leaves the core's current thread unlinked
+(`activateThreadOnCore_settle_unlinkedOnCore`), so together they make no
+linked thread resident.  The record alone is no stage: it is the one write
+that sets a resident thread. -/
+theorem recordResidentThenActivate_runQueueEntryStage (st : SystemState) (c : CoreId) :
+    SystemState.RunQueueEntryStage
+      (PriorityInheritance.deferResidentElsewhere (PriorityInheritance.dispatchVacatedCore st c) c)
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c) := by
+  have A := (activateThreadOnCore_runQueueStage (PriorityInheritance.settleResidencyOnCore st c) c).entry
+  refine SystemState.RunQueueEntryStage.of_frameThen
+    (m := PriorityInheritance.settleResidencyOnCore st c) rfl rfl rfl rfl rfl rfl A fun h r =>
+    ⟨(A.1.live h (SystemState.runQueueRefined_of_frame
+      (fun c t => SystemState.runLinkOn_of_objects rfl c t) rfl rfl r)).unset, fun d tid hR => ?_⟩
+  rw [activateThreadOnCore_residentOnCore] at hR
+  by_cases hd : d = c
+  · rw [hd] at hR
+    exact Or.inr (objYieldCodes_fst_zero_of_getTcb? fun t hT =>
+      activateThreadOnCore_settle_unlinkedOnCore st c h tid t
+        (Or.inr (by rw [activateThreadOnCore_residentOnCore]; exact hR)) hT)
+  · refine Or.inl ?_
+    have e : (PriorityInheritance.settleResidencyOnCore st c).machine.residentOnCore d =
+        (PriorityInheritance.deferResidentElsewhere
+          (PriorityInheritance.dispatchVacatedCore st c) c).machine.residentOnCore d := by
+      simp only [PriorityInheritance.settleResidencyOnCore]
+      exact MachineState.residentOnCore_setResidentOnCore_ne _ _ _ _ (Ne.symm hd)
+    rw [← e]; exact hR
+
+/-- **Residency settlement and the activation**: the vacated core's dispatch,
+the deferral of a thread resident elsewhere, then the residency record with the
+activation after it. -/
+theorem settleThenActivateOnCore_runQueueEntryStage (st : SystemState) (c : CoreId) :
+    SystemState.RunQueueEntryStage st
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c) :=
+  ((dispatchVacatedCore_runQueueEntryStage st c).trans
+    (deferResidentElsewhere_runQueueEntryStage _ c)).trans
+      (recordResidentThenActivate_runQueueEntryStage st c)
+
+theorem settleThenActivateAt_runQueueEntryStage (st : SystemState) (coreId : UInt64) :
+    SystemState.RunQueueEntryStage st
+      (activateThreadAt (PriorityInheritance.settleResidencyAt st coreId) coreId) := by
+  unfold PriorityInheritance.settleResidencyAt activateThreadAt
+  cases Concurrency.coreIdOfUInt64? coreId with
+  | some c => exact settleThenActivateOnCore_runQueueEntryStage st c
+  | none => exact (RunQueueStage.refl _).entry
 
 /-! ### The trap-frame saves and the ledger drains -/
 
@@ -428,7 +476,8 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
-        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq]))).entry
+        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+        (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry
   · rename_i hE
     cases h
     exact hW.entry.trans (syscallEntryChecked_runQueueEntryStage E1
@@ -468,8 +517,8 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
   exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
     ((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
     (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
-    (settleResidencyOnCore_runQueueEntryStage _ e)).trans
-    ((activateThreadOnCore_runQueueStage _ e).entry.trans (clearLedgers_runQueueStage' _).entry))
+    (settleThenActivateOnCore_runQueueEntryStage _ e)).trans
+    (clearLedgers_runQueueStage' _).entry)
 
 /-- **The syscall entry's committed state keeps the agreement**: the trap-frame
 save, the entry's IPC-buffer words handed to the state, the step, and the
@@ -489,7 +538,8 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
-      (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler]))
+      (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+      (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl))
   have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
     (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       fun _ => by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
@@ -557,8 +607,7 @@ theorem perCoreTimerTickEntryState_runQueueEntryStage (coreId : UInt64)
           (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
   ((saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans
     (perCoreTimerTickStep_runQueueEntryStage _ coreId hInv hRef hD hBi hAff)).trans
-    (((settleResidencyAt_runQueueEntryStage _ coreId).trans
-      (activateThreadAt_runQueueStage _ coreId).entry).trans (clearLedgers_runQueueStage _).entry)
+    ((settleThenActivateAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry)
 
 /-- **The reschedule entry's committed state keeps the agreement** (the
 secondary core's first entry is this one). -/
@@ -570,8 +619,8 @@ theorem perCoreRescheduleEntryState_runQueueEntryStage (coreId : UInt64)
           (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
   (((saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans
     (perCoreRescheduleStep_runQueueEntryStage _ coreId)).trans
-    (settleResidencyAt_runQueueEntryStage _ coreId)).trans
-    ((activateThreadAt_runQueueStage _ coreId).entry.trans (clearLedgers_runQueueStage _).entry)
+    (settleThenActivateAt_runQueueEntryStage _ coreId)).trans
+    (clearLedgers_runQueueStage _).entry
 
 /-- The fault delivery both fault entries share: a vacated core's dispatch, or
 the delivery and the core's own scheduling point. -/
@@ -627,8 +676,7 @@ theorem faultEntryState_runQueueEntryStage (lctx : LabelingContext) (coreId : UI
   have hS := saveCapturedTrapFrameAt_runQueueStage st coreId (some frame)
   ((hS.entry.trans (faultEntryStep_runQueueEntryStage lctx _ ectx w coreId
     (E.of_ipcFrame hS (saveCapturedTrapFrameAt_ipcFrame st coreId _)))).trans
-    (((settleResidencyAt_runQueueEntryStage _ coreId).trans
-      (activateThreadAt_runQueueStage _ coreId).entry).trans (clearLedgers_runQueueStage _).entry))
+    ((settleThenActivateAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
 
 theorem saveCapturedSyscallFrameAt_runQueueStage (st : SystemState) (coreId : UInt64)
     (frame : Option Architecture.InFlightContext) :
@@ -655,8 +703,7 @@ theorem unknownSyscallEntryState_runQueueEntryStage (lctx : LabelingContext) (co
     · exact IpcFrame.refl _
   ((hS.entry.trans (unknownSyscallEntryStep_runQueueEntryStage lctx _ ectx w coreId
     (E.of_ipcFrame hS hF))).trans
-    (((settleResidencyAt_runQueueEntryStage _ coreId).trans
-      (activateThreadAt_runQueueStage _ coreId).entry).trans (clearLedgers_runQueueStage _).entry))
+    ((settleThenActivateAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
 
 /-- The lazy FP/SIMD switch writes the previous owner's saved FP context and the
 core's owner slot. -/
@@ -692,8 +739,7 @@ theorem fpAccessEntryState_runQueueEntryStage (coreId : UInt64)
     SystemState.RunQueueEntryStage st (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId) := by
   refine (saveCapturedTrapFrameAt_runQueueStage st coreId frame).entry.trans ?_
-  refine SystemState.RunQueueEntryStage.trans ?_ (activateThreadAt_runQueueStage _ coreId).entry
-  refine SystemState.RunQueueEntryStage.trans ?_ (settleResidencyAt_runQueueEntryStage _ coreId)
+  refine SystemState.RunQueueEntryStage.trans ?_ (settleThenActivateAt_runQueueEntryStage _ coreId)
   unfold fpAccessEntryStep
   split
   · exact (RunQueueStage.refl _).entry

@@ -481,16 +481,6 @@ activation is what keeps it so on the core an entry ran on: after the
 residency settle and the activation, that core's current and resident threads
 hold no yield link. -/
 
-/-- **No thread a core runs or holds the live registers of has a pending
-yield**: a core's current thread and its resident thread (the one whose frame
-its bank holds, `MachineState.residentOnCore`) each have yield-to code 0.
-The lemmas below establish it on the core an entry ran on; carrying it across
-every entry for every core is WS-ZA ZA6.8. -/
-def _root_.SeLe4n.Model.SystemState.yieldLinkedNotResident (st : SystemState) : Prop :=
-  ∀ (c : CoreId) (tid : SeLe4n.ThreadId) (t : TCB),
-    (st.scheduler.currentOnCore c = some tid ∨ st.machine.residentOnCore c = some tid) →
-    st.getTcb? tid = some t → t.yieldToCode = 0
-
 /-- **After the activation, core `c`'s current thread has no pending yield.** -/
 theorem activateThreadOnCore_current_unlinked (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) (t : TCB)

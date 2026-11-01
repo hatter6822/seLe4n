@@ -531,6 +531,13 @@ theorem registerService_preserves_scheduler
     st'.scheduler = st.scheduler := by
   obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok hStep; rfl
 
+/-- Service registration writes no machine state. -/
+theorem registerService_preserves_machine
+    (st st' : SystemState) (reg : ServiceRegistration)
+    (hStep : registerService reg st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  obtain ⟨_, _, _, _, _, _, rfl⟩ := registerService_ok hStep; rfl
+
 /-- The clear's one write: the endpoint's record of the service, nothing more. -/
 theorem clearServiceRecord_cases (st : SystemState) (e : SeLe4n.ObjId) :
     clearServiceRecord st e = st ∨
@@ -593,6 +600,13 @@ theorem revokeService_preserves_scheduler
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
+  obtain ⟨_, _, _, rfl⟩ := revokeService_ok hStep; rfl
+
+/-- Revocation writes no machine state. -/
+theorem revokeService_preserves_machine
+    (st st' : SystemState) (sid : ServiceId)
+    (hStep : revokeService sid st = .ok ((), st')) :
+    st'.machine = st.machine := by
   obtain ⟨_, _, _, rfl⟩ := revokeService_ok hStep; rfl
 
 /-- The clear writes the object store alone. -/

@@ -237,6 +237,169 @@ theorem of_frames {st st' : SystemState}
 
 end YieldLinksKept
 
+/-- WS-ZA ZA6.8: **every yield-to code a step sets is on a slot of `L`** — off
+`L`, each slot's post-state yield-to code is `0` or the pre-state's.  The
+run-queue stage family carries it with `L` empty (`YieldToCodesUnset`): no
+step but the yieldTo invocation (ZA6.9) links a thread, and that invocation
+links its caller only, so it is the one producer of a nonempty `L`. -/
+def YieldToCodesSetOnly (L : SeLe4n.ObjId → Prop) (st' st : SystemState) : Prop :=
+  ∀ k, ¬ L k → (objYieldCodes st'.objects[k]?).1 = 0 ∨
+    (objYieldCodes st'.objects[k]?).1 = (objYieldCodes st.objects[k]?).1
+
+/-- WS-ZA ZA6.8: **a step sets no yield-to code** — every slot's post-state
+yield-to code is `0` or the pre-state's. -/
+abbrev YieldToCodesUnset (st' st : SystemState) : Prop :=
+  YieldToCodesSetOnly (fun _ => False) st' st
+
+namespace YieldToCodesSetOnly
+
+theorem refl (L : SeLe4n.ObjId → Prop) (st : SystemState) : YieldToCodesSetOnly L st st :=
+  fun _ _ => Or.inr rfl
+
+theorem trans {L : SeLe4n.ObjId → Prop} {a b d : SystemState}
+    (h₁ : YieldToCodesSetOnly L a b) (h₂ : YieldToCodesSetOnly L b d) :
+    YieldToCodesSetOnly L a d := fun k hk => by
+  rcases h₁ k hk with e | e
+  · exact Or.inl e
+  · rcases h₂ k hk with e' | e'
+    · exact Or.inl (e.trans e')
+    · exact Or.inr (e.trans e')
+
+theorem mono {L L' : SeLe4n.ObjId → Prop} {st' st : SystemState} (hL : ∀ k, L k → L' k)
+    (h : YieldToCodesSetOnly L st' st) : YieldToCodesSetOnly L' st' st :=
+  fun k hk => h k (fun h' => hk (hL k h'))
+
+theorem of_kept {L : SeLe4n.ObjId → Prop} {st' st : SystemState} (h : YieldLinksKept st' st) :
+    YieldToCodesSetOnly L st' st := fun k _ => Or.inr (by rw [h k])
+
+/-- A slot off `L` whose pre-state yield-to code is `0` holds `0` after. -/
+theorem zero {L : SeLe4n.ObjId → Prop} {st' st : SystemState} (h : YieldToCodesSetOnly L st' st)
+    {k : SeLe4n.ObjId} (hk : ¬ L k) (h0 : (objYieldCodes st.objects[k]?).1 = 0) :
+    (objYieldCodes st'.objects[k]?).1 = 0 := by
+  rcases h k hk with e | e
+  · exact e
+  · exact e.trans h0
+
+/-- A step clearing slot `a`'s yield-to code, keeping slot `b`'s and every
+other slot's codes (a link's cancel or completion) sets no yield-to code. -/
+theorem of_unlink {L : SeLe4n.ObjId → Prop} {st st' : SystemState} {a b : SeLe4n.ObjId}
+    (hA : objYieldCodes st'.objects[a]? = (0, (objYieldCodes st.objects[a]?).2))
+    (hB : objYieldCodes st'.objects[b]? = ((objYieldCodes st.objects[b]?).1, 0))
+    (hO : ∀ k, k ≠ a → k ≠ b → objYieldCodes st'.objects[k]? = objYieldCodes st.objects[k]?) :
+    YieldToCodesSetOnly L st' st := fun k _ => by
+  by_cases ha : k = a
+  · subst ha; exact Or.inl (by rw [hA])
+  · by_cases hb : k = b
+    · subst hb; exact Or.inr (by rw [hB])
+    · exact Or.inr (by rw [hO k ha hb])
+
+
+/-- A step whose every thread's yield-to code, read through the typed lookup,
+is `0` or the pre-state's sets none. -/
+theorem of_tcbCodes {L : SeLe4n.ObjId → Prop} {st' st : SystemState}
+    (h : ∀ t, ((st'.getTcb? t).map TCB.yieldToCode).getD 0 = 0 ∨
+      ((st'.getTcb? t).map TCB.yieldToCode).getD 0 = ((st.getTcb? t).map TCB.yieldToCode).getD 0) :
+    YieldToCodesSetOnly L st' st := fun k _ => by
+  rw [objYieldCodes_eq_lookups st' k, objYieldCodes_eq_lookups st k]
+  exact h _
+
+/-- A context write sets no yield-to code. -/
+theorem updateSchedContext {L : SeLe4n.ObjId → Prop} (st : SystemState)
+    (s : SeLe4n.SchedContextId) (g : SchedContext → SchedContext) (hInv : st.objects.invExt) :
+    YieldToCodesSetOnly L (st.updateSchedContext s g) st :=
+  of_tcbCodes fun t => Or.inr (by rw [SystemState.updateSchedContext_getTcb? st s g hInv t])
+
+/-- A thread write that clears or keeps the thread's yield-to code sets none. -/
+theorem updateTcb {L : SeLe4n.ObjId → Prop} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hf : ∀ x, (f x).yieldToCode = 0 ∨ (f x).yieldToCode = x.yieldToCode) :
+    YieldToCodesSetOnly L (st.updateTcb tid f) st :=
+  of_tcbCodes fun t => by
+    by_cases e : t = tid
+    · subst e
+      rw [SystemState.updateTcb_getTcb?_self st t f hInv]
+      cases st.getTcb? t with
+      | none => exact Or.inr rfl
+      | some x => exact hf x
+    · rw [SystemState.updateTcb_getTcb?_ne st tid f hInv t
+        (fun h => e (SeLe4n.ThreadId.toObjId_injective _ _ h).symm)]
+      exact Or.inr rfl
+
+end YieldToCodesSetOnly
+
+/-- WS-ZA ZA6.8: **every resident thread of the post-state was resident on
+its core before, or holds no yield link** — residency is set only by the
+settle at an entry's tail, which with the activation after it names an
+unlinked thread (`activateThreadOnCore_settle_unlinkedOnCore`), and is
+otherwise only cleared. -/
+def ResidentsRecordUnlinked (st' st : SystemState) : Prop :=
+  ∀ (c : Concurrency.CoreId) (t : SeLe4n.ThreadId), st'.machine.residentOnCore c = some t →
+    st.machine.residentOnCore c = some t ∨ (objYieldCodes st'.objects[t.toObjId]?).1 = 0
+
+/-- WS-ZA ZA6.8: **a step links no thread and makes no linked thread
+resident**: the run-queue stage family's `live` field.  With the remote
+current-slot frame (`currentKeptOffCore`) it carries
+`SystemState.yieldLinkedNotResident` across a kernel entry on every core but
+the executing one. -/
+structure YieldLinkLiveFrame (st' st : SystemState) : Prop where
+  unset : YieldToCodesUnset st' st
+  residents : ResidentsRecordUnlinked st' st
+
+namespace YieldLinkLiveFrame
+
+theorem refl (st : SystemState) : YieldLinkLiveFrame st st :=
+  ⟨.refl _ st, fun _ _ h => Or.inl h⟩
+
+theorem trans {a b d : SystemState} (h₁ : YieldLinkLiveFrame a b) (h₂ : YieldLinkLiveFrame b d) :
+    YieldLinkLiveFrame a d :=
+  ⟨h₁.unset.trans h₂.unset, fun c t h => by
+    rcases h₁.residents c t h with e | e
+    · rcases h₂.residents c t e with e' | e'
+      · exact Or.inl e'
+      · exact Or.inr (h₁.unset.zero (fun h => h) e')
+    · exact Or.inr e⟩
+
+/-- A step keeping every core's resident thread and setting no yield-to code. -/
+theorem of_unset {st' st : SystemState} (hU : YieldToCodesUnset st' st)
+    (hR : st'.machine.residentCode = st.machine.residentCode) : YieldLinkLiveFrame st' st :=
+  ⟨hU, fun c t h => Or.inl (by
+    unfold MachineState.residentOnCore at h ⊢; rw [← hR]; exact h)⟩
+
+/-- A step keeping every slot's yield codes and every core's resident thread. -/
+theorem of_kept {st' st : SystemState} (hY : YieldLinksKept st' st)
+    (hR : st'.machine.residentCode = st.machine.residentCode) : YieldLinkLiveFrame st' st :=
+  of_unset (.of_kept hY) hR
+
+end YieldLinkLiveFrame
+
+/-- **No thread a core runs or holds the live registers of has a pending
+yield**: a core's current thread and its resident thread (the one whose frame
+its bank holds, `MachineState.residentOnCore`) each have yield-to code 0.
+`activateThreadOnCore_current_unlinked` and its siblings establish it on the
+core an entry ran on; WS-ZA ZA6.8 carries
+it across every committing entry for every core
+(`syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its siblings).
+It holds at boot, where no code is set (`yieldLinkedNotResident_of_codesClear`). -/
+def _root_.SeLe4n.Model.SystemState.yieldLinkedNotResident (st : SystemState) : Prop :=
+  ∀ (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (t : TCB),
+    (st.scheduler.currentOnCore c = some tid ∨ st.machine.residentOnCore c = some tid) →
+    st.getTcb? tid = some t → t.yieldToCode = 0
+
+/-- A store holding no yield link keeps no linked thread current or resident. -/
+theorem _root_.SeLe4n.Model.SystemState.yieldLinkedNotResident_of_codesClear {st : SystemState}
+    (h : ∀ k : SeLe4n.ObjId, (objYieldCodes st.objects[k]?).1 = 0) : st.yieldLinkedNotResident :=
+  fun _ tid t _ hT => by
+    have e := h tid.toObjId
+    rw [objYieldCodes_of_getTcb? hT] at e; exact e
+
+/-- The default state holds no object, so no link. -/
+theorem _root_.SeLe4n.Model.SystemState.default_yieldLinkedNotResident :
+    (default : SystemState).yieldLinkedNotResident :=
+  SystemState.yieldLinkedNotResident_of_codesClear fun k => by
+    have e : (default : SystemState).objects[k]? = none := by
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    rw [e]; rfl
+
 end SeLe4n.Kernel
 
 namespace SeLe4n.Model.SystemState
@@ -615,6 +778,61 @@ theorem completeHeldYield_preserves_yieldLinksAgree (st : SystemState) (held : N
   split
   · exact h
   · exact completeYieldFrom_preserves_yieldLinksAgree _ _ hInv h
+
+-- ============================================================================
+-- WS-ZA ZA6.8: the cancel and the completion set no yield-to code
+-- ============================================================================
+
+theorem cancelYieldTo_yieldToCodesUnset (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : YieldToCodesUnset (cancelYieldTo st tid) st := by
+  unfold cancelYieldTo
+  split
+  · split
+    · exact .refl _ st
+    · exact (YieldToCodesSetOnly.updateTcb _ tid TCB.yieldCleared
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => Or.inl rfl)).trans
+        (YieldToCodesSetOnly.updateSchedContext st _ _ hInv)
+  · exact .refl _ st
+
+theorem cancelYieldFrom_yieldToCodesUnset (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : YieldToCodesUnset (cancelYieldFrom st s) st := by
+  unfold cancelYieldFrom
+  split
+  · split
+    · exact .refl _ st
+    · exact (YieldToCodesSetOnly.updateTcb _ _ TCB.yieldCleared
+        (updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => Or.inl rfl)).trans
+        (YieldToCodesSetOnly.updateSchedContext st _ _ hInv)
+  · exact .refl _ st
+
+theorem completeYieldTo_yieldToCodesUnset (st : SystemState) (y : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : YieldToCodesUnset (completeYieldTo st y) st := by
+  unfold completeYieldTo
+  split
+  · split
+    · exact .refl _ st
+    · exact (cancelYieldTo_yieldToCodesUnset _ _
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)).trans
+        (.of_kept (setConsumed_yieldLinksKept _ _ _ hInv))
+  · exact .refl _ st
+
+theorem completeYieldFrom_yieldToCodesUnset (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : YieldToCodesUnset (completeYieldFrom st s) st := by
+  unfold completeYieldFrom
+  split
+  · split
+    · exact .refl _ st
+    · exact (cancelYieldFrom_yieldToCodesUnset _ _
+        (setConsumed_preserves_objects_invExt _ _ _ hInv)).trans
+        (.of_kept (setConsumed_yieldLinksKept _ _ _ hInv))
+  · exact .refl _ st
+
+theorem completeHeldYield_yieldToCodesUnset (st : SystemState) (held : Nat)
+    (hInv : st.objects.invExt) : YieldToCodesUnset (completeHeldYield st held) st := by
+  unfold completeHeldYield
+  split
+  · exact .refl _ st
+  · exact completeYieldFrom_yieldToCodesUnset _ _ hInv
 
 /-- **On agreeing links the completion a context records is seL4-MCS's
 `schedContext_completeYieldTo` of its yielder**: the yielder names the context

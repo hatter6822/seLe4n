@@ -3333,6 +3333,7 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv => returnDonatedSchedContext_refillViewsKept hInv h)
     (fun hInv => returnDonatedSchedContext_yieldLinksKept hInv h)
     (by rw [hS])
+    (by rw [returnDonatedSchedContext_machine_eq st st' serverTid scId originalOwner newOwner? h])
 
 theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
     {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
@@ -3408,6 +3409,7 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId _ hInv (fun _ => rfl)
         · show (st.updateSchedContext scId _).scheduler.currentCode = _
           rw [hU]
+        · exact congrArg MachineState.residentCode (SystemState.updateSchedContext_machine st scId _)
       · rw [SystemState.updateSchedContext_getSchedContext?_self _ _ _ hI, hG] at ha
         cases ha; rfl
   · cases h

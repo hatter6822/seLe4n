@@ -5,6 +5,7 @@ Released under GPL-3.0-or-later license as described in the file LICENSE.
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Endpoint
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
+import SeLe4n.Kernel.SlotConfinement.MemoryArms
 
 /-!
 # Capability, VSpace, untyped and service arms keep the run-queue link agreement
@@ -38,7 +39,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
     (hV : st.objects.invExt → ∀ oid : SeLe4n.ObjId,
       objRefillView st'.objects[oid]? = objRefillView st.objects[oid]?)
     (hY : st.objects.invExt → ∀ oid : SeLe4n.ObjId,
-      objYieldCodes st'.objects[oid]? = objYieldCodes st.objects[oid]?) :
+      objYieldCodes st'.objects[oid]? = objYieldCodes st.objects[oid]?)
+    (hRes : st'.machine.residentCode = st.machine.residentCode) :
     RunQueueStage st st' :=
   have hL : st.objects.invExt → ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun hInv c t => by
     rw [SystemState.runLinkOn_eq_objRunLinkOn, SystemState.runLinkOn_eq_objRunLinkOn]
@@ -47,7 +49,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
       SystemState.runQueueRefined_of_frame (hL hInv) (by rw [(h hInv).2.2.2])
         (by rw [(h hInv).2.2.2]) r⟩) hF
       (fun hInv => ⟨.of_objReleaseLinkOn (hR hInv), by rw [(h hInv).2.2.2]⟩)
-      (fun hInv => .of_eq (hV hInv)) hY,
+      (fun hInv => .of_eq (hV hInv)) hY hRes,
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [(h hInv).2.2.2])
       (hL hInv) (SystemState.StateMono.of_slots (h hInv).2.2.1) d,
     fun hInv _ => SystemState.StateMono.of_slots (h hInv).2.2.1⟩
@@ -56,7 +58,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
 theorem vspaceRootOnlyWrite_runQueueStage {st st' : SystemState}
     (h : st.objects.invExt →
       st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-        st'.referenceTables = st.referenceTables) :
+        st'.referenceTables = st.referenceTables)
+    (hRes : st'.machine.residentCode = st.machine.residentCode) :
     RunQueueStage st st' :=
   RunQueueStage.of_slots (fun hInv =>
     have ⟨hI, hW, hS, _⟩ := h hInv
@@ -80,10 +83,10 @@ theorem vspaceRootOnlyWrite_runQueueStage {st st' : SystemState}
       rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
       · rw [e]
       · rw [h1, h2]; rfl)
-    fun hInv oid => by
+    (fun hInv oid => by
       rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
       · rw [e]
-      · rw [h1, h2]; rfl
+      · rw [h1, h2]; rfl) hRes
 
 /-- A write of the derivation tree alone. -/
 theorem withCdt_runQueueStage (st : SystemState) (cdt : CapDerivationTree) :
@@ -249,7 +252,8 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     (h : st.objects.invExt → st'.objects.invExt ∧ st'.scheduler = st.scheduler ∧
       ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
         (retireTouched st.objects[oid]? ∧ retireTouched st'.objects[oid]?))
-    (hF : st.objects.invExt → SystemState.TableReferenceFrame st st') :
+    (hF : st.objects.invExt → SystemState.TableReferenceFrame st st')
+    (hRes : st'.machine.residentCode = st.machine.residentCode) :
     RunQueueStage st st' := by
   have hRT : ∀ o : Option KernelObject, retireTouched o → ∀ c,
       SystemState.objReleaseLinkOn o c = none := by
@@ -271,7 +275,7 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     · rw [hVT _ t1, hVT _ t2]) (fun hInv oid => by
     rcases (h hInv).2.2 oid with e | ⟨t1, t2⟩
     · rw [e]
-    · rw [objYieldCodes_of_retireTouched t1, objYieldCodes_of_retireTouched t2])
+    · rw [objYieldCodes_of_retireTouched t1, objYieldCodes_of_retireTouched t2]) hRes
   obtain ⟨hExt, hS1, hW⟩ := h hInv
   have hT : ∀ o : Option KernelObject, retireTouched o → ∀ c, SystemState.objRunLinkOn o c = RunQueue.RunQueueLink.none := by
     intro o h c
@@ -309,7 +313,9 @@ theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target record
         (fun c => by rw [(retireFinalObject_releaseStateAgree ec target recorder st hInv).replenishQueueOnCore c])
         ((retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR) x,
       fun hInv _ hY => SystemState.yieldLinksAgree_of_kept
-        (retireFinalObject_yieldLinksKept ec target recorder st hInv) hY⟩,
+        (retireFinalObject_yieldLinksKept ec target recorder st hInv) hY,
+      fun hInv _ => .of_kept (retireFinalObject_yieldLinksKept ec target recorder st hInv)
+        (by rw [(retireFinalObject_fields ec target recorder st).2.2])⟩,
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) (hL hInv)
       (retireFinalObject_stateMono ec target recorder hInv) d,
     fun hInv _ => retireFinalObject_stateMono ec target recorder hInv⟩
@@ -317,8 +323,9 @@ theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target record
 theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {named : List SeLe4n.ObjId}
     {pages : List MappedPage} {st st' : SystemState}
     (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) : RunQueueStage st st' :=
-  vspaceRootOnlyWrite_runQueueStage fun hInv =>
-    finaliseDestroyedCapabilities_ok_frame ec named pages st st' hInv h
+  vspaceRootOnlyWrite_runQueueStage (fun hInv =>
+    finaliseDestroyedCapabilities_ok_frame ec named pages st st' hInv h)
+    (congrArg MachineState.residentCode (finaliseDestroyedCapabilities_framed ec named pages st st' h).2)
 
 /-- A store whose slot holds no TCB on either side. -/
 theorem storeObject_inert_runQueueStage {st st' : SystemState} {oid : SeLe4n.ObjId}
@@ -359,16 +366,20 @@ theorem vspaceMapFromFrameCap_runQueueStage {tid : SeLe4n.ThreadId} {ec : Concur
     (h : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) : RunQueueStage st st' := by
   obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid ec args st st' h
-  exact ((vspaceRootOnlyWrite_runQueueStage fun hInv =>
-      vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1 hInv hMap).trans
+  exact ((vspaceRootOnlyWrite_runQueueStage (fun hInv =>
+      vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame _ _ _ _ _ st st1 hInv hMap)
+      (congrArg MachineState.residentCode
+        (vspaceMapPageCheckedWithShootdownFromStatePerCore_framed _ _ _ _ _ st st1 hMap).2)).trans
     (tagFrameMapping_runQueueStage hT)).trans (cspaceRecordFrameMapping_runQueueStage hRec)
 
 theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage {ec : Concurrency.CoreId}
     {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
     (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
       = .ok ((), st')) : RunQueueStage st st' :=
-  vspaceRootOnlyWrite_runQueueStage fun hInv =>
-    vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st' hInv h
+  vspaceRootOnlyWrite_runQueueStage (fun hInv =>
+    vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st' hInv h)
+    (congrArg MachineState.residentCode
+      (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed ec asid vaddr st st' h).2)
 
 theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {st st' : SystemState} (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
@@ -390,12 +401,13 @@ run-queue link: the endpoint holds none, before or after. -/
 theorem serviceRecordRewrite_runQueueStage {st st' : SystemState}
     (hW : ServiceRecordRewrite st.objects st'.objects)
     (hS : st'.scheduler = st.scheduler)
-    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded) :
+    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
+    (hM : st'.machine = st.machine) :
     RunQueueStage st st' := by
   rcases hW with h | ⟨e, ep, c, hE0, h⟩
-  · exact RunQueueStage.of_frameWith h (by rw [hS]) (by rw [hS]) hTab (by rw [hS])
+  · exact RunQueueStage.of_frameWith h (by rw [hS]) (by rw [hS]) hTab (by rw [hS]) (hRes := by rw [hM])
   · exact RunQueueStage.insertWith h (by rw [hS]) (by rw [hS]) (fun _ => by rw [hE0]; rfl)
-      (SystemState.objStateMono_nonTcb (by rw [hE0]; rfl) rfl) hTab (by rw [hS])
+      (SystemState.objStateMono_nonTcb (by rw [hE0]; rfl) rfl) hTab (by rw [hS]) (hRes := by rw [hM])
 
 /-- The revocation writes the registry and its endpoint's back-link
 (`revokeService_preserves_tableReferencesRecorded`). -/
@@ -403,7 +415,8 @@ theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : RunQueueStage st st' :=
   serviceRecordRewrite_runQueueStage (revokeService_serviceRecordRewrite h)
     (revokeService_preserves_scheduler st st' sid h)
-    fun hInv hR => revokeService_preserves_tableReferencesRecorded h hInv hR
+    (fun hInv hR => revokeService_preserves_tableReferencesRecorded h hInv hR)
+    (revokeService_preserves_machine st st' sid h)
 
 /-- The registration writes the registry and its endpoint's back-link
 (`registerService_preserves_tableReferencesRecorded`). -/
@@ -411,7 +424,8 @@ theorem registerService_runQueueStage {reg : ServiceRegistration} {st st' : Syst
     (h : registerService reg st = .ok ((), st')) : RunQueueStage st st' :=
   serviceRecordRewrite_runQueueStage (registerService_serviceRecordRewrite h)
     (registerService_preserves_scheduler st st' reg h)
-    fun hInv hR => registerService_preserves_tableReferencesRecorded h hInv hR
+    (fun hInv hR => registerService_preserves_tableReferencesRecorded h hInv hR)
+    (registerService_preserves_machine st st' reg h)
 
 /-- WS-ZA ZA5.5: the release of a final endpoint's registration is a revocation
 or nothing (`releaseFinalRegistration_cases`). -/
@@ -722,6 +736,7 @@ theorem updateSchedContext_runQueueStage (st : SystemState) (scId : SeLe4n.Sched
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId f hInv hy
   · show (st.updateSchedContext scId _).scheduler.currentCode = _
     rw [hU]
+  · exact congrArg MachineState.residentCode (SystemState.updateSchedContext_machine st scId _)
 
 /-- WS-ZA ZA6.4: **a context update that may write its refills is a frame stage
 off that context** — the drain's refill, whose placement closes it. -/
@@ -749,6 +764,7 @@ theorem updateSchedContext_runQueueFrameStage (st : SystemState) (scId : SeLe4n.
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId f hInv hy
   · show (st.updateSchedContext scId _).scheduler.currentCode = _
     rw [hU]
+  · exact congrArg MachineState.residentCode (SystemState.updateSchedContext_machine st scId _)
 
 /-- The revert of a finalised reply's caller's boost is a run-queue stage
 (`propagatePipChainCrossCore_runQueueStage`). -/
@@ -785,9 +801,16 @@ theorem finaliseSuspendStep_runQueueEntryStage (st : SystemState) :
 /-- The release of the cores' holds writes no object and no queue. -/
 theorem finaliseReleaseStep_runQueueEntryStage (st : SystemState) :
     FinaliseReleaseStep (SystemState.RunQueueEntryStage st) :=
-  fun s t h => h.trans (SystemState.RunQueueStage.of_frame (st' := finaliseThreadReleaseCores s t)
+  fun s t h => h.trans (SystemState.RunQueueStage.of_frameLive (st' := finaliseThreadReleaseCores s t)
     (finaliseThreadReleaseCores_objects s t)
     (by rw [finaliseThreadReleaseCores_scheduler]) (by rw [finaliseThreadReleaseCores_scheduler])
+    (fun c u hU => by
+      rw [finaliseThreadReleaseCores_machine] at hU
+      unfold MachineState.releaseThread at hU
+      rw [MachineState.releaseThreadOnCores_residentOnCore] at hU
+      split at hU
+      · cases hU
+      · exact Or.inl hU)
     (by rw [finaliseThreadReleaseCores_scheduler])
     (by unfold finaliseThreadReleaseCores SystemState.referenceTables; dsimp only)
     (by rw [finaliseThreadReleaseCores_scheduler])).entry
@@ -990,7 +1013,7 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
     RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _ _)
       (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler])
       (by cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl)
-      (by rw [CarveRequest.scrub_scheduler])
+      (by rw [CarveRequest.scrub_scheduler]) (CarveRequest.scrub_residentCode _ _ _ _)
   exact ((((k1.trans k2).trans k3).trans kZ).trans (cspaceInsertSlot_runQueueStage hIns)).trans
     (cdtRecord_runQueueStage _ _ _ _)
 

@@ -219,16 +219,13 @@ theorem vspaceMapPageCheckedWithShootdownFromState_framed (executingCore : CoreI
       subst hs
       exact ⟨hs1, hm1⟩
 
-/-- SM8.B.2 (**the live `.vspaceMap` bound**): the initiator-atomic map writes
-**no core** — page tables, the scalar TLB, an optional remap round, the
-initiator's drain and the fresh fill are all outside the observer's read set. -/
-theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores
+/-- The initiator-atomic map writes neither the scheduler nor the machine. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_framed
     (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
     (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore executingCore
       asid vaddr paddr perms st = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' [] := by
-  refine observableSlotsConfinedToCores_nil_of_framed ?_
+    SchedulerMachineFramed st st' := by
   unfold Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
   split at hStep
   · exact absurd hStep (by simp)
@@ -240,6 +237,19 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores
       asid vaddr paddr perms st stRound hRound
     exact ⟨by rw [tlbFillOnCore_scheduler, drainInitiatorPerCoreView_scheduler, hs1],
            by rw [tlbFillOnCore_machine, drainInitiatorPerCoreView_machine, hm1]⟩
+
+/-- SM8.B.2 (**the live `.vspaceMap` bound**): the initiator-atomic map writes
+**no core** — page tables, the scalar TLB, an optional remap round, the
+initiator's drain and the fresh fill are all outside the observer's read set. -/
+theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions) (st st' : SystemState)
+    (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore executingCore
+      asid vaddr paddr perms st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_framed
+    (vspaceMapPageCheckedWithShootdownFromStatePerCore_framed executingCore asid vaddr paddr
+      perms st st' hStep)
 
 /-- **WS-BP BP7.1**: the live `.vspaceMap` arm past its address-space check —
 the frame-capability resolution in front of the per-core map — writes **no
@@ -290,6 +300,18 @@ theorem withIcacheBroadcast_framed
       subst he
       exact ⟨hs, hm⟩
 
+/-- The verified unmap with its instruction-cache broadcast writes neither the
+scheduler nor the machine. -/
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed
+    (executingCore : CoreId) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast executingCore
+      asid vaddr st = .ok ((), st')) :
+    SchedulerMachineFramed st st' :=
+  withIcacheBroadcast_framed _ _ st st'
+    (fun _ _ hk => vspaceUnmapPageWithShootdownPerCore_framed executingCore asid vaddr _ _ hk)
+    hStep
+
 /-- SM8.B.2 (**the live `.vspaceUnmap` bound**): the unmap seam writes **no
 core**. Page tables, the scalar TLB, the shootdown round, the initiator's own
 per-core view and the I-cache ledger — none of them is a scheduler slot or a
@@ -301,9 +323,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores
       asid vaddr st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' [] :=
   observableSlotsConfinedToCores_nil_of_framed
-    (withIcacheBroadcast_framed _ _ st st'
-      (fun _ _ hk => vspaceUnmapPageWithShootdownPerCore_framed executingCore asid vaddr _ _ hk)
-      hStep)
+    (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed executingCore asid vaddr st st' hStep)
 
 /-- WS-BP BP7.1: the page teardown (`unmapLivePages`, run when a frame
 capability is destroyed) is a sequence of the `.vspaceUnmap`
@@ -325,9 +345,8 @@ theorem unmapLivePages_framed (executingCore : CoreId) :
         | ok pr =>
           obtain ⟨u, st1⟩ := pr; cases u
           rw [h1] at h
-          obtain ⟨hs1, hm1⟩ := withIcacheBroadcast_framed _ _ st st1
-            (fun _ _ hk => vspaceUnmapPageWithShootdownPerCore_framed executingCore p.asid
-              p.vaddr _ _ hk) h1
+          obtain ⟨hs1, hm1⟩ := vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed
+            executingCore p.asid p.vaddr st st1 h1
           obtain ⟨hs2, hm2⟩ := unmapLivePages_framed executingCore rest st1 st' h
           exact ⟨hs2.trans hs1, hm2.trans hm1⟩
       · exact unmapLivePages_framed executingCore rest st st' h

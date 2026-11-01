@@ -494,7 +494,13 @@ step's object writes are covered by the table write lock every declared
 footprint names.  A thread with a yield link must be no core's current or
 resident thread at an entry boundary (`SystemState.yieldLinkedNotResident`),
 since a context's final delete writes the yielder's saved registers; ZA6.7
-proves it on each entry's own core and ZA6.8 carries it kernel-wide.  ZA6.9
+proves it on each entry's own core and, since `v0.36.171`, ZA6.8 carries it
+kernel-wide.  Every run-queue stage producer proves the stage's `live` field
+(`YieldLinkLiveFrame`: it sets no yield-to code and makes no linked thread
+resident); a new producer over an abstract state takes the resident frame
+(`st'.machine.residentCode = st.machine.residentCode`) from its caller, and a
+step that sets a resident proves the frame with the activation after it
+(`RunQueueEntryStage.of_frameThen`).  ZA6.9
 adds the rest of seL4's
 `seL4_SchedContext_YieldTo`, the invocation.  ZA6.10 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference

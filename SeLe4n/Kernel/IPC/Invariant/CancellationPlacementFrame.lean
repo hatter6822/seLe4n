@@ -259,6 +259,7 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
     (fun hInv => abortPendingIpcOnEndpoint_releaseStateAgree hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_refillViewsKept hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_yieldLinksKept hInv hA)
+    (hRes := by rw [abortPendingIpcOnEndpoint_machine epId isReceiveQ tid st st' hA])
 
 /-- WS-RR RR8.11: the reclaim moves no thread's home core — the pop rebinds
 scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
