@@ -1,3 +1,41 @@
+## v0.36.180 — WS-ZA ZA6.17: the blocked-not-resident preservation's decomposition, and the pre-commit hook's build bound
+
+Proofs only for the kernel; one fix to the pre-commit hook.
+
+- **The decomposition** (`BlockedNotResident.of_entry`). After a step on core
+  `e`, the residents are of two kinds:
+  - A resident of another core was resident there before (`residentKept`), so
+    it was ready. It stays ready if the step left a ready thread on another
+    core ready (`hKeep`).
+  - The resident of `e` is the thread `e`'s settle recorded, which must be
+    ready (`hOwn`).
+
+  This is the shape ZA6.18 proves at every committing entry.
+- **The pre-commit hook's spurious "FAILED (0 errors)", fixed.** The hook built
+  each staged module under `timeout 300`. That bound covers the module's whole
+  dependency rebuild. An edit low in the import graph makes a later staged
+  module rebuild hundreds of dependents first: `SavedRegisters` after a
+  `YieldLinkInvariant` edit took 603 seconds. `timeout` killed the build
+  (exit 124), the log held no `error:` line, and the hook reported a failed
+  build with 0 errors.
+  - The bound is now an hour by default, overridable with
+    `SELE4N_PRECOMMIT_BUILD_TIMEOUT`.
+  - A kill is reported as `TIMED OUT`.
+  - A failure with no `error:` line shows its exit status and the log's tail.
+  - Every non-zero build still blocks the commit, and the `sorry` check is
+    unchanged.
+
+  Tested by breaking it: a staged real error still fails with its errors, a
+  1-second bound reports `TIMED OUT` and blocks, and a staged `sorry` is still
+  rejected. Tier 3 anchors pin the bound, the status capture and both blocking
+  branches, and `docs/DEVELOPMENT.md` documents the variable.
+- **The plan.** The preservation row is split:
+  - ZA6.17, this decomposition;
+  - ZA6.18, the two halves at every committing entry.
+
+  The rows after them move up one (ZA6.18 to ZA6.31 become ZA6.19 to ZA6.32),
+  and every citation is swept.
+
 ## v0.36.179 — WS-ZA ZA6.16: a thread blocked in IPC is resident on no core
 
 The census's writes to a blocked thread (a cancellation's restore, a delivery,
