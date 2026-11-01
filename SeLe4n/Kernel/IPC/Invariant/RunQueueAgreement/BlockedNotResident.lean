@@ -157,7 +157,7 @@ theorem _root_.SeLe4n.Model.SystemState.default_blockedNotResident :
 /-- **A thread blocked in IPC is held by no core**: it is current nowhere
 (`blockedCurrentNowhere`) and resident nowhere (`blockedNotResident`) — the
 free-ness the census's writes to a blocked thread need (ZA6.15's cancellation
-restore, ZA6.22's deliveries and reply). -/
+restore, ZA6.23's deliveries and reply). -/
 theorem offCoreFree_of_blocked {e : CoreId} {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hB : blockedCurrentNowhere st) (hN : st.blockedNotResident)
     (hT : st.getTcb? tid = some t) (hS : t.ipcState ≠ .ready) : offCoreFree e st tid :=

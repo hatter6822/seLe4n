@@ -563,8 +563,17 @@ syscall dispatch arm a readiness frame (`IPC/Invariant/RunQueueAgreement/Syscall
 a mirror family beside the arms' entry-stage proofs: every arm blocks at most
 its caller) and carries the invariant across the syscall entry, so every entry
 keeps it.  New dispatch arms must ship a readiness frame beside their entry
-stage.  ZA6.21 to ZA6.23 census the
-dispatch's arms (capability-only, IPC and notification, the rest), ZA6.24
+stage.  Since `v0.36.184`, ZA6.21 proves every core's resident thread has a
+TCB (`SystemState.residentsHaveTcbs`, `IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean`)
+at boot and across every entry, through a sixth coverage field,
+`stepCovers.residentTcbKept`.  **New code must assume it**: every new
+`stepCovers` construction supplies `residentTcbKept` (`tcbsKept` and its
+frames, `tcbsKept.residentTcbKept`), and a new path that removes a TCB must
+admit only a thread held on no core, as the final retire does
+(`retireFinalObject_residentTcbKept`).  ZA6.22 and ZA6.23 census the
+dispatch's arms (the capability-only dispatch with its TCB and
+scheduling-context arms; the IPC and notification arms with the dispatch's
+census), ZA6.24
 derives the syscall's id and argument
 registers from the entry's saved frame, and ZA6.25 composes them into the
 syscall entry's and every other core's bank match.  ZA6.26 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
