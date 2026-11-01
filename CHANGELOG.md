@@ -1,3 +1,57 @@
+## v0.36.173 — WS-ZA ZA6.10: a core's current thread is resident on no other core, kernel-wide
+
+A remote deschedule empties a core's `current` slot while its thread still runs
+there at EL0, so the thread's live registers are that core's resident until the
+core's next entry saves them. This version states the property that keeps such a
+thread off every other core, proves it at every entry boundary, retires the one
+committing entry that skipped the settle carrying it, and closes the deferral's
+liveness gap. The plan gains two rows: ZA6.10 is this one, and ZA6.11 makes the
+remote stall wait for the remote save, as seL4's `remoteTCBStall` does. Every
+later row moves up two (ZA6.12 to ZA6.20), with every citation swept.
+
+- **Vulnerability fixed: the raw cross-core suspend seam is retired** (Low,
+  reachable only by a caller of an export with no in-tree caller).
+  `suspend_thread_cross_core` (Rust `sele4n_suspend_thread`) committed a suspend
+  without the residency settle and its deferral, the restore target, the FP/SIMD
+  owner release or the HAL current-thread record, so it could leave a thread
+  current on one core while another core still held its unsaved registers. The
+  step, drained step, bracket, entry, their theorems, the Rust wrapper, extern,
+  host stand-in and tests, the `build.rs` gate row and the census entry are
+  removed; negative anchors pin the removal. The live suspend is the syscall
+  seam's `.tcbSuspend` arm, which runs all four. The open debt row about the
+  suspend entry's pre-state closes with it.
+- **The invariant** (`IPC/Invariant/RunQueueAgreement/CurrentNotResidentElsewhere.lean`).
+  - `SystemState.currentNotResidentElsewhere`: a core's non-idle current thread
+    is resident on no other core, and no core holds an idle thread's frame.
+  - The coverage relation `stepCovers` gains `residentKept`
+    (`residentKeptOffCore`), proven at every arm, with `resident_frame` and
+    `machine_chain` rules for the machine frames the arms needed.
+  - Carried across the syscall, timer, reschedule (and secondary), fault,
+    unknown-syscall and FP/SIMD entries
+    (`syscallDispatchEntryState_preserves_currentNotResidentElsewhere` and its
+    siblings), established at boot
+    (`bootFromPlatformCheckedStartedFor_currentNotResidentElsewhere`) and for the
+    default state.
+- **Fixed along the way: the deferral cost the deferring core its idle slice**
+  (Low, liveness). A core that passed over a thread still resident elsewhere ran
+  its idle thread until the slice expired, since nothing woke it once the
+  thread's last core saved it. The settle that moves a core's resident record
+  off a thread queued on another core now raises that core's reschedule flag
+  (`PriorityInheritance.pokeReleasedResident`, `pokeReleasedResident_raises`,
+  `settleResidencyOnCore_pokes`), and every entry fires the flags its settle
+  raised as `.reschedule` SGIs. It reads codes and one TCB and builds nothing.
+- **The executing core's bank match** (`IPC/Invariant/RunQueueAgreement/EntryContextMatches.lean`):
+  `settleResidencyOnCore_preserves_contextMatchesCurrentOnCore`, and the timer,
+  reschedule and FP/SIMD entry forms. The fault, unknown-syscall and syscall
+  entries' forms are registered debt, as is the remote stall's wait for the
+  remote save (ZA6.11).
+- **Tests.** SR-046 checks a migration from core 1, with the invariant at every
+  step and refused on the states it rules out. SR-047 checks that core 1's
+  release raises and fires core 0's flag, and that core 0's next entry runs the
+  thread.
+- Proofs only beside the poke and the retirement; every allocation pin is
+  unchanged.
+
 ## v0.36.172 — WS-ZA ZA6.9: the `seL4_SchedContext_Consumed` invocation
 
 seL4-MCS's `seL4_SchedContext_Consumed` returns a scheduling context's consumed

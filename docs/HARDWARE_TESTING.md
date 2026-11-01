@@ -222,9 +222,11 @@ specific `tlbi_*` helper.
 
 ### 4.3 AN9-D — `suspendThread` atomicity (interrupts masked window)
 
-**What we're checking:** the FFI wrapper `sele4n_suspend_thread` keeps
-PSTATE.I = 1 (IRQ masked) for the entire duration of the inner Lean
-dispatch.
+**What we're checking:** a suspend keeps PSTATE.I = 1 (IRQ masked) for
+the entire duration of the Lean dispatch.  Since `v0.36.173` (WS-ZA
+ZA6.10) the only suspend path is the `.tcbSuspend` arm of the SVC seam
+(`dispatch_svc`); the raw FFI wrapper `sele4n_suspend_thread` is
+retired.
 
 **Procedure:**
 
@@ -245,12 +247,12 @@ cargo test --manifest-path rust/Cargo.toml -p sele4n-hal cpu
 **Expected output:** `[PASS] 100 000 suspend cycles, 0 partial
 windows observed`.
 
-**Failure diagnostic:** if a partial window is observed, the FFI
-wrapper is not actually masking IRQs.  Re-check that the
-`with_interrupts_disabled` call brackets the entire inner dispatch
-in `rust/sele4n-hal/src/ffi.rs::sele4n_suspend_thread`.  Verify by
-disassembly that the wrapper emits `msr DAIFSet, #2` before and
-`msr DAIFClr, #2` after the inner call.
+**Failure diagnostic:** if a partial window is observed, the SVC seam
+is not keeping IRQs masked.  The exception entry sets PSTATE.I; re-check
+that nothing on the path from `trap.rs`'s SVC arm through
+`svc_dispatch::dispatch_svc` to the Lean dispatch clears it (no
+`msr DAIFClr, #2` before the dispatch returns), by reading the path and
+by disassembly.
 
 ### 4.4 AN9-F — SVC dispatch (userspace-to-kernel typed routing)
 
