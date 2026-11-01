@@ -855,8 +855,9 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.4 part 14: `lifecycleRetypeObject` and
   -- `lifecycleRevokeDeleteRetype` left with the in-place retype; every object
   -- is carved, through `retypeFromUntyped`, already on the list.
-  expect "enforcement boundary: total 50 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 50)
+  -- WS-ZA ZA6.9: `schedContextConsumedOnCore` joined, capability-only.
+  expect "enforcement boundary: total 51 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 51)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
@@ -1507,7 +1508,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- V6-L: Extended boundary matches canonical
   expect "enforcementBoundaryExtended has 50 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 50)
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 51)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! SchedContext operations — configure, bind, unbind — and the yield.
+//! SchedContext operations — configure, bind, unbind, consumed — and the yield.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiSchedContextConfigure`,
 //! `apiSchedContextBind`, `apiSchedContextUnbind`. Added in WS-Z Phase Z5.
@@ -97,6 +97,26 @@ pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_regs: [0; 4],
         syscall_id: SyscallId::SchedContextUnbind,
     })
+}
+
+/// Read and reset a scheduling context's consumed time — seL4's
+/// `seL4_SchedContext_Consumed`.
+///
+/// The kernel returns the time the context has consumed since the last reading
+/// (in timer ticks, saturated at a word) in the first message register and
+/// resets it to zero.  Requires the `Write` right on the SchedContext
+/// capability; no message registers are sent.
+///
+/// Lean: `schedContextConsumedOnCore` (SchedContext/YieldLink.lean), WS-ZA ZA6.9.
+#[inline]
+pub fn sched_context_consumed(sc_cap: CPtr) -> KernelResult<u64> {
+    let resp = invoke_syscall(SyscallRequest {
+        cap_addr: sc_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::SchedContextConsumed,
+    })?;
+    Ok(resp.msg_regs[0])
 }
 
 /// Give up the rest of the caller's allotment — seL4's `seL4_Yield` under MCS.

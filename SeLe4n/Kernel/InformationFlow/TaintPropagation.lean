@@ -212,6 +212,9 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .tcbUnbindNotification => .inert
   | .schedContextBind => .inert
   | .schedContextUnbind => .inert
+  -- WS-ZA ZA6.9: the Consumed reading is the invoked context's own counter,
+  -- read under its capability; no message, badge or capability moves.
+  | .schedContextConsumed => .inert
   | .schedContextConfigure => .inert
   -- Services: a registration is a name, not content.
   | .serviceRegister => .inert
@@ -270,7 +273,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
-  | .schedContextBind | .schedContextUnbind | .schedContextConfigure => false
+  | .schedContextBind | .schedContextUnbind | .schedContextConfigure | .schedContextConsumed => false
   | .serviceRegister | .serviceRevoke | .serviceQuery => false
 
 /-- WS-SM SM9.D.13a: **the two arms that record, named.**
@@ -772,7 +775,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-    | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -953,7 +956,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -989,7 +992,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-    | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -1062,7 +1065,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-    | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction

@@ -624,6 +624,18 @@ theorem copyThreadSpacesZombie_stepCovers (e ec : CoreId) (st st' : SystemState)
     exact stepCoversInv_trans h.1
       (copyThreadSpaces_stepCovers e ec s st' vtid cnSrc vrSrc h.2.1.2.1 h.2.1.1 h.2.2 h2)
 
+/-- WS-ZA ZA6.9: **the Consumed invocation covers**: `setConsumed` moves no key
+input and no scheduler field. -/
+theorem schedContextConsumedOnCore_stepCovers (e : CoreId) {s : SeLe4n.SchedContextId}
+    {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : schedContextConsumedOnCore s c st = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
+  exact ⟨stepCovers_of_keys_sched
+      (keyInputsEq_of_objectsAgreeOffYield (SystemState.setConsumed_objectsAgreeOffYield st s caller hInv))
+      (SystemState.setConsumed_scheduler st s caller),
+    SystemState.setConsumed_preserves_objects_invExt _ _ _ hInv⟩
+
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
@@ -667,6 +679,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
            exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv)
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
+        | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
         | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact stepCoversInv_trans (retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers

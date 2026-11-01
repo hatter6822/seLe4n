@@ -5670,6 +5670,14 @@ theorem setConsumed_preserves_ipcInvariantFull (st : SystemState) (s : SeLe4n.Sc
         (fun _ => rfl)) (by intro; rfl)
   · exact hInv
 
+/-- WS-ZA ZA6.9: the Consumed invocation keeps the bundle — it is `setConsumed`. -/
+theorem schedContextConsumedOnCore_preserves_ipcInvariantFull {s : SeLe4n.SchedContextId}
+    {c : Concurrency.CoreId} {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) (h : schedContextConsumedOnCore s c st = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
+  exact setConsumed_preserves_ipcInvariantFull st s caller hObjInv hInv
+
 /-- The context's end of the cancel keeps the bundle. -/
 theorem cancelYieldFrom_preserves_ipcInvariantFull (st : SystemState)
     (s : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :

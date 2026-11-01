@@ -186,6 +186,17 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
     | _ => .error .invalidCapability
+  | .schedContextConsumed =>
+    match cap.target with
+    | .object scId =>
+          match validateObjIdArg scId with
+          | .error e => .error e
+          | .ok vScId =>
+              match schedContextConsumedOnCore (SeLe4n.SchedContextId.ofObjId vScId.val)
+                  executingCore st with
+              | .ok st' => .ok ((), st')
+              | .error e => .error e
+    | _ => .error .invalidCapability
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>
@@ -613,6 +624,18 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
       | .ok vScId =>
         RefusalCarrying.ofChecked (SchedContextOps.schedContextUnbindAdmitted st vScId)
           (fun st => SchedContextOps.schedContextUnbindOnCorePerform st vScId executingCore)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .schedContextConsumed =>
+    match cap.target with
+    | .object scObjId =>
+      match validateObjIdArg scObjId with
+      | .error e => .error (e, st)
+      | .ok vScId =>
+        RefusalCarrying.ofChecked
+          (schedContextConsumedAdmitted st (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
+          (fun st => schedContextConsumedPerform st (SeLe4n.SchedContextId.ofObjId vScId.val)
+            executingCore)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
   | .tcbBindNotification =>
@@ -1079,6 +1102,18 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         obtain ⟨sgi, hU⟩ := SchedContextOps.schedContextUnbindOnCore_of_admitted st vScId
           executingCore hA
         simp only [dispatchInvocationBy, hS, hU]
+    all_goals rfl
+  case schedContextConsumed =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hS : validateObjIdArg objId with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hS]
+      | ok vScId =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        simp only [dispatchInvocationBy, hS, schedContextConsumedOnCore_of_admitted _ _ _ hA]
     all_goals rfl
   case tcbBindNotification =>
     cases target

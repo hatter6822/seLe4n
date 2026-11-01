@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.171` (`lakefile.toml`) |
+| **Package version** | `0.36.172` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 547,222 across 496 Lean files |
 | **Test LoC** | 88,056 across 70 Lean test suites |
@@ -6668,6 +6668,27 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `yieldOnCore_preserves_ipcInvariantFull`, `yieldOnCore_stepCovers`,
   `schedLockSet_yieldOnCore_coversWrites` (it locks only its own core),
   `yieldOnCore_confinedToCores`, `yieldOnCore_crossCoreNonInterference`.
+- **Consumed** (`v0.36.172`, `.schedContextConsumed` syscall 42, a
+  scheduling-context capability with write right — seL4 MCS's
+  `seL4_SchedContext_Consumed`; `schedContextConsumedOnCore` in
+  `SchedContext/YieldLink.lean`).  The invocation returns the context's
+  consumed time and resets it (`setConsumed`, seL4's
+  `schedContext_updateConsumed` with `setConsumed`): the caller's `x1` takes the
+  consumed-info word and `x2` the time.  It checks before it writes: no current
+  thread is refused `.illegalState` and a capability that names no context
+  `.invalidCapability` (`schedContextConsumedOnCore_of_admitted`).  It writes the
+  caller's TCB and the context and no scheduler slot.  Payoffs:
+  `schedContextConsumedOnCore_preserves_ipcInvariantFull`,
+  `schedContextConsumedOnCore_stepCovers`,
+  `schedContextConsumedOnCore_confinedToCores`,
+  `schedContextConsumedOnCore_crossCoreNonInterference`
+  (`syscallDelegates_schedContextConsumed`), `lockSet_schedContextConsumed`.
+  The exerciser's `sched-context-consumed` scenario reads 0 allocations.  The
+  head enqueue `seL4_SchedContext_YieldTo` needs (seL4's `tcbSchedEnqueue`) is
+  `runEnqueueHeadOnCore` (`Scheduler/RunQueueHeadEnqueue.lean`), refined
+  against the abstract queue (`runEnqueueHeadOnCore_refined`) and staged
+  (`RunQueueStage.runEnqueueHeadOnCore`); the YieldTo invocation itself is not
+  yet wired.
 - **Every configured address space owns a table page** (`v0.36.13`).  The
   binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
   RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's

@@ -335,7 +335,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
@@ -1191,7 +1191,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification

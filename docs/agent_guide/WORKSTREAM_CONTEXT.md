@@ -500,9 +500,12 @@ kernel-wide.  Every run-queue stage producer proves the stage's `live` field
 resident); a new producer over an abstract state takes the resident frame
 (`st'.machine.residentCode = st.machine.residentCode`) from its caller, and a
 step that sets a resident proves the frame with the activation after it
-(`RunQueueEntryStage.of_frameThen`).  ZA6.9
-adds the rest of seL4's
-`seL4_SchedContext_YieldTo`, the invocation.  ZA6.10 puts
+(`RunQueueEntryStage.of_frameThen`).  Since `v0.36.172`, ZA6.9 has
+landed seL4's `seL4_SchedContext_Consumed` (`schedContextConsumedOnCore`,
+syscall 42) and the head enqueue (`runEnqueueHeadOnCore`).  The rest of the
+row is seL4's `seL4_SchedContext_YieldTo`, the invocation.  Its linked branch
+sets the caller's yield-to code, so the stage's `live` field must first take
+`YieldToCodesSetOnly L` across the dispatch chain.  ZA6.10 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:

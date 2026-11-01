@@ -67,6 +67,13 @@ theorem setConsumed_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId)
   · exact (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)
   · exact MappingStage.refl _
 
+/-- WS-ZA ZA6.9: the Consumed invocation keeps every mapping record. -/
+theorem schedContextConsumedOnCore_mappingStage {s : SeLe4n.SchedContextId} {c : CoreId}
+    {st st' : SystemState} (h : schedContextConsumedOnCore s c st = .ok st') :
+    MappingStage st st' := by
+  obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
+  exact setConsumed_mappingStage st s caller
+
 /-- WS-ZA ZA6.6: the cancel from a context's end. -/
 theorem cancelYieldFrom_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId) :
     MappingStage st (cancelYieldFrom st s) := by

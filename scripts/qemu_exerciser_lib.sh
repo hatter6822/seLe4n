@@ -263,7 +263,8 @@ for driver in drivers:
             # behind the root task's own IPC-buffer set that the configure's
             # fifth word is read through.
             "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
-            "sched-context-unbind", "sched-context-rebind", "tcb-resume-bound",
+            "sched-context-unbind", "sched-context-consumed", "sched-context-rebind",
+            "tcb-resume-bound",
             "tcb-suspend-bound",
             # WS-ZA ZA5.5: a service query reads the code its endpoint records,
             # and a revoke clears it and erases the registry entry in place.

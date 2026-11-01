@@ -171,6 +171,61 @@ def completeHeldYield (st : SystemState) (held : Nat) : SystemState :=
   | 0 => st
   | k + 1 => completeYieldFrom st ⟨k⟩
 
+/-- **seL4-MCS's `invokeSchedContext_Consumed`** (WS-ZA ZA6.9, the
+`seL4_SchedContext_Consumed` invocation on the executing core `c`): the invoked
+context's consumed time is returned in the caller's first message register and
+reset (`setConsumed`).  seL4 decodes nothing for it, so the only refusals are the
+ones a well-formed entry never meets: a core with no current thread has no
+caller (`.illegalState`, as `yieldOnCore`), and a capability whose target is no
+scheduling context names nothing to read (`.invalidCapability`). -/
+def schedContextConsumedOnCore (s : SeLe4n.SchedContextId) (c : Concurrency.CoreId)
+    (st : SystemState) : Except KernelError SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => .error .illegalState
+  | some caller =>
+    match st.getSchedContext? s with
+    | none => .error .invalidCapability
+    | some _ => .ok (setConsumed st s caller)
+
+/-- A Consumed invocation that succeeds is `setConsumed` for the core's current
+thread. -/
+theorem schedContextConsumedOnCore_ok {s : SeLe4n.SchedContextId} {c : Concurrency.CoreId}
+    {st st' : SystemState} (h : schedContextConsumedOnCore s c st = .ok st') :
+    ∃ caller, st.scheduler.currentOnCore c = some caller ∧ st' = setConsumed st s caller := by
+  unfold schedContextConsumedOnCore at h
+  split at h
+  · cases h
+  · rename_i caller hCur
+    split at h
+    · cases h
+    · cases h; exact ⟨caller, hCur, rfl⟩
+
+/-- The Consumed invocation's checks, read before its write: a current thread
+on the core and a scheduling context at the invoked object. -/
+@[inline] def schedContextConsumedAdmitted (st : SystemState) (s : SeLe4n.SchedContextId)
+    (c : Concurrency.CoreId) : Bool :=
+  (st.scheduler.currentOnCore c).isSome && (st.getSchedContext? s).isSome
+
+/-- The Consumed invocation's write once admitted: `setConsumed` for the core's
+current thread. -/
+@[inline] def schedContextConsumedPerform (st : SystemState) (s : SeLe4n.SchedContextId)
+    (c : Concurrency.CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | some caller => setConsumed st s caller
+  | none => st
+
+theorem schedContextConsumedOnCore_of_admitted (st : SystemState) (s : SeLe4n.SchedContextId)
+    (c : Concurrency.CoreId) (h : schedContextConsumedAdmitted st s c = true) :
+    schedContextConsumedOnCore s c st = .ok (schedContextConsumedPerform st s c) := by
+  unfold schedContextConsumedAdmitted at h
+  unfold schedContextConsumedOnCore schedContextConsumedPerform
+  cases hC : st.scheduler.currentOnCore c with
+  | none => rw [hC] at h; cases h
+  | some caller =>
+    cases hS : st.getSchedContext? s with
+    | none => rw [hC, hS] at h; cases h
+    | some _ => rfl
+
 end SeLe4n.Kernel
 
 namespace SeLe4n.Model.SystemState

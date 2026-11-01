@@ -463,12 +463,14 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     (`v0.36.12`) added `pageTableMap` and `pageTableUnmap`, capability-only —
     the live `.pageTableMap` / `.pageTableUnmap` arms' transitions.  WS-ZA
     ZA4.3 added `yieldOnCore`, the yield's transition, which invokes no
-    capability and is listed with the capability-only operations.
+    capability and is listed with the capability-only operations.  WS-ZA ZA6.9
+    added `schedContextConsumedOnCore`, the Consumed invocation's transition,
+    capability-only.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 50 := by rfl
+    enforcementBoundaryExtended.length = 51 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

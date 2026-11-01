@@ -1576,6 +1576,9 @@ const PAGE_TABLE_UNMAP: u64 = 40;
 /// `Yield` (`SyscallId` 41).
 #[cfg(feature = "hw_target")]
 const YIELD: u64 = 41;
+/// `SchedContextConsumed` (`SyscallId` 42, WS-ZA ZA6.9).
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_CONSUMED: u64 = 42;
 /// **WS-ZA ZA6.2**: the steps of a scenario that are not syscalls, by a
 /// `syscall` no `SyscallId` takes.  A timer tick is entered as
 /// `handle_irq_per_core`'s timer branch enters it and measured as the kernel
@@ -2574,6 +2577,14 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
         invocation(
             "sched-context-unbind",
             SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        // WS-ZA ZA6.9: the Consumed invocation reads the context's consumed
+        // time into the caller's saved registers and resets it in place.
+        invocation(
+            "sched-context-consumed",
+            SCHED_CONTEXT_CONSUMED,
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),

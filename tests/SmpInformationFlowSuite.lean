@@ -4724,7 +4724,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
   assertBool "nineteen live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 19))
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 20))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -5327,8 +5327,8 @@ private def runPerCoreCoverageChecks : IO Unit := do
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
   assertBool "64 entries: 50 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations and the yield) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 64) &&
-     decide (enforcementBoundaryExtended.length = 50) &&
+    (decide (enforcementBoundaryPerCore.length = 65) &&
+     decide (enforcementBoundaryExtended.length = 51) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)

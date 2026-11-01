@@ -768,7 +768,7 @@ def routedInvocation : SyscallId → Bool
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
-  | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind
+  | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .tcbBindNotification | .tcbUnbindNotification | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true
