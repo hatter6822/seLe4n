@@ -1,3 +1,39 @@
+## v0.36.182 — WS-ZA ZA6.19: blocked threads resident on no core, across the timer, fault and unknown-syscall entries
+
+Proofs only.
+
+- **A preemption window keeps `StateMono`.** `RunQueueWindowStage` gains a
+  third clause: inside a preemption point a window step keeps the state
+  fields monotone, readiness included. The outgoing thread's requeue and the
+  wake after a stage supply it, and a block point's own store refutes the
+  preemption case. So the timer's slice end, its budget exhaustion (whose IPC
+  timeouts make threads ready) and the domain switch block no thread
+  (`windowDispatch_stateMono`, `timerTickOnCore_stateMono`,
+  `perCoreTimerTickStep_stateMono`).
+- **The fault delivery's readiness frame.** A block window keeps no
+  `StateMono`, because it blocks the thread current on its core. The frame
+  is stated beside it instead: `readyKeptStage S` keeps readiness off `S`,
+  given the link invariants, and composes over the link stages.
+  - The caller's IPC-state store keeps every other thread's readiness
+    (`storeTcbIpcStateAndMessage_readyKeptStage`).
+  - So the call blocks only its caller (`endpointCallOnCore_readyKeptStage`),
+    through the capability transfer, the donation and the inheritance walk
+    (`endpointCallCrossCoreDispatch_readyKeptStage`).
+  - The fail-closed suspend blocks no thread
+    (`faultSuspendOnCore_readyKeptStage`).
+  - The delivery both fault entries share blocks only the executing core's
+    current thread (`faultEntryDeliver_readyKeptStage`, with the successor's
+    `scheduleLocalSuccessorFrom_stateMono`).
+- **Carried across the timer, fault and unknown-syscall entries**
+  (`perCoreTimerTickEntryState_preserves_blockedNotResident`,
+  `faultEntryState_preserves_blockedNotResident`,
+  `unknownSyscallEntryState_preserves_blockedNotResident`), through
+  `settleThenActivateAt_blockedNotResident`. No reachable blocked resident
+  was found.
+- **The plan.** The syscall entry's carry runs over every dispatch arm and is
+  the new ZA6.20. The rows after it move up one (ZA6.20 to ZA6.33 become
+  ZA6.21 to ZA6.34), and every citation is swept.
+
 ## v0.36.181 — WS-ZA ZA6.18: the entries' IPC-state frame, and the entries that block no thread
 
 Proofs only.
