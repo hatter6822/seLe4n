@@ -27,7 +27,7 @@
 //!
 //! # What it protects
 //!
-//! Every Lean entry that commits kernel state — all five:
+//! Every Lean entry that commits kernel state:
 //!
 //! | Lean export | Rust bracket |
 //! |---|---|
@@ -35,12 +35,14 @@
 //! | `lean_per_core_timer_tick`         | `timer::per_core_timer_tick_isr` |
 //! | `lean_per_core_reschedule`         | `trap::reschedule_sgi_handler` |
 //! | `lean_secondary_kernel_main`       | `smp::rust_secondary_main` |
-//! | `suspend_thread_cross_core`        | `ffi::sele4n_suspend_thread` |
 //!
-//! The last is the one to watch for: it reaches Lean through
-//! `sele4n_suspend_thread` rather than a `lean_*` symbol, so a sweep
-//! for `lean_` does not find it. A lost suspend is a thread that keeps
-//! running after its caller was told it stopped.
+//! (The fault, unknown-syscall and FP/SIMD entries commit through the trap
+//! handler's bracket as well.)  **WS-ZA ZA6.10 retired the fifth row**, the raw
+//! cross-core suspend seam (`suspend_thread_cross_core`, reached through
+//! `ffi::sele4n_suspend_thread`): it had no in-tree caller, installed no
+//! restore target and ran no residency settle, so it could commit a thread
+//! current on one core while another core still held its unsaved registers.
+//! The live suspend is the syscall `.tcbSuspend` arm.
 //!
 //! The secondary bring-up entry is bracketed *and* ordered: it runs
 //! before `enable_irq` on its core, so a tick cannot preempt the
@@ -56,20 +58,17 @@
 //! instead of entering a runtime it never initialized.
 //!
 //! **WS-RR RR5.6/RR5.7**: that sentence was false when it was written.
-//! Three of the five seams consulted the gate; the SVC dispatch seam and
-//! the cross-core suspend seam — the two that reach Lean through the
-//! `svc_dispatch` / `ffi` boundary rather than an ISR — did not, and the
-//! suspend seam is invisible to a `lean_` sweep besides.  Both now do,
-//! and the claim is checked rather than asserted:
+//! Three of the then five seams consulted the gate; the SVC dispatch seam
+//! and the (since retired) cross-core suspend seam — the two that reached
+//! Lean through the `svc_dispatch` / `ffi` boundary rather than an ISR —
+//! did not.  Both then did, and the claim is checked rather than asserted:
 //! `build.rs::scan_lean_upcalls_readiness_gated` derives the upcall set
 //! from the Lean tree's `@[export]`s and fails the build unless a
 //! readiness guard on the *executing* PE dominates each call.
 //!
 //! What a not-ready core does differs by seam, because what it can
 //! safely do differs.  The three ISR seams degrade to their Rust-only
-//! halves (record-and-re-arm, EOI-and-drop, skip).  The suspend seam
-//! returns `KernelError::IllegalState`: it is a C-callable API with an
-//! error channel and no trapped thread waiting on it.  The SVC seam
+//! halves (record-and-re-arm, EOI-and-drop, skip).  The SVC seam
 //! **halts the core** — an `SVC` advanced the PC, so a frame *could* be
 //! returned, but the timer seam consults the same mask, so a thread on a
 //! not-ready core would never be preempted again
@@ -301,6 +300,11 @@ where
     // request against this core is met by this decision.
     crate::remote_stall::clear_stall_request(core_id);
     let out = f();
+    // The entry has committed, and its commit's first stage saved the frame
+    // this core trapped with: a remote stall waiting on this core's save
+    // (`remote_stall::await_remote_saves_in`) may now proceed.  Inside the
+    // lock, so the epoch an initiator samples under it is exact.
+    crate::remote_stall::note_locked_entry(core_id);
     release_kernel_entry();
     out
 }

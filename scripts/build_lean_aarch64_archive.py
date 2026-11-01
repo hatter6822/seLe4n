@@ -1325,7 +1325,7 @@ def self_test() -> int:
     ]:
         expect(f"providers refused: {label}", _refused(check_hal_providers, classes, text))
 
-    roots = ["initialize_seLe4n_SeLe4n", "lean_kernel_main", "suspend_thread_cross_core"]
+    roots = ["initialize_seLe4n_SeLe4n", "lean_kernel_main", "lean_per_core_timer_tick"]
     expect("the roots script round-trips", parse_roots_script(render_roots_script(roots)) == roots)
     for label, bad in [("no roots", []), ("a repeated root", roots + roots[:1]),
                        ("a root that is not a C identifier", roots + ["x) INPUT(y"])]:
@@ -1335,7 +1335,7 @@ def self_test() -> int:
         ("a second linker command", rendered + "INPUT(libfake.a)\n"),
         ("no EXTERN at all", rendered.replace("EXTERN(", "(")),
         ("an empty EXTERN", ROOTS_HEADER + "EXTERN()\n"),
-        ("a repeated root", rendered.replace("suspend_thread_cross_core", "lean_kernel_main")),
+        ("a repeated root", rendered.replace("lean_per_core_timer_tick", "lean_kernel_main")),
     ]:
         expect(f"the roots script refused: {label}", _refused(parse_roots_script, text))
     try:

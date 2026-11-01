@@ -14,6 +14,8 @@ import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
 import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Testing.BootCoreOps
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+import SeLe4n.Kernel.Scheduler.ActivateThread
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Lifecycle.Suspend
@@ -1135,6 +1137,153 @@ private def sr044_entryTailKeepsEveryCoreUnlinked : IO Unit := do
   expect "SR-044 both cores' tails in turn keep every core unlinked"
     (yieldLinkedNotResidentB (tail (tail stV core0) core1))
 
+/-- `SystemState.currentNotResidentElsewhere`, read off every pair of cores: no
+core's non-idle current thread is resident on another core, and no core holds an
+idle thread's frame. -/
+private def currentNotResidentElsewhereB (st : SystemState) : Bool :=
+  let cores := SeLe4n.Kernel.Concurrency.allCores
+  (cores.all fun c => cores.all fun d =>
+    c == d || match st.scheduler.currentOnCore c with
+      | some t => SeLe4n.Kernel.isIdleThreadId t || st.machine.residentOnCore d != some t
+      | none => true) &&
+  cores.all fun d => match st.machine.residentOnCore d with
+    | some t => !SeLe4n.Kernel.isIdleThreadId t
+    | none => true
+
+/-- A thread queued on the boot core that last ran on core 1 at EL0, where a
+remote commit has since emptied core 1's slot: core 1's bank still holds the
+thread's live registers (its resident), and the boot core runs its idle
+thread. -/
+private def residentMigrantState : SystemState :=
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let base := ((BootstrapBuilder.empty.withObject (⟨100⟩ : ObjId) (.tcb (mkTcb 100))).withRunnable
+    [⟨100⟩]).build
+  let base := SeLe4n.Kernel.storeIdleThreadOnCore (SeLe4n.Kernel.storeIdleThreadOnCore base core0) core1
+  { base with
+    scheduler := base.scheduler.setCurrentOnCore core0 (some (SeLe4n.Kernel.idleThreadId core0))
+    machine := base.machine.setResidentOnCore core1 (some ⟨100⟩) }
+
+/-- An entry's tail on core `c` (residency settle, then activation). -/
+private def entryTail (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
+  SeLe4n.Kernel.activateThreadOnCore (SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore st c) c
+
+/-- The reschedule entry's state on core `c`: the step, then the tail. -/
+private def rescheduleEntryState (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SystemState :=
+  entryTail (SeLe4n.Kernel.perCoreRescheduleStep st c.val.toUInt64) c
+
+/-- The timer entry's state on core `c`: the tick, then the tail. -/
+private def timerEntryState (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SystemState :=
+  entryTail (SeLe4n.Kernel.perCoreTimerTickStep st c.val.toUInt64).1 c
+
+/-- SR-046 (WS-ZA ZA6.10, a core's current thread is resident on no other core):
+a thread that last ran on core 1 migrates to the boot core.  While core 1's bank
+still holds its live registers the boot core's reschedule does not choose it;
+once core 1's entry has saved it, the boot core's next entry runs it, and every
+state in between satisfies the invariant.  The thread current on the boot core
+while resident on core 1 is the state the invariant rules out. -/
+private def sr046_migrantRunsOnlyOnceSaved : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st0 := residentMigrantState
+  expect "SR-046 the migrant's start state satisfies the invariant" (currentNotResidentElsewhereB st0)
+  expect "SR-046 the checker refuses the migrant current on core 0 while resident on core 1"
+    (!currentNotResidentElsewhereB { st0 with
+      scheduler := st0.scheduler.setCurrentOnCore core0 (some ⟨100⟩) })
+  expect "SR-046 the checker refuses an idle thread's frame as a resident"
+    (!currentNotResidentElsewhereB { st0 with
+      machine := st0.machine.setResidentOnCore core1 (some (SeLe4n.Kernel.idleThreadId core1)) })
+  let st1 := rescheduleEntryState st0 core0
+  expect "SR-046 core 0 does not choose the thread core 1 still holds"
+    (st1.scheduler.currentOnCore core0 == some (SeLe4n.Kernel.idleThreadId core0) &&
+      st1.queuedOn core0 ⟨100⟩)
+  expect "SR-046 ...and the invariant holds" (currentNotResidentElsewhereB st1)
+  let st2 := timerEntryState st1 core1
+  expect "SR-046 core 1's entry releases the thread" (st2.machine.residentOnCore core1 == none)
+  expect "SR-046 ...and the invariant holds" (currentNotResidentElsewhereB st2)
+  let st3 := rescheduleEntryState st2 core0
+  expect "SR-046 core 0's next entry runs the migrant"
+    (st3.scheduler.currentOnCore core0 == some ⟨100⟩ &&
+      st3.machine.residentOnCore core0 == some ⟨100⟩)
+  expect "SR-046 ...and the invariant holds" (currentNotResidentElsewhereB st3)
+
+/-- SR-047 (WS-ZA ZA6.10, the deferral costs no time slice): when core 1's entry
+releases the resident the boot core passed over, its settle raises the boot
+core's reschedule flag, which the entry fires as a `.reschedule` SGI, so the
+boot core runs the thread at its next entry rather than its idle thread's whole
+slice.  A settle that releases nothing raises no flag. -/
+private def sr047_releaseWakesTheDeferringCore : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st1 := rescheduleEntryState residentMigrantState core0
+  let mid := (SeLe4n.Kernel.perCoreTimerTickStep st1 core1.val.toUInt64).1
+  let st2 := entryTail mid core1
+  let sgis := mid.scheduler.reschedulePending.raised st2.scheduler.reschedulePending
+  expect "SR-047 core 1's settle raises core 0's flag" (st2.scheduler.reschedulePendingOnCore core0)
+  expect "SR-047 ...which the entry fires as an SGI at core 0, and only there"
+    (sgis.get core0 && !sgis.get core1)
+  expect "SR-047 core 0's SGI entry runs the thread"
+    ((rescheduleEntryState st2 core0).scheduler.currentOnCore core0 == some ⟨100⟩)
+  let st2' := entryTail (SeLe4n.Kernel.perCoreTimerTickStep st2 core1.val.toUInt64).1 core1
+  expect "SR-047 a settle that releases nothing raises no flag"
+    (st2.scheduler.reschedulePending.raised st2'.scheduler.reschedulePending == .none)
+
+/-- `SystemState.holdsOnlyCurrentOn`, read off one core: the core holds no
+thread's live registers but its current thread's. -/
+private def holdsOnlyCurrentOnB (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
+  match st.machine.residentOnCore c with
+  | some t => st.scheduler.currentOnCore c == some t
+  | none => true
+
+/-- SR-048 (WS-ZA ZA6.11, the remote stall waits for the remote save): a commit
+on the boot core has taken the thread off core 1, whose bank still holds its
+live registers.  The HAL's check stalls core 1 and only core 1; core 1's next
+entry, the one the stall's save epoch waits for, writes the frame it trapped
+with into the thread's TCB (a syscall's rewound to its `SVC`); and its tail
+leaves core 1 holding no thread's registers but its current thread's, which
+the vacated state before it did not. -/
+private def sr048_stallWaitsForTheRemoteSave : IO Unit := do
+  let core0 := SeLe4n.Kernel.Concurrency.bootCoreId
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st0 := residentMigrantState
+  -- The HAL record: core 1 last decided the thread; every other core what
+  -- the committed state runs.
+  let decided := st0.scheduler.currentCode.set core1.val (100 + 1) core1.isLt
+  expect "SR-048 the stall set holds core 1, the core the commit took the thread off"
+    (SeLe4n.Kernel.Concurrency.stallsOn decided core0 st0 core1)
+  expect "SR-048 ...and no core whose committed thread is the one it decided"
+    (SeLe4n.Kernel.Concurrency.allCores.all fun c =>
+      c == core1 || !SeLe4n.Kernel.Concurrency.stallsOn decided core0 st0 c)
+  expect "SR-048 the vacated core holds a thread that is not its current thread"
+    (!holdsOnlyCurrentOnB st0 core1)
+  let frame : SeLe4n.Kernel.Architecture.InFlightContext :=
+    { (default : SeLe4n.Kernel.Architecture.InFlightContext) with x0 := 77, pc := 0x1004, pstate := 0 }
+  let saved := SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st0 core1 (some frame)
+  expect "SR-048 core 1's entry saves the frame it trapped with into the thread"
+    (match saved.getTcb? ⟨100⟩ with
+     | some t => t.registerContext.x0 == 77 && t.registerContext.pc == 0x1004
+     | none => false)
+  let savedSvc := SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame st0 core1 (some frame)
+  expect "SR-048 ...a syscall's frame rewound to its SVC"
+    (match savedSvc.getTcb? ⟨100⟩ with
+     | some t => t.registerContext.x0 == 77 && t.registerContext.pc == 0x1000
+     | none => false)
+  let st1 := entryTail saved core1
+  expect "SR-048 core 1's tail leaves it holding only its current thread"
+    (holdsOnlyCurrentOnB st1 core1 && st1.machine.residentOnCore core1 != some ⟨100⟩)
+  expect "SR-048 ...and the thread's saved registers are the trapped frame"
+    (match st1.getTcb? ⟨100⟩ with
+     | some t => t.registerContext.x0 == 77
+     | none => false)
+  let ignored := SeLe4n.Kernel.Architecture.saveCapturedTrapFrame st0 core1
+    (some { frame with pstate := 0x5 })
+  expect "SR-048 a frame taken at EL1 saves nothing into the thread"
+    (match ignored.getTcb? ⟨100⟩, st0.getTcb? ⟨100⟩ with
+     | some t, some t0 => t.registerContext == t0.registerContext
+     | _, _ => false)
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1204,4 +1353,9 @@ def main : IO Unit := do
   sr044_entryTailKeepsEveryCoreUnlinked
   IO.println "--- ZA6.9: the Consumed invocation ---"
   sr045_consumedInvocationReadsAndResets
-  IO.println "=== All D1 suspend/resume tests passed (47 tests) ==="
+  IO.println "--- ZA6.10: a core's current thread is resident on no other core ---"
+  sr046_migrantRunsOnlyOnceSaved
+  sr047_releaseWakesTheDeferringCore
+  IO.println "--- ZA6.11: the remote stall waits for the remote save ---"
+  sr048_stallWaitsForTheRemoteSave
+  IO.println "=== All D1 suspend/resume tests passed (50 tests) ==="

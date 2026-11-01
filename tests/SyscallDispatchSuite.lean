@@ -1302,81 +1302,6 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
     (bound.machineConfig.declaredCoreCount == 4)
     "every member of the RPi5 family must declare the binding's four PEs"
 
-/-- SD-057 (PR #889 review round 8): **the raw suspend seam refuses a reserved
-idle thread id, and commits nothing.**  `suspend_thread_cross_core` takes a raw
-id and no capability, so `syscallResolveCap`'s refusal of a capability naming an
-idle object (SD-054) never reached it: with the boot state installed, the
-transition `suspendThreadOnCore` dequeues idle 0 like any other thread — the
-finding, reproduced first — and the seam now refuses the id with the sentinel's
-`.invalidArgument` before the transition runs
-(`suspendThreadCrossCoreStep_idle_refused`).  An ordinary installed thread still
-reaches the transition (the inactive lower witness is refused by the
-transition's own `.illegalState`), so the guard is the idle reservation and
-nothing wider.  The step is committed through `modifyGetKernelState`, the
-same read-then-write the export performs; the export itself also fires the
-diff-derived SGIs through the HAL's `ffi_send_sgi`, which no host suite links,
-so the export body is pinned to the step by a Tier 3 anchor rather than
-executed here. -/
-private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
-  match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform witnessedCfg with
-  | Except.error e =>
-      failLine "sd057_boot_unexpected_error" s!"the four-core binding should boot, got: {e}"
-  | Except.ok _ =>
-      let c0 : SeLe4n.Kernel.Concurrency.CoreId := ⟨0, by decide⟩
-      let idle0 : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId c0
-      let invalidArgument := KernelError.toUInt32 .invalidArgument
-      let st ← getKernelState
-      -- The finding: the transition alone suspends the idle thread.
-      expect "sd057_transition_alone_would_suspend_idle"
-        (match idle0.toValid? with
-         | some vIdle =>
-           match suspendThreadOnCore st vIdle c0 with
-           | Except.ok (st', _) =>
-             (st'.getTcb? idle0).map (·.threadState) == some .Inactive
-           | Except.error _ => false
-         | none => false)
-        "without the seam's check, suspendThreadOnCore suspends idle 0"
-      -- The seam refuses before the transition runs — the step, committed
-      -- through the kernel-state reference exactly as the export commits it.
-      let (status, sgis) ← modifyGetKernelState
-        (suspendThreadCrossCoreStep idle0.toNat.toUInt64 c0)
-      expect "sd057_idle_id_refused_with_invalidArgument"
-        (status == invalidArgument && sgis.isEmpty)
-        s!"expected the sentinel's discriminant {invalidArgument} and no SGI, got {status}"
-      let st' ← getKernelState
-      expect "sd057_idle_thread_still_installed_dispatchable_and_ready"
-        ((st'.getTcb? idle0).isSome && idleDispatchableOnCore st' c0 &&
-         ((st'.getTcb? idle0).map (·.threadState) == some .Ready))
-        "the refusal must commit nothing"
-      -- The pure step, the theorem's subject: refused, no SGI, state untouched.
-      expect "sd057_pure_step_idle_refused_no_sgi"
-        (match suspendThreadCrossCoreStep idle0.toNat.toUInt64 c0 st with
-         | ((code, sgis), stAfter) =>
-           code == invalidArgument && sgis.isEmpty &&
-           stAfter.getTcb? idle0 == st.getTcb? idle0)
-        "the pure step must refuse an idle id without deriving an SGI"
-      expect "sd057_every_core_idle_id_refused"
-        (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-          match suspendThreadCrossCoreStep
-              (SeLe4n.Kernel.idleThreadId c).toNat.toUInt64 c0 st with
-          | ((code, _), _) => code == invalidArgument))
-        "every core's idle id is refused"
-      -- An ordinary installed thread reaches the transition and is suspended:
-      -- since WS-BP BP7.11 the platform boot **starts** its labeling's lower
-      -- witness (`PlatformBinding.initialThreads`), so it is queued and
-      -- `.Ready`, and the transition succeeds — where before BP7.11 it was
-      -- `.Inactive` and the transition refused it `.illegalState`.  Either way
-      -- the point stands: the seam's idle check does not refuse it.
-      let (witnessStatus, _) ← modifyGetKernelState
-        (suspendThreadCrossCoreStep SeLe4n.Kernel.harnessLowerWitnessIndex.toUInt64 c0)
-      expect "sd057_ordinary_thread_reaches_the_transition"
-        (witnessStatus == 0)
-        s!"the started witness is suspended by the transition, got {witnessStatus}"
-      -- The sentinel keeps its refusal.
-      let (sentinelStatus, _) ← modifyGetKernelState (suspendThreadCrossCoreStep 0 c0)
-      expect "sd057_sentinel_refused" (sentinelStatus == invalidArgument)
-        "the sentinel is refused with the same discriminant"
-
 /-- SD-058 (WS-RR RR7.29, register finding 2): **`.mintReplyCap` driven through
 the syscall gate.**
 
@@ -2460,7 +2385,6 @@ def main : IO Unit := do
   sd055_witnesses_installed_and_binding_cores
   IO.println "--- PR #889 review round 5: witnesses off the boot root, structural cores ---"
   sd056_witnesses_off_boot_root_and_structural_cores
-  sd057_rawSuspendSeamRefusesIdleIds
   IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
   sd058_mintReplyCapThroughTheSyscallGate
   sd059_cspaceRevokeThroughTheSyscallGate

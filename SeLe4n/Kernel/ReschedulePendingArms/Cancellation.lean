@@ -104,11 +104,13 @@ theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
     {a b : SeLe4n.ThreadId}
     (hKeys : ∀ t, t ≠ a → t ≠ b → schedKeyView m t = schedKeyView pre t ∧
       budgetEligibleView m t = budgetEligibleView pre t)
-    (hSched : m.scheduler = pre.scheduler) (hRun : SystemState.RunCoresAgree m pre) :
+    (hSched : m.scheduler = pre.scheduler) (hRun : SystemState.RunCoresAgree m pre)
+    (hRes : m.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre (markKeyChangeFrom pre (markKeyChangeFrom pre m a) b) := by
   refine ⟨reschedulePendingCovers_of_keyChangeFlagged (fun t => ?_)
     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_,
-    currentKeptOffCore_of_eq fun c _ => ?_⟩
+    currentKeptOffCore_of_eq fun c _ => ?_,
+    residentKeptOffCore_of_eq (by simp only [markKeyChangeFrom_machine]; exact hRes)⟩
   · by_cases hb : t = b
     · subst hb; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     by_cases ha : t = a
@@ -191,6 +193,8 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
+  have hM := congrArg MachineState.residentCode
+    (returnDonatedSchedContext_machine_eq _ _ _ _ _ _ h)
   unfold returnDonatedSchedContext SystemState.getSchedContext? at h
   revert h
   cases hObj : st.objects[scId.toObjId]? with
@@ -251,7 +255,8 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                       (stcb' := { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv hObj rfl rfl
                       (by rw [← hS1]) hS2 hL1 (by rw [← hS3]) hL2 (by rw [← hS4]) rfl rfl
                     exact ⟨stepCovers_markKeyChangeFrom_pair
-                      (fun t ho hs => hK t ho hs) hS hR,
+                      (fun t ho hs => hK t ho hs) hS hR
+                      (by simpa only [markKeyChangeFrom_machine] using hM),
                       by simp only [markKeyChangeFrom_objects]; exact hI⟩
     | _ => intro h; cases h
 
@@ -391,11 +396,19 @@ theorem removeFromNotificationWaitQueue_keyInputsEq (st : SystemState) (tid : Se
 
 /-! ### The teardown covers -/
 
+/-- The IPC teardown's writes set no core's resident thread (`resident_frame`). -/
+macro_rules | `(tactic| resident_frame) => `(tactic|
+  (simp only [Lifecycle.Suspend.restoreToReadyCancelled_machine_eq,
+    Lifecycle.Suspend.restoreToReadyStaging_machine_eq, removeFromAllEndpointQueues_machine_eq,
+    removeFromNotificationWaitQueue_machine_eq, spliceThreadReplyFrameOut_machine_eq,
+    Lifecycle.Suspend.consumeReplyLink_machine_eq, SystemState.unlinkReplyWaiterOpt_machine]; done))
+
 /-- An object-only step that moves no key input covers. -/
 theorem stepCovers_of_keys_sched {e : CoreId} {pre post : SystemState}
-    (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler) :
+    (hKeys : keyInputsEq pre post) (hSched : post.scheduler = pre.scheduler)
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre post :=
-  stepCovers_of_scheduler_eq hKeys hSched
+  stepCovers_of_scheduler_eq hKeys hSched hRes
 
 /-- **The cancelled caller's reclaim covers**: the return ends in its two
 hooks. -/
@@ -465,11 +478,13 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
     (hRq : SystemState.RunCoresAgree m pre)
     (hCur : ∀ c, m.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hFl : ∀ c, pre.scheduler.reschedulePendingOnCore c = true →
-      m.scheduler.reschedulePendingOnCore c = true) :
+      m.scheduler.reschedulePendingOnCore c = true)
+    (hRes : m.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre (markKeyChangeFrom pre m a) := by
   refine ⟨reschedulePendingCovers_of_keyChangeFlagged (fun t => ?_)
     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_,
-    currentKeptOffCore_of_eq fun c _ => ?_⟩
+    currentKeptOffCore_of_eq fun c _ => ?_,
+    residentKeptOffCore_of_eq (by simp only [markKeyChangeFrom_machine]; exact hRes)⟩
   · by_cases ha : t = a
     · subst ha; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     · left

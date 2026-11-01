@@ -905,9 +905,11 @@ theorem fireRaisedReschedules_eq (m : SeLe4n.Model.PerCoreFlags) :
 /-- **The remote-core stall over `cores`** (seL4's `remoteTCBStall`): each
 core but the executing one is checked against `codes`, the thread code the
 committed state runs on each core (`SchedulerState.currentCode`); a core the
-commit changed is made to leave the thread it ran before this returns
-(`Platform.FFI.ffiStallIfChanged`).  Recursion, so the runtime builds no list
-and no closure. -/
+commit changed is made to leave the thread it ran before this returns, and its
+save epoch is sampled, so the executing core resumes nothing until that core
+has saved the thread (`Platform.FFI.ffiStallIfChanged`; the model of the wait
+is `RemoteSaveObligation`).  Recursion, so the runtime builds no list and no
+closure. -/
 def stallChangedOver (codes : Vector Nat numCores) (execCore : CoreId) :
     List CoreId → BaseIO Unit
   | [] => pure ()
@@ -944,6 +946,46 @@ theorem stallChangedCores_eq (codes : Vector Nat numCores) (execCore : CoreId) :
       (allCores.filter fun c => decide (c ≠ execCore)).forM fun c =>
         Platform.FFI.ffiStallIfChanged c.val.toUInt64 (codes.get c).toUInt64 :=
   stallChangedOver_eq codes execCore allCores
+
+/-- **The HAL's stall check of core `c`, as a specification** (WS-ZA ZA6.11;
+`ffi_stall_if_changed`, run per core by `stallChangedCores`): `c` is not the
+executing core `e`, and the committed state runs on `c` a thread other than the
+one `c` last decided to run (`decided`, the HAL record `PER_CPU_CURRENT_THREAD`
+as thread codes: `0` none, `tid + 1`).  The stall pokes, waits on and samples
+the save epoch of exactly these cores. -/
+def stallsOn (decided : Vector Nat numCores) (e : CoreId) (post : SeLe4n.Model.SystemState)
+    (c : CoreId) : Bool :=
+  c != e && decided.get c != post.scheduler.currentCode.get c
+
+/-- The committed thread code of a core is its current thread's code. -/
+theorem currentCode_get (s : SeLe4n.Model.SchedulerState) (c : CoreId) :
+    s.currentCode.get c = SeLe4n.ThreadId.optCode (s.currentOnCore c) := by
+  simp [SeLe4n.Model.SchedulerState.currentOnCore]
+
+/-- **Every core the commit took a thread off is stalled**: core `c ≠ e` ran `t`
+(the HAL record names it) and the committed state does not. -/
+theorem stallsOn_of_taken (decided : Vector Nat numCores) (e c : CoreId)
+    (post : SeLe4n.Model.SystemState) (t : SeLe4n.ThreadId) (hc : c ≠ e)
+    (hRec : decided.get c = SeLe4n.ThreadId.optCode (some t))
+    (hTaken : post.scheduler.currentOnCore c ≠ some t) :
+    stallsOn decided e post c = true := by
+  unfold stallsOn
+  rw [currentCode_get, hRec]
+  have hne : SeLe4n.ThreadId.optCode (some t) ≠
+      SeLe4n.ThreadId.optCode (post.scheduler.currentOnCore c) :=
+    fun h => hTaken (SeLe4n.ThreadId.optCode_injective h).symm
+  simp [hc, hne]
+
+/-- A core whose committed thread is the one it decided is not stalled. -/
+theorem stallsOn_of_unchanged (decided : Vector Nat numCores) (e c : CoreId)
+    (post : SeLe4n.Model.SystemState) (h : decided.get c = post.scheduler.currentCode.get c) :
+    stallsOn decided e post c = false := by
+  simp [stallsOn, h]
+
+/-- The executing core is never stalled. -/
+@[simp] theorem stallsOn_self (decided : Vector Nat numCores) (e : CoreId)
+    (post : SeLe4n.Model.SystemState) : stallsOn decided e post e = false := by
+  simp [stallsOn]
 
 -- ============================================================================
 -- WS-SM SM7.A.3 — Shootdown acknowledgment-flag typed wrappers

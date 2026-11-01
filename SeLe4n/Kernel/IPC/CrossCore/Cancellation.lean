@@ -124,8 +124,7 @@ sweeps.
 
 **Live wiring status (audit-corrected; re-corrected at WS-RR RR8.12).**  The
 live `.tcbSuspend` dispatch landed at v0.32.61 through `suspendThreadOnCore`
-(§13 of this module, behind `API.dispatchCapabilityOnly` and the
-`suspend_thread_cross_core` FFI seam) — NOT through
+(§13 of this module, behind `API.dispatchCapabilityOnly`) — NOT through
 `cancelIpcBlockingOnCore`/`descheduleThread`, which remain the theorem-level
 composites.  **Do not wire those live as-is**: the pipeline performs its own
 placement deschedule at G4 and its own G7 reschedule, so composing the whole
@@ -426,8 +425,8 @@ holder's own removal core at its declared member
 **TOCTOU caveat (resolution vs. concurrent mutation).**  On hardware the whole
 transition runs inside the suspend syscall's 2PL bracket holding the victim's
 TCB **write** lock (`lockSet_cancelIpcBlocking` ∋ `tcbLock victim`), and the
-AN9-D FFI bracket (`with_interrupts_disabled` around
-`suspend_thread_cross_core`) excludes same-core ISR interleavings.  The
+syscall's trap handler runs with IRQs masked, which excludes same-core ISR
+interleavings.  The
 placement scan reads OTHER cores' run queues and current slots, which the
 victim's TCB lock does not serialise — its declared guard is the placed core's
 `LockKey.runQueue` write lock in the scheduler-domain footprint, and in the
@@ -5116,8 +5115,7 @@ theorem suspendThreadOnCore_preserves_objects_invExt
 `ipcInvariant`.**  This is the theorem the pre-SM10 audit found missing: SM6.E's
 five `*_preserves_ipcInvariant` composites are all about functions the module
 header warns must not be wired live as-is, while `suspendThreadOnCore` — the one
-`API.dispatchCapabilityOnly`'s `.tcbSuspend` arm and the
-`suspend_thread_cross_core` seam actually call — carried no preservation theorem
+`API.dispatchCapabilityOnly`'s `.tcbSuspend` arm actually calls — carried no preservation theorem
 at all. -/
 theorem suspendThreadOnCore_preserves_ipcInvariant
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)

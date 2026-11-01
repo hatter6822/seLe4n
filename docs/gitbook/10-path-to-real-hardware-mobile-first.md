@@ -40,7 +40,8 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
 - **SuspendThread atomicity** (AN9-D / DEF-C-M04): FFI bracket via
   `interrupts::with_interrupts_disabled`.  WS-RC R2.B closed the
   Lean side, and **WS-SM SM6.E** flipped the live seam to the
-  cross-core entry `suspend_thread_cross_core`.  **WS-RR RR5.17**
+  cross-core entry `suspend_thread_cross_core`, which **WS-ZA ZA6.10**
+  retired: the suspend is the SVC seam's `.tcbSuspend` arm.  **WS-RR RR5.17**
   retired the boot-pinned `@[export suspend_thread_inner]`: it
   committed kernel state with no kernel-entry bracket, and the
   `@[export]` made it a C symbol in the linked image whose only

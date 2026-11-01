@@ -55,9 +55,10 @@ declarations from compilation, so the "gating" is **link-time**:
   the `@[extern]` symbols resolve to the corresponding
   `#[no_mangle] pub extern "C"` functions in
   `rust/sele4n-hal/src/{ffi,svc_dispatch}.rs`, and the `@[export]`
-  symbols (`suspend_thread_inner`; the syscall entry itself is
-  `lean_syscall_dispatch_cross_core` in `Kernel/SyscallDispatchEntry.lean` —
-  WS-RA removed the vestigial `syscall_dispatch_inner`) are
+  symbols (the syscall entry is `lean_syscall_dispatch_cross_core` in
+  `Kernel/SyscallDispatchEntry.lean` — WS-RA removed the vestigial
+  `syscall_dispatch_inner`, and WS-RR RR5.17 the `suspend_thread_inner`
+  export) are
   reachable from the Rust caller via `extern "C" { fn ... }` blocks.
 - On a simulation build (host development, CI smoke/full test runs)
   the Rust HAL is **not** linked.  Test paths consume the pure-model
@@ -83,8 +84,9 @@ simulation build because no Rust HAL is linked to make the upcall.
 - **MMIO**: 32/64-bit volatile read/write
 - **UART**: Debug character output
 - **Interrupts**: Enable/disable interrupt delivery
-- **suspendThread bridge** (AN9-D / WS-RC R2.B): Lean ↔ Rust suspend
-  with `with_interrupts_disabled` bracketing on the Rust side.
+- **suspendThread reference path** (AN9-D / WS-RC R2.B): the boot-pinned
+  `suspendThreadInner`, exported to no C symbol; the live suspend is the
+  syscall `.tcbSuspend` arm.
 - **Syscall dispatch bridge** (AN9-F / WS-RC R2.B): Rust → Lean SVC
   dispatch routing into the verified `syscallEntryChecked`.
 
@@ -310,9 +312,12 @@ opaque ffiSendSgiToAllButSelf : (intid : UInt8) → BaseIO Unit
 runs on `core`.  When that is not what `core` last decided to run, the commit
 took a thread off it: `core` is asked to reschedule before it next returns to
 EL0 and, if it is at EL0 now, poked with the `.reschedule` SGI and waited on
-until it has entered the kernel.  The executing core is skipped; a core that
-never enters halts the system fail-closed.  Called after a commit, under the
-kernel-entry lock, by `Concurrency.stallChangedCores`.
+until it has entered the kernel; either way its save epoch is sampled here,
+under the lock, and the executing core's exit gate waits outside the lock until
+`core` has completed a locked entry since, the entry whose save stage writes
+the thread into its TCB (WS-ZA ZA6.11).  The executing core is skipped; a core
+that never enters halts the system fail-closed.  Called after a commit, under
+the kernel-entry lock, by `Concurrency.stallChangedCores`.
 
     Rust: `ffi_stall_if_changed` in `sele4n-hal/src/ffi.rs` -/
 @[extern "ffi_stall_if_changed"]
@@ -1112,7 +1117,7 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     commits state runs inside
     `rust/sele4n-hal/src/kernel_entry.rs`'s `with_kernel_entry` bracket, so the
     read and the write are one critical section against every other kernel
-    entry.  All five committing entries are bracketed —
+    entry.  The committing entries are bracketed —
     `lean_syscall_dispatch_cross_core` (`svc_dispatch::dispatch_svc`),
     `lean_per_core_timer_tick` (`timer::per_core_timer_tick_isr`, from
     `trap.rs::handle_irq_per_core`'s timer branch),
@@ -1120,8 +1125,7 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     `.reschedule` SGI receiver),
     `lean_secondary_kernel_main` (`smp.rs::rust_secondary_main`, the bring-up
     reschedule — bracketed *and* invoked before `enable_irq` on its core, so a
-    tick cannot re-enter the non-reentrant lock on the same core) and
-    `suspend_thread_cross_core` (`ffi::sele4n_suspend_thread`).  The primary
+    tick cannot re-enter the non-reentrant lock on the same core).  The primary
     bring-up entry (`lean_kernel_main`, `SeLe4n.Platform.RPi5.kernelMain`, WS-BP
     BP4.1) is the one committing path outside the bracket, and it needs none: an
     unbracketed install racing a bracketed tick could be overwritten by a commit
@@ -3238,86 +3242,41 @@ theorem syscallDispatchFromAbiWords_eq
         rw [returnOutcomeWords_eq]
 
 -- ============================================================================
--- AN9-D (DEF-C-M04): suspendThread atomicity bracket
+-- AN9-D (DEF-C-M04): the boot-pinned suspend reference path
 -- ============================================================================
 
-/-- AN9-D (DEF-C-M04): Lean → Rust direction.  Calls the
-    `sele4n_suspend_thread` Rust wrapper that brackets the inner Lean
-    dispatch with `with_interrupts_disabled`.
+/-- AN9-D inner — the boot-pinned suspend, run against the kernel-state
+    reference.  **No C symbol and no production caller**: the live suspend is
+    the syscall `.tcbSuspend` arm (`syscallDispatchCrossCoreEntry`), which runs
+    inside the kernel-entry bracket and ends with the residency settle every
+    committing entry ends with.
 
-    Used when a Lean module invoking `suspendThread` from a path that
-    must enforce hardware atomicity (i.e., not the abstract
-    sequential model) wants to ensure the FFI bracket is in place.
-
-    See `rust/sele4n-hal/src/ffi.rs::sele4n_suspend_thread`. -/
-@[extern "sele4n_suspend_thread"]
-opaque ffiSuspendThread : UInt64 → BaseIO UInt32
-
-/-- AN9-D inner — Rust → Lean direction.  Exported so the Rust
-    `sele4n_suspend_thread` wrapper can call back into the Lean
-    suspend dispatch (after `with_interrupts_disabled` is set up).
-
-    `@[export]` instructs the Lean compiler to emit a C-callable
-    `suspend_thread_inner` symbol; the Rust side declares
-    `extern "C" { fn suspend_thread_inner(...) -> u32; }` in
-    `rust/sele4n-hal/src/ffi.rs`.
-
-    Returns a `KernelError` discriminant; `0` means success (matching
-    the `KernelError::Ok` slot reserved at AK4-A).
-
-    **WS-RC R2.B (substantive)**: this body now reads the live
-    `SystemState` from `kernelStateRef`, calls the verified
-    `Kernel.Lifecycle.Suspend.suspendThread` handler with a
-    type-checked `ValidThreadId`, writes the post-state back to the
-    ref, and returns the encoded result.
+    The body reads the live `SystemState` from `kernelStateRef`, runs the
+    per-core suspend (`suspendThreadOnCore`) on the boot core with a
+    type-checked `ValidThreadId`, writes the post-state back and returns the
+    encoded result, dropping the cross-core SGI the transition reports; the
+    single-core `suspendThread` writes the run queue only through the
+    proof-only ghost (WS-ZA ZA4.5), so it has no compiled code.
 
     Failure modes:
     - `tid` corresponds to `ThreadId.sentinel` (the reserved value):
       reject with `.invalidArgument` (`KernelError.toUInt32 = 39`)
-      without invoking `suspendThread` — the type system would
-      otherwise refuse a `ValidThreadId` argument.
-    - `suspendThread` returns `.error e`: forward `e`'s discriminant
-      and leave `kernelStateRef` unchanged.
-    - `suspendThread` returns `.ok st'`: install `st'` as the new
-      kernel state and return `0` (`KernelError::Ok`-equivalent slot).
+      without invoking the transition — the type system would otherwise
+      refuse a `ValidThreadId` argument.
+    - the transition returns `.error e`: forward `e`'s discriminant and
+      leave `kernelStateRef` unchanged.
+    - the transition returns `.ok`: install the post-state and return `0`.
 
-    **WS-SM SM6.E**: the live Rust atomicity bracket
-    (`sele4n_suspend_thread`) resolves the **cross-core** entry
-    `suspend_thread_cross_core` (`SyscallDispatchEntry.suspendThreadCrossCoreEntry`,
-    backed by the verified per-core `suspendThreadOnCore`: home-core
-    deschedule + remote `.reschedule` SGI after the commit).
-
-    **WS-RR RR5.17 — the `@[export]` is RETIRED; this is a Lean-side
-    reference path, not a C symbol.**
-
-    The body commits through `initialiseKernelState`, a bare
-    `kernelStateRef.set`, with no kernel-entry bracket around the
-    read-modify-write.  `kernel_entry.rs` acknowledged that and argued it was
-    harmless because nothing on the trap path reached it — which was true of the
-    HAL as it stood, and is not a property of the artefact: `@[export]` makes it
-    a live C symbol in the linked image, so *any* future Rust caller would get an
-    unserialised kernel-state write, and a lost suspend is a thread that keeps
-    running after its caller was told it stopped.
-
-    Two remediations were open (register §5 finding 9): bracket the body, or
-    retire the export and keep the definition for the suites.  Retiring is the
-    stronger one and the one with precedent in this file — WS-RA removed the
-    twin `syscall_dispatch_inner` for the same reason, and the tombstone below
-    keeps it gone.  It removes the hazard rather than mitigating it: there is no
-    symbol for a future caller to reach, so no bracket can be forgotten.
-    Bracketing would also have needed the Lean body to take the kernel-entry
-    lock through new FFI, which the simulation build cannot link — the suites
-    that exercise this definition run with no HAL.
-
-    What remains is a **boot-pinned reference path** with no production caller,
-    exercised by `tests/SyscallDispatchSuite.lean` (SD-020..SD-023) as the
-    counterpart of the live cross-core entry.  It runs the per-core suspend
-    (`suspendThreadOnCore`) on the boot core and drops the cross-core SGI it
-    reports; the single-core `suspendThread` writes the run queue only through
-    the proof-only ghost (WS-ZA ZA4.5), so it has no compiled code.  New code must not
-    call it: the live suspend is `suspendThreadCrossCoreEntry`, whose Rust
-    wrapper takes the kernel-entry bracket and consults the per-core readiness
-    gate (RR5.7). -/
+    **WS-RR RR5.17 retired its `@[export]`**: the body commits through
+    `initialiseKernelState`, a bare `kernelStateRef.set` with no kernel-entry
+    bracket, so a C symbol would have been an unserialised kernel-state write
+    for any future caller.  WS-ZA ZA6.10 retired the raw cross-core suspend
+    seam (`suspend_thread_cross_core`, the Rust `sele4n_suspend_thread`) for a
+    related reason: it committed a core's scheduling decision without the
+    residency settle, so it could leave a thread current on one core while
+    another core still held its unsaved registers.  What remains is this
+    reference path, exercised by `tests/SyscallDispatchSuite.lean`
+    (SD-020..SD-023).  New code must not call it. -/
 def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
   let st ← getKernelState
   let threadId := SeLe4n.ThreadId.ofNat tid.toNat

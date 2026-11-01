@@ -152,10 +152,9 @@ import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupFootprint
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
--- WS-LS LS2.3: the syscall and suspend seams' footprint coverage — each
--- declared footprint covers every object-store and scheduler write its seam
--- performs (`syscallDispatchCrossCoreStep_coversWrites`,
--- `suspendSeamAction_coversWrites`), built over the production per-arm
+-- WS-LS LS2.3: the syscall seam's footprint coverage — the declared
+-- footprint covers every object-store and scheduler write the seam performs
+-- (`syscallDispatchCrossCoreStep_coversWrites`), built over the production per-arm
 -- containment (`SyscallSchedContainment`) and slot confinement
 -- (`SlotConfinement.*`), so the bracket's `hCover` is discharged at the seam
 -- rather than assumed.

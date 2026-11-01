@@ -119,8 +119,8 @@ per-core op footprints.
 live per-core run loop (SM5.I) is the runtime exerciser that acquires those
 footprints under `withLockSet`, and it did not: SM3.C.9 deferred wrapping the
 `@[export]` bodies, so at that point exactly one live seam acquired a declared
-footprint (the raw `suspend_thread_cross_core`) and the per-core scheduler
-entries acquired none.
+footprint (the raw cross-core suspend seam, retired at WS-ZA ZA6.10) and the
+per-core scheduler entries acquired none.
 
 What is true now: **the syscall seam brackets**.
 `syscallDispatchCrossCoreEntry` runs its atomic step inside the footprint

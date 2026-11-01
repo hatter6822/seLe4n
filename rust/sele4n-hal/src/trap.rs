@@ -1750,7 +1750,7 @@ pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
             //
             // No device interrupt has a Lean entry yet: wiring one to its
             // handler's notification, as seL4's `handleInterrupt` does, is
-            // `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` WS-ZA ZA6.13.
+            // `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` WS-ZA ZA6.17.
             //
             // Audit-pass-4: per-line atomicity via `kprintln_core!`
             // (see SGI branch above for rationale).
@@ -1895,6 +1895,13 @@ const SPSR_MODE_MASK: u64 = 0x1F;
 /// on a path that took no lock (a shootdown SGI, a spurious interrupt) or in
 /// the window between a locked entry's release and its `eret`.
 ///
+/// First, whatever the frame resumes, the gate waits for every remote save
+/// this core's last commit owes (`remote_stall::await_remote_saves_in`): each
+/// core that commit took a thread off has completed a locked entry since, and
+/// so has saved that thread into its TCB, before this core resumes anything.
+/// The wait holds no lock, and serves this core's own stall request and
+/// shootdown obligation while it polls.
+///
 /// # Safety (caller contract)
 ///
 /// Called only from `trap.S`, with `frame` the frame `restore_context` is
@@ -1902,6 +1909,29 @@ const SPSR_MODE_MASK: u64 = 0x1F;
 #[no_mangle]
 pub extern "C" fn user_exit_gate(frame: &mut TrapFrame) {
     let core = crate::per_cpu::current_core_id_from_tpidr();
+    let waited = crate::remote_stall::await_remote_saves_in(
+        &crate::remote_stall::SAVE_EPOCH,
+        &crate::remote_stall::PENDING_SAVES,
+        &crate::remote_stall::STALL_REQUESTED,
+        core as usize,
+        crate::remote_stall::STALL_WAIT_FUEL,
+        |c| {
+            if crate::lean_ready::lean_ready(c) {
+                let _in_flight = InFlightFrame::publish(frame);
+                reschedule_sgi_handler(RESCHEDULE_INTID, 0);
+            } else {
+                crate::remote_stall::clear_stall_request(c);
+            }
+        },
+        crate::shootdown::self_service_round,
+    );
+    if waited == crate::remote_stall::SaveWait::TimedOut {
+        crate::kprintln!(
+            "[FATAL] remote stall: a core this core's commit took a thread off \
+             completed no kernel entry to save it; halting fail-closed"
+        );
+        crate::gic::halt_all()
+    }
     while frame.spsr_el1 & SPSR_MODE_MASK == 0 && !crate::remote_stall::enter_user(core as usize) {
         // A core whose Lean runtime is not ready runs no thread, so no commit
         // can have taken one off it; the reschedule it cannot take is moot.

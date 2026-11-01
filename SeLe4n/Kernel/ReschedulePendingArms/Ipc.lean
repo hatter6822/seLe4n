@@ -59,6 +59,106 @@ theorem storeTcbQueueLinks_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadI
   exact modifyTcb_keyFrame (f := fun tcb => tcbWithQueueLinks tcb prev pprev next)
     (fun _ => rfl) hInv h
 
+/-- The IPC writes keep the machine (`machine_chain`), so they set no core's
+resident thread (`resident_frame`). -/
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (endpointQueuePopHead_machine_eq _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (endpointQueueEnqueue_machine_eq _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbIpcStateAndMessage_machine_eq _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbReceiveComplete_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbIpcState_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (linkCallerReply_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (cleanupPreReceiveDonationMigrated_machine_eq _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (modifyTcb_machine_eq (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (receiveTransferCaps_preserves_machine (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (donateSchedContext_machine_eq _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (returnDonatedSchedContext_machine_eq _ _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (enqueueRunnableOnCore_machineEq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (removeRunnableOnCore_machine_eq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine SystemState.linkReplyWaiter_machine.trans ?_; machine_chain))
+
+/-- A wake's state is an enqueue, which keeps the machine. -/
+theorem wakeThread_fst_machine (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (wakeThread st tid c).1.machine = st.machine := by
+  rw [wakeThread_state_eq_enqueue]; exact enqueueRunnableOnCore_machineEq _ _ _
+
+/-- Recording a reply's stasher stores a reply object, which keeps the machine. -/
+theorem recordReplyStasher_machine (st : SystemState) (code : Nat) (recv : SeLe4n.ThreadId) :
+    (st.recordReplyStasher code recv).machine = st.machine := by
+  rcases SystemState.recordReplyStasher_eq_or st code recv with h | ⟨_, _, _, _, hS⟩
+  · rw [h]
+  · exact storeObject_machine_eq _ _ _ _ hS
+
+/-- The notification link-in writes two TCBs' queue links, keeping the machine. -/
+theorem linkNtfnWaiter_machine_eq {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (h : linkNtfnWaiter st waiter tail = .ok st') :
+    st'.machine = st.machine := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  unfold storeTcbNtfnLinks at h3
+  unfold relinkNtfnNext modifyTcbOpt at h4
+  cases tail with
+  | none => cases h4; exact modifyTcb_machine_eq h3
+  | some t => exact (modifyTcb_machine_eq h4).trans (modifyTcb_machine_eq h3)
+
+/-- The in-place state-and-message store keeps the machine. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_machine_eq {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {ipc : ThreadIpcState} {msg : Option IpcMessage}
+    (h : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
+    st'.machine = st.machine := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at h
+  revert h
+  cases hSt : storeObject tid.toObjId _ st with
+  | error _ => intro h; cases h
+  | ok p => obtain ⟨⟨⟩, s⟩ := p; intro h; cases h; exact storeObject_machine_eq _ _ _ _ hSt
+
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (linkNtfnWaiter_machine_eq (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbIpcStateAndMessage_fromTcb_machine_eq (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (wakeThread_fst_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (recordReplyStasher_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Architecture.stageDeliveredMessage_machine_eq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Architecture.stageWokenDelivery_machine_eq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Architecture.stageWokenSendCompletion_machine_eq _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (Architecture.writeDeliveredFrameToTcb_machine_eq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (detachNtfnHead_machine _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (applyFaultRestart_machine_eq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (faultAbandonOnCore_machine_eq _ _ _).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (SystemState.consumeCallerReply_machine_eq _ _ _ _ (by assumption)).trans ?_;
+   machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (linkServerStashedReply_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (removeCallerReplyFrame_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (endpointQueueRemoveDual_machine_eq _ _ _ _ _ (by assumption)).trans ?_; machine_chain))
+
 /-- WS-ZA ZA4.4: the notification link-in rewrites queue links only. -/
 theorem linkNtfnWaiter_keyFrame {st st' : SystemState} {waiter : SeLe4n.ThreadId}
     {tail : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
@@ -210,12 +310,14 @@ theorem wakeThread_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Thre
       (wakeThread st tid executingCore).1.objects.invExt := by
   refine ⟨?_, wakeThread_preserves_objects_invExt st tid executingCore hInv⟩
   rw [wakeThread_state_eq_enqueue]
-  exact ⟨enqueueRunnableOnCore_covers e _ st tid hInv, enqueueRunnableOnCore_monotone e _ st tid, enqueueRunnableOnCore_currentKept e _ _ _⟩
+  exact ⟨enqueueRunnableOnCore_covers e _ st tid hInv, enqueueRunnableOnCore_monotone e _ st tid, enqueueRunnableOnCore_currentKept e _ _ _,
+    residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
 
 theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
   ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
-    removeRunnableOnCore_currentKept e st tid c⟩
+    removeRunnableOnCore_currentKept e st tid c,
+    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
 
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/
@@ -258,7 +360,9 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
             have hF2 := storeTcbReceiveComplete_keyFrame hInv1 hRecv
             have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hInv1 hRecv
             obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st2 receiver executingCore hInv2
-            exact ⟨stepCovers_trans (hF1.trans hF2).stepCovers hW, hWInv⟩
+            exact ⟨stepCovers_trans ((hF1.trans hF2).stepCovers (congrArg MachineState.residentCode
+              ((storeTcbReceiveComplete_machine_eq _ _ _ _ hRecv).trans
+                (endpointQueuePopHead_machine_eq _ _ _ _ _ hPop)))) hW, hWInv⟩
     · split
       · exact ⟨stepCovers_refl e st, hInv⟩
       · rename_i st1 hEnq
@@ -271,8 +375,12 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
           have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv1 hBlk
           have hF3 := recordSendCap_keyFrame _ sender payload.badge payload.grant
             (removeRunnableOnCore_objects_invExt st2 sender executingCore hInv2)
-          exact ⟨stepCovers_trans (stepCovers_trans (hF1.trans hF2).stepCovers
-            (removeRunnableOnCore_stepCovers e st2 sender executingCore)) hF3.stepCovers, hF3.2.2⟩
+          exact ⟨stepCovers_trans (stepCovers_trans ((hF1.trans hF2).stepCovers
+            (congrArg MachineState.residentCode
+              ((storeTcbIpcStateAndMessage_machine_eq _ _ _ _ _ hBlk).trans
+                (endpointQueueEnqueue_machine_eq _ _ _ _ _ hEnq))))
+            (removeRunnableOnCore_stepCovers e st2 sender executingCore))
+            (hF3.stepCovers (by unfold recordSendCap; simp [SystemState.mapTcbInPlace])), hF3.2.2⟩
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
@@ -328,7 +436,8 @@ theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeL
       | exact ⟨hSend, hSendInv⟩
       | (rename_i hU
          have hF := receiveTransferCaps_keyFrame hSendInv hU
-         exact ⟨stepCovers_trans hSend hF.stepCovers, hF.2.2⟩)
+         exact ⟨stepCovers_trans hSend (hF.stepCovers (congrArg MachineState.residentCode
+           (receiveTransferCaps_preserves_machine hU))), hF.2.2⟩)
 
 /-- The live checked send covers on every outcome. -/
 theorem endpointSendCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -514,7 +623,8 @@ theorem endpointReceiveDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : 
       | exact ⟨hRcv, hRcvInv⟩
       | (rename_i hU
          have hF := receiveTransferCaps_keyFrame hRcvInv hU
-         exact ⟨stepCovers_trans hRcv hF.stepCovers, hF.2.2⟩)
+         exact ⟨stepCovers_trans hRcv (hF.stepCovers (congrArg MachineState.residentCode
+           (receiveTransferCaps_preserves_machine hU))), hF.2.2⟩)
 
 /-! ### The donation lend -/
 
@@ -526,6 +636,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   refine ⟨?_, donateSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h⟩
+  have hM := congrArg MachineState.residentCode (donateSchedContext_machine_eq _ _ _ _ _ h)
   unfold donateSchedContext at h
   revert h
   cases hSc : st.getSchedContext? clientScId with
@@ -604,6 +715,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                           hS4 rfl).trans
                         (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1)
                           hS3 rfl)).trans k2.runCoresAgree)
+                      (by simpa only [markKeyChangeFrom_machine] using hM)
                     · show schedKeyView s4 t = schedKeyView st t ∧
                         budgetEligibleView s4 t = budgetEligibleView st t
                       exact ⟨by rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
@@ -891,6 +1003,8 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
       · split
         · exact hRefl
         · rename_i st1 hS
+          have hM1 := congrArg MachineState.residentCode
+            (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
           unfold storeTcbIpcStateAndMessage_fromTcb at hS
           have hF1 : capabilityKeyFrame st st1 := by
             revert hS
@@ -901,7 +1015,7 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
               intro h; cases h
               exact storeObject_tcbKeyKeeping_keyFrame hInv (lookupTcb_some_objects _ _ _ hL) hSt rfl
           obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st1 target executingCore hF1.2.2
-          have hPre := stepCovers_trans hF1.stepCovers hW
+          have hPre := stepCovers_trans (hF1.stepCovers hM1) hW
           split
           · exact ⟨stepCovers_trans hPre (unlinkReplyWaiter_stepCovers e _ _ _),
               SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hWInv⟩
@@ -1004,16 +1118,16 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
     split
     · unfold applyFaultRestart
       refine ⟨stepCovers_trans hR ?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hRInv⟩
-      apply capabilityKeyFrame.stepCovers
-      exact updateTcb_keyFrame st1 faulted (fun _ => rfl) hRInv
+      exact capabilityKeyFrame.stepCovers (updateTcb_keyFrame st1 faulted (fun _ => rfl) hRInv)
+        (by rw [SystemState.updateTcb_machine])
     · unfold faultAbandonOnCore
       refine ⟨stepCovers_trans (stepCovers_trans hR
         (removeRunnableOnCore_stepCovers e st1 faulted (faultAbandonCore st1 faulted))) ?_,
         SystemState.updateTcb_preserves_objects_invExt _ _ _
           (removeRunnableOnCore_objects_invExt _ _ _ hRInv)⟩
-      apply capabilityKeyFrame.stepCovers
-      exact updateTcb_keyFrame _ faulted (fun _ => rfl)
-        (removeRunnableOnCore_objects_invExt _ _ _ hRInv)
+      exact capabilityKeyFrame.stepCovers (updateTcb_keyFrame _ faulted (fun _ => rfl)
+        (removeRunnableOnCore_objects_invExt _ _ _ hRInv))
+        (by rw [SystemState.updateTcb_machine])
 
 /-- The checked reply transfer covers on its `.ok`. -/
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1343,6 +1457,7 @@ theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.
             split
             · exact hRefl
             · rename_i st2 hT
+              have hM2 := storeTcbIpcStateAndMessage_fromTcb_machine_eq hT
               unfold storeTcbIpcStateAndMessage_fromTcb at hT
               have hF2 : capabilityKeyFrame st st2 := by
                 revert hT

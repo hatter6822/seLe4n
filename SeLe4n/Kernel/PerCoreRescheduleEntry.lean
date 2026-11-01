@@ -139,7 +139,10 @@ Atomically runs the verified `perCoreRescheduleStep` against the live kernel
 state (committing `handleRescheduleSgiOnCore`'s result) **through the bracket
 this core declares** (**WS-RR RR7.39** / **WS-LS LS2.2** — `rescheduleBracket`:
 the object-store table write lock and this core's run-queue write lock, with
-`perCoreRescheduleStep_coversWrites` as the record's proof field), then records
+`perCoreRescheduleStep_coversWrites` as the record's proof field), fires a
+`.reschedule` SGI at every core whose flag the residency settle raised
+(**WS-ZA ZA6.10**: a resident this entry released, queued on another core,
+wakes that core — `PriorityInheritance.pokeReleasedResident`), then records
 the thread that step left running on this core in the HAL's per-core mirror
 (**WS-RR RR7.26**).  Both reads of the post-state happen inside the one atomic
 step, so the value recorded is the value committed.
@@ -160,16 +163,18 @@ def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit :=
   | none => pure ()
   | some c => do
     let frame ← Platform.FFI.ffiTrapContext
-    let (kind, context, tableBase, asid, code, writes, icache) ←
+    let (pokes, kind, context, tableBase, asid, code, writes, icache) ←
       Platform.FFI.modifyGetKernelState (fun st =>
-        let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-          ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
-        ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+        let mid := ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2
+        let pending := mid.scheduler.reschedulePending
+        let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
+        ((pending.raised post.scheduler.reschedulePending, Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
           post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
           post.pendingIcacheMaintenance),
           Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
     Platform.FFI.completePhysicalWrites writes
+    Concurrency.fireRaisedReschedules pokes
     Platform.FFI.completeIcacheMaintenance icache
     Concurrency.releaseSwitchedFpOwnerOnCore c
     Platform.FFI.restoreTrapFrameParts kind context tableBase asid
@@ -201,16 +206,18 @@ theorem perCoreRescheduleEntry_def (coreId : UInt64) :
       | none => pure ()
       | some c => do
         let frame ← Platform.FFI.ffiTrapContext
-        let (kind, context, tableBase, asid, code, writes, icache) ←
+        let (pokes, kind, context, tableBase, asid, code, writes, icache) ←
           Platform.FFI.modifyGetKernelState (fun st =>
-            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-              ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
-            ((Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+            let mid := ((rescheduleBracket coreId).run (Architecture.saveCapturedTrapFrame st c frame)).2
+            let pending := mid.scheduler.reschedulePending
+            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
+            ((pending.raised post.scheduler.reschedulePending, Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
               post.pendingIcacheMaintenance),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites post)))
         Platform.FFI.completePhysicalWrites writes
+        Concurrency.fireRaisedReschedules pokes
         Platform.FFI.completeIcacheMaintenance icache
         Concurrency.releaseSwitchedFpOwnerOnCore c
         Platform.FFI.restoreTrapFrameParts kind context tableBase asid

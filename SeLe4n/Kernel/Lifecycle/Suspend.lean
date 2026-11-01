@@ -1424,7 +1424,7 @@ needed it separately and one of them did not get it.  WS-OD OD1.7's holder wake
 and WS-RR RR7.22/RR8.11's replenishment migration were both added to
 `cancelIpcBlockingOnCore` below, which composes them with the victim's
 deschedule — and that composite has never had a production caller.  The live
-`.tcbSuspend` (and the `suspend_thread_cross_core` seam under it) runs
+`.tcbSuspend` runs
 `Lifecycle.Suspend.suspendThreadOnCore`, whose G4 performs its own placement
 removal and whose G2 therefore reached for the *bare* teardown, so on the only
 path a syscall takes neither fix was present: measured, the reclaimed context's
@@ -1711,8 +1711,8 @@ noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- model this is safe: no other operation can observe the intermediate
       -- state between G2 and G3. On hardware, this entire G2→G3→G4→G5→G6
       -- sequence MUST execute atomically with interrupts disabled to prevent
-      -- an ISR from observing the partially-cleaned TCB. The Rust HAL's
-      -- `with_interrupts_disabled` (interrupts.rs) provides this guarantee.
+      -- an ISR from observing the partially-cleaned TCB. The syscall trap
+      -- handler runs with IRQs masked (trap.rs), which provides this guarantee.
       --
       -- Defensive re-lookup ensures `cancelDonation` sees the post-IPC-cleanup
       -- TCB state, guarding against future changes to `cancelIpcBlocking` that
@@ -1888,7 +1888,8 @@ noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
 --      `.ok` and witnesses the post-condition the FFI bracket guarantees.
 --   2. Defining `suspendThread_atomicity_precondition` — the FFI-supplied
 --      `interruptsEnabled = false` shape that real-hardware callers
---      always discharge via the Rust `with_interrupts_disabled` bracket.
+--      always discharge: the live suspend is the syscall `.tcbSuspend` arm,
+--      whose trap handler runs with IRQs masked.
 --   3. Proving `suspendThread_atomicity_under_ffi_bracket_default` (the
 --      substantive form) which UNFOLDS `suspendThread` and proves
 --      `.error .invalidArgument` is the result on the empty default
@@ -1897,9 +1898,9 @@ noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
 --      precondition discharge) and re-exported as
 --      `suspendThread_default_rejects_with_invalidArgument`.
 --
--- The Rust counterpart `sele4n_suspend_thread` in
--- `rust/sele4n-hal/src/ffi.rs` brackets the inner Lean dispatch with
--- `with_interrupts_disabled`, so callers from real hardware always
+-- The live suspend is the syscall `.tcbSuspend` arm: its trap handler runs
+-- with IRQs masked until exception return (`rust/sele4n-hal/src/trap.rs`),
+-- inside the kernel-entry bracket, so callers from real hardware always
 -- discharge the precondition.
 
 /-- AN9-D: Post-condition predicate witnessing that a suspended thread's

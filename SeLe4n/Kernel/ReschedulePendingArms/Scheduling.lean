@@ -170,6 +170,43 @@ theorem updatePrioritySource_bindingsAgree (st : SystemState) (tid : SeLe4n.Thre
       (bindingsAgree.updateSchedContext hInv)
   · exact bindingsAgree.updateTcb (f := fun t => { t with priority := p }) hInv (fun _ => rfl)
 
+/-- The configure's bound-thread propagation rewrites TCBs and re-buckets one,
+setting no core's resident thread. -/
+theorem schedContextConfigureBoundPropagate_residentCode (stStored : SystemState)
+    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat) :
+    (SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid boundTcb hBound
+      priority domain).machine.residentCode = stStored.machine.residentCode := by
+  unfold SchedContextOps.schedContextConfigureBoundPropagate
+  dsimp only
+  repeat' split
+  all_goals simp [SystemState.rewriteObject_machine]
+
+/-- The configure's resume tail, the priority-source write and the bucket
+migration set no core's resident thread. -/
+@[simp] theorem configureResumeBound_residentCode (st : SystemState) (t : SeLe4n.ThreadId)
+    (sc : SchedContext) :
+    (SchedContextOps.configureResumeBound st t sc).machine.residentCode =
+      st.machine.residentCode := by
+  unfold SchedContextOps.configureResumeBound
+  dsimp only
+  repeat' split
+  all_goals simp
+
+@[simp] theorem updatePrioritySource_residentCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (p : SeLe4n.Priority) :
+    (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p).machine.residentCode =
+      st.machine.residentCode := by
+  unfold SchedContext.PriorityManagement.updatePrioritySource
+  split <;> simp [SystemState.updateTcb_machine, SystemState.updateSchedContext_machine]
+
+@[simp] theorem migrateRunQueueBucketOnCore_residentCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c : CoreId) :
+    (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore st tid p c).machine.residentCode =
+      st.machine.residentCode := by
+  unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+  split <;> simp
+
 /-! ### Affinity -/
 
 /-- A step that moves no key input covers when every remote core is flagged or
@@ -180,9 +217,10 @@ theorem stepCovers_of_keys_slots {e : CoreId} {pre post : SystemState}
     (hSlots : ∀ c, c ≠ e → post.scheduler.reschedulePendingOnCore c = true ∨
       ((∀ t, post.queuedOn c t = true → pre.queuedOn c t = true) ∧
         post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
-    (hMono : reschedulePendingMonotone e pre post) (hKept : currentKeptOffCore e pre post) :
+    (hMono : reschedulePendingMonotone e pre post) (hKept : currentKeptOffCore e pre post)
+    (hResK : residentKeptOffCore e pre post := by resident_kept) :
     stepCovers e pre post :=
-  ⟨reschedulePendingCovers_of_frame hKeys hElig hSlots, hMono, hKept⟩
+  ⟨reschedulePendingCovers_of_frame hKeys hElig hSlots, hMono, hKept, hResK⟩
 
 /-- **A release-queue edit covers**: it writes the contexts' release links and
 the release-queue slots alone, which no key input, run queue, current slot or
@@ -190,7 +228,7 @@ flag reads. -/
 theorem stepCovers_of_releaseOnlyWrite (e : CoreId) {st st' : SystemState}
     (hW : st'.releaseOnlyWrite st) (hA : st'.objectsAgreeOffReleaseLinks st) :
     stepCovers e st st' := by
-  apply stepCovers_of_keys_slots
+  apply stepCovers_of_keys_slots (hResK := residentKeptOffCore_of_eq (by rw [hW.1]))
     (schedKeyView_eq_of_keyInputsEq (keyInputsEq_of_objectsAgreeOffReleaseLinks hA))
     (budgetEligibleView_eq_of_keyInputsEq (keyInputsEq_of_objectsAgreeOffReleaseLinks hA))
   · intro c _
@@ -670,7 +708,8 @@ core's flag raised. -/
 theorem configureResumeBound_stepCovers (e : CoreId) (st : SystemState) (t : SeLe4n.ThreadId)
     (sc : SchedContext) : stepCovers e st (SchedContextOps.configureResumeBound st t sc) := by
   have hA := SchedContextOps.configureResumeBound_objectsAgreeOffRunLinks st t sc
-  apply stepCovers_of_keys_slots (schedKeyView_of_objectsAgreeOffRunLinks hA)
+  apply stepCovers_of_keys_slots (hResK := residentKeptOffCore_of_eq (by simp))
+    (schedKeyView_of_objectsAgreeOffRunLinks hA)
     (budgetEligibleView_of_objectsAgreeOffRunLinks hA)
   · intro c _
     unfold SchedContextOps.configureResumeBound
@@ -764,6 +803,8 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
               (SchedContextOps.purgeReplenishment_agree st ⟨vScId.val.toNat⟩) oid
           have hCurSt : ∀ c, stStored.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
             intro c; rw [hSchedSt]; exact SchedContextOps.purgeReplenishment_currentOnCore _ _ c
+          have hResSt : stStored.machine.residentCode = st.machine.residentCode := by
+            rw [storeObject_machine_eq _ _ _ _ hStore, SchedContextOps.purgeReplenishment_machine]
           have hFlSt : ∀ c, stStored.scheduler.reschedulePendingOnCore c =
               st.scheduler.reschedulePendingOnCore c := by
             intro c; rw [hSchedSt]
@@ -801,7 +842,7 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
               stepCovers e st stStored := fun hNo =>
             ⟨reschedulePendingCovers_of_frame (fun t => hKeySt t (hNo t)) (fun t => hEligSt t (hNo t))
               (fun c _ => Or.inr ⟨fun t ht => by rwa [hRqSt] at ht, hCurSt c⟩),
-             fun c _ h => by rw [hFlSt]; exact h, currentKeptOffCore_of_eq fun c _ => hCurSt c⟩
+             fun c _ h => by rw [hFlSt]; exact h, currentKeptOffCore_of_eq fun c _ => hCurSt c, residentKeptOffCore_of_eq hResSt⟩
           split at hStep
           · rename_i hBT
             cases hStep
@@ -825,6 +866,9 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
             have hCurSt : ∀ c, (stStored.releasePlace (determineTargetCore st boundTid)
                 ⟨vScId.val.toNat⟩).scheduler.currentOnCore c = st.scheduler.currentOnCore c :=
               fun c => (hWP.currentOnCore c).trans (hCurSt c)
+            have hResSt : (stStored.releasePlace (determineTargetCore st boundTid)
+                ⟨vScId.val.toNat⟩).machine.residentCode = st.machine.residentCode := by
+              rw [hWP.1]; exact hResSt
             have hFlSt : ∀ c, (stStored.releasePlace (determineTargetCore st boundTid)
                 ⟨vScId.val.toNat⟩).scheduler.reschedulePendingOnCore c =
                 st.scheduler.reschedulePendingOnCore c := fun c => by
@@ -842,13 +886,13 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
               (budgetEligibleView_eq_of_keyInputsEq
                 (keyInputsEq_of_objectsAgreeOffReleaseLinks hAP) t).trans (hEligSt t hNo)
             generalize stStored.releasePlace (determineTargetCore st boundTid) ⟨vScId.val.toNat⟩ = stP
-              at hStep hInvSt hGetSt hRqSt hCurSt hFlSt hKeySt hEligSt
+              at hStep hInvSt hGetSt hRqSt hCurSt hFlSt hKeySt hEligSt hResSt
             have hNoReader : (∀ t tcb, st.getTcb? t = some tcb →
                 tcb.schedContextBinding.scId? ≠ some (SchedContextId.ofObjId vScId.val)) →
                 stepCovers e st stP := fun hNo =>
               ⟨reschedulePendingCovers_of_frame (fun t => hKeySt t (hNo t)) (fun t => hEligSt t (hNo t))
                 (fun c _ => Or.inr ⟨fun t ht => by rwa [hRqSt] at ht, hCurSt c⟩),
-               fun c _ h => by rw [hFlSt]; exact h, currentKeptOffCore_of_eq fun c _ => hCurSt c⟩
+               fun c _ h => by rw [hFlSt]; exact h, currentKeptOffCore_of_eq fun c _ => hCurSt c, residentKeptOffCore_of_eq hResSt⟩
             split at hStep
             · rename_i boundTcb hBound _
               cases hStep
@@ -874,7 +918,10 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
                 refine ⟨⟨markKeyChangeFrom_covers (fun t ht => ⟨?_, ?_⟩)
                     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩),
                   fun c _ h => markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ ?_,
-                  currentKeptOffCore_of_eq fun c _ => ?_⟩, ?_⟩
+                  currentKeptOffCore_of_eq fun c _ => ?_,
+                  residentKeptOffCore_of_eq (by
+                    rw [markKeyChangeFrom_machine, schedContextConfigureBoundPropagate_residentCode]
+                    exact hResSt)⟩, ?_⟩
                 · rw [schedKeyView_eq_of_keyInputsEqExcept hFr.1 ht]
                   exact hKeySt t (hNoOther t ht)
                 · rw [budgetEligibleView_eq_of_keyInputsEqExcept hFr.1 ht]
@@ -1002,7 +1049,7 @@ theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
   refine ⟨⟨markKeyChangeFor_covers hTcb (fun t ht => ?_) (fun c hc hFl t ht => ?_)
     (fun c hc => Or.inr ⟨hRq c hc, ?_⟩),
     fun c hc hp => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ ?_,
-    currentKeptOffCore_of_eq fun c _ => ?_⟩, ?_⟩
+    currentKeptOffCore_of_eq fun c _ => ?_, by resident_kept⟩, ?_⟩
   · rw [schedKeyView_of_objectsAgreeOffRunLinks
       (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _) t,
       schedKeyView_eq_of_keyInputsEq
@@ -1257,7 +1304,7 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
             (SystemState.RunCoresAgree.rewriteObject_not_tcb hAdm hObjInv
               (fun t h => by rw [hScRaw] at h; cases h) (fun t h => by cases h))
         refine ⟨stepCovers_trans ⟨markKeyChangeFor_covers hT (fun t ht => ?_)
-          (fun _ _ _ t _ => ?_) ?_, ?_, ?_⟩ (releasePlace_stepCovers e _ _ _), ?_⟩
+          (fun _ _ _ t _ => ?_) ?_, ?_, ?_, by resident_kept⟩ (releasePlace_stepCovers e _ _ _), ?_⟩
         · refine (schedKeyView_eq_of_keyInputsEqExcept (hK2.trans_offRunLinks (fun x => ?_)
             (fun y hy => bindQueueStage_runCoreCode_ne _ _ _ _ _ y hy)) ht).trans (hKey1 t)
           split
@@ -1358,7 +1405,7 @@ theorem stepCovers_of_schedSlots {e : CoreId} (st : SystemState) (s : SchedulerS
     stepCovers e st { st with scheduler := s } :=
   ⟨reschedulePendingCovers_of_frame (fun _ => rfl) (fun _ => rfl)
     (fun c _ => (hC c).imp id fun h => ⟨fun _ ht => ht, h⟩), fun c _ h => hM c h,
-    fun c _ t ht => hK c t ht⟩
+    fun c _ t ht => hK c t ht, residentKeptOffCore_refl e st⟩
 
 theorem priorityRescheduleOnCore_invExt (e : CoreId) (st st' : SystemState)
     (running? : Option CoreId) (sp : Bool) (sgi? : Option (CoreId × SgiKind))
@@ -1515,7 +1562,7 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
   refine ⟨markKeyChangeFrom_covers (fun t ht => ⟨schedKeyView_eq_of_keyInputsEqExcept hKX ht,
       budgetEligibleView_eq_of_keyInputsEqExcept hKX ht⟩) (fun c _ => ?_),
     fun c _ hF => markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ ?_,
-    currentKeptOffCore_of_eq fun c _ => ?_⟩
+    currentKeptOffCore_of_eq fun c _ => ?_, by resident_kept⟩
   · exact slots_bridge hA2
       (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler])
       (unbindTailStage_slots _ _ _ _ _ _ c)
@@ -1653,6 +1700,7 @@ theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4
     (fun c _ => Or.inr ⟨(hMidSched c).1, (hMidSched c).2.1⟩)
     (fun c _ hp => by rw [(hMidSched c).2.2]; exact hp)
     (currentKeptOffCore_of_eq fun c _ => (hMidSched c).2.1)
+    (residentKeptOffCore_of_eq (by rw [← hMid]; simp))
   have hInvMk : (markKeyChangeFor mid tid (effectiveSchedParams st tcb)).objects.invExt := by
     rw [markKeyChangeFor_objects, ← hMid]
     exact SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objects_invExt _ _ _ _ hInvU

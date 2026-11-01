@@ -184,47 +184,6 @@ fn svc_increments_per_core_syscall_count() {
     );
 }
 
-/// Moved from `ffi`'s unit tests at RR5.7 (see this file's header).
-#[test]
-fn sele4n_suspend_thread_brackets_inner_call() {
-    mark_this_core_ready();
-    // The wrapper must invoke the inner stand-in (which returns
-    // NotImplemented = 17 on the host lane) and return its result.
-    // This proves the bracket dispatches into the inner symbol.
-    let result = sele4n_hal::ffi::sele4n_suspend_thread(42);
-    assert_eq!(
-        result, 17,
-        "suspendThread bracket must forward inner stand-in return"
-    );
-}
-
-/// Moved from `ffi`'s unit tests at RR5.7 (see this file's header).
-#[test]
-fn sele4n_suspend_thread_handles_zero_tid() {
-    mark_this_core_ready();
-    // ThreadId 0 is the sentinel; the wrapper must still invoke the
-    // inner dispatch (which performs sentinel rejection at the Lean
-    // layer).  This proves the bracket is a transparent forwarder
-    // and does not pre-filter ids.
-    let result = sele4n_hal::ffi::sele4n_suspend_thread(0);
-    assert_eq!(result, 17, "bracket must not pre-filter sentinel");
-}
-
-/// Moved from `ffi`'s unit tests at RR5.7 (see this file's header).
-#[test]
-fn sele4n_suspend_thread_disables_interrupts_during_call() {
-    mark_this_core_ready();
-    // The bracket calls `with_interrupts_disabled`, which on host
-    // is a no-op closure call.  We assert that it does not
-    // panic and that the return value matches the inner stand-in.
-    // The atomicity contract (interrupts actually disabled on
-    // hardware) is enforced by the aarch64 implementation of
-    // `interrupts::with_interrupts_disabled`.
-    let r1 = sele4n_hal::ffi::sele4n_suspend_thread(1);
-    let r2 = sele4n_hal::ffi::sele4n_suspend_thread(2);
-    assert_eq!(r1, r2, "bracket must be deterministic");
-}
-
 /// **WS-RR RR7.37 (register finding 84)**: the SVC arm's published frame is
 /// never readable as a success.
 ///

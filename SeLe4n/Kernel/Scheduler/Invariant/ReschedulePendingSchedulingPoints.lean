@@ -28,7 +28,8 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 open SeLe4n.Kernel.PriorityInheritance (scheduleLocalSuccessor dispatchVacatedCore
-  deferResidentElsewhere settleResidencyOnCore)
+  deferResidentElsewhere settleResidencyOnCore pokeReleasedResident_objects
+  pokeReleasedResident_scheduler pokeReleasedResident_flag_mono pokeReleasedResident_machine)
 
 /-- The preempt re-enqueues on its own core and saves a register context. -/
 theorem preemptCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
@@ -82,6 +83,7 @@ theorem preemptCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
       · split
         · simpa [SystemState.rewriteObject_scheduler] using hp
         · exact hp
+  · simp
 
 /-- A step that writes only core `e`'s run queue and `current` slot of the
 scheduler, keeps the object store's key inputs and every flag, covers. -/
@@ -91,10 +93,11 @@ theorem stepCovers_of_local_slots {e : CoreId} {pre post : SystemState}
     (hRq : ∀ c, c ≠ e → ∀ t, post.queuedOn c t = true → pre.queuedOn c t = true)
     (hSched : ∀ c, c ≠ e →
       post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c ∧
-      post.scheduler.reschedulePendingOnCore c = pre.scheduler.reschedulePendingOnCore c) :
+      post.scheduler.reschedulePendingOnCore c = pre.scheduler.reschedulePendingOnCore c)
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
     stepCovers e pre post :=
   stepCovers_of_frame hKeys hElig hRq (fun c hc => (hSched c hc).1)
-    (fun c hc hp => by rw [(hSched c hc).2]; exact hp)
+    (fun c hc hp => by rw [(hSched c hc).2]; exact hp) hRes
 
 /-- A step whose object store is a removal's queues nothing new on any core. -/
 theorem queuedOn_imp_of_runRemove {st post : SystemState} {e : CoreId} {t' : SeLe4n.ThreadId}
@@ -267,8 +270,26 @@ the activation after it reads a well-formed store. -/
 theorem settleResidencyOnCore_preserves_objects_invExt (e : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) : (settleResidencyOnCore st e).objects.invExt := by
   unfold settleResidencyOnCore
+  rw [pokeReleasedResident_objects]
   exact deferResidentElsewhere_preserves_objects_invExt e _
     (dispatchVacatedCore_preserves_objects_invExt e st hInv)
+
+/-- The settle's last two writes cover: recording the executing core's resident
+thread is a machine write on core `e`, and the poke of the released thread's
+queue core only raises that core's flag. -/
+theorem settleRecord_stepCovers (e : CoreId) (Y : SystemState) (r : Option SeLe4n.ThreadId)
+    (o n : Nat) :
+    stepCovers e Y (PriorityInheritance.pokeReleasedResident
+      { Y with machine := Y.machine.setResidentOnCore e r } e o n) :=
+  stepCovers_trans
+    (stepCovers_of_scheduler_eq_residentKept (post := { Y with machine := Y.machine.setResidentOnCore e r })
+      (keyInputsEq_of_objects_eq rfl) rfl
+      (residentKeptOffCore_of_setResidentOnCore rfl))
+    (stepCovers_of_scheduler_eq_except_reschedule
+      (keyInputsEq_of_objects_eq (pokeReleasedResident_objects _ _ _ _))
+      (pokeReleasedResident_scheduler _ _ _ _)
+      (fun c _ h => pokeReleasedResident_flag_mono _ _ c _ _ h)
+      (by rw [pokeReleasedResident_machine]))
 
 /-- **The commit's residency settling covers**: the dispatch and the deferral
 are scheduling points on the executing core, and the residency record is a
@@ -277,9 +298,9 @@ theorem settleResidencyOnCore_stepCovers (e : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (settleResidencyOnCore st e) := by
   unfold settleResidencyOnCore
-  refine stepCovers_trans (stepCovers_trans (dispatchVacatedCore_stepCovers e st hInv)
+  exact stepCovers_trans (stepCovers_trans (dispatchVacatedCore_stepCovers e st hInv)
     (deferResidentElsewhere_stepCovers e _ (dispatchVacatedCore_preserves_objects_invExt e st hInv)))
-    (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl)
+    (settleRecord_stepCovers e _ _ _ _)
 
 /-- Staging the caller's result rewrites a register context and the bank. -/
 theorem stageCallerReturnFor_stepCovers (e : CoreId) (caller? : Option SeLe4n.ThreadId)
@@ -301,8 +322,10 @@ theorem stageCallerReturnFor_stepCovers (e : CoreId) (caller? : Option SeLe4n.Th
     | some tid =>
       simp only [Architecture.stageCallerReturnFor]
       split
-      · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f), hWInv tid f⟩
-      · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f), hWInv tid f⟩
+      · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f)
+          (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine]), hWInv tid f⟩
+      · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f)
+          (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine]), hWInv tid f⟩
 
 theorem scheduleLocalSuccessorFrom_preserves_objects_invExt (e : CoreId)
     (caller? : Option SeLe4n.ThreadId) (post : SystemState) (hInv : post.objects.invExt) :

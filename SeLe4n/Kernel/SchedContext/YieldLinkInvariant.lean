@@ -240,7 +240,7 @@ end YieldLinksKept
 /-- WS-ZA ZA6.8: **every yield-to code a step sets is on a slot of `L`** — off
 `L`, each slot's post-state yield-to code is `0` or the pre-state's.  The
 run-queue stage family carries it with `L` empty (`YieldToCodesUnset`): no
-step but the yieldTo invocation (ZA6.10) links a thread, and that invocation
+step but the yieldTo invocation (ZA6.14) links a thread, and that invocation
 links its caller only, so it is the one producer of a nonempty `L`. -/
 def YieldToCodesSetOnly (L : SeLe4n.ObjId → Prop) (st' st : SystemState) : Prop :=
   ∀ k, ¬ L k → (objYieldCodes st'.objects[k]?).1 = 0 ∨

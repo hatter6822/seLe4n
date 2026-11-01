@@ -1,9 +1,8 @@
 /-
   seLe4n — Syscall seam coverage (WS-LS LS2.3)
 
-  The two state-committing seams a declared footprint brackets — the ABI
-  syscall step and the raw suspend entry — are covered by the footprint they
-  declare: every object-store, run-queue and replenish-queue write the step
+  The ABI syscall step, the state-committing seam a declared footprint
+  brackets, is covered by the footprint it declares: every object-store, run-queue and replenish-queue write the step
   makes is under a lock the footprint names (`footprintCoversWrites`).
 
   What this module discharges is the `hCover` premise of
@@ -137,8 +136,20 @@ theorem deferResidentElsewhere_coversWrites (S : LockSet) (e : CoreId) (st : Sys
     · exact footprintCoversWrites_refl S st
   · exact footprintCoversWrites_refl S st
 
+/-- A step that writes only reschedule-pending flags, on any core, is covered by
+every footprint: no clause of the coverage reads the flags (the cross-core
+poke raises another core's flag as the KSC-1 accumulator's remote write). -/
+theorem footprintCoversWrites_of_objects_reschedule_eq (S : LockSet) {st st' : SystemState}
+    {flags : PerCoreFlags}
+    (hObj : st'.objects = st.objects)
+    (hSched : st'.scheduler = { st.scheduler with reschedulePending := flags }) :
+    footprintCoversWrites S st st' :=
+  ⟨fun _ oid _ => by rw [hObj], fun d _ => by rw [hSched]; exact ⟨rfl, rfl, rfl⟩,
+   fun d _ => by rw [hSched]; rfl⟩
+
 /-- The residency settling: the dispatch and the deferral are scheduling points
-on the executing core, and the residency record is a machine write. -/
+on the executing core, the residency record is a machine write, and the poke of
+the released thread's queue core writes only that core's reschedule flag. -/
 theorem settleResidencyOnCore_coversWrites (S : LockSet) (e : CoreId) (st : SystemState)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
     (hRun : (LockKey.runQueue e, AccessMode.write) ∈ S.pairs) :
@@ -147,7 +158,10 @@ theorem settleResidencyOnCore_coversWrites (S : LockSet) (e : CoreId) (st : Syst
   exact footprintCoversWrites_trans S
     (footprintCoversWrites_trans S (dispatchVacatedCore_coversWrites S e st hTable hRun)
       (deferResidentElsewhere_coversWrites S e _ hTable hRun))
-    (footprintCoversWrites_of_objects_scheduler_eq S rfl rfl)
+    (footprintCoversWrites_trans S (footprintCoversWrites_of_objects_scheduler_eq S rfl rfl)
+      (footprintCoversWrites_of_objects_reschedule_eq S
+        (PriorityInheritance.pokeReleasedResident_objects _ _ _ _)
+        (PriorityInheritance.pokeReleasedResident_scheduler _ _ _ _)))
 
 /-- WS-ZA ZA6.7: **the activation is covered by every footprint naming the table
 write lock.**  It writes the executing core's current thread and the context its
@@ -859,42 +873,6 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
       (footprintCoversWrites_of_scheduler_eq U hTable
         (Platform.FFI.recordSyscallRefusal_scheduler_eq ctx e syscallId tid ke x0 _)))
       (syscallCommitTail_coversWrites U e _ _ _ hTable hRunE)
-
--- ============================================================================
--- §4  The raw suspend seam
--- ============================================================================
-
-/-- **The raw suspend seam's action is covered by the unified footprint it
-declares**: the suspend on the executing core (the arm's own containment) and
-the executing core's local successor; a refused suspend commits nothing.
-
-Stated over the action's state half exactly as `suspendThreadCrossCoreStep`
-writes it, so the bracket WS-LS LS2.4 puts at that seam discharges its
-`covers` field with this theorem and nothing else. -/
-theorem suspendSeamAction_coversWrites (caller : SeLe4n.ThreadId)
-    (vtid : SeLe4n.ValidThreadId) (execCore : CoreId) (s : SystemState) (U : LockSet)
-    (hU : unifiedLockSetForSyscall .tcbSuspend (.ofThreadTarget caller vtid.val) execCore s
-      = some U) :
-    footprintCoversWrites U s
-      (match Lifecycle.Suspend.suspendThreadOnCore s vtid execCore with
-       | .ok (s', _) =>
-           activateThreadOnCore (PriorityInheritance.scheduleLocalSuccessorFrom
-             (s.scheduler.currentOnCore execCore) s' execCore) execCore
-       | .error _ => s) := by
-  obtain ⟨S, hSched⟩ := unifiedLockSetForSyscall_some_imp_sched _ _ _ _ _ hU
-  have hTable := mem_unifiedLockSetForSyscall_objStore _ _ _ _ _ hU
-  have hRunE := mem_unifiedLockSetForSyscall_executingCore _ _ _ _ _ hU
-  have hS : LockSet.ofList? (schedLockSet_suspendThreadOnCore s vtid execCore) = some S := by
-    simpa [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofThreadTarget,
-      validThreadId_val_toValid?] using hSched
-  split
-  · rename_i s' sgi hStep
-    exact footprintCoversWrites_trans U (footprintCoversWrites_trans U
-      (unifiedLockSetForSyscall_coversWrites _ _ _ _ S U s s' hSched hU
-        (schedLockSet_suspendThreadOnCore_coversWrites s s' vtid execCore sgi S hStep hS))
-      (scheduleLocalSuccessorFrom_coversWrites U execCore _ s' hTable hRunE))
-      (activateThreadOnCore_coversWrites U execCore _ hTable)
-  · exact footprintCoversWrites_refl U s
 
 /-! ### The timer and reschedule entries' tails
 

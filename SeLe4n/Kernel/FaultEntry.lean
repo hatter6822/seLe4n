@@ -403,7 +403,10 @@ syndrome words (`ESR_EL1`, `FAR_EL1`) — three scalars; the fault window
 `SPSR_EL1` are decoded from the one published trap context
 (`faultEntryFrame?`), read once.  Reads the deployment labeling context,
 atomically commits `faultEntryStep` against the live kernel state, then fires
-the cross-core SGIs the diff surfaced — the same read-context / read-frame /
+the cross-core SGIs the diff surfaced and a `.reschedule` SGI at every core
+whose flag the residency settle raised (WS-ZA ZA6.10: a resident this entry
+released, queued on another core, wakes that core —
+`PriorityInheritance.pokeReleasedResident`) — the same read-context / read-frame /
 commit / fire-SGIs shape `syscallDispatchCrossCoreEntry` has, and for the
 same reason: the context read is a pure read of a boot-installed value, so it
 need not be inside the commit closure, while the delivery must be.  An entry
@@ -425,15 +428,17 @@ def faultEntry (coreId esr far : UInt64) : BaseIO Unit := do
     let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
       let st := Concurrency.saveCapturedTrapFrameAt st0 coreId (some frame)
       let (sgis, st') := faultEntryStep lctx st ectx w coreId
+      let pending := st'.scheduler.reschedulePending
       let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-      ((sgis,
+      (((sgis, pending.raised st'.scheduler.reschedulePending),
         (Concurrency.coreIdOfUInt64? coreId).map
           (fun c => (c, st'.scheduler.currentOnCore c)),
         Concurrency.restoreTargetAt st' coreId,
         (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
         Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
     Platform.FFI.completePhysicalWrites r.2.2.2.1
-    Concurrency.fireCrossCoreSgis r.1
+    Concurrency.fireCrossCoreSgis r.1.1
+    Concurrency.fireRaisedReschedules r.1.2
     Platform.FFI.completeIcacheMaintenance r.2.2.2.2
     Concurrency.releaseSwitchedFpOwner coreId
     Platform.FFI.restoreTrapFrame r.2.2.1
@@ -445,7 +450,8 @@ the per-core `lean_ready` gate — when `dispatch_svc` rejects the syscall
 number, instead of publishing an `invalidSyscallNumber` error frame: the
 thread is delivered to its fault handler as seL4's `UnknownSyscall`, or
 suspended fail-closed.  Same three scalars and the same one-frame decode as
-`lean_handle_fault`; the syscall number rides in the window's `x7`. -/
+`lean_handle_fault`; the syscall number rides in the window's `x7`.  It fires
+the same SGIs, the delivery's and the residency settle's (WS-ZA ZA6.10). -/
 @[export lean_handle_unknown_syscall]
 def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit := do
   let lctx ← Platform.FFI.getKernelLabelingContext
@@ -455,15 +461,17 @@ def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit := do
     let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
       let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId (some frame)
       let (sgis, st') := unknownSyscallEntryStep lctx st ectx w coreId
+      let pending := st'.scheduler.reschedulePending
       let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-      ((sgis,
+      (((sgis, pending.raised st'.scheduler.reschedulePending),
         (Concurrency.coreIdOfUInt64? coreId).map
           (fun c => (c, st'.scheduler.currentOnCore c)),
         Concurrency.restoreTargetAt st' coreId,
         (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
         Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
     Platform.FFI.completePhysicalWrites r.2.2.2.1
-    Concurrency.fireCrossCoreSgis r.1
+    Concurrency.fireCrossCoreSgis r.1.1
+    Concurrency.fireRaisedReschedules r.1.2
     Platform.FFI.completeIcacheMaintenance r.2.2.2.2
     Concurrency.releaseSwitchedFpOwner coreId
     Platform.FFI.restoreTrapFrame r.2.2.1
@@ -505,8 +513,10 @@ core resumes — the faulting thread, whose `ELR_EL1` still names the FP/SIMD
 instruction, so it re-executes with its own FP state.  On `.retry` nothing is
 loaded and the restore leaves the trap armed, so the thread traps again until the
 core holding its live values has released them.  On a core that runs a thread
-nothing here schedules, so no SGI is fired and no successor is chosen
-(`fpAccessEntryStep_scheduler`).
+the step schedules nothing (`fpAccessEntryStep_scheduler`); the only SGI the
+entry fires is the residency settle's (WS-ZA ZA6.10), at a core whose flag the
+settle raised because this entry released a resident queued there
+(`PriorityInheritance.pokeReleasedResident`).
 
 **`v0.36.40`**: on a core another core has vacated, the step dispatches a
 successor (`PriorityInheritance.dispatchVacatedCore`), so the restore has
@@ -521,12 +531,15 @@ def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
   let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
     let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
     let res := fpAccessEntryStep st coreId live
+    let pending := res.2.scheduler.reschedulePending
     let res := (res.1,
       activateThreadAt (PriorityInheritance.settleResidencyAt res.2 coreId) coreId)
-    ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+    (((res.1, pending.raised res.2.scheduler.reschedulePending),
+      Concurrency.restoreTargetAt res.2 coreId,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
-  applyFpAccessOutcome r.1
+  applyFpAccessOutcome r.1.1
+  Concurrency.fireRaisedReschedules r.1.2
   Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.1
   Concurrency.recordCommittedCurrentThreadHw r.2.2
@@ -543,12 +556,15 @@ theorem fpAccessEntry_def (coreId : UInt64) :
         let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
           let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
           let res := fpAccessEntryStep st coreId live
+          let pending := res.2.scheduler.reschedulePending
           let res := (res.1,
             activateThreadAt (PriorityInheritance.settleResidencyAt res.2 coreId) coreId)
-          ((res.1, Concurrency.restoreTargetAt res.2 coreId,
+          (((res.1, pending.raised res.2.scheduler.reschedulePending),
+            Concurrency.restoreTargetAt res.2 coreId,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, res.2.scheduler.currentOnCore c))), res.2))
-        applyFpAccessOutcome r.1
+        applyFpAccessOutcome r.1.1
+        Concurrency.fireRaisedReschedules r.1.2
         Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.1
         Concurrency.recordCommittedCurrentThreadHw r.2.2) := rfl
@@ -618,15 +634,17 @@ theorem faultEntry_def (coreId esr far : UInt64) :
           let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
             let st := Concurrency.saveCapturedTrapFrameAt st0 coreId (some frame)
             let (sgis, st') := faultEntryStep lctx st ectx w coreId
+            let pending := st'.scheduler.reschedulePending
             let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-            ((sgis,
+            (((sgis, pending.raised st'.scheduler.reschedulePending),
               (Concurrency.coreIdOfUInt64? coreId).map
                 (fun c => (c, st'.scheduler.currentOnCore c)),
               Concurrency.restoreTargetAt st' coreId,
               (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
           Platform.FFI.completePhysicalWrites r.2.2.2.1
-          Concurrency.fireCrossCoreSgis r.1
+          Concurrency.fireCrossCoreSgis r.1.1
+          Concurrency.fireRaisedReschedules r.1.2
           Platform.FFI.completeIcacheMaintenance r.2.2.2.2
           Concurrency.releaseSwitchedFpOwner coreId
           Platform.FFI.restoreTrapFrame r.2.2.1
@@ -643,15 +661,17 @@ theorem unknownSyscallEntry_def (coreId esr far : UInt64) :
           let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
             let st := Concurrency.saveCapturedSyscallFrameAt st0 coreId (some frame)
             let (sgis, st') := unknownSyscallEntryStep lctx st ectx w coreId
+            let pending := st'.scheduler.reschedulePending
             let st' := activateThreadAt (PriorityInheritance.settleResidencyAt st' coreId) coreId
-            ((sgis,
+            (((sgis, pending.raised st'.scheduler.reschedulePending),
               (Concurrency.coreIdOfUInt64? coreId).map
                 (fun c => (c, st'.scheduler.currentOnCore c)),
               Concurrency.restoreTargetAt st' coreId,
               (st'.drainedPhysicalWrites, st'.pendingIcacheMaintenance)),
               Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
           Platform.FFI.completePhysicalWrites r.2.2.2.1
-          Concurrency.fireCrossCoreSgis r.1
+          Concurrency.fireCrossCoreSgis r.1.1
+          Concurrency.fireRaisedReschedules r.1.2
           Platform.FFI.completeIcacheMaintenance r.2.2.2.2
           Concurrency.releaseSwitchedFpOwner coreId
           Platform.FFI.restoreTrapFrame r.2.2.1
