@@ -329,15 +329,17 @@ MACHINERY_PINS = {
     # `resident_kept` and `machine_chain` tactics (one `syntax`, one `macro`)
     # and their step rules, and the `resident_frame` alternatives over each
     # arm family's machine frames.  Each `macro_rules` adds a tactic-category
-    # alternative; none mints a declaration.
+    # alternative; none mints a declaration.  WS-ZA ZA6.13 adds the
+    # `banksKept` automation: the `bank_frame` and `bank_kept` tactics (two
+    # `syntax`) and their alternatives over the arms' register-bank frames.
     ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "macro"): 1,
-    ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "macro_rules"): 11,
-    ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "syntax"): 1,
-    ("SeLe4n/Kernel/ReschedulePendingArms/Cancellation.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "macro_rules"): 15,
+    ("SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean", "syntax"): 3,
+    ("SeLe4n/Kernel/ReschedulePendingArms/Cancellation.lean", "macro_rules"): 2,
     ("SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean", "macro_rules"): 17,
     ("SeLe4n/Kernel/ReschedulePendingArms/Entry.lean", "macro_rules"): 5,
     ("SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean", "macro_rules"): 30,
-    ("SeLe4n/Kernel/ReschedulePendingArms/Lifecycle.lean", "macro_rules"): 1,
+    ("SeLe4n/Kernel/ReschedulePendingArms/Lifecycle.lean", "macro_rules"): 2,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.

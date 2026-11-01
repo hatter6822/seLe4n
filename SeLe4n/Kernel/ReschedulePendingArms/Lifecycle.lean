@@ -74,13 +74,14 @@ theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Vali
         fun c _ hF => markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ (by rw [hS]; exact hF),
         currentKeptOffCore_of_eq fun c _ => by rw [markKeyChangeFrom_currentOnCore, hS],
         residentKeptOffCore_of_eq (by
+          rw [markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq]), banksKeptOffCore_of_eq (by
           rw [markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq])⟩
     have h1Inv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
         vtid.val).objects.invExt := by rw [markKeyChangeFrom_objects]; exact hMidInv
     have h2 := stepCovers_trans h1
       ⟨enqueueRunnableOnCore_covers e (determineTargetCore st vtid.val) _ vtid.val h1Inv,
        enqueueRunnableOnCore_monotone e (determineTargetCore st vtid.val) _ vtid.val, enqueueRunnableOnCore_currentKept e _ _ _,
-       residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
+       residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
     have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
       (determineTargetCore st vtid.val) vtid.val h1Inv
     split at hStep
@@ -116,6 +117,12 @@ macro_rules | `(tactic| resident_frame) => `(tactic|
     Lifecycle.Suspend.clearPendingState, SystemState.updateTcb_machine,
     removeRunnableOnCore_machine_eq, enqueueRunnableOnCore_machineEq]; done))
 
+/-- ...and they write no core's bank (`bank_frame`). -/
+macro_rules | `(tactic| bank_frame) => `(tactic|
+  (simp only [SystemState.cancelYieldTo_machine, Lifecycle.Suspend.clearPendingStateValid,
+    Lifecycle.Suspend.clearPendingState, SystemState.updateTcb_machine,
+    removeRunnableOnCore_machine_eq, enqueueRunnableOnCore_machineEq]; done))
+
 /-! ### Suspend -/
 
 /-- Taking a thread off the core the state places it on covers: a queue removal
@@ -127,7 +134,7 @@ theorem descheduleAt_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Th
   | none => exact stepCovers_refl e st
   | some c => exact ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
     removeRunnableOnCore_currentKept e st tid c,
-    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
+    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
 
 theorem descheduleAt_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (placed : Option CoreId) (hInv : st.objects.invExt) :

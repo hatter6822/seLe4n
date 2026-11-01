@@ -84,6 +84,7 @@ theorem preemptCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
         · simpa [SystemState.rewriteObject_scheduler] using hp
         · exact hp
   · simp
+  · exact banksKeptOffCore_of_eq (by simp)
 
 /-- A step that writes only core `e`'s run queue and `current` slot of the
 scheduler, keeps the object store's key inputs and every flag, covers. -/
@@ -94,10 +95,11 @@ theorem stepCovers_of_local_slots {e : CoreId} {pre post : SystemState}
     (hSched : ∀ c, c ≠ e →
       post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c ∧
       post.scheduler.reschedulePendingOnCore c = pre.scheduler.reschedulePendingOnCore c)
-    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   stepCovers_of_frame hKeys hElig hRq (fun c hc => (hSched c hc).1)
-    (fun c hc hp => by rw [(hSched c hc).2]; exact hp) hRes
+    (fun c hc hp => by rw [(hSched c hc).2]; exact hp) hRes hBank
 
 /-- A step whose object store is a removal's queues nothing new on any core. -/
 theorem queuedOn_imp_of_runRemove {st post : SystemState} {e : CoreId} {t' : SeLe4n.ThreadId}
@@ -323,9 +325,15 @@ theorem stageCallerReturnFor_stepCovers (e : CoreId) (caller? : Option SeLe4n.Th
       simp only [Architecture.stageCallerReturnFor]
       split
       · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f)
-          (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine]), hWInv tid f⟩
+          (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine])
+          (banksKeptOffCore_of_setRegsOnCore (by
+            simp only [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine]; rfl)),
+          hWInv tid f⟩
       · exact ⟨stepCovers_of_scheduler_eq (hW tid f) (hWriteSched tid f)
-          (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine]), hWInv tid f⟩
+          (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine])
+          (banksKeptOffCore_of_eq
+            (by simp [Architecture.writeReturnFrameToTcb, SystemState.updateTcb_machine])),
+          hWInv tid f⟩
 
 theorem scheduleLocalSuccessorFrom_preserves_objects_invExt (e : CoreId)
     (caller? : Option SeLe4n.ThreadId) (post : SystemState) (hInv : post.objects.invExt) :

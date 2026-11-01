@@ -271,20 +271,14 @@ theorem faultEntryDeliver_stepCovers (lctx : LabelingContext) (st : SystemState)
 
 /-- WS-ZA ZA6.7: **the activation covers**: what it writes — the current
 thread's yield-to code and two return registers, the context's yield-from code
-and consumed count (`KernelObject.withoutYield`), and the core's bank — is no
+and consumed count (`KernelObject.withoutYield`), and the core's own bank — is no
 key input, and it writes no scheduler state. -/
-theorem activateThreadOnCore_stepCovers (e c : CoreId) (st : SystemState)
-    (hInv : st.objects.invExt) : stepCovers e st (activateThreadOnCore st c) :=
+theorem activateThreadOnCore_stepCovers (c : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) : stepCovers c st (activateThreadOnCore st c) :=
   stepCovers_of_keys_sched
     (keyInputsEq_of_objectsAgreeOffYield (activateThreadOnCore_objectsAgreeOffYield st c hInv))
     (activateThreadOnCore_scheduler st c)
-
-theorem activateThreadAt_stepCovers (e : CoreId) (st : SystemState) (coreId : UInt64)
-    (hInv : st.objects.invExt) : stepCovers e st (activateThreadAt st coreId) := by
-  unfold activateThreadAt
-  split
-  · exact activateThreadOnCore_stepCovers e _ st hInv
-  · exact stepCovers_refl e st
+    (hBank := fun d hd => activateThreadOnCore_regsOnCore_ne st c d hd)
 
 /-- **The syscall seam covers** on the executing core: the ABI dispatch, the
 caller's return staging, the local scheduling point, the residency settlement
@@ -306,7 +300,7 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
       (stageCallerReturnFor_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv).2)
   exact stepCovers_trans (stepCovers_trans hD
     (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv))
-    (activateThreadOnCore_stepCovers e e _ hSInv)
+    (activateThreadOnCore_stepCovers e _ hSInv)
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 

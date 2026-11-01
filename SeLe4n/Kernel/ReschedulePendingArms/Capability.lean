@@ -118,9 +118,10 @@ theorem cdtRecord_keyFrame (stM : SystemState) (src dst : CSpaceAddr)
 
 theorem capabilityKeyFrame.stepCovers {e : CoreId} {st st' : SystemState}
     (h : capabilityKeyFrame st st')
-    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e st st' := by bank_kept) :
     stepCovers e st st' :=
-  stepCovers_of_scheduler_eq h.1 h.2.1 hRes
+  stepCovers_of_scheduler_eq h.1 h.2.1 hRes hBank
 
 theorem cspaceDeleteSlot_keyInputsEq (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)

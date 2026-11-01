@@ -412,9 +412,10 @@ theorem notificationSignalDeclassifiedOnCore_stepCovers (e : CoreId)
 /-- A key frame covers and keeps the store invariant. -/
 theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
     (h : capabilityKeyFrame st st')
-    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
+    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e st st' := by bank_kept) :
     SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
-  ⟨h.stepCovers hRes, h.2.2⟩
+  ⟨h.stepCovers hRes hBank, h.2.2⟩
 
 /-- Coverage composes, the invariant read off the second leg. -/
 theorem stepCoversInv_trans {e : CoreId} {a b d : SystemState} (h₁ : stepCovers e a b)
@@ -538,7 +539,7 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
       fun t _ kq hq => ⟨kq, ((hView t kq hq).symm.trans hq), Nat.le_refl _, Nat.le_refl _, rfl⟩⟩,
     reschedulePendingMonotone_of_scheduler_eq hS,
     currentKeptOffCore_of_eq fun c _ => by rw [hS],
-    residentKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2])⟩,
+    residentKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2]), banksKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2])⟩,
     (retireFinalObject_frame ec target recorder st hObjInv).1⟩
   unfold SystemState.queuedOn at ht
   cases hx : (retireFinalObject ec target recorder st).getTcb? t with
@@ -660,7 +661,8 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     (hUnq : ∀ c (t : SeLe4n.ThreadId), t.toObjId = X → post.queuedOn c t = false)
     (hSched : post.scheduler = pre.scheduler)
     (hBi : schedContextBindingBidirectional pre) (hPlaced : placedThreadsHaveTcbs pre)
-    (hRes : post.machine.residentCode = pre.machine.residentCode) :
+    (hRes : post.machine.residentCode = pre.machine.residentCode)
+    (hBk : post.machine.coreRegs = pre.machine.coreRegs) :
     stepCovers e pre post := by
   have hKeyNe : ∀ t, t.toObjId ≠ X → schedKeyView post t = schedKeyView pre t := by
     intro t ht
@@ -670,7 +672,7 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     rw [hEq, hAbs] at hSo; cases hSo
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
     fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched],
-    residentKeptOffCore_of_eq hRes⟩
+    residentKeptOffCore_of_eq hRes, banksKeptOffCore_of_eq hBk⟩
   · have hne : t.toObjId ≠ X := fun hEq => by rw [hUnq c t hEq] at ht; cases ht
     refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
       candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
@@ -696,6 +698,32 @@ theorem untypedRetypeObject_residentCode {src dst : CSpaceAddr} {childId : SeLe4
     CarveRequest.scrub_residentCode, storeObject_machine_eq _ _ _ _ hStIdx,
     storeObject_machine_eq _ _ _ _ hStCh, storeObject_machine_eq _ _ _ _ hStUt]
 
+/-- The scrub writes memory alone, no core's bank. -/
+theorem CarveRequest.scrub_coreRegs (st : SystemState) (ut : UntypedObject) (idx : Nat)
+    (req : CarveRequest) :
+    (req.scrub st ut idx).machine.coreRegs = st.machine.coreRegs := by
+  cases req <;> simp only [CarveRequest.scrub, carveZeroFrame] <;> (try split) <;> rfl
+
+/-- ...and the carve writes no core's bank. -/
+theorem untypedRetypeObject_coreRegs {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
+    {req : CarveRequest} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    st'.machine.coreRegs = st.machine.coreRegs := by
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+    untypedRetypeObject_ok_decompose src dst childId req st st' hInv h
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hStUt, hStCh, _, hStIdx⟩ :=
+    retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hInv hRt
+  rw [SystemState.cdtAddChild_machine, cspaceInsertSlot_preserves_machine _ _ _ _ hIns,
+    CarveRequest.scrub_coreRegs, storeObject_machine_eq _ _ _ _ hStIdx,
+    storeObject_machine_eq _ _ _ _ hStCh, storeObject_machine_eq _ _ _ _ hStUt]
+
+/-- A thread's final-delete core release writes the FP/SIMD owners and the
+residency records, no core's bank. -/
+theorem finaliseThreadReleaseCores_coreRegs (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (finaliseThreadReleaseCores st tid).machine.coreRegs = st.machine.coreRegs := by
+  rw [finaliseThreadReleaseCores_machine, MachineState.releaseThread,
+    MachineState.releaseThreadOnCores_fields]
+
 /-- **The carve covers** (WS-ZA ZA5.4 part 14), for every kind it makes: the
 child's slot was empty and the object stored there is queued nowhere — a carved
 TCB is inactive with empty links — and no other key input moved. -/
@@ -708,7 +736,7 @@ theorem untypedRetypeObject_stepCovers (e : CoreId) {src dst : CSpaceAddr}
   obtain ⟨hFrame, hAbs, hUnq, hSched, hInv'⟩ :=
     untypedRetypeObject_keyFrameOffChild src dst childId req st st' hInv h
   exact ⟨stepCovers_of_freshSlot e hFrame hAbs hUnq hSched hBi hPlaced
-    (untypedRetypeObject_residentCode hInv h), hInv'⟩
+    (untypedRetypeObject_residentCode hInv h) (untypedRetypeObject_coreRegs hInv h), hInv'⟩
 
 /-! ### The finalising destroyers -/
 
@@ -740,7 +768,7 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
   exact stepCovers_trans h1
     ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
       _ t hI2, enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _,
-      residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
+      residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
 
 /-- WS-ZA ZA5.4 part 24: **a thread's endpoint cancel covers**: the removal
 (`endpointQueueRemoveDual_keyFrame`, through `queueRemove_inPlace`) and the
@@ -770,6 +798,7 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
       (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv),
      enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _,
      residentKeptOffCore_of_eq (by
+       unfold wakeCancelledWaiter; rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by
        unfold wakeCancelledWaiter; rw [enqueueRunnableOnCore_machineEq])⟩
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
@@ -827,7 +856,8 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
           rw [MachineState.releaseThreadOnCores_residentOnCore] at hU
           split at hU
           · cases hU
-          · exact hU)), ?_⟩
+          · exact hU)
+        (banksKeptOffCore_of_eq (finaliseThreadReleaseCores_coreRegs s t))), ?_⟩
       rw [hO]; exact h.2)
     (fun s s1 x _ _ r h _ _ hR _ hS _ _ _ _ => by
       have hI1 := storeObject_preserves_objects_invExt s s1 _ _ h.2 hS
@@ -852,17 +882,17 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
           (propagatePipChainCrossCore_stepCovers e _ _ _ sv hI1).2⟩)
     (fun s _ _ tid _ h _ _ e => e ▸
       stepCoversInv_trans h.1 ((updateTcb_keyFrame s tid (f := TCB.stashCleared) (fun _ => rfl)
-        h.2).stepCoversInv (hRes := by rw [SystemState.updateTcb_machine])))
+        h.2).stepCoversInv (hRes := by rw [SystemState.updateTcb_machine]) (hBank := banksKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine]))))
     ⟨fun s t h => ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched
         (keyInputsEq_of_objectsAgreeOffYield (SystemState.cancelYieldTo_objectsAgreeOffYield s t h.2))
         (SystemState.cancelYieldTo_scheduler s t)
-        (hRes := by rw [SystemState.cancelYieldTo_machine])),
+        (hRes := by rw [SystemState.cancelYieldTo_machine]) (hBank := banksKeptOffCore_of_eq (by rw [SystemState.cancelYieldTo_machine]))),
         SystemState.cancelYieldTo_preserves_objects_invExt _ _ h.2⟩,
      fun s c h => ⟨stepCovers_trans h.1 (stepCovers_of_keys_sched
         (keyInputsEq_of_objectsAgreeOffYield
           (SystemState.completeYieldFrom_objectsAgreeOffYield s c h.2))
         (SystemState.completeYieldFrom_scheduler s c)
-        (hRes := by rw [completeYieldFrom_machine])),
+        (hRes := by rw [completeYieldFrom_machine]) (hBank := banksKeptOffCore_of_eq (by rw [completeYieldFrom_machine]))),
         SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2⟩⟩
     target st ⟨stepCovers_refl e st, hInv⟩
 
@@ -892,7 +922,7 @@ theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr
     rw [releaseFinalRegistration_machine,
       (finaliseDestroyedCapabilities_framed ec _ _ st1 st2 hF).2,
       (cspaceDeleteSlot_scheduler_machine addr st st1 hD).2]
-  exact stepCoversInv_trans (stepCovers_trans (h2.stepCovers (hRes := by rw [hM2])) h3.1)
+  exact stepCoversInv_trans (stepCovers_trans (h2.stepCovers (hRes := by rw [hM2]) (hBank := banksKeptOffCore_of_eq (by rw [hM2]))) h3.1)
     (retireFinalObject_stepCovers e ec _ _ _ h3.2 hB3.1.1 hB3.2)
 
 /-- What the delete loops carry: coverage from the start state, and the bundle
@@ -989,16 +1019,16 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
-        (hRes := by rw [mintReplyCapWithCdt_machine_eq h])
+        (hRes := by rw [mintReplyCapWithCdt_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h]))
     | exact (untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv
-        (hRes := by rw [untypedResetFromCap_machine_eq h])
+        (hRes := by rw [untypedResetFromCap_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [untypedResetFromCap_machine_eq h]))
     | exact (vspaceMapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (vspaceRootOnlyWrite_keyFrame
         (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
-        (hRes := by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1])
+        (hRes := by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1]) (hBank := banksKeptOffCore_of_eq (by rw [(Architecture.vspaceUnifyInstructionPage_frame h).2.2.2.1]))
     | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
     | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
@@ -1009,23 +1039,23 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
            exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
-             (hRes := by rw [Architecture.writeReturnFrameToTcb_machine_eq]))
+             (hRes := by rw [Architecture.writeReturnFrameToTcb_machine_eq]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])))
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [unbindNotification_machine_eq hU])
+            (hRes := by rw [unbindNotification_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [unbindNotification_machine_eq hU]))
         | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact stepCoversInv_trans ((retirePendingFaultForResume_keyFrame _ _ hInv).stepCovers
-              (hRes := by rw [retirePendingFaultForResume_machine]))
+              (hRes := by rw [retirePendingFaultForResume_machine]) (hBank := banksKeptOffCore_of_eq (by rw [retirePendingFaultForResume_machine])))
             (resumeThreadOnCore_stepCovers _ _ _ _ _
               (retirePendingFaultForResume_keyFrame _ _ hInv).2.2 hU)
         | exact (setPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setMCPriorityOnCore_stepCovers _ _ _ _ _ _ _ hInv hU)
         | exact (setThreadCpuAffinityOnCore_stepCovers _ _ _ _ _ _ hInv hU)
         | exact (setIPCBufferOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU])
+            (hRes := by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.IpcBufferValidation.setIPCBufferOp_machine_eq _ _ _ _ hU]))
         | exact (setThreadFaultHandlerOp_keyFrame _ _ _ _ hInv hU).stepCoversInv
-            (hRes := by rw [setThreadFaultHandlerOp_machine_eq hU])
+            (hRes := by rw [setThreadFaultHandlerOp_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [setThreadFaultHandlerOp_machine_eq hU]))
         | exact copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ hB hU)
   all_goals
     obtain ⟨_, _, _, _, _, _, _, _, _, hU⟩ := untypedRetypeFromCap_ok _ _ _ _ _ _ h
@@ -1051,7 +1081,9 @@ theorem stepCovers_clearStash_stage {e : CoreId} {st s st' : SystemState}
       | .error e => .error e
       | .ok ((), s') => .ok ((), stage s')) = (.ok ((), st') : Except KernelError (Unit × SystemState)))
     (hStageM : ∀ x, (stage x).machine.residentCode = x.machine.residentCode := by
-      intro x; resident_frame) :
+      intro x; resident_frame)
+    (hStageB : ∀ x, (stage x).machine.coreRegs = x.machine.coreRegs := by
+      intro x; bank_frame) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   split at h
   · cases h
@@ -1059,7 +1091,8 @@ theorem stepCovers_clearStash_stage {e : CoreId} {st s st' : SystemState}
     cases h
     have hF := clearWokenReceiverStash_keyFrame woken? hInv hClr
     exact stepCoversInv_trans (stepCovers_trans hS hF.stepCovers)
-      ((hStage _ hF.2.2).stepCoversInv (hRes := hStageM _))
+      ((hStage _ hF.2.2).stepCoversInv (hRes := hStageM _)
+        (hBank := banksKeptOffCore_of_eq (hStageB _)))
 
 /-- The two badge stagings a signal arm ends with. -/
 theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
@@ -1108,6 +1141,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       all_goals first
         | exact writeReturnFrameToTcb_keyFrame _ _ _ (by exact hInv)
         | rw [Architecture.writeReturnFrameToTcb_machine_eq]
+        | exact banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
@@ -1153,7 +1187,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       dsimp only at h
       split at h
       · exact (cspaceMintWithCdt_keyFrame _ _ _ _ _ _ hInv h).stepCoversInv
-          (hRes := by rw [cspaceMintWithCdt_machine_eq h])
+          (hRes := by rw [cspaceMintWithCdt_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [cspaceMintWithCdt_machine_eq h]))
       · cases h
   case none.cspaceCopy.object cnodeId =>
     repeat' split at h
@@ -1162,7 +1196,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     dsimp only at h
     split at h
     · exact (cspaceCopy_keyFrame _ _ _ _ hInv h).stepCoversInv
-        (hRes := by rw [cspaceCopy_machine_eq h])
+        (hRes := by rw [cspaceCopy_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq h]))
     · cases h
   case none.cspaceMove.object cnodeId =>
     repeat' split at h
@@ -1171,7 +1205,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     dsimp only at h
     split at h
     · exact (cspaceMove_keyFrame _ _ _ _ hInv h).stepCoversInv
-        (hRes := by rw [cspaceMove_machine_eq h])
+        (hRes := by rw [cspaceMove_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [cspaceMove_machine_eq h]))
     · cases h
   case none.serviceRegister.object epId =>
     repeat' split at h
@@ -1179,7 +1213,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     unfold registerServiceChecked at h
     split at h
     · exact (registerService_keyFrame hInv h).stepCoversInv
-        (hRes := by rw [registerService_preserves_machine _ _ _ h])
+        (hRes := by rw [registerService_preserves_machine _ _ _ h]) (hBank := banksKeptOffCore_of_eq (by rw [registerService_preserves_machine _ _ _ h]))
     · cases h
   case none.notificationSignal.object notifId =>
     split at h
@@ -1318,6 +1352,6 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     (fun t ht c => hAwayCur t ht c)
     h
-  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3, hD.1.4⟩, hD.2⟩
+  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3, hD.1.4, hD.1.5⟩, hD.2⟩
 
 end SeLe4n.Kernel

@@ -199,7 +199,9 @@ theorem processOneReplenishmentOnCore_stepCovers (st : SystemState) (e : CoreId)
       ⟨(hV t).1.trans hR.1, (hV t).2.trans hR.2⟩
   refine ⟨?_, fun c _ hF => processOneReplenishmentOnCore_reschedulePendingOnCore_mono st e scId now c hF,
     fun c hc t ht => ?_, residentKeptOffCore_of_eq
-      (congrArg MachineState.residentCode (processOneReplenishmentOnCore_machine_eq st e scId now))⟩
+      (congrArg MachineState.residentCode (processOneReplenishmentOnCore_machine_eq st e scId now)),
+    banksKeptOffCore_of_eq
+      (congrArg MachineState.coreRegs (processOneReplenishmentOnCore_machine_eq st e scId now))⟩
   rotate_left
   · rw [processOneReplenishmentOnCore, markRefillKeyChange_extract_frame
       (fun s => s.scheduler.currentOnCore c) st _ scId (fun _ _ => by
@@ -268,6 +270,7 @@ theorem abortPendingIpcOnEndpoint_stepCovers (e : CoreId) {epId : SeLe4n.ObjId} 
     (h : abortPendingIpcOnEndpoint epId isRecvQ tid st = .ok st') : stepCovers e st st' := by
   refine stepCovers_of_keys_sched ?_ (abortPendingIpcOnEndpoint_scheduler_eq _ _ _ _ _ h)
     (hRes := congrArg MachineState.residentCode (abortPendingIpcOnEndpoint_machine _ _ _ _ _ h))
+    (hBank := banksKeptOffCore_of_eq (congrArg MachineState.coreRegs (abortPendingIpcOnEndpoint_machine _ _ _ _ _ h)))
   unfold abortPendingIpcOnEndpoint at h
   split at h
   · cases h
@@ -370,12 +373,13 @@ theorem stepCovers_of_objects_eq {e : CoreId} {pre post : SystemState}
     (hObj : post.objects = pre.objects)
     (hCur : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hMono : reschedulePendingMonotone e pre post)
-    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame) :
+    (hRes : post.machine.residentCode = pre.machine.residentCode := by resident_frame)
+    (hBank : banksKeptOffCore e pre post := by bank_kept) :
     stepCovers e pre post :=
   have hKeys := keyInputsEq_of_objects_eq hObj
   stepCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
     (budgetEligibleView_eq_of_keyInputsEq hKeys)
-    (fun c _ t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht) hCur hMono hRes
+    (fun c _ t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht) hCur hMono hRes hBank
 
 /-- Writing a core's timeout-error diagnostic covers. -/
 theorem setLastTimeoutErrorsOnCore_stepCovers (e : CoreId) (st : SystemState) (c : CoreId)
@@ -677,6 +681,11 @@ theorem tickClockedState_residentCode (st : SystemState) (c : CoreId) :
     (tickClockedState st c).machine.residentCode = st.machine.residentCode := by
   unfold tickClockedState; split <;> rfl
 
+/-- ...and no core's bank. -/
+theorem tickClockedState_coreRegs (st : SystemState) (c : CoreId) :
+    (tickClockedState st c).machine.coreRegs = st.machine.coreRegs := by
+  unfold tickClockedState; split <;> rfl
+
 /-- **The run-loop step covers**: the clock advance frames every view, slot and
 flag; the tick covers; the domain step covers. -/
 theorem perCoreTimerTickStep_stepCovers (st : SystemState) (coreId : UInt64)
@@ -688,6 +697,7 @@ theorem perCoreTimerTickStep_stepCovers (st : SystemState) (coreId : UInt64)
   have hC : stepCovers ⟨coreId.toNat, h⟩ st (tickClockedState st ⟨coreId.toNat, h⟩) :=
     stepCovers_of_objects_eq (tickClockedState_objects _ _) (fun _ _ => by simp)
       (fun _ _ hp => by simpa using hp) (tickClockedState_residentCode _ _)
+      (banksKeptOffCore_of_eq (tickClockedState_coreRegs _ _))
   have hCInv : (tickClockedState st ⟨coreId.toNat, h⟩).objects.invExt := by
     rw [tickClockedState_objects]; exact hInv
   have hCBi : schedContextBindingBidirectional (tickClockedState st ⟨coreId.toNat, h⟩) := by

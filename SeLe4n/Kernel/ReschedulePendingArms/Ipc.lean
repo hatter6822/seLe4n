@@ -311,13 +311,13 @@ theorem wakeThread_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Thre
   refine ⟨?_, wakeThread_preserves_objects_invExt st tid executingCore hInv⟩
   rw [wakeThread_state_eq_enqueue]
   exact ⟨enqueueRunnableOnCore_covers e _ st tid hInv, enqueueRunnableOnCore_monotone e _ st tid, enqueueRunnableOnCore_currentKept e _ _ _,
-    residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
+    residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
 
 theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
   ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
     removeRunnableOnCore_currentKept e st tid c,
-    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
+    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
 
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/
@@ -362,7 +362,8 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
             obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st2 receiver executingCore hInv2
             exact ⟨stepCovers_trans ((hF1.trans hF2).stepCovers (congrArg MachineState.residentCode
               ((storeTcbReceiveComplete_machine_eq _ _ _ _ hRecv).trans
-                (endpointQueuePopHead_machine_eq _ _ _ _ _ hPop)))) hW, hWInv⟩
+                (endpointQueuePopHead_machine_eq _ _ _ _ _ hPop))) (banksKeptOffCore_of_eq (congrArg MachineState.coreRegs ((storeTcbReceiveComplete_machine_eq _ _ _ _ hRecv).trans
+                (endpointQueuePopHead_machine_eq _ _ _ _ _ hPop))))) hW, hWInv⟩
     · split
       · exact ⟨stepCovers_refl e st, hInv⟩
       · rename_i st1 hEnq
@@ -378,7 +379,8 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
           exact ⟨stepCovers_trans (stepCovers_trans ((hF1.trans hF2).stepCovers
             (congrArg MachineState.residentCode
               ((storeTcbIpcStateAndMessage_machine_eq _ _ _ _ _ hBlk).trans
-                (endpointQueueEnqueue_machine_eq _ _ _ _ _ hEnq))))
+                (endpointQueueEnqueue_machine_eq _ _ _ _ _ hEnq))) (banksKeptOffCore_of_eq (congrArg MachineState.coreRegs ((storeTcbIpcStateAndMessage_machine_eq _ _ _ _ _ hBlk).trans
+                (endpointQueueEnqueue_machine_eq _ _ _ _ _ hEnq)))))
             (removeRunnableOnCore_stepCovers e st2 sender executingCore))
             (hF3.stepCovers (by unfold recordSendCap; simp [SystemState.mapTcbInPlace])), hF3.2.2⟩
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
@@ -437,7 +439,7 @@ theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeL
       | (rename_i hU
          have hF := receiveTransferCaps_keyFrame hSendInv hU
          exact ⟨stepCovers_trans hSend (hF.stepCovers (congrArg MachineState.residentCode
-           (receiveTransferCaps_preserves_machine hU))), hF.2.2⟩)
+           (receiveTransferCaps_preserves_machine hU)) (banksKeptOffCore_of_eq (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hU)))), hF.2.2⟩)
 
 /-- The live checked send covers on every outcome. -/
 theorem endpointSendCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -624,7 +626,7 @@ theorem endpointReceiveDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : 
       | (rename_i hU
          have hF := receiveTransferCaps_keyFrame hRcvInv hU
          exact ⟨stepCovers_trans hRcv (hF.stepCovers (congrArg MachineState.residentCode
-           (receiveTransferCaps_preserves_machine hU))), hF.2.2⟩)
+           (receiveTransferCaps_preserves_machine hU)) (banksKeptOffCore_of_eq (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hU)))), hF.2.2⟩)
 
 /-! ### The donation lend -/
 
@@ -637,6 +639,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
     stepCovers e st st' ∧ st'.objects.invExt := by
   refine ⟨?_, donateSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h⟩
   have hM := congrArg MachineState.residentCode (donateSchedContext_machine_eq _ _ _ _ _ h)
+  have hMB := congrArg MachineState.coreRegs (donateSchedContext_machine_eq _ _ _ _ _ h)
   unfold donateSchedContext at h
   revert h
   cases hSc : st.getSchedContext? clientScId with
@@ -716,6 +719,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                         (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1)
                           hS3 rfl)).trans k2.runCoresAgree)
                       (by simpa only [markKeyChangeFrom_machine] using hM)
+                      (banksKeptOffCore_of_eq (by simpa only [markKeyChangeFrom_machine] using hMB))
                     · show schedKeyView s4 t = schedKeyView st t ∧
                         budgetEligibleView s4 t = budgetEligibleView st t
                       exact ⟨by rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
@@ -1005,6 +1009,7 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
         · rename_i st1 hS
           have hM1 := congrArg MachineState.residentCode
             (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
+          have hM1B := congrArg MachineState.coreRegs (storeTcbIpcStateAndMessage_fromTcb_machine_eq hS)
           unfold storeTcbIpcStateAndMessage_fromTcb at hS
           have hF1 : capabilityKeyFrame st st1 := by
             revert hS
