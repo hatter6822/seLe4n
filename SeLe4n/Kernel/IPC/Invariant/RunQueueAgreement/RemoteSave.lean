@@ -282,8 +282,9 @@ theorem syscallDispatchEntryState_holdsOnlyCurrentOn (ctx : LabelingContext)
 for an initiator's commit `pre → post` on core `e`, stated over the run that
 follows it.  `decided` is the HAL record (`PER_CPU_CURRENT_THREAD`) at the
 commit, and for each stalled core `d` (`Concurrency.stallsOn decided e post d`) the run
-names the state `S` the target's first locked entry after the commit ran from,
-and the frame that entry saved:
+names the state `entry` the target's first locked entry after the commit ran
+from (a parameter, not a field: the obligation is about a state the run
+reached, not a function that makes one), and the frame that entry saved:
 
 * `record`: the record names what each core runs — every committing entry
   records what it left its own core running (`recordCommittedCurrentThreadHw`),
@@ -295,14 +296,15 @@ and the frame that entry saved:
 * `frame`: the target's entry is handed the frame of the thread it ran, from
   EL0 — an exception from EL0, or the exit gate's refused return, which hands
   the frame it was about to resume;
-* `waited`: the initiator returns to EL0 only after that entry has committed —
+* the wait, which is why `entry` precedes the initiator's return: the
+  initiator returns to EL0 only after that entry has committed —
   the save epoch the target advances inside the lock
   (`note_locked_entry_in`), sampled under the initiator's lock
   (`record_pending_save_in`) and waited on outside it
   (`await_remote_saves_in`).
 
 `RemoteSaveObligation.saved` is what the stall then guarantees. -/
-structure RemoteSaveObligation (e d : CoreId) (pre post : SystemState) (t : SeLe4n.ThreadId) where
+structure RemoteSaveObligation (e d : CoreId) (pre post entry : SystemState) (t : SeLe4n.ThreadId) where
   /-- The target is another core. -/
   ne : d ≠ e
   /-- The HAL record at the commit. -/
@@ -315,19 +317,17 @@ structure RemoteSaveObligation (e d : CoreId) (pre post : SystemState) (t : SeLe
   vacated : post.scheduler.currentOnCore d = none
   /-- The commit made no thread resident on the target. -/
   kept : keptOnCore d pre post
-  /-- The state the target's first locked entry after the commit ran from. -/
-  entryState : SystemState
   /-- The commits between kept the target's slots. -/
-  between : keptOnCore d post entryState
+  between : keptOnCore d post entry
   /-- The frame the target's entry saved, taken from EL0. -/
   frame : Architecture.InFlightContext
   fromEl0 : Architecture.trapFromEl0 frame.snapshot = true
   /-- The store's table invariant at the target's entry. -/
-  invExt : entryState.objects.invExt
+  invExt : entry.objects.invExt
 
 /-- **The target is stalled**: the HAL's check finds it changed. -/
-theorem RemoteSaveObligation.stalled {e d : CoreId} {pre post : SystemState}
-    {t : SeLe4n.ThreadId} (O : RemoteSaveObligation e d pre post t) :
+theorem RemoteSaveObligation.stalled {e d : CoreId} {pre post entry : SystemState}
+    {t : SeLe4n.ThreadId} (O : RemoteSaveObligation e d pre post entry t) :
     Concurrency.stallsOn O.decided e post d = true :=
   Concurrency.stallsOn_of_taken O.decided e d post t O.ne O.record (by rw [O.vacated]; simp)
 
@@ -336,15 +336,15 @@ target's entry has written the frame `t` trapped with into `t`'s TCB — or `t`'
 record was released first, by the final delete of `t` — and the target holds
 no thread's registers but its own current thread's (every entry's tail,
 `*EntryState_holdsOnlyCurrentOn`). -/
-theorem RemoteSaveObligation.saved {e d : CoreId} {pre post : SystemState}
-    {t : SeLe4n.ThreadId} (O : RemoteSaveObligation e d pre post t) :
-    (∀ tcb, O.entryState.getTcb? t = some tcb →
-        O.entryState.machine.residentOnCore d = some t →
-        (Architecture.saveCapturedTrapFrame O.entryState d (some O.frame)).getTcb? t =
+theorem RemoteSaveObligation.saved {e d : CoreId} {pre post entry : SystemState}
+    {t : SeLe4n.ThreadId} (O : RemoteSaveObligation e d pre post entry t) :
+    (∀ tcb, entry.getTcb? t = some tcb →
+        entry.machine.residentOnCore d = some t →
+        (Architecture.saveCapturedTrapFrame entry d (some O.frame)).getTcb? t =
             some { tcb with registerContext := O.frame.snapshot } ∧
-          (Architecture.saveCapturedSyscallFrame O.entryState d (some O.frame)).getTcb? t =
+          (Architecture.saveCapturedSyscallFrame entry d (some O.frame)).getTcb? t =
             some { tcb with registerContext := Architecture.restartAtSvc O.frame.snapshot }) ∧
-      O.entryState.vacatedHolding d t := by
+      entry.vacatedHolding d t := by
   have hP : post.vacatedHolding d t := by
     refine ⟨O.vacated, ?_⟩
     cases h : post.machine.residentOnCore d with
