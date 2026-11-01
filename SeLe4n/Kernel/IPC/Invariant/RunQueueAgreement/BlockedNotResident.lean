@@ -141,6 +141,12 @@ theorem clearLedgers {X : SystemState} (h : X.blockedNotResident) :
     (Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites X)).blockedNotResident :=
   h
 
+/-- ...and in the syscall step's order. -/
+theorem clearLedgers' {X : SystemState} (h : X.blockedNotResident) :
+    (Architecture.clearPhysicalWrites
+      (Architecture.clearIcacheMaintenance X)).blockedNotResident :=
+  h
+
 end BlockedNotResident
 
 /-- The default state holds no resident. -/

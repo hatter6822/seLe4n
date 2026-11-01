@@ -28,10 +28,6 @@ namespace readyKeptStage
 
 variable {S : SeLe4n.ThreadId → Prop}
 
-theorem of_switch {c : CoreId} {st st' : SystemState}
-    (h : SystemState.RunQueueSwitchStage c st st') : readyKeptStage S st st' :=
-  fun hI hR => .of_stateMono (h.2.2 hI hR)
-
 theorem of_eq {st st' : SystemState} (h : st' = st) : readyKeptStage S st st' := by
   subst h; exact refl _
 
@@ -347,23 +343,6 @@ theorem faultReplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   · rename_i stR sgi hR
     rw [hR] at hE
     exact (readyKeptStage.of_stage hE).trans hE.1 (faultReplyApplyOnCore_readyKeptStage _ _ _)
-
-theorem replyTransferOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
-    {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage}
-    {c : CoreId} {st st' : SystemState} (hD : st.currentDequeuedUnique)
-    (h : replyTransferOnCore replier callerTid mi regs msg c st = .ok ((), st')) :
-    readyKeptStage S st st' := by
-  have hF := faultReplyOnCore_readyKeptStage (S := S) replier callerTid mi regs c st hD
-  have hE := endpointReplyCrossCoreDispatch_runQueueStage replier callerTid msg c st
-    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
-  unfold replyTransferOnCore at h
-  repeat' (first | split at h | dsimp only at h)
-  all_goals first
-    | (cases h; done)
-    | (rename_i hR; cases h; rw [hR] at hF; exact hF)
-    | (rename_i hR; cases h; rw [hR] at hE
-       exact .of_stage (hE.trans (stageDeliveredMessage_runQueueStage _ _ _)))
 
 theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     {ctx : LabelingContext} {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
@@ -1454,5 +1433,268 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
           P.blocked) hSig))
         (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
     · cases h
+
+
+/-- **The checked syscall dispatch keeps every ready thread other than the
+caller ready**: the yield moves no thread's IPC state, the capability
+resolution is a read, the routed arm keeps every thread but the caller ready,
+and the taint pass writes the taint table and the taint words alone. -/
+theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st st' : SystemState)
+    (P : SyscallArmPremises st executingCore tid)
+    (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
+    readyKeptStage (· = tid) st st' := by
+  unfold dispatchSyscallChecked at h
+  split at h
+  · cases h
+  by_cases hY : decoded.syscallId = .yield
+  · simp only [hY, ↓reduceIte, dispatchYield] at h
+    split at h
+    · cases h
+    · rename_i hYieldOk
+      cases h
+      exact yieldOnCore_readyKeptStage hYieldOk (P.placeable executingCore)
+  simp only [hY, ↓reduceIte] at h
+  split at h <;> try (cases h; done)
+  split at h <;> try (cases h; done)
+  cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
+    simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
+  all_goals
+    split at h
+    · cases h
+    rename_i stPost hD
+    cases h
+    suffices hP : SystemState.RunQueueEntryStage st stPost ∧
+        readyKeptStage (· = tid) st stPost from
+      readyKeptStage.trans hP.1.1 hP.2 (readyKeptStage.of_stage
+        (SystemState.RunQueueStage.of_objectsAgreeOffTaint
+          (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
+          (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
+          (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
+          (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])))
+  · unfold syscallInvoke at hD
+    split at hD
+    · cases hD
+    · rename_i cap s1 hLk
+      have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
+      obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
+      subst hStEq
+      exact ⟨dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _
+        stPost P hD,
+        dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
+  · unfold syscallInvokeResolved at hD
+    split at hD
+    · cases hD
+    · rename_i cap s1 hRz
+      obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
+      subst hStEq
+      exact ⟨dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _
+        stPost P hD,
+        dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
+
+
+/-! ### The syscall entry -/
+
+/-- **The checked syscall entry keeps every ready thread other than the core's
+current thread ready**: the register and decode reads, the IPC-buffer fill
+writing one core's TLB, and the dispatch, which blocks at most its caller. -/
+theorem syscallEntryChecked_readyKeptStage {ctx : LabelingContext}
+    {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
+    {st st' : SystemState}
+    (E : EntryPremises st)
+    (hNI : ∀ tid, st.scheduler.currentOnCore e = some tid → isIdleThreadId tid = false)
+    (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
+    readyKeptStage (fun t => st.scheduler.currentOnCore e = some t) st st' := by
+  unfold syscallEntryChecked at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  rename_i tid hCur
+  split at h
+  · cases h
+  rename_i regs s hLk
+  split at h
+  · cases h
+  rename_i decoded hDec
+  dsimp only at h
+  obtain ⟨t, ht⟩ := Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb st e tid
+    decoded.overflowCount
+  rw [ht] at h
+  have hF := SystemState.RunQueueStage.of_frame (st := st)
+    (st' := { st with perCoreTlb := t }) rfl rfl rfl
+  refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
+  exact readyKeptStage.trans hF.entry.1 (.of_stage hF)
+    (dispatchSyscallChecked_readyKeptStage ctx decoded tid e _ st'
+      ((E.of_ipcFrame hF (IpcFrame.of_frame rfl fun _ => rfl)).arm hCur (hNI tid hCur)) h)
+
+/-- **The ABI dispatch keeps every ready thread other than the core's current
+thread ready**: the argument spill writes the caller's registers, then the
+checked entry, the capability-fault delivery suspending the caller, or a
+refusal record. -/
+theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreId}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
+    (E : EntryPremises st)
+    (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+    readyKeptStage (fun t => st.scheduler.currentOnCore e = some t) st st' := by
+  unfold Platform.FFI.syscallDispatchFromAbi at h
+  split at h
+  · cases h; exact readyKeptStage.refl _
+  rename_i tid hCur
+  split at h
+  · cases h; exact readyKeptStage.refl _
+  rename_i hIdle
+  have hNI : isIdleThreadId tid = false := by simpa using hIdle
+  have hW : SystemState.RunQueueStage st
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+    unfold Platform.FFI.writeFfiRegistersToTcb
+    exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
+  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
+    E.of_ipcFrame hW (by
+      unfold Platform.FFI.writeFfiRegistersToTcb
+      exact IpcFrame.updateTcb _ _ fun _ => rfl)
+  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler.currentOnCore e
+      = some tid := by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
+  refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
+  dsimp only at h
+  split at h
+  · split at h
+    · cases h
+      unfold Platform.FFI.deliverSyscallCapFault
+      have hW2 := writeFaultRegistersToTcb_runQueueStage
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+      have E2 := E1.of_ipcFrame hW2 (by
+        unfold writeFaultRegistersToTcb
+        exact IpcFrame.updateTcb _ _ fun _ => rfl)
+      exact readyKeptStage.trans (hW.trans hW2).entry.1 (.of_stage (hW.trans hW2))
+        (faultDeliverOnCoreChecked_readyKeptStage _ _ tid _ _ e E2.endpointHeads
+          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI)
+    · cases h
+      exact .of_stage (hW.trans (SystemState.RunQueueStage.of_frame
+        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
+        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+        (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)))
+  · rename_i hE
+    cases h
+    refine readyKeptStage.trans hW.entry.1 (.of_stage hW)
+      (readyKeptStage.mono (fun x hx => ?_) (syscallEntryChecked_readyKeptStage E1
+        (fun t ht => by rw [hCur1] at ht; cases ht; exact hNI) hE))
+    rw [hCur1] at hx; cases hx; rfl
+
+
+/-- WS-ZA ZA6.20: **the syscall entry keeps a thread blocked in IPC resident on
+no core.**  The trap-frame save and the IPC-buffer words block no thread; every
+dispatch arm blocks at most the caller, the executing core's current thread
+(`syscallDispatchFromAbi_readyKeptStage`); the caller's return staging and the
+local scheduling point block none; and the caller is resident on no other core
+(`currentNotResidentElsewhere`).  The dispatch's coverage reads its premises at
+the state the dispatch runs from, as the sister carry's does
+(`syscallDispatchEntryState_preserves_currentNotResidentElsewhere`). -/
+theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingContext)
+    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (E : EntryPremises st)
+    (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
+    (hB : finalisingDeleteBundle (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
+    (hPlaced : placedThreadsHaveTcbs (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
+    (hAwayCur : ∀ t, (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some t →
+      ∀ c, (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).queuedOn c t = false)
+    (hC : st.currentNotResidentElsewhere) (hBNR : st.blockedNotResident) :
+    (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2
+      ).blockedNotResident := by
+  refine BlockedNotResident.of_frame (X := (syscallDispatchCrossCoreStep ctx e syscallId
+    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+    trapped.pstate trapped.sp trapped.x30
+    (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+      bytes n)).2) ?_
+    (fun d tid hR => by
+      have hM := syncUserWords_residentCode (syscallDispatchCrossCoreStep ctx e syscallId
+        trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+        trapped.pstate trapped.sp trapped.x30 (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 ByteArray.empty 0
+      simp only [MachineState.residentOnCore] at hR ⊢; rw [← hM]; exact hR)
+    (fun tid t' hT => ⟨t', by
+      have hO := Architecture.IpcBufferRead.syncUserWords_objects (syscallDispatchCrossCoreStep
+        ctx e syscallId
+        trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+        trapped.pstate trapped.sp trapped.x30 (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 ByteArray.empty 0
+      unfold SystemState.getTcb? at hT ⊢
+      rw [← hO]; exact hT, rfl⟩)
+  have hS := (saveCapturedSyscallFrame_runQueueStage st e frame).trans
+    (SystemState.RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
+      (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+      (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+      (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
+      (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+      (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
+      (st' := Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
+  have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
+    (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+      fun _ => by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
+  have ES := E.of_ipcFrame hS hF
+  obtain ⟨hInvS, hRS⟩ := hS.1.links hInv0 hR0
+  have hS0 : (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler = st.scheduler := by
+    rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler]
+  have hM0 : (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n).machine.residentCode =
+        st.machine.residentCode := by
+    rw [syncUserWords_residentCode, saveCapturedSyscallFrame_residentCode]
+  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
+    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+    trapped.pstate trapped.sp trapped.x30
+    (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+  rw [syscallDispatchCrossCoreStep_of_ok hD]
+  have A := syscallDispatchFromAbi_runQueueEntryStage ES hD
+  have B := (stageCallerReturnFor_runQueueStage ((Architecture.IpcBufferRead.syncUserWords
+    (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+    st' e outcome)
+  have ABC := A.trans (B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
+    ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+      bytes n).scheduler.currentOnCore e) _ e))
+  have Full := hS.entry.trans (ABC.trans (settleThenActivateOnCore_runQueueEntryStage _ e))
+  obtain ⟨hInvM, hRM⟩ := ABC.1.links hInvS hRS
+  obtain ⟨hDc, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInvS hB hPlaced hAwayCur hD
+  obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e
+    ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+      bytes n).scheduler.currentOnCore e) st' outcome hDInv
+  have hCov := stepCovers_trans (stepCovers_trans hDc hStage)
+    (scheduleLocalSuccessorFrom_stepCovers e
+      ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
+        bytes n).scheduler.currentOnCore e) _ hStageInv)
+  have r : readyKeptStage (fun t => (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some t)
+      _ _ :=
+    (syscallDispatchFromAbi_readyKeptStage ES hD).trans A.1
+      ((readyKeptStage.of_stage B).trans B.entry.1 fun hI hR =>
+        .of_stateMono (scheduleLocalSuccessorFrom_stateMono
+          ((Architecture.IpcBufferRead.syncUserWords
+            (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+          _ e hI hR))
+  refine BlockedNotResident.clearLedgers' ?_
+  exact settleThenActivateOnCore_blockedNotResident hBNR hC hInvM hRM
+    (residentKeptOffCore_trans (residentKeptOffCore_of_eq hM0) hCov.residentKept)
+    ((readyKeptExcept.of_stateMono (hS.2.2 hInv0 hR0)).trans
+      (fun t hn => r hInvS hRS t fun hc => hn (by rwa [hS0] at hc)))
+    (Full.2 hInv0 hR0 (Full.1.links hInv0 hR0).2 hD0)
 
 end SeLe4n.Kernel
