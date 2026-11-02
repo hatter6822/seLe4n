@@ -1,3 +1,36 @@
+## v0.36.179 — WS-ZA ZA6.16: a thread blocked in IPC is resident on no core
+
+The census's writes to a blocked thread (a cancellation's restore, a delivery,
+a reply) are sound only if no core holds that thread as its resident: the
+resident core's next entry would save its bank over the write. A blocked thread
+is already current nowhere (`blockedCurrentNowhere`). This version states that
+it is resident nowhere, proves that at boot, and gives the census the blocked
+thread's free-ness. Proofs only; no executable code changes.
+
+- **The invariant** (`IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean`).
+  `SystemState.blockedNotResident` says every core's resident thread is ready
+  in IPC.
+- **Where it holds.** It holds wherever no core holds a resident
+  (`BlockedNotResident.of_noResidents`, `of_defaultCodes`):
+  - in the default state (`SystemState.default_blockedNotResident`);
+  - in the state the started boot installs
+    (`bootFromPlatformCheckedStartedFor_blockedNotResident`).
+- **Its frame.** `BlockedNotResident.of_frame` carries it across a step that
+  records no new resident and keeps each resident's IPC state.
+- **The census's free-ness.** `offCoreFree_of_blocked`: a blocked thread is held
+  by no core, from `blockedCurrentNowhere` and `blockedNotResident`.
+- **The plan.** The row is split:
+  - ZA6.16, this row;
+  - ZA6.17, the preservation across every committing entry. It needs the frame
+    that no entry blocks a thread resident on another core: only the caller's
+    syscall and its fault block a thread, and the caller is resident on no
+    other core.
+
+  The rows after them move up one (ZA6.17 to ZA6.30 become ZA6.18 to ZA6.31),
+  and every citation is swept.
+- Tier 3 anchors pin the statement, the frame, the free-ness and the boot
+  theorem. The new module is in the staged allowlist.
+
 ## v0.36.178 — WS-ZA ZA6.15: the census of the final delete's writes
 
 A final delete writes saved registers in two ways: the scheduling-context
