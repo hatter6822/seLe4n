@@ -1147,16 +1147,16 @@ private def bracketStepFn (st : SystemState) :=
 /-- The seam's bracket at those same words (WS-LS LS2.4). -/
 private def bracketSpec :=
   SeLe4n.Testing.dispatchBracket harnessLabelingContext bootCoreId
-    (syscallId := 20) (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1 })
+    (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1, x7 := 20 })
 
 private def bracketRun (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1 }) st
+    (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1, x7 := 20 }) st
 
 /-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
 private def undeclaredRun (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1 }) st
+    (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1, x7 := 4 }) st
 
 private def undeclaredBare (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreStep harnessLabelingContext bootCoreId

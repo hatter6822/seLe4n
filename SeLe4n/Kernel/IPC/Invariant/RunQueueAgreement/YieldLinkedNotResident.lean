@@ -360,7 +360,7 @@ dispatch's coverage reads its premises at the state the dispatch runs from —
 the saved state with the entry's IPC-buffer words handed to it — as the seam's
 does (`syscallDispatchCrossCoreStep_stepCovers`). -/
 theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (E : EntryPremises st)
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined)
@@ -374,11 +374,11 @@ theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident (ctx : Labeli
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n).queuedOn c t = false)
     (hY : st.yieldLinkedNotResident) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).yieldLinkedNotResident := by
   refine yieldLinkedNotResident_of_live hY
-    ((syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E).1.live
+    ((syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).1.live
       hInv0 hR0) (currentsRecordUnlinked.clearUserWords ?_)
   have hInv : (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n).objects.invExt := by
@@ -388,11 +388,11 @@ theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident (ctx : Labeli
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n) :=
     currentKeptOffCore_of_eq fun _ _ => by
       rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler]
-  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
+  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
     trapped.pstate trapped.sp trapped.x30
     (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
-  show currentsRecordUnlinked (syscallDispatchCrossCoreStep ctx e syscallId
+  show currentsRecordUnlinked (syscallDispatchCrossCoreStep ctx e trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
     trapped.pstate trapped.sp trapped.x30
     (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 st

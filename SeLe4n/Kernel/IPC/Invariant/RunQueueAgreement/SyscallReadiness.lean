@@ -1605,7 +1605,7 @@ local scheduling point block none; and the caller is resident on no other core
 the state the dispatch runs from, as the sister carry's does
 (`syscallDispatchEntryState_preserves_currentNotResidentElsewhere`). -/
 theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (E : EntryPremises st)
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
@@ -1619,24 +1619,24 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n).queuedOn c t = false)
     (hC : st.currentNotResidentElsewhere) (hBNR : st.blockedNotResident) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2
       ).blockedNotResident := by
-  refine BlockedNotResident.of_frame (X := (syscallDispatchCrossCoreStep ctx e syscallId
+  refine BlockedNotResident.of_frame (X := (syscallDispatchCrossCoreStep ctx e trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
     trapped.pstate trapped.sp trapped.x30
     (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
       bytes n)).2) ?_
     (fun d tid hR => by
-      have hM := syncUserWords_residentCode (syscallDispatchCrossCoreStep ctx e syscallId
+      have hM := syncUserWords_residentCode (syscallDispatchCrossCoreStep ctx e trapped.syscallId
         trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
         trapped.pstate trapped.sp trapped.x30 (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 ByteArray.empty 0
       simp only [MachineState.residentOnCore] at hR ⊢; rw [← hM]; exact hR)
     (fun tid t' hT => ⟨t', by
       have hO := Architecture.IpcBufferRead.syncUserWords_objects (syscallDispatchCrossCoreStep
-        ctx e syscallId
+        ctx e trapped.syscallId
         trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
         trapped.pstate trapped.sp trapped.x30 (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 ByteArray.empty 0
@@ -1665,7 +1665,7 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n).machine.residentCode =
         st.machine.residentCode := by
     rw [syncUserWords_residentCode, saveCapturedSyscallFrame_residentCode]
-  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
+  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
     trapped.pstate trapped.sp trapped.x30
     (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)

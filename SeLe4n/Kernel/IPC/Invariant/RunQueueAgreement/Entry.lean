@@ -527,12 +527,12 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
 save, the entry's IPC-buffer words handed to the state, the step, and the
 committed state dropping the words. -/
 theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e : CoreId)
-    (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState)
     (E : EntryPremises st) :
     SystemState.RunQueueEntryStage st (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) :=
   have hS := (saveCapturedSyscallFrame_runQueueStage st e frame).trans
@@ -547,7 +547,7 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (IpcFrame.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       fun _ => by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
   have hC := RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 ByteArray.empty 0)
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
@@ -560,15 +560,15 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
 read of an object's own back-links (`SystemState.tableBackLinksClear`) answers
 what a walk of the registry and the interrupt table would. -/
 theorem syscallDispatchEntryState_preserves_tableReferencesRecorded (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (E : EntryPremises st) (hInv : st.objects.invExt)
     (hR : st.runQueueRefined) (hT : st.tableReferencesRecorded) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).tableReferencesRecorded :=
-  (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E).tableReferencesRecorded
+  (syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).tableReferencesRecorded
     hInv hR hT
 
 /-! ### The timer, reschedule, fault and FP/SIMD entries -/
@@ -743,15 +743,15 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.refillsSound {st st' 
 /-- **The syscall entry keeps the refill state sound** — the bind, the configure
 and the bound yield among its arms. -/
 theorem syscallDispatchEntryState_preserves_refillsSound (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (E : EntryPremises st) (hRel : st.releaseQueueRefined)
     (hS : st.refillsSound) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).refillsSound :=
-  (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E).refillsSound
+  (syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).refillsSound
     E.objInv E.refined hRel hS
 
 /-- **The timer entry keeps the refill state sound** — the drain's refills and
@@ -831,14 +831,14 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.yieldLinksAgree {st s
 
 /-- **The syscall entry keeps the yield link in agreement.** -/
 theorem syscallDispatchEntryState_preserves_yieldLinksAgree (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (E : EntryPremises st) (hY : st.yieldLinksAgree) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).yieldLinksAgree :=
-  (syscallDispatchEntryState_runQueueEntryStage ctx e syscallId trapped frame bytes n st E
+  (syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E
     ).yieldLinksAgree E.objInv E.refined hY
 
 /-- **The timer entry keeps the yield link in agreement.** -/

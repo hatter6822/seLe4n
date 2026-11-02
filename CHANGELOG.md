@@ -1,3 +1,54 @@
+## v0.36.190 — WS-ZA ZA6.27: the syscall's number and arguments are read from the entry's saved frame
+
+The syscall entry no longer takes the syscall number from the HAL. It reads
+the number (`x7`) and the arguments from the frame it saves into the caller's
+context, as seL4's `handleSyscall` reads a syscall's arguments from the
+registers its thread trapped with. The saved context and the core's register
+bank therefore cannot diverge at the entry.
+
+- **The export takes no argument.** `syscallDispatchCrossCoreEntry` is
+  `BaseIO UInt64`, so `lean_syscall_dispatch_cross_core()` takes nothing
+  (`rust/sele4n-hal/src/svc_dispatch.rs`, with its host stand-in). The HAL's
+  own prefilters still decode the same `x7`.
+- **The bracket reads the number from the frame.** `syscallDispatchBracket`,
+  `syscallDispatchCrossCoreBracketedStep` and its word form take the trapped
+  context alone, and the number is its `x7` (`InFlightContext.syscallId`).
+  The entry-level theorems that took a separate `syscallId`
+  (`syscallDispatchEntryState_*`, in seven modules) now take the trapped
+  context alone.
+- **The entry admits only a frame the HAL can dispatch.** The frame must be
+  taken from EL0 (`InFlightContext.fromEl0`) and its `x7` must be a `u32`
+  (`InFlightContext.syscallNumberFits`, the HAL's `u32::try_from`). Any other
+  frame fails closed the way a frame-less entry does: `.faulted`, with
+  nothing committed (`syscallEntryContextOrFaulted`,
+  `syscallEntryContextOrFaulted_ok`). A word the ABI cannot name is never
+  narrowed into a syscall number. The HAL never hands over such a frame: it
+  halts on kernel-origin exceptions and sends a wide `x7` to the
+  unknown-syscall entry.
+- **The `x7` write is recorded, not changed.** `writeFfiRegistersToTcb` still
+  writes `x7 :=` the syscall number into the saved context. On every admitted
+  frame this is the trapped word (`InFlightContext.syscallId_toUInt64`).
+- **The statement ZA6.28 consumes.**
+  - The save puts an admitted frame into the caller's context and the core's
+    bank (`saveCapturedSyscallFrame_current_saves`).
+  - The dispatch's argument spill then reads back every TCB unchanged
+    (`writeFfiRegistersToTcb_getTcb?_of_held`, `syscallEntrySpill_getTcb?`).
+  - So the spill keeps every core's bank match as it found it
+    (`syscallEntrySpill_contextMatchesCurrentOnCore_iff`).
+  - On the state the dispatch decodes, the executing core's bank is its
+    caller's saved context (`syscallEntrySaved_contextMatchesCurrentOnCore`,
+    `syscallEntrySpill_contextMatchesCurrentOnCore`).
+  - The only premises are the entry's admission and the store's
+    well-formedness. None concerns a word the HAL passes.
+- **Tests and anchors.** SD-036d and SD-036e
+  (`tests/SyscallDispatchSuite.lean`) check that an EL1 frame and a wide `x7`
+  answer `.faulted`. The suites that drive the bracket now put the syscall
+  number in the trapped `x7`. New Tier 3 anchors cover the admission, the
+  derived number, the argument-free export and the spill theorems.
+- **Allocation.** The admission is two field tests on the HAL's persistent
+  frame, and the number is a truncation of a field. No record is built and no
+  word is boxed.
+
 ## v0.36.189 — WS-ZA ZA6.26: the saved-register census over the IPC and notification arms, and the whole syscall dispatch
 
 Proofs only. No syscall writes the saved registers of a thread another core

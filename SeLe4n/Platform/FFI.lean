@@ -2042,6 +2042,35 @@ def writeFfiRegistersToTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId)
     · rfl
   · rfl
 
+/-- **A spill of words the context already holds reads back nothing new**: when
+the thread's saved context holds the words (`ffiRegistersHeld`), every TCB
+lookup after the spill is the lookup before it, whatever the object table's
+fill.  The syscall entry's save puts the trapped frame in the caller's context
+and the entry hands the spill that frame's own words, so this is the spill at
+the entry (`syscallEntrySpill_getTcb?`). -/
+theorem writeFfiRegistersToTcb_getTcb?_of_held (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hInv : st.objects.invExt)
+    (hHeld : ∀ tcb, st.getTcb? tid = some tcb →
+      ffiRegistersHeld tcb.registerContext syscallId x0 x1 x2 x3 x4 x5 = true)
+    (t : SeLe4n.ThreadId) :
+    (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getTcb? t = st.getTcb? t := by
+  rw [writeFfiRegistersToTcb_eq_updateTcb]
+  by_cases hk : tid.toObjId = t.toObjId
+  · have hSame : ∀ s : SystemState, s.getTcb? t = s.getTcb? tid := fun s => by
+      unfold SystemState.getTcb?; rw [hk]
+    rw [hSame, hSame st, SystemState.updateTcb_getTcb?_self _ _ _ hInv]
+    cases hT : st.getTcb? tid with
+    | none => rfl
+    | some tcb =>
+      exact congrArg some (ffiRegisterSpill_of_held _ _ _ _ _ _ _ tcb (hHeld tcb hT))
+  · exact SystemState.updateTcb_getTcb?_ne _ _ _ hInv t hk
+
+/-- The spill writes no machine state: the register banks are the input's. -/
+theorem writeFfiRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) :
+    (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).machine = st.machine :=
+  SystemState.updateTcb_machine st tid _
+
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's
     `x0` register, per AAPCS64.
 
