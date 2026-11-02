@@ -126,11 +126,14 @@ theorem deferResidentElsewhere_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (PriorityInheritance.deferResidentElsewhere st c) := by
   unfold PriorityInheritance.deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid _
+    have hR := restoreIncomingContextOnCore_mappingStage st c tid
+    split
+    · dsimp only
+      split
       · rename_i hS
-        exact switchToThreadOnCore_mappingStage hS
-      · exact (preemptCurrentOnCore_mappingStage st c _).trans (MappingStage.of_objects_eq rfl)
+        exact hR.trans (switchToThreadOnCore_mappingStage hS)
+      · exact hR.trans (dropCurrentOnCore_mappingStage _ c)
     · exact MappingStage.refl _
   · exact MappingStage.refl _
 

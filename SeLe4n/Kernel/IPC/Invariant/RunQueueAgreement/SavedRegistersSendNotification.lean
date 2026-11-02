@@ -781,14 +781,14 @@ theorem offCoreFree_of_signalWaiter {e : CoreId} {st : SystemState} {nid : SeLe4
 send and the stash clear write no saved register, and the delivery's staging
 names the receive queue's head at the entry's start, which is blocked there. -/
 theorem sendArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {ec : CoreId}
+    {tid : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {ec e : CoreId}
     {st s1 s2 : SystemState} {r : CapTransferSummary × Option (CoreId × Concurrency.SgiKind)}
     (n : Nat) (P : SyscallArmPremises st ec tid) (hRT : st.residentsHaveTcbs)
     (hBNR : st.blockedNotResident)
     (hSend : endpointSendCrossCoreDispatchChecked ctx epId tid payload base ec st = (s1, .ok r))
     (hClr : clearWokenReceiverStash ((st.getEndpoint? epId).bind (·.receiveQ.head)) s1
       = .ok ((), s2)) :
-    savedRegsWrittenFree ec st st (Architecture.stageWokenDelivery s2
+    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery s2
       ((st.getEndpoint? epId).bind (·.receiveQ.head)) n) := by
   have h1 := endpointSendCrossCoreDispatchChecked_savedRegsUnwritten ctx epId tid payload base ec
     P.objInv
@@ -802,26 +802,26 @@ and the stash clear write no saved register, and the two stagings name the
 bound thread blocked on receive and the notification's head waiter at the
 entry's start, both blocked there. -/
 theorem signalArm_savedRegsWrittenFree {nid : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
-    {ec : CoreId} {st s1 s2 : SystemState} (P : SyscallArmPremises st ec tid)
+    {ec e : CoreId} {st s1 s2 : SystemState} (P : SyscallArmPremises st ec tid)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (h1 : savedRegsUnwritten st s1)
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree ec st st (Architecture.stageWokenDelivery
+    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
       (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
       (notificationSignalWaiter? st nid) 0) := by
   have h2 := h1.trans (clearWokenReceiverStash_savedRegsUnwritten h1.2 hClr)
-  obtain ⟨w1, i1⟩ := stageWokenDelivery_savedRegsWrittenFree (e := ec) (base := st) 0 h2.2
+  obtain ⟨w1, i1⟩ := stageWokenDelivery_savedRegsWrittenFree (e := e) (base := st) 0 h2.2
     fun _ h => offCoreFree_of_boundTarget P.dequeued hRT hBNR h
   exact (h2.writtenFree.trans w1).trans (stageWokenDelivery_savedRegsWrittenFree 0 i1 fun _ h =>
     offCoreFree_of_signalWaiter P.dequeued P.ntfnHeads hRT hBNR h).1
 
 /-- The checked signal arm. -/
 theorem notificationSignalArm_savedRegsWrittenFree {ctx : LabelingContext} {nid : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {ec : CoreId} {st s1 s2 : SystemState}
+    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {ec e : CoreId} {st s1 s2 : SystemState}
     {r : Option (CoreId × Concurrency.SgiKind)} (P : SyscallArmPremises st ec tid)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hSig : notificationSignalBoundCrossCoreDispatchChecked ctx nid tid badge ec st = (s1, .ok r))
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree ec st st (Architecture.stageWokenDelivery
+    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
       (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
       (notificationSignalWaiter? st nid) 0) := by
   have h1 := notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten ctx nid tid badge
@@ -832,13 +832,13 @@ theorem notificationSignalArm_savedRegsWrittenFree {ctx : LabelingContext} {nid 
 /-- The declassifying signal arm. -/
 theorem declassifySignalArm_savedRegsWrittenFree {ctx : GenericLabelingContext}
     {declPolicy : DeclassificationPolicy} {nid : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
-    {badge : SeLe4n.Badge} {ec : CoreId} {st s1 s2 : SystemState}
+    {badge : SeLe4n.Badge} {ec e : CoreId} {st s1 s2 : SystemState}
     {r : Option (CoreId × Concurrency.SgiKind)} (P : SyscallArmPremises st ec tid)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hSig : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy nid badge ec st
       = (s1, .ok r))
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree ec st st (Architecture.stageWokenDelivery
+    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
       (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
       (notificationSignalWaiter? st nid) 0) :=
   signalArm_savedRegsWrittenFree P hRT hBNR

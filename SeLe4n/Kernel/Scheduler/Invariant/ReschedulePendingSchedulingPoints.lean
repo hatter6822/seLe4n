@@ -235,23 +235,41 @@ theorem dispatchVacatedCore_preserves_objects_invExt (e : CoreId) (st : SystemSt
       exact handleRescheduleSgiOnCore_preserves_objects_invExt st e st' hInv h
     · exact hInv
 
-/-- Deferring a thread still resident elsewhere switches the executing core to
-its idle thread, or preempts and vacates it. -/
+/-- Reloading a thread's saved context into the executing core's bank writes
+that bank alone. -/
+theorem restoreIncomingContextOnCore_stepCovers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : stepCovers e st (restoreIncomingContextOnCore st e tid) :=
+  stepCovers_of_frame
+    (schedKeyView_of_objectsAgreeOffRunLinks
+      (.of_objects_eq (restoreIncomingContextOnCore_objects st e tid)))
+    (budgetEligibleView_of_objectsAgreeOffRunLinks
+      (.of_objects_eq (restoreIncomingContextOnCore_objects st e tid)))
+    (fun c _ t ht => by
+      rwa [(SystemState.RunCoresAgree.of_objects (restoreIncomingContextOnCore_objects st e tid)
+        ).queuedOn] at ht)
+    (fun c _ => by rw [restoreIncomingContextOnCore_scheduler])
+    (fun c _ hp => by rw [restoreIncomingContextOnCore_scheduler]; exact hp)
+    (restoreIncomingContextOnCore_residentCode st e tid)
+    (fun d hd => restoreIncomingContextOnCore_regsOnCore_ne st e d tid (Ne.symm hd))
+
+/-- Deferring a thread still resident elsewhere reloads its saved context into
+the executing core's bank, then switches the core to its idle thread, or
+preempts and vacates it. -/
 theorem deferResidentElsewhere_stepCovers (e : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) :
     stepCovers e st (deferResidentElsewhere st e) := by
   unfold deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid _
+    have hR := restoreIncomingContextOnCore_stepCovers e st tid
+    have hI : (restoreIncomingContextOnCore st e tid).objects.invExt := by
+      rw [restoreIncomingContextOnCore_objects]; exact hInv
+    split
+    · dsimp only
+      split
       · rename_i st' h
-        exact switchToThreadOnCore_stepCovers e st st' _ hInv h
-      · refine stepCovers_trans (preemptCurrentOnCore_stepCovers e st _ hInv)
-          (stepCovers_of_local_slots (fun _ => rfl) (fun _ => rfl)
-            (fun c _ t ht => by rwa [(SystemState.RunCoresAgree.of_objects rfl).queuedOn] at ht) ?_)
-        intro c hc
-        have hne : e ≠ c := Ne.symm hc
-        simp [hne]
+        exact stepCovers_trans hR (switchToThreadOnCore_stepCovers e _ st' _ hI h)
+      · exact stepCovers_trans hR (dropCurrentOnCore_stepCovers e _ hI)
     · exact stepCovers_refl e st
   · exact stepCovers_refl e st
 
@@ -259,11 +277,15 @@ theorem deferResidentElsewhere_preserves_objects_invExt (e : CoreId) (st : Syste
     (hInv : st.objects.invExt) : (deferResidentElsewhere st e).objects.invExt := by
   unfold deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid _
+    have hI : (restoreIncomingContextOnCore st e tid).objects.invExt := by
+      rw [restoreIncomingContextOnCore_objects]; exact hInv
+    split
+    · dsimp only
+      split
       · rename_i st' h
-        exact switchToThreadOnCore_preserves_objects_invExt st e _ st' hInv h
-      · exact preemptCurrentOnCore_preserves_objects_invExt st e _ hInv
+        exact switchToThreadOnCore_preserves_objects_invExt _ e _ st' hI h
+      · exact preemptCurrentOnCore_preserves_objects_invExt _ e _ hI
     · exact hInv
   · exact hInv
 

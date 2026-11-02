@@ -199,17 +199,21 @@ theorem scheduleLocalSuccessorFrom_runQueueEntryStage (caller? : Option SeLe4n.T
     · exact (RunQueueStage.refl _).entry
   · exact (RunQueueStage.refl _).entry
 
-/-- A thread resident on another core is not resumed here: core `c` switches
-to its idle thread, or drops its current slot. -/
+/-- A thread resident on another core is not resumed here: core `c` reloads
+its saved context into the bank, then switches to its idle thread, or drops its
+current slot. -/
 theorem deferResidentElsewhere_runQueueEntryStage (st : SystemState) (c : CoreId) :
     SystemState.RunQueueEntryStage st (PriorityInheritance.deferResidentElsewhere st c) := by
   unfold PriorityInheritance.deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid _
+    have hR := (restoreIncomingContextOnCore_runQueueStage st c tid).entry
+    split
+    · dsimp only
+      split
       · rename_i hS
-        exact (switchToThreadOnCore_runQueueSwitchStage hS fun _ => .inr (.inr rfl)).entry
-      · exact (dropCurrentOnCore_runQueueSwitchStage st c).entry
+        exact hR.trans (switchToThreadOnCore_runQueueSwitchStage hS fun _ => .inr (.inr rfl)).entry
+      · exact hR.trans (dropCurrentOnCore_runQueueSwitchStage _ c).entry
     · exact (RunQueueStage.refl _).entry
   · exact (RunQueueStage.refl _).entry
 

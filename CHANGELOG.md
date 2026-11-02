@@ -1,3 +1,67 @@
+## v0.36.191 — WS-ZA ZA6.28: every core's bank matches its current thread at every entry boundary, and the residency deferral writes no saved register
+
+Every core's register bank equals its current thread's saved context after
+every committing entry. For the executing core this is new at the syscall
+entry; for every other core it is new at every entry. This release also fixes
+a stale-bank write in the residency deferral.
+
+- **The deferral's finding and fix.** When the executing core's current thread
+  was resident on another core, `PriorityInheritance.deferResidentElsewhere`
+  preempted it. That happened in both branches, not only when the switch to the
+  idle thread failed. The preemption saved the executing core's bank into the
+  saved context of a thread another core still held as resident. The write was
+  a no-op only if that bank matched the thread, and nothing proved that at the
+  syscall entry. The remote core's next save (`saveVacatedFrameOnCore`)
+  overwrote the write before anything read it, so no thread observed it. It
+  still broke the saved-register census, and the docstring's claim about it was
+  false. The deferral now restores the thread's saved context into the bank
+  (`restoreIncomingContextOnCore`) before it preempts, so the save writes back
+  what it read (`deferResidentElsewhere_savedRegs`,
+  `settleResidencyOnCore_savedRegs`). seL4 likewise never saves a bank into a
+  thread that did not trap from it. The `.error` fallback is kept, and it is
+  now harmless.
+- **The current-thread census.** `currentSavedRegsKeptOffCore` states that no
+  thread current on another core has its saved registers written. With
+  `contextMatchesCurrentOnCore_offCore` it gives each other core's match from
+  the banks' frame.
+- **Every other core, at every entry.** These theorems are in
+  `IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean`:
+  - `syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore`
+  - `perCoreRescheduleEntryState_preserves_contextMatchesCurrentOffCore`
+  - `fpAccessEntryState_preserves_contextMatchesCurrentOffCore`
+  - `faultEntryState_preserves_contextMatchesCurrentOffCore`
+  - `unknownSyscallEntryState_preserves_contextMatchesCurrentOffCore`
+
+  They share the tail `settleThenActivateOnCore_contextMatchesCurrentOffCore`.
+  The timer entry's replenishment drain, budget tick, `scheduleEffective` and
+  domain step write only the executing core's current thread, which gives
+  `perCoreTimerTickEntryState_preserves_contextMatchesCurrentOffCore`
+  (`TimerContextMatches.lean`).
+- **The executing core after a syscall.** The dispatch writes the caller's
+  saved context, so the bank no longer equals it. Every arm instead keeps the
+  bank equal to the caller's saved context outside the return window x0..x5
+  (`bankAgree`, in `ExecutingBankFrame.lean`), because each staging into the
+  caller writes only that window. An arm with no scheduling point is covered
+  at another core (`otherCore`), and a scheduling arm's prefix
+  (`SchedPointPrefix`) is followed by a scheduling point that keeps the
+  agreement. The arms are proved per dispatcher in
+  `ExecutingBankDispatch.lean`, up to `syscallEntryChecked_bankAgree`. In
+  `ExecutingContextMatches.lean` the commit's staging of a returning caller
+  turns the agreement back into the match. A caller that blocks is current
+  nowhere, a delivered capability fault vacates the core, and a refusal writes
+  no object, slot or bank (`syscallDispatchFromAbi_stagedContextMatches`). The
+  scheduling point, settle, activation and ledger clears keep the match, which
+  gives `syscallDispatchEntryState_preserves_contextMatchesCurrentOnCore` and,
+  with the other cores,
+  `syscallDispatchEntryState_preserves_contextMatchesCurrentEveryCore`.
+- **The census, restated.** The IPC arms' census lemmas now name the frame
+  core separately from the executing one. The scheduling arms' census lemmas
+  are now corollaries of their prefixes.
+- **The debt row closes.** The `docs/REGISTERED_DEBT.md` row on the bank match
+  is closed.
+- The four new modules are staged. 34 Tier 3 anchors cover the new theorems
+  and the order of the deferral's reload.
+
 ## v0.36.190 — WS-ZA ZA6.27: the syscall's number and arguments are read from the entry's saved frame
 
 The syscall entry no longer takes the syscall number from the HAL. It reads

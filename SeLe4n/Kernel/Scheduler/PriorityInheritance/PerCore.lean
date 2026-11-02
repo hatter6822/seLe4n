@@ -1582,20 +1582,33 @@ saves it, and resuming it here would run it on two cores at once; switching it
 out later would also save this core's stale copy over the fresh one.  So the
 core switches to its idle thread instead, which re-enqueues the thread on this
 core's run queue (`switchToThreadOnCore` → `preemptCurrentOnCore`); the next
-scheduling point here selects it again once the other core has saved it.  The
-save that preemption performs writes back the context the switch just loaded,
-so it changes nothing.  Should the switch fail (no idle thread the core admits,
-which the boot rules out), the thread is still taken off the core: re-enqueued
-and the slot cleared, so the property never depends on the idle switch. -/
+scheduling point here selects it again once the other core has saved it.
+Should the switch fail (no idle thread the core admits: the boot stores every
+core's idle thread pinned to it and no capability can name one,
+`capTargetsReservedIdleObject`, but no kernel-wide invariant states it), the
+thread is still taken off the core: re-enqueued and the slot cleared
+(`dropCurrentOnCore`), so the property never depends on the idle switch.
+
+WS-ZA ZA6.28: **the deferral writes no saved register.**  Both branches
+preempt the thread, and the preemption saves the core's bank into the
+thread's saved context.  The bank holds none of the thread's live state: its
+live registers are on the core it is resident on, whose next entry saves them
+over its saved context (`Architecture.saveVacatedFrameOnCore`), and this core
+only loaded a copy of that saved context when it chose the thread.  So the
+deferral first reloads the thread's saved context into the bank
+(`restoreIncomingContextOnCore`), and the save then writes back what the
+context already holds, whatever the bank held before
+(`deferResidentElsewhere_savedRegs`).  Without the reload the save would write
+the bank into the saved context of a thread another core holds, the write the
+saved-register census forbids (`savedRegsKeptOffCore`). -/
 def deferResidentElsewhere (st : SystemState) (c : CoreId) : SystemState :=
   match st.scheduler.currentOnCore c with
   | some tid =>
     if residentElsewhere st c tid then
-      match switchToThreadOnCore st c (idleThreadId c) with
+      let st0 := restoreIncomingContextOnCore st c tid
+      match switchToThreadOnCore st0 c (idleThreadId c) with
       | .ok st' => st'
-      | .error _ =>
-        let st1 := preemptCurrentOnCore st c (idleThreadId c)
-        { st1 with scheduler := st1.scheduler.setCurrentOnCore c none }
+      | .error _ => dropCurrentOnCore st0 c
     else st
   | none => st
 
@@ -1837,14 +1850,14 @@ theorem deferResidentElsewhere_current_not_elsewhere (st : SystemState) (c : Cor
       rw [hC] at hCur; cases hCur; exact hR
     | true =>
       rw [hR] at hCur; simp only [if_true] at hCur
-      cases hS : switchToThreadOnCore st c (idleThreadId c) with
+      cases hS : switchToThreadOnCore (restoreIncomingContextOnCore st c t) c (idleThreadId c) with
       | ok st' =>
         rw [hS] at hCur; simp only at hCur
-        rw [switchToThreadOnCore_sets_current st c _ st' hS] at hCur
+        rw [switchToThreadOnCore_sets_current _ c _ st' hS] at hCur
         cases hCur
         rw [isIdleThreadId_idleThreadId] at hIdle; cases hIdle
       | error e =>
-        rw [hS] at hCur; simp at hCur
+        rw [hS] at hCur; simp [dropCurrentOnCore] at hCur
 
 /-- The settle step writes the scheduler only through the reschedule and the
 switch; the record touches the machine's residency table alone. -/

@@ -216,11 +216,17 @@ theorem deferResidentElsewhere_stateMono (st : SystemState) (c : CoreId)
     SystemState.StateMono st (PriorityInheritance.deferResidentElsewhere st c) := by
   unfold PriorityInheritance.deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid _
+    have hS0 := restoreIncomingContextOnCore_runQueueStage st c tid
+    obtain ⟨hInv0, hR0⟩ := hS0.1.links hInv hR
+    have hM := hS0.2.2 hInv hR
+    split
+    · dsimp only
+      split
       · rename_i hS
-        exact (switchToThreadOnCore_runQueueSwitchStage hS fun _ => .inr (.inr rfl)).2.2 hInv hR
-      · exact (dropCurrentOnCore_runQueueSwitchStage st c).2.2 hInv hR
+        exact hM.trans
+          ((switchToThreadOnCore_runQueueSwitchStage hS fun _ => .inr (.inr rfl)).2.2 hInv0 hR0)
+      · exact hM.trans ((dropCurrentOnCore_runQueueSwitchStage _ c).2.2 hInv0 hR0)
     · exact .refl _
   · exact .refl _
 

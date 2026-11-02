@@ -616,8 +616,27 @@ admits only a frame from EL0 whose `x7` is a `u32`
 bank match (`syscallEntrySpill_contextMatchesCurrentOnCore`).  **New code must
 assume it**: the syscall entry takes no word from the HAL beside the frame,
 and a new entry-level theorem is stated over the trapped context, not a
-separate syscall number.  ZA6.28 composes it into the syscall entry's and
-every other core's bank match.  ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
+separate syscall number.  Since `v0.36.191`, ZA6.28 proves that every
+core's bank matches its current thread at every entry boundary.  Every other
+core's match holds after every committing entry
+(`IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean`,
+`TimerContextMatches.lean`,
+`syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore` and its
+siblings), and the residency deferral reloads the executing core's bank from
+the thread's saved context before it preempts it, so the preemption writes
+back what it read (`deferResidentElsewhere_savedRegs`,
+`settleResidencyOnCore_savedRegs`).  The executing core's match holds after a
+syscall (`ExecutingBankFrame.lean`, `ExecutingBankDispatch.lean`,
+`ExecutingContextMatches.lean`,
+`syscallDispatchEntryState_preserves_contextMatchesCurrentOnCore`): each
+dispatch arm keeps the bank agreeing with the caller's saved context outside
+the return window x0..x5 (`bankAgree`).  **New code must assume it**: a step
+that preempts a thread saves only a bank the thread itself trapped with or was
+just restored from; a new entry states that it writes the saved registers of
+no thread current on another core (`currentSavedRegsKeptOffCore`); and a new
+syscall arm states its `bankAgree` frame, writing into the caller only its
+return window.
+ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
 the stage's `live` field generalised to `YieldToCodesSetOnly L` across the
 dispatch chain (its linked branch sets the caller's yield-to code), the
 invocation and its live-link tests.  ZA6.30 puts
