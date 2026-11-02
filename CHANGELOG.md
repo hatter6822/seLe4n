@@ -1,3 +1,64 @@
+## v0.36.188 — WS-ZA ZA6.25: the saved-register census over the TCB and scheduling-context arms, and the whole capability-only dispatch
+
+Proofs only.
+
+- **Each arm read as the threads it writes.** Every TCB and scheduling-context
+  arm is stated as `savedRegsWrittenFree e st st st'` (ZA6.24's relation, at
+  the entry's start) and closed by the step's own frames
+  (`savedRegsWrittenFree.census`).
+- **The scheduling point.** The executing core's reschedule saves only that
+  core's outgoing thread (`preemptCurrentOnCore_savedRegsKeptExcept`,
+  `handleRescheduleOnCoreState_savedRegsKeptExcept`,
+  `handleRescheduleSgiOnCore_savedRegsWrittenFree`). No step before it makes a
+  thread current on that core (`currentKeptOnCore`, from every core's
+  `stepCovers`), so the outgoing thread was the core's current thread at the
+  entry, which no other core holds (`offCoreFree_of_currentOn`);
+  `savedRegsWrittenFree_schedPoint` composes a prefix with it.
+- **The arms.**
+  - The unbind on the executing core
+    (`schedContextUnbindOnCore_savedRegsWrittenFree`).
+  - The priority and ceiling writes (`applyPriorityChangeOnCore_savedRegsWrittenFree`,
+    `setPriorityOnCore_savedRegsWrittenFree`,
+    `setMCPriorityOnCore_savedRegsWrittenFree`).
+  - The Consumed invocation: `setConsumed` writes the caller
+    (`schedContextConsumedOnCore_savedRegsWrittenFree`).
+  - The suspend: its cancellation writes the victim only when the victim was
+    blocked, so current and resident nowhere
+    (`cancelIpcBlockingReclaimed_savedRegsWrittenFree`); the boost revert, the
+    donation cancel (`cancelDonatedDonationOnCore_savedRegsKeptExcept`), the
+    deschedule, the state clears and the yield-link cancel write no register;
+    its scheduling point runs on the executing core
+    (`suspendRescheduleOnCore_state_cases`,
+    `suspendThreadOnCore_savedRegsWrittenFree`).
+  - The resume: the fault retire writes a suspended thread, which no core runs
+    (`resumeThreadOnCore_inactive`, `currentActive`), and only when no core
+    holds it resident; the restore keeps the resumed thread's window
+    (`resumeReadyMidState_savedRegsKeptExcept`,
+    `resumeThreadOnCore_savedRegsWrittenFree`, `tcbResume_savedRegsKeptOffCore`).
+  - The space change: the zombie passes are ZA6.24's `finaliseCensusChain`, and
+    the slot copies write no saved register and retire only threads no core
+    holds (`threadSlotCopied_savedRegsKeptExcept`, `threadSlotSet_savedRegs`,
+    `copyThreadSpaces_savedRegs`, `copyThreadSpacesZombie_savedRegsKeptOffCore`).
+  - The arms that write no saved register: the notification bind and unbind,
+    the IPC buffer, the fault handler, the affinity, the configure and the
+    bind (`*_savedRegsKeptExcept`).
+- **The yield completion.** No TCB or scheduling-context arm completes a yield
+  outside a finalisation; the completions a finalisation runs write a
+  yield-linked thread no core holds (`yieldLinkedNotResident`, ZA6.24), so
+  `setConsumed`'s yield completion is sound.
+- **Over the dispatch.** `dispatchCapabilityOnly_savedRegsKeptOffCore`, every
+  arm. ZA6.23's classifier `SyscallId.capabilityObjectArm` and
+  `dispatchCapabilityOnly_objectArm_savedRegsKeptOffCore` are retired into it.
+- **Module.** `IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean`,
+  staged infrastructure (imported by `Platform/Staged.lean`, listed in
+  `scripts/staged_module_allowlist.txt`), with Tier 3 anchors on the
+  scheduling point, the suspend, the resume, the Consumed invocation, the
+  space change and the whole dispatch; the classifier and `hArm` anchors are
+  retired and a negative anchor pins the classifier's removal.
+- **Docs.** ZA6.25 is recorded as landed in
+  `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`; the spec, the claim index,
+  `WORKSTREAM_CONTEXT.md` and `REGISTERED_DEBT.md` are updated.
+
 ## v0.36.187 — WS-ZA ZA6.24: the saved-register census over the final delete and revoke
 
 Proofs only.

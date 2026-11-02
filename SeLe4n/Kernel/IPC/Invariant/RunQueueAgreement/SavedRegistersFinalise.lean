@@ -34,9 +34,11 @@ chains of finalising deletes and finalisations.  Their census
   on another core, so the census owes a deleted thread nothing.
 
 The step frames compose into the census through the coverage relation the
-deletes already carry (`coversWithDeleteBundle`).  The object arms' dispatch
-theorem (ZA6.23) is extended here to the final delete and revoke
-(`SyscallId.capabilityObjectArm`, `dispatchCapabilityOnly_objectArm_savedRegsKeptOffCore`).
+deletes already carry (`coversWithDeleteBundle`).  The whole capability-only
+dispatch's census (ZA6.25, `dispatchCapabilityOnly_savedRegsKeptOffCore`) reads
+the final delete and revoke from here
+(`cspaceDeleteSlotZombie_savedRegsKeptOffCore`,
+`cspaceRevokeCdtFinalising_savedRegsKeptOffCore`).
 -/
 
 namespace SeLe4n.Kernel
@@ -1014,68 +1016,5 @@ theorem cspaceRevokeCdtFinalising_savedRegsKeptOffCore {e ec : CoreId} {addr : C
   (cspaceRevokeCdtFinalising_closed (finaliseCensusChain e st)
     (fun _ _ _ hQ hD => hQ.delete B hD) (fun d _ hQ => hQ.finalise B d)
     (.start hB) h).2.2
-
-/-! ### Over the dispatch -/
-
-/-- The capability-only dispatch's arms whose census this module and the
-object-write frame (`savedRegsKept`) give: the final delete and revoke, the
-reply-capability mint, the untyped, VSpace and page-table arms, and the service
-revoke and query.  The TCB arms and the scheduling-context arms are the others. -/
-def _root_.SeLe4n.Model.SyscallId.capabilityObjectArm : SyscallId → Bool
-  | .cspaceDelete | .cspaceRevoke
-  | .mintReplyCap | .untypedRetype | .untypedReset | .vspaceMap | .vspaceUnmap
-  | .vspaceUnifyInstruction | .pageTableMap | .pageTableUnmap | .serviceRevoke
-  | .serviceQuery => true
-  | _ => false
-
-/-- WS-ZA ZA6.23, extended by ZA6.24: **the capability-only dispatch's object
-arms write the saved registers of no thread another core holds.**  The final
-delete and revoke write only threads free at the entry's start or released from
-every core (`cspaceDeleteSlotZombie_savedRegsKeptOffCore`,
-`cspaceRevokeCdtFinalising_savedRegsKeptOffCore`); every other arm but the
-service query keeps every saved context (`savedRegsKept`), which under the
-syscall's premises is the census (`savedRegsKeptOffCore_of_savedRegsKept`); the
-service query writes the caller alone.  The coverage relation's frames are the
-step's (`stepCovers.currentKept`, `stepCovers.residentKept`). -/
-theorem dispatchCapabilityOnly_objectArm_savedRegsKeptOffCore {decoded : SyscallDecodeResult}
-    {cap : Capability} {tid : SeLe4n.ThreadId} {ec : CoreId} {k : Kernel Unit}
-    {st st' : SystemState} (P : SyscallArmPremises st ec tid) (hRT : st.residentsHaveTcbs)
-    (hN : st.currentNotResidentElsewhere) (hB : finalisingDeleteBundle st)
-    (hBNR : st.blockedNotResident) (hYA : st.yieldLinksAgree) (hYN : st.yieldLinkedNotResident)
-    (hArm : decoded.syscallId.capabilityObjectArm = true)
-    (hK : dispatchCapabilityOnly decoded cap tid ec = some k) (h : k st = .ok ((), st'))
-    (hCK : currentKeptOffCore ec st st') (hRK : residentKeptOffCore ec st st') :
-    savedRegsKeptOffCore ec st st' := by
-  have hInv := P.objInv
-  have B : FinaliseCensusBase st :=
-    ⟨P.objInv, P.refined, P.toEntryPremises.blocked, hBNR, hYA, hYN⟩
-  have hF : savedRegsKept st st' → savedRegsKeptOffCore ec st st' := fun hS =>
-    savedRegsKeptOffCore_of_savedRegsKept hS P.dequeued hRT hCK hRK
-  clear hCK hRK
-  unfold dispatchCapabilityOnly at hK
-  cases hId : decoded.syscallId <;> rw [hId] at hK hArm <;> simp only [Option.some.injEq,
-    reduceCtorEq] at hK
-  all_goals first | exact absurd hArm (by decide) | skip
-  all_goals subst hK
-  all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
-  all_goals first | (cases h; done) | skip
-  all_goals (repeat' split at h)
-  all_goals first | (cases h; done) | skip
-  all_goals first
-    | exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB h
-    | exact cspaceRevokeCdtFinalising_savedRegsKeptOffCore B hB h
-    | exact hF (mintReplyCapWithCdt_savedRegsKept hInv h)
-    | exact hF (untypedResetFromCap_savedRegsKept hInv h)
-    | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
-    | exact hF (vspaceMapFromFrameCap_savedRegsKept hInv h)
-    | exact hF (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv h)
-    | exact hF (vspaceUnifyInstructionPage_savedRegsKept h)
-    | exact hF (pageTableMap_savedRegsKept hInv h)
-    | exact hF (pageTableUnmap_savedRegsKept hInv h)
-    | exact hF (revokeServiceByRecordedRegistration_savedRegsKept hInv h)
-    | (cases h; rename_i hU
-       rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
-       exact writeReturnFrameToTcb_savedRegsKeptOffCore _ hInv P.current
-         (currentsUnique_of_dequeuedUnique P.dequeued) hN)
 
 end SeLe4n.Kernel
