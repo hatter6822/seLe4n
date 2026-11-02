@@ -311,13 +311,15 @@ theorem wakeThread_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Thre
   refine ⟨?_, wakeThread_preserves_objects_invExt st tid executingCore hInv⟩
   rw [wakeThread_state_eq_enqueue]
   exact ⟨enqueueRunnableOnCore_covers e _ st tid hInv, enqueueRunnableOnCore_monotone e _ st tid, enqueueRunnableOnCore_currentKept e _ _ _,
-    residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
+    residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
+    (tcbsKept_enqueueRunnableOnCore _ _ _ hInv).residentTcbKept⟩
 
 theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
   ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
     removeRunnableOnCore_currentKept e st tid c,
-    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
+    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]),
+    (tcbsKept_removeRunnableOnCore st tid c).residentTcbKept⟩
 
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
 two flags, none a key input. -/
@@ -718,6 +720,9 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                           hS4 rfl).trans
                         (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1)
                           hS3 rfl)).trans k2.runCoresAgree)
+                      (((tcbsKept.of_keyInputsEq k2).trans
+                        (tcbsKept_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1) hS3)).trans
+                        (tcbsKept_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2) hS4))
                       (by simpa only [markKeyChangeFrom_machine] using hM)
                       (banksKeptOffCore_of_eq (by simpa only [markKeyChangeFrom_machine] using hMB))
                     · show schedKeyView s4 t = schedKeyView st t ∧

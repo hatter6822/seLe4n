@@ -75,13 +75,18 @@ theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Vali
         currentKeptOffCore_of_eq fun c _ => by rw [markKeyChangeFrom_currentOnCore, hS],
         residentKeptOffCore_of_eq (by
           rw [markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq]), banksKeptOffCore_of_eq (by
-          rw [markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq])⟩
+          rw [markKeyChangeFrom_machine, PriorityInheritance.resumeReadyMidState_machine_eq]),
+        ((show tcbsKept st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) from
+          (tcbsKept.updateTcb _ _ _ hInv).trans (tcbsKept.updateTcb _ _ _
+            (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv))).trans
+          (tcbsKept.of_objects_eq (markKeyChangeFrom_objects _ _ _))).residentTcbKept⟩
     have h1Inv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
         vtid.val).objects.invExt := by rw [markKeyChangeFrom_objects]; exact hMidInv
     have h2 := stepCovers_trans h1
       ⟨enqueueRunnableOnCore_covers e (determineTargetCore st vtid.val) _ vtid.val h1Inv,
        enqueueRunnableOnCore_monotone e (determineTargetCore st vtid.val) _ vtid.val, enqueueRunnableOnCore_currentKept e _ _ _,
-       residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
+       residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
+       (tcbsKept_enqueueRunnableOnCore _ _ _ h1Inv).residentTcbKept⟩
     have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
       (determineTargetCore st vtid.val) vtid.val h1Inv
     split at hStep
@@ -134,7 +139,8 @@ theorem descheduleAt_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Th
   | none => exact stepCovers_refl e st
   | some c => exact ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c,
     removeRunnableOnCore_currentKept e st tid c,
-    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq])⟩
+    residentKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]), banksKeptOffCore_of_eq (by rw [removeRunnableOnCore_machine_eq]),
+    (tcbsKept_removeRunnableOnCore st tid c).residentTcbKept⟩
 
 theorem descheduleAt_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (placed : Option CoreId) (hInv : st.objects.invExt) :

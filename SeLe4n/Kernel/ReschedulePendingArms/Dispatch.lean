@@ -514,6 +514,27 @@ theorem retireFinalObject_budgetEligibleView (ec : CoreId) (target recorder : Na
     (a := x) (b := x) rfl (fun sc hsc => by
     rw [retireFinalObject_getSchedContext?_named ec target recorder st hObjInv hI hL hx sc hsc])]
 
+/-- **The retire keeps every resident's TCB**: a thread it erases is held on
+no core (`threadRetirable`), so no core's resident is a thread it erases. -/
+theorem retireFinalObject_residentTcbKept (e ec : CoreId) (target recorder : Nat)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    residentTcbKeptOffCore e st (retireFinalObject ec target recorder st) := by
+  intro c _ r hR hT
+  rw [(retireFinalObject_fields ec target recorder st).2.2] at hR
+  obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+  have hk := (SystemState.getTcb?_eq_some_iff st r x).mp hx
+  rcases retireFinalObject_tcb_kept_or_quiescent ec target recorder st hObjInv hk with
+    hE | ⟨-, hId, -, -, hH⟩
+  · rw [(SystemState.getTcb?_eq_some_iff _ r x).mpr (hE.trans hk)]; rfl
+  · have hEq : x.tid = r :=
+      SeLe4n.ThreadId.toObjId_injective _ _ (congrArg SeLe4n.ObjId.ofNat hId)
+    have hNo : st.machine.residentOnSomeCore x.tid = false := by
+      unfold threadHeldOnSomeCore at hH
+      simp only [Bool.or_eq_false_iff] at hH
+      exact hH.2
+    rw [hEq] at hNo
+    exact absurd hR ((MachineState.residentOnSomeCore_eq_false_iff _ _).mp hNo c)
+
 /-- **The final-delete retire covers**: it frames the scheduler and every
 thread's run-queue links, so no core's queue gains a thread and no current slot
 moves, and every thread it keeps keeps its key
@@ -539,7 +560,8 @@ theorem retireFinalObject_stepCovers (e ec : CoreId) (target recorder : Nat) (st
       fun t _ kq hq => ⟨kq, ((hView t kq hq).symm.trans hq), Nat.le_refl _, Nat.le_refl _, rfl⟩⟩,
     reschedulePendingMonotone_of_scheduler_eq hS,
     currentKeptOffCore_of_eq fun c _ => by rw [hS],
-    residentKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2]), banksKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2])⟩,
+    residentKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2]), banksKeptOffCore_of_eq (by rw [(retireFinalObject_fields ec target recorder st).2.2]),
+    retireFinalObject_residentTcbKept e ec target recorder st hObjInv⟩,
     (retireFinalObject_frame ec target recorder st hObjInv).1⟩
   unfold SystemState.queuedOn at ht
   cases hx : (retireFinalObject ec target recorder st).getTcb? t with
@@ -672,7 +694,11 @@ theorem stepCovers_of_freshSlot (e : CoreId) {pre post : SystemState} {X : SeLe4
     rw [hEq, hAbs] at hSo; cases hSo
   refine ⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
     fun c _ hc => by rw [hSched]; exact hc, currentKeptOffCore_of_eq fun c _ => by rw [hSched],
-    residentKeptOffCore_of_eq hRes, banksKeptOffCore_of_eq hBk⟩
+    residentKeptOffCore_of_eq hRes, banksKeptOffCore_of_eq hBk,
+    tcbsKept.residentTcbKept fun t hT => tcbsKept.of_view (hKeyNe t fun hEq => by
+      obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+      have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+      rw [hEq, hAbs] at this; cases this) hT⟩
   · have hne : t.toObjId ≠ X := fun hEq => by rw [hUnq c t hEq] at ht; cases ht
     refine ⟨(queuedOn_of_keyInputsOf (hFrame _ hne) c) ▸ ht, (hKeyNe t hne).symm,
       candidacyNotGained_of_eq (budgetEligibleView_eq_of_slotUnread hFrame hne ?_).symm⟩
@@ -768,7 +794,8 @@ theorem storeEndpointWaiterCancelled_stepCovers (e : CoreId) (st : SystemState)
   exact stepCovers_trans h1
     ⟨enqueueRunnableOnCore_covers e (determineTargetCore (s1.updateTcb t cancelledEndpointWaiterTcb) t)
       _ t hI2, enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _,
-      residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq])⟩
+      residentKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by rw [enqueueRunnableOnCore_machineEq]),
+      (tcbsKept_enqueueRunnableOnCore _ _ _ hI2).residentTcbKept⟩
 
 /-- WS-ZA ZA5.4 part 24: **a thread's endpoint cancel covers**: the removal
 (`endpointQueueRemoveDual_keyFrame`, through `queueRemove_inPlace`) and the
@@ -799,7 +826,9 @@ theorem notificationWaiterCancel_stepCovers (e : CoreId) (st : SystemState)
      enqueueRunnableOnCore_monotone e _ _ t, enqueueRunnableOnCore_currentKept e _ _ _,
      residentKeptOffCore_of_eq (by
        unfold wakeCancelledWaiter; rw [enqueueRunnableOnCore_machineEq]), banksKeptOffCore_of_eq (by
-       unfold wakeCancelledWaiter; rw [enqueueRunnableOnCore_machineEq])⟩
+       unfold wakeCancelledWaiter; rw [enqueueRunnableOnCore_machineEq]),
+     (tcbsKept_enqueueRunnableOnCore _ _ _
+       (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st t tcb hInv)).residentTcbKept⟩
 
 /-- WS-ZA ZA5.4 parts 23–24: **the finalisation covers**, every step of it
 (`finaliseFinalObject_closed`): each cancel's, the notification unbind's
@@ -1352,6 +1381,6 @@ theorem syscallEntryChecked_stepCovers {ctx : LabelingContext}
     (finalisingDeleteBundle.of_objects_scheduler_eq (s := st) rfl rfl hB) hPlaced
     (fun t ht c => hAwayCur t ht c)
     h
-  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3, hD.1.4, hD.1.5⟩, hD.2⟩
+  exact ⟨⟨hD.1.1, hD.1.2, hD.1.3, hD.1.4, hD.1.5, hD.1.6⟩, hD.2⟩
 
 end SeLe4n.Kernel

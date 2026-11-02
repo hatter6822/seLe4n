@@ -4382,6 +4382,25 @@ run_check "INVARIANT" rg -n -U "^      ipcBufferAddr elr spsr spEl0 x30 st = \.o
 run_check "INVARIANT" rg -n -U '^    \(hC : st\.currentNotResidentElsewhere\) \(hBNR : st\.blockedNotResident\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbind_runQueueStage_of_dequeued($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
+# WS-ZA ZA6.21: every core's resident thread has a TCB, at boot and across
+# every committing entry; the coverage relation carries each remote resident's
+# TCB, and the final retire admits only a thread held on no core.
+run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SystemState\.residentsHaveTcbs \(st : SystemState\) : Prop :=\n  ∀ \(d : CoreId\) \(tid : SeLe4n\.ThreadId\),\n    st\.machine\.residentOnCore d = some tid → \(st\.getTcb\? tid\)\.isSome$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n -U '^def residentTcbKeptOffCore \(e : CoreId\) \(pre post : SystemState\) : Prop :=\n  ∀ c, c ≠ e → ∀ t, post\.machine\.residentOnCore c = some t →\n    \(pre\.getTcb\? t\)\.isSome → \(post\.getTcb\? t\)\.isSome$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n '^  residentTcbKept : residentTcbKeptOffCore e pre post$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n -U '^def tcbsKept \(pre post : SystemState\) : Prop :=\n  ∀ t, \(pre\.getTcb\? t\)\.isSome → \(post\.getTcb\? t\)\.isSome$' SeLe4n/Kernel/Scheduler/Invariant/ReschedulePendingCoverage.lean
+run_check "INVARIANT" rg -n -U '^    \(st : SystemState\) \(hObjInv : st\.objects\.invExt\) :\n    residentTcbKeptOffCore e st \(retireFinalObject ec target recorder st\) :=' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^    retireFinalObject_residentTcbKept e ec target recorder st hObjInv⟩,$' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem of_tail($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem settleThenActivateAt_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n -U '^    \(hT : st\.residentsHaveTcbs\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
