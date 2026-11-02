@@ -27,8 +27,8 @@ save before the initiator resumes anything (WS-ZA ZA6.11).
 The composition is closed at the syscall entry
 (`syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore`), the
 reschedule entry, the FP/SIMD entry, the fault entry and the unknown-syscall
-entry.  The timer entry's census and the executing core's match through the
-syscall seam are WS-ZA ZA6.29's.
+entry; the timer entry's is in `TimerContextMatches`, and the executing core's
+match through the syscall seam in `ExecutingContextMatches`.
 
 **The deferral writes no saved register.**  The residency settle's deferral
 (`PriorityInheritance.deferResidentElsewhere`) preempts a thread another core

@@ -4466,7 +4466,7 @@ run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st \(notificationSignalB
 run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st\n      \(notificationWaitCrossCoreDispatchChecked ctx notificationId waiter c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    savedRegsKeptExcept \(· = tid\) st \(Architecture\.stageDeliveredMessage st tid n\) ∧' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    \(h : ∀ x, st\.getTcb\? t = some x → x\.ipcState ≠ \.ready\) : offCoreFree e st t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
-run_check "INVARIANT" rg -n -U '^    savedRegsWrittenFree ec st st \(Architecture\.stageWokenDelivery s2\n      \(\(st\.getEndpoint\? epId\)\.bind \(·\.receiveQ\.head\)\) n\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsWrittenFree e st st \(Architecture\.stageWokenDelivery s2\n      \(\(st\.getEndpoint\? epId\)\.bind \(·\.receiveQ\.head\)\) n\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queueHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^    offCoreFree_of_signalWaiter P\.dequeued P\.ntfnHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^      offCoreFree_of_current P\.current \(currentsUnique_of_dequeuedUnique P\.dequeued\) hN\)⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
@@ -4530,6 +4530,27 @@ run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_cont
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+# The timer entry writes the saved registers of no thread current on another
+# core; the executing core's bank agrees with the syscall's caller outside its
+# return window across every dispatch arm, so after the commit's staging, the
+# scheduling point and the activation it matches its current thread.
+run_check "INVARIANT" rg -n '^theorem timerTickOnCore_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/TimerContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickPost_currentSavedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/TimerContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/TimerContextMatches.lean
+run_check "INVARIANT" rg -n '^def bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankFrame.lean
+run_check "INVARIANT" rg -n '^theorem contextMatchesCurrentOnCore_of_bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankFrame.lean
+run_check "INVARIANT" rg -n '^theorem contextMatchesCurrentOnCore_stageReturns($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankFrame.lean
+run_check "INVARIANT" rg -n '^theorem contextMatchesCurrentOnCore_stageCallerReturnFor_of_bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankFrame.lean
+run_check "INVARIANT" rg -n '^theorem bankAgree_schedPoint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankFrame.lean
+run_check "INVARIANT" rg -n '^theorem SchedPointPrefix.bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankFrame.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankDispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankDispatch.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankDispatch.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_bankAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingBankDispatch.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_stagedContextMatches($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_contextMatchesCurrentEveryCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ExecutingContextMatches.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

@@ -695,12 +695,12 @@ theorem endpointReplyCrossCoreDispatchChecked_ok_target_notReady {ctx : Labeling
 call writes no saved register, and the delivery's staging names the receive
 queue's head at the entry's start, which is blocked there. -/
 theorem callArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {ec : CoreId}
+    {tid : SeLe4n.ThreadId} {payload : SendPayload} {base : SeLe4n.Slot} {ec e : CoreId}
     {st s1 : SystemState} {r : CapTransferSummary × Option (CoreId × Concurrency.SgiKind)}
     (n : Nat) (P : SyscallArmPremises st ec tid) (hRT : st.residentsHaveTcbs)
     (hBNR : st.blockedNotResident)
     (hCall : endpointCallCrossCoreDispatchChecked ctx epId tid payload base ec st = (s1, .ok r)) :
-    savedRegsWrittenFree ec st st (Architecture.stageWokenDelivery s1
+    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery s1
       ((st.getEndpoint? epId).bind (·.receiveQ.head)) n) := by
   have h1 := endpointCallCrossCoreDispatchChecked_savedRegsUnwritten ctx epId tid payload base ec
     P.objInv
@@ -708,11 +708,34 @@ theorem callArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjI
   exact h1.writtenFree.trans (stageWokenDelivery_savedRegsWrittenFree n h1.2 fun _ h =>
     offCoreFree_of_receiveHead P.dequeued P.queueHeads hRT hBNR h).1
 
-/-- WS-ZA ZA6.26: **the receive arm writes only the woken sender and the
-caller**: the receive and its hand-off write no saved register, the send's
+/-- **The receive arm up to its caller's staging writes only the woken
+sender**: the receive and its hand-off write no saved register, and the send's
 completion names the send queue's head at the entry's start, which is blocked
-there, and the delivered message is staged into the caller, the executing
-core's current thread. -/
+there, so it is free of every core. -/
+theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {replyId : Option SeLe4n.ReplyId} {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {ec e : CoreId}
+    {st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
+    {sgi : Option (CoreId × Concurrency.SgiKind)} (P : SyscallArmPremises st ec tid)
+    (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId root base ec st
+      = (s1, .ok (dequeued, summary, sgi)))
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
+    savedRegsWrittenFree e st st
+      (Architecture.stageWokenSendCompletion stDon ((st.getEndpoint? epId).bind (·.sendQ.head))) ∧
+    (Architecture.stageWokenSendCompletion stDon
+      ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt := by
+  have h1 := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid replyId root base ec
+    P.objInv
+  rw [hRecv] at h1
+  have h2 := h1.trans (applyReceiveRendezvousHandoff_savedRegsUnwritten h1.2 hHand)
+  obtain ⟨w1, i1⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := st) h2.2
+    fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h
+  exact ⟨h2.writtenFree.trans w1, i1⟩
+
+/-- WS-ZA ZA6.26: **the receive arm writes only the woken sender and the
+caller**: up to the caller's staging it writes only the woken sender
+(`receiveArmCompletion_savedRegsWrittenFree`), and the delivered message is
+staged into the caller, the executing core's current thread. -/
 theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {ec : CoreId}
     {st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
@@ -725,25 +748,20 @@ theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.Thre
     savedRegsWrittenFree ec st st (Architecture.stageDeliveredMessage
       (Architecture.stageWokenSendCompletion stDon ((st.getEndpoint? epId).bind (·.sendQ.head)))
       tid n) := by
-  have h1 := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid replyId root base ec
-    P.objInv
-  rw [hRecv] at h1
-  have h2 := h1.trans (applyReceiveRendezvousHandoff_savedRegsUnwritten h1.2 hHand)
-  obtain ⟨w1, i1⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := ec) (base := st) h2.2
-    fun _ h => offCoreFree_of_sendHead P.dequeued P.queueHeads hRT hBNR h
+  obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := ec) P hRT hBNR hRecv hHand
   obtain ⟨k, -⟩ := stageDeliveredMessage_savedRegsKeptExcept _ tid n i1
-  exact (h2.writtenFree.trans w1).trans (.of_kept k fun _ h => h ▸
+  exact w1.trans (.of_kept k fun _ h => h ▸
     offCoreFree_of_current P.current (currentsUnique_of_dequeuedUnique P.dequeued) hN)
 
 /-- WS-ZA ZA6.26: **the fault reply writes only the faulted thread**: the reply
 chain writes no saved register and refuses a thread not blocked on its reply, so
 the restart frame names a thread blocked at the entry's start. -/
 theorem faultReplyOnCore_savedRegsWrittenFree {replier faulted : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {ec : CoreId} {st s' : SystemState}
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {ec e : CoreId} {st s' : SystemState}
     {x : Architecture.FaultReplyOutcome × Option (CoreId × Concurrency.SgiKind)}
     (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hInv : st.objects.invExt) (h : faultReplyOnCore replier faulted mi regs ec st = (s', .ok x)) :
-    savedRegsWrittenFree ec st st s' := by
+    savedRegsWrittenFree e st st s' := by
   unfold faultReplyOnCore at h
   split at h
   · cases h
@@ -776,11 +794,11 @@ reply's restart frame or the delivered reply's staging, each into a thread the
 reply leg found blocked on its reply at the entry's start. -/
 theorem replyTransferOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
     {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
-    {msg : IpcMessage} {ec : CoreId} {st st' : SystemState}
+    {msg : IpcMessage} {ec e : CoreId} {st st' : SystemState}
     (hD : st.currentDequeuedUnique) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hInv : st.objects.invExt)
     (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg ec st = .ok ((), st')) :
-    savedRegsWrittenFree ec st st st' := by
+    savedRegsWrittenFree e st st st' := by
   unfold replyTransferOnCoreChecked at h
   split at h
   · revert h
@@ -811,12 +829,12 @@ names the send queue's head after the reply leg and the donation pop, which
 write no endpoint, so the head the entry began from, blocked there. -/
 theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage} {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {ec : CoreId}
+    {msg : IpcMessage} {root : SeLe4n.ObjId} {base : SeLe4n.Slot} {ec e : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (hInv : st.objects.invExt)
     (h : endpointReplyRecvOnCore epId tid rid prevCaller msg root base ec st = .ok (summary, st')) :
-    savedRegsWrittenFree ec st st st' ∧ st'.objects.invExt := by
+    savedRegsWrittenFree e st st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvOnCore at h
   dsimp only at h
   have h0 := endpointReplyOnCore_savedRegsUnwritten tid prevCaller msg ec hInv
@@ -855,7 +873,7 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)
   obtain ⟨k5, i5⟩ := stageDeliveredMessage_savedRegsKeptExcept _ prevCaller 0 h4.2
-  obtain ⟨w6, i6⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := ec) (base := st)
+  obtain ⟨w6, i6⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := st)
     (w := (st1p.getEndpoint? epId).bind (·.sendQ.head)) i5 fun _ ht =>
       offCoreFree_of_sendHead hD hQ hRT hBNR
         (sendHead_backward (fun o ep hx => hB0 o ep (hB1 o ep hx)) ht)

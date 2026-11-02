@@ -46,6 +46,17 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-! ### A core's own slot -/
 
+/-- A core other than `e` (`numCores` is four), off which a frame or a census
+reads core `e` as another core's. -/
+def otherCore (e : CoreId) : CoreId :=
+  if e.val = 0 then ⟨1, by decide⟩ else ⟨0, by decide⟩
+
+theorem ne_otherCore (e : CoreId) : e ≠ otherCore e := by
+  unfold otherCore
+  split
+  · rename_i h; intro he; rw [he] at h; cases h
+  · rename_i h; intro he; rw [he] at h; exact h rfl
+
 /-- **Core `c`'s current slot is kept or cleared** from `pre` to `post`. -/
 def currentKeptOnCore (c : CoreId) (pre post : SystemState) : Prop :=
   ∀ t, post.scheduler.currentOnCore c = some t → pre.scheduler.currentOnCore c = some t
@@ -66,13 +77,8 @@ theorem of_eq {pre post : SystemState}
 /-- **A frame off every core keeps every core's slot**: there is a second core
 (`numCores` is four), off which the frame reads core `c`. -/
 theorem of_offCore {pre post : SystemState} (h : ∀ e, currentKeptOffCore e pre post) :
-    currentKeptOnCore c pre post := fun t ht => by
-  have hn : (if c.val = 0 then 1 else 0) < Concurrency.numCores := by
-    unfold Concurrency.numCores; split <;> omega
-  refine h ⟨if c.val = 0 then 1 else 0, hn⟩ c (fun hc => ?_) t ht
-  have hv := congrArg Fin.val hc
-  simp only at hv
-  split at hv <;> omega
+    currentKeptOnCore c pre post := fun t ht =>
+  h (otherCore c) c (ne_otherCore c) t ht
 
 /-- A step every core's coverage holds of. -/
 theorem of_stepCovers {pre post : SystemState} (h : ∀ e, stepCovers e pre post) :
@@ -558,6 +564,58 @@ theorem offCoreFree_of_currentOn {e : CoreId} {st : SystemState} (hU : currentsU
     ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e st t :=
   fun _ ht => offCoreFree_of_current ht hU hN
 
+/-- WS-ZA ZA6.28: **what a scheduling arm does before its scheduling point**: it
+writes only threads free of every core at `base`, keeps or clears the executing
+core's slot, writes not that core's bank, and ends in no scheduling point or in
+the core's reschedule.  The census (`SchedPointPrefix.writtenFree`) and the
+executing core's bank agreement both read it. -/
+structure SchedPointPrefix (e : CoreId) (base st s st' : SystemState) : Prop where
+  writes : ∀ e', savedRegsWrittenFree e' base st s
+  current : currentKeptOnCore e st s
+  bank : s.machine.regsOnCore e = st.machine.regsOnCore e
+  inv : s.objects.invExt
+  point : st' = s ∨ handleRescheduleSgiOnCore s e = .ok st'
+
+/-- A prefix that writes no saved register, at any `base`. -/
+theorem SchedPointPrefix.of_kept {e : CoreId} {base st s st' : SystemState}
+    (k : savedRegsKeptExcept (fun _ => False) st s) (hK : currentKeptOnCore e st s)
+    (hB : s.machine.regsOnCore e = st.machine.regsOnCore e) (hI : s.objects.invExt)
+    (hP : st' = s ∨ handleRescheduleSgiOnCore s e = .ok st') : SchedPointPrefix e base st s st' :=
+  ⟨fun _ => .of_kept k fun _ h => h.elim, hK, hB, hI, hP⟩
+
+/-- A step that writes no saved register, the executing core's slot or its bank,
+ahead of a prefix. -/
+theorem SchedPointPrefix.cons {e : CoreId} {base st₀ st s st' : SystemState}
+    (k : savedRegsKeptExcept (fun _ => False) st₀ st) (hK : currentKeptOnCore e st₀ st)
+    (hB : st.machine.regsOnCore e = st₀.machine.regsOnCore e) (P : SchedPointPrefix e base st s st') :
+    SchedPointPrefix e base st₀ s st' :=
+  ⟨fun e' => (savedRegsWrittenFree.of_kept k fun _ h => h.elim).trans (P.writes e'),
+    hK.trans P.current, P.bank.trans hB, P.inv, P.point⟩
+
+/-- **The census of a scheduling arm**: the prefix's, then the scheduling point's
+save of the core's current thread, which the prefix found there. -/
+theorem SchedPointPrefix.writtenFree {e : CoreId} {base st s st' : SystemState}
+    (P : SchedPointPrefix e base st s st')
+    (hFree : ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e base t) :
+    savedRegsWrittenFree e base st st' :=
+  savedRegsWrittenFree_schedPoint (P.writes e) P.inv P.current hFree P.point
+
+/-- WS-ZA ZA6.28: **the unbind on the executing core** writes no saved register,
+slot or bank before its scheduling point. -/
+theorem schedContextUnbindOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemState}
+    {vScId : SeLe4n.ValidObjId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindOnCore vScId e st = .ok (st', sgi?)) :
+    ∃ s, SchedPointPrefix e base st s st' := by
+  unfold SchedContextOps.schedContextUnbindOnCore at h
+  split at h
+  · cases h
+  · rename_i stU hUn
+    have C := fun e' => schedContextUnbind_stepCovers st stU vScId e' hInv hUn
+    exact ⟨stU, .of_kept (schedContextUnbind_savedRegsKeptExcept hInv hUn)
+      (.of_stepCovers fun e' => (C e').1) ((C (otherCore e)).1.banksKept e (ne_otherCore e))
+      (C e).2 (SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases _ _ _ _ _ _ h)⟩
+
 /-- WS-ZA ZA6.25: **the unbind on the executing core** writes no saved register
 but its scheduling point's. -/
 theorem schedContextUnbindOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
@@ -565,16 +623,8 @@ theorem schedContextUnbindOnCore_savedRegsWrittenFree {e : CoreId} {st st' : Sys
     (hInv : st.objects.invExt) (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
     (h : SchedContextOps.schedContextUnbindOnCore vScId e st = .ok (st', sgi?)) :
     savedRegsWrittenFree e st st st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hUn
-    exact savedRegsWrittenFree_schedPoint
-      (.of_kept (W := fun _ => False) (schedContextUnbind_savedRegsKeptExcept hInv hUn) (fun _ h => h.elim))
-      (schedContextUnbind_stepCovers st stU vScId e hInv hUn).2
-      (.of_stepCovers fun e' => (schedContextUnbind_stepCovers st stU vScId e' hInv hUn).1)
-      (offCoreFree_of_currentOn hU hN)
-      (SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases _ _ _ _ _ _ h)
+  obtain ⟨_, P⟩ := schedContextUnbindOnCore_schedPointPrefix (base := st) hInv h
+  exact P.writtenFree (offCoreFree_of_currentOn hU hN)
 
 /-! ### The priority arms -/
 
@@ -588,16 +638,22 @@ theorem updatePrioritySource_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} 
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl))
   · exact .updateTcb st tid _ hInv (fun _ => rfl)
 
-/-- WS-ZA ZA6.25: **a priority change writes no saved register but its
-scheduling point's**: the priority write, the bucket re-key, the key hook and
-the boost re-walk write priorities, run-queue links and boost codes and keep
-every core's slot. -/
-theorem applyPriorityChangeOnCore_savedRegsWrittenFree {e : CoreId} {base st st' : SystemState}
+/-- The bucket re-key writes run-queue links and the scheduler alone. -/
+theorem migrateRunQueueBucketOnCore_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (h : CoreId) :
+    (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore st tid p h).machine =
+      st.machine := by
+  unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+  split <;> simp
+
+/-- WS-ZA ZA6.28: **a priority change writes no saved register, slot or bank
+before its scheduling point**: the priority write, the bucket re-key, the key
+hook and the boost re-walk write priorities, run-queue links and boost codes. -/
+theorem applyPriorityChangeOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {p : SeLe4n.Priority} {b : Bool}
     {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
-    (hFree : ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e base t)
     (h : SchedContext.PriorityManagement.applyPriorityChangeOnCore st tid tcb p e b = .ok (st', sgi?)) :
-    savedRegsWrittenFree e base st st' := by
+    ∃ s, SchedPointPrefix e base st s st' := by
   unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at h
   have hI1 := SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt st tid tcb p hInv
   have hI2 := SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objects_invExt _ tid p
@@ -614,20 +670,44 @@ theorem applyPriorityChangeOnCore_savedRegsWrittenFree {e : CoreId} {base st st'
       (.of_runLinks (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks
         _ _ _ _))).trans (.of_objects_eq (markKeyChangeFor_objects _ _ _))).trans
       (.of_repropagateFromWaiter _ tid e _ hI3)
-  have hK : currentKeptOnCore e st (PriorityInheritance.repropagateFromWaiter
-      (markKeyChangeFor (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
-        (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
-        (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)) tid e st.objectIndex.length) := by
-    obtain ⟨objs, hU⟩ := SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb p
-    refine (currentKeptOnCore.of_eq ?_).trans (.of_stepCovers fun e' =>
-      (PriorityInheritance.repropagateFromWaiter_preserves
-        (fun s => stepCovers e' _ s ∧ s.objects.invExt) _ tid e _
-        (fun server _ => propagatePipChainCrossCore_stepCovers e' e _ _ server hI3)
-        ⟨stepCovers_refl e' _, hI3⟩).1)
-    rw [markKeyChangeFor_currentOnCore, migrateRunQueueBucketOnCore_currentOnCore, hU]
-  exact savedRegsWrittenFree_schedPoint (.of_kept k (fun _ h => h.elim))
-    (PriorityInheritance.repropagateFromWaiter_preserves_objects_invExt _ tid e _ hI3) hK hFree
-    (SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases _ _ _ _ _ _ h)
+  have C := fun e' => (PriorityInheritance.repropagateFromWaiter_preserves
+    (fun s => stepCovers e' _ s ∧ s.objects.invExt) _ tid e st.objectIndex.length
+    (fun server _ => propagatePipChainCrossCore_stepCovers e' e _ _ server hI3)
+    ⟨stepCovers_refl e' _, hI3⟩).1
+  obtain ⟨objs, hU⟩ := SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects st tid tcb p
+  refine ⟨_, .of_kept k ((currentKeptOnCore.of_eq ?_).trans (.of_stepCovers C))
+    (((C (otherCore e)).banksKept e (ne_otherCore e)).trans ?_)
+    (PriorityInheritance.repropagateFromWaiter_preserves_objects_invExt _ tid e _ hI3)
+    (SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases _ _ _ _ _ _ h)⟩
+  · rw [markKeyChangeFor_currentOnCore, migrateRunQueueBucketOnCore_currentOnCore, hU]
+  · rw [markKeyChangeFor_machine, migrateRunQueueBucketOnCore_machine, hU]
+
+/-- WS-ZA ZA6.25: **a priority change writes no saved register but its
+scheduling point's**. -/
+theorem applyPriorityChangeOnCore_savedRegsWrittenFree {e : CoreId} {base st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {p : SeLe4n.Priority} {b : Bool}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (hFree : ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e base t)
+    (h : SchedContext.PriorityManagement.applyPriorityChangeOnCore st tid tcb p e b = .ok (st', sgi?)) :
+    savedRegsWrittenFree e base st st' := by
+  obtain ⟨_, P⟩ := applyPriorityChangeOnCore_schedPointPrefix (base := base) hInv h
+  exact P.writtenFree hFree
+
+/-- WS-ZA ZA6.28: **the priority write's prefix**: the checks read, then the
+priority change's. -/
+theorem setPriorityOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemState}
+    {vCallerTid vTargetTid : SeLe4n.ValidThreadId} {p : SeLe4n.Priority}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid p e =
+      .ok (st', sgi?)) : ∃ s, SchedPointPrefix e base st s st' := by
+  unfold SchedContext.PriorityManagement.setPriorityOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · split at h
+      · exact applyPriorityChangeOnCore_schedPointPrefix hInv h
+      · cases h
+  · cases h
 
 /-- WS-ZA ZA6.25: **the priority write writes no saved register but its
 scheduling point's**. -/
@@ -637,24 +717,17 @@ theorem setPriorityOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemStat
     (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
     (h : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid p e =
       .ok (st', sgi?)) : savedRegsWrittenFree e st st st' := by
-  unfold SchedContext.PriorityManagement.setPriorityOnCore at h
-  split at h
-  · split at h
-    · cases h
-    · split at h
-      · exact applyPriorityChangeOnCore_savedRegsWrittenFree hInv (offCoreFree_of_currentOn hU hN) h
-      · cases h
-  · cases h
+  obtain ⟨_, P⟩ := setPriorityOnCore_schedPointPrefix (base := st) hInv h
+  exact P.writtenFree (offCoreFree_of_currentOn hU hN)
 
-/-- WS-ZA ZA6.25: **the ceiling write writes no saved register but its
-scheduling point's**: the ceiling is the target's slot rewritten with its saved
-registers, and a ceiling that bites is a priority change. -/
-theorem setMCPriorityOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
+/-- WS-ZA ZA6.28: **the ceiling write's prefix**: the ceiling is the target's
+slot rewritten with its saved registers, and a ceiling that bites is a priority
+change. -/
+theorem setMCPriorityOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemState}
     {vCallerTid vTargetTid : SeLe4n.ValidThreadId} {p : SeLe4n.Priority}
     {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
-    (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
     (h : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid p e =
-      .ok (st', sgi?)) : savedRegsWrittenFree e st st st' := by
+      .ok (st', sgi?)) : ∃ s, SchedPointPrefix e base st s st' := by
   unfold SchedContext.PriorityManagement.setMCPriorityOnCore at h
   split at h
   · split at h
@@ -667,14 +740,30 @@ theorem setMCPriorityOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemSt
             (st.rewriteObject vTargetTid.val.toObjId (.tcb { targetTcb with maxControlledPriority := p }) hAd) :=
           .rewriteObject_tcb hAd hInv hPre rfl
         have hI := SystemState.rewriteObject_preserves_objects_invExt st _ _ hAd hInv
+        have hK : currentKeptOnCore e st
+            (st.rewriteObject vTargetTid.val.toObjId (.tcb { targetTcb with maxControlledPriority := p }) hAd) :=
+          .of_eq (by rw [SystemState.rewriteObject_scheduler])
+        have hB : (st.rewriteObject vTargetTid.val.toObjId
+            (.tcb { targetTcb with maxControlledPriority := p }) hAd).machine.regsOnCore e =
+              st.machine.regsOnCore e := by rw [SystemState.rewriteObject_machine]
         dsimp only at h
         split at h
-        · exact (savedRegsWrittenFree.of_kept k (fun _ h => h.elim)).trans
-            (applyPriorityChangeOnCore_savedRegsWrittenFree hI
-              (fun t ht => offCoreFree_of_currentOn hU hN t ht) h)
-        · cases h; exact .of_kept k (fun _ h => h.elim)
+        · obtain ⟨s, P⟩ := applyPriorityChangeOnCore_schedPointPrefix (base := base) hI h
+          exact ⟨s, .cons k hK hB P⟩
+        · cases h; exact ⟨_, .of_kept k hK hB hI (.inl rfl)⟩
       · cases h
   · cases h
+
+/-- WS-ZA ZA6.25: **the ceiling write writes no saved register but its
+scheduling point's**. -/
+theorem setMCPriorityOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
+    {vCallerTid vTargetTid : SeLe4n.ValidThreadId} {p : SeLe4n.Priority}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
+    (h : SchedContext.PriorityManagement.setMCPriorityOnCore st vCallerTid vTargetTid p e =
+      .ok (st', sgi?)) : savedRegsWrittenFree e st st st' := by
+  obtain ⟨_, P⟩ := setMCPriorityOnCore_schedPointPrefix (base := st) hInv h
+  exact P.writtenFree (offCoreFree_of_currentOn hU hN)
 
 /-! ### The Consumed invocation -/
 
@@ -705,16 +794,15 @@ theorem resumeReadyMidState_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (
     savedRegsKeptExcept.updateTcb st tid _ hInv (fun _ => rfl)).trans
     (.updateTcb _ tid _ (PriorityInheritance.restoreToReady_objects_invExt st tid hInv) (fun _ => rfl))
 
-/-- WS-ZA ZA6.25: **the resume writes no saved register but its scheduling
-point's**: the restore keeps the resumed thread's window, the key hook writes
-no object, the enqueue writes run-queue links, and every core's slot is kept up
-to the local reschedule. -/
-theorem resumeThreadOnCore_savedRegsWrittenFree {e : CoreId} {base st st' : SystemState}
+/-- WS-ZA ZA6.28: **the resume writes no saved register, slot or bank before
+its scheduling point**: the restore keeps the resumed thread's window, the key
+hook writes no object, the enqueue writes run-queue links, and every core's slot
+is kept up to the local reschedule. -/
+theorem resumeThreadOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
     (hInv : st.objects.invExt)
-    (hFree : ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e base t)
     (h : Lifecycle.Suspend.resumeThreadOnCore st vtid e = .ok (st', sgi?)) :
-    savedRegsWrittenFree e base st st' := by
+    ∃ s, SchedPointPrefix e base st s st' := by
   unfold Lifecycle.Suspend.resumeThreadOnCore at h
   dsimp only [] at h
   split at h
@@ -735,17 +823,34 @@ theorem resumeThreadOnCore_savedRegsWrittenFree {e : CoreId} {base st st' : Syst
       (currentKeptOnCore.of_eq (by
         rw [markKeyChangeFrom_currentOnCore, PriorityInheritance.resumeReadyMidState_scheduler_eq])).trans
         (.of_offCore fun e' => enqueueRunnableOnCore_currentKept e' _ _ _)
+    have hB : (enqueueRunnableOnCore
+        (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
+        (determineTargetCore st vtid.val) vtid.val).machine.regsOnCore e =
+          st.machine.regsOnCore e := by
+      rw [enqueueRunnableOnCore_machine_eq, markKeyChangeFrom_machine,
+        PriorityInheritance.resumeReadyMidState_machine_eq]
     have h2Inv := enqueueRunnableOnCore_preserves_objects_invExt _
       (determineTargetCore st vtid.val) vtid.val h1Inv
     split at h
     · split at h
       · rename_i st4 hH
         cases h
-        exact savedRegsWrittenFree_schedPoint (.of_kept k (fun _ h => h.elim)) h2Inv hK hFree (.inr hH)
+        exact ⟨_, .of_kept k hK hB h2Inv (.inr hH)⟩
       · cases h
     · cases h
-      exact .of_kept k (fun _ h => h.elim)
+      exact ⟨_, .of_kept k hK hB h2Inv (.inl rfl)⟩
   · cases h
+
+/-- WS-ZA ZA6.25: **the resume writes no saved register but its scheduling
+point's**. -/
+theorem resumeThreadOnCore_savedRegsWrittenFree {e : CoreId} {base st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (hFree : ∀ t, st.scheduler.currentOnCore e = some t → offCoreFree e base t)
+    (h : Lifecycle.Suspend.resumeThreadOnCore st vtid e = .ok (st', sgi?)) :
+    savedRegsWrittenFree e base st st' := by
+  obtain ⟨_, P⟩ := resumeThreadOnCore_schedPointPrefix (base := base) hInv h
+  exact P.writtenFree hFree
 
 /-- A resume that succeeds found its target suspended. -/
 theorem resumeThreadOnCore_inactive {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
@@ -862,28 +967,31 @@ theorem suspendRescheduleOnCore_state_cases {st st' : SystemState} {runningCore 
     | (cases h; exact .inl rfl)
     | (rename_i st4 hH; cases h; exact .inr hH)
 
-/-- WS-ZA ZA6.25: **the suspend writes no saved register but a blocked victim's
-and its scheduling point's.**  The cancellation writes the victim only when it
+/-- WS-ZA ZA6.28: **the suspend's prefix writes no saved register but a blocked
+victim's, and not the executing core's slot or bank.**  The cancellation writes the victim only when it
 was blocked (`cancelIpcBlockingReclaimed_savedRegsWrittenFree`); the boost
 revert, the donation cancel, the deschedule, the state clears and the yield-link
 cancel write boost codes, binding codes, run-queue and release links and state
 fields; and none puts a thread in the executing core's slot, so the thread its
 scheduling point saves was the core's current thread at the entry. -/
-theorem suspendThreadOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
+theorem suspendThreadOnCore_schedPointPrefix {e : CoreId} {st st' : SystemState}
     {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
-    (hInv : st.objects.invExt) (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
-    (hB : blockedCurrentNowhere st) (hBN : st.blockedNotResident)
+    (hInv : st.objects.invExt) (hB : blockedCurrentNowhere st) (hBN : st.blockedNotResident)
     (h : Lifecycle.Suspend.suspendThreadOnCore st vtid e = .ok (st', sgi?)) :
-    savedRegsWrittenFree e st st st' := by
+    ∃ s, SchedPointPrefix e st st s st' := by
   unfold Lifecycle.Suspend.suspendThreadOnCore at h
   dsimp only [] at h
   split at h
   · rename_i tcb hT
     split at h
     · cases h
-    have hW1 := cancelIpcBlockingReclaimed_savedRegsWrittenFree (e := e) hInv hB hBN hT
+    have hW1 := fun e' => cancelIpcBlockingReclaimed_savedRegsWrittenFree (e := e') hInv hB hBN hT
     have hK1 : currentKeptOnCore e st (cancelIpcBlockingReclaimed vtid.val tcb st) :=
       .of_stepCovers fun e' => cancelIpcBlockingReclaimed_stepCovers e' st vtid.val tcb hInv
+    have hB1 : (cancelIpcBlockingReclaimed vtid.val tcb st).machine.regsOnCore e =
+        st.machine.regsOnCore e :=
+      (cancelIpcBlockingReclaimed_stepCovers (otherCore e) st vtid.val tcb hInv).banksKept e
+        (ne_otherCore e)
     have h1Inv : (cancelIpcBlockingReclaimed vtid.val tcb st).objects.invExt :=
       cancelIpcBlockingReclaimed_objects_invExt vtid.val tcb st
         (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st vtid.val tcb hInv)
@@ -891,33 +999,39 @@ theorem suspendThreadOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemSt
     case' none =>
       rw [hBS] at h
       dsimp only at h
-      generalize cancelIpcBlockingReclaimed vtid.val tcb st = s2 at h hW1 hK1 h1Inv
+      generalize cancelIpcBlockingReclaimed vtid.val tcb st = s2 at h hW1 hK1 hB1 h1Inv
     case' some srv =>
       rw [hBS] at h
       dsimp only at h
       have hc := fun e' => propagatePipChainCrossCore_stepCovers e' e
         (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length _ srv h1Inv
-      replace hW1 := hW1.trans (.of_kept (W := fun _ => False)
+      replace hW1 := fun e' => (hW1 e').trans (.of_kept (W := fun _ => False)
         (.of_propagatePipChainCrossCore _ srv e
           (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length h1Inv) (fun _ h => h.elim))
       replace hK1 := hK1.trans (.of_stepCovers fun e' => (hc e').1)
+      replace hB1 := ((hc (otherCore e)).1.banksKept e (ne_otherCore e)).trans hB1
       replace h1Inv := (hc e).2
       clear hc
       generalize (PriorityInheritance.propagatePipChainCrossCore
-        (cancelIpcBlockingReclaimed vtid.val tcb st) srv e).1 = s2 at h hW1 hK1 h1Inv
+        (cancelIpcBlockingReclaimed vtid.val tcb st) srv e).1 = s2 at h hW1 hK1 hB1 h1Inv
     all_goals
       split at h
       · cases h
       rename_i s3 hDon
-      obtain ⟨k3, hK3, h3Inv⟩ : savedRegsKeptExcept (fun _ => False) s2 s3 ∧
-          currentKeptOnCore e s2 s3 ∧ s3.objects.invExt := by
+      obtain ⟨k3, hK3, hB3, h3Inv⟩ : savedRegsKeptExcept (fun _ => False) s2 s3 ∧
+          currentKeptOnCore e s2 s3 ∧ s3.machine.regsOnCore e = s2.machine.regsOnCore e ∧
+          s3.objects.invExt := by
         split at hDon
-        · cases hDon; exact ⟨.refl _, .refl _, h1Inv⟩
+        · cases hDon; exact ⟨.refl _, .refl _, rfl, h1Inv⟩
         · exact ⟨cancelBoundDonationOnCore_savedRegsKeptExcept h1Inv hDon,
             .of_stepCovers fun e' => (cancelBoundDonationOnCore_stepCovers e' h1Inv hDon).1,
+            (cancelBoundDonationOnCore_stepCovers (otherCore e) h1Inv hDon).1.banksKept e
+              (ne_otherCore e),
             (cancelBoundDonationOnCore_stepCovers e h1Inv hDon).2⟩
         · exact ⟨cancelDonatedDonationOnCore_savedRegsKeptExcept h1Inv hDon,
             .of_stepCovers fun e' => (cancelDonatedDonationOnCore_stepCovers e' h1Inv hDon).1,
+            (cancelDonatedDonationOnCore_stepCovers (otherCore e) h1Inv hDon).1.banksKept e
+              (ne_otherCore e),
             (cancelDonatedDonationOnCore_stepCovers e h1Inv hDon).2⟩
       have h4Inv : (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)).objects.invExt :=
         descheduleAt_objects_invExt _ _ _ h3Inv
@@ -952,9 +1066,31 @@ theorem suspendThreadOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemSt
             rw [SystemState.cancelYieldTo_scheduler, SystemState.updateTcb_scheduler]
             unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
             rw [SystemState.updateTcb_scheduler]))
-      exact savedRegsWrittenFree_schedPoint (hW1.trans (.of_kept k (fun _ h => h.elim))) h6bInv hK
-        (offCoreFree_of_currentOn hU hN) (suspendRescheduleOnCore_state_cases h)
+      have hBk : (cancelYieldTo
+          ((Lifecycle.Suspend.clearPendingStateValid
+            (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid).updateTcb vtid.val
+            fun t => { t with threadState := .Inactive }) vtid.val).machine.regsOnCore e =
+            st.machine.regsOnCore e := by
+        refine Eq.trans ?_ (((descheduleAt_stepCovers (otherCore e) s3 vtid.val
+          (placedCoreOf? st vtid.val)).banksKept e (ne_otherCore e)).trans (hB3.trans hB1))
+        rw [SystemState.cancelYieldTo_machine, SystemState.updateTcb_machine]
+        unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
+        rw [SystemState.updateTcb_machine]
+      exact ⟨_, fun e' => (hW1 e').trans (.of_kept k (fun _ h => h.elim)), hK, hBk, h6bInv,
+        suspendRescheduleOnCore_state_cases h⟩
   · cases h
+
+/-- WS-ZA ZA6.25: **the suspend writes no saved register but a blocked victim's
+and its scheduling point's**: its prefix (`suspendThreadOnCore_schedPointPrefix`),
+then the scheduling point's save of the core's current thread at the entry. -/
+theorem suspendThreadOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt) (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
+    (hB : blockedCurrentNowhere st) (hBN : st.blockedNotResident)
+    (h : Lifecycle.Suspend.suspendThreadOnCore st vtid e = .ok (st', sgi?)) :
+    savedRegsWrittenFree e st st st' := by
+  obtain ⟨_, P⟩ := suspendThreadOnCore_schedPointPrefix hInv hB hBN h
+  exact P.writtenFree (offCoreFree_of_currentOn hU hN)
 
 /-! ### The space change -/
 

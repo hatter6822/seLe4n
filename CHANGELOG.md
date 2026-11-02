@@ -1,9 +1,9 @@
-## v0.36.191 — WS-ZA ZA6.28: every other core's bank matches its current thread after the entries, and the residency deferral writes no saved register
+## v0.36.191 — WS-ZA ZA6.28: every core's bank matches its current thread at every entry boundary, and the residency deferral writes no saved register
 
-Every core other than the executing one keeps its register bank equal to its
-current thread's saved context across the syscall, reschedule, FP/SIMD, fault
-and unknown-syscall entries. This release also fixes a stale-bank write in the
-residency deferral.
+Every core's register bank equals its current thread's saved context after
+every committing entry. For the executing core this is new at the syscall
+entry; for every other core it is new at every entry. This release also fixes
+a stale-bank write in the residency deferral.
 
 - **The deferral's finding and fix.** When the executing core's current thread
   was resident on another core, `PriorityInheritance.deferResidentElsewhere`
@@ -24,9 +24,8 @@ residency deferral.
   thread current on another core has its saved registers written. With
   `contextMatchesCurrentOnCore_offCore` it gives each other core's match from
   the banks' frame.
-- **The entries.** These theorems are in
-  `IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean`, a new staged
-  module:
+- **Every other core, at every entry.** These theorems are in
+  `IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean`:
   - `syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore`
   - `perCoreRescheduleEntryState_preserves_contextMatchesCurrentOffCore`
   - `fpAccessEntryState_preserves_contextMatchesCurrentOffCore`
@@ -34,14 +33,34 @@ residency deferral.
   - `unknownSyscallEntryState_preserves_contextMatchesCurrentOffCore`
 
   They share the tail `settleThenActivateOnCore_contextMatchesCurrentOffCore`.
-- **The split.** The bank-match row is split in two. The executing core's match
-  after a syscall needs an argument per dispatch arm. The timer entry's
-  off-core census needs its drain, budget tick, `scheduleEffective` and domain
-  step. Both move to a new row, ZA6.29, which now closes the
-  `docs/REGISTERED_DEBT.md` bank-match row; that row is narrowed. The plan's
-  rows from ZA6.29 to ZA6.37 are renumbered to ZA6.30 to ZA6.38.
-- 17 Tier 3 anchors cover the new theorems and the order of the deferral's
-  reload.
+  The timer entry's replenishment drain, budget tick, `scheduleEffective` and
+  domain step write only the executing core's current thread, which gives
+  `perCoreTimerTickEntryState_preserves_contextMatchesCurrentOffCore`
+  (`TimerContextMatches.lean`).
+- **The executing core after a syscall.** The dispatch writes the caller's
+  saved context, so the bank no longer equals it. Every arm instead keeps the
+  bank equal to the caller's saved context outside the return window x0..x5
+  (`bankAgree`, in `ExecutingBankFrame.lean`), because each staging into the
+  caller writes only that window. An arm with no scheduling point is covered
+  at another core (`otherCore`), and a scheduling arm's prefix
+  (`SchedPointPrefix`) is followed by a scheduling point that keeps the
+  agreement. The arms are proved per dispatcher in
+  `ExecutingBankDispatch.lean`, up to `syscallEntryChecked_bankAgree`. In
+  `ExecutingContextMatches.lean` the commit's staging of a returning caller
+  turns the agreement back into the match. A caller that blocks is current
+  nowhere, a delivered capability fault vacates the core, and a refusal writes
+  no object, slot or bank (`syscallDispatchFromAbi_stagedContextMatches`). The
+  scheduling point, settle, activation and ledger clears keep the match, which
+  gives `syscallDispatchEntryState_preserves_contextMatchesCurrentOnCore` and,
+  with the other cores,
+  `syscallDispatchEntryState_preserves_contextMatchesCurrentEveryCore`.
+- **The census, restated.** The IPC arms' census lemmas now name the frame
+  core separately from the executing one. The scheduling arms' census lemmas
+  are now corollaries of their prefixes.
+- **The debt row closes.** The `docs/REGISTERED_DEBT.md` row on the bank match
+  is closed.
+- The four new modules are staged. 34 Tier 3 anchors cover the new theorems
+  and the order of the deferral's reload.
 
 ## v0.36.190 — WS-ZA ZA6.27: the syscall's number and arguments are read from the entry's saved frame
 
