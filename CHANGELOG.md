@@ -1,3 +1,48 @@
+## v0.36.191 — WS-ZA ZA6.28: every other core's bank matches its current thread after the entries, and the residency deferral writes no saved register
+
+Every core other than the executing one keeps its register bank equal to its
+current thread's saved context across the syscall, reschedule, FP/SIMD, fault
+and unknown-syscall entries. This release also fixes a stale-bank write in the
+residency deferral.
+
+- **The deferral's finding and fix.** When the executing core's current thread
+  was resident on another core, `PriorityInheritance.deferResidentElsewhere`
+  preempted it. That happened in both branches, not only when the switch to the
+  idle thread failed. The preemption saved the executing core's bank into the
+  saved context of a thread another core still held as resident. The write was
+  a no-op only if that bank matched the thread, and nothing proved that at the
+  syscall entry. The remote core's next save (`saveVacatedFrameOnCore`)
+  overwrote the write before anything read it, so no thread observed it. It
+  still broke the saved-register census, and the docstring's claim about it was
+  false. The deferral now restores the thread's saved context into the bank
+  (`restoreIncomingContextOnCore`) before it preempts, so the save writes back
+  what it read (`deferResidentElsewhere_savedRegs`,
+  `settleResidencyOnCore_savedRegs`). seL4 likewise never saves a bank into a
+  thread that did not trap from it. The `.error` fallback is kept, and it is
+  now harmless.
+- **The current-thread census.** `currentSavedRegsKeptOffCore` states that no
+  thread current on another core has its saved registers written. With
+  `contextMatchesCurrentOnCore_offCore` it gives each other core's match from
+  the banks' frame.
+- **The entries.** These theorems are in
+  `IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean`, a new staged
+  module:
+  - `syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore`
+  - `perCoreRescheduleEntryState_preserves_contextMatchesCurrentOffCore`
+  - `fpAccessEntryState_preserves_contextMatchesCurrentOffCore`
+  - `faultEntryState_preserves_contextMatchesCurrentOffCore`
+  - `unknownSyscallEntryState_preserves_contextMatchesCurrentOffCore`
+
+  They share the tail `settleThenActivateOnCore_contextMatchesCurrentOffCore`.
+- **The split.** The bank-match row is split in two. The executing core's match
+  after a syscall needs an argument per dispatch arm. The timer entry's
+  off-core census needs its drain, budget tick, `scheduleEffective` and domain
+  step. Both move to a new row, ZA6.29, which now closes the
+  `docs/REGISTERED_DEBT.md` bank-match row; that row is narrowed. The plan's
+  rows from ZA6.29 to ZA6.37 are renumbered to ZA6.30 to ZA6.38.
+- 17 Tier 3 anchors cover the new theorems and the order of the deferral's
+  reload.
+
 ## v0.36.190 — WS-ZA ZA6.27: the syscall's number and arguments are read from the entry's saved frame
 
 The syscall entry no longer takes the syscall number from the HAL. It reads

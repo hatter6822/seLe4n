@@ -119,20 +119,18 @@ theorem deferResidentElsewhere_coversWrites (S : LockSet) (e : CoreId) (st : Sys
     footprintCoversWrites S st (PriorityInheritance.deferResidentElsewhere st e) := by
   unfold PriorityInheritance.deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid _
+    have hR : footprintCoversWrites S st (restoreIncomingContextOnCore st e tid) :=
+      ⟨fun _ _ _ => by rw [restoreIncomingContextOnCore_objects],
+       fun _ _ => by rw [restoreIncomingContextOnCore_scheduler]; exact ⟨rfl, rfl, rfl⟩,
+       fun _ _ => by rw [restoreIncomingContextOnCore_scheduler]⟩
+    split
+    · dsimp only
+      split
       · rename_i st' h
-        exact switchToThreadOnCore_coversWrites S e st st' _ hTable hRun h
-      · refine ⟨fun hAbsent => absurd hTable hAbsent, fun d hd => ?_, fun d _ => ?_⟩
-        · have hne : e ≠ d := fun hEq => hd (hEq ▸ hRun)
-          simp only [preemptCurrentOnCore_runQueueOnCore_ne st e _ d hne,
-            preemptCurrentOnCore_currentOnCore, preemptCurrentOnCore_activeDomainOnCore,
-            SchedulerState.setCurrentOnCore_runQueueOnCore,
-            SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
-            SchedulerState.setCurrentOnCore_activeDomainOnCore]
-          exact ⟨trivial, trivial, trivial⟩
-        · simp only [SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-            preemptCurrentOnCore_replenishQueueOnCore]
+        exact footprintCoversWrites_trans S hR
+          (switchToThreadOnCore_coversWrites S e _ st' _ hTable hRun h)
+      · exact footprintCoversWrites_trans S hR (dropCurrentOnCore_coversWrites S e _ hTable hRun)
     · exact footprintCoversWrites_refl S st
   · exact footprintCoversWrites_refl S st
 

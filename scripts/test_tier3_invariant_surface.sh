@@ -4508,6 +4508,28 @@ run_check "INVARIANT" rg -n '^theorem syscallEntrySpill_contextMatchesCurrentOnC
 run_check "INVARIANT" rg -n '^theorem syscallEntrySaved_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntrySpill_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^            let tag = unsafe \{ lean_syscall_dispatch_cross_core\(\) \};$' rust/sele4n-hal/src/svc_dispatch.rs
+# WS-ZA ZA6.28: every other core's bank still matches its current thread after
+# the syscall, reschedule, FP/SIMD, fault and unknown-syscall entries.  Each
+# entry writes the saved registers of no thread current on another core, and
+# the residency deferral restores the executing core's bank from the thread's
+# saved context before it preempts it, so its save writes back what it read.
+run_check "INVARIANT" rg -n -U '^      let st0 := restoreIncomingContextOnCore st c tid\n      match switchToThreadOnCore st0 c \(idleThreadId c\) with\n      \| \.ok st. => st.\n      \| \.error _ => dropCurrentOnCore st0 c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^def currentSavedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem currentSavedRegsKeptOffCore_of_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem contextMatchesCurrentOnCore_offCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem restoreIncomingContextOnCore_current_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem preemptCurrentOnCore_savedRegs_of_match($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_savedRegs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem settleResidencyOnCore_savedRegs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem saveTrapThenVacated_contextMatchesCurrentOnCore_offCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem syscallCommitTail_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

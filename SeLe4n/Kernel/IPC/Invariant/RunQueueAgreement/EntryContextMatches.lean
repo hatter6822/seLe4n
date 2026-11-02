@@ -42,19 +42,33 @@ theorem dispatchVacatedCore_preserves_contextMatchesCurrentOnCore (st : SystemSt
       exact handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore st c st' hInv h hR
     · exact h
 
-/-- The deferral keeps the core's match: a switch to the idle thread establishes
-it, and the vacating fallback leaves the core no current thread. -/
+/-- The deferral keeps the core's match: the reload makes the bank the
+deferred thread's context, a switch to the idle thread then establishes the
+match, and the vacating fallback leaves the core no current thread. -/
 theorem deferResidentElsewhere_preserves_contextMatchesCurrentOnCore (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : contextMatchesCurrentOnCore st c) :
     contextMatchesCurrentOnCore (deferResidentElsewhere st c) c := by
   unfold deferResidentElsewhere
   split
-  · split
-    · split
+  · rename_i tid hC
+    split
+    · dsimp only
+      have hI : (restoreIncomingContextOnCore st c tid).objects.invExt := by
+        rw [restoreIncomingContextOnCore_objects]; exact hInv
+      split
       · rename_i st' hS
-        exact switchToThreadOnCore_establishes_contextMatchesCurrentOnCore st c _ st' hInv h hS
-      · unfold contextMatchesCurrentOnCore
-        simp
+        refine switchToThreadOnCore_establishes_contextMatchesCurrentOnCore _ c _ st' hI ?_ hS
+        unfold contextMatchesCurrentOnCore
+        rw [restoreIncomingContextOnCore_scheduler, hC]
+        dsimp only
+        rw [restoreIncomingContextOnCore_getTcb?]
+        cases hT : st.getTcb? tid with
+        | none => trivial
+        | some tcb =>
+          dsimp only
+          rw [restoreIncomingContextOnCore_regsOnCore_self st c tid tcb hT]
+          exact SeLe4n.RegisterFile.beq_self _
+      · exact dropCurrentOnCore_contextMatchesCurrentOnCore _ c
     · exact h
   · exact h
 

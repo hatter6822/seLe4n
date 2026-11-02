@@ -1753,7 +1753,7 @@ pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
             //
             // No device interrupt has a Lean entry yet: wiring one to its
             // handler's notification, as seL4's `handleInterrupt` does, is
-            // `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` WS-ZA ZA6.32.
+            // `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` WS-ZA ZA6.33.
             //
             // Audit-pass-4: per-line atomicity via `kprintln_core!`
             // (see SGI branch above for rationale).
