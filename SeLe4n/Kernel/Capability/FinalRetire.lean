@@ -2829,6 +2829,7 @@ theorem retireFinalObject_stateMono (ec : Concurrency.CoreId) (target recorder :
     {st : SystemState} (hObjInv : st.objects.invExt) :
     SystemState.StateMono st (retireFinalObject ec target recorder st) := by
   refine SystemState.StateMono.of_pointwise_erase (fun t x hx => ?_) (fun t x' hx' hc => ?_)
+    (fun t x' hx' hn => ?_)
   · have hk := (SystemState.getTcb?_eq_some_iff st t x).mp hx
     rcases retireFinalObject_tcb_kept_or_quiescent ec target recorder st hObjInv hk with
       e | ⟨hn, -, -, hQ, -⟩
@@ -2838,6 +2839,10 @@ theorem retireFinalObject_stateMono (ec : Concurrency.CoreId) (target recorder :
   · have hp := (SystemState.getTcb?_eq_some_iff _ t x').mp hx'
     exact hc x' ((SystemState.getTcb?_eq_some_iff st t x').mpr
       (retireFinalObject_tcb_back ec target recorder st hObjInv hp))
+  · have hp := (SystemState.getTcb?_eq_some_iff _ t x').mp hx'
+    rw [(SystemState.getTcb?_eq_some_iff st t x').mpr
+      (retireFinalObject_tcb_back ec target recorder st hObjInv hp)] at hn
+    cases hn
 
 -- ============================================================================
 -- §8  A store scan bounds a sweep

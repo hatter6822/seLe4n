@@ -2175,15 +2175,24 @@ unpinned thread homed on the boot core (`determineTargetCore`'s reading). -/
 def homedOn (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId) : Prop :=
   ∀ x, st.getTcb? t = some x → x.cpuAffinity.getD Concurrency.bootCoreId = c
 
+/-- `t`'s TCB, if it has one, is ready in IPC. -/
+def readyOrAbsent (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
+  ∀ x, st.getTcb? t = some x → x.ipcState = .ready
+
 /-- A step that keeps every runnable thread runnable, every coherent TCB
-coherent and every active thread active, and every active thread on its
-affinity: what every step but a block, a suspend or an affinity change does to
-the state fields. -/
+coherent and every active thread active, every active thread on its affinity,
+and every thread ready in IPC (or with no TCB) ready (or with no TCB): what
+every step but a block, a suspend or an affinity change does to the state
+fields.  The last clause is a monotone step's own (`TCB.StepMono`'s first)
+read thread by thread, with a TCB the step creates ready: it is what lets a
+whole entry's frame on the IPC states be read off its stages (WS-ZA ZA6.18,
+`readyKeptExcept`). -/
 def StateMono (st st' : SystemState) : Prop :=
   ∀ t, (st.runnable t → st'.runnable t) ∧ (st.coherentAt t → st'.coherentAt t) ∧
     (st.activeAt t → st'.activeAt t) ∧
     (st.activeAt t → ∀ x x', st.getTcb? t = some x → st'.getTcb? t = some x' →
-      x'.cpuAffinity = x.cpuAffinity)
+      x'.cpuAffinity = x.cpuAffinity) ∧
+    (st.readyOrAbsent t → st'.readyOrAbsent t)
 
 theorem StateMono.runnable {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
     (hr : st.runnable t) : st'.runnable t := (h t).1 hr
@@ -2198,7 +2207,11 @@ theorem StateMono.activeAt {st st' : SystemState} (h : StateMono st st') {t : Se
 theorem StateMono.affinity {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
     (ha : st.activeAt t) {x x' : TCB} (hx : st.getTcb? t = some x)
     (hx' : st'.getTcb? t = some x') : x'.cpuAffinity = x.cpuAffinity :=
-  (h t).2.2.2 ha x x' hx hx'
+  (h t).2.2.2.1 ha x x' hx hx'
+
+/-- A thread ready in IPC, or with no TCB, stays so. -/
+theorem StateMono.readyOrAbsent {st st' : SystemState} (h : StateMono st st')
+    {t : SeLe4n.ThreadId} (hr : st.readyOrAbsent t) : st'.readyOrAbsent t := (h t).2.2.2.2 hr
 
 /-- An active thread stays homed where it was. -/
 theorem StateMono.homedOn {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
@@ -2207,27 +2220,37 @@ theorem StateMono.homedOn {st st' : SystemState} (h : StateMono st st') {t : SeL
   rw [h.affinity ⟨x, hx, hA⟩ hx hx']; exact hh x hx
 
 theorem StateMono.refl (st : SystemState) : StateMono st st :=
-  fun _ => ⟨id, id, id, fun _ _ _ h h' => by rw [h] at h'; cases h'; rfl⟩
+  fun _ => ⟨id, id, id, fun _ _ _ h h' => by rw [h] at h'; cases h'; rfl, id⟩
 
 theorem StateMono.trans {st st' st'' : SystemState} (h1 : StateMono st st')
     (h2 : StateMono st' st'') : StateMono st st'' :=
   fun t => ⟨fun h => h2.runnable (h1.runnable h), fun h => h2.coherentAt (h1.coherentAt h),
     fun h => h2.activeAt (h1.activeAt h), fun ha x x'' hx hx'' => by
       obtain ⟨x', hx', hA'⟩ := h1.activeAt ha
-      rw [h2.affinity ⟨x', hx', hA'⟩ hx' hx'', h1.affinity ha hx hx']⟩
+      rw [h2.affinity ⟨x', hx', hA'⟩ hx' hx'', h1.affinity ha hx hx'],
+    fun h => h2.readyOrAbsent (h1.readyOrAbsent h)⟩
 
 /-- A step is state-monotone when, thread by thread, a TCB it keeps is
-replaced by a monotone step of it and a TCB it creates is coherent. -/
+replaced by a monotone step of it and a TCB it creates is coherent, and ready
+where there was none. -/
 theorem StateMono.of_pointwise {st st' : SystemState}
     (h1 : ∀ t x, st.getTcb? t = some x → ∃ x', st'.getTcb? t = some x' ∧ x.StepMono x')
     (h2 : ∀ t x', st'.getTcb? t = some x' → (∀ x, st.getTcb? t = some x → x.Coherent) →
-      x'.Coherent) : StateMono st st' := fun t =>
+      x'.Coherent)
+    (h3 : ∀ t x', st'.getTcb? t = some x' → st.getTcb? t = none → x'.ipcState = .ready) :
+    StateMono st st' := fun t =>
   ⟨fun ⟨x, hx, hr⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.runnable hr⟩,
     fun hc x' hx' => h2 t x' hx' hc,
     fun ⟨x, hx, ha⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.2.1 ha⟩,
     fun _ x y hx hy => by
       obtain ⟨x', hx', hm⟩ := h1 t x hx
-      rw [hy] at hx'; cases hx'; exact hm.2.2⟩
+      rw [hy] at hx'; cases hx'; exact hm.2.2,
+    fun hr y hy => by
+      cases hx : st.getTcb? t with
+      | none => exact h3 t y hy hx
+      | some x =>
+        obtain ⟨x', hx', hm⟩ := h1 t x hx
+        rw [hy] at hx'; cases hx'; exact hm.1 (hr x hx)⟩
 
 /-- **A step that may also erase suspended threads is state-monotone**: a TCB
 it keeps is replaced by a monotone step of it, or the TCB is gone and was not
@@ -2236,7 +2259,9 @@ theorem StateMono.of_pointwise_erase {st st' : SystemState}
     (h1 : ∀ t x, st.getTcb? t = some x →
       (∃ x', st'.getTcb? t = some x' ∧ x.StepMono x') ∨ (st'.getTcb? t = none ∧ ¬ x.Active))
     (h2 : ∀ t x', st'.getTcb? t = some x' → (∀ x, st.getTcb? t = some x → x.Coherent) →
-      x'.Coherent) : StateMono st st' := fun t =>
+      x'.Coherent)
+    (h3 : ∀ t x', st'.getTcb? t = some x' → st.getTcb? t = none → x'.ipcState = .ready) :
+    StateMono st st' := fun t =>
   ⟨fun ⟨x, hx, hr⟩ => by
       rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
       · exact ⟨x', hx', hm.runnable hr⟩
@@ -2246,10 +2271,17 @@ theorem StateMono.of_pointwise_erase {st st' : SystemState}
       rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨-, hA⟩
       · exact ⟨x', hx', hm.2.1 ha⟩
       · exact absurd ha hA,
-    fun _ x y hx hy => by
+    fun _ x y hx hy => (by
       rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨hn, -⟩
       · rw [hy] at hx'; cases hx'; exact hm.2.2
-      · rw [hy] at hn; cases hn⟩
+      · rw [hy] at hn; cases hn),
+    fun hr y hy => by
+      cases hx : st.getTcb? t with
+      | none => exact h3 t y hy hx
+      | some x =>
+        rcases h1 t x hx with ⟨x', hx', hm⟩ | ⟨hn, -⟩
+        · rw [hy] at hx'; cases hx'; exact hm.1 (hr x hx)
+        · rw [hy] at hn; cases hn⟩
 
 /-- The same, read off a step that rewrites every TCB through a monotone map
 and adds or removes none. -/
@@ -2262,6 +2294,7 @@ theorem StateMono.of_map {st st' : SystemState} {f : SeLe4n.ThreadId → TCB →
       cases hT : st.getTcb? t with
       | none => rw [hT] at hx'; cases hx'
       | some x => rw [hT] at hx'; cases hx'; exact (hm t x).coherent (hc x hT))
+    (fun t x' hx' hn => by rw [h, hn] at hx'; cases hx')
 
 /-- A step that keeps every thread's TCB keeps the state fields. -/
 theorem StateMono.of_getTcb {st st' : SystemState} (h : ∀ t, st'.getTcb? t = st.getTcb? t) :
@@ -2279,6 +2312,7 @@ theorem StateMono.of_stateFields {st st' : SystemState}
       x'.cpuAffinity = x.cpuAffinity → x.StepMono x' := fun x x' e1 e2 e3 =>
     ⟨fun h => e1.trans h, fun h => by unfold TCB.Active; rw [e2]; exact h, e3⟩
   refine StateMono.of_pointwise (fun t x hx => ?_) (fun t x' hx' hc => ?_)
+    (fun t x' hx' hn => by have ht := h t; rw [hx', hn] at ht; cases ht)
   · have ht := h t
     rw [hx] at ht
     cases hT : st'.getTcb? t with
@@ -2368,18 +2402,20 @@ replaced by a monotone step of it, and a TCB it stores is coherent whenever the
 one it replaces was (or there was none). -/
 def objStateMono (old : Option KernelObject) (new : KernelObject) : Prop :=
   (∀ x, objTcb? old = some x → ∃ x', objTcb? (some new) = some x' ∧ x.StepMono x') ∧
-  (∀ x', objTcb? (some new) = some x' → (∀ x, objTcb? old = some x → x.Coherent) → x'.Coherent)
+  (∀ x', objTcb? (some new) = some x' → (∀ x, objTcb? old = some x → x.Coherent) → x'.Coherent) ∧
+  (objTcb? old = none → ∀ x', objTcb? (some new) = some x' → x'.ipcState = .ready)
 
 /-- A TCB stored over a TCB through a monotone step. -/
 theorem objStateMono_tcb {x x' : TCB} (h : x.StepMono x') :
     objStateMono (some (.tcb x)) (.tcb x') :=
   ⟨fun y hy => by cases hy; exact ⟨x', rfl, h⟩,
-    fun y hy hc => by cases hy; exact h.coherent (hc x rfl)⟩
+    fun y hy hc => by cases hy; exact h.coherent (hc x rfl), fun h => by cases h⟩
 
 /-- An object other than a TCB stored over an object other than a TCB. -/
 theorem objStateMono_nonTcb {old : Option KernelObject} {new : KernelObject}
     (hOld : objTcb? old = none) (hNew : objTcb? (some new) = none) : objStateMono old new :=
-  ⟨fun _ hy => (by rw [hOld] at hy; cases hy), fun _ hy _ => (by rw [hNew] at hy; cases hy)⟩
+  ⟨fun _ hy => (by rw [hOld] at hy; cases hy), fun _ hy _ => (by rw [hNew] at hy; cases hy),
+    fun _ _ hy => (by rw [hNew] at hy; cases hy)⟩
 
 /-- Closes `objStateMono (some (.tcb old)) (.tcb new)` the same way. -/
 macro "obj_state_mono" : tactic => `(tactic| first
@@ -2391,11 +2427,13 @@ macro "obj_state_mono" : tactic => `(tactic| first
 new slot possibly empty. -/
 def slotStateMono (old new : Option KernelObject) : Prop :=
   (∀ x, objTcb? old = some x → ∃ x', objTcb? new = some x' ∧ x.StepMono x') ∧
-  (∀ x', objTcb? new = some x' → (∀ x, objTcb? old = some x → x.Coherent) → x'.Coherent)
+  (∀ x', objTcb? new = some x' → (∀ x, objTcb? old = some x → x.Coherent) → x'.Coherent) ∧
+  (objTcb? old = none → ∀ x', objTcb? new = some x' → x'.ipcState = .ready)
 
 theorem slotStateMono.of_eq {old new : Option KernelObject} (h : new = old) :
     slotStateMono old new :=
-  by subst h; exact ⟨fun x hx => ⟨x, hx, ⟨id, id, rfl⟩⟩, fun x' hx' hc => hc x' hx'⟩
+  by subst h; exact ⟨fun x hx => ⟨x, hx, ⟨id, id, rfl⟩⟩, fun x' hx' hc => hc x' hx',
+    fun hn _ hx' => by rw [hn] at hx'; cases hx'⟩
 
 theorem slotStateMono.of_obj {old new : Option KernelObject} {o : KernelObject}
     (h : new = some o) (hm : objStateMono old o) : slotStateMono old new := by
@@ -2410,7 +2448,10 @@ theorem StateMono.of_slots {st st' : SystemState}
     (fun t x hx => by rw [getTcb?_eq_objTcb?] at hx ⊢; exact (h _).1 x hx)
     (fun t x' hx' hc => by
       rw [getTcb?_eq_objTcb?] at hx'
-      exact (h _).2 x' hx' fun x hx => hc x (by rw [getTcb?_eq_objTcb?]; exact hx))
+      exact (h _).2.1 x' hx' fun x hx => hc x (by rw [getTcb?_eq_objTcb?]; exact hx))
+    (fun t x' hx' hn => by
+      rw [getTcb?_eq_objTcb?] at hx' hn
+      exact (h _).2.2 hn x' hx')
 
 theorem StateMono.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
     (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k obj)
@@ -2426,12 +2467,16 @@ theorem StateMono.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Kernel
   have hold : ∀ t, k = t.toObjId → st.getTcb? t = objTcb? st.objects[k]? := fun t hk => by
     rw [getTcb?_eq_objTcb?, hk]
   refine StateMono.of_pointwise (fun t x hx => ?_) (fun t x' hx' hc => ?_)
+    (fun t x' hx' hn => ?_)
   · rw [key]; split
     · rename_i hk; exact hm.1 x (by rw [← hold t hk]; exact hx)
     · exact ⟨x, hx, ⟨id, id, rfl⟩⟩
   · rw [key] at hx'; split at hx'
-    · rename_i hk; exact hm.2 x' hx' (fun x h => hc x (by rw [hold t hk]; exact h))
+    · rename_i hk; exact hm.2.1 x' hx' (fun x h => hc x (by rw [hold t hk]; exact h))
     · exact hc x' hx'
+  · rw [key] at hx'; split at hx'
+    · rename_i hk; exact hm.2.2 (by rw [← hold t hk]; exact hn) x' hx'
+    · rw [hx'] at hn; cases hn
 
 /-- **seL4's `ct_not_in_q`, `ct_in_state activatable`, `valid_queues`'
 runnability and the idle-thread placement facts, on every core, with one core's
