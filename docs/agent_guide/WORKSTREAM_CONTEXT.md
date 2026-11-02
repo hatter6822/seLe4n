@@ -584,10 +584,15 @@ capability-only dispatch's object arms keep it, which under the syscall's
 premises is the census (`savedRegsKeptOffCore_of_savedRegsKept`).  **New code
 must assume it**: a new arm that writes only objects holding no registers
 ships a `savedRegsKept` frame, and one that writes registers names a thread no
-other core holds.  ZA6.24 to ZA6.26 census the dispatch's other arms (the
-final delete and revoke; the TCB and scheduling-context arms with the
-capability-only dispatch's census; the IPC and notification arms with the
-dispatch's census), ZA6.27
+other core holds.  Since `v0.36.187`, ZA6.24 censuses the final delete and
+revoke (`IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean`): each
+finalisation step writes only the thread it names (`savedRegsKeptExcept`),
+blocked in IPC or yield-linked, so free at the entry's start, and the retire
+removes only a thread no core holds.  **New code must assume it**: a new
+finalisation step states its `savedRegsKeptExcept` frame and the free-ness of
+any thread it writes.  ZA6.25 and ZA6.26 census the dispatch's other arms (the
+TCB and scheduling-context arms with the capability-only dispatch's census;
+the IPC and notification arms with the dispatch's census), ZA6.27
 derives the syscall's id and argument
 registers from the entry's saved frame, and ZA6.28 composes them into the
 syscall entry's and every other core's bank match.  ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,

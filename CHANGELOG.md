@@ -1,3 +1,59 @@
+## v0.36.187 — WS-ZA ZA6.24: the saved-register census over the final delete and revoke
+
+Proofs only.
+
+- **The step relation.** `savedRegsKeptExcept W pre post`: the step changes
+  the saved registers of no thread outside `W`, and a thread with no TCB keeps
+  none. It has `refl`, `trans` and `mono`, and is built per write (`updateTcb`,
+  `updateTcb_written`, `updateSchedContext`, `modifyObject`, `of_runLinks`,
+  `of_replyLinks`, `of_slots`, `of_slotsTcb`). ZA6.15's yield completion is
+  restated over it (`completeYieldFrom_savedRegsKeptExcept`), and
+  `savedRegsKeptOffCore_of_writes` takes it.
+- **The finalisation's writers.** Over the closed set
+  (`finaliseFinalObject_closed`), each step writes at most the thread it names:
+  - the endpoint waiter's cancel (`storeEndpointWaiterCancelled_savedRegsKeptExcept`)
+    and the blocked thread's endpoint cancel
+    (`storeEndpointBlockedCancelled_savedRegsKeptExcept`);
+  - every arm of the cancellation (`cancelIpcBlocking_savedRegsKeptExcept`),
+    the reply arm's loan return, frame splice, link teardown and waiter
+    unlink writing no register;
+  - the reply's caller cancel with its boost reverted
+    (`finaliseReplyCancel_savedRegsKeptExcept`);
+  - the yield completion. Every other step writes no saved register.
+- **Free-ness at the entry's start.** A thread blocked when it is written,
+  after steps that block no thread (`readyKeptStage`), was blocked at the
+  start, so current nowhere and resident nowhere
+  (`offCoreFree_of_blockedSince`, from `blockedCurrentNowhere` and
+  `blockedNotResident`). A thread with no TCB at the start counts as ready,
+  which the readiness frame keeps, so `residentsHaveTcbs` is not needed. The
+  yielder a context records was linked at the start
+  (`offCoreFree_of_yieldFromSince`, `yieldLinkedNotResident`). The whole
+  finalisation: `finaliseFinalObject_savedRegsWrittenFree`.
+- **The core release.** The retire keeps every thread's saved registers but
+  those of a thread it removes, which no core holds
+  (`retireFinalObject_savedRegs`, `offCoreFree_of_notHeld`). The delete, the
+  page teardown and the registration's release write none
+  (`of_cspaceDeleteSlot`, `of_vspaceRootOnlyWrite`,
+  `of_releaseFinalRegistration`), so a finalising delete writes only free
+  threads (`cspaceDeleteSlotFinalising_savedRegsWritten`).
+- **The chains.** `savedRegsKeptOffCore_extend` and `finaliseCensusChain`
+  give `cspaceDeleteSlotZombie_savedRegsKeptOffCore` and
+  `cspaceRevokeCdtFinalising_savedRegsKeptOffCore`, from `FinaliseCensusBase`
+  and the delete's bundle.
+- **Over the dispatch.** `SyscallId.capabilityObjectArm` and
+  `dispatchCapabilityOnly_objectArm_savedRegsKeptOffCore` move from
+  `SavedRegistersFrame.lean` and admit `.cspaceDelete` and `.cspaceRevoke`;
+  the theorem takes `finalisingDeleteBundle`, `blockedNotResident`,
+  `yieldLinksAgree` and `yieldLinkedNotResident`.
+- **Module.** `IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean`,
+  staged infrastructure (imported by `Platform/Staged.lean`, listed in
+  `scripts/staged_module_allowlist.txt`), with Tier 3 anchors on the
+  relations, the cancellation's frame, the finalisation, the retire, the
+  delete step, the chains, the classifier and the dispatch's delete arms.
+- **Docs.** ZA6.24 is recorded as landed in
+  `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`; the spec, the claim index,
+  `WORKSTREAM_CONTEXT.md` and `REGISTERED_DEBT.md` are updated.
+
 ## v0.36.186 — WS-ZA ZA6.23: the saved-register frame and the capability-only dispatch's object arms
 
 Proofs only.
