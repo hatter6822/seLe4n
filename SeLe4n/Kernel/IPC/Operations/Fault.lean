@@ -555,8 +555,10 @@ bundle transports across a restart by the one-TCB-rewrite lever rather than by
 a case analysis.  The `pendingMessage` the reply delivered is left as
 delivered — see `faultAbandon` for why that is right rather than merely
 convenient.  The store is the typed in-place rewrite `SystemState.updateTcb`
-(`v0.35.70`). -/
-def applyFaultRestart (st : SystemState) (faulted : SeLe4n.ThreadId)
+(`v0.35.70`).  WS-ZA ZA6.31: inlined, so a restart built from the thread's
+own context (the resume's, `retirePendingFaultForResume`) writes that
+context's words into the register file and builds no frame record. -/
+@[inline] def applyFaultRestart (st : SystemState) (faulted : SeLe4n.ThreadId)
     (frame : Architecture.FaultRestartFrame) : SystemState :=
   st.updateTcb faulted fun tcb => { tcb.withRestartFrame frame with pendingFault := none }
 
