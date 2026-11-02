@@ -1,3 +1,89 @@
+## v0.36.192 — WS-ZA ZA6.29: the `seL4_SchedContext_YieldTo` invocation
+
+The kernel now implements seL4-MCS's `seL4_SchedContext_YieldTo` as syscall
+43, a scheduling-context capability invocation with the write right. It
+follows `decodeSchedContext_YieldTo` and `invokeSchedContext_YieldTo`, and
+seL4's head enqueue (`tcbSchedEnqueue`) is added with it.
+
+- **The checks.** Each check is made before any write and is refused with
+  `.illegalState`, seL4's `seL4_IllegalOperation`. The executing core must
+  have a current thread, the context must be bound, its thread must not be
+  the caller, the thread's priority must be within the caller's MCP, and the
+  caller must have no pending yield (`schedContextYieldToOnCore_of_admitted`).
+- **The invocation** (`yieldToBound`). It completes the context's earlier
+  yield (`completeYieldFrom`) and resumes the context on its thread's home
+  core (`releasePlace`, seL4's `schedContext_resume`). A thread that is homed
+  on another core or ranks below the caller is requeued at its band's head
+  (`yieldToRequeue`), and the caller gets the consumed time now
+  (`setConsumed`). Otherwise the yield is linked (`setYieldLink`), the target
+  is dequeued, the caller is taken off its slot and enqueued at its band's
+  head and then the target ahead of it, and the core reschedules
+  (`yieldToLink`). The caller's consumed time is then written when it next
+  runs (`activateThreadOnCore`). A thread that is not schedulable is left
+  alone. No refill is written except by the resume's postpone.
+- **The head enqueue.** `RunQueue.insertHead` is the abstract head insert.
+  `runEnqueueHeadOnCore` (`Scheduler/RunQueueHeadEnqueue.lean`) is its
+  per-core link form, refined against it (`runEnqueueHeadOnCore_refined`) and
+  proven a run-queue stage (`RunQueueStage.runEnqueueHeadOnCore`).
+- **The stage over the caller's code.** The linked branch sets the caller's
+  yield-to code, so the dispatch chain's stage is now
+  `RunQueueEntryStageOn (currentObjOn st e)`. Its `live` field
+  (`YieldLinkLiveFrameOn L`, `YieldToCodesSetOnly L`) allows a step to set the
+  code of the executing core's current thread at the entry and of no other
+  thread. Every plain stage lifts by `.toOn`. ZA6.8's payoff is restated over
+  it (`yieldLinkedNotResident_of_liveOn`,
+  `settleThenActivateOnCore_linkedOnUnlinked`). The syscall entry's theorem
+  `syscallDispatchEntryState_preserves_yieldLinkedNotResident` moves to
+  `CurrentNotResidentElsewhere.lean` and takes `currentNotResidentElsewhere`:
+  the linked caller was current on the executing core, so it is resident on
+  no other core. The trap-frame save lemmas move to `RunQueueAgreement/Entry.lean`.
+- **Arm proofs.** These cover the IPC bundle
+  (`schedContextYieldToOnCore_preserves_ipcInvariantFull`), the entry stage
+  (`schedContextYieldToOnCore_runQueueEntryStage`), the lock footprint
+  (`schedLockSet_schedContextYieldToOnCore`, `lockSet_schedContextYieldTo`,
+  `schedLockSet_schedContextYieldToOnCore_coversWrites`) and slot confinement
+  to the executing core and the bound thread's home core
+  (`schedContextYieldToOnCore_confinedToCores`, `schedContextYieldToWriteSet`).
+  They also cover reschedule coverage
+  (`schedContextYieldToOnCore_stepCovers`), the saved-register census
+  (`schedContextYieldToOnCore_savedRegsWrittenFree`), the bank agreement
+  (`schedContextYieldToOnCore_bankAgree`), mapping records
+  (`schedContextYieldToOnCore_mappingStage`) and cross-core non-interference
+  (`schedContextYieldToOnCore_crossCoreNonInterference`, delegation-backed by
+  `syscallDelegates_schedContextYieldTo`). The cross-core inventory grows to
+  36 transitions, 29 live arms and 26 remote writers, and the enforcement
+  boundary to 52 entries.
+- **Rust ABI.** `SyscallId::SchedContextYieldTo = 43` (`COUNT` 43,
+  `ENCODING_BOUND` 44) is in `sele4n-types` and the HAL's decoder, with
+  `sched_context_yield_to` in `sele4n-sys` and the conformance tests.
+- **Tests.** `tests/SuspendResumeSuite.lean` SR-049 to SR-054 cover the linked
+  branch. They test its live link completed by the yielder's activation, by
+  the context's next yieldTo and by the context's delete. They also test the
+  five refusals and the two branches that return now.
+- **Fixtures.** Three fixtures change because the syscall count and the
+  inventories grew by one entry, and for no other reason:
+  - `main_trace_smoke.expected`: 43 `SyscallId` variants;
+  - `smp_information_flow.expected`: the cross-core inventory, the
+    enforcement boundary, the ABI's syscall count and the taint
+    classification's inert count;
+  - `syscall_return_shape.expected`, shared with the Rust conformance suite:
+    syscall 43 returns a message.
+
+  Each has a refreshed checksum. `setYieldLink` is registered in the
+  reply-stack write census: it writes the context's `yieldFromCode` and leaves
+  `scReply` untouched.
+- **Zero allocation.** The generated C showed that the requeue's guard (is
+  the target current on its home core) built a `some` cell and an `Option`
+  equality closure on every call. The compiled form `yieldToRequeueImpl`
+  compares the home core's `current` slot as its code instead, and it is
+  proven equal to the specification (`@[csimp]` `yieldToRequeue_eq_impl`).
+  The exerciser's `sched-context-yield-to` scenario checks that the call
+  succeeded with the consumed-info word in `x1`. It is pinned at 0
+  allocations at first call and in steady state. The scenario runs while the
+  partner is suspended, so it measures the branch that returns now for an
+  unschedulable target. The requeue and linked branches are covered by the
+  suite and the generated C, not by the exerciser.
+
 ## v0.36.191 — WS-ZA ZA6.28: every core's bank matches its current thread at every entry boundary, and the residency deferral writes no saved register
 
 Every core's register bank equals its current thread's saved context after

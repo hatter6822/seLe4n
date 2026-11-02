@@ -914,4 +914,144 @@ theorem schedContextConsumedOnCore_confinedToCores (s : SeLe4n.SchedContextId)
   rw [SystemState.setConsumed_eq_objects]
   exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq rfl rfl
 
+/-! ### The yieldTo invocation (WS-ZA ZA6.29) -/
+
+theorem runRemoveOnCore_confinedToCores (S : SystemState) (h : CoreId) (x : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores S (S.runRemoveOnCore h x) [h] :=
+  ⟨fun c hc => SystemState.runRemoveOnCore_runQueueOnCore_ne S h c x (fun e => hc (by simp [e])),
+   fun c _ => by simp, fun c _ => by simp, fun c _ => by simp, fun c _ => by simp,
+   fun c _ => by simp⟩
+
+theorem runDescheduleOnCore_confinedToCores (S : SystemState) (h : CoreId) (x : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores S (S.runDescheduleOnCore h x) [h] := by
+  refine ⟨fun c hc => ?_, fun c hc => ?_, fun c _ => by simp, fun c _ => by simp,
+    fun c _ => by simp, fun c _ => ?_⟩
+  · have hne : h ≠ c := fun e => hc (by simp [e])
+    simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne]
+  · rw [SystemState.runDescheduleOnCore_currentOnCore, if_neg (fun e => hc (by simp [e.1]))]
+  · unfold SystemState.runDescheduleOnCore
+    simp only [SystemState.runRemoveOnCore_machine]
+
+theorem runEnqueueHeadOnCore_confinedToCores (S : SystemState) (h : CoreId) (x : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    observableSlotsConfinedToCores S (S.runEnqueueHeadOnCore h x p) [h] := by
+  refine ⟨fun c hc => SystemState.runEnqueueHeadOnCore_runQueueOnCore_ne S h c x p
+      (fun e => hc (by simp [e])),
+    fun c _ => SystemState.runEnqueueHeadOnCore_currentOnCore _ _ _ _ _, ?_, ?_, ?_,
+    fun c _ => by simp⟩
+  all_goals intro c _; rw [SystemState.runEnqueueHeadOnCore_scheduler]; split <;> simp
+
+/-- **The unlinked branch's requeue** writes the target's home core alone. -/
+theorem yieldToRequeue_confinedToCores (S : SystemState) (home : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    observableSlotsConfinedToCores S (SchedContextOps.yieldToRequeue S home t p) [home] := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact observableSlotsConfinedToCores_refl S _
+  · have h := observableSlotsConfinedToCores_trans (runRemoveOnCore_confinedToCores S home t)
+      (runEnqueueHeadOnCore_confinedToCores _ home t p)
+    refine observableSlotsConfinedToCores_mono (fun c hc => by simpa using hc)
+      (observableSlotsConfinedToCores_then_flagOnly h ?_)
+    exact ⟨fun _ _ => by simp, fun _ _ => by simp, fun _ _ => by simp, fun _ _ => by simp,
+      fun _ _ => by simp, fun _ _ => by simp⟩
+
+/-- **The linked branch** writes the executing core alone: the link is an
+object write, and the dequeues, the head enqueues and the scheduling point are
+core `c`'s. -/
+theorem yieldToLink_confinedToCores (S : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority) :
+    observableSlotsConfinedToCores S (SchedContextOps.yieldToLink S c s caller t pC pT) [c] := by
+  have h0 : observableSlotsConfinedToCores S (setYieldLink S s caller) [] :=
+    observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (SystemState.setYieldLink_scheduler S s caller) (SystemState.setYieldLink_machine S s caller)
+  have h1 := observableSlotsConfinedToCores_trans
+    (observableSlotsConfinedToCores_trans
+      (observableSlotsConfinedToCores_trans
+        (observableSlotsConfinedToCores_trans
+          (runRemoveOnCore_confinedToCores (setYieldLink S s caller) c t)
+          (runDescheduleOnCore_confinedToCores _ c caller))
+        (runEnqueueHeadOnCore_confinedToCores _ c caller pC))
+      (runEnqueueHeadOnCore_confinedToCores _ c t pT))
+    (handleRescheduleSgiOnCore_confinedToCores _ _ c
+      (SchedContextOps.yieldToLink_sgi S c s caller t pC pT))
+  exact observableSlotsConfinedToCores_mono (fun d hd => by simpa using hd)
+    (observableSlotsConfinedToCores_widen_cons h0
+      (observableSlotsConfinedToCores_mono (fun d hd => by simpa using hd) h1))
+
+/-- The yieldTo resolves its thread's home core on the completion's state,
+which is the pre-state's: the completion writes yield links, a consumed count
+and return registers, never an affinity. -/
+theorem determineTargetCore_completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (completeYieldFrom st s) t = determineTargetCore st t :=
+  determineTargetCore_congr _ _ t
+    ((SystemState.completeYieldFrom_objectsAgreeOffYield st s hInv).getTcb?_map (·.cpuAffinity)
+      (fun _ => rfl) t)
+
+/-- A yieldTo that succeeds names its context's bound thread. -/
+theorem schedContextYieldToOnCore_boundThread {scObjId : SeLe4n.ObjId} {e : CoreId}
+    {st st' : SystemState}
+    (hStep : SchedContextOps.schedContextYieldToOnCore (SeLe4n.SchedContextId.ofObjId scObjId) e st
+      = .ok st') :
+    ∃ caller t, SchedContextOps.schedContextBoundThread? st scObjId = some t ∧
+      st' = SchedContextOps.yieldToBound st e (SeLe4n.SchedContextId.ofObjId scObjId) caller t := by
+  obtain ⟨caller, sc, t, -, -, -, hS, hk, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok hStep
+  refine ⟨caller, t, ?_, rfl⟩
+  unfold SchedContextOps.schedContextBoundThread?
+  rw [hS]
+  simp [SchedContext.boundThread, hk, SeLe4n.ThreadId.ofOptCode]
+
+/-- WS-ZA ZA6.29 (**the live `.schedContextYieldTo` bound**): a yieldTo writes
+no core outside the executing core and its context's thread's home core
+(`schedContextYieldToWriteSet`).  The completion, the resume and `setConsumed`
+write no observable slot; the requeue writes the home core; the link writes
+the executing core. -/
+theorem schedContextYieldToOnCore_confinedToCores (scObjId : SeLe4n.ObjId) (e : CoreId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextYieldToOnCore (SeLe4n.SchedContextId.ofObjId scObjId) e st
+      = .ok st') :
+    observableSlotsConfinedToCores st st' (schedContextYieldToWriteSet st scObjId e) := by
+  obtain ⟨caller, t, hB, rfl⟩ := schedContextYieldToOnCore_boundThread hStep
+  unfold schedContextYieldToWriteSet
+  rw [hB]
+  dsimp only
+  rw [← determineTargetCore_completeYieldFrom st (SeLe4n.SchedContextId.ofObjId scObjId) t hInv]
+  generalize SeLe4n.SchedContextId.ofObjId scObjId = s
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  have hPrefix : observableSlotsConfinedToCores st
+      ((completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s) [] :=
+    List.nil_append [] ▸ observableSlotsConfinedToCores_trans
+      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (SystemState.completeYieldFrom_scheduler st s) (by rw [SystemState.completeYieldFrom_eq_objects]))
+      (releasePlace_confinedToCores _ _ s)
+  generalize determineTargetCore (completeYieldFrom st s) t = home at hPrefix ⊢
+  generalize (completeYieldFrom st s).releasePlace home s = st2 at hPrefix ⊢
+  have hSet : ∀ X : SystemState, observableSlotsConfinedToCores st2 X [e, home] →
+      observableSlotsConfinedToCores st (setConsumed X s caller) [e, home] := fun X hX =>
+    observableSlotsConfinedToCores_then_flagOnly
+      (observableSlotsConfinedToCores_mono (fun d hd => by simpa using hd)
+        (observableSlotsConfinedToCores_trans hPrefix hX))
+      (by rw [SystemState.setConsumed_eq_objects]
+          exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq rfl rfl)
+  have hNone := hSet st2 (observableSlotsConfinedToCores_refl st2 _)
+  have hLink : ∀ pC pT, observableSlotsConfinedToCores st
+      (SchedContextOps.yieldToLink st2 e s caller t pC pT) [e, home] := fun pC pT =>
+    observableSlotsConfinedToCores_mono
+      (fun d hd => by simp only [List.nil_append, List.mem_singleton] at hd; simp [hd])
+      (observableSlotsConfinedToCores_trans hPrefix (yieldToLink_confinedToCores st2 e s caller t pC pT))
+  split
+  · exact hNone
+  · split
+    · exact hNone
+    · split
+      · exact hNone
+      · split
+        · split
+          · exact hSet _ (observableSlotsConfinedToCores_mono (fun d hd => by simp [List.mem_singleton.mp hd])
+              (yieldToRequeue_confinedToCores st2 home t _))
+          · exact hLink _ _
+        · exact hNone
+
 end SeLe4n.Kernel

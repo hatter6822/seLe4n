@@ -1590,6 +1590,9 @@ const YIELD: u64 = 41;
 /// `SchedContextConsumed` (`SyscallId` 42, WS-ZA ZA6.9).
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_CONSUMED: u64 = 42;
+/// `SchedContextYieldTo` (`SyscallId` 43, WS-ZA ZA6.29).
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_YIELD_TO: u64 = 43;
 /// **WS-ZA ZA6.2**: the steps of a scenario that are not syscalls, by a
 /// `syscall` no `SyscallId` takes.  A timer tick is entered as
 /// `handle_irq_per_core`'s timer branch enters it and measured as the kernel
@@ -2058,6 +2061,23 @@ const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
         primed: None,
         blocks: false,
         returns: Some((CONSUMED_INFO_WORD, reading)),
+    }
+}
+
+/// The yieldTo invocation on the context capability (WS-ZA ZA6.29): it must
+/// succeed and return the consumed time now, with `x1` the consumed-info word
+/// (`setConsumed`'s, as the Consumed invocation's).
+#[cfg(feature = "hw_target")]
+const fn yield_to(name: &'static str) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall: SCHED_CONTEXT_YIELD_TO,
+        cptr: SCHED_CONTEXT_CAP,
+        msg_len: 0,
+        msg: [0; 4],
+        primed: None,
+        blocks: false,
+        returns: Some((CONSUMED_INFO_WORD, None)),
     }
 }
 
@@ -2633,6 +2653,11 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 6] = [
             SCHED_CONTEXT_CAP,
             [PARTNER_TCB_CAP, 0, 0, 0],
         ),
+        // WS-ZA ZA6.29: the yieldTo invocation on the context bound to the
+        // partner, which is not yet resumed: the checks pass, the context's
+        // resume places nothing, and an unschedulable target is neither
+        // requeued nor linked, so the consumed time returns at once.
+        yield_to("sched-context-yield-to"),
         invocation("tcb-resume-bound", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("tcb-suspend-bound", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
         invocation(

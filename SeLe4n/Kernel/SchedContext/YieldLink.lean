@@ -160,6 +160,18 @@ def completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId) : SystemSta
     | k + 1 => cancelYieldFrom (setConsumed st s ⟨k⟩) s
   | none => st
 
+/-- **The link seL4-MCS's `invokeSchedContext_YieldTo` sets** on its linked
+branch (`NODE_STATE(ksCurThread)->tcbYieldTo = sc; sc->scYieldFrom =
+NODE_STATE(ksCurThread)`): context `s` names `caller` as its yielder, then
+`caller` names `s` as the context it yielded to, each in its slot.  The
+invocation's checks keep both ends clear before it (the caller has no pending
+yield, and the context's earlier yield is completed first), so the link it sets
+is the only one either end holds. -/
+def setYieldLink (st : SystemState) (s : SeLe4n.SchedContextId) (caller : SeLe4n.ThreadId) :
+    SystemState :=
+  (st.updateSchedContext s (fun sc => { sc with yieldFromCode := caller.val + 1 })).updateTcb
+    caller (fun t => { t with yieldToCode := s.val + 1 })
+
 /-- **The completion half of seL4-MCS's `unbindFromSC`**: once a thread is
 unbound from the context it held, the yield that context records is completed
 (`if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`,
@@ -318,6 +330,21 @@ theorem completeHeldYield_tlbShootdown (st : SystemState) (held : Nat) :
 theorem cancelYieldTo_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cancelYieldTo st tid).tlbShootdown = st.tlbShootdown := by
   rw [cancelYieldTo_eq_objects]
+
+/-- The link's set writes the object store alone. -/
+theorem setYieldLink_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) :
+    setYieldLink st s caller = { st with objects := (setYieldLink st s caller).objects } := by
+  unfold setYieldLink
+  rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
+
+theorem setYieldLink_scheduler (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) : (setYieldLink st s caller).scheduler = st.scheduler := by
+  rw [setYieldLink_eq_objects]
+
+theorem setYieldLink_machine (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) : (setYieldLink st s caller).machine = st.machine := by
+  rw [setYieldLink_eq_objects]
 
 theorem cancelYieldTo_machine (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cancelYieldTo st tid).machine = st.machine := by

@@ -3197,6 +3197,99 @@ theorem RunQueueEntryStage.trans {st st' st'' : SystemState}
     let ⟨h', r'⟩ := h1.1 h r
     h2.2 h' r' r'' (h1.2 h r r' d)⟩
 
+/-- WS-ZA ZA6.29: **a link stage that links only threads of `L`**: the link
+stage with its `live` frame let through the threads a step may link
+(`YieldLinkLiveFrameOn`).  The syscall entry's stage is one with `L` the
+executing core's current thread, which the yieldTo invocation links; every
+link stage is one for any `L` (`RunQueueLinkStage.toOn`). -/
+structure RunQueueLinkStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState) : Prop where
+  links : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
+  tables : st.objects.invExt → st.runQueueRefined → st.tableReferencesRecorded →
+    st'.tableReferencesRecorded
+  release : st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
+    st'.releaseQueueRefined
+  refills : ∀ S, st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
+    st.refillsSoundExcept S → st'.refillsSoundExcept S
+  yield : st.objects.invExt → st.runQueueRefined → st.yieldLinksAgree → st'.yieldLinksAgree
+  live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrameOn L st' st
+
+theorem RunQueueLinkStage.toOn {st st' : SystemState} (h : RunQueueLinkStage st st')
+    (L : SeLe4n.ObjId → Prop) : RunQueueLinkStageOn L st st' :=
+  ⟨h.links, h.tables, h.release, h.refills, h.yield, fun h' r => (h.live h' r).toOn L⟩
+
+theorem RunQueueLinkStageOn.trans {L : SeLe4n.ObjId → Prop} {st st' st'' : SystemState}
+    (h1 : RunQueueLinkStageOn L st st') (h2 : RunQueueLinkStageOn L st' st'') :
+    RunQueueLinkStageOn L st st'' :=
+  ⟨fun h r => (h1.links h r).elim h2.links,
+    fun h r t => let ⟨h', r'⟩ := h1.links h r; h2.tables h' r' (h1.tables h r t),
+    fun h r q => let ⟨h', r'⟩ := h1.links h r; h2.release h' r' (h1.release h r q),
+    fun S h r q s => let ⟨h', r'⟩ := h1.links h r
+      h2.refills S h' r' (h1.release h r q) (h1.refills S h r q s),
+    fun h r y => let ⟨h', r'⟩ := h1.links h r; h2.yield h' r' (h1.yield h r y),
+    fun h r => let ⟨h', r'⟩ := h1.links h r; (h2.live h' r').trans (h1.live h r)⟩
+
+theorem RunQueueLinkStageOn.mono {L L' : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (hL : ∀ k, L k → L' k) (h : RunQueueLinkStageOn L st st') : RunQueueLinkStageOn L' st st' :=
+  ⟨h.links, h.tables, h.release, h.refills, h.yield, fun h' r => (h.live h' r).mono hL⟩
+
+/-- WS-ZA ZA6.29: **a whole kernel entry that links only threads of `L`**. -/
+def RunQueueEntryStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState) : Prop :=
+  RunQueueLinkStageOn L st st' ∧
+  (st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
+    st.currentDequeuedUnique → st'.currentDequeuedUnique)
+
+/-- A kernel entry that links no thread links only threads of any `L`. -/
+theorem RunQueueEntryStage.toOn {st st' : SystemState} (h : RunQueueEntryStage st st')
+    (L : SeLe4n.ObjId → Prop) : RunQueueEntryStageOn L st st' :=
+  ⟨h.1.toOn L, h.2⟩
+
+theorem RunQueueEntryStageOn.trans {L : SeLe4n.ObjId → Prop} {st st' st'' : SystemState}
+    (h1 : RunQueueEntryStageOn L st st') (h2 : RunQueueEntryStageOn L st' st'') :
+    RunQueueEntryStageOn L st st'' :=
+  ⟨h1.1.trans h2.1, fun h r r'' d =>
+    let ⟨h', r'⟩ := h1.1.links h r
+    h2.2 h' r' r'' (h1.2 h r r' d)⟩
+
+theorem RunQueueEntryStageOn.mono {L L' : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (hL : ∀ k, L k → L' k) (h : RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L' st st' :=
+  ⟨h.1.mono hL, h.2⟩
+
+/-- The link half and the placement half from a state with the three
+properties. -/
+theorem RunQueueEntryStageOn.of_inv {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (hL : RunQueueLinkStageOn L st st')
+    (H : st.objects.invExt → st.runQueueRefined → st.currentDequeuedUnique →
+      RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L st st' :=
+  ⟨hL, fun h r r' d => (H h r d).2 h r r' d⟩
+
+/-- An entry that links only threads of `L` from a state whose object store
+keeps its invariant. -/
+theorem RunQueueEntryStageOn.of_invExt {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (H : st.objects.invExt → RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L st st' :=
+  ⟨⟨fun h r => (H h).1.links h r, fun h r t => (H h).1.tables h r t,
+      fun h r q => (H h).1.release h r q, fun S h r q s => (H h).1.refills S h r q s,
+      fun h r y => (H h).1.yield h r y, fun h r => (H h).1.live h r⟩,
+    fun h r r' d => (H h).2 h r r' d⟩
+
+/-- An entry that links only threads of `L` keeps the table references
+recorded. -/
+theorem RunQueueEntryStageOn.tableReferencesRecorded {L : SeLe4n.ObjId → Prop}
+    {st st' : SystemState} (h : RunQueueEntryStageOn L st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hT : st.tableReferencesRecorded) : st'.tableReferencesRecorded :=
+  h.1.tables hInv hR hT
+
+/-- WS-ZA ZA6.29: core `e`'s current thread at `st`, as an object slot: the
+thread the yieldTo invocation on `e` links. -/
+def currentObjOn (st : SystemState) (e : CoreId) : SeLe4n.ObjId → Prop :=
+  fun k => ∃ t, st.scheduler.currentOnCore e = some t ∧ t.toObjId = k
+
+/-- The executing core's current thread is read off its slot: a step keeping
+that slot keeps it. -/
+theorem currentObjOn_congr {st st' : SystemState} {e : CoreId}
+    (h : st'.scheduler.currentOnCore e = st.scheduler.currentOnCore e) :
+    currentObjOn st' e = currentObjOn st e := by
+  unfold currentObjOn; rw [h]
+
 /-- **A scheduling point**: steps inside core `c`'s point, then the dispatch
 that closes it, make a kernel entry's worth of steps. -/
 theorem RunQueueWindowStage.dispatch {p : SchedPoint} {st st' st'' : SystemState}

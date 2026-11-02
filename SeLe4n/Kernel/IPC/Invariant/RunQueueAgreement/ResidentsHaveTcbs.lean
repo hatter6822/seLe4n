@@ -456,10 +456,11 @@ theorem syscallDispatchEntryState_preserves_residentsHaveTcbs (ctx : LabelingCon
   have B := (stageCallerReturnFor_runQueueStage ((Architecture.IpcBufferRead.syncUserWords
     (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
     st' e outcome)
-  have ABC := A.trans (B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
+  have ABC := A.trans ((B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
-      bytes n).scheduler.currentOnCore e) _ e))
-  have Full := hS.entry.trans (ABC.trans (settleThenActivateOnCore_runQueueEntryStage _ e))
+      bytes n).scheduler.currentOnCore e) _ e)).toOn _)
+  have Full := (hS.entry.toOn _).trans (ABC.trans
+    ((settleThenActivateOnCore_runQueueEntryStage _ e).toOn _))
   have hInvM := (ABC.1.links hInvS hRS).1
   obtain ⟨hDc, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInvS hB hPlaced hAwayCur hD
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e

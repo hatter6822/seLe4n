@@ -74,6 +74,37 @@ theorem schedContextConsumedOnCore_mappingStage {s : SeLe4n.SchedContextId} {c :
   obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
   exact setConsumed_mappingStage st s caller
 
+/-- WS-ZA ZA6.29: a head enqueue writes run-queue links alone. -/
+theorem runEnqueueHeadOnCore_mappingStage (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : MappingStage st (st.runEnqueueHeadOnCore c t p) :=
+  MappingStage.of_objectsAgreeOffRunLinks (SystemState.runEnqueueHeadOnCore_objects_invExt st c t p)
+    (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
+
+/-- WS-ZA ZA6.29: the yield link rewrites a context and a thread in place. -/
+theorem setYieldLink_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) : MappingStage st (setYieldLink st s caller) :=
+  (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)
+
+/-- WS-ZA ZA6.29: the requeue at the target's band head, and its flag. -/
+theorem yieldToRequeue_mappingStage (st : SystemState) (home : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : MappingStage st (SchedContextOps.yieldToRequeue st home t p) := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact MappingStage.refl _
+  · exact ((runRemoveOnCore_mappingStage _ _ _).trans (runEnqueueHeadOnCore_mappingStage _ _ _ _)).trans
+      (MappingStage.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
+
+/-- WS-ZA ZA6.29: the linked branch: the link, the dequeue, the two head
+enqueues and the core's scheduling point. -/
+theorem yieldToLink_mappingStage (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority) :
+    MappingStage st (SchedContextOps.yieldToLink st c s caller t pC pT) := by
+  unfold SchedContextOps.yieldToLink SchedContextOps.yieldToLinkPrefix
+  exact (((((setYieldLink_mappingStage _ _ _).trans (runRemoveOnCore_mappingStage _ _ _)).trans
+    (runDescheduleOnCore_mappingStage _ _ _)).trans (runEnqueueHeadOnCore_mappingStage _ _ _ _)).trans
+    (runEnqueueHeadOnCore_mappingStage _ _ _ _)).trans
+    (handleRescheduleSgiOnCore_mappingStage (handleRescheduleSgiOnCore_eq_state _ c))
+
 /-- WS-ZA ZA6.6: the cancel from a context's end. -/
 theorem cancelYieldFrom_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId) :
     MappingStage st (cancelYieldFrom st s) := by
@@ -383,6 +414,32 @@ theorem releasePlace_mappingStage (st : SystemState) (c : CoreId) (scId : SeLe4n
   MappingStage.of_objectsAgreeOffSchedulerLinks
     (fun h => SystemState.releasePlace_objects_invExt st c scId h)
     (.of_releaseLinks (SystemState.releasePlace_agree st c scId))
+
+/-- WS-ZA ZA6.29: **the yieldTo invocation keeps every mapping record**: the
+completion, the resume's release, `setConsumed`, the requeue and the linked
+branch each rewrite threads, a context or run-queue links in place. -/
+theorem schedContextYieldToOnCore_mappingStage {s : SeLe4n.SchedContextId} {c : CoreId}
+    {st st' : SystemState} (h : SchedContextOps.schedContextYieldToOnCore s c st = .ok st') :
+    MappingStage st st' := by
+  obtain ⟨caller, -, t, -, -, -, -, -, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  refine ((completeYieldFrom_mappingStage st s).trans (releasePlace_mappingStage
+    (completeYieldFrom st s) (determineTargetCore (completeYieldFrom st s) t) s)).trans ?_
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
+    s = st2
+  split
+  · exact setConsumed_mappingStage _ _ _
+  · split
+    · exact setConsumed_mappingStage _ _ _
+    · split
+      · exact setConsumed_mappingStage _ _ _
+      · split
+        · split
+          · exact (yieldToRequeue_mappingStage _ _ _ _).trans (setConsumed_mappingStage _ _ _)
+          · exact yieldToLink_mappingStage _ _ _ _ _ _ _
+        · exact setConsumed_mappingStage _ _ _
 
 /-- A scheduling context rewritten through its witnessed lookup. -/
 theorem MappingStage.rewriteObject_schedContext {st : SystemState} {scId : SeLe4n.SchedContextId}

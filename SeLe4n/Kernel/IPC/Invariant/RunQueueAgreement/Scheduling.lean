@@ -1811,4 +1811,267 @@ theorem schedContextUnbindOnCore_runQueueEntryStage {vScId : SeLe4n.ValidObjId}
       (priorityRescheduleOnCore_runQueueEntryStage h)
 
 
+/-! ## The yieldTo invocation (WS-ZA ZA6.29) -/
+
+/-- **The resume's placement of a bound context is a stage**: free for core
+`c`, the context is placed by its refills (`closePlace`); held on another core's
+queue, the placement writes nothing. -/
+theorem releasePlace_runQueueStage_of_bound (X : SystemState) (c : Concurrency.CoreId)
+    (s : SeLe4n.SchedContextId) {u : SchedContext} (hXs : X.getSchedContext? s = some u)
+    (hB : u.boundThread.isSome = true) : RunQueueStage X (X.releasePlace c s) := by
+  cases hF : X.releaseFreeFor c s
+  · rw [SystemState.releasePlace_of_not_free hF]; exact .refl X
+  · exact SystemState.RunQueueFrameStage.closePlace ((RunQueueStage.refl X).toFrame _)
+      fun S hs _ _ _ hS _ => SystemState.closePlace_facts_bound hXs (hS.1 s u hs hXs) hB hF
+
+/-- **The unlinked branch's requeue is a kernel entry**: a target running on its
+home core is left; any other leaves its home core's queue and joins its band's
+head there, current on no core because a current thread is homed on the core it
+runs on. -/
+theorem yieldToRequeue_runQueueEntryStage (st : SystemState) (home : Concurrency.CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hRun : st.runnable t)
+    (hHome : st.homedOn t home) :
+    SystemState.RunQueueEntryStage st (SchedContextOps.yieldToRequeue st home t p) := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact (RunQueueStage.refl st).entry
+  · rename_i hNot
+    have hR := RunQueueStage.runRemoveOnCore st home t
+    refine SystemState.RunQueueEntryStage.of_cond ((hR.1.trans
+      (SystemState.RunQueueLinkStage.runEnqueueHeadOnCore _ home t p)).trans
+      (SystemState.RunQueueStage.markReschedulePendingOnCore _ home).1) fun d => ?_
+    refine (RunQueueStage.then_enqueueHead (p := p) hR ?_ hRun ?_).trans
+      (SystemState.RunQueueStage.markReschedulePendingOnCore _ home)
+    · intro c' hc'
+      have h' : st.scheduler.currentOnCore c' = some t := by
+        simpa only [SchedulerState.currentOnCore, SystemState.runRemoveOnCore_current] using hc'
+      obtain ⟨x, hx, -⟩ := hRun
+      have he : c' = home := (d.currentHome c' t h' x hx).symm.trans (hHome x hx)
+      exact hNot (he ▸ h')
+    · exact (SystemState.StateMono.of_agreeOffRunLinks
+        (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st home t)).homedOn hRun.activeAt hHome
+
+
+/-- **The linked branch is a kernel entry that links its caller alone**: the
+link set with both ends clear (`setYieldLink_runQueueEntryStageOn`), the target
+off core `c`'s queue, the caller off `c`'s slot and at its band's head, the
+target at its band's head — each current on no core when enqueued, the caller
+having left its slot and the target homed on `c` — and `c`'s reschedule. -/
+theorem yieldToLink_runQueueEntryStageOn {L : SeLe4n.ObjId → Prop} (st : SystemState)
+    (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId) (caller t : SeLe4n.ThreadId)
+    (pC pT : SeLe4n.Priority) (hL : L caller.toObjId)
+    (hCur : st.scheduler.currentOnCore c = some caller) (hNe : t ≠ caller)
+    (hRun : st.runnable t) (hHome : st.homedOn t c)
+    (hClear : st.objects.invExt → ∃ sc x, st.getSchedContext? s = some sc ∧
+      sc.yieldFromCode = 0 ∧ st.getTcb? caller = some x ∧ x.yieldToCode = 0) :
+    SystemState.RunQueueEntryStageOn L st (SchedContextOps.yieldToLink st c s caller t pC pT) := by
+  refine SystemState.RunQueueEntryStageOn.of_invExt fun hInv => ?_
+  have hY := SystemState.setYieldLink_runQueueEntryStageOn st s caller hL hClear
+  have hM : SystemState.StateMono st (setYieldLink st s caller) :=
+    SystemState.StateMono.of_stateFields fun u =>
+      (SystemState.setYieldLink_objectsAgreeOffYield st s caller hInv).getTcb?_map _ (t := u)
+  have hSch := SystemState.setYieldLink_scheduler st s caller
+  have hE := handleRescheduleSgiOnCore_runQueueEntryStage
+    (SchedContextOps.yieldToLink_sgi st c s caller t pC pT)
+  unfold SchedContextOps.yieldToLink at hE ⊢
+  unfold SchedContextOps.yieldToLinkPrefix at hE ⊢
+  generalize setYieldLink st s caller = S at hY hM hSch hE ⊢
+  have hCurS : S.scheduler.currentOnCore c = some caller := by rw [hSch]; exact hCur
+  have hRunS : S.runnable t := hM.runnable hRun
+  have hHomeS : S.homedOn t c := hM.homedOn hRun.activeAt hHome
+  have hR := RunQueueStage.runRemoveOnCore S c t
+  have hD := RunQueueStage.runDescheduleOnCore (S.runRemoveOnCore c t) c caller
+  have hCur1 : (S.runRemoveOnCore c t).scheduler.currentOnCore c = some caller := by
+    simpa only [SchedulerState.currentOnCore, SystemState.runRemoveOnCore_current] using hCurS
+  have hCur2 := SystemState.runDescheduleOnCore_currentOnCore_of_current _ c caller hCur1
+  have hM2 : SystemState.StateMono S ((S.runRemoveOnCore c t).runDescheduleOnCore c caller) :=
+    (SystemState.StateMono.of_agreeOffRunLinks
+      (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks S c t)).trans
+      (SystemState.StateMono.of_agreeOffRunLinks
+        (SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks _ c caller))
+  have hM3 : SystemState.StateMono S
+      (((S.runRemoveOnCore c t).runDescheduleOnCore c caller).runEnqueueHeadOnCore c caller pC) :=
+    hM2.trans (SystemState.StateMono.of_agreeOffRunLinks
+      (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ c caller pC))
+  refine hY.trans ((SystemState.RunQueueEntryStage.trans ?_ hE).toOn L)
+  refine SystemState.RunQueueEntryStage.of_cond (((hR.1.trans hD.1).trans
+    (SystemState.RunQueueLinkStage.runEnqueueHeadOnCore _ c caller pC)).trans
+    (SystemState.RunQueueLinkStage.runEnqueueHeadOnCore _ c t pT)) fun d => ?_
+  have hRunC : S.runnable caller := d.runnable hCurS
+  have h3 := RunQueueStage.then_enqueueHead (p := pC) (hR.trans hD) (t := caller)
+    (fun c' h => by
+      rw [hCur2] at h
+      split at h
+      · cases h
+      · rename_i hc
+        apply hc
+        have h' : S.scheduler.currentOnCore c' = some caller := by
+          simpa only [SchedulerState.currentOnCore, SystemState.runRemoveOnCore_current] using h
+        exact (d.current c caller hCurS).2.1 c' h')
+    hRunC (hM2.homedOn hRunC.activeAt (d.currentHome c caller hCurS))
+  refine RunQueueStage.then_enqueueHead (p := pT) h3 ?_ hRunS (hM3.homedOn hRunS.activeAt hHomeS)
+  intro c' h
+  rw [SystemState.runEnqueueHeadOnCore_currentOnCore, hCur2] at h
+  split at h
+  · cases h
+  · rename_i hc
+    have h' : S.scheduler.currentOnCore c' = some t := by
+      simpa only [SchedulerState.currentOnCore, SystemState.runRemoveOnCore_current] using h
+    obtain ⟨x, hx, -⟩ := hRunS
+    exact hc ((d.currentHome c' t h' x hx).symm.trans (hHomeS x hx))
+
+
+/-- WS-ZA ZA6.29 (**the yieldTo invocation is a kernel entry that links the
+executing core's current thread alone**): the completion of the context's
+earlier yield, the resume's placement of the bound context, then the requeue and
+the consumed time, the link (which links the caller, current on `c`), or the
+consumed time alone. -/
+theorem schedContextYieldToOnCore_runQueueEntryStage {s : SeLe4n.SchedContextId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : SchedContextOps.schedContextYieldToOnCore s c st = .ok st') :
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st c) st st' := by
+  obtain ⟨caller, sc0, t, -, cT0, hCur, hS, hb, hNe, -, hC, -, hY, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  refine SystemState.RunQueueEntryStageOn.of_invExt fun hInv => ?_
+  have hL : SystemState.currentObjOn st c caller.toObjId := ⟨caller, hCur, rfl⟩
+  have hA := SystemState.completeYieldFrom_objectsAgreeOffYield st s hInv
+  obtain ⟨u, hu, hub⟩ : ∃ u, (completeYieldFrom st s).getSchedContext? s = some u ∧
+      u.boundThreadCode = t.val + 1 := by
+    have e := hA.getSchedContext?_map (·.boundThreadCode) (fun _ => rfl) s
+    rw [hS] at e
+    cases h1 : (completeYieldFrom st s).getSchedContext? s with
+    | none => rw [h1] at e; cases e
+    | some u => rw [h1] at e; exact ⟨u, rfl, (Option.some.inj e).trans hb⟩
+  have hP := releasePlace_runQueueStage_of_bound (completeYieldFrom st s)
+    (determineTargetCore (completeYieldFrom st s) t) s hu
+    (by simp [SchedContext.boundThread, SeLe4n.ThreadId.ofOptCode, hub])
+  have hAg := SystemState.releasePlace_agree (completeYieldFrom st s)
+    (determineTargetCore (completeYieldFrom st s) t) s
+  have hCur2 : ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s).scheduler.currentOnCore c =
+      some caller := by
+    rw [(SystemState.releasePlace_releaseOnlyWrite _ _ _).currentOnCore c,
+      SystemState.completeYieldFrom_scheduler]
+    exact hCur
+  have hHome2 : ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s).homedOn t
+      (determineTargetCore (completeYieldFrom st s) t) :=
+    fun x hx => homedOn_determineTargetCore _ t x (by rw [← hAg.getTcb? t]; exact hx)
+  have hY2 : ∀ x, ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s).getTcb? caller = some x →
+      x.yieldToCode = 0 := fun x hx =>
+    SystemState.completeYieldFrom_yieldToCode_zero st s hInv caller
+      (fun y hy => by rw [hC] at hy; cases hy; exact hY) (by rw [← hAg.getTcb? caller]; exact hx)
+  have hF2 : ∀ x, ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s).getSchedContext? s = some x →
+      x.yieldFromCode = 0 := fun x hx => by
+    have e := hAg.getSchedContext?_map (·.yieldFromCode) (fun _ => rfl) s
+    rw [hx, hu] at e
+    have e' : x.yieldFromCode = u.yieldFromCode := Option.some.inj e
+    rw [e']
+    exact SystemState.completeYieldFrom_yieldFromCode_self st s hInv hu
+  refine (((SystemState.completeYieldFrom_runQueueStage st s).trans hP).entry.toOn _).trans ?_
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  generalize determineTargetCore (completeYieldFrom st s) t = home at hCur2 hHome2 hY2 hF2 ⊢
+  generalize (completeYieldFrom st s).releasePlace home s = st2 at hCur2 hHome2 hY2 hF2 ⊢
+  have hSet : ∀ X : SystemState,
+      SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st c) X (setConsumed X s caller) :=
+    fun X => (SystemState.setConsumed_runQueueStage X s caller).entry.toOn _
+  split
+  · exact hSet _
+  · rename_i tT hT
+    split
+    · exact hSet _
+    · rename_i cT hCT
+      split
+      · exact hSet _
+      · rename_i sc hSc
+        split
+        · rename_i hSched
+          simp only [Bool.and_eq_true] at hSched
+          have hRunT : st2.runnable t := ⟨tT, hT, TCB.runnable_of_isRunnable hSched.1.1⟩
+          split
+          · exact ((yieldToRequeue_runQueueEntryStage st2 home t _ hRunT hHome2).toOn _).trans
+              (hSet _)
+          · rename_i hLink
+            simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq, not_or,
+              Classical.not_not] at hLink
+            have hc : home = c := Fin.ext hLink.1
+            subst hc
+            exact yieldToLink_runQueueEntryStageOn st2 home s caller t _ _ hL hCur2 hNe hRunT
+              hHome2 (fun _ => ⟨sc, cT, hSc, hF2 sc hSc, hCT, hY2 cT hCT⟩)
+        · exact hSet _
+
+
+/-- The requeue writes run-queue links and core `home`'s flag alone: every
+thread keeps its state fields. -/
+theorem yieldToRequeue_stateMono (S : SystemState) (home : Concurrency.CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    SystemState.StateMono S (SchedContextOps.yieldToRequeue S home t p) := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact .refl S
+  · exact ((SystemState.StateMono.of_agreeOffRunLinks
+      (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks S home t)).trans
+      (SystemState.StateMono.of_agreeOffRunLinks
+        (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ home t p))).trans
+      (SystemState.StateMono.of_getTcb fun _ => rfl)
+
+/-- The requeue keeps the link invariants. -/
+theorem yieldToRequeue_links (S : SystemState) (home : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hI : S.objects.invExt) (hR : S.runQueueRefined) :
+    (SchedContextOps.yieldToRequeue S home t p).objects.invExt ∧
+      (SchedContextOps.yieldToRequeue S home t p).runQueueRefined := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact ⟨hI, hR⟩
+  · exact (((RunQueueStage.runRemoveOnCore S home t).1.trans
+      (SystemState.RunQueueLinkStage.runEnqueueHeadOnCore _ home t p)).trans
+      (SystemState.RunQueueStage.markReschedulePendingOnCore _ home).1).links hI hR
+
+/-- The link's set writes the two link ends alone: it keeps the link
+invariants. -/
+theorem setYieldLink_links (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) (hI : st.objects.invExt) (hR : st.runQueueRefined) :
+    (setYieldLink st s caller).objects.invExt ∧ (setYieldLink st s caller).runQueueRefined := by
+  have hA := SystemState.setYieldLink_objectsAgreeOffYield st s caller hI
+  have hS := SystemState.setYieldLink_scheduler st s caller
+  have hL : ∀ c t, (setYieldLink st s caller).runLinkOn c t = st.runLinkOn c t := by
+    intro c t
+    have e := hA.getTcb?_map (fun x => x.runLinkOn c) (t := t)
+    unfold SystemState.runLinkOn
+    cases h1 : (setYieldLink st s caller).getTcb? t <;> cases h2 : st.getTcb? t <;>
+      rw [h1, h2] at e <;> first | rfl | cases e | exact Option.some.inj e
+  exact ⟨SchedContextOps.setYieldLink_objects_invExt st s caller hI,
+    SystemState.runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) hR⟩
+
+/-- The linked branch's writes before its scheduling point keep the link
+invariants and every thread's state fields. -/
+theorem yieldToLinkPrefix_links (st : SystemState) (c : Concurrency.CoreId)
+    (s : SeLe4n.SchedContextId) (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority)
+    (hI : st.objects.invExt) (hR : st.runQueueRefined) :
+    ((SchedContextOps.yieldToLinkPrefix st c s caller t pC pT).objects.invExt ∧
+      (SchedContextOps.yieldToLinkPrefix st c s caller t pC pT).runQueueRefined) ∧
+    SystemState.StateMono st (SchedContextOps.yieldToLinkPrefix st c s caller t pC pT) := by
+  have hY := setYieldLink_links st s caller hI hR
+  have hM : SystemState.StateMono st (setYieldLink st s caller) :=
+    SystemState.StateMono.of_stateFields fun u =>
+      (SystemState.setYieldLink_objectsAgreeOffYield st s caller hI).getTcb?_map _ (t := u)
+  unfold SchedContextOps.yieldToLinkPrefix
+  generalize setYieldLink st s caller = Y at hY hM
+  refine ⟨((((RunQueueStage.runRemoveOnCore Y c t).1.trans
+    (RunQueueStage.runDescheduleOnCore _ c caller).1).trans
+    (SystemState.RunQueueLinkStage.runEnqueueHeadOnCore _ c caller pC)).trans
+    (SystemState.RunQueueLinkStage.runEnqueueHeadOnCore _ c t pT)).links hY.1 hY.2, ?_⟩
+  exact hM.trans ((((SystemState.StateMono.of_agreeOffRunLinks
+    (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks Y c t)).trans
+    (SystemState.StateMono.of_agreeOffRunLinks
+      (SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks _ c caller))).trans
+    (SystemState.StateMono.of_agreeOffRunLinks
+      (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ c caller pC))).trans
+    (SystemState.StateMono.of_agreeOffRunLinks
+      (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ c t pT)))
+
+
 end SeLe4n.Kernel

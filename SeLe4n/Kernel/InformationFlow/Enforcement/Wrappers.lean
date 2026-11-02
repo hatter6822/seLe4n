@@ -292,6 +292,8 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "yieldOnCore"
   -- WS-ZA ZA6.9: the Consumed invocation, a SchedContext capability's.
   , .capabilityOnly "schedContextConsumedOnCore"
+  -- WS-ZA ZA6.29: the yieldTo invocation, a SchedContext capability's.
+  , .capabilityOnly "schedContextYieldToOnCore"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -425,6 +427,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .pageTableUnmap => "pageTableUnmap"
   | .yield => "yieldOnCore"
   | .schedContextConsumed => "schedContextConsumedOnCore"
+  | .schedContextYieldTo => "schedContextYieldToOnCore"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"

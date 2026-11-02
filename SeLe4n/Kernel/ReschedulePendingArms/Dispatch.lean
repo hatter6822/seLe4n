@@ -1023,6 +1023,185 @@ theorem schedContextConsumedOnCore_stepCovers (e : CoreId) {s : SeLe4n.SchedCont
       (SystemState.setConsumed_scheduler st s caller),
     SystemState.setConsumed_preserves_objects_invExt _ _ _ hInv⟩
 
+/-! ### The yieldTo invocation (WS-ZA ZA6.29) -/
+
+/-- WS-ZA ZA6.29: **a step that keeps every core but `h`'s queue, current
+thread and flag**: it queues nothing new on any other core and moves neither of
+its slots. -/
+def runSlotsKeptOffCore (h : CoreId) (pre post : SystemState) : Prop :=
+  ∀ c, c ≠ h → (∀ t, post.queuedOn c t = true → pre.queuedOn c t = true) ∧
+    post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c ∧
+    post.scheduler.reschedulePendingOnCore c = pre.scheduler.reschedulePendingOnCore c
+
+theorem runSlotsKeptOffCore.trans {h : CoreId} {a b d : SystemState}
+    (h₁ : runSlotsKeptOffCore h a b) (h₂ : runSlotsKeptOffCore h b d) :
+    runSlotsKeptOffCore h a d := fun c hc =>
+  let ⟨q1, c1, f1⟩ := h₁ c hc
+  let ⟨q2, c2, f2⟩ := h₂ c hc
+  ⟨fun t ht => q1 t (q2 t ht), c2.trans c1, f2.trans f1⟩
+
+theorem runSlotsKeptOffCore_runRemove (S : SystemState) (h : CoreId) (x : SeLe4n.ThreadId) :
+    runSlotsKeptOffCore h S (S.runRemoveOnCore h x) := fun c hc => by
+  refine ⟨fun t ht => ?_, ?_, ?_⟩
+  · rw [SystemState.runRemoveOnCore_queuedOn] at ht
+    split at ht
+    · cases ht
+    · exact ht
+  · simp [SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore,
+      SchedulerState.currentOnCore]
+  · simp [SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore,
+      SchedulerState.reschedulePendingOnCore]
+
+theorem runSlotsKeptOffCore_deschedule (S : SystemState) (h : CoreId) (x : SeLe4n.ThreadId) :
+    runSlotsKeptOffCore h S (S.runDescheduleOnCore h x) := fun c hc => by
+  refine ⟨fun t ht => ?_, ?_, ?_⟩
+  · rw [SystemState.runDescheduleOnCore_queuedOn] at ht
+    split at ht
+    · cases ht
+    · exact ht
+  · rw [SystemState.runDescheduleOnCore_currentOnCore, if_neg (fun h' => hc h'.1)]
+  · rw [SystemState.runDescheduleOnCore_scheduler,
+      SchedulerState.markReschedulePendingOnCoreIf_reschedulePendingOnCore_ne _ _ _ _ (Ne.symm hc)]
+    simp [SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore, SchedulerState.reschedulePendingOnCore]
+
+theorem runSlotsKeptOffCore_enqueueHead (S : SystemState) (h : CoreId) (x : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : runSlotsKeptOffCore h S (S.runEnqueueHeadOnCore h x p) :=
+  fun c hc => by
+  refine ⟨fun t ht => ?_, SystemState.runEnqueueHeadOnCore_currentOnCore _ _ _ _ _, ?_⟩
+  · rw [SystemState.runEnqueueHeadOnCore_queuedOn] at ht
+    split at ht
+    · simp [hc] at ht
+    · exact ht
+  · rw [SystemState.runEnqueueHeadOnCore_scheduler]
+    split <;> simp [SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore,
+      SchedulerState.reschedulePendingOnCore]
+
+/-- **The unlinked branch's requeue covers**: it writes core `home`'s queue
+alone and flags `home`. -/
+theorem yieldToRequeue_stepCovers (e : CoreId) (S : SystemState) (home : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    stepCovers e S (SchedContextOps.yieldToRequeue S home t p) := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact stepCovers_refl e S
+  · have hK := (runSlotsKeptOffCore_runRemove S home t).trans
+      (runSlotsKeptOffCore_enqueueHead _ home t p)
+    have hA : SystemState.objectsAgreeOffRunLinks
+        (((S.runRemoveOnCore home t).runEnqueueHeadOnCore home t p).markReschedulePendingOnCore
+          home) S :=
+      (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ home t p).trans
+        (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks S home t)
+    have hCur : ∀ c, (((S.runRemoveOnCore home t).runEnqueueHeadOnCore home t
+        p).markReschedulePendingOnCore home).scheduler.currentOnCore c =
+          S.scheduler.currentOnCore c := fun c => by
+      simp only [SystemState.markReschedulePendingOnCore_scheduler,
+        SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SystemState.runEnqueueHeadOnCore_currentOnCore]
+      simp [SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore,
+        SchedulerState.currentOnCore]
+    refine stepCovers_of_keys_slots (schedKeyView_of_objectsAgreeOffRunLinks hA)
+      (budgetEligibleView_of_objectsAgreeOffRunLinks hA) (fun c hc => ?_) (fun c hc hp => ?_)
+      (fun c _ x hx => by rw [hCur] at hx; exact hx)
+    · by_cases hh : c = home
+      · subst hh; exact Or.inl (by simp)
+      · exact Or.inr ⟨fun x hx => (hK c hh).1 x hx, hCur c⟩
+    · by_cases hh : c = home
+      · subst hh; simp
+      · rw [SystemState.markReschedulePendingOnCore_scheduler,
+          SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ (Ne.symm hh),
+          (hK c hh).2.2]
+        exact hp
+
+/-- **The linked branch's writes before its scheduling point cover**: the link
+writes no key input and no scheduler field; the dequeues and the two head
+enqueues write core `e`'s queue and slot alone. -/
+theorem yieldToLinkPrefix_stepCovers (S : SystemState) (e : CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority) (hInv : S.objects.invExt) :
+    stepCovers e S (SchedContextOps.yieldToLinkPrefix S e s caller t pC pT) := by
+  have h1 : stepCovers e S (setYieldLink S s caller) :=
+    stepCovers_of_keys_sched
+      (keyInputsEq_of_objectsAgreeOffYield (SystemState.setYieldLink_objectsAgreeOffYield S s caller hInv))
+      (SystemState.setYieldLink_scheduler S s caller)
+      (hRes := by rw [SystemState.setYieldLink_eq_objects])
+      (hBank := banksKeptOffCore_of_eq (by rw [SystemState.setYieldLink_eq_objects]))
+  refine stepCovers_trans h1 ?_
+  unfold SchedContextOps.yieldToLinkPrefix
+  generalize setYieldLink S s caller = Y
+  have hK := (((runSlotsKeptOffCore_runRemove Y e t).trans
+    (runSlotsKeptOffCore_deschedule _ e caller)).trans
+    (runSlotsKeptOffCore_enqueueHead _ e caller pC)).trans (runSlotsKeptOffCore_enqueueHead _ e t pT)
+  have hA : SystemState.objectsAgreeOffRunLinks ((((Y.runRemoveOnCore e t).runDescheduleOnCore e
+      caller).runEnqueueHeadOnCore e caller pC).runEnqueueHeadOnCore e t pT) Y :=
+    (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ e t pT).trans
+      ((SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ e caller pC).trans
+        ((SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks _ e caller).trans
+          (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks Y e t)))
+  have hM : ((((Y.runRemoveOnCore e t).runDescheduleOnCore e caller).runEnqueueHeadOnCore e caller
+      pC).runEnqueueHeadOnCore e t pT).machine = Y.machine := by
+    simp only [SystemState.runEnqueueHeadOnCore_machine]
+    unfold SystemState.runDescheduleOnCore
+    simp only [SystemState.runRemoveOnCore_machine]
+  exact stepCovers_of_local_slots (schedKeyView_of_objectsAgreeOffRunLinks hA)
+    (budgetEligibleView_of_objectsAgreeOffRunLinks hA) (fun c hc => (hK c hc).1)
+    (fun c hc => ⟨(hK c hc).2.1, (hK c hc).2.2⟩) (by rw [hM]) (banksKeptOffCore_of_eq (by rw [hM]))
+
+/-- WS-ZA ZA6.29: **the yieldTo invocation covers**: the completion and
+`setConsumed` move no key input and no scheduler field, the resume's
+re-placement is a release-queue edit, the requeue flags the target's home core,
+and the link's queue writes and its scheduling point are core `e`'s own. -/
+theorem schedContextYieldToOnCore_stepCovers {e : CoreId} {s : SeLe4n.SchedContextId}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextYieldToOnCore s e st = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨caller, -, t, -, -, -, -, -, -, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  have hInv1 := SystemState.completeYieldFrom_preserves_objects_invExt st s hInv
+  have h1 : stepCovers e st (completeYieldFrom st s) :=
+    stepCovers_of_keys_sched
+      (keyInputsEq_of_objectsAgreeOffYield (SystemState.completeYieldFrom_objectsAgreeOffYield st s hInv))
+      (SystemState.completeYieldFrom_scheduler st s)
+      (hRes := by rw [SystemState.completeYieldFrom_eq_objects])
+      (hBank := banksKeptOffCore_of_eq (by rw [SystemState.completeYieldFrom_eq_objects]))
+  have h2 := releasePlace_stepCovers e (completeYieldFrom st s)
+    (determineTargetCore (completeYieldFrom st s) t) s
+  have hInv2 := SystemState.releasePlace_objects_invExt _
+    (determineTargetCore (completeYieldFrom st s) t) s hInv1
+  have hSet : ∀ X : SystemState, X.objects.invExt →
+      stepCovers e X (setConsumed X s caller) ∧ (setConsumed X s caller).objects.invExt :=
+    fun X hX => ⟨stepCovers_of_keys_sched
+      (keyInputsEq_of_objectsAgreeOffYield (SystemState.setConsumed_objectsAgreeOffYield X s caller hX))
+      (SystemState.setConsumed_scheduler X s caller),
+      SystemState.setConsumed_preserves_objects_invExt _ _ _ hX⟩
+  have hFirstTwo := stepCovers_trans h1 h2
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
+    = st2 at hFirstTwo hInv2 ⊢
+  have hLink : ∀ pC pT, stepCovers e st2 (SchedContextOps.yieldToLink st2 e s caller t pC pT) ∧
+      (SchedContextOps.yieldToLink st2 e s caller t pC pT).objects.invExt := fun pC pT =>
+    have hPI := SchedContextOps.yieldToLinkPrefix_objects_invExt st2 e s caller t pC pT hInv2
+    have hSgi := SchedContextOps.yieldToLink_sgi st2 e s caller t pC pT
+    ⟨stepCovers_trans (yieldToLinkPrefix_stepCovers st2 e s caller t pC pT hInv2)
+        (handleRescheduleSgiOnCore_stepCovers e _ _ hPI hSgi),
+      handleRescheduleSgiOnCore_preserves_objects_invExt _ e _ hPI hSgi⟩
+  have hFin : ∀ X : SystemState, stepCovers e st2 X ∧ X.objects.invExt →
+      stepCovers e st X ∧ X.objects.invExt := fun X hX => ⟨stepCovers_trans hFirstTwo hX.1, hX.2⟩
+  refine hFin _ ?_
+  split
+  · exact hSet _ hInv2
+  · split
+    · exact hSet _ hInv2
+    · split
+      · exact hSet _ hInv2
+      · split
+        · split
+          · exact ⟨stepCovers_trans (yieldToRequeue_stepCovers e st2 _ t _)
+              (hSet _ (SchedContextOps.yieldToRequeue_objects_invExt _ _ _ _ hInv2)).1,
+              (hSet _ (SchedContextOps.yieldToRequeue_objects_invExt _ _ _ _ hInv2)).2⟩
+          · exact hLink _ _
+        · exact hSet _ hInv2
+
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
@@ -1071,6 +1250,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
              (hRes := by rw [Architecture.writeReturnFrameToTcb_machine_eq]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])))
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
+        | exact (schedContextYieldToOnCore_stepCovers hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
             (hRes := by rw [unbindNotification_machine_eq hU]) (hBank := banksKeptOffCore_of_eq (by rw [unbindNotification_machine_eq hU]))
         | exact (suspendThreadOnCore_stepCovers _ _ _ _ _ hInv hU)

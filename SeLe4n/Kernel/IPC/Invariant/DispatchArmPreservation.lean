@@ -5697,6 +5697,22 @@ theorem schedContextConsumedOnCore_preserves_ipcInvariantFull {s : SeLe4n.SchedC
   obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
   exact setConsumed_preserves_ipcInvariantFull st s caller hObjInv hInv
 
+/-- WS-ZA ZA6.29: the link's set keeps the bundle: two yield codes. -/
+theorem setYieldLink_preserves_ipcInvariantFull (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (setYieldLink st s caller) :=
+  updateTcb_yieldWrite_preserves_ipcInvariantFull _ caller _
+    (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hObjInv)
+    (updateSchedContext_boundKept_preserves_ipcInvariantFull _ _ _ hObjInv hInv
+      (fun _ => rfl)) (by intro; rfl)
+
+/-- The guarded head enqueue writes run-queue links alone. -/
+theorem ipcInvariantFull_runEnqueueHeadOnCore (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h : ipcInvariantFull st) :
+    ipcInvariantFull (st.runEnqueueHeadOnCore c t p) :=
+  ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p) h
+
 /-- The context's end of the cancel keeps the bundle. -/
 theorem cancelYieldFrom_preserves_ipcInvariantFull (st : SystemState)
     (s : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
@@ -5723,6 +5739,60 @@ theorem completeYieldFrom_preserves_ipcInvariantFull (st : SystemState)
         (SystemState.setConsumed_preserves_objects_invExt _ _ _ hObjInv)
         (setConsumed_preserves_ipcInvariantFull _ _ _ hObjInv hInv)
   · exact hInv
+
+/-- WS-ZA ZA6.29: the yieldTo invocation keeps the bundle: the completion of the
+context's earlier yield, the resume's re-placement (release links), then the
+requeue's run-queue links and flag, or the link's two codes, the run-queue
+links and the core's reschedule, and the consumed time's count and registers. -/
+theorem schedContextYieldToOnCore_preserves_ipcInvariantFull {s : SeLe4n.SchedContextId}
+    {c : Concurrency.CoreId} {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (h : SchedContextOps.schedContextYieldToOnCore s c st = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨caller, -, t, -, -, -, -, -, -, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  have hO1 := SystemState.completeYieldFrom_preserves_objects_invExt st s hObjInv
+  have hI1 := completeYieldFrom_preserves_ipcInvariantFull st s hObjInv hInv
+  have hO2 := SystemState.releasePlace_objects_invExt (completeYieldFrom st s)
+    (determineTargetCore (completeYieldFrom st s) t) s hO1
+  have hI2 := ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+    (.of_releaseLinks (SystemState.releasePlace_agree (completeYieldFrom st s)
+      (determineTargetCore (completeYieldFrom st s) t) s)) hI1
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
+    = st2 at hO2 hI2 ⊢
+  have hC : ∀ X : SystemState, X.objects.invExt → ipcInvariantFull X →
+      ipcInvariantFull (setConsumed X s caller) := fun X hX hI =>
+    setConsumed_preserves_ipcInvariantFull X s caller hX hI
+  split
+  · exact hC _ hO2 hI2
+  · split
+    · exact hC _ hO2 hI2
+    · split
+      · exact hC _ hO2 hI2
+      · split
+        · split
+          · refine hC _ (SchedContextOps.yieldToRequeue_objects_invExt _ _ _ _ hO2) ?_
+            unfold SchedContextOps.yieldToRequeue
+            split
+            · exact hI2
+            · exact markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+                (ipcInvariantFull_runEnqueueHeadOnCore _ _ _ _
+                  (ipcInvariantFull_of_objectsAgreeOffRunLinks
+                    (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _) hI2))
+          · refine handleRescheduleSgiOnCore_preserves_ipcInvariantFull _ c _
+              (SchedContextOps.yieldToLinkPrefix_objects_invExt _ _ _ _ _ _ _ hO2) ?_
+              (SchedContextOps.yieldToLink_sgi _ _ _ _ _ _ _)
+            unfold SchedContextOps.yieldToLinkPrefix
+            exact ipcInvariantFull_runEnqueueHeadOnCore _ _ _ _
+              (ipcInvariantFull_runEnqueueHeadOnCore _ _ _ _
+                (ipcInvariantFull_of_objectsAgreeOffRunLinks
+                  (SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks _ _ _)
+                  (ipcInvariantFull_of_objectsAgreeOffRunLinks
+                    (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)
+                    (setYieldLink_preserves_ipcInvariantFull _ _ _ hO2 hI2))))
+        · exact hC _ hO2 hI2
 
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
 cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`

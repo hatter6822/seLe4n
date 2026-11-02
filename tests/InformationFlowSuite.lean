@@ -855,9 +855,10 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.4 part 14: `lifecycleRetypeObject` and
   -- `lifecycleRevokeDeleteRetype` left with the in-place retype; every object
   -- is carved, through `retypeFromUntyped`, already on the list.
-  -- WS-ZA ZA6.9: `schedContextConsumedOnCore` joined, capability-only.
-  expect "enforcement boundary: total 51 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 51)
+  -- WS-ZA ZA6.9: `schedContextConsumedOnCore` joined, capability-only, and
+  -- WS-ZA ZA6.29 `schedContextYieldToOnCore`, capability-only.
+  expect "enforcement boundary: total 52 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 52)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
@@ -1399,12 +1400,15 @@ def runInformationFlowChecks : IO Unit := do
   -- `lifecycleRevokeDeleteRetype` removed with the in-place retype.
   -- 33 → 32 and read-only 4 → 3: `revokeService` and
   -- `lookupServiceByRecordedRegistration` are replaced by their policy-gated wrappers.
-  expect "enforcement boundary has 33 capability-only"
-    (coCount = 33)
+  -- WS-ZA ZA6.9: 32 → 33 with `schedContextConsumedOnCore`, and WS-ZA ZA6.29
+  -- 33 → 34 with `schedContextYieldToOnCore`, both capability-only: the
+  -- context capability's write right is their whole authority.
+  expect "enforcement boundary has 34 capability-only"
+    (coCount = 34)
   expect "enforcement boundary has 3 read-only"
     (roCount = 3)
-  expect "enforcement boundary total is 51"
-    (boundary.length = 51)
+  expect "enforcement boundary total is 52"
+    (boundary.length = 52)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1507,8 +1511,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 50 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 51)
+  expect "enforcementBoundaryExtended has 52 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 52)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

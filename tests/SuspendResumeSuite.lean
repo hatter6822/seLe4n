@@ -1284,6 +1284,158 @@ private def sr048_stallWaitsForTheRemoteSave : IO Unit := do
      | some t, some t0 => t.registerContext == t0.registerContext
      | _, _ => false)
 
+-- ============================================================================
+-- WS-ZA ZA6.29: the yieldTo invocation
+-- ============================================================================
+
+/-- Context 50, bound to thread 2, with 7 units consumed; `yieldFrom` names its
+earlier yielder (`0` for none). -/
+private def yieldToContext (bound : Nat) (yieldFrom : Nat := 0) : SeLe4n.Kernel.SchedContext :=
+  { scId := SeLe4n.SchedContextId.ofNat 50, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
+    consumed := 7, boundThreadCode := bound, yieldFromCode := yieldFrom }
+
+/-- A caller current on the boot core (thread `caller`, MCP `mcp`), the target
+thread 2 ready and queued there at priority `targetPrio` (state `targetState`),
+bound to context 50; thread 1 linked to the context when `linked`. -/
+private def yieldToState (caller : Nat) (mcp : Nat := 0xFF) (targetPrio : Nat := 10)
+    (targetState : ThreadState := .Ready) (bound : Nat := 3) (linked : Bool := false)
+    (callerYieldTo : Nat := 0) : SystemState :=
+  let callerTcb := { mkTcb caller .Running 10 with
+    maxControlledPriority := ⟨mcp⟩, yieldToCode := callerYieldTo }
+  let target := { mkTcb 2 targetState targetPrio with
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+      (.bound (SeLe4n.SchedContextId.ofNat 50)) }
+  let b0 := SeLe4n.Testing.BootstrapBuilder.empty.withObject ⟨2⟩ (.tcb target)
+  let b1 := b0.withObject ⟨caller⟩ (.tcb callerTcb)
+  let b2 := if linked && caller != 1 then
+      b1.withObject ⟨1⟩ (.tcb { mkTcb 1 .Ready 10 with yieldToCode := 51 })
+    else b1
+  let b3 := b2.withObject ⟨50⟩
+    (.schedContext (yieldToContext bound (if linked then 2 else 0)))
+  let queue : List SeLe4n.ThreadId := if targetState == .Ready then [⟨2⟩] else []
+  ((b3.withRunnable queue).withCurrent (some ⟨caller⟩)).build
+
+private def yieldToOn (st : SystemState) : Except KernelError SystemState :=
+  SeLe4n.Kernel.SchedContextOps.schedContextYieldToOnCore (SeLe4n.SchedContextId.ofNat 50)
+    SeLe4n.Kernel.Concurrency.bootCoreId st
+
+private def isIllegalState : Except KernelError SystemState → Bool
+  | .error .illegalState => true
+  | _ => false
+
+/-- SR-049 (seL4-MCS `invokeSchedContext_YieldTo`, the linked branch): the
+caller yields to a target of its own priority homed on its core.  Both link
+ends are set, the target runs and the caller is queued behind it, and no
+consumed time is written yet: the caller's registers and the count are kept. -/
+private def sr049_yieldToLinksAndRunsTarget : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  let st := yieldToState 1
+  match yieldToOn st with
+  | .ok st' =>
+    match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]?, st.getTcb? ⟨1⟩ with
+    | some (.tcb t), some (.schedContext sc), some t0 =>
+      expect "SR-049 the caller's link names the context" (t.yieldToCode == 51)
+      expect "SR-049 ...and the context's names the caller" (sc.yieldFromCode == 2)
+      expect "SR-049 the target runs" (st'.scheduler.currentOnCore core == some ⟨2⟩)
+      expect "SR-049 the caller is queued behind it" (st'.queuedOn core ⟨1⟩)
+      expect "SR-049 no consumed time is written yet"
+        (sc.consumed == 7 && t.registerContext == t0.registerContext)
+    | _, _, _ => throw <| IO.userError "SR-049 objects not found after the yieldTo"
+  | .error e => throw <| IO.userError s!"SR-049 yieldTo should succeed, got {repr e}"
+
+/-- SR-050 (seL4-MCS `activateThread` → `schedContext_completeYieldTo`): the
+live link SR-049 left is completed when the yielder next runs: its activation
+writes the consumed time and clears both ends. -/
+private def sr050_yieldToCompletedByActivation : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  match yieldToOn (yieldToState 1) with
+  | .ok st' =>
+    let stA := SeLe4n.Kernel.activateThreadOnCore
+      (SeLe4n.Testing.withCurrentOnCore st' core ⟨1⟩) core
+    match stA.objects[(⟨1⟩ : ObjId)]?, stA.objects[(⟨50⟩ : ObjId)]? with
+    | some (.tcb t), some (.schedContext sc) =>
+      expect "SR-050 the yielder's MR0 holds the consumed time" (t.registerContext.x2 == 7)
+      expect "SR-050 ...with a one-register message info"
+        (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+      expect "SR-050 both link ends are cleared and the count taken off"
+        (t.yieldToCode == 0 && sc.yieldFromCode == 0 && sc.consumed == 0)
+    | _, _ => throw <| IO.userError "SR-050 objects not found after the activation"
+  | .error e => throw <| IO.userError s!"SR-050 yieldTo should succeed, got {repr e}"
+
+/-- SR-051 (`if (sc->scYieldFrom) schedContext_completeYieldTo(sc->scYieldFrom)`):
+the context's next yieldTo, by thread 3, completes thread 1's live link first —
+thread 1 gets the consumed time and its link is cleared — and then links
+thread 3. -/
+private def sr051_yieldToCompletedByNextYieldTo : IO Unit := do
+  match yieldToOn (yieldToState 3 (linked := true)) with
+  | .ok st' =>
+    match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨3⟩ : ObjId)]?,
+        st'.objects[(⟨50⟩ : ObjId)]? with
+    | some (.tcb y), some (.tcb t), some (.schedContext sc) =>
+      expect "SR-051 the earlier yielder's MR0 holds the consumed time"
+        (y.registerContext.x2 == 7 && y.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+      expect "SR-051 ...and its link is cleared" (y.yieldToCode == 0)
+      expect "SR-051 the new caller is linked in its place"
+        (t.yieldToCode == 51 && sc.yieldFromCode == 4 && sc.consumed == 0)
+    | _, _, _ => throw <| IO.userError "SR-051 objects not found after the yieldTo"
+  | .error e => throw <| IO.userError s!"SR-051 yieldTo should succeed, got {repr e}"
+
+/-- SR-052 (seL4-MCS `finaliseCap` on a context): the live link SR-049 left is
+completed by the context's final delete. -/
+private def sr052_yieldToCompletedByDelete : IO Unit := do
+  match yieldToOn (yieldToState 1) with
+  | .ok st' =>
+    let stD := SeLe4n.Kernel.finaliseSchedContext ⟨50⟩ st'
+    match stD.objects[(⟨1⟩ : ObjId)]?, stD.objects[(⟨50⟩ : ObjId)]? with
+    | some (.tcb t), some (.schedContext sc) =>
+      expect "SR-052 the yielder's MR0 holds the consumed time" (t.registerContext.x2 == 7)
+      expect "SR-052 both link ends are cleared"
+        (t.yieldToCode == 0 && sc.yieldFromCode == 0)
+    | _, _ => throw <| IO.userError "SR-052 objects not found after the delete"
+  | .error e => throw <| IO.userError s!"SR-052 yieldTo should succeed, got {repr e}"
+
+/-- SR-053 (seL4-MCS `decodeSchedContext_YieldTo`): every check comes before any
+write and refuses with `.illegalState` — an unbound context, a context bound to
+the caller, a target above the caller's MCP, a caller with a pending yield. -/
+private def sr053_yieldToRefusals : IO Unit := do
+  expect "SR-053 an unbound context is refused" (isIllegalState (yieldToOn (yieldToState 1 (bound := 0))))
+  expect "SR-053 a context bound to the caller is refused"
+    (isIllegalState (yieldToOn (yieldToState 1 (bound := 2))))
+  expect "SR-053 a target above the caller's MCP is refused"
+    (isIllegalState (yieldToOn (yieldToState 1 (mcp := 5))))
+  expect "SR-053 a caller with a pending yield is refused"
+    (isIllegalState (yieldToOn (yieldToState 1 (callerYieldTo := 61))))
+  expect "SR-053 a core with no current thread is refused"
+    (isIllegalState (yieldToOn { yieldToState 1 with
+      scheduler := (yieldToState 1).scheduler.setCurrentOnCore
+        SeLe4n.Kernel.Concurrency.bootCoreId none }))
+
+/-- SR-054 (seL4-MCS `invokeSchedContext_YieldTo`, `return_now`): a target that
+ranks below the caller is requeued at its band's head and an unschedulable one
+is left alone; either way the caller keeps running, gets the consumed time now
+and is not linked. -/
+private def sr054_yieldToReturnsNow : IO Unit := do
+  let core := SeLe4n.Kernel.Concurrency.bootCoreId
+  for (label, st) in [("lower-priority", yieldToState 1 (targetPrio := 5)),
+      ("unschedulable", yieldToState 1 (targetState := .Inactive))] do
+    match yieldToOn st with
+    | .ok st' =>
+      match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+      | some (.tcb t), some (.schedContext sc) =>
+        expect s!"SR-054 {label}: the caller's MR0 holds the consumed time"
+          (t.registerContext.x2 == 7 && t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+        expect s!"SR-054 {label}: no link is set and the count is taken off"
+          (t.yieldToCode == 0 && sc.yieldFromCode == 0 && sc.consumed == 0)
+        expect s!"SR-054 {label}: the caller keeps running"
+          (st'.scheduler.currentOnCore core == some ⟨1⟩)
+      | _, _ => throw <| IO.userError s!"SR-054 {label}: objects not found"
+    | .error e => throw <| IO.userError s!"SR-054 {label}: yieldTo should succeed, got {repr e}"
+  match yieldToOn (yieldToState 1 (targetPrio := 5)) with
+  | .ok st' =>
+    expect "SR-054 the lower-priority target stays queued" (st'.queuedOn core ⟨2⟩)
+  | .error e => throw <| IO.userError s!"SR-054 yieldTo should succeed, got {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -1358,4 +1510,11 @@ def main : IO Unit := do
   sr047_releaseWakesTheDeferringCore
   IO.println "--- ZA6.11: the remote stall waits for the remote save ---"
   sr048_stallWaitsForTheRemoteSave
-  IO.println "=== All D1 suspend/resume tests passed (50 tests) ==="
+  IO.println "--- ZA6.29: the yieldTo invocation ---"
+  sr049_yieldToLinksAndRunsTarget
+  sr050_yieldToCompletedByActivation
+  sr051_yieldToCompletedByNextYieldTo
+  sr052_yieldToCompletedByDelete
+  sr053_yieldToRefusals
+  sr054_yieldToReturnsNow
+  IO.println "=== All D1 suspend/resume tests passed (56 tests) ==="

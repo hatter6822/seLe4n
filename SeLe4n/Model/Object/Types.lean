@@ -4214,6 +4214,9 @@ inductive SyscallId where
   | schedContextConsumed   -- WS-ZA ZA6.9: read and reset a scheduling context's
                            -- consumed time (seL4_SchedContext_Consumed), through
                            -- `schedContextConsumedOnCore`
+  | schedContextYieldTo    -- WS-ZA ZA6.29: yield to the thread bound to a scheduling
+                           -- context (seL4_SchedContext_YieldTo), through
+                           -- `schedContextYieldToOnCore`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -4263,13 +4266,14 @@ namespace SyscallId
   | .pageTableUnmap        => 40
   | .yield                 => 41
   | .schedContextConsumed  => 42
+  | .schedContextYieldTo   => 43
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 42
+def count : Nat := 43
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
-def encodingBound : Nat := 43
+def encodingBound : Nat := 44
 
 /-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
     lifecycle retype (WS-ZA ZA5.4 part 14). -/
@@ -4320,6 +4324,7 @@ def retiredNumbers : List Nat := [8]
   | 40 => some .pageTableUnmap
   | 41 => some .yield
   | 42 => some .schedContextConsumed
+  | 43 => some .schedContextYieldTo
   | _  => none
 
 instance : ToString SyscallId where
@@ -4366,6 +4371,7 @@ instance : ToString SyscallId where
     | .pageTableUnmap        => "pageTableUnmap"
     | .yield                 => "yield"
     | .schedContextConsumed  => "schedContextConsumed"
+    | .schedContextYieldTo   => "schedContextYieldTo"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -4384,7 +4390,8 @@ def all : List SyscallId :=
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
   , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
-  , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed ]
+  , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
+  , .schedContextYieldTo ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -4416,9 +4423,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 =>
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 =>
     intro s h; simp [ofNat?] at h <;> (subst h; rfl)
-  | n + 43 => intro s h; simp [ofNat?] at h
+  | n + 44 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
@@ -4438,8 +4445,8 @@ theorem ofNat?_isSome_iff (n : Nat) :
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 => rfl
-  | n + 43 => simp [ofNat?, encodingBound, retiredNumbers]
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 => rfl
+  | n + 44 => simp [ofNat?, encodingBound, retiredNumbers]
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl

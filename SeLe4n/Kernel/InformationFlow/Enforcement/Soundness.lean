@@ -465,12 +465,13 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     ZA4.3 added `yieldOnCore`, the yield's transition, which invokes no
     capability and is listed with the capability-only operations.  WS-ZA ZA6.9
     added `schedContextConsumedOnCore`, the Consumed invocation's transition,
-    capability-only.
+    capability-only, and WS-ZA ZA6.29 `schedContextYieldToOnCore`, the yieldTo
+    invocation's, capability-only.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 51 := by rfl
+    enforcementBoundaryExtended.length = 52 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

@@ -783,6 +783,123 @@ theorem schedContextConsumedOnCore_savedRegsWrittenFree {e : CoreId} {st st' : S
       (.updateTcb_written _ caller _ (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) rfl)
   · exact .of_objects_eq rfl
 
+/-! ### The yieldTo invocation -/
+
+/-- WS-ZA ZA6.29: `setConsumed` writes its thread's saved registers alone. -/
+theorem setConsumed_savedRegsKeptExceptThread (X : SystemState) (s : SeLe4n.SchedContextId)
+    (y : SeLe4n.ThreadId) (hX : X.objects.invExt) :
+    savedRegsKeptExcept (· = y) X (setConsumed X s y) := by
+  unfold setConsumed
+  split
+  · exact (savedRegsKeptExcept.updateSchedContext X _ _ hX).trans
+      (.updateTcb_written _ y _ (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hX) rfl)
+  · exact .of_objects_eq rfl
+
+/-- The requeue writes run-queue links and a flag. -/
+theorem yieldToRequeue_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (S : SystemState)
+    (home : CoreId) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    savedRegsKeptExcept W S (SchedContextOps.yieldToRequeue S home t p) := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · exact .of_objects_eq rfl
+  · exact ((savedRegsKeptExcept.of_runLinks (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks S home t)).trans
+      (.of_runLinks (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks _ home t p))).trans
+      (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
+
+/-- The linked branch's prefix writes a yield-to code, a yield-from code and
+run-queue links. -/
+theorem yieldToLinkPrefix_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop} (S : SystemState)
+    (c : CoreId) (s : SeLe4n.SchedContextId) (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority)
+    (hS : S.objects.invExt) :
+    savedRegsKeptExcept W S (SchedContextOps.yieldToLinkPrefix S c s caller t pC pT) := by
+  have k1 : savedRegsKeptExcept W S (setYieldLink S s caller) := by
+    unfold setYieldLink
+    exact (savedRegsKeptExcept.updateSchedContext S _ _ hS).trans (.updateTcb _ caller _
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hS) (fun _ => rfl))
+  unfold SchedContextOps.yieldToLinkPrefix
+  generalize setYieldLink S s caller = X at k1
+  have k2 := k1.trans (.of_runLinks (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks X c t))
+  generalize X.runRemoveOnCore c t = X2 at k2
+  have k3 := k2.trans (.of_runLinks (SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks X2 c caller))
+  generalize X2.runDescheduleOnCore c caller = X3 at k3
+  have k4 := k3.trans (.of_runLinks (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks X3 c caller pC))
+  generalize X3.runEnqueueHeadOnCore c caller pC = X4 at k4
+  exact k4.trans (.of_runLinks (SystemState.runEnqueueHeadOnCore_objectsAgreeOffRunLinks X4 c t pT))
+
+/-- The linked branch's prefix keeps or clears core `c`'s slot. -/
+theorem yieldToLinkPrefix_currentKeptOnCore (S : SystemState) (c : CoreId)
+    (s : SeLe4n.SchedContextId) (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority) :
+    currentKeptOnCore c S (SchedContextOps.yieldToLinkPrefix S c s caller t pC pT) := by
+  intro u hu
+  unfold SchedContextOps.yieldToLinkPrefix at hu
+  rw [SystemState.runEnqueueHeadOnCore_currentOnCore, SystemState.runEnqueueHeadOnCore_currentOnCore,
+    SystemState.runDescheduleOnCore_currentOnCore] at hu
+  split at hu
+  · cases hu
+  · simpa [SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore,
+      SchedulerState.currentOnCore, SystemState.setYieldLink_scheduler] using hu
+
+/-- WS-ZA ZA6.29: **the yieldTo invocation writes the saved registers of no
+thread another core holds**: the completion writes the context's earlier
+yielder, which is linked and so held by no core (`yieldLinkedNotResident`);
+`setConsumed` writes the caller, the executing core's current thread; the
+linked branch's scheduling point saves the core's outgoing thread, which the
+prefix found there (the caller, or none once it is descheduled); every other
+write is a link or a code. -/
+theorem schedContextYieldToOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
+    {s : SeLe4n.SchedContextId} (hInv : st.objects.invExt) (hU : currentsUnique st)
+    (hN : st.currentNotResidentElsewhere) (hYA : st.yieldLinksAgree)
+    (hYN : st.yieldLinkedNotResident) (h : SchedContextOps.schedContextYieldToOnCore s e st = .ok st') :
+    savedRegsWrittenFree e st st st' := by
+  obtain ⟨caller, -, t, -, -, hCur, -, -, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  have hFreeC : offCoreFree e st caller := offCoreFree_of_currentOn hU hN caller hCur
+  have h1 : savedRegsWrittenFree e st st (completeYieldFrom st s) :=
+    .of_kept (completeYieldFrom_savedRegsKeptExcept hInv)
+      (fun _ ⟨_, _, hS, hC, hy⟩ => hy ▸ offCoreFree_of_yieldCode hYN (yieldCode_of_yieldFrom hYA hS hC))
+  have hInv1 := SystemState.completeYieldFrom_preserves_objects_invExt st s hInv
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  have h2 : savedRegsWrittenFree e st st ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s) :=
+    h1.trans (.of_kept (W := fun _ => False)
+      (.of_releaseLinks (SystemState.releasePlace_agree _ _ _)) fun _ h => h.elim)
+  have hInv2 := SystemState.releasePlace_objects_invExt _
+    (determineTargetCore (completeYieldFrom st s) t) s hInv1
+  have hCur2 : ((completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
+      s).scheduler.currentOnCore e = st.scheduler.currentOnCore e := by
+    rw [(SystemState.releasePlace_releaseOnlyWrite _ _ _).currentOnCore e,
+      SystemState.completeYieldFrom_scheduler]
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
+    s = st2 at h2 hInv2 hCur2 ⊢
+  have hSet : ∀ X : SystemState, X.objects.invExt → savedRegsWrittenFree e st st X →
+      savedRegsWrittenFree e st st (setConsumed X s caller) := fun X hX hW =>
+    hW.trans (.of_kept (setConsumed_savedRegsKeptExceptThread X s caller hX) fun _ hy => hy ▸ hFreeC)
+  have hLink : ∀ pC pT, savedRegsWrittenFree e st st
+      (SchedContextOps.yieldToLink st2 e s caller t pC pT) := fun pC pT =>
+    savedRegsWrittenFree_schedPoint
+      (h2.trans (.of_kept (W := fun _ => False)
+        (yieldToLinkPrefix_savedRegsKeptExcept st2 e s caller t pC pT hInv2)
+        fun _ h => h.elim))
+      (SchedContextOps.yieldToLinkPrefix_objects_invExt st2 e s caller t pC pT hInv2)
+      ((currentKeptOnCore.of_eq hCur2).trans
+        (yieldToLinkPrefix_currentKeptOnCore st2 e s caller t pC pT))
+      (fun u hu => offCoreFree_of_currentOn hU hN u hu)
+      (.inr (SchedContextOps.yieldToLink_sgi st2 e s caller t pC pT))
+  split
+  · exact hSet _ hInv2 h2
+  · split
+    · exact hSet _ hInv2 h2
+    · split
+      · exact hSet _ hInv2 h2
+      · split
+        · split
+          · exact hSet _ (SchedContextOps.yieldToRequeue_objects_invExt _ _ _ _ hInv2)
+              (h2.trans (.of_kept (W := fun _ => False)
+                (yieldToRequeue_savedRegsKeptExcept st2 _ t _) fun _ h => h.elim))
+          · exact hLink _ _
+        · exact hSet _ hInv2 h2
+
 /-! ### The resume -/
 
 /-- The resume's restore: the IPC clear, the state and boost write, keeping the
@@ -1284,6 +1401,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
            exact writeReturnFrameToTcb_savedRegsKeptOffCore _ hInv P.current hU hN)
         | exact hW (schedContextUnbindOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (schedContextConsumedOnCore_savedRegsWrittenFree hInv hU hN hS)
+        | exact hW (schedContextYieldToOnCore_savedRegsWrittenFree hInv hU hN hYA hYN hS)
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)
         | exact hW (suspendThreadOnCore_savedRegsWrittenFree hInv hU hN P.toEntryPremises.blocked
             hBNR hS)

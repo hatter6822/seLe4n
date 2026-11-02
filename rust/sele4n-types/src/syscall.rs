@@ -165,15 +165,22 @@ pub enum SyscallId {
     /// returns in the first message register (x2) with a one-register
     /// `MessageInfo` in x1.
     SchedContextConsumed = 42,
+    /// WS-ZA ZA6.29: yield to the thread bound to a scheduling context —
+    /// seL4's `seL4_SchedContext_YieldTo`.  Invoked on the scheduling-context
+    /// capability (`Write` right), with no message registers; the consumed time
+    /// returns in the first message register (x2) with a one-register
+    /// `MessageInfo` in x1, written when the call returns or, when the caller
+    /// yielded its core to the target, when the caller next runs.
+    SchedContextYieldTo = 43,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 42;
+    pub const COUNT: usize = 43;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
-    pub const ENCODING_BOUND: u64 = 43;
+    pub const ENCODING_BOUND: u64 = 44;
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
@@ -226,6 +233,7 @@ impl SyscallId {
             40 => Some(Self::PageTableUnmap),
             41 => Some(Self::Yield),
             42 => Some(Self::SchedContextConsumed),
+            43 => Some(Self::SchedContextYieldTo),
             _ => None,
         }
     }
@@ -305,6 +313,9 @@ impl SyscallId {
             // WS-ZA ZA6.9: the Consumed invocation resets the context's consumed
             // time, so it carries the write right Bind and Unbind carry.
             Self::SchedContextConsumed => AccessRight::Write,
+            // WS-ZA ZA6.29: the yieldTo invocation resets the context's consumed
+            // time and requeues its thread, so it carries the same write right.
+            Self::SchedContextYieldTo => AccessRight::Write,
         }
     }
 }
@@ -503,9 +514,14 @@ mod tests {
             SyscallId::from_u64(42),
             Some(SyscallId::SchedContextConsumed)
         );
-        assert_eq!(SyscallId::from_u64(43), None);
-        assert_eq!(SyscallId::COUNT, 42);
-        assert_eq!(SyscallId::ENCODING_BOUND, 43);
+        // WS-ZA ZA6.29: the yieldTo invocation, appended the same way.
+        assert_eq!(
+            SyscallId::from_u64(43),
+            Some(SyscallId::SchedContextYieldTo)
+        );
+        assert_eq!(SyscallId::from_u64(44), None);
+        assert_eq!(SyscallId::COUNT, 43);
+        assert_eq!(SyscallId::ENCODING_BOUND, 44);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype

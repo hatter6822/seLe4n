@@ -537,6 +537,7 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                            controlCore := some ⟨core, hCore⟩ }
                   else none
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
+      | .schedContextYieldTo, .object scId => some (.ofObjectTarget tid scId)
       | .schedContextBind, .object _ =>
           match resolveSchedContextBindThread tid
               (Architecture.SyscallArgDecode.decodeSchedContextBindArgs decoded) s with

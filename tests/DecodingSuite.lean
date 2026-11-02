@@ -103,7 +103,8 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 42 (WS-ZA ZA4.3 added yield at 41, WS-BP BP7.1 added
+  -- First invalid: 44 (WS-ZA ZA6.29 added schedContextYieldTo at 43, ZA6.9
+  -- schedContextConsumed at 42, ZA4.3 yield at 41, WS-BP BP7.1 added
   -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38, untypedReset at 37
   -- and untypedRetype at 36, on top of
   -- WS-RR RR8.16's cspaceRevoke at 35, the
@@ -111,14 +112,14 @@ private def rd002_decodeSyscallIdInvalid : IO Unit := do
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
-  let r43 := decodeSyscallId ⟨43⟩
-  expect "invalid=43" (isErrEq r43 .invalidSyscallNumber)
+  let r44 := decodeSyscallId ⟨44⟩
+  expect "invalid=44" (isErrEq r44 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 42/43 (WS-ZA ZA6.9:
-schedContextConsumed=42 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 43/44 (WS-ZA ZA6.29:
+schedContextYieldTo=43 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
   let r38 := decodeSyscallId ⟨38⟩
   let r39 := decodeSyscallId ⟨39⟩
@@ -126,12 +127,14 @@ private def rd003_decodeSyscallIdBoundary : IO Unit := do
   let r41 := decodeSyscallId ⟨41⟩
   let r42 := decodeSyscallId ⟨42⟩
   let r43 := decodeSyscallId ⟨43⟩
+  let r44 := decodeSyscallId ⟨44⟩
   expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
   expect "pageTableMap=39" (isOkEq r39 .pageTableMap)
   expect "pageTableUnmap=40" (isOkEq r40 .pageTableUnmap)
   expect "boundary=41 ok (yield)" (isOkEq r41 .yield)
   expect "boundary=42 ok (schedContextConsumed)" (isOkEq r42 .schedContextConsumed)
-  expect "boundary=43 err" (!r43.isOk)
+  expect "boundary=43 ok (schedContextYieldTo)" (isOkEq r43 .schedContextYieldTo)
+  expect "boundary=44 err" (!r44.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

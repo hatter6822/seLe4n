@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.191` (`lakefile.toml`) |
+| **Package version** | `0.36.192` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 562,208 across 514 Lean files |
-| **Test LoC** | 88,224 across 70 Lean test suites |
-| **Proved declarations** | 21,517 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 565,317 across 515 Lean files |
+| **Test LoC** | 88,402 across 70 Lean test suites |
+| **Proved declarations** | 21,666 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -6041,7 +6041,7 @@ Every kernel object has a decidable well-formedness predicate:
     consumed-time accounting (landed at `v0.36.168`, below), the yield link
     (`v0.36.169`), the activation step (`v0.36.170`, below), the live-register
     invariant (`v0.36.171`), the Consumed invocation (ZA6.9, `v0.36.172`) and
-    the YieldTo invocation (ZA6.29).
+    the YieldTo invocation (ZA6.29, `v0.36.192`, below).
   - **Zero allocation.**  The configure, the bind and the refill scenarios
     read 0 heap cells at first call and steady state on the QEMU exerciser.
     The configure's resolution runs in continuation form
@@ -6067,7 +6067,7 @@ Every kernel object has a decidable well-formedness predicate:
     the count is returned, at most a word (`consumedReadMax`), and what was
     returned is taken off (`consumedReading_add_updateConsumed`,
     `updateConsumed_cases`).  The Consumed invocation (ZA6.9, `v0.36.172`)
-    and the yieldTo invocation (ZA6.29) return it in MR0.
+    and the yieldTo invocation (ZA6.29, `v0.36.192`) return it in MR0.
   - **Outside the refill view.**  The count is in no refill invariant's view
     (`addConsumed_refillView`, `chargeBudget_refillView`) and is erased with
     the refills (`SchedContext.refillsErased`), so `refillsSound`, refill
@@ -6100,8 +6100,8 @@ Every kernel object has a decidable well-formedness predicate:
     (`activateThreadOnCore_preserves_contextMatchesCurrentOnCore`), as a
     still-current caller's result is staged into both.  What it does is
     `activateThreadOnCore_completes`.  With no link it is the identity
-    (`activateThreadOnCore_of_unlinked`); the yieldTo invocation (ZA6.29) is
-    the first transition that sets one.
+    (`activateThreadOnCore_of_unlinked`); the yieldTo invocation (ZA6.29,
+    `v0.36.192`) is the one transition that sets one.
   - **Compiled form.**  `activateThreadOnCoreImpl`, the `@[csimp]` form
     (`activateThreadOnCore_eq_impl`), reads the core's current-thread code, so
     no `some` is built, then that thread's yield-to code, and answers its
@@ -6159,11 +6159,24 @@ Every kernel object has a decidable well-formedness predicate:
     reschedule SGI and secondary entry, fault,
     unknown-syscall and FP/SIMD entries for every core
     (`syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its
-    siblings, `IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean`).
+    siblings, `IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean`;
+    the syscall entry's theorem is in `CurrentNotResidentElsewhere.lean`
+    since `v0.36.192`).
     Boot establishes it, every code being 0
     (`bootFromPlatformCheckedStartedFor_yieldLinkedNotResident`), as does the
-    default state.  ZA6.29's yieldTo, the one step that sets a code, sets it
-    on its caller (`YieldToCodesSetOnly`).
+    default state.  Since `v0.36.192` (ZA6.29) the yieldTo invocation's linked
+    branch sets its caller's code, so the dispatch chain's stage is
+    `RunQueueEntryStageOn (currentObjOn st e)`: its `live` field
+    (`YieldLinkLiveFrameOn L`) lets a step set the yield-to code of the
+    executing core's current thread at the entry and of no other thread
+    (`YieldToCodesSetOnly`).  The payoff reads it through the activation: the
+    linked caller is descheduled before the scheduling point and, current on
+    the executing core at the entry, is resident on no other core
+    (`currentNotResidentElsewhere`), so after the settle and activation no
+    core holds it (`settleThenActivateOnCore_linkedOnUnlinked`,
+    `yieldLinkedNotResident_of_liveOn`).  The syscall entry's theorem
+    therefore takes `currentNotResidentElsewhere` and lives in
+    `CurrentNotResidentElsewhere.lean`.
   - **A core's current thread is resident on no other core** (`v0.36.173`,
     WS-ZA ZA6.10).  A remote deschedule empties a core's `current` slot while
     its thread still runs there at EL0, so its live registers are that core's
@@ -6873,8 +6886,50 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`syscallDelegates_schedContextConsumed`), `lockSet_schedContextConsumed`.
   The exerciser's `sched-context-consumed` scenario checks the call succeeded
   with the consumed-info word in `x1`, and `sched-context-consumed-reset`
-  checks that a second call reads 0; both read 0 allocations.  seL4's `seL4_SchedContext_YieldTo` is the
-  zero-allocation plan's row ZA6.29.
+  checks that a second call reads 0; both read 0 allocations.
+- **YieldTo** (`v0.36.192`, `.schedContextYieldTo` syscall 43, a
+  scheduling-context capability with write right — seL4 MCS's
+  `seL4_SchedContext_YieldTo`; `schedContextYieldToOnCore` in
+  `SchedContext/Operations.lean`).  The checks are seL4's
+  `decodeSchedContext_YieldTo`, each made before any write and refused
+  `.illegalState` (seL4's `seL4_IllegalOperation`): the executing core has a
+  current thread, the context is bound, its thread is not the caller, the
+  thread's priority is within the caller's MCP, and the caller has no pending
+  yield (`schedContextYieldToOnCore_of_admitted`, `schedContextYieldToOnCore_ok`).
+  The invocation (`yieldToBound`, seL4's `invokeSchedContext_YieldTo`) then
+  completes the context's earlier yield (`completeYieldFrom`,
+  `schedContext_completeYieldTo`) and resumes the context on its thread's home
+  core (`releasePlace`, `schedContext_resume`, which postpones a context whose
+  head refill is not ready).  For a schedulable thread there are two branches.
+  If the thread is homed on another core or ranks below the caller, it is
+  dequeued and enqueued at its band's head (`yieldToRequeue`) and the caller's
+  MR0 takes the consumed time now (`setConsumed`).  Otherwise the yield is
+  linked (`setYieldLink`), the target is dequeued, the caller is taken off its
+  slot and enqueued at its band's head and then the target at the head ahead
+  of it, and the core reschedules (`yieldToLink`); the caller's consumed time
+  is written when it next runs (`activateThreadOnCore`).  An unschedulable
+  thread is left alone and the caller gets the time now.  No refill is
+  written except by the resume's postpone.  The head enqueue is seL4's
+  `tcbSchedEnqueue`: `RunQueue.insertHead` on the abstract queue, refined by
+  the per-core links' `runEnqueueHeadOnCore` (`runEnqueueHeadOnCore_refined`)
+  and a run-queue stage (`RunQueueStage.runEnqueueHeadOnCore`).  Payoffs:
+  `schedContextYieldToOnCore_preserves_ipcInvariantFull`,
+  `schedContextYieldToOnCore_runQueueEntryStage`,
+  `schedContextYieldToOnCore_mappingStage`,
+  `schedContextYieldToOnCore_stepCovers`,
+  `schedContextYieldToOnCore_confinedToCores` (the executing core and the
+  bound thread's home core, `schedContextYieldToWriteSet`),
+  `schedLockSet_schedContextYieldToOnCore_coversWrites`,
+  `schedContextYieldToOnCore_savedRegsWrittenFree`,
+  `schedContextYieldToOnCore_bankAgree`,
+  `schedContextYieldToOnCore_crossCoreNonInterference`
+  (`syscallDelegates_schedContextYieldTo`), `lockSet_schedContextYieldTo`.
+  The requeue's guard compares the home core's `current` slot as its code
+  (`yieldToRequeueImpl`, the `@[csimp]` form, `yieldToRequeue_eq_impl`), so it
+  builds no `some` cell.  The exerciser's `sched-context-yield-to` scenario,
+  run while the partner is suspended, checks the call succeeded with the
+  consumed-info word in `x1` and reads 0 allocations at first call and steady
+  state.
 - **Every configured address space owns a table page** (`v0.36.13`).  The
   binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
   RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's
@@ -7860,8 +7915,8 @@ removal). Since `v0.36.167` (WS-ZA ZA6.4) the configure is invoked on a
 per-core SchedControl capability, not on the context's own, and the
 kernel-internal `schedContextYieldTo` budget transfer, which broke refill
 conservation, is removed (seL4's `seL4_SchedContext_YieldTo` invocation is
-planned, ZA6.5 to ZA6.29; ZA6.5's consumed-time accounting landed at
-`v0.36.168`). 7
+built in ZA6.5 to ZA6.29: ZA6.5's consumed-time accounting landed at
+`v0.36.168` and the invocation itself at `v0.36.192`). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.
