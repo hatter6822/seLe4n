@@ -489,40 +489,42 @@ footprint is undeclared runs the same step as one whose footprint is — the
 footprint is a proof obligation, not a runtime branch.
 
 `execCore` is the core the syscall executes on.  `trapped` is the context the
-caller trapped with, whole (`v0.36.47` audit): the step reads the six message
+caller trapped with, whole (`v0.36.47` audit): the step reads the syscall
+number (`x7`, `InFlightContext.syscallId`; WS-ZA ZA6.27), the six message
 registers, the IPC buffer (`x6`) and the fault window (`pc`, `pstate`, `sp`,
-`x30`) off it here, so the closure the entry hands
+`x30`) off it here, so no word the HAL passes beside the frame can disagree
+with the frame the entry saves, so the closure the entry hands
 `Platform.FFI.modifyGetKernelState` captures one object rather than eleven
 boxed `UInt64`s.  It is the core's in-flight object (WS-CV CV3.1), read here
 and never kept: the state receives its words through the save's copy.  Inlined, with `BracketSpec.run`, so the executed path is the
 step's own application and the record is never built at runtime. -/
 @[inline] def syscallDispatchBracket (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (trapped : Architecture.InFlightContext) :
+    (trapped : Architecture.InFlightContext) :
     BracketSpec (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) where
-  declared := declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
+  declared := declaredUnifiedLockSetForAbiEntry ctx execCore trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
-  step := syscallDispatchCrossCoreStep ctx execCore syscallId
+  step := syscallDispatchCrossCoreStep ctx execCore trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
     trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
   inv := fun st => st.objects.invExt ∧ queueHeadBlockedConsistent st
   covers := fun st S hInv hS =>
-    syscallDispatchCrossCoreStep_coversWrites ctx execCore syscallId
+    syscallDispatchCrossCoreStep_coversWrites ctx execCore trapped.syscallId
       trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
       trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st S hInv hS
 
 /-- The step the seam commits: the syscall bracket, run.  Kept under the name
 the entry, its definitional marker and the suites call. -/
 @[inline] def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (execCore : CoreId) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  (syscallDispatchBracket ctx execCore syscallId trapped).run st
+  (syscallDispatchBracket ctx execCore trapped).run st
 
 /-- **WS-LS LS2.4**: what the syscall entry executes is the verified step —
 `rfl`, because `BracketSpec.run` is the step.  This equation holding on every
@@ -530,10 +532,10 @@ pre-state, declared footprint or not, is what subsumes the old bracket's
 `_undeclared` fallback and `_refused` negative: there is no arm on which the
 seam commits anything but the step. -/
 theorem syscallDispatchCrossCoreBracketedStep_run (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (execCore : CoreId) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
-      = syscallDispatchCrossCoreStep ctx execCore syscallId
+    syscallDispatchCrossCoreBracketedStep ctx execCore trapped st
+      = syscallDispatchCrossCoreStep ctx execCore trapped.syscallId
           trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
           trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st := rfl
 
@@ -544,35 +546,35 @@ compiled, it is `syscallDispatchCrossCoreStepWords`, where no outcome is built
 (`syscallDispatchCrossCoreBracketedStepWords_eq_impl`), so a value-returning
 syscall hands the boundary its words without a frame or an outcome. -/
 def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (execCore : CoreId) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Nat) × SystemState :=
-  let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
+  let r := syscallDispatchCrossCoreBracketedStep ctx execCore trapped st
   ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
     r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2,
     currentAsCode r.1.2), r.2)
 
 /-- WS-ZA ZA4: the compiled `syscallDispatchCrossCoreBracketedStepWords`. -/
 @[inline] def syscallDispatchCrossCoreBracketedStepWordsImpl (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (execCore : CoreId) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Nat) × SystemState :=
-  syscallDispatchCrossCoreStepWords ctx execCore syscallId
+  syscallDispatchCrossCoreStepWords ctx execCore trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
     trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st
 
 @[csimp] theorem syscallDispatchCrossCoreBracketedStepWords_eq_impl :
     @syscallDispatchCrossCoreBracketedStepWords =
       @syscallDispatchCrossCoreBracketedStepWordsImpl := by
-  funext ctx execCore syscallId trapped st
+  funext ctx execCore trapped st
   unfold syscallDispatchCrossCoreBracketedStepWords syscallDispatchCrossCoreBracketedStepWordsImpl
   rw [syscallDispatchCrossCoreStepWords_eq, syscallDispatchCrossCoreBracketedStep_run]
 
@@ -715,15 +717,47 @@ without one.**  An `SVC` handler always publishes its frame before it
 dispatches (`rust/sele4n-hal/src/trap.rs`), so an entry the HAL hands no context
 is a kernel defect, and the answer is to fail closed: `.faulted` with no state
 read, no state committed and no restore staged, on which the trap layer halts
-the PE (`halt_after_delivered_syscall_fault`).  Pure, so the host suite runs the
-arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`).  Inlined, so
-the entry's match on its answer is a match on the HAL's `Option` and no
-`Except` is built (WS-CV CV3.1: the HAL's `some` is persistent, so its cell
-cannot be reused for one). -/
+the PE (`halt_after_delivered_syscall_fault`).
+
+The entry reads the syscall's number and arguments from this frame alone (WS-ZA
+ZA6.27), so it admits only a frame the HAL can dispatch: one taken from EL0
+(`InFlightContext.fromEl0`; the HAL halts every kernel-origin exception before
+it routes one, `halt_if_kernel_origin`) whose `x7` is a `u32`
+(`InFlightContext.syscallNumberFits`; the HAL routes every other word to the
+unknown-syscall entry with the full word).  Any other frame is the same kernel
+defect and fails closed the same way.  An admitted frame is then saved whole
+into the caller's context, so the words the dispatch's argument spill writes
+are the words already there (`syscallEntrySpill_getTcb?`).
+
+Pure, so the host suite runs the arms no hardware path reaches
+(`tests/SyscallDispatchSuite.lean`).  Inlined, so the entry's match on its
+answer is a match on the HAL's `Option` and two field tests, and no `Except` is
+built (WS-CV CV3.1: the HAL's `some` is persistent, so its cell cannot be
+reused for one). -/
 @[inline] def syscallEntryContextOrFaulted :
     Option Architecture.InFlightContext → Except UInt64 Architecture.InFlightContext
-  | some trapped => .ok trapped
+  | some trapped =>
+    if trapped.fromEl0 && trapped.syscallNumberFits then .ok trapped
+    else .error Architecture.SyscallOutcome.faulted.tagWord
   | none => .error Architecture.SyscallOutcome.faulted.tagWord
+
+/-- **What the entry admits**: the HAL's frame, taken from EL0, with a `u32` in
+`x7`. -/
+theorem syscallEntryContextOrFaulted_ok {frame : Option Architecture.InFlightContext}
+    {trapped : Architecture.InFlightContext}
+    (h : syscallEntryContextOrFaulted frame = .ok trapped) :
+    frame = some trapped ∧ trapped.fromEl0 = true ∧ trapped.syscallNumberFits = true := by
+  cases frame with
+  | none => cases h
+  | some ic =>
+    simp only [syscallEntryContextOrFaulted] at h
+    by_cases hA : (ic.fromEl0 && ic.syscallNumberFits) = true
+    · rw [if_pos hA] at h
+      cases h
+      simp only [Bool.and_eq_true] at hA
+      exact ⟨rfl, hA.1, hA.2⟩
+    · rw [if_neg hA] at h
+      cases h
 
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core
@@ -775,7 +809,7 @@ describes the state that was actually committed;
 its scheduler slots.  Inert (`st'' = st'`) for every syscall that left a thread
 running on this core — including every arm of a single-core build. -/
 @[export lean_syscall_dispatch_cross_core]
-def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
+def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   let ctx ← Platform.FFI.getKernelLabelingContext
   let execCore ← Concurrency.currentCoreId
   -- **WS-LS LS2.4**: the atomic step is the seam's bracket, run
@@ -789,12 +823,17 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- PR #904 review (`v0.36.41`): on a core a remote deschedule vacated, the
   -- frame goes to the core's resident thread rewound to the `SVC`
   -- (`saveCapturedSyscallFrame`), so the interrupted syscall is re-issued.
-  -- The frame is also where the syscall's arguments are read, once: the
-  -- message info (`x1`), the six message registers, the IPC buffer (`x6`) and
-  -- the fault window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`).  An `SVC`
-  -- handler always publishes its frame before it dispatches, so an entry with
-  -- none is a kernel defect and fails closed (`syscallEntryContextOrFaulted`):
-  -- `.faulted` with no restore staged, on which the trap layer halts the PE.
+  -- The frame is also where the syscall's number and arguments are read,
+  -- once: the syscall number (`x7`, WS-ZA ZA6.27, as seL4's `handleSyscall`
+  -- reads them from the registers the thread trapped with), the message info
+  -- (`x1`), the six message registers, the IPC buffer (`x6`) and the fault
+  -- window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`), so the HAL passes no word
+  -- beside the frame that could disagree with it.  An `SVC` handler always
+  -- publishes its frame before it dispatches, so an entry with none — or with
+  -- one the HAL could not have dispatched (not from EL0, or an `x7` that is no
+  -- `u32`) — is a kernel defect and fails closed
+  -- (`syscallEntryContextOrFaulted`): `.faulted` with no restore staged, on
+  -- which the trap layer halts the PE.
   let frame ← Platform.FFI.ffiTrapContext
   let trapped ← match syscallEntryContextOrFaulted frame with
     | .ok trapped => pure trapped
@@ -804,7 +843,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- into this core's entry-word buffer and handed to the model in the atomic
   -- step, so the decode reads what the thread wrote; the committed state drops
   -- the buffer (WS-ZA ZA5.2).
-  let wordCount ← captureEntryWords execCore syscallId trapped.x0 msgInfo
+  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo
   let wordBytes ← Platform.FFI.ffiEntryWordBuffer
   -- **WS-ZA ZA3.1**: the restore target's parts are read off the committed
   -- state inside the atomic step (`syscallDispatchCrossCoreStep_restoreTarget`:
@@ -816,7 +855,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext, restoreTableBase,
       restoreAsid, committedCodes) ←
     Platform.FFI.modifyGetKernelState fun st =>
-      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
+      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
       let post := Architecture.IpcBufferRead.clearUserWords r.2
@@ -889,8 +928,8 @@ atomic step read off the committed post-state) so a refactor that drops the SGI
 firing, the state commit or the record breaks this marker at elaboration;
 combined with `@[export]` (which the Rust extern resolves against) the seam
 cannot regress silently. -/
-theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
-    syscallDispatchCrossCoreEntry syscallId =
+theorem syscallDispatchCrossCoreEntry_def :
+    syscallDispatchCrossCoreEntry =
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
@@ -899,12 +938,12 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
           | .ok trapped => pure trapped
           | .error tag => return tag
         let msgInfo := trapped.x1
-        let wordCount ← captureEntryWords execCore syscallId trapped.x0 msgInfo
+        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo
         let wordBytes ← Platform.FFI.ffiEntryWordBuffer
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
             restoreTableBase, restoreAsid, committedCodes) ←
           Platform.FFI.modifyGetKernelState fun st =>
-            let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
+            let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped
               (Architecture.IpcBufferRead.syncUserWords
                 (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
             let post := Architecture.IpcBufferRead.clearUserWords r.2
@@ -959,6 +998,173 @@ theorem vacatedCore_next_syscall_rejected
                    PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated
+
+-- ============================================================================
+-- WS-ZA ZA6.27 — the syscall's number and arguments are the saved frame's
+-- ============================================================================
+
+/-- **The syscall entry's save puts the frame in its caller's context and its
+core's bank**: on a core with a current thread, a frame taken from EL0 becomes
+both that thread's saved context and the core's bank (the vacated-core path
+writes nothing when a thread is current). -/
+theorem saveCapturedSyscallFrame_current_saves (st : SystemState) (c : CoreId)
+    (ic : Architecture.InFlightContext) (hEl0 : ic.fromEl0 = true)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (hCur : st.scheduler.currentOnCore c = some tid) (tcb : TCB)
+    (hT : (Architecture.saveCapturedSyscallFrame st c (some ic)).getTcb? tid = some tcb) :
+    tcb.registerContext = ic.snapshot ∧
+      (Architecture.saveCapturedSyscallFrame st c (some ic)).machine.regsOnCore c =
+        ic.snapshot := by
+  have hEl0' : Architecture.trapFromEl0 ic.snapshot = true := by
+    rw [Architecture.trapFromEl0_snapshot]; exact hEl0
+  have hV : Architecture.saveCapturedSyscallFrame st c (some ic) =
+      Architecture.saveTrapFrameOnCore st c ic.snapshot :=
+    Architecture.saveVacatedFrameOnCore_of_current _ c _ _ tid
+      (by rw [Architecture.saveTrapFrameOnCore_scheduler, hCur])
+  rw [hV] at hT ⊢
+  cases h0 : st.getTcb? tid with
+  | none =>
+    have hId : Architecture.saveTrapFrameOnCore st c ic.snapshot = st := by
+      simp [Architecture.saveTrapFrameOnCore, hEl0', hCur, h0]
+    rw [hId, h0] at hT
+    cases hT
+  | some tcb0 =>
+    obtain ⟨hBank, hTcb⟩ :=
+      Architecture.saveTrapFrameOnCore_saves st c ic.snapshot tid tcb0 hEl0' hCur h0 hInv
+    rw [hTcb] at hT
+    cases hT
+    exact ⟨rfl, hBank⟩
+
+/-- **The argument spill at the syscall entry writes what the save saved.**  The
+dispatch (`Platform.FFI.syscallDispatchFromAbi`) spills the syscall number and
+`x0`–`x5` into its caller's saved context (`writeFfiRegistersToTcb`); the entry
+hands it the words of the frame it admitted and saved
+(`syscallDispatchBracket`), so the spill rewrites the caller's context with the
+words it already holds, and every TCB reads back as it did before the spill.
+The premises are the entry's own admission and the store's well-formedness: no
+word the HAL passes beside the frame is involved, so the saved context and the
+bank cannot diverge.  This is seL4's `handleSyscall`, which reads a syscall's
+arguments from the registers its thread trapped with. -/
+theorem syscallEntrySpill_getTcb? {frame : Option Architecture.InFlightContext}
+    {trapped : Architecture.InFlightContext}
+    (hAdm : syscallEntryContextOrFaulted frame = .ok trapped)
+    (st : SystemState) (e : CoreId) (bytes : ByteArray) (n : Nat)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (hCur : (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some tid)
+    (t : SeLe4n.ThreadId) :
+    (Platform.FFI.writeFfiRegistersToTcb (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid
+        trapped.syscallId trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4
+        trapped.x5).getTcb? t =
+      (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).getTcb? t := by
+  obtain ⟨rfl, hEl0, hFits⟩ := syscallEntryContextOrFaulted_ok hAdm
+  have hSched : (Architecture.saveCapturedSyscallFrame st e (some trapped)).scheduler =
+      st.scheduler := by
+    show (Architecture.saveVacatedFrameOnCore _ e _ _).scheduler = _
+    rw [Architecture.saveVacatedFrameOnCore_scheduler,
+      Architecture.saveTrapFrameOnCore_scheduler]
+  have hCur' : st.scheduler.currentOnCore e = some tid := by
+    simpa [hSched] using hCur
+  have hInvS : (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e (some trapped)) bytes n).objects.invExt := by
+    rw [Architecture.IpcBufferRead.syncUserWords_objects,
+      show Architecture.saveCapturedSyscallFrame st e (some trapped) =
+          Architecture.saveTrapFrameOnCore st e trapped.snapshot from
+        Architecture.saveVacatedFrameOnCore_of_current _ e _ _ tid
+          (by rw [Architecture.saveTrapFrameOnCore_scheduler, hCur'])]
+    exact Architecture.saveTrapFrameOnCore_preserves_objects_invExt st e _ hInv
+  refine Platform.FFI.writeFfiRegistersToTcb_getTcb?_of_held _ tid _ _ _ _ _ _ _ hInvS
+    (fun tcb hT => ?_) t
+  have hT' : (Architecture.saveCapturedSyscallFrame st e (some trapped)).getTcb? tid =
+      some tcb := by
+    simpa [SystemState.getTcb?] using hT
+  obtain ⟨hRf, -⟩ :=
+    saveCapturedSyscallFrame_current_saves st e trapped hEl0 hInv tid hCur' tcb hT'
+  rw [hRf]
+  simp [Platform.FFI.ffiRegistersHeld, Architecture.InFlightContext.snapshot,
+    Architecture.InFlightContext.syscallId_toUInt64 trapped hFits]
+
+/-- **…so the spill keeps every core's bank match as it found it**: it writes no
+bank and no scheduler state, and every TCB reads back unchanged. -/
+theorem syscallEntrySpill_contextMatchesCurrentOnCore_iff
+    {frame : Option Architecture.InFlightContext} {trapped : Architecture.InFlightContext}
+    (hAdm : syscallEntryContextOrFaulted frame = .ok trapped)
+    (st : SystemState) (e : CoreId) (bytes : ByteArray) (n : Nat)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (hCur : (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some tid)
+    (c : CoreId) :
+    contextMatchesCurrentOnCore (Platform.FFI.writeFfiRegistersToTcb
+        (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid trapped.syscallId trapped.x0 trapped.x1
+        trapped.x2 trapped.x3 trapped.x4 trapped.x5) c ↔
+      contextMatchesCurrentOnCore (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n) c := by
+  unfold contextMatchesCurrentOnCore
+  rw [Platform.FFI.writeFfiRegistersToTcb_scheduler, Platform.FFI.writeFfiRegistersToTcb_machine]
+  split
+  · rename_i u _
+    rw [syscallEntrySpill_getTcb? hAdm st e bytes n hInv tid hCur u]
+  · exact Iff.rfl
+
+/-- **The syscall entry's save establishes the executing core's bank match**,
+whatever the state held before: the admitted frame is the caller's context and
+the core's bank alike. -/
+theorem syscallEntrySaved_contextMatchesCurrentOnCore
+    {frame : Option Architecture.InFlightContext} {trapped : Architecture.InFlightContext}
+    (hAdm : syscallEntryContextOrFaulted frame = .ok trapped)
+    (st : SystemState) (e : CoreId) (bytes : ByteArray) (n : Nat)
+    (hInv : st.objects.invExt) :
+    contextMatchesCurrentOnCore (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n) e := by
+  obtain ⟨rfl, hEl0, -⟩ := syscallEntryContextOrFaulted_ok hAdm
+  have hSched : (Architecture.saveCapturedSyscallFrame st e (some trapped)).scheduler =
+      st.scheduler := by
+    show (Architecture.saveVacatedFrameOnCore _ e _ _).scheduler = _
+    rw [Architecture.saveVacatedFrameOnCore_scheduler,
+      Architecture.saveTrapFrameOnCore_scheduler]
+  unfold contextMatchesCurrentOnCore
+  split
+  · rename_i tid hCur
+    have hCur' : st.scheduler.currentOnCore e = some tid := by
+      simpa [hSched] using hCur
+    split
+    · rename_i tcb hT
+      have hT' : (Architecture.saveCapturedSyscallFrame st e (some trapped)).getTcb? tid =
+          some tcb := by
+        simpa [SystemState.getTcb?] using hT
+      obtain ⟨hRf, hBank⟩ :=
+        saveCapturedSyscallFrame_current_saves st e trapped hEl0 hInv tid hCur' tcb hT'
+      have hB : (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e (some trapped)) bytes n).machine.regsOnCore e =
+          (Architecture.saveCapturedSyscallFrame st e (some trapped)).machine.regsOnCore e := by
+        unfold Architecture.IpcBufferRead.syncUserWords
+        split <;> rfl
+      rw [hB, hBank, hRf]
+      exact beq_self_eq_true _
+    · trivial
+  · trivial
+
+/-- **The bank match on the state the syscall's dispatch decodes**: after the
+entry's save and the dispatch's argument spill, the executing core's bank is its
+caller's saved context.  The statement the entry-level bank match composes
+through the dispatch (WS-ZA ZA6.28); its premises are the entry's admission and
+the store's well-formedness, none about a word the HAL passes. -/
+theorem syscallEntrySpill_contextMatchesCurrentOnCore
+    {frame : Option Architecture.InFlightContext} {trapped : Architecture.InFlightContext}
+    (hAdm : syscallEntryContextOrFaulted frame = .ok trapped)
+    (st : SystemState) (e : CoreId) (bytes : ByteArray) (n : Nat)
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (hCur : (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some tid) :
+    contextMatchesCurrentOnCore (Platform.FFI.writeFfiRegistersToTcb
+        (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid trapped.syscallId trapped.x0 trapped.x1
+        trapped.x2 trapped.x3 trapped.x4 trapped.x5) e :=
+  (syscallEntrySpill_contextMatchesCurrentOnCore_iff hAdm st e bytes n hInv tid hCur e).mpr
+    (syscallEntrySaved_contextMatchesCurrentOnCore hAdm st e bytes n hInv)
 
 -- ============================================================================
 -- WS-SM SM9.B.9 — the refusal write does not disturb the runtime seam

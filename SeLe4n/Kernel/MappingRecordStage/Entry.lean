@@ -381,11 +381,11 @@ trap-frame save, the entry's IPC-buffer words handed to the state, the step,
 and the committed state dropping the words.  The premises are read off the
 state the entry starts from. -/
 theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : CoreId)
-    (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (P : MappingArmPremises st) :
     MappingStage st (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) := by
   have hS := (saveCapturedSyscallFrame_mappingStage st e frame).trans
@@ -403,15 +403,15 @@ theorem syscallDispatchEntryState_mappingStage (ctx : LabelingContext) (e : Core
 invariant bundle and the ASID table's table invariant on the state it starts
 from (`MappingArmPremises.of_proofLayerInvariantBundle`). -/
 theorem syscallDispatchEntryState_preserves_liveMappingsRecorded (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (hB : Architecture.proofLayerInvariantBundle st)
     (hA : st.asidTable.invExtK) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).liveMappingsRecorded :=
-  (syscallDispatchEntryState_mappingStage ctx e syscallId trapped frame bytes n st
+  (syscallDispatchEntryState_mappingStage ctx e trapped frame bytes n st
     (MappingArmPremises.of_proofLayerInvariantBundle hB hA)).preserves
     (objects_invExt_of_capabilityInvariantBundle _ hB.2.1)
     hB.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1

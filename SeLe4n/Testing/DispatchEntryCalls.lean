@@ -56,27 +56,27 @@ open SeLe4n.Kernel
 /-- `syscallDispatchCrossCoreBracketedStep`: the bracket runs its step, so this
 is the cross-core step at the trapped context's words. -/
 def dispatchCrossCoreBracketedStep (ctx : LabelingContext)
-    (execCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId : UInt32)
+    (execCore : SeLe4n.Kernel.Concurrency.CoreId)
     (trapped : Architecture.InFlightContext) (st : SystemState) :
     (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  dispatchCrossCoreStep ctx execCore syscallId
+  dispatchCrossCoreStep ctx execCore trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
     trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st
 
 /-- `syscallDispatchBracket`, with its step the out-of-line cross-core step. -/
 @[noinline] def dispatchBracket (ctx : LabelingContext)
-    (execCore : SeLe4n.Kernel.Concurrency.CoreId) (syscallId : UInt32)
+    (execCore : SeLe4n.Kernel.Concurrency.CoreId)
     (trapped : Architecture.InFlightContext) :
     SeLe4n.Kernel.Concurrency.BracketSpec
       (Architecture.SyscallOutcome × PerCoreFlags × List SeLe4n.Kernel.Concurrency.CoreId ×
         List Architecture.TlbInvalidation × (Nat × Nat) ×
         List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
         Architecture.RestoreTarget × Option SeLe4n.ThreadId) :=
-  { syscallDispatchBracket ctx execCore syscallId trapped with
-    step := dispatchCrossCoreBracketedStep ctx execCore syscallId trapped }
+  { syscallDispatchBracket ctx execCore trapped with
+    step := dispatchCrossCoreBracketedStep ctx execCore trapped }
 
 theorem dispatchFromAbi_eq ctx c id x0 x1 x2 x3 x4 x5 ipc elr spsr sp x30 st :
     dispatchFromAbi ctx c id x0 x1 x2 x3 x4 x5 ipc elr spsr sp x30 st =
@@ -88,13 +88,13 @@ theorem dispatchCrossCoreStep_eq ctx c id x0 x1 x2 x3 x4 x5 ipc elr spsr sp x30 
       syscallDispatchCrossCoreStep ctx c id x0 x1 x2 x3 x4 x5 ipc elr spsr sp x30 st :=
   rfl
 
-theorem dispatchCrossCoreBracketedStep_eq ctx c id trapped st :
-    dispatchCrossCoreBracketedStep ctx c id trapped st =
-      syscallDispatchCrossCoreBracketedStep ctx c id trapped st :=
+theorem dispatchCrossCoreBracketedStep_eq ctx c trapped st :
+    dispatchCrossCoreBracketedStep ctx c trapped st =
+      syscallDispatchCrossCoreBracketedStep ctx c trapped st :=
   rfl
 
-theorem dispatchBracket_eq ctx c id trapped :
-    dispatchBracket ctx c id trapped = syscallDispatchBracket ctx c id trapped :=
+theorem dispatchBracket_eq ctx c trapped :
+    dispatchBracket ctx c trapped = syscallDispatchBracket ctx c trapped :=
   rfl
 
 end SeLe4n.Testing

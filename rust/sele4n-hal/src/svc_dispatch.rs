@@ -708,13 +708,15 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<SvcOutcome, D
         // frame this call returns is the frame this call's commit published.
         crate::kernel_entry::with_kernel_entry(core, || {
             // SAFETY: `lean_syscall_dispatch_cross_core` is a Lean-emitted
-            // extern "C" symbol resolved at link time.  The validated syscall
-            // id is its one argument (`u32`, the @[extern] declaration in
-            // `SeLe4n/Kernel/SyscallDispatchEntry.lean`); the Lean side reads
-            // every other argument from the in-flight frame, in one call.
+            // extern "C" symbol resolved at link time.  It takes no argument:
+            // the Lean side reads the syscall number (`x7`) and every argument
+            // from the in-flight frame, in one call, the frame it saves into
+            // the caller's context (WS-ZA ZA6.27), so no word passed here can
+            // disagree with that frame.  `sid` above is this layer's own
+            // prefilter, decoded from the same `x7`.
             // Calling it is sound from EL1 kernel context once this core's Lean
             // runtime is initialized — which the gate above just established.
-            let tag = unsafe { lean_syscall_dispatch_cross_core(sid.to_u32()) };
+            let tag = unsafe { lean_syscall_dispatch_cross_core() };
             (tag, return_frame_read_in(&RETURN_FRAMES, core))
         })
     } else {
@@ -781,9 +783,11 @@ extern "C" {
     /// checks `lean_ready` on the executing PE before every outcome, including
     /// its prefilters — and only for an `SVC` taken from EL0, inside the
     /// handler that published the frame (`trap::InFlightFrame`) the Lean side
-    /// reads the arguments from.  `syscall_id` must be that frame's `x7`; the
-    /// outcome tag the call returns decides whether the frame may be `eret`ed.
-    fn lean_syscall_dispatch_cross_core(syscall_id: u32) -> u64;
+    /// reads the syscall number and its arguments from (WS-ZA ZA6.27: the
+    /// Lean entry fails closed, `.faulted`, on a frame not taken from EL0 or
+    /// whose `x7` is no `u32`); the outcome tag the call returns decides
+    /// whether the frame may be `eret`ed.
+    fn lean_syscall_dispatch_cross_core() -> u64;
 }
 
 /// AN9-F.4 host-lane stand-in (WS-RA shape): publishes the label-encoded
@@ -811,7 +815,7 @@ extern "C" {
 ///
 /// None beyond the call: this stand-in touches only the return-frame mailbox.
 #[cfg(not(feature = "hw_target"))]
-unsafe fn lean_syscall_dispatch_cross_core(_syscall_id: u32) -> u64 {
+unsafe fn lean_syscall_dispatch_cross_core() -> u64 {
     return_frame_publish_in(&RETURN_FRAMES, 0, error_frame_regs(17));
     0
 }

@@ -607,10 +607,17 @@ notification arms and the whole syscall dispatch
 write no saved register (`savedRegsUnwritten`), and each staging names a
 thread blocked in IPC at the entry's start or the caller.  **New code must
 assume it**: a new IPC step states its `savedRegsUnwritten` frame, and a new
-staging names a thread blocked at the entry's start or the caller.  ZA6.27
-derives the syscall's id and argument
-registers from the entry's saved frame, and ZA6.28 composes them into the
-syscall entry's and every other core's bank match.  ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
+staging names a thread blocked at the entry's start or the caller.  Since
+`v0.36.190`, ZA6.27 reads the syscall's number and arguments from the frame
+the entry saves (`syscallDispatchBracket` takes the trapped context alone; the
+export `lean_syscall_dispatch_cross_core()` takes no argument), and the entry
+admits only a frame from EL0 whose `x7` is a `u32`
+(`syscallEntryContextOrFaulted`), so the argument spill keeps every core's
+bank match (`syscallEntrySpill_contextMatchesCurrentOnCore`).  **New code must
+assume it**: the syscall entry takes no word from the HAL beside the frame,
+and a new entry-level theorem is stated over the trapped context, not a
+separate syscall number.  ZA6.28 composes it into the syscall entry's and
+every other core's bank match.  ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
 the stage's `live` field generalised to `YieldToCodesSetOnly L` across the
 dispatch chain (its linked branch sets the caller's yield-to code), the
 invocation and its live-link tests.  ZA6.30 puts

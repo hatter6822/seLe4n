@@ -4379,7 +4379,7 @@ run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_blocked
 run_check "INVARIANT" rg -n -U "^    \(h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = \.ok \(\(\), st'\)\) :\n    readyKeptStage \(· = tid\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n -U "^    \(h : dispatchSyscallChecked ctx decoded tid executingCore st = \.ok \(\(\), st'\)\) :\n    readyKeptStage \(· = tid\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n -U "^      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st'\)\) :\n    readyKeptStage \(fun t => st\.scheduler\.currentOnCore e = some t\) st st' :=" SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
-run_check "INVARIANT" rg -n -U '^    \(hC : st\.currentNotResidentElsewhere\) \(hBNR : st\.blockedNotResident\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
+run_check "INVARIANT" rg -n -U '^    \(hC : st\.currentNotResidentElsewhere\) \(hBNR : st\.blockedNotResident\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbind_runQueueStage_of_dequeued($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 # WS-ZA ZA6.21: every core's resident thread has a TCB, at boot and across
@@ -4399,7 +4399,7 @@ run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_resi
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
-run_check "INVARIANT" rg -n -U '^    \(hT : st\.residentsHaveTcbs\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n -U '^    \(hT : st\.residentsHaveTcbs\) :\n    \(Architecture\.IpcBufferRead\.clearUserWords\n      \(syscallDispatchCrossCoreBracketedStepWords ctx e trapped' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 # WS-ZA ZA6.22: every cancellation restore retires the fault record, as seL4's
 # cancelIPC resets tcbFault; the resume writes its restart frame only into a
@@ -4487,6 +4487,27 @@ run_check "INVARIANT" rg -n '^        \(applySyscallTaint_objectsAgreeOffTaint _
 run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact offCoreFree_of_receiveHead E\.dequeued E\.queueHeads hRT hBNR ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(h : Platform\.FFI\.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5\n      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st.\)\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+# WS-ZA ZA6.27: the syscall's number and arguments are read from the frame the
+# entry saves.  The entry admits only a frame taken from EL0 whose x7 is a u32,
+# the bracket derives the syscall number from the frame, the export takes no
+# argument, and the argument spill at the entry rewrites the caller's context
+# with the words it already holds, so the bank match needs no premise about a
+# word the HAL passes.
+run_check "INVARIANT" rg -n '^@\[inline\] def syscallId \(c : @& InFlightContext\) : UInt32 :=$' SeLe4n/Kernel/Architecture/InFlightContext.lean
+run_check "INVARIANT" rg -n '^  c\.x7\.toUInt32\.toUInt64 == c\.x7$' SeLe4n/Kernel/Architecture/InFlightContext.lean
+run_check "INVARIANT" rg -n '^theorem syscallId_toUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InFlightContext.lean
+run_check "INVARIANT" rg -n -U '^  \| some trapped =>\n    if trapped\.fromEl0 && trapped\.syscallNumberFits then \.ok trapped\n    else \.error Architecture\.SyscallOutcome\.faulted\.tagWord$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryContextOrFaulted_ok($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n -U '^@\[inline\] def syscallDispatchBracket[^\n]*\n[^\n]*\(syscallId : UInt32\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_getTcb\?_of_held($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_machine($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem saveCapturedSyscallFrame_current_saves($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntrySpill_getTcb\?($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntrySpill_contextMatchesCurrentOnCore_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntrySaved_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntrySpill_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^            let tag = unsafe \{ lean_syscall_dispatch_cross_core\(\) \};$' rust/sele4n-hal/src/svc_dispatch.rs
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
@@ -5064,7 +5085,7 @@ run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st exe
 # ZA5.2: into the core's entry-word buffer, run by run as the proven runs are
 # planned, a receive's blocked sender's slots too, and the committed state
 # drops the buffer.
-run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore syscallId trapped\.x0 msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore trapped\.syscallId trapped\.x0 msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let post := Architecture\.IpcBufferRead\.clearUserWords r\.2\n      \(\(r\.1, Architecture\.restoreCommitKindOnCore post execCore,$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.ffiCaptureUserWords idx\.toUInt64 pa\.toNat\.toUInt64 len\.toUInt64\n        captureOverflowRuns st tcb stop fuel \(s \+ len\) \(idx \+ len\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^          captureOverflowRuns st stcb sstop sstop 0 n$' SeLe4n/Kernel/SyscallDispatchEntry.lean
@@ -5422,11 +5443,11 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped\n        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-# The syscall's arguments cross the boundary once: the HAL passes the validated
-# id alone, and the Lean side reads every other argument from the context it
-# takes whole.  Capture and restore are one call each, not one per word.
-run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(syscall_id: u32\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n -U '^      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore trapped\n        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# The syscall's number and arguments cross the boundary once: the HAL passes
+# no argument, and the Lean side reads them all from the context it takes whole
+# (WS-ZA ZA6.27).  Capture and restore are one call each, not one per word.
+run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^  let frame ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-CV CV2.1/CV3.1: the HAL hands the core's persistent in-flight context
 # over and the restore borrows the thread's own, so no conversion runs either
@@ -21918,9 +21939,9 @@ run_check "INVARIANT" rg -n '^  sd062_carve_checks_authority_before_child$' test
 # would leave the scheduler writes outside it — which is exactly what the
 # retired `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded — and the
 # seam's step must be that record, run.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*  declared := declaredUnifiedLockSetForAbiEntry ctx execCore syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*    syscallDispatchCrossCoreStep_coversWrites ctx execCore syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*  \(syscallDispatchBracket ctx execCore syscallId trapped\)\.run st" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*  declared := declaredUnifiedLockSetForAbiEntry ctx execCore trapped\.syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*    syscallDispatchCrossCoreStep_coversWrites ctx execCore trapped\.syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*  \(syscallDispatchBracket ctx execCore trapped\)\.run st" SeLe4n/Kernel/SyscallDispatchEntry.lean'
 # NEGATIVE: the object-domain-only bracket must not come back at the seam.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*runUnderDeclaredLockSet" SeLe4n/Kernel/SyscallDispatchEntry.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*  declared := declaredLockSetForAbiEntry ctx" SeLe4n/Kernel/SyscallDispatchEntry.lean'

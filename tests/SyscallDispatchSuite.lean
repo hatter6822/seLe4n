@@ -514,8 +514,11 @@ private def sd038_idleCallerRefused : IO Unit := do
 handed no context.  `syscallEntryContextOrFaulted` is the pure owner of that
 arm: `none` is the `.faulted` outcome tag and nothing else (no state is read,
 so none can be committed), and `some c` is `c` itself, so the entry dispatches
-on exactly the context the HAL handed over.  The host lane cannot link the
-entry's externs, which is why the arm is a pure function. -/
+on exactly the context the HAL handed over.  Since the entry reads the
+syscall number from the frame (`x7`), a frame the HAL could not have
+dispatched — taken at EL1, or with an `x7` that is no `u32` — is the same
+`.faulted` tag, never a narrowed id.  The host lane cannot link the entry's
+externs, which is why the arm is a pure function. -/
 private def sd036_entryWithoutContext_faults : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨12⟩
   let st := mkState [(⟨12⟩, .tcb (mkTcb 12 .Ready))] (some tid)
@@ -526,13 +529,26 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
       | .error tag => tag == faulted && tag == 2
       | .ok _ => false)
     "an entry with no published context must answer the .faulted tag (2)"
-  let c : Kernel.Architecture.InFlightContext := .ofRegisterFile
-    (SeLe4n.RegisterFile.ofWords fun i => 0x2000 + i.toUInt64)
+  let rf : SeLe4n.RegisterFile :=
+    { SeLe4n.RegisterFile.ofWords (fun i => 0x2000 + i.toUInt64) with pstate := 0 }
+  let c : Kernel.Architecture.InFlightContext := .ofRegisterFile rf
   expect "sd036b_some_is_the_context_itself"
     (match syscallEntryContextOrFaulted (some c) with
-      | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022
+      | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022 && c'.syscallId == 0x2007
       | .error _ => false)
     "an entry with a context must dispatch on exactly that context"
+  expect "sd036d_el1_frame_is_the_faulted_tag"
+    (match syscallEntryContextOrFaulted
+        (some (.ofRegisterFile { rf with pstate := 0x5 })) with
+      | .error tag => tag == faulted
+      | .ok _ => false)
+    "a frame taken at EL1 is no syscall the HAL dispatches: it must answer .faulted"
+  expect "sd036e_wide_syscall_word_is_the_faulted_tag"
+    (match syscallEntryContextOrFaulted
+        (some (.ofRegisterFile { rf with x7 := 0x1_0000_0002 })) with
+      | .error tag => tag == faulted
+      | .ok _ => false)
+    "an x7 that is no u32 must answer .faulted, never be narrowed to syscall 2"
   -- The frame-less answer commits nothing: the state is what was installed.
   let st' ← getKernelState
   match st'.objects[tid.toObjId]? with

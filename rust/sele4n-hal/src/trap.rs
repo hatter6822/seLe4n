@@ -1471,7 +1471,10 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // and forwards via the `lean_syscall_dispatch_cross_core`
             // `extern "C"` symbol (Lean-emitted from
             // `SeLe4n/Kernel/SyscallDispatchEntry.lean`) into the Lean
-            // kernel.
+            // kernel, which takes no argument: it reads the syscall number
+            // and the arguments from the frame it saves into the caller's
+            // context (WS-ZA ZA6.27), so the prefilters' id below is this
+            // layer's own decode of the same `x7`.
             //
             // **WS-RR RR8.13**: this named `syscall_dispatch_inner` and
             // described the ABI v1 status convention — a raw

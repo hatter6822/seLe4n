@@ -251,22 +251,22 @@ theorem holdsOnlyCurrentOn_clearLedgers {X : SystemState} {c : CoreId}
 
 /-- **The syscall entry leaves its core holding only its current thread.** -/
 theorem syscallDispatchEntryState_holdsOnlyCurrentOn (ctx : LabelingContext)
-    (e : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) :
     (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e syscallId trapped
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).holdsOnlyCurrentOn e := by
   refine SystemState.holdsOnlyCurrentOn_of_frame
     (by unfold Architecture.IpcBufferRead.clearUserWords
         rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
     (syncUserWords_residentCode _ _ _) ?_
-  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
+  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
     trapped.pstate trapped.sp trapped.x30
     (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
-  show (syscallDispatchCrossCoreStep ctx e syscallId
+  show (syscallDispatchCrossCoreStep ctx e trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
     trapped.pstate trapped.sp trapped.x30
     (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
