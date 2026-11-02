@@ -599,8 +599,15 @@ scheduling point's outgoing thread, the executing core's current thread at the
 entry.  **New code must assume it**: a new step before an arm's scheduling
 point keeps or clears the executing core's slot (`currentKeptOnCore`), and a
 new capability-only arm states which threads it writes and why each is free at
-the entry's start.  ZA6.26 censuses the IPC and notification arms with the
-dispatch's census, ZA6.27
+the entry's start.  Since `v0.36.189`, ZA6.26 censuses the IPC and
+notification arms and the whole syscall dispatch
+(`syscallDispatchFromAbi_savedRegsKeptOffCore`,
+`IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean`,
+`SavedRegistersCallReply.lean`, `SavedRegistersDispatch.lean`): the transitions
+write no saved register (`savedRegsUnwritten`), and each staging names a
+thread blocked in IPC at the entry's start or the caller.  **New code must
+assume it**: a new IPC step states its `savedRegsUnwritten` frame, and a new
+staging names a thread blocked at the entry's start or the caller.  ZA6.27
 derives the syscall's id and argument
 registers from the entry's saved frame, and ZA6.28 composes them into the
 syscall entry's and every other core's bank match.  ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,

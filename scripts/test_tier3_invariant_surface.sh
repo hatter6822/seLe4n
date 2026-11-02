@@ -4456,6 +4456,37 @@ run_check "INVARIANT" rg -n -U '^    \(hBNR : st\.blockedNotResident\) \(hYA : s
 run_check "INVARIANT" rg -n '^        \| exact tcbResume_savedRegsKeptOffCore hInv P\.refined P\.dequeued hN hS$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '^        \| exact copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_negative_check "INVARIANT" rg -n 'capabilityObjectArm' SeLe4n
+# WS-ZA ZA6.26: the census over the IPC and notification arms and the whole
+# dispatch -- the transitions write no saved register, every staging names a
+# thread blocked at the entry's start or the caller, the yield saves the caller,
+# the taint pass writes taint words, and the ABI dispatch composes them.
+run_check "INVARIANT" rg -n -U '^def savedRegsUnwritten \(pre post : SystemState\) : Prop :=\n  savedRegsKeptExcept \(fun _ => False\) pre post ∧ post\.objects\.invExt$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st\n      \(endpointSendCrossCoreDispatchChecked ctx endpointId sender payload base c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st \(notificationSignalBoundCrossCoreDispatchChecked ctx notificationId\n      signaler badge c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st\n      \(notificationWaitCrossCoreDispatchChecked ctx notificationId waiter c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsKeptExcept \(· = tid\) st \(Architecture\.stageDeliveredMessage st tid n\) ∧' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    \(h : ∀ x, st\.getTcb\? t = some x → x\.ipcState ≠ \.ready\) : offCoreFree e st t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsWrittenFree ec st st \(Architecture\.stageWokenDelivery s2\n      \(\(st\.getEndpoint\? epId\)\.bind \(·\.receiveQ\.head\)\) n\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queueHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^    offCoreFree_of_signalWaiter P\.dequeued P\.ntfnHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^      offCoreFree_of_current P\.current \(currentsUnique_of_dequeuedUnique P\.dequeued\) hN\)⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queueHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
+run_check "INVARIANT" rg -n '^    fun _ h => offCoreFree_of_sendHead P\.dequeued P\.queueHeads hRT hBNR h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
+run_check "INVARIANT" rg -n '^      e ▸ offCoreFree_of_notReady hD hRT hBNR hB\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
+run_check "INVARIANT" rg -n '^          \(endpointReplyCrossCoreDispatchChecked_ok_target_notReady hR\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
+run_check "INVARIANT" rg -n '^        \(sendHead_backward \(fun o ep hx => hB0 o ep \(hB1 o ep hx\)\) ht\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
+run_check "INVARIANT" rg -n '^    exact hW \(sendArm_savedRegsWrittenFree _ P hRT hBNR hSend hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^    exact hW \(receiveArm_savedRegsWrittenFree _ P hRT hBNR hN hRecv hHand\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(callArm_savedRegsWrittenFree _ P hRT hBNR hCall\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^    exact hW \(replyTransferOnCoreChecked_savedRegsWrittenFree P\.dequeued hRT hBNR hInv h\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^        \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact offCoreFree_of_receiveHead E\.dequeued E\.queueHeads hRT hBNR ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n -U '^    \(h : Platform\.FFI\.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5\n      ipcBufferAddr elr spsr spEl0 x30 st = \.ok \(outcome, st.\)\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
