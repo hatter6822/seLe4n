@@ -82,13 +82,18 @@ theorem savedRegsKeptOffCore_trans_stepCovers {e : CoreId} {a b c : SystemState}
     (hC : stepCovers e b c) : savedRegsKeptOffCore e a c :=
   savedRegsKeptOffCore_trans h₁ h₂ hC.currentKept hC.residentKept
 
+/-- WS-ZA ZA6.24: **the step writes the saved registers of no thread outside
+`W`**: every other thread has the saved registers it had (no TCB stays no TCB). -/
+def savedRegsKeptExcept (W : SeLe4n.ThreadId → Prop) (pre post : SystemState) : Prop :=
+  ∀ t, ¬ W t → post.savedRegs t = pre.savedRegs t
+
 /-- **A step's census, from what it writes**: it changes the saved registers
 only of threads in `W`, each of which no other core held at an earlier state
 `base`, and nothing from `base` to the step's post-state made a thread current
 or resident on another core. -/
 theorem savedRegsKeptOffCore_of_writes {e : CoreId} {base pre post : SystemState}
     (W : SeLe4n.ThreadId → Prop)
-    (hOnly : ∀ t, ¬ W t → post.savedRegs t = pre.savedRegs t)
+    (hOnly : savedRegsKeptExcept W pre post)
     (hFree : ∀ t, W t → offCoreFree e base t)
     (hK : currentKeptOffCore e base post) (hR : residentKeptOffCore e base post) :
     savedRegsKeptOffCore e pre post := fun d hd t ht => by
@@ -227,27 +232,21 @@ theorem yieldCode_of_unset {st base : SystemState} {k : SeLe4n.ObjId}
   · exact absurd h hL
   · rw [← h]; exact hL
 
-/-- **The yield completion names a linked thread**: `completeYieldFrom` writes
-the saved registers of the context's recorded yielder alone (`setConsumed`'s
-consumed-time words; the link clear writes no register), a thread no other core
-held at `base`. -/
-theorem completeYieldFrom_savedRegsKeptOffCore {e : CoreId} {base st : SystemState}
-    {s : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
-    (hFree : ∀ sc k, st.getSchedContext? s = some sc → sc.yieldFromCode = k + 1 →
-      offCoreFree e base ⟨k⟩)
-    (hK : currentKeptOffCore e base (completeYieldFrom st s))
-    (hR : residentKeptOffCore e base (completeYieldFrom st s)) :
-    savedRegsKeptOffCore e st (completeYieldFrom st s) := by
-  revert hK hR
+/-- WS-ZA ZA6.24: **the yield completion writes the context's recorded yielder
+alone**: `setConsumed`'s consumed-time words; the link clear writes no
+register. -/
+theorem completeYieldFrom_savedRegsKeptExcept {st : SystemState} {s : SeLe4n.SchedContextId}
+    (hInv : st.objects.invExt) :
+    savedRegsKeptExcept (fun t => ∃ sc k, st.getSchedContext? s = some sc ∧
+      sc.yieldFromCode = k + 1 ∧ t = ⟨k⟩) st (completeYieldFrom st s) := by
+  intro t hW
   unfold completeYieldFrom
   split
   · rename_i sc hS
     split
-    · intro _ _; exact savedRegsKeptOffCore_refl e st
+    · rfl
     · rename_i k hC
-      intro hK hR
-      refine savedRegsKeptOffCore_of_writes (· = ⟨k⟩) (fun t hNe => ?_)
-        (fun _ h => h ▸ hFree sc k hS hC) hK hR
+      have hNe : t ≠ ⟨k⟩ := fun h => hW ⟨sc, k, hS, hC, h⟩
       have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st s
         SchedContext.updateConsumed hInv
       unfold setConsumed cancelYieldFrom
@@ -272,7 +271,21 @@ theorem completeYieldFrom_savedRegsKeptOffCore {e : CoreId} {base st : SystemSta
         SystemState.updateTcb_getTcb?_ne _ _ _ hInv1 t
           (fun h => hNe (SeLe4n.ThreadId.toObjId_injective _ _ h.symm)),
         SystemState.updateSchedContext_getTcb? _ _ _ hInv]
-  · intro _ _; exact savedRegsKeptOffCore_refl e st
+  · rfl
+
+/-- **The yield completion names a linked thread**: `completeYieldFrom` writes
+the saved registers of the context's recorded yielder alone
+(`completeYieldFrom_savedRegsKeptExcept`), a thread no other core held at
+`base`. -/
+theorem completeYieldFrom_savedRegsKeptOffCore {e : CoreId} {base st : SystemState}
+    {s : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (hFree : ∀ sc k, st.getSchedContext? s = some sc → sc.yieldFromCode = k + 1 →
+      offCoreFree e base ⟨k⟩)
+    (hK : currentKeptOffCore e base (completeYieldFrom st s))
+    (hR : residentKeptOffCore e base (completeYieldFrom st s)) :
+    savedRegsKeptOffCore e st (completeYieldFrom st s) :=
+  savedRegsKeptOffCore_of_writes _ (completeYieldFrom_savedRegsKeptExcept hInv)
+    (fun _ ⟨sc, k, hS, hC, h⟩ => h ▸ hFree sc k hS hC) hK hR
 
 
 /-! ### The cancellation's write -/

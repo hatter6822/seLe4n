@@ -4428,7 +4428,22 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_savedRegsKept($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
 run_check "INVARIANT" rg -n '^theorem pageTableUnmap_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
-run_check "INVARIANT" rg -n -U '^    \(hArm : decoded\.syscallId\.capabilityObjectArm = true\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n -U '^    \(hArm : decoded\.syscallId\.capabilityObjectArm = true\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+# WS-ZA ZA6.24: the census over the final delete and revoke -- each finalisation
+# step writes only the thread it names, free at the entry's start; the retire
+# removes only a thread no core holds; the chains compose; and the object arms'
+# dispatch theorem admits both arms.
+run_check "INVARIANT" rg -n -U '^def savedRegsKeptExcept \(W : SeLe4n\.ThreadId → Prop\) \(pre post : SystemState\) : Prop :=\n  ∀ t, ¬ W t → post\.savedRegs t = pre\.savedRegs t$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
+run_check "INVARIANT" rg -n -U '^def savedRegsWrittenFree \(e : CoreId\) \(base pre post : SystemState\) : Prop :=\n  ∀ t, post\.savedRegs t = pre\.savedRegs t ∨ offCoreFree e base t$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^    \(hInv : st\.objects\.invExt\) :\n    savedRegsKeptExcept \(· = v\) st \(Lifecycle\.Suspend\.cancelIpcBlocking st v tcb\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^    \(hL : finaliseLoanBundle s\) \(target : Nat\) :\n    savedRegsWrittenFree e st s \(finaliseFinalObject target s\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^    \(retireFinalObject ec target recorder st\)\.savedRegs t = st\.savedRegs t ∨ offCoreFree e st t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^    ∀ t, s.\.savedRegs t = s\.savedRegs t ∨ offCoreFree e st t ∨ offCoreFree e s. t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^    \(h : cspaceDeleteSlotZombie ec addr st = \.ok \(\(\), st.\)\) : savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^    \(h : cspaceRevokeCdtFinalising ec addr st = \.ok \(\(\), st.\)\) : savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SyscallId\.capabilityObjectArm : SyscallId → Bool\n  \| \.cspaceDelete \| \.cspaceRevoke\n' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n '^    \| exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n '^    \| exact cspaceRevokeCdtFinalising_savedRegsKeptOffCore B hB h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
