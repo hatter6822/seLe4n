@@ -3737,18 +3737,24 @@ fn suspend_partner() -> bool {
     true
 }
 
-/// **The fault entries** (seL4's `handleFault` from each of its producers),
+/// **The fault entries** (seL4's `handleFault` from each of its producers:
+/// `handleVMFaultEvent`, `handleUserLevelFault`, `handleUnknownSyscall` and the
+/// capability fault a syscall's lookup raises), and the FP/SIMD access trap,
 /// each scenario run twice, at first call and at steady state:
 /// - with no handler (its capability's slot empty), each fault suspends the
-///   root task fail-closed; the partner, runnable behind it, resumes it and
-///   suspends itself;
-/// - a VM fault raised while the handler is not waiting blocks the root task
-///   on the endpoint, and the partner's receive takes the fault and its reply
-///   restarts the thread;
-/// - with the partner waiting on the endpoint, each fault is delivered to it
-///   at once, and its reply-receive restarts the root task and waits again;
-/// - an FP/SIMD access loads the root task's context, its yield releases it,
-///   the partner's access loads the partner's, and its suspend releases it.
+///   root task fail-closed; the partner, which then runs, resumes it
+///   (measured: the resume of a thread a fault suspended), and the root task,
+///   chosen over the partner whenever both are runnable, suspends the partner;
+/// - a VM fault raised while the handler is not waiting queues the root task
+///   on the endpoint, and the partner's receive takes the fault message and its
+///   reply restarts the thread;
+/// - with the root task waiting on the endpoint as the handler, each fault the
+///   partner raises is delivered to it at once, and its reply-receive restarts
+///   the partner and waits again;
+/// - an FP/SIMD access loads the root task's context; its receive blocks it
+///   and the switch to the partner releases the core's registers into the root
+///   task's saved context; the partner's access loads its own, and its send
+///   wakes the root task, which takes the core and releases the partner's.
 #[cfg(feature = "hw_target")]
 fn fault_entries() -> Option<bool> {
     let set_handler = |name, tcb| {
@@ -3792,7 +3798,7 @@ fn fault_entries() -> Option<bool> {
             let which = if first { " (first call)" } else { "" };
             if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
                 || heap_allocations_trap(&fault_trip(kind, name), which) != Some(true)
-                || !unmeasured(&resume_root, "the suspended root task was not resumed")
+                || heap_allocations_round_trip(&resume_root, which) != Some(true)
                 || !suspend_partner()
             {
                 return Some(false);

@@ -81,7 +81,7 @@ def writeFpContextToTcb (st : SystemState) (tid : SeLe4n.ThreadId) (ctx : FpCont
   st.updateTcb tid fun tcb => { tcb with fpContext := ctx }
 
 /-- **WS-BP BP7.9**: record `t?` as the owner of core `c`'s FP/SIMD registers. -/
-def setFpOwner (st : SystemState) (c : CoreId) (t? : Option SeLe4n.ThreadId) : SystemState :=
+@[inline] def setFpOwner (st : SystemState) (c : CoreId) (t? : Option SeLe4n.ThreadId) : SystemState :=
   { st with machine := st.machine.setFpOwnerOnCore c t? }
 
 /-- **WS-BP BP7.9**: some core other than `c` holds `tid`'s live FP/SIMD values. -/
@@ -101,6 +101,27 @@ def fpLiveForImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool
   funext st c tid
   unfold fpLiveFor fpLiveForImpl
   cases fpOwnerOf st c <;> rfl
+
+/-- WS-ZA ZA6.31: `fpOwnedElsewhere` over a core list, by recursion, each
+core's owner compared with `Option.isEqSome` — so neither the predicate's
+closure nor a `some tid` is built (`fpOwnedElsewhere_eq_impl`). -/
+def fpOwnedOnCoresImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    List CoreId → Bool
+  | [] => false
+  | d :: ds => (decide (d ≠ c) && (fpOwnerOf st d).isEqSome tid) || fpOwnedOnCoresImpl st c tid ds
+
+/-- WS-ZA ZA6.31: the compiled `fpOwnedElsewhere`. -/
+@[inline] def fpOwnedElsewhereImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  fpOwnedOnCoresImpl st c tid allCores
+
+@[csimp] theorem fpOwnedElsewhere_eq_impl : @fpOwnedElsewhere = @fpOwnedElsewhereImpl := by
+  funext st c tid
+  unfold fpOwnedElsewhere fpOwnedElsewhereImpl
+  induction allCores with
+  | nil => rfl
+  | cons d ds ih =>
+    simp only [List.any_cons, fpOwnedOnCoresImpl, ih]
+    cases fpOwnerOf st d <;> rfl
 
 /-- **WS-BP BP7.9**: what an FP/SIMD access trap does. -/
 inductive FpAccessOutcome where
@@ -143,6 +164,39 @@ def fpReleaseNeeded (st : SystemState) (c : CoreId) : Option SeLe4n.ThreadId :=
   | some o => if st.scheduler.currentOnCore c = some o then none else some o
   | none => none
 
+/-- WS-ZA ZA6.31: `fpReleaseNeeded` as compiled — the core's current thread is
+asked of its code, so no `some o` is built for the comparison, and an owner
+that must be released is answered by the owner record itself
+(`fpReleaseNeeded_eq_impl`). -/
+@[inline] def fpReleaseNeededImpl (st : SystemState) (c : CoreId) : Option SeLe4n.ThreadId :=
+  let owner? := fpOwnerOf st c
+  match owner? with
+  | some o => if st.scheduler.currentCode.get c == o.val + 1 then none else owner?
+  | none => none
+
+@[csimp] theorem fpReleaseNeeded_eq_impl : @fpReleaseNeeded = @fpReleaseNeededImpl := by
+  funext st c
+  unfold fpReleaseNeeded fpReleaseNeededImpl
+  cases h : fpOwnerOf st c with
+  | none => rfl
+  | some o =>
+    dsimp only
+    have hEq : (st.scheduler.currentOnCore c = some o) ↔
+        (st.scheduler.currentCode.get c == o.val + 1) = true := by
+      simp only [SchedulerState.currentOnCore]
+      cases st.scheduler.currentCode.get c with
+      | zero => simp [SeLe4n.ThreadId.ofOptCode]
+      | succ k =>
+        obtain ⟨v⟩ := o
+        simp only [SeLe4n.ThreadId.ofOptCode, Option.some.injEq, beq_iff_eq,
+          Nat.add_right_cancel_iff]
+        constructor
+        · intro h'; cases h'; rfl
+        · intro h'; subst h'; rfl
+    by_cases hc : st.scheduler.currentOnCore c = some o
+    · rw [if_pos hc, if_pos (hEq.mp hc)]
+    · rw [if_neg hc, if_neg (fun h' => hc (hEq.mpr h'))]
+
 /-- **WS-BP BP7.9: release a core's switched-out FP owner**: its live values,
 captured from the registers, become its saved context, and the core owns
 nobody's. -/
@@ -172,6 +226,101 @@ theorem writeFpContextToTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId)
 @[simp] theorem setFpOwner_getTcb? (st : SystemState) (c : CoreId)
     (t? : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) :
     (setFpOwner st c t?).getTcb? tid = st.getTcb? tid := rfl
+
+/-! ### WS-ZA ZA6.31: the switch as the entry runs it
+
+The entry crosses the commit with the outcome as a tag word and the context it
+loads as the thread's own saved cell, so it builds neither the outcome nor the
+pair (`fpAccessOnCore_eq_tagged`). -/
+
+/-- The outcome a tag stands for: `2` loads `ctx`, `1` retries, anything else
+is inert. -/
+def FpAccessOutcome.ofTag (tag : UInt8) (ctx : FpContext) : FpAccessOutcome :=
+  if tag == 2 then .load ctx else if tag == 1 then .retry else .inert
+
+/-- The context a load answers: the saved context of the thread the core
+runs.  Out of line, so its read is not sunk past the step that follows it. -/
+@[noinline] def fpLoadedContext (st : SystemState) (c : CoreId) : FpContext :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    match st.getTcb? tid with
+    | some t => t.fpContext
+    | none => default
+  | none => default
+
+/-- The switch's outcome, as its tag (`FpAccessOutcome.ofTag`).  Out of line,
+so it is asked of the pre-state before the step consumes it. -/
+@[noinline] def fpAccessTagOnCore (st : SystemState) (c : CoreId) (live : Option FpContext) :
+    UInt8 :=
+  match st.scheduler.currentOnCore c with
+  | none => 0
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then 0
+    else if fpOwnedElsewhere st c tid then 1
+    else
+      match fpOwnerOf st c, live with
+      | some _, none => 1
+      | _, _ => 2
+
+/-- Record `tid` as core `c`'s owner, out of line: inlined, the record's
+update would be split at the switch's branch into its fields, and the state
+and machine records rebuilt rather than written in place. -/
+@[noinline] def setFpOwnerToThread (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  setFpOwner st c (some tid)
+
+/-- The switch's state, without its outcome. -/
+def fpAccessStateOnCore (st : SystemState) (c : CoreId) (live : Option FpContext) :
+    SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then st
+    else if fpOwnedElsewhere st c tid then st
+    else
+      match fpOwnerOf st c, live with
+      | some _, none => st
+      | owner?, _ =>
+        let st1 := match owner?, live with
+          | some o, some ctx => writeFpContextToTcb st o ctx
+          | _, _ => st
+        setFpOwnerToThread st1 c tid
+
+/-- **The switch is its tag, its loaded context and its state.** -/
+theorem fpAccessOnCore_eq_tagged (st : SystemState) (c : CoreId) (live : Option FpContext) :
+    fpAccessOnCore st c live =
+      (FpAccessOutcome.ofTag (fpAccessTagOnCore st c live)
+          (fpLoadedContext (fpAccessStateOnCore st c live) c),
+        fpAccessStateOnCore st c live) := by
+  unfold fpAccessOnCore fpAccessTagOnCore fpAccessStateOnCore setFpOwnerToThread
+  split
+  · rfl
+  · rename_i tid hCur
+    split
+    · rfl
+    · split
+      · rfl
+      · split
+        · rfl
+        · rename_i owner? live' _
+          -- The load: the state keeps the scheduler, so the loaded context is
+          -- the current thread's saved one.
+          have hSched : ∀ st1 : SystemState, st1.scheduler = st.scheduler →
+              ((((setFpOwner st1 c (some tid)).getTcb? tid).map (·.fpContext)).getD default) =
+                fpLoadedContext (setFpOwner st1 c (some tid)) c := by
+            intro st1 h1
+            unfold fpLoadedContext
+            rw [setFpOwner_scheduler, h1, hCur]
+            dsimp only
+            cases (setFpOwner st1 c (some tid)).getTcb? tid <;> rfl
+          refine Prod.ext ?_ rfl
+          show FpAccessOutcome.load _ = FpAccessOutcome.ofTag 2 _
+          simp only [FpAccessOutcome.ofTag]
+          congr 1
+          apply hSched
+          split
+          · exact writeFpContextToTcb_scheduler _ _ _
+          · rfl
 
 /-- **WS-BP BP7.9**: an FP access schedules nothing. -/
 theorem fpAccessOnCore_scheduler (st : SystemState) (c : CoreId) (live : Option FpContext) :

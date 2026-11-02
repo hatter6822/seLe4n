@@ -2958,7 +2958,7 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
               capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           match syscallResolveCap gate st with
           | .error e =>
-              if e = ke then some (.capFault (UInt64.ofNat decoded.capAddr.toNat) inRecv e)
+              if e = ke then some (.capFault decoded.capAddr.word inRecv e)
               else none
           | .ok _ => none
         | _ => none

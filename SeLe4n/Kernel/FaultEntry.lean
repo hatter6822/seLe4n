@@ -502,7 +502,16 @@ cleared in the atomic step and performed first.  A fault message carries up to
 thirteen words, and a handler already blocked in receive is delivered them at
 once, so the words past the fourth are user-word stores into its IPC buffer —
 recorded by the delivery (`Architecture.stageDeliveredMessage`) and owed to RAM
-by this seam. -/
+by this seam.
+
+**WS-ZA ZA6.31** (ZA3.1's form): the raw core id is decoded once, before
+anything is read, and an id naming no core enters nothing.  Inside the atomic
+step the entry runs the state-only step (`faultEntryStepState`,
+`faultEntryStep_eq_state`) and reads the restore target's parts, the core's
+current-thread code, the raised flags (the step's and the settle's, one word)
+and the two ledgers off the committed state, so no target, no decoded core and
+no SGI list crosses the commit; the committed state is the one every carry of
+this entry is stated over (`faultEntryCommitted_eq`). -/
 @[export lean_handle_fault]
 def faultEntry (coreId esr far : UInt64) : BaseIO Unit :=
   match Concurrency.coreIdOfUInt64? coreId with
@@ -539,7 +548,9 @@ number, instead of publishing an `invalidSyscallNumber` error frame: the
 thread is delivered to its fault handler as seL4's `UnknownSyscall`, or
 suspended fail-closed.  Same three scalars and the same one-frame decode as
 `lean_handle_fault`; the syscall number rides in the window's `x7`.  It fires
-the same SGIs, the delivery's and the residency settle's (WS-ZA ZA6.10). -/
+the same SGIs, the delivery's and the residency settle's (WS-ZA ZA6.10), and
+since WS-ZA ZA6.31 crosses its commit as words the same way
+(`unknownSyscallEntryStep_eq_state`, `unknownSyscallEntryCommitted_eq`). -/
 @[export lean_handle_unknown_syscall]
 def unknownSyscallEntry (coreId esr far : UInt64) : BaseIO Unit :=
   match Concurrency.coreIdOfUInt64? coreId with
@@ -593,6 +604,36 @@ def applyFpAccessOutcome : Architecture.FpAccessOutcome → BaseIO Unit
   | .retry => pure ()
   | .inert => pure ()
 
+/-- WS-ZA ZA6.31: `applyFpAccessOutcome` of a tagged outcome
+(`Architecture.FpAccessOutcome.ofTag`), as the entry runs it — the entry
+crosses the commit with the tag and the loaded context, never an outcome. -/
+def applyFpAccessTag (tag : UInt8) (ctx : FpContext) : BaseIO Unit :=
+  if tag == 2 then Platform.FFI.loadFpContext ctx else pure ()
+
+theorem applyFpAccessOutcome_ofTag (tag : UInt8) (ctx : FpContext) :
+    applyFpAccessOutcome (Architecture.FpAccessOutcome.ofTag tag ctx) = applyFpAccessTag tag ctx := by
+  unfold Architecture.FpAccessOutcome.ofTag applyFpAccessTag
+  by_cases h2 : (tag == 2) = true
+  · simp only [h2, if_true]; rfl
+  · simp only [h2, Bool.false_eq_true, if_false]
+    by_cases h1 : (tag == 1) = true
+    · simp only [h1, if_true]; rfl
+    · simp only [h1, Bool.false_eq_true, if_false]; rfl
+
+/-- WS-ZA ZA6.31: **the FP/SIMD step is its tag, its loaded context and its
+state** on the core the raw id names (`Architecture.fpAccessOnCore_eq_tagged`):
+what the entry crosses the commit with is the specification's outcome. -/
+theorem fpAccessEntryStep_eq_tagged (st : SystemState) (coreId : UInt64) (c : CoreId)
+    (live : Option FpContext) (hc : Concurrency.coreIdOfUInt64? coreId = some c) :
+    fpAccessEntryStep st coreId live =
+      (Architecture.FpAccessOutcome.ofTag (Architecture.fpAccessTagOnCore st c live)
+          (Architecture.fpLoadedContext (Architecture.fpAccessStateOnCore st c live) c),
+        PriorityInheritance.dispatchVacatedCore (Architecture.fpAccessStateOnCore st c live) c) := by
+  unfold fpAccessEntryStep
+  rw [hc]
+  dsimp only
+  rw [Architecture.fpAccessOnCore_eq_tagged]
+
 /-- **WS-BP BP7.9 (the export)**: EC `0x07` from EL0 — a thread used FP/SIMD
 while its core's trap was armed.
 
@@ -615,7 +656,15 @@ successor (`PriorityInheritance.dispatchVacatedCore`), so the restore has
 something to install; the entry then releases a switched-out FP owner and records
 the committed current thread on the HAL, as every entry that can change what a
 core runs does.  Both are inert on the ordinary path — the owner is the current
-thread or nobody, and the recorded thread is the one already recorded. -/
+thread or nobody, and the recorded thread is the one already recorded.
+
+**WS-ZA ZA6.31** (ZA3.1's form): the raw core id is decoded once, and the
+switch crosses the commit as its outcome's tag and the context a load answers,
+the trapping thread's own saved cell (`fpAccessEntryStep_eq_tagged`,
+`applyFpAccessOutcome_ofTag`), beside the restore target's parts and the
+current-thread code, so neither the outcome nor a target record is built; the
+committed state is the one this entry's carries are stated over
+(`fpAccessEntryCommitted_eq`). -/
 @[export lean_handle_fp_access]
 def fpAccessEntry (coreId : UInt64) : BaseIO Unit :=
   match Concurrency.coreIdOfUInt64? coreId with
@@ -623,16 +672,20 @@ def fpAccessEntry (coreId : UInt64) : BaseIO Unit :=
   | some c => do
     let frame ← Platform.FFI.ffiTrapContext
     let live ← Concurrency.captureOwnedFp coreId
-    let (outcome, raised, kind, context, tableBase, asid, code) ←
+    let (tag, ctx, raised, kind, context, tableBase, asid, code) ←
       Platform.FFI.modifyGetKernelState (fun st0 =>
-        let res := fpAccessEntryStep (Architecture.saveCapturedTrapFrame st0 c frame) coreId live
-        let pending := res.2.scheduler.reschedulePending
-        let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore res.2 c) c
-        ((res.1, pending.raised post.scheduler.reschedulePending,
+        let st := Architecture.saveCapturedTrapFrame st0 c frame
+        let tag := Architecture.fpAccessTagOnCore st c live
+        let switched := Architecture.fpAccessStateOnCore st c live
+        let ctx := Architecture.fpLoadedContext switched c
+        let mid := PriorityInheritance.dispatchVacatedCore switched c
+        let pending := mid.scheduler.reschedulePending
+        let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
+        ((tag, ctx, pending.raised post.scheduler.reschedulePending,
           Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
           Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
           post.scheduler.currentCode.get c), post))
-    applyFpAccessOutcome outcome
+    applyFpAccessTag tag ctx
     Concurrency.fireRaisedReschedules raised
     Concurrency.releaseSwitchedFpOwnerOnCore c
     Platform.FFI.restoreTrapFrameParts kind context tableBase asid
@@ -641,7 +694,8 @@ def fpAccessEntry (coreId : UInt64) : BaseIO Unit :=
 /-- **WS-BP BP7.9** structural marker: the FP/SIMD access entry is the frame
 save, the owner capture, the lazy switch, the load it answers and the restore —
 pinned so a refactor that loads before committing, or restores without the
-switch, fails here. -/
+switch, fails here.  Since WS-ZA ZA6.31 it also pins the one decode of the core
+id and the words the commit hands back. -/
 theorem fpAccessEntry_def (coreId : UInt64) :
     fpAccessEntry coreId =
       (        match Concurrency.coreIdOfUInt64? coreId with
@@ -649,16 +703,20 @@ theorem fpAccessEntry_def (coreId : UInt64) :
         | some c => do
           let frame ← Platform.FFI.ffiTrapContext
           let live ← Concurrency.captureOwnedFp coreId
-          let (outcome, raised, kind, context, tableBase, asid, code) ←
+          let (tag, ctx, raised, kind, context, tableBase, asid, code) ←
             Platform.FFI.modifyGetKernelState (fun st0 =>
-              let res := fpAccessEntryStep (Architecture.saveCapturedTrapFrame st0 c frame) coreId live
-              let pending := res.2.scheduler.reschedulePending
-              let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore res.2 c) c
-              ((res.1, pending.raised post.scheduler.reschedulePending,
+              let st := Architecture.saveCapturedTrapFrame st0 c frame
+              let tag := Architecture.fpAccessTagOnCore st c live
+              let switched := Architecture.fpAccessStateOnCore st c live
+              let ctx := Architecture.fpLoadedContext switched c
+              let mid := PriorityInheritance.dispatchVacatedCore switched c
+              let pending := mid.scheduler.reschedulePending
+              let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
+              ((tag, ctx, pending.raised post.scheduler.reschedulePending,
                 Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
                 Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
                 post.scheduler.currentCode.get c), post))
-          applyFpAccessOutcome outcome
+          applyFpAccessTag tag ctx
           Concurrency.fireRaisedReschedules raised
           Concurrency.releaseSwitchedFpOwnerOnCore c
           Platform.FFI.restoreTrapFrameParts kind context tableBase asid
@@ -672,12 +730,13 @@ theorem fpAccessEntryCommitted_eq (st0 : SystemState) (coreId : UInt64) (c : Cor
     (frame : Option Architecture.InFlightContext) (live : Option FpContext)
     (hc : Concurrency.coreIdOfUInt64? coreId = some c) :
     activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-      (fpAccessEntryStep (Architecture.saveCapturedTrapFrame st0 c frame) coreId live).2 c) c =
+      (PriorityInheritance.dispatchVacatedCore (Architecture.fpAccessStateOnCore
+        (Architecture.saveCapturedTrapFrame st0 c frame) c live) c) c) c =
     activateThreadAt (PriorityInheritance.settleResidencyAt
       (fpAccessEntryStep (Concurrency.saveCapturedTrapFrameAt st0 coreId frame) coreId live).2
         coreId) coreId := by
   simp only [Concurrency.saveCapturedTrapFrameAt, PriorityInheritance.settleResidencyAt,
-    activateThreadAt, hc]
+    activateThreadAt, hc, fpAccessEntryStep_eq_tagged _ coreId c live hc]
 
 /-- **WS-BP BP7.9**: on a core that runs a thread, the FP/SIMD access schedules
 nothing — the step commits no scheduler change, so the core resumes the thread
@@ -733,7 +792,11 @@ descheduled frame — exactly what RR7.26's clear-on-vacate exists to prevent.
 
 **`v0.36.47` audit**: the marker also pins that the entry reads the frame
 **once** — the window and the exception context are `faultEntryFrame?`'s
-decode of the one captured context, and the `none` arm commits nothing. -/
+decode of the one captured context, and the `none` arm commits nothing.
+
+**WS-ZA ZA6.31**: and that the core id is decoded once and the commit hands
+back words — the raised flags, the restore target's parts, the current-thread
+code and the two ledgers. -/
 theorem faultEntry_def (coreId esr far : UInt64) :
     faultEntry coreId esr far =
       (        match Concurrency.coreIdOfUInt64? coreId with

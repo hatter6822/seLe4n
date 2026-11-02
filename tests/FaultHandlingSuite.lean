@@ -1993,6 +1993,17 @@ private def runLazyFpChecks : IO Unit := do
     (isLoad o4 default && !isLoad o4 ctxA)
   assertBool "an owner with no capture retries rather than dropping its values"
     (decide ((fpAccessOnCore stSw c0 none).1 = .retry))
+  -- WS-ZA ZA6.31: the entry runs the switch as its tag, its loaded context
+  -- and its state; on each arm above the tagged outcome is the switch's.
+  let tagged (st : SystemState) (live : Option SeLe4n.FpContext) : FpAccessOutcome :=
+    FpAccessOutcome.ofTag (fpAccessTagOnCore st c0 live)
+      (fpLoadedContext (fpAccessStateOnCore st c0 live) c0)
+  assertBool "the tagged outcome is the switch's on every arm"
+    (decide (tagged stRunning none = o1) && decide (tagged st2 none = o3)
+      && decide (tagged stSw (some ctxA) = o4)
+      && decide (tagged stSw none = .retry))
+  assertBool "the compiled owner and release reads are the specification's"
+    (fpReleaseNeeded stSw c0 == some faulter && !fpOwnedElsewhere st1 c0 faulter)
   -- 5. The migration race: the faulter's live values are still in core 0's
   --    registers while it runs on core 1 — it retries until core 0 releases.
   let stMig : SystemState :=

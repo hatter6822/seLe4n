@@ -1236,7 +1236,7 @@ once a finalised thread is released by every core (`finaliseThreadReleaseCores`)
 every other machine field, every register bank and the memory are `st`'s. -/
 def onlyObjectsSchedulerCoreHoldsDiffer (st' st : SystemState) : Prop :=
   st' = { st with objects := st'.objects, scheduler := st'.scheduler,
-                  machine := { st.machine with fpOwner := st'.machine.fpOwner,
+                  machine := { st.machine with fpOwnerCode := st'.machine.fpOwnerCode,
                                                residentCode := st'.machine.residentCode } }
 
 namespace onlyObjectsSchedulerCoreHoldsDiffer
@@ -1247,7 +1247,7 @@ theorem trans {a b c : SystemState} (h₂ : onlyObjectsSchedulerCoreHoldsDiffer 
     (h₁ : onlyObjectsSchedulerCoreHoldsDiffer b a) : onlyObjectsSchedulerCoreHoldsDiffer c a := by
   unfold onlyObjectsSchedulerCoreHoldsDiffer at *
   calc c = { b with objects := c.objects, scheduler := c.scheduler,
-                    machine := { b.machine with fpOwner := c.machine.fpOwner,
+                    machine := { b.machine with fpOwnerCode := c.machine.fpOwnerCode,
                                                 residentCode := c.machine.residentCode } } := h₂
     _ = _ := by rw [h₁]
 
