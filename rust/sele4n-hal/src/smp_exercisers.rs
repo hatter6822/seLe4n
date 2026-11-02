@@ -3391,7 +3391,12 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
-    Some(true)
+    // The fault entries, each entered through the synchronous-exception
+    // handler, the timer masked across the whole section.
+    let saved = crate::interrupts::disable_interrupts();
+    let ok = fault_entries();
+    crate::interrupts::restore_interrupts(saved);
+    ok
 }
 
 /// **WS-ZA ZA6.1**: a kernel entry the allocation exerciser drives that is not
@@ -3475,6 +3480,425 @@ fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<boo
     Some(true)
 }
 
+/// A trap the fault scenarios take through the synchronous-exception handler
+/// (`trap::handle_synchronous_exception`), as an EL0 thread raises it: the
+/// syndrome and fault-address words, the PC it trapped at, and `x0`, `x1` and
+/// `x7` (the capability address, the message info and the syscall number of
+/// an `SVC`).
+#[cfg(feature = "hw_target")]
+struct TrapTrip {
+    name: &'static str,
+    esr: u64,
+    far: u64,
+    elr: u64,
+    x0: u64,
+    x1: u64,
+    x7: u64,
+}
+
+/// The PC a fault scenario's thread traps at: an EL0 address of the user
+/// window, which nothing maps (the trap is synthesised, never executed).
+#[cfg(feature = "hw_target")]
+const FAULT_PC: u64 = (1 << 39) + 0x40;
+/// `ESR_EL1.IL`: a 32-bit instruction.
+#[cfg(feature = "hw_target")]
+const ESR_IL: u64 = 1 << 25;
+/// A translation fault at level 3, the abort's status code.
+#[cfg(feature = "hw_target")]
+const ESR_TRANSLATION_FAULT_L3: u64 = 0x07;
+
+/// A data abort from EL0 at a kernel address: a word `≥ 2^63`, so a fault
+/// address carried as a number would box.
+#[cfg(feature = "hw_target")]
+const fn data_abort(name: &'static str) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: (0x24 << 26) | ESR_IL | ESR_TRANSLATION_FAULT_L3,
+        far: 0xffff_0000_dead_0000,
+        elr: FAULT_PC,
+        x0: 0,
+        x1: 0,
+        x7: 0,
+    }
+}
+
+/// An instruction abort from EL0 at its own PC.
+#[cfg(feature = "hw_target")]
+const fn instruction_abort(name: &'static str) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: (0x20 << 26) | ESR_IL | ESR_TRANSLATION_FAULT_L3,
+        far: FAULT_PC,
+        elr: FAULT_PC,
+        x0: 0,
+        x1: 0,
+        x7: 0,
+    }
+}
+
+/// A PC alignment fault (`userException`).
+#[cfg(feature = "hw_target")]
+const fn pc_alignment(name: &'static str) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: (0x22 << 26) | ESR_IL,
+        far: FAULT_PC + 2,
+        elr: FAULT_PC + 2,
+        x0: 0,
+        x1: 0,
+        x7: 0,
+    }
+}
+
+/// An `SVC` whose `x7` names no syscall: a word `≥ 2^63`, which no `u32`
+/// narrows, delivered as seL4's `UnknownSyscall` with the full word.
+#[cfg(feature = "hw_target")]
+const UNKNOWN_SYSCALL_NUMBER: u64 = 0x8000_0000_0000_0005;
+#[cfg(feature = "hw_target")]
+const fn unknown_syscall(name: &'static str) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: ROUND_TRIP_ESR,
+        far: 0,
+        elr: FAULT_PC + 4,
+        x0: 0,
+        x1: 0,
+        x7: UNKNOWN_SYSCALL_NUMBER,
+    }
+}
+
+/// An empty slot of the root CNode: its capability address is `2^63 + 31`.
+#[cfg(feature = "hw_target")]
+const EMPTY_SLOT: u64 = 31;
+/// A send through the empty slot's address: the lookup finds no capability,
+/// which seL4 raises as a capability fault carrying the address.
+#[cfg(feature = "hw_target")]
+const fn cap_fault(name: &'static str) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: ROUND_TRIP_ESR,
+        far: 0,
+        elr: FAULT_PC + 4,
+        x0: cap_address(EMPTY_SLOT),
+        x1: 0,
+        x7: SEND,
+    }
+}
+
+/// An FP/SIMD access from EL0 with the core's trap armed.
+#[cfg(feature = "hw_target")]
+const fn fp_access(name: &'static str) -> TrapTrip {
+    TrapTrip {
+        name,
+        esr: (0x07 << 26) | ESR_IL,
+        far: 0,
+        elr: FAULT_PC,
+        x0: 0,
+        x1: 0,
+        x7: 0,
+    }
+}
+
+/// The slot the two threads' fault handler names: empty while the
+/// fail-closed scenarios run, a copy of the exerciser endpoint's capability
+/// while the delivered ones do.
+#[cfg(feature = "hw_target")]
+const FAULT_HANDLER_SLOT: u64 = 20;
+#[cfg(feature = "hw_target")]
+const FAULT_HANDLER_CAP: u64 = cap_address(FAULT_HANDLER_SLOT);
+/// `x1` of the frame a VM fault reaches its handler with: the VM-fault tag
+/// (`seL4_Fault_VMFault`, 6, the MCS layout's) as the label and its four
+/// words as the length.
+#[cfg(feature = "hw_target")]
+const VM_FAULT_MESSAGE_INFO: u64 = (6 << 9) | 4;
+
+/// The five faults each fault scenario raises: a data abort and an
+/// instruction abort (seL4's `handleVMFaultEvent`), a capability fault at an
+/// address `≥ 2^63` (`handleInvocation`'s lookup failure), an unknown syscall
+/// (`handleUnknownSyscall`) and a user exception (`handleUserLevelFault`).
+#[cfg(feature = "hw_target")]
+const FAULT_KINDS: [&str; 5] = [
+    "vm-fault-data",
+    "vm-fault-instruction",
+    "cap-fault",
+    "unknown-syscall",
+    "user-exception",
+];
+
+/// The trap of fault kind `kind` (an entry of [`FAULT_KINDS`]), named `name`.
+#[cfg(feature = "hw_target")]
+const fn fault_trip(kind: usize, name: &'static str) -> TrapTrip {
+    match kind {
+        0 => data_abort(name),
+        1 => instruction_abort(name),
+        2 => cap_fault(name),
+        3 => unknown_syscall(name),
+        _ => pc_alignment(name),
+    }
+}
+
+/// Each kind's scenario names: with no handler, delivered to a handler
+/// waiting on the endpoint, and that handler's reply.
+#[cfg(feature = "hw_target")]
+const FAULT_SUSPENDS: [&str; 5] = [
+    "vm-fault-data-suspends",
+    "vm-fault-instruction-suspends",
+    "cap-fault-suspends",
+    "unknown-syscall-suspends",
+    "user-exception-suspends",
+];
+#[cfg(feature = "hw_target")]
+const FAULT_DELIVERED: [&str; 5] = [
+    "vm-fault-data-delivered",
+    "vm-fault-instruction-delivered",
+    "cap-fault-delivered",
+    "unknown-syscall-delivered",
+    "user-exception-delivered",
+];
+#[cfg(feature = "hw_target")]
+const FAULT_REPLIES: [&str; 5] = [
+    "vm-fault-data-reply",
+    "vm-fault-instruction-reply",
+    "cap-fault-reply",
+    "unknown-syscall-reply",
+    "user-exception-reply",
+];
+
+/// One measured trap: the frame published as an EL0 thread's, the
+/// synchronous-exception handler entered with IRQs masked, and this core's
+/// heap counter read before and after.  The handler returns only through a
+/// context the kernel restored (it halts the core otherwise).
+#[cfg(feature = "hw_target")]
+fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr();
+    let name = trip.name;
+    let mut frame = crate::trap::TrapFrame {
+        gprs: [0; 31],
+        sp_el0: 0,
+        elr_el1: trip.elr,
+        spsr_el1: ROUND_TRIP_SPSR,
+        esr_el1: trip.esr,
+        far_el1: trip.far,
+        tpidr_el0: 0,
+        reserved: 0,
+    };
+    frame.gprs[0] = trip.x0;
+    frame.gprs[1] = trip.x1;
+    frame.gprs[7] = trip.x7;
+    let saved_daif = crate::interrupts::disable_interrupts();
+    let before = own_heap_allocations(core as usize);
+    crate::trap::handle_synchronous_exception(&mut frame);
+    let after = own_heap_allocations(core as usize);
+    crate::interrupts::restore_interrupts(saved_daif);
+    crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
+    crate::fp_context::set_trap_for_resume(false);
+    let (Some(before), Some(after)) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
+        );
+        return Some(false);
+    };
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: entered, a thread restored"
+    );
+    if after < before {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
+         delta={}",
+        after - before
+    );
+    Some(true)
+}
+
+/// The partner suspended, unmeasured, which leaves the root task current:
+/// by the root task, or by the partner itself when a step left it current
+/// (a resumed or restarted thread of its priority may be switched to).
+#[cfg(feature = "hw_target")]
+fn suspend_partner() -> bool {
+    let suspend = partner_step(
+        "suspend-partner",
+        TCB_SUSPEND,
+        PARTNER_TCB_CAP,
+        0,
+        [0, 0],
+        false,
+    );
+    if let Dispatched::Failed = dispatch_round_trip(&suspend).0 {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
+        );
+        return false;
+    }
+    true
+}
+
+/// **The fault entries** (seL4's `handleFault` from each of its producers),
+/// each scenario run twice, at first call and at steady state:
+/// - with no handler (its capability's slot empty), each fault suspends the
+///   root task fail-closed; the partner, runnable behind it, resumes it and
+///   suspends itself;
+/// - a VM fault raised while the handler is not waiting blocks the root task
+///   on the endpoint, and the partner's receive takes the fault and its reply
+///   restarts the thread;
+/// - with the partner waiting on the endpoint, each fault is delivered to it
+///   at once, and its reply-receive restarts the root task and waits again;
+/// - an FP/SIMD access loads the root task's context, its yield releases it,
+///   the partner's access loads the partner's, and its suspend releases it.
+#[cfg(feature = "hw_target")]
+fn fault_entries() -> Option<bool> {
+    let set_handler = |name, tcb| {
+        invocation(
+            name,
+            TCB_SET_FAULT_HANDLER,
+            tcb,
+            [FAULT_HANDLER_CAP, 0, 0, 0],
+        )
+    };
+    let copy_handler = invocation(
+        "copy-fault-handler",
+        CSPACE_COPY,
+        CNODE_CAP,
+        [ENDPOINT_SLOT, FAULT_HANDLER_SLOT, 0, 0],
+    );
+    let delete_handler = invocation(
+        "delete-fault-handler",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FAULT_HANDLER_SLOT, 0, 0, 0],
+    );
+    if !unmeasured(
+        &copy_handler,
+        "the fault handler's capability was not copied",
+    ) || !unmeasured(
+        &set_handler("set-root-fault-handler", ROOT_TCB_CAP),
+        "the root task's fault handler was not set",
+    ) || !unmeasured(
+        &set_handler("set-partner-fault-handler", PARTNER_TCB_CAP),
+        "the partner's fault handler was not set",
+    ) || !unmeasured(
+        &delete_handler,
+        "the fault handler's capability was not deleted",
+    ) {
+        return Some(false);
+    }
+    let resume_root = invocation("resume-faulted-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]);
+    for (kind, name) in FAULT_SUSPENDS.iter().enumerate() {
+        for first in [true, false] {
+            let which = if first { " (first call)" } else { "" };
+            if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+                || heap_allocations_trap(&fault_trip(kind, name), which) != Some(true)
+                || !unmeasured(&resume_root, "the suspended root task was not resumed")
+                || !suspend_partner()
+            {
+                return Some(false);
+            }
+        }
+    }
+    if !unmeasured(
+        &copy_handler,
+        "the fault handler's capability was not copied",
+    ) {
+        return Some(false);
+    }
+    let receive_fault = RoundTrip {
+        name: "receive-queued-fault",
+        syscall: RECEIVE,
+        cptr: ENDPOINT_CAP,
+        msg_len: 1,
+        msg: [REPLY_CAP, 0, 0, 0],
+        primed: None,
+        blocks: false,
+        returns: Some((VM_FAULT_MESSAGE_INFO, None)),
+    };
+    let reply_fault = partner_step("reply-queued-fault", REPLY, REPLY_CAP, 0, [0, 0], false);
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || heap_allocations_trap(&data_abort("vm-fault-queued"), which) != Some(true)
+            || heap_allocations_round_trip(&receive_fault, which) != Some(true)
+            || heap_allocations_round_trip(&reply_fault, which) != Some(true)
+            || !suspend_partner()
+        {
+            return Some(false);
+        }
+    }
+    // The handler waits first: the root task's receive blocks it, and the
+    // partner, current in its place, faults to it (the root task is chosen
+    // over the partner whenever both are runnable).
+    let handler_waits = partner_step(
+        "handler-waits",
+        RECEIVE,
+        ENDPOINT_CAP,
+        1,
+        [REPLY_CAP, 0],
+        true,
+    );
+    let wake_handler = partner_step("wake-handler", SEND, ENDPOINT_CAP, 1, [0x55, 0], false);
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+        {
+            return Some(false);
+        }
+        for kind in 0..FAULT_KINDS.len() {
+            let reply = partner_step(
+                FAULT_REPLIES[kind],
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                2,
+                [REPLY_CAP, 0],
+                true,
+            );
+            if heap_allocations_trap(&fault_trip(kind, FAULT_DELIVERED[kind]), which) != Some(true)
+                || heap_allocations_round_trip(&reply, which) != Some(true)
+            {
+                return Some(false);
+            }
+        }
+        if !unmeasured(&wake_handler, "the waiting handler was not woken") || !suspend_partner() {
+            return Some(false);
+        }
+    }
+    // The root task's access loads its context; its receive blocks it and
+    // releases the core's registers to its saved context; the partner's
+    // access loads the partner's; its send wakes the root task, which takes
+    // the core and releases the partner's.
+    let fp_blocks = partner_step("fp-owner-blocks", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true);
+    let fp_wakes = partner_step(
+        "fp-owner-wakes-root",
+        SEND,
+        ENDPOINT_CAP,
+        1,
+        [0x55, 0],
+        false,
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || heap_allocations_trap(&fp_access("fp-access"), which) != Some(true)
+            || heap_allocations_round_trip(&fp_blocks, which) != Some(true)
+            || heap_allocations_trap(&fp_access("fp-access-partner"), which) != Some(true)
+            || heap_allocations_round_trip(&fp_wakes, which) != Some(true)
+            || !suspend_partner()
+        {
+            return Some(false);
+        }
+    }
+    if !unmeasured(
+        &delete_handler,
+        "the fault handler's capability was not deleted",
+    ) {
+        return Some(false);
+    }
+    Some(true)
+}
+
 /// Dispatch one round trip through the syscall seam with IRQs masked, reading
 /// this core's heap counter before and after: what it did (printing why when
 /// it did neither of the two things a round trip may do), and the two readings.
@@ -3535,8 +3959,12 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
     let outcome = match dispatched {
         // A refusal is an ordinary frame too, its status in the `x1` label
         // (`error_frame_regs`): only label 0, the success, measures the
-        // syscall the gate names.
-        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
+        // syscall the gate names.  A receive that takes a fault message
+        // returns the fault's tag as its label, which the round trip names
+        // exactly (`returns`).
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs))
+            if regs[1] >> 9 == 0 || trip.returns.is_some_and(|(x1, _)| regs[1] == x1) =>
+        {
             Dispatched::Returned(regs)
         }
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
