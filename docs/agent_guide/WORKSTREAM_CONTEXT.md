@@ -648,6 +648,12 @@ assume it**: a new syscall arm states its stage as `RunQueueEntryStageOn L`
 the caller before its scheduling point may set the caller's yield-to code, and
 the syscall entry's `yieldLinkedNotResident` payoff takes
 `currentNotResidentElsewhere`.
+Since `v0.36.194`, ZA6.31 gives the fault, unknown-syscall and FP/SIMD
+access entries ZA3.1's form, so every committing entry crosses its commit as
+words.  **New code must assume it**: the FP/SIMD owner table holds codes
+(`MachineState.fpOwnerCode`; `MachineState.fpOwner` is the decoded view), so a
+write goes through `setFpOwnerOnCore`; a new fault path is driven by the
+exerciser's `fault_entries` and pinned in `scripts/qemu_exerciser_lib.sh`.
 Since `v0.36.193`, ZA6.30 puts the per-core tick, drain, charges, yield,
 yieldTo, activation, reschedule SGI, residency settle and the reschedule and
 secondary entries inside the per-core non-interference step relation

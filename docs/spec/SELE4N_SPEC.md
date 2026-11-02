@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.193` (`lakefile.toml`) |
+| **Package version** | `0.36.194` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 567,703 across 516 Lean files |
 | **Test LoC** | 88,436 across 70 Lean test suites |
@@ -5881,6 +5881,23 @@ Every kernel object has a decidable well-formedness predicate:
   (`perCoreRescheduleStep_eq_impl`), and boot gives every core's slots their
   own cells (`SystemState.withFreshPerCoreSlots`).  The exerciser reads each
   at 0.
+- **The fault, unknown-syscall and FP/SIMD access entries cross their commit
+  as words** (`v0.36.194`, WS-ZA ZA6.31).  Each decodes the raw core id once
+  and reads the restore target's parts, the current-thread code and the raised
+  flags off the committed state.  The fault entries run state-only steps
+  proven equal to the specification's (`faultEntryStep_eq_state`,
+  `unknownSyscallEntryStep_eq_state`), and the FP/SIMD entry crosses the
+  switch as its outcome's tag and the thread's own saved context
+  (`fpAccessOnCore_eq_tagged`); each committed state is the one the entry's
+  carries are stated over (`faultEntryCommitted_eq`,
+  `unknownSyscallEntryCommitted_eq`, `fpAccessEntryCommitted_eq`).  The FP/SIMD
+  owner table holds codes (`MachineState.fpOwnerCode`), and the owner and
+  release checks build nothing (`fpOwnedElsewhere_eq_impl`,
+  `fpReleaseNeeded_eq_impl`).  The exerciser drives every fault path,
+  including a capability fault at an address `≥ 2^63`, whose fault now carries
+  the address's word.  The FP/SIMD access and the resume of a faulted thread
+  read 0; the release capture reads 1, and the fault record and its delivery
+  read 30 to 122 (registered in `docs/REGISTERED_DEBT.md`).
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged

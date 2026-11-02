@@ -473,7 +473,7 @@ for driver in drivers:
         # delivered fault adds the endpoint call and the encoded message
         # (108 to 122); a reply decodes the fault and restarts the thread
         # (87); a queued fault's receive transfers the message (47) and its
-        # reply restarts the thread (54).  The release of a switched-out FP
+        # reply restarts the thread (53).  The release of a switched-out FP
         # owner captures the registers into a new context (`ffi_fp_capture`,
         # 1).  Registered in docs/REGISTERED_DEBT.md; the rows that bring
         # them to zero lower these pins.
@@ -487,7 +487,7 @@ for driver in drivers:
             "cap-fault-resume": (0, 0), "unknown-syscall-resume": (0, 0),
             "user-exception-resume": (0, 0),
             "vm-fault-queued": (59, 59), "receive-queued-fault": (47, 47),
-            "reply-queued-fault": (54, 54),
+            "reply-queued-fault": (53, 53),
             "vm-fault-data-delivered": (109, 109), "vm-fault-instruction-delivered": (108, 108),
             "cap-fault-delivered": (112, 112), "unknown-syscall-delivered": (122, 122),
             "user-exception-delivered": (113, 113),

@@ -1,3 +1,50 @@
+## v0.36.194 — WS-ZA ZA6.31: the fault entries cross their commit as words
+
+The fault, unknown-syscall and FP/SIMD access entries take ZA3.1's form, and
+the QEMU exerciser drives every fault path: each fault kind with no handler and
+the resume that answers it, each kind delivered to a waiting handler and its
+reply, a VM fault queued on a handler not yet waiting, and the FP/SIMD trap of
+each thread with the release at each switch.  The FP/SIMD access and the
+resume read 0; the fault record and its delivery still allocate and are
+registered.
+
+- **The form.** Each entry decodes the raw core id once, and an id naming no
+  core enters nothing.  Inside the atomic step it reads the restore target's
+  parts, the current-thread code, the raised flags (the step's and the
+  residency settle's, one word) and the two ledgers off the committed state,
+  so no `RestoreTarget`, decoded core or SGI list crosses the commit.  The
+  fault and unknown-syscall entries run state-only steps proven equal to the
+  specification's (`faultEntryDeliverState`, `faultEntryStepState`,
+  `unknownSyscallEntryStepState`; `faultEntryDeliver_eq_state`,
+  `faultEntryStep_eq_state`, `unknownSyscallEntryStep_eq_state`,
+  `faultEntry_sgis_eq_raised`).  The FP/SIMD entry crosses the switch as its
+  outcome's tag and the trapping thread's own saved context
+  (`fpAccessTagOnCore`, `fpAccessStateOnCore`, `fpLoadedContext`,
+  `applyFpAccessTag`; `fpAccessOnCore_eq_tagged`, `fpAccessEntryStep_eq_tagged`,
+  `applyFpAccessOutcome_ofTag`).  Each committed state is the one the entry's
+  carries are stated over (`faultEntryCommitted_eq`,
+  `unknownSyscallEntryCommitted_eq`, `fpAccessEntryCommitted_eq`).
+- **The FP/SIMD switch builds nothing.** The owner check built a closure and
+  a `some` cell per core (`fpOwnedElsewhere_eq_impl`), the release check built
+  `some` cells to compare the current thread (`fpReleaseNeeded_eq_impl`), and
+  the owner table held `Option` cells: it now holds codes, as the residency
+  table does (`MachineState.fpOwnerCode`, with `MachineState.fpOwner` the
+  decoded view), written out of line (`setFpOwnerToThread`).
+- **The resume of a faulted thread** builds no restart frame or return
+  window: `faultRestartFrameOfContext`, `FaultRestartFrame.returnWindow`,
+  `RegisterFile.stageRestartFrame`, `TCB.withRestartFrame` and
+  `applyFaultRestart` are inlined (the queued fault's reply reads one cell
+  fewer too, 53).
+- **A capability fault at an address `≥ 2^63`** carried its address through
+  `UInt64.ofNat decoded.capAddr.toNat`, a heap number above `2^63`; it now
+  carries the address's word (`syscallCapFaultOf`).
+- **The exerciser** (`smp_exercisers.rs`, `fault_entries`) traps through
+  `handle_synchronous_exception` over an EL0 frame, and the gate pins every
+  scenario (`scripts/qemu_exerciser_lib.sh`).
+- Tier 3 anchors move to the new form and cover the new definitions and
+  theorems; `tests/FaultHandlingSuite.lean` §4c checks the tagged switch on
+  every arm.
+
 ## v0.36.193 — WS-ZA ZA6.30: the per-core scheduler steps inside the non-interference step relation
 
 The per-core tick, the release drain, the exhausting and yield charges, the
