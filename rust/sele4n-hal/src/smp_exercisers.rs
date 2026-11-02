@@ -3059,6 +3059,79 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = invocation(
         FRAME_SLOT,
     ],
 );
+/// **WS-ZA ZA6.29's two other branches** (added at ZA6.30): the yieldTo
+/// invocation on the context bound to a schedulable partner, issued by the
+/// root task with the timer masked across the whole sequence, so no tick
+/// switches the two threads between steps.  The setup binds the context to
+/// the suspended partner, lowers the partner one priority below the root
+/// task and resumes it on core 0 (its affinity, as the TCB scenarios leave
+/// it), unmeasured.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_SETUP: [RoundTrip; 3] = [
+    invocation(
+        "yield-to-bind-partner",
+        SCHED_CONTEXT_BIND,
+        SCHED_CONTEXT_CAP,
+        [PARTNER_TCB_CAP, 0, 0, 0],
+    ),
+    invocation(
+        "yield-to-lower-partner",
+        TCB_SET_PRIORITY,
+        PARTNER_TCB_CAP,
+        [PARTNER_PRIORITY - 1, 0, 0, 0],
+    ),
+    invocation(
+        "yield-to-resume-partner",
+        TCB_RESUME,
+        PARTNER_TCB_CAP,
+        [0; 4],
+    ),
+];
+/// The requeue branch: the partner ranks below the caller, so it is requeued
+/// at its band's head and the consumed time returns at once.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_REQUEUE: RoundTrip = yield_to("sched-context-yield-to-requeue");
+/// The partner raised to the root task's priority, unmeasured.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_RAISE: RoundTrip = invocation(
+    "yield-to-raise-partner",
+    TCB_SET_PRIORITY,
+    PARTNER_TCB_CAP,
+    [PARTNER_PRIORITY, 0, 0, 0],
+);
+/// The linked branch's first half: the partner ranks with the caller on the
+/// caller's core, so the yield is linked and core 0 switches to the partner.
+/// The caller's frame is staged now and its consumed time is not: `x1` is the
+/// caller's own spill, never the consumed-info word.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_LINK: RoundTrip = RoundTrip {
+    name: "sched-context-yield-to-linked",
+    syscall: SCHED_CONTEXT_YIELD_TO,
+    cptr: SCHED_CONTEXT_CAP,
+    msg_len: 0,
+    msg: [0; 4],
+    primed: None,
+    blocks: false,
+    returns: None,
+};
+/// ...and its second: the partner, now current, blocks on the notification,
+/// so core 0 switches back to the root task, whose activation completes the
+/// link and writes the consumed time into its frame.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_PARTNER_BLOCKS: RoundTrip = partner_step(
+    "sched-context-yield-to-linked",
+    WAIT,
+    NOTIFICATION_CAP,
+    0,
+    [0, 0],
+    true,
+);
+/// The link cleared: a caller with a pending yield is refused, so a second
+/// yieldTo (the partner blocked, so not schedulable) succeeds only if the
+/// activation cleared the root task's end of the link.  Unmeasured.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_CLEARED: RoundTrip = yield_to("yield-to-link-cleared");
+
 #[cfg(feature = "hw_target")]
 const PARTNER_SETUP: [RoundTrip; 3] = [
     partner_step(
@@ -3297,6 +3370,17 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
+    // WS-ZA ZA6.29's requeue and linked branches (added at ZA6.30), twice,
+    // the timer masked across each run.
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        let saved = crate::interrupts::disable_interrupts();
+        let ok = yield_to_branches(which);
+        crate::interrupts::restore_interrupts(saved);
+        if ok != Some(true) {
+            return Some(false);
+        }
+    }
     // WS-ZA ZA6.1: the kernel entries that are not syscalls, each entered as
     // its trap handler enters it, twice.
     for entry in KERNEL_ENTRIES.iter() {
@@ -3395,7 +3479,7 @@ fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<boo
 /// this core's heap counter before and after: what it did (printing why when
 /// it did neither of the two things a round trip may do), and the two readings.
 #[cfg(feature = "hw_target")]
-fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>) {
+fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
@@ -3429,6 +3513,10 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
         (dispatched, crate::trap::take_restored())
     };
     let after = own_heap_allocations(core);
+    // The restore replaced the published frame with the resumed thread's
+    // context: its `x0` to `x5` are what that thread resumes with.
+    let mut resumed = [0u64; 6];
+    resumed.copy_from_slice(&frame.gprs[..6]);
     crate::interrupts::restore_interrupts(saved_daif);
     // The restore installed the resumed thread's translation and set the
     // FP/SIMD trap for it.  This core goes on with its bring-up, so both go
@@ -3442,7 +3530,7 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: resumed no thread"
         );
-        return (Dispatched::Failed, before, after);
+        return (Dispatched::Failed, before, after, resumed);
     }
     let outcome = match dispatched {
         // A refusal is an ordinary frame too, its status in the `x1` label
@@ -3472,7 +3560,112 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
             Dispatched::Failed
         }
     };
-    (outcome, before, after)
+    (outcome, before, after, resumed)
+}
+
+/// **WS-ZA ZA6.29's requeue and linked branches**: the setup, the measured
+/// requeue, the partner raised, the measured linked round trip, the link's
+/// clearing checked, and the partner suspended (which releases the context),
+/// so the second run finds the state the first did.
+#[cfg(feature = "hw_target")]
+fn yield_to_branches(which: &str) -> Option<bool> {
+    for step in YIELD_TO_SETUP.iter() {
+        if !unmeasured(step, "the yieldTo setup failed") {
+            return Some(false);
+        }
+    }
+    if heap_allocations_round_trip(&YIELD_TO_REQUEUE, which) != Some(true) {
+        return Some(false);
+    }
+    if !unmeasured(&YIELD_TO_RAISE, "the partner was not raised") {
+        return Some(false);
+    }
+    if heap_allocations_yield_to_linked(which) != Some(true) {
+        return Some(false);
+    }
+    if !unmeasured(
+        &YIELD_TO_CLEARED,
+        "the root task's yield link was not cleared",
+    ) {
+        return Some(false);
+    }
+    let suspend = invocation(
+        "yield-to-suspend-partner",
+        TCB_SUSPEND,
+        PARTNER_TCB_CAP,
+        [0; 4],
+    );
+    if !unmeasured(&suspend, "the partner was not suspended") {
+        return Some(false);
+    }
+    Some(true)
+}
+
+/// **The linked yieldTo, measured across its whole round trip**: the root
+/// task's yieldTo, which links the yield and switches core 0 to the partner,
+/// then the partner's wait, which blocks it and switches back to the root
+/// task, whose activation completes the link.  One reading spans both
+/// dispatches (the timer is masked by the caller), and the round trip's
+/// return is the root task's frame as it resumes: the consumed-info word in
+/// `x1`, written by the activation.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let name = YIELD_TO_LINK.name;
+    let (linked, before, _, _) = dispatch_round_trip(&YIELD_TO_LINK);
+    match linked {
+        Dispatched::Returned(regs) if regs[1] != CONSUMED_INFO_WORD => {}
+        Dispatched::Returned(_) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the consumed time returned at once, so the yield was not linked"
+            );
+            return Some(false);
+        }
+        Dispatched::Blocked => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the yieldTo blocked its caller"
+            );
+            return Some(false);
+        }
+        Dispatched::Failed => return Some(false),
+    }
+    let (blocked, _, after, resumed) = dispatch_round_trip(&YIELD_TO_PARTNER_BLOCKS);
+    if !matches!(blocked, Dispatched::Blocked) {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the partner's wait did not block"
+        );
+        return Some(false);
+    }
+    let (Some(before), Some(after)) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
+        );
+        return Some(false);
+    };
+    if resumed[1] != CONSUMED_INFO_WORD {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the caller resumed with x1={:#x}, expected the consumed-info word {CONSUMED_INFO_WORD:#x}",
+            resumed[1]
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
+        resumed[0],
+        resumed[1]
+    );
+    if after < before {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
+        );
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
+         delta={}",
+        after - before
+    );
+    Some(true)
 }
 
 /// One measured round trip of `heap_allocations_per_syscall`; `which` labels
@@ -3481,7 +3674,7 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
 fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    let (outcome, before, after) = dispatch_round_trip(trip);
+    let (outcome, before, after, _) = dispatch_round_trip(trip);
     let (Some(before), Some(after)) = (before, after) else {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"

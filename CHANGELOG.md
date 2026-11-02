@@ -5,8 +5,9 @@ yield, yieldTo, the activation at entry exit, the reschedule SGI, the residency
 settle and the reschedule and secondary entries now have per-core
 low-equivalence theorems and are constructors of the per-core step relation
 (`PerCoreNonInterferenceStep`, new module
-`InformationFlow/PerCoreSchedulerNonInterference.lean`). No executable code
-changes.
+`InformationFlow/PerCoreSchedulerNonInterference.lean`). The QEMU exerciser
+now covers yieldTo's requeue and linked branches, and the two compiled forms
+that made them allocate are fixed.
 
 - **The release queue is projected.** The scheduling-context arm of the
   projection now erases only the release successor link and keeps the
@@ -36,6 +37,26 @@ changes.
   of the tick and the reschedule entry, the activation of a hidden yielder
   linked to an observable context, and the missing context-to-thread label
   coherence. The ZA6.3 row on the per-core tick's non-interference is closed.
+- **YieldTo's other two branches in the exerciser** (the ZA6.29 follow-up).
+  The `sched-context-yield-to` scenario takes the unschedulable branch only.
+  `sched-context-yield-to-requeue` requeues a partner that ranks below the
+  caller and returns the consumed time at once, with `x1` checked.
+  `sched-context-yield-to-linked` links the yield to a partner at the caller's
+  priority, which runs and then blocks; the caller's activation completes the
+  link. Its count spans the whole round trip, the measurement returns the
+  resumed caller's registers to check `x1`, and the link is checked cleared.
+  Both are pinned at 0 at first call and at steady state
+  (`scripts/qemu_exerciser_lib.sh`).
+- **The allocations they found.** The two scenarios first read 1 and 4 cells.
+  The head enqueue built its bucket ends from fresh fields when the bucket was
+  empty; `prependEndsImpl` reads the old ends first, so their cell is reused
+  (`prependEnds_eq_impl`). The linked activation's bank write rebuilt the
+  state and machine records at a join point and tested the bank's register
+  file for exclusivity while its slot still held it, so the file was copied.
+  `completeCurrentYieldImpl` writes the bank out of line
+  (`writeConsumedToBank`), and the file is written by a call
+  (`RegisterFile.withConsumedOwned`) after the slot hands it over
+  (`completeCurrentYield_eq_impl`). Both read 0 after the fix.
 
 ## v0.36.192 — WS-ZA ZA6.29: the `seL4_SchedContext_YieldTo` invocation
 

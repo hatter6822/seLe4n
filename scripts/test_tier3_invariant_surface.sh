@@ -9256,6 +9256,11 @@ run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_yieldLinksAgr
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def completeCurrentYield \(st : SystemState\)[^\n]*\n[^\n]*\n  match st\.getSchedContext\? s with\n  \| some sc =>\n    let w := sc\.consumedReading\.toUInt64\n    let s1 := completeYieldTo st tid\n    \{ s1 with machine := s1\.machine\.modifyRegsOnCore c \(·\.withConsumed w\) \}$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def activateThreadOnCoreImpl \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  match st\.scheduler\.currentCode\.get c with\n  \| 0 => st$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem activateThreadOnCore_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+# The linked activation's bank write: out of line, the file written as a call.
+run_check "INVARIANT" rg -n '^@\[noinline\] def _root_\.SeLe4n\.RegisterFile\.withConsumedOwned \(' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def writeConsumedToBank \(st : SystemState\) \(c : CoreId\) \(w : UInt64\) : SystemState :=\n  let m := st\.machine\.modifyRegsOnCore c \(SeLe4n\.RegisterFile\.withConsumedOwned w\)$' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^def completeCurrentYieldImpl \(' SeLe4n/Kernel/Scheduler/ActivateThread.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem completeCurrentYield_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_completes($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ActivateThread.lean
@@ -23132,6 +23137,10 @@ run_check "INVARIANT" rg -n '^def yieldToBound \(' SeLe4n/Kernel/SchedContext/Op
 run_check "INVARIANT" rg -n '^def yieldToRequeue \(' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^def yieldToRequeueImpl \(' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem yieldToRequeue_eq_impl : @yieldToRequeue = @yieldToRequeueImpl' SeLe4n/Kernel/SchedContext/Operations.lean
+# The head enqueue's bucket ends rewritten in their cell (the yieldTo requeue's
+# and the linked branch's enqueues allocate nothing).
+run_check "INVARIANT" rg -n '^@\[inline\] def prependEndsImpl \(' SeLe4n/Kernel/Scheduler/RunQueue.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem prependEnds_eq_impl : @prependEnds = @prependEndsImpl' SeLe4n/Kernel/Scheduler/RunQueue.lean
 run_check "INVARIANT" rg -n '^  if st\.scheduler\.currentCode\.get home == t\.val \+ 1 then st$' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^def yieldToLinkPrefix \(' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^def yieldToLink \(' SeLe4n/Kernel/SchedContext/Operations.lean

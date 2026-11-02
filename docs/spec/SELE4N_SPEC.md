@@ -6111,7 +6111,12 @@ Every kernel object has a decidable well-formedness predicate:
     input when either is 0.  It and `activateThreadAt` are out of line, as is
     the linked case (`completeCurrentYield`): inlined, the step's branches met
     in the timer entry's body and the join point built the tick's result pair,
-    one heap cell per tick.
+    one heap cell per tick.  The linked case's own compiled form
+    (`completeCurrentYieldImpl`, `completeCurrentYield_eq_impl`, `v0.36.193`)
+    writes the bank out of line (`writeConsumedToBank`), so the state and
+    machine records are rewritten in place, and writes the register file by a
+    call (`RegisterFile.withConsumedOwned`) after its slot hands it over, so
+    the file is not copied.
   - **Lock coverage.**  Every footprint the kernel declares names the table
     write lock (`schedFootprintOfCores`,
     `mem_unifiedLockSetForSyscall_objStore`), which covers every object at
@@ -6933,7 +6938,14 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   builds no `some` cell.  The exerciser's `sched-context-yield-to` scenario,
   run while the partner is suspended, checks the call succeeded with the
   consumed-info word in `x1` and reads 0 allocations at first call and steady
-  state.
+  state.  Since `v0.36.193` two more cover the other branches, each at 0 at
+  first call and steady state: `sched-context-yield-to-requeue` (a partner
+  ranked below the caller is requeued and the consumed time returns at once)
+  and `sched-context-yield-to-linked` (the link, the partner's run until it
+  blocks, and the caller's activation, counted over the whole round trip, with
+  the resumed caller's `x1` and the cleared link checked).  The head enqueue's
+  bucket ends are rewritten in their cell (`prependEndsImpl`,
+  `prependEnds_eq_impl`).
 - **The per-core scheduler steps are inside the non-interference step
   relation** (`v0.36.193`, WS-ZA ZA6.30;
   `InformationFlow/PerCoreSchedulerNonInterference.lean`).  The projection

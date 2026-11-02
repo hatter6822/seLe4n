@@ -1170,6 +1170,10 @@ def nonExecutedTransitionsPlain : List Name :=
   -- statement the fused declassify step's window recursion is proven equal
   -- to (`originateWindow_eq`); the compiled step runs `originateWindow`.
   , `SeLe4n.Kernel.originationPass
+  -- WS-ZA ZA6.30: the reschedule entry's committed state, named for its
+  -- non-interference theorem; `perCoreRescheduleEntry_commits` restates the
+  -- entry, which builds the same state inline, over it.
+  , `SeLe4n.Kernel.perCoreRescheduleEntryState
   -- WS-ZA ZA6.2: the timer step's committed state, named for the theorems the
   -- step's flag word is read against; the step and its compiled form build the
   -- same state inline.

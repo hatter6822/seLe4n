@@ -67,6 +67,43 @@ two reads of `activateThreadOnCoreImpl`. -/
     { s1 with machine := s1.machine.modifyRegsOnCore c (·.withConsumed w) }
   | none => completeYieldTo st tid
 
+/-- `RegisterFile.withConsumed` as a call, for the bank's slot write: the slot
+hands its file over (`Array.modify` empties the slot first), so the file
+arrives with its one reference and is rewritten in place.  Inlined into the
+slot write, the file's exclusivity was tested while the slot still held it,
+and the file was copied on every write. -/
+@[noinline] def _root_.SeLe4n.RegisterFile.withConsumedOwned (w : UInt64)
+    (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
+  rf.withConsumed w
+
+/-- Core `c`'s bank takes the two registers `setConsumed` writes
+(`RegisterFile.withConsumed`), in its slot (`modifyRegsOnCore`).  Out of line,
+so the state arrives owned and its record and the machine's are rewritten in
+place: written inside `completeCurrentYield`, the bank's bounds test and the
+consumed reading's clamp met in a join point that rebuilt both records. -/
+@[noinline] def writeConsumedToBank (st : SystemState) (c : CoreId) (w : UInt64) : SystemState :=
+  let m := st.machine.modifyRegsOnCore c (SeLe4n.RegisterFile.withConsumedOwned w)
+  { st with machine := m }
+
+/-- The compiled `completeCurrentYield`: the consumed reading taken off the
+context before any write, then the completion, then the bank's write out of
+line (`writeConsumedToBank`).  Proven equal
+(`completeCurrentYield_eq_impl`). -/
+def completeCurrentYieldImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (s : SeLe4n.SchedContextId) : SystemState :=
+  match st.getSchedContext? s with
+  | some sc =>
+    let w := sc.consumedReading.toUInt64
+    writeConsumedToBank (completeYieldTo st tid) c w
+  | none => completeYieldTo st tid
+
+@[csimp] theorem completeCurrentYield_eq_impl :
+    @completeCurrentYield = @completeCurrentYieldImpl := by
+  funext st c tid s
+  unfold completeCurrentYield completeCurrentYieldImpl writeConsumedToBank
+    SeLe4n.RegisterFile.withConsumedOwned
+  split <;> rfl
+
 /-- **seL4-MCS's `activateThread` yield completion on core `c`**: the core's
 current thread, when its yield link names a context, completes that yield
 (`completeCurrentYield`); a core with no current thread, a current thread with

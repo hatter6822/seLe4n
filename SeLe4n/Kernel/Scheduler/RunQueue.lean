@@ -578,6 +578,21 @@ theorem linkOf_prependLinks {links : RHTable ThreadId RunQueueLink} (h : links.i
 @[inline] def prependEnds (t : ThreadId) (bhead : Nat) (e : BucketEnds) : BucketEnds :=
   { head := code t, tail := if bhead = 0 then code t else e.tail }
 
+/-- The compiled `prependEnds`, `appendEndsImpl`'s shape: branching on the old
+head reads the ends before they are rewritten, so the rewrite reuses their
+cell; built from fresh fields in an empty bucket, the ends were a new cell on
+every head enqueue into one. -/
+@[inline] def prependEndsImpl (t : ThreadId) (bhead : Nat) (e : BucketEnds) : BucketEnds :=
+  let tl := if bhead = 0 then code t else e.tail
+  if e.head = code t then { e with tail := tl } else { e with head := code t, tail := tl }
+
+@[csimp] theorem prependEnds_eq_impl : @prependEnds = @prependEndsImpl := by
+  funext t bhead e
+  cases e with
+  | mk hd tl =>
+    unfold prependEnds prependEndsImpl
+    by_cases h : hd = code t <;> simp [h]
+
 /-- A nonzero head code of a queue names one of its members. -/
 theorem code_ne_head {l : List ThreadId} {e : Nat} (he : e = lastCode 0 l.reverse) {t : ThreadId}
     (ht : t ∉ l) : code t ≠ e := code_ne_end he (fun h => ht (List.mem_reverse.mp h))

@@ -1893,11 +1893,11 @@ section Coverage
 
 /-- **The per-core scheduler steps** proven invisible above. -/
 inductive PerCoreSchedulerOperation where
-  | timerTickOnCore
+  | tick
   | replenishmentDrain
   | budgetExhaust
   | yieldCharge
-  | yieldOnCore
+  | yieldStep
   | activateHiddenYielder
   | activateObservableYielder
   | schedContextYieldTo
@@ -1911,7 +1911,7 @@ inductive PerCoreSchedulerOperation where
 
 /-- Every per-core scheduler step, once. -/
 def PerCoreSchedulerOperation.all : List PerCoreSchedulerOperation :=
-  [.timerTickOnCore, .replenishmentDrain, .budgetExhaust, .yieldCharge, .yieldOnCore,
+  [.tick, .replenishmentDrain, .budgetExhaust, .yieldCharge, .yieldStep,
     .activateHiddenYielder, .activateObservableYielder, .schedContextYieldTo, .rescheduleSgi,
     .rescheduleStep, .rescheduleEntry, .secondaryEntry, .residencySettle, .residencyDefer]
 
@@ -1940,11 +1940,11 @@ entry is covered by the reschedule entry's theorem through
 `secondaryKernelMain_commits`, which proves it commits the same state; the
 observable yielder's activation by the two-state theorem. -/
 def perCoreSchedulerNiTheorem : PerCoreSchedulerOperation → String
-  | .timerTickOnCore           => niName! timerTickOnCore_lowEquivalent
+  | .tick                      => niName! timerTickOnCore_lowEquivalent
   | .replenishmentDrain        => niName! processReplenishmentsDueOnCore_lowEquivalent
   | .budgetExhaust             => niName! budgetExhaustOnCore_lowEquivalent
   | .yieldCharge               => niName! yieldChargeOnCore_lowEquivalent
-  | .yieldOnCore               => niName! yieldOnCore_lowEquivalent
+  | .yieldStep                 => niName! yieldOnCore_lowEquivalent
   | .activateHiddenYielder     => niName! activateThreadOnCore_lowEquivalent
   | .activateObservableYielder => niName! activateThreadOnCore_lowEquivalent_pair
   | .schedContextYieldTo       => niName! schedContextYieldToOnCore_lowEquivalent
@@ -1994,7 +1994,7 @@ inductive PerCoreNonInterferenceStep (ctx : LabelingContext) (observer : IfObser
       (hSet : st.objectIndexSet.table.invExt) (hStep : NonInterferenceStep ctx observer st st')
       (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
       PerCoreNonInterferenceStep ctx observer st st'
-  | timerTickOnCore {st : SystemState} (c : CoreId) (h : tickHidden ctx observer st c) :
+  | tick {st : SystemState} (c : CoreId) (h : tickHidden ctx observer st c) :
       PerCoreNonInterferenceStep ctx observer st (timerTickOnCore st c)
   | replenishmentDrain {st : SystemState} (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
       (hRef : st.releaseQueueRefined) (hRH : releaseHiddenOn ctx observer st c) :
@@ -2010,7 +2010,7 @@ inductive PerCoreNonInterferenceStep (ctx : LabelingContext) (observer : IfObser
       (hS : ∀ tcb scId, st.getTcb? tid = some tcb → tcb.schedContextBinding.scId? = some scId →
         objectObservable ctx observer scId.toObjId = false)
       (hInv : st.objects.invExt) : PerCoreNonInterferenceStep ctx observer st st'
-  | yieldOnCore {st st' : SystemState} (c : CoreId) (h : yieldOnCore st c = .ok st')
+  | yieldStep {st st' : SystemState} (c : CoreId) (h : yieldOnCore st c = .ok st')
       (hH : yieldHidden ctx observer st c) : PerCoreNonInterferenceStep ctx observer st st'
   | activateHiddenYielder {st : SystemState} (c : CoreId) (hInv : st.objects.invExt)
       (hX : activationContextHidden ctx observer st c) (hCur : currentHiddenOn ctx observer st c) :
@@ -2043,13 +2043,13 @@ theorem perCoreNonInterferenceStep_sound {ctx : LabelingContext} {observer : IfO
   cases h with
   | kernel hObjInv hIdx hSet hStep hConfined =>
     exact nonInterference_perCore ctx observer _ _ hObjInv hIdx hSet hStep hConfined
-  | timerTickOnCore c h => exact timerTickOnCore_lowEquivalent _ c h
+  | tick c h => exact timerTickOnCore_lowEquivalent _ c h
   | replenishmentDrain c now hInv hRef hRH =>
     exact processReplenishmentsDueOnCore_lowEquivalent _ c now hInv hRef hRH
   | budgetExhaust c tid k scId sc hSc ticks hT hS hInv hQ =>
     exact budgetExhaustOnCore_lowEquivalent _ c tid k scId sc hSc ticks hT hS hInv hQ
   | yieldCharge c tid h hT hS hInv => exact (yieldChargeOnCore_lowEquivalent h hT hS hInv).1
-  | yieldOnCore c h hH => exact yieldOnCore_lowEquivalent h hH
+  | yieldStep c h hH => exact yieldOnCore_lowEquivalent h hH
   | activateHiddenYielder c hInv hX hCur => exact activateThreadOnCore_lowEquivalent _ c hInv hX hCur
   | schedContextYieldTo s c h hH => exact schedContextYieldToOnCore_lowEquivalent h hH
   | rescheduleSgi c h hStep => exact handleRescheduleSgiOnCore_lowEquivalent _ _ c h hStep
