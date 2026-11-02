@@ -3718,7 +3718,8 @@ receive-completing rewrite.
 completed receive does — `.ready`, no parked message, no stashed reply — and
 then says the four things a timeout means: the budget is gone, the thread is
 runnable, the timed-out flag is set, and the return frame carries
-`.ipcTimeout`.
+`.ipcTimeout`.  It also retires the fault record (WS-ZA ZA6.22), as every
+cancellation restore does; no conjunct reads it.
 
 Naming that increment is what lets the abort **reuse**
 `storeTcbReceiveComplete_closes_exceptMembership` rather than re-prove twenty
@@ -3730,6 +3731,7 @@ def timeoutStagedTcb (tcb : TCB) : TCB :=
     timeoutBudget := none
     threadState := .Ready
     timedOut := true
+    pendingFault := none
     registerContext := tcb.registerContext.stageReturnFrame Architecture.timeoutFrame }
 
 @[simp] theorem timeoutStagedTcb_ipcState (tcb : TCB) :
@@ -3761,7 +3763,8 @@ theorem abortStagedTcb_eq (tcb : TCB) :
            timeoutBudget := none
            threadState := .Ready
            timedOut := true
-           pendingReceiveReplyCode := 0 } .ready))
+           pendingReceiveReplyCode := 0
+           pendingFault := none } .ready))
         Architecture.timeoutFrame
       = timeoutStagedTcb
           ((TCB.setIpcState { tcb with

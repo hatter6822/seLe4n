@@ -44,7 +44,8 @@ theorem abortPendingIpcOnEndpoint_shape
              timeoutBudget := none
              threadState := .Ready
              timedOut := true
-             pendingReceiveReplyCode := 0 } .ready)) Architecture.timeoutFrame)) st1
+             pendingReceiveReplyCode := 0
+             pendingFault := none } .ready)) Architecture.timeoutFrame)) st1
         = .ok ((), st') := by
   unfold abortPendingIpcOnEndpoint at hStep
   cases hRem : endpointQueueRemove endpointId isReceiveQ tid st with

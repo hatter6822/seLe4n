@@ -571,7 +571,8 @@ at boot and across every entry, through a sixth coverage field,
 frames, `tcbsKept.residentTcbKept`), and a new path that removes a TCB must
 admit only a thread held on no core, as the final retire does
 (`retireFinalObject_residentTcbKept`).  Since `v0.36.185`, ZA6.22 makes every
-cancellation restore retire the fault record (`TCB.restoredToReady`) and
+cancellation restore and the budget-timeout abort retire the fault record
+(`TCB.restoredToReady`, `abortPendingIpcOnEndpoint`) and
 confines the resume's restart frame to a thread no core holds
 (`discardPendingFault`).  **New code must assume it**: a path that makes a
 blocked thread `.ready` retires `pendingFault`, through `TCB.restoredToReady`

@@ -22,6 +22,10 @@ Security fix. Found while auditing the capability-only dispatch's census.
     This covers every `restoreToReadyStaging` caller: `cancelIpcBlocking`'s
     arms, the in-place cancels and the suspend's reclaim.
   - The endpoint walk's `cancelledEndpointWaiterTcb` retires it too.
+  - So does the budget-timeout abort (`abortPendingIpcOnEndpoint`, shared
+    with the suspend's reclaim of an endpoint-blocked thread). seL4's timeout
+    reaches the thread through `cancelIPC` too. No transition gives a blocked
+    thread a timeout budget yet, so this closes the path before it goes live.
   - The suspend keeps the record only for a fault-suspended thread, as
     seL4's `suspend` keeps `tcbFault` outside `cancelIPC`.
   - `ipcFaultSend` is left as it is: it is read only together with the
@@ -35,7 +39,8 @@ Security fix. Found while auditing the capability-only dispatch's census.
   - New invariant `SystemState.faultRecordParked`: a fault record is held
     only by a thread blocked on a call or a reply, or `.Inactive`.
   - Every cancellation restore keeps it
-    (`faultRecordParked_restoreToReadyStaging`).
+    (`faultRecordParked_restoreToReadyStaging`), and so does the timeout
+    abort (`abortPendingIpcOnEndpoint_faultRecordParked`).
   - A cancelled thread carries no fault
     (`threadHasPendingFault_restoreToReadyStaging`).
   - Under the invariant, a thread blocked on nothing and not `.Inactive`
@@ -47,7 +52,8 @@ Security fix. Found while auditing the capability-only dispatch's census.
     `resumeThreadOnCore_preserves_ipcInvariantFull` takes that fact, and
     the `.tcbResume` arm supplies it from the retire
     (`retirePendingFaultForResume_noFault`).
-  - The endpoint walk's cancel is read as three stores.
+  - The endpoint walk's cancel is read as three stores, and the timeout's
+    staged increment (`timeoutStagedTcb`) clears the record.
   - The restore's shape lemmas are stated over `TCB.restoredToReady`.
 - **Tests.** The fault suite's `runCancelledFaultChecks` cancels a delivered
   faulter and checks that the reply can no longer take the fault branch. It

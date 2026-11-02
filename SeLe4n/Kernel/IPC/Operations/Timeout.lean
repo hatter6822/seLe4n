@@ -104,12 +104,17 @@ def abortPendingIpcOnEndpoint
       -- spellings).  `timedOut := true` stays: it is the *kernel-side* fact the
       -- scheduler and the invariants read; the frame is the *userspace-side*
       -- answer, and neither substitutes for the other.
+      -- WS-ZA ZA6.22: and retire the fault record, as every cancellation
+      -- restore does (`TCB.restoredToReady`): seL4's timeout reaches the
+      -- thread through `cancelIPC`, which resets `tcbFault`, so a timed-out
+      -- fault-blocked thread must not return to `.ready` carrying its fault.
       let tcb' : TCB := ((TCB.setIpcState { tcb with
         pendingMessage := none,
         timeoutBudget := none,
         threadState := .Ready,
         timedOut := true,
-        pendingReceiveReplyCode := 0 } .ready) : TCB).withReturnFrame
+        pendingReceiveReplyCode := 0,
+        pendingFault := none } .ready) : TCB).withReturnFrame
           Architecture.timeoutFrame
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
@@ -223,7 +228,8 @@ theorem abortPendingIpcOnEndpoint_tcb_lookup
                     timeoutBudget := none
                     threadState := .Ready
                     timedOut := true
-                    pendingReceiveReplyCode := 0 } .ready) : TCB).withReturnFrame
+                    pendingReceiveReplyCode := 0
+                    pendingFault := none } .ready) : TCB).withReturnFrame
                   Architecture.timeoutFrame), ?_, hAff1.symm⟩
         rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
           if_pos (beq_self_eq_true tid.toObjId)]
