@@ -68,6 +68,14 @@ Because the naming gate reads the index rather than the working tree, a Tier 0
 run over unstaged edits checks the *previous* content: **stage first, then run
 the gate.** The hook is the backstop, not the first line.
 
+Each module build is bounded, and the bound covers the module's dependency
+rebuild: an edit low in the import graph can make one staged module rebuild
+hundreds of dependents first (about ten minutes for the deepest invariant
+modules).  The default bound is an hour; set `SELE4N_PRECOMMIT_BUILD_TIMEOUT`
+(seconds) to change it.  A build the bound kills is reported as `TIMED OUT`
+and blocks the commit like any failure; build the module once and commit
+again.
+
 ### Rust
 
 ```bash

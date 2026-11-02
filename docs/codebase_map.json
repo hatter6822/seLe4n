@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "backup/za54-part67",
-      "commit_sha": "77a4ac20bc1de0b623cb41bfc0efcf347357db71",
-      "tree_sha": "79a2e0f1c11be9e3da35b375b25252cdf8bc5484",
-      "committed_at_utc": "2026-11-01T16:26:36+00:00"
+      "branch": "backup/za54-part68",
+      "commit_sha": "3d39668a7945f720be457886d862cbd6fd2e6575",
+      "tree_sha": "9e5c2094b2235248b466fda5d4c6607a7a34cfc3",
+      "committed_at_utc": "2026-11-01T17:50:20+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f2da0ce9fd30837197b8722d2bb55a0a3d4318a18b2d08ba6258207436bec59f"
+    "source_digest": "ede5132a1a1e57612559f3f2a86f4f48993ac537f924b827f2e703bbf0248e5f"
   },
   "summary": {
     "module_count": 571,
-    "declaration_count": 32270
+    "declaration_count": 32271
   },
   "readme_sync": {
-    "version": "0.36.179",
+    "version": "0.36.180",
     "lean_toolchain": "v4.28.0",
     "production_files": 501,
-    "production_loc": 550219,
+    "production_loc": 550240,
     "test_files": 70,
     "test_loc": 88173,
-    "proved_theorem_lemma_decls": 20980,
+    "proved_theorem_lemma_decls": 20981,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -160614,13 +160614,13 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.BlockedNotResident",
       "path": "SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean",
-      "declaration_count": 7,
+      "declaration_count": 8,
       "declarations": [
         {
           "kind": "def",
           "name": "SeLe4n.Model.SystemState.blockedNotResident",
           "full_name": "SeLe4n.Model.SystemState.blockedNotResident",
-          "line": 30,
+          "line": 31,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.MachineState.residentOnCore",
@@ -160635,7 +160635,7 @@
           "kind": "theorem",
           "name": "of_noResidents",
           "full_name": "SeLe4n.Kernel.BlockedNotResident.of_noResidents",
-          "line": 37,
+          "line": 38,
           "called": [
             "SeLe4n.MachineState.residentOnCore",
             "SeLe4n.Model.SystemState",
@@ -160646,7 +160646,7 @@
           "kind": "theorem",
           "name": "of_defaultCodes",
           "full_name": "SeLe4n.Kernel.BlockedNotResident.of_defaultCodes",
-          "line": 42,
+          "line": 43,
           "called": [
             "SeLe4n.Kernel.BlockedNotResident.of_noResidents",
             "SeLe4n.Kernel.CurrentNotResidentElsewhere.default_residentCode",
@@ -160661,8 +160661,22 @@
           "kind": "theorem",
           "name": "of_frame",
           "full_name": "SeLe4n.Kernel.BlockedNotResident.of_frame",
-          "line": 51,
+          "line": 52,
           "called": [
+            "SeLe4n.MachineState.residentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.blockedNotResident",
+            "SeLe4n.Model.SystemState.getTcb?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_entry",
+          "full_name": "SeLe4n.Kernel.BlockedNotResident.of_entry",
+          "line": 66,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.residentKeptOffCore",
             "SeLe4n.MachineState.residentOnCore",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.blockedNotResident",
@@ -160673,7 +160687,7 @@
           "kind": "theorem",
           "name": "SeLe4n.Model.SystemState.default_blockedNotResident",
           "full_name": "SeLe4n.Model.SystemState.default_blockedNotResident",
-          "line": 61,
+          "line": 82,
           "called": [
             "SeLe4n.Kernel.BlockedNotResident.of_defaultCodes",
             "SeLe4n.Model.SystemState",
@@ -160684,7 +160698,7 @@
           "kind": "theorem",
           "name": "offCoreFree_of_blocked",
           "full_name": "SeLe4n.Kernel.offCoreFree_of_blocked",
-          "line": 69,
+          "line": 90,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.blockedCurrentNowhere",
@@ -160701,7 +160715,7 @@
           "kind": "theorem",
           "name": "bootFromPlatformCheckedStartedFor_blockedNotResident",
           "full_name": "SeLe4n.Platform.Boot.bootFromPlatformCheckedStartedFor_blockedNotResident",
-          "line": 83,
+          "line": 104,
           "called": [
             "SeLe4n.Kernel.BlockedNotResident.of_defaultCodes",
             "SeLe4n.Kernel.Concurrency.CoreId",

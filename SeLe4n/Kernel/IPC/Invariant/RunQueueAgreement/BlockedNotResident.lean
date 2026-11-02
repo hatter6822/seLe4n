@@ -17,8 +17,9 @@ current thread, so `SystemState.blockedNotResident` holds whenever residency is
 recorded; this file states it, proves it where no core holds a resident (boot,
 the default state), carries it across a step that keeps the residency records
 and the residents' IPC states, and gives the census's free-ness for a blocked
-thread (`offCoreFree_of_blocked`).  Its preservation across every committing
-entry is ZA6.17's.
+thread (`offCoreFree_of_blocked`).  ZA6.17 decomposes its preservation across
+an entry (`BlockedNotResident.of_entry`); the two halves an entry supplies are
+ZA6.18's.
 -/
 
 namespace SeLe4n.Kernel
@@ -55,6 +56,26 @@ theorem of_frame {X Y : SystemState} (h : X.blockedNotResident)
   obtain ⟨t, hX, hS⟩ := hT tid t' hT'
   rw [← hS]; exact h d tid t (hR d tid hY) hX
 
+/-- WS-ZA ZA6.17: **the entry's decomposition.**  After a step on core `e`, the
+residents are of two kinds.  A resident of another core was resident there
+before (`residentKeptOffCore`, the coverage relation's `residentKept`), so it was
+ready if it had a TCB; it stays ready if the step left a ready thread on another
+core ready (`hKeep`, the frame that the step blocks no thread another core
+holds).  The resident of `e` is the one `e`'s own settle recorded, its current
+thread resumed at EL0, which is ready (`hOwn`). -/
+theorem of_entry {e : CoreId} {pre post : SystemState} (h : pre.blockedNotResident)
+    (hRK : residentKeptOffCore e pre post)
+    (hKeep : ∀ d, d ≠ e → ∀ tid t', post.machine.residentOnCore d = some tid →
+      post.getTcb? tid = some t' →
+      ∃ t, pre.getTcb? tid = some t ∧ (t.ipcState = .ready → t'.ipcState = .ready))
+    (hOwn : ∀ tid t', post.machine.residentOnCore e = some tid → post.getTcb? tid = some t' →
+      t'.ipcState = .ready) :
+    post.blockedNotResident := fun d tid t' hR hT' => by
+  by_cases hd : d = e
+  · subst hd; exact hOwn tid t' hR hT'
+  · obtain ⟨t, hT, hS⟩ := hKeep d hd tid t' hR hT'
+    exact hS (h d tid t (hRK d hd tid hR) hT)
+
 end BlockedNotResident
 
 /-- The default state holds no resident. -/
@@ -65,7 +86,7 @@ theorem _root_.SeLe4n.Model.SystemState.default_blockedNotResident :
 /-- **A thread blocked in IPC is held by no core**: it is current nowhere
 (`blockedCurrentNowhere`) and resident nowhere (`blockedNotResident`) — the
 free-ness the census's writes to a blocked thread need (ZA6.15's cancellation
-restore, ZA6.19's deliveries and reply). -/
+restore, ZA6.20's deliveries and reply). -/
 theorem offCoreFree_of_blocked {e : CoreId} {st : SystemState} {tid : SeLe4n.ThreadId}
     {t : TCB} (hB : blockedCurrentNowhere st) (hN : st.blockedNotResident)
     (hT : st.getTcb? tid = some t) (hS : t.ipcState ≠ .ready) : offCoreFree e st tid :=
