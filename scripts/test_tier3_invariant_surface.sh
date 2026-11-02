@@ -4413,6 +4413,8 @@ run_check "INVARIANT" rg -n '^theorem threadHasPendingFault_restoreToReadyStagin
 run_check "INVARIANT" rg -n '^def _root_\.SeLe4n\.Model\.SystemState\.faultRecordParked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 run_check "INVARIANT" rg -n '^theorem threadHasPendingFault_eq_false_of_faultRecordParked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 run_check "INVARIANT" rg -n '^theorem faultRecordParked_restoreToReadyStaging($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_faultRecordParked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" bash -lc 'rg -n -U "^def abortPendingIpcOnEndpoint[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/IPC/Operations/Timeout.lean | rg -F "pendingFault := none"'
 run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_check "INVARIANT" rg -n '^private def runCancelledFaultChecks($|[ ({:\[\]])' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n '^  runCancelledFaultChecks$' tests/FaultHandlingSuite.lean

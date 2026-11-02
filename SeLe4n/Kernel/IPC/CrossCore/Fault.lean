@@ -589,7 +589,8 @@ blocks it on the handler's endpoint (`.blockedOnCall`) or in the handler's
 reply (`.blockedOnReply`); a fault with no handler leaves it `.Inactive`
 (`faultSuspendOnCore`).  It is retired by the handler's reply
 (`applyFaultRestart`, `faultAbandon`), by every cancellation restore
-(`TCB.restoredToReady`) and by a resume (`retirePendingFaultForResume`), each
+(`TCB.restoredToReady`), by the budget-timeout abort
+(`abortPendingIpcOnEndpoint`) and by a resume (`retirePendingFaultForResume`), each
 before the thread runs again.  So a thread that runs, and in particular one
 that issues an ordinary Call, carries none
 (`threadHasPendingFault_eq_false_of_faultRecordParked`). -/
@@ -634,6 +635,33 @@ theorem faultRecordParked_restoreToReadyStaging {st : SystemState}
     rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv t
       (fun h => hEq (SeLe4n.ThreadId.toObjId_injective _ _ h.symm))] at hT
     exact h t tcb hT hF
+
+/-- WS-ZA ZA6.22: **the budget-timeout abort keeps `faultRecordParked`**, as
+every cancellation restore does (`faultRecordParked_restoreToReadyStaging`):
+the aborted thread leaves it with no fault record, the splice rewrites only
+its neighbours' queue links, and no other thread is written. -/
+theorem abortPendingIpcOnEndpoint_faultRecordParked {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint endpointId isReceiveQ tid st = .ok st')
+    (h : st.faultRecordParked) : st'.faultRecordParked := by
+  obtain ⟨st1, tcb1, hRem, -, hStore⟩ := abortPendingIpcOnEndpoint_shape hStep
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  intro t tcb hT hF
+  have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  by_cases hEq : t.toObjId = tid.toObjId
+  · rw [hEq, storeObject_objects_eq st1 st' tid.toObjId _ hInv1 hStore] at hO
+    cases hO
+    cases hF
+  · rw [storeObject_objects_ne st1 st' tid.toObjId t.toObjId _ hEq hInv1 hStore] at hO
+    obtain ⟨ot, hot, hf⟩ := endpointQueueRemove_getTcb_backward_upToField
+      (fun x : TCB => (x.pendingFault, x.threadState, x.ipcState)) (fun _ _ _ _ => rfl)
+      _ _ _ st st1 hInv hRem _ tcb hO
+    simp only [Prod.mk.injEq] at hf
+    obtain ⟨hPf, hTs, hIs⟩ := hf
+    have hOt : st.getTcb? t = some ot := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hot
+    rw [← hTs, ← hIs]
+    exact h t ot hOt (by rw [hPf]; exact hF)
 
 /-- WS-RR RR4.14/RR4.15 (**the reply seam**): seL4's `doReplyTransfer`, whose
 first act is to ask whether the thread being answered is faulted.
