@@ -556,4 +556,57 @@ theorem schedContextUnbindOnCore_replenishQueueOnCore_ne (st st' : SystemState)
               simp only [hBT] at hU
               cases hU
 
+-- ============================================================================
+-- §8  The `.schedContextYieldTo` arm
+-- ============================================================================
+
+/-- **The cores a `.schedContextYieldTo` may write** — the executing core, whose
+current slot, run queue and flag the linked branch writes, and the bound
+thread's home core, where the resume places the context and the unlinked
+branch re-queues the thread at its band's head.  A context with no bound
+thread is refused before any write, so its set is the executing core alone. -/
+def schedContextYieldToWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List CoreId :=
+  match SchedContextOps.schedContextBoundThread? st scObjId with
+  | some tid => [executingCore, determineTargetCore st tid]
+  | none => [executingCore]
+
+/-- **The core a `.schedContextYieldTo` moves a reservation on** — the bound
+thread's home core, where the resume (`releasePlace`, seL4-MCS's
+`schedContext_resume`) postpones a context whose head refill is not ready. -/
+def schedContextYieldToReplenishCores (st : SystemState) (scObjId : SeLe4n.ObjId) :
+    List CoreId :=
+  match SchedContextOps.schedContextBoundThread? st scObjId with
+  | some tid => [determineTargetCore st tid]
+  | none => []
+
+/-- **The live `.schedContextYieldTo` arm's scheduler-domain footprint.** -/
+def schedLockSet_schedContextYieldToOnCore (st : SystemState) (scObjId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores (schedContextYieldToWriteSet st scObjId executingCore)
+    (schedContextYieldToReplenishCores st scObjId)
+
+/-- The footprint holds the executing core's run-queue write lock, the linked
+branch's scheduling point's. -/
+theorem schedLockSet_schedContextYieldToOnCore_contains_executing_runQueue_write
+    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId) :
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
+      ∈ schedLockSet_schedContextYieldToOnCore st scObjId executingCore :=
+  (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
+    (by unfold schedContextYieldToWriteSet; split <;> simp)
+
+/-- The footprint holds the bound thread's home core's run-queue and
+replenish-queue write locks, the requeue's and the resume's. -/
+theorem schedLockSet_schedContextYieldToOnCore_contains_home_write
+    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId) (tid : SeLe4n.ThreadId)
+    (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid) :
+    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
+        ∈ schedLockSet_schedContextYieldToOnCore st scObjId executingCore ∧
+      (LockKey.replenishQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
+        ∈ schedLockSet_schedContextYieldToOnCore st scObjId executingCore :=
+  ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
+      (by simp [schedContextYieldToWriteSet, h]),
+    (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
+      (by simp [schedContextYieldToReplenishCores, h])⟩
+
 end SeLe4n.Kernel

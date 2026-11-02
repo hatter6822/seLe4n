@@ -3262,6 +3262,15 @@ theorem RunQueueEntryStageOn.of_inv {L : SeLe4n.ObjId → Prop} {st st' : System
       RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L st st' :=
   ⟨hL, fun h r r' d => (H h r d).2 h r r' d⟩
 
+/-- An entry that links only threads of `L` from a state whose object store
+keeps its invariant. -/
+theorem RunQueueEntryStageOn.of_invExt {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (H : st.objects.invExt → RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L st st' :=
+  ⟨⟨fun h r => (H h).1.links h r, fun h r t => (H h).1.tables h r t,
+      fun h r q => (H h).1.release h r q, fun S h r q s => (H h).1.refills S h r q s,
+      fun h r y => (H h).1.yield h r y, fun h r => (H h).1.live h r⟩,
+    fun h r r' d => (H h).2 h r r' d⟩
+
 /-- An entry that links only threads of `L` keeps the table references
 recorded. -/
 theorem RunQueueEntryStageOn.tableReferencesRecorded {L : SeLe4n.ObjId → Prop}

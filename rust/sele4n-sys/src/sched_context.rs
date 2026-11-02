@@ -119,6 +119,32 @@ pub fn sched_context_consumed(sc_cap: CPtr) -> KernelResult<u64> {
     Ok(resp.msg_regs[0])
 }
 
+/// Yield to the thread bound to a scheduling context — seL4's
+/// `seL4_SchedContext_YieldTo`.
+///
+/// The kernel refuses (`IllegalState`) a context with no bound thread, a
+/// context bound to the caller, a bound thread whose priority exceeds the
+/// caller's maximum controlled priority, and a caller with a yield pending.
+/// Otherwise it resumes the context and, when its thread is schedulable, either
+/// moves the thread to the head of its priority on its home core (a thread
+/// homed on another core, or ranked below the caller) or, on the caller's own
+/// core, runs it ahead of the caller, which waits at the head of its own
+/// priority.  The consumed time returns in the first message register: at once
+/// in the first case, when the caller next runs in the second.  Requires the
+/// `Write` right on the SchedContext capability; no message registers are sent.
+///
+/// Lean: `schedContextYieldToOnCore` (SchedContext/Operations.lean), WS-ZA ZA6.29.
+#[inline]
+pub fn sched_context_yield_to(sc_cap: CPtr) -> KernelResult<u64> {
+    let resp = invoke_syscall(SyscallRequest {
+        cap_addr: sc_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::SchedContextYieldTo,
+    })?;
+    Ok(resp.msg_regs[0])
+}
+
 /// Give up the rest of the caller's allotment — seL4's `seL4_Yield` under MCS.
 ///
 /// A thread bound to a scheduling context forfeits its remaining budget until

@@ -2893,6 +2893,7 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .pageTableMap           => some false
   | .pageTableUnmap         => some false
   | .schedContextConsumed   => some false
+  | .schedContextYieldTo    => some false
   -- WS-ZA ZA4.3: a yield looks up no capability, so it has no lookup failure
   -- to deliver in either phase.
   | .yield                  => none

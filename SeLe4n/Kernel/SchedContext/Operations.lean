@@ -2411,6 +2411,34 @@ def yieldToRequeue (st : SystemState) (home : Concurrency.CoreId) (t : SeLe4n.Th
   if st.scheduler.currentOnCore home = some t then st
   else ((st.runRemoveOnCore home t).runEnqueueHeadOnCore home t p).markReschedulePendingOnCore home
 
+/-- The compiled `yieldToRequeue`: `home`'s `current` slot is compared as its
+code, so no `some` cell and no `Option` equality instance is built (proven
+equal, `yieldToRequeue_eq_impl`). -/
+def yieldToRequeueImpl (st : SystemState) (home : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : SystemState :=
+  if st.scheduler.currentCode.get home == t.val + 1 then st
+  else ((st.runRemoveOnCore home t).runEnqueueHeadOnCore home t p).markReschedulePendingOnCore home
+
+@[csimp] theorem yieldToRequeue_eq_impl : @yieldToRequeue = @yieldToRequeueImpl := by
+  funext st home t p
+  unfold yieldToRequeue yieldToRequeueImpl
+  by_cases h : st.scheduler.currentCode.get home = t.val + 1
+  · have hs : st.scheduler.currentOnCore home = some t := by
+      simp [SchedulerState.currentOnCore, h]
+    simp [h, hs]
+  · have hs : (st.scheduler.currentOnCore home = some t) = False := by
+      simp [SchedulerState.currentOnCore, h]
+    have hd : (st.scheduler.currentCode.get home == t.val + 1) = false := by simp [h]
+    simp only [hs, hd, if_false, Bool.false_eq_true]
+
+/-- **The linked branch's writes before its scheduling point**: the link, the
+target off core `c`'s queue, the caller off `c`'s slot, and the two head
+enqueues, the caller's first so the target's lands ahead of it. -/
+def yieldToLinkPrefix (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pCaller pTarget : SeLe4n.Priority) : SystemState :=
+  ((((setYieldLink st s caller).runRemoveOnCore c t).runDescheduleOnCore c caller).runEnqueueHeadOnCore
+    c caller pCaller).runEnqueueHeadOnCore c t pTarget
+
 /-- **The linked branch** (`cur->tcbYieldTo = sc; sc->scYieldFrom = cur;
 tcbSchedDequeue(tcb); tcbSchedEnqueue(cur); tcbSchedEnqueue(tcb);
 rescheduleRequired()`) on core `c`: the link set (`setYieldLink`), the target
@@ -2421,12 +2449,7 @@ entry, so the slot is cleared with no save, as a self-suspend clears it; the
 caller's consumed time is written when it next runs (`activateThreadOnCore`). -/
 def yieldToLink (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
     (caller t : SeLe4n.ThreadId) (pCaller pTarget : SeLe4n.Priority) : SystemState :=
-  let st1 := setYieldLink st s caller
-  let st2 := st1.runRemoveOnCore c t
-  let st3 := st2.runDescheduleOnCore c caller
-  let st4 := st3.runEnqueueHeadOnCore c caller pCaller
-  let st5 := st4.runEnqueueHeadOnCore c t pTarget
-  handleRescheduleOnCoreState st5 c
+  handleRescheduleOnCoreState (yieldToLinkPrefix st c s caller t pCaller pTarget) c
 
 /-- **seL4-MCS's `invokeSchedContext_YieldTo`** once its checks pass, for the
 caller `caller` on core `c` and the thread `t` context `s` is bound to: the
@@ -2458,6 +2481,39 @@ def yieldToBound (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedCo
             setConsumed (yieldToRequeue st2 home t tT.boostedPriority) s caller
           else yieldToLink st2 c s caller t cT.boostedPriority tT.boostedPriority
         else setConsumed st2 s caller
+
+/-- The linked branch's scheduling point is core `c`'s reschedule, which never
+refuses. -/
+theorem yieldToLink_sgi (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pCaller pTarget : SeLe4n.Priority) :
+    handleRescheduleSgiOnCore (yieldToLinkPrefix st c s caller t pCaller pTarget) c =
+      .ok (yieldToLink st c s caller t pCaller pTarget) :=
+  handleRescheduleSgiOnCore_eq_state _ _
+
+theorem setYieldLink_objects_invExt (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (setYieldLink st s caller).objects.invExt :=
+  SystemState.updateTcb_preserves_objects_invExt _ _ _
+    (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+
+theorem yieldToLinkPrefix_objects_invExt (st : SystemState) (c : Concurrency.CoreId)
+    (s : SeLe4n.SchedContextId) (caller t : SeLe4n.ThreadId) (pCaller pTarget : SeLe4n.Priority)
+    (hInv : st.objects.invExt) :
+    (yieldToLinkPrefix st c s caller t pCaller pTarget).objects.invExt :=
+  SystemState.runEnqueueHeadOnCore_objects_invExt _ _ _ _
+    (SystemState.runEnqueueHeadOnCore_objects_invExt _ _ _ _
+      (SystemState.runDescheduleOnCore_objects_invExt _ _ _
+        (SystemState.runRemoveOnCore_objects_invExt _ _ _ (setYieldLink_objects_invExt _ _ _ hInv))))
+
+theorem yieldToRequeue_objects_invExt (st : SystemState) (home : Concurrency.CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
+    (yieldToRequeue st home t p).objects.invExt := by
+  unfold yieldToRequeue
+  split
+  · exact hInv
+  · rw [SystemState.markReschedulePendingOnCore_objects]
+    exact SystemState.runEnqueueHeadOnCore_objects_invExt _ _ _ _
+      (SystemState.runRemoveOnCore_objects_invExt _ _ _ hInv)
 
 /-- **seL4-MCS's `seL4_SchedContext_YieldTo` on core `c`**
 (`decodeSchedContext_YieldTo`, then `invokeSchedContext_YieldTo`).  Every check

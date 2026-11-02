@@ -462,6 +462,103 @@ def yieldLinksAgree (st : SystemState) : Prop :=
   ∀ t s : SeLe4n.ObjId,
     (objYieldCodes st.objects[t]?).1 = s.val + 1 ↔ (objYieldCodes st.objects[s]?).2 = t.val + 1
 
+/-- WS-ZA ZA6.29: **a link set between two clear ends keeps the agreement**:
+slot `a`'s yield-to code set to `b` and slot `b`'s yield-from code set to `a`,
+both clear before, every other slot's codes kept. -/
+theorem yieldLinksAgree_of_link {st st' : SystemState} (h : st.yieldLinksAgree)
+    {a b : SeLe4n.ObjId} (ha0 : (objYieldCodes st.objects[a]?).1 = 0)
+    (hb0 : (objYieldCodes st.objects[b]?).2 = 0)
+    (hA : objYieldCodes st'.objects[a]? = (b.val + 1, (objYieldCodes st.objects[a]?).2))
+    (hB : objYieldCodes st'.objects[b]? = ((objYieldCodes st.objects[b]?).1, a.val + 1))
+    (hO : ∀ k, k ≠ a → k ≠ b → objYieldCodes st'.objects[k]? = objYieldCodes st.objects[k]?) :
+    st'.yieldLinksAgree := by
+  have hId : ∀ {x y : SeLe4n.ObjId}, x.val = y.val → x = y := fun {x y} e => by
+    cases x; cases y; cases e; rfl
+  have hne : a ≠ b := by
+    intro e
+    rcases objYieldCodes_fst_or_snd st'.objects[a]? with e' | e'
+    · rw [hA] at e'; simp at e'
+    · rw [e, hB] at e'; simp at e'
+  have hfst : ∀ t, t ≠ a →
+      (objYieldCodes st'.objects[t]?).1 = (objYieldCodes st.objects[t]?).1 := by
+    intro t ht
+    by_cases htb : t = b
+    · rw [htb, hB]
+    · rw [hO t ht htb]
+  have hsnd : ∀ s, s ≠ b →
+      (objYieldCodes st'.objects[s]?).2 = (objYieldCodes st.objects[s]?).2 := by
+    intro s hs
+    by_cases hsa : s = a
+    · rw [hsa, hA]
+    · rw [hO s hsa hs]
+  intro t s
+  by_cases ht : t = a
+  · rw [ht, hA]
+    by_cases hs : s = b
+    · rw [hs, hB]; exact ⟨fun _ => rfl, fun _ => rfl⟩
+    · rw [hsnd s hs]
+      dsimp only
+      constructor
+      · intro e; exact absurd (hId (by omega : s.val = b.val)) hs
+      · intro e; have := (h a s).mpr e; omega
+  · rw [hfst t ht]
+    by_cases hs : s = b
+    · rw [hs, hB]
+      dsimp only
+      constructor
+      · intro e; have := (h t b).mp e; omega
+      · intro e; exact absurd (hId (by omega : t.val = a.val)) ht
+    · rw [hsnd s hs]; exact h t s
+
+/-- WS-ZA ZA6.29: **the link's set keeps the agreement** when both its ends are
+clear: the caller has yielded to no context and the context records no
+yielder. -/
+theorem setYieldLink_preserves_yieldLinksAgree (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) (hInv : st.objects.invExt) {sc : SchedContext} {t : TCB}
+    (hS : st.getSchedContext? s = some sc) (hS0 : sc.yieldFromCode = 0)
+    (hT : st.getTcb? caller = some t) (hT0 : t.yieldToCode = 0) (h : st.yieldLinksAgree) :
+    (setYieldLink st s caller).yieldLinksAgree := by
+  have hI1 := updateSchedContext_preserves_objects_invExt st s
+    (fun sc => { sc with yieldFromCode := caller.val + 1 }) hInv
+  have hNe : caller.toObjId ≠ s.toObjId := by
+    intro e
+    have h1 := (getTcb?_eq_some_iff _ _ _).mp hT
+    have h2 := (getSchedContext?_eq_some_iff _ _ _).mp hS
+    rw [e, h2] at h1; cases h1
+  unfold setYieldLink
+  refine yieldLinksAgree_of_link h (a := caller.toObjId) (b := s.toObjId)
+    (by rw [objYieldCodes_of_getTcb? hT]; exact hT0)
+    (by rw [objYieldCodes_of_getSchedContext? hS]; exact hS0) ?_ ?_ ?_
+  · rw [objYieldCodes_of_getTcb? hT]
+    have e : ((st.updateSchedContext s (fun sc => { sc with yieldFromCode := caller.val + 1 })).updateTcb
+        caller (fun t => { t with yieldToCode := s.val + 1 })).getTcb? caller =
+        some { t with yieldToCode := s.val + 1 } := by
+      rw [updateTcb_getTcb?_self _ _ _ hI1, updateSchedContext_getTcb? _ _ _ hInv, hT]; rfl
+    rw [objYieldCodes_of_getTcb? e]; rfl
+  · rw [objYieldCodes_of_getSchedContext? hS]
+    have e : ((st.updateSchedContext s (fun sc => { sc with yieldFromCode := caller.val + 1 })).updateTcb
+        caller (fun t => { t with yieldToCode := s.val + 1 })).getSchedContext? s =
+        some { sc with yieldFromCode := caller.val + 1 } := by
+      rw [updateTcb_getSchedContext? _ _ _ hI1, updateSchedContext_getSchedContext?_self _ _ _ hInv,
+        hS]; rfl
+    rw [objYieldCodes_of_getSchedContext? e]; rfl
+  · intro k hka hkb
+    rw [updateTcb_objects_ne _ _ _ _ (Ne.symm hka) hI1,
+      updateSchedContext_objects_ne _ _ _ _ (Ne.symm hkb) hInv]
+
+/-- WS-ZA ZA6.29: **the link's set links its caller alone**: off the caller's
+slot every yield-to code is kept. -/
+theorem setYieldLink_yieldToCodesSetOnly {L : SeLe4n.ObjId → Prop} (st : SystemState)
+    (s : SeLe4n.SchedContextId) (caller : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hL : L caller.toObjId) : YieldToCodesSetOnly L (setYieldLink st s caller) st := by
+  have hI1 := updateSchedContext_preserves_objects_invExt st s
+    (fun sc => { sc with yieldFromCode := caller.val + 1 }) hInv
+  unfold setYieldLink
+  intro k hk
+  have hne : caller.toObjId ≠ k := fun e => hk (e ▸ hL)
+  rw [updateTcb_objects_ne _ _ _ _ hne hI1]
+  exact YieldToCodesSetOnly.updateSchedContext (L := L) st s _ hInv k hk
+
 /-- A step keeping every slot's yield codes keeps the agreement. -/
 theorem yieldLinksAgree_of_kept {st st' : SystemState} (hK : YieldLinksKept st' st)
     (h : st.yieldLinksAgree) : st'.yieldLinksAgree := fun t s => by

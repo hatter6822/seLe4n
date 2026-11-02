@@ -517,6 +517,119 @@ theorem syscallDispatchEntryState_preserves_currentNotResidentElsewhere (ctx : L
   rw [syscallDispatchCrossCoreStep_of_ok hD] at hU''
   exact currentsUnique.clearLedgers' hU''
 
+/-! ### The yield link across the syscall entry (WS-ZA ZA6.8, ZA6.29) -/
+
+/-- WS-ZA ZA6.29: **the entry's tail on core `e` leaves the thread current on
+`e` before the entry unlinked wherever it runs or is resident.**  On `e` the
+activation completes a link (`activateThreadOnCore_settle_unlinkedOnCore`); on
+any other core that thread is not current, since no core's current thread is
+another's (`currentsUnique`) and the entry makes no thread current there, and
+not resident, since a core's current thread is resident on no other core
+(`currentNotResidentElsewhere`) and the entry makes no thread resident there. -/
+theorem settleThenActivateOnCore_linkedOnUnlinked {e : CoreId} {pre M : SystemState}
+    (hInvS : (PriorityInheritance.settleResidencyOnCore M e).objects.invExt)
+    (hK : currentKeptOffCore e pre
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore M e) e))
+    (hRK : residentKeptOffCore e pre
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore M e) e))
+    (hU : currentsUnique pre) (hCNR : pre.currentNotResidentElsewhere) :
+    linkedOnUnlinked (SystemState.currentObjOn pre e)
+      (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore M e) e) := by
+  intro d tid t hR hLk hT
+  obtain ⟨u, hu, hEq⟩ := hLk
+  obtain rfl := SeLe4n.ThreadId.toObjId_injective _ _ hEq
+  by_cases hd : d = e
+  · subst hd
+    exact activateThreadOnCore_settle_unlinkedOnCore M d hInvS u t hR hT
+  · rcases hR with h | h
+    · exact absurd (hU e d u hu (hK d hd u h)) hd
+    · have hPre := hRK d hd u h
+      exact absurd hPre (hCNR.elsewhere e d u (Ne.symm hd) hu (hCNR.residentNotIdle d u hPre))
+
+/-- **The syscall entry keeps no linked thread current or resident.**  The
+dispatch's coverage reads its premises at the state the dispatch runs from —
+the saved state with the entry's IPC-buffer words handed to it — as the seam's
+does (`syscallDispatchCrossCoreStep_stepCovers`).  WS-ZA ZA6.29: the entry may
+link the caller (the yieldTo invocation's linked branch), and the tail leaves
+the caller unlinked wherever it runs or is resident
+(`settleThenActivateOnCore_linkedOnUnlinked`). -/
+theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident (ctx : LabelingContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (E : EntryPremises st)
+    (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined)
+    (hB : finalisingDeleteBundle (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
+    (hPlaced : placedThreadsHaveTcbs (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
+    (hAwayCur : ∀ t, (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some t →
+      ∀ c, (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).queuedOn c t = false)
+    (hCNR : st.currentNotResidentElsewhere)
+    (hY : st.yieldLinkedNotResident) :
+    (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).yieldLinkedNotResident := by
+  have hInv : (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n).objects.invExt := by
+    rw [Architecture.IpcBufferRead.syncUserWords_objects]
+    exact ((saveCapturedSyscallFrame_runQueueStage st e frame).1.links hInv0 hR0).1
+  have hK0 : currentKeptOffCore e st (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n) :=
+    currentKeptOffCore_of_eq fun _ _ => by
+      rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler]
+  have hRK0 : residentKeptOffCore e st (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n) := fun c _ t h => by
+    unfold MachineState.residentOnCore at h ⊢
+    rwa [syncUserWords_residentCode, saveCapturedSyscallFrame_residentCode] at h
+  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e trapped.syscallId
+    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+    trapped.pstate trapped.sp trapped.x30
+    (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
+  obtain ⟨-, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced hAwayCur hD
+  have hCov := syscallDispatchCrossCoreStep_stepCovers hInv hB hPlaced hAwayCur hD
+  have hSInv := settleResidencyOnCore_preserves_objects_invExt e _
+    (scheduleLocalSuccessorFrom_preserves_objects_invExt e ((Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e) _
+      (stageCallerReturnFor_stepCovers e ((Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
+        st' outcome hDInv).2)
+  have hTail : currentsRecordUnlinked (syscallDispatchCrossCoreStep ctx e trapped.syscallId
+      trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+      trapped.pstate trapped.sp trapped.x30
+      (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 st ∧
+      linkedOnUnlinked (SystemState.currentObjOn st e) (syscallDispatchCrossCoreStep ctx e
+        trapped.syscallId trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+        trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 := by
+    rw [syscallDispatchCrossCoreStep_of_ok hD]
+    exact ⟨currentsRecordUnlinked.clearLedgers' (currentsRecordUnlinked_of_kept
+        (currentKeptOffCore_trans hK0 hCov.currentKept)
+        (activateThreadOnCore_currentUnlinkedOn _ e hSInv)),
+      (settleThenActivateOnCore_linkedOnUnlinked hSInv
+        (currentKeptOffCore_trans hK0 hCov.currentKept)
+        (residentKeptOffCore_trans hRK0 hCov.residentKept)
+        (currentsUnique_of_dequeuedUnique E.dequeued) hCNR).clearLedgers'⟩
+  refine yieldLinkedNotResident_of_liveOn hY
+    ((syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).1.live
+      hInv0 hR0) (currentsRecordUnlinked.clearUserWords ?_) (linkedOnUnlinked.clearUserWords ?_)
+  · show currentsRecordUnlinked (syscallDispatchCrossCoreStep ctx e trapped.syscallId
+      trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
+      trapped.pstate trapped.sp trapped.x30
+      (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 st
+    exact hTail.1
+  · show linkedOnUnlinked (SystemState.currentObjOn st e) (syscallDispatchCrossCoreStep ctx e
+      trapped.syscallId trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+      trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
+      (Architecture.IpcBufferRead.syncUserWords
+        (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2
+    exact hTail.2
+
 end SeLe4n.Kernel
 
 namespace SeLe4n.Platform.Boot

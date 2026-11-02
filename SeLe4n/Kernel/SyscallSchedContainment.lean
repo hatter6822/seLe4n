@@ -531,6 +531,100 @@ theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState
     (fun d hd => schedContextUnbindOnCore_replenishQueueOnCore_ne st st' vScId executingCore
       sgi d hObjInv hd hStep)
 
+/-- WS-ZA ZA6.29: **the requeue moves no reservation**: it writes a run queue
+and a flag. -/
+theorem yieldToRequeue_replenishQueueOnCore (S : SystemState) (home : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (d : CoreId) :
+    (SchedContextOps.yieldToRequeue S home t p).scheduler.replenishQueueOnCore d =
+      S.scheduler.replenishQueueOnCore d := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · rfl
+  · simp only [SystemState.markReschedulePendingOnCore_scheduler,
+      SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+      SystemState.runEnqueueHeadOnCore_scheduler]
+    split <;> simp
+
+/-- WS-ZA ZA6.29: **the link moves no reservation**: the link is an object
+write, the queue writes and the scheduling point write run queues, slots and
+flags. -/
+theorem yieldToLink_replenishQueueOnCore (S : SystemState) (c : CoreId)
+    (s : SeLe4n.SchedContextId) (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority)
+    (d : CoreId) :
+    (SchedContextOps.yieldToLink S c s caller t pC pT).scheduler.replenishQueueOnCore d =
+      S.scheduler.replenishQueueOnCore d := by
+  rw [handleRescheduleSgiOnCore_replenishQueueOnCore _ c _ d
+    (SchedContextOps.yieldToLink_sgi S c s caller t pC pT)]
+  unfold SchedContextOps.yieldToLinkPrefix
+  rw [SystemState.runEnqueueHeadOnCore_scheduler]
+  split
+  · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
+    rw [SystemState.runEnqueueHeadOnCore_scheduler]
+    split <;> simp [SystemState.setYieldLink_scheduler]
+  · rw [SystemState.runEnqueueHeadOnCore_scheduler]
+    split <;> simp [SystemState.setYieldLink_scheduler]
+
+/-- WS-ZA ZA6.29: **a `.schedContextYieldTo` writes one replenish queue: its
+context's thread's home core's**, the resume's (`releasePlace`).  The
+exactness half of `schedLockSet_schedContextYieldToOnCore`'s replenish
+segment. -/
+theorem schedContextYieldToOnCore_replenishQueueOnCore_ne (scObjId : SeLe4n.ObjId)
+    (e d : CoreId) (st st' : SystemState) (hInv : st.objects.invExt)
+    (hd : d ∉ schedContextYieldToReplenishCores st scObjId)
+    (hStep : SchedContextOps.schedContextYieldToOnCore (SeLe4n.SchedContextId.ofObjId scObjId) e st
+      = .ok st') :
+    st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d := by
+  obtain ⟨caller, t, hB, rfl⟩ := schedContextYieldToOnCore_boundThread hStep
+  unfold schedContextYieldToReplenishCores at hd
+  rw [hB] at hd
+  simp only [List.mem_singleton] at hd
+  rw [← determineTargetCore_completeYieldFrom st (SeLe4n.SchedContextId.ofObjId scObjId) t hInv] at hd
+  generalize SeLe4n.SchedContextId.ofObjId scObjId = s at hd ⊢
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  have h2 : ((completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
+      s).scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d := by
+    rw [SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ _ hd,
+      SystemState.completeYieldFrom_scheduler]
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
+    s = st2 at h2 ⊢
+  have hSet : ∀ X : SystemState, X.scheduler.replenishQueueOnCore d =
+      st.scheduler.replenishQueueOnCore d →
+      (setConsumed X s caller).scheduler.replenishQueueOnCore d =
+        st.scheduler.replenishQueueOnCore d := fun X hX => by
+    rw [SystemState.setConsumed_scheduler]; exact hX
+  split
+  · exact hSet _ h2
+  · split
+    · exact hSet _ h2
+    · split
+      · exact hSet _ h2
+      · split
+        · split
+          · exact hSet _ ((yieldToRequeue_replenishQueueOnCore _ _ _ _ d).trans h2)
+          · exact (yieldToLink_replenishQueueOnCore _ _ _ _ _ _ _ d).trans h2
+        · exact hSet _ h2
+
+/-- WS-ZA ZA6.29: **`.schedContextYieldTo`'s footprint covers its writes**: the
+run segment is the executing core and the bound thread's home core
+(`schedContextYieldToOnCore_confinedToCores`), the replenish segment the home
+core (`schedContextYieldToOnCore_replenishQueueOnCore_ne`). -/
+theorem schedLockSet_schedContextYieldToOnCore_coversWrites (st st' : SystemState)
+    (scObjId : SeLe4n.ObjId) (executingCore : CoreId) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextYieldToOnCore (SeLe4n.SchedContextId.ofObjId scObjId)
+      executingCore st = .ok st')
+    (hS : LockSet.ofList?
+      (schedLockSet_schedContextYieldToOnCore st scObjId executingCore) = some S) :
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S
+    (schedContextYieldToWriteSet st scObjId executingCore)
+    (schedContextYieldToReplenishCores st scObjId) st st'
+    (LockSet.ofList?_pairs hS)
+    (schedContextYieldToOnCore_confinedToCores scObjId executingCore st st' hObjInv hStep)
+    (fun d hd => schedContextYieldToOnCore_replenishQueueOnCore_ne scObjId executingCore d st st'
+      hObjInv hd hStep)
+
 -- ============================================================================
 -- §9  The affinity arm
 -- ============================================================================

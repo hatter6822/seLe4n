@@ -402,6 +402,41 @@ theorem clearLedgers_runQueueStage' (st : SystemState) :
     RunQueueStage st (Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st)) :=
   RunQueueStage.of_frame rfl rfl rfl
 
+/-! ### The trap-frame saves write no scheduler state -/
+
+theorem saveCapturedTrapFrame_scheduler (st : SystemState) (c : CoreId)
+    (frame : Option Architecture.InFlightContext) :
+    (Architecture.saveCapturedTrapFrame st c frame).scheduler = st.scheduler := by
+  cases frame with
+  | none => rfl
+  | some ic =>
+    simp only [Architecture.saveCapturedTrapFrame, Architecture.saveVacatedFrameOnCore_scheduler,
+      Architecture.saveTrapFrameOnCore_scheduler]
+
+theorem saveCapturedSyscallFrame_scheduler (st : SystemState) (c : CoreId)
+    (frame : Option Architecture.InFlightContext) :
+    (Architecture.saveCapturedSyscallFrame st c frame).scheduler = st.scheduler := by
+  cases frame with
+  | none => rfl
+  | some ic =>
+    simp only [Architecture.saveCapturedSyscallFrame, Architecture.saveVacatedFrameOnCore_scheduler,
+      Architecture.saveTrapFrameOnCore_scheduler]
+
+theorem saveCapturedTrapFrameAt_scheduler (st : SystemState) (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) :
+    (Concurrency.saveCapturedTrapFrameAt st coreId frame).scheduler = st.scheduler := by
+  unfold Concurrency.saveCapturedTrapFrameAt
+  split
+  · exact saveCapturedTrapFrame_scheduler st _ frame
+  · rfl
+
+theorem saveCapturedSyscallFrameAt_scheduler (st : SystemState) (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) :
+    (Concurrency.saveCapturedSyscallFrameAt st coreId frame).scheduler = st.scheduler := by
+  unfold Concurrency.saveCapturedSyscallFrameAt
+  split
+  · exact saveCapturedSyscallFrame_scheduler st _ frame
+  · rfl
 /-! ### The syscall entry -/
 
 /-- **The checked syscall entry keeps the agreement**: the register read and the
@@ -413,7 +448,7 @@ theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
     (E : EntryPremises st)
     (hNI : ∀ tid, st.scheduler.currentOnCore e = some tid → isIdleThreadId tid = false)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
-    SystemState.RunQueueEntryStage st st' := by
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st e) st st' := by
   unfold syscallEntryChecked at h
   split at h
   · cases h
@@ -431,7 +466,7 @@ theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
     decoded.overflowCount
   rw [ht] at h
   have hF := RunQueueStage.of_frame (st := st) (st' := { st with perCoreTlb := t }) rfl rfl rfl
-  exact hF.entry.trans
+  exact (hF.entry.toOn (SystemState.currentObjOn st e)).trans
     (dispatchSyscallChecked_runQueueEntryStage ctx decoded tid e _ st'
       ((E.of_ipcFrame hF (IpcFrame.of_frame rfl fun _ => rfl)).arm hCur (hNI tid hCur)) h)
 
@@ -443,13 +478,13 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
     (E : EntryPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
-    SystemState.RunQueueEntryStage st st' := by
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st e) st st' := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
-  · cases h; exact (RunQueueStage.refl _).entry
+  · cases h; exact (RunQueueStage.refl _).entry.toOn _
   rename_i tid hCur
   split at h
-  · cases h; exact (RunQueueStage.refl _).entry
+  · cases h; exact (RunQueueStage.refl _).entry.toOn _
   rename_i hIdle
   have hNI : isIdleThreadId tid = false := by simpa using hIdle
   have hW : RunQueueStage st
@@ -473,9 +508,9 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
       have E2 := E1.of_ipcFrame hW2 (by
         unfold writeFaultRegistersToTcb
         exact IpcFrame.updateTcb _ _ fun _ => rfl)
-      exact (hW.trans hW2).entry.trans
+      exact ((hW.trans hW2).entry.trans
         (faultDeliverOnCoreChecked_runQueueEntryStage _ _ tid _ _ e E2.endpointHeads
-          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI)
+          (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur1) hNI)).toOn _
     · cases h
       exact (hW.trans (RunQueueStage.of_frame
         (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
@@ -484,10 +519,12 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
         (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry
+        (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry.toOn _
   · rename_i hE
     cases h
-    exact hW.entry.trans (syscallEntryChecked_runQueueEntryStage E1
+    rw [← SystemState.currentObjOn_congr (st' := Platform.FFI.writeFfiRegistersToTcb st tid syscallId
+      x0 x1 x2 x3 x4 x5) (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler])]
+    exact (hW.entry.toOn _).trans (syscallEntryChecked_runQueueEntryStage E1
       (fun t ht => by rw [hCur1] at ht; cases ht; exact hNI) hE)
 
 /-- The caller's return staging writes its TCB's return frame and, when it is
@@ -516,16 +553,17 @@ theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} 
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
     {st : SystemState}
     (E : EntryPremises st) :
-    SystemState.RunQueueEntryStage st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st).2 := by
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st e) st
+      (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
-    ((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
+    (((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
     (scheduleLocalSuccessorFrom_runQueueEntryStage _ _ e)).trans
     (settleThenActivateOnCore_runQueueEntryStage _ e)).trans
-    (clearLedgers_runQueueStage' _).entry)
+    (clearLedgers_runQueueStage' _).entry).toOn _)
 
 /-- **The syscall entry's committed state keeps the agreement**: the trap-frame
 save, the entry's IPC-buffer words handed to the state, the step, and the
@@ -535,10 +573,11 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState)
     (E : EntryPremises st) :
-    SystemState.RunQueueEntryStage st (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
-        (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) :=
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st e) st
+      (Architecture.IpcBufferRead.clearUserWords
+        (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
+          (Architecture.IpcBufferRead.syncUserWords
+            (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) :=
   have hS := (saveCapturedSyscallFrame_runQueueStage st e frame).trans
     (RunQueueStage.of_frame (Architecture.IpcBufferRead.syncUserWords_objects _ _ _)
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
@@ -557,8 +596,12 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
     (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-  (hS.entry.trans (syscallDispatchCrossCoreStep_runQueueEntryStage (E.of_ipcFrame hS hF))).trans
-    hC.entry
+  have hL : SystemState.currentObjOn (Architecture.IpcBufferRead.syncUserWords
+      (Architecture.saveCapturedSyscallFrame st e frame) bytes n) e = SystemState.currentObjOn st e :=
+    SystemState.currentObjOn_congr (by
+      rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler])
+  ((hS.entry.toOn _).trans (hL ▸ syscallDispatchCrossCoreStep_runQueueEntryStage
+    (E.of_ipcFrame hS hF))).trans (hC.entry.toOn _)
 
 /-- **The syscall entry keeps the table references recorded**, so the retire's
 read of an object's own back-links (`SystemState.tableBackLinksClear`) answers
@@ -744,6 +787,15 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.refillsSound {st st' 
   (SystemState.refillsSound_iff_except _).mpr
     (h.1.refills _ hInv hR hRel ((SystemState.refillsSound_iff_except _).mp hS))
 
+/-- WS-ZA ZA6.29: and so does an entry that links only threads of `L`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStageOn.refillsSound
+    {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (h : SystemState.RunQueueEntryStageOn L st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    st'.refillsSound :=
+  (SystemState.refillsSound_iff_except _).mpr
+    (h.1.refills _ hInv hR hRel ((SystemState.refillsSound_iff_except _).mp hS))
+
 /-- **The syscall entry keeps the refill state sound** — the bind, the configure
 and the bound yield among its arms. -/
 theorem syscallDispatchEntryState_preserves_refillsSound (ctx : LabelingContext)
@@ -830,6 +882,14 @@ half carries it (`RunQueueLinkStage.yield`) — the yield, the suspend and the
 finalise steps among its arms. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.yieldLinksAgree {st st' : SystemState}
     (h : SystemState.RunQueueEntryStage st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hY : st.yieldLinksAgree) : st'.yieldLinksAgree :=
+  h.1.yield hInv hR hY
+
+/-- WS-ZA ZA6.29: and so does an entry that links only threads of `L` — the
+yieldTo's link is set at both ends. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStageOn.yieldLinksAgree
+    {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (h : SystemState.RunQueueEntryStageOn L st st') (hInv : st.objects.invExt)
     (hR : st.runQueueRefined) (hY : st.yieldLinksAgree) : st'.yieldLinksAgree :=
   h.1.yield hInv hR hY
 

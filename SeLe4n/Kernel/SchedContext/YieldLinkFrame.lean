@@ -241,6 +241,69 @@ theorem RunQueueStage.of_objectsAgreeOffYield {st st' : SystemState}
       fun h _ y => hY h y, fun h _ => .of_unset (hU h) hRes⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
 
+/-- WS-ZA ZA6.29: **a step that writes only the yield link ends, linking only
+threads of `L`**, is a kernel entry's worth of steps that links only threads of
+`L` (`RunQueueEntryStageOn`): `RunQueueStage.of_objectsAgreeOffYield` with the
+link frame let through `L`. -/
+theorem RunQueueEntryStageOn.of_objectsAgreeOffYield {L : SeLe4n.ObjId → Prop}
+    {st st' : SystemState}
+    (hA : objectsAgreeOffYield st' st) (hS : st'.scheduler = st.scheduler)
+    (hI : st.objects.invExt → st'.objects.invExt)
+    (hT : st'.referenceTables = st.referenceTables)
+    (hY : st.objects.invExt → st.yieldLinksAgree → st'.yieldLinksAgree)
+    (hU : st.objects.invExt → Kernel.YieldToCodesSetOnly L st' st)
+    (hRes : st'.machine.residentCode = st.machine.residentCode) :
+    RunQueueEntryStageOn L st st' := by
+  have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := by
+    intro c t
+    have e := hA.getTcb?_map (fun x => x.runLinkOn c) (t := t)
+    unfold runLinkOn
+    cases h1 : st'.getTcb? t <;> cases h2 : st.getTcb? t <;> rw [h1, h2] at e <;>
+      first | rfl | cases e | exact Option.some.inj e
+  have hM : StateMono st st' :=
+    StateMono.of_stateFields (fun t => hA.getTcb?_map _ (t := t))
+  have hF : TableReferenceFrame st st' :=
+    .of_map (g := KernelObject.withoutYield) (fun o => by cases o <;> rfl) hT hA
+  have hRel : releaseStateAgree st' st :=
+    ⟨.of_map KernelObject.withoutYield (fun o _ => by cases o <;> rfl) hA, by rw [hS]⟩
+  have hV : Kernel.RefillViewsKept st' st :=
+    Kernel.RefillViewsKept.of_map KernelObject.withoutYield (fun o => by cases o <;> rfl) hA
+  exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩,
+      fun _ _ t => hF.preserves t, fun _ _ r => hRel.refined r,
+      fun _ _ _ q s => refillsSoundExcept_of_kept hV
+        (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
+      fun h _ y => hY h y, fun h _ => ⟨hU h, fun c t hr => Or.inl (by
+        unfold MachineState.residentOnCore at hr ⊢; rw [← hRes]; exact hr)⟩⟩,
+    fun _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d⟩
+
+/-- WS-ZA ZA6.29: the link's set writes the two link ends alone. -/
+theorem setYieldLink_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.SchedContextId)
+    (caller : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    objectsAgreeOffYield (setYieldLink st s caller) st := by
+  unfold setYieldLink
+  exact (updateTcb_objectsAgreeOffYield _ caller (fun t => { t with yieldToCode := s.val + 1 })
+    (updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => rfl)).trans
+    (updateSchedContext_objectsAgreeOffYield _ s
+      (fun sc => { sc with yieldFromCode := caller.val + 1 }) hInv (fun _ => rfl))
+
+/-- WS-ZA ZA6.29: **the link's set is a kernel entry's worth of steps that
+links its caller alone**, when both its ends are clear. -/
+theorem setYieldLink_runQueueEntryStageOn {L : SeLe4n.ObjId → Prop} (st : SystemState)
+    (s : SeLe4n.SchedContextId) (caller : SeLe4n.ThreadId) (hL : L caller.toObjId)
+    (hClear : st.objects.invExt → ∃ sc t, st.getSchedContext? s = some sc ∧ sc.yieldFromCode = 0 ∧
+      st.getTcb? caller = some t ∧ t.yieldToCode = 0) :
+    RunQueueEntryStageOn L st (setYieldLink st s caller) :=
+  RunQueueEntryStageOn.of_invExt fun hInv =>
+    RunQueueEntryStageOn.of_objectsAgreeOffYield (setYieldLink_objectsAgreeOffYield st s caller hInv)
+      (setYieldLink_scheduler st s caller)
+      (fun h => updateTcb_preserves_objects_invExt _ _ _
+        (updateSchedContext_preserves_objects_invExt _ _ _ h))
+      (by rw [setYieldLink_eq_objects]; rfl)
+      (fun h y => let ⟨_, _, hS, hS0, hT, hT0⟩ := hClear h
+        setYieldLink_preserves_yieldLinksAgree st s caller h hS hS0 hT hT0 y)
+      (fun h => setYieldLink_yieldToCodesSetOnly st s caller h hL)
+      (by rw [setYieldLink_eq_objects])
+
 /-- **The cancel is a run-queue stage**, keeping the link agreement
 (`cancelYieldTo_preserves_yieldLinksAgree`). -/
 theorem cancelYieldTo_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId) :

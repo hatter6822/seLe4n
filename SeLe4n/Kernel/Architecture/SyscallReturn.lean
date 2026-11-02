@@ -336,6 +336,10 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- wrote into the caller's first message register, with its message info in
   -- `x1`: the frame passes the staged registers through.
   | .schedContextConsumed  => .message
+  -- WS-ZA ZA6.29: the yieldTo invocation returns the consumed time the same way:
+  -- written now by `setConsumed`, or at the caller's activation on the linked
+  -- branch (`activateThreadOnCore`).
+  | .schedContextYieldTo   => .message
   | .tcbBindNotification   => .unit
   | .tcbUnbindNotification => .unit
   | .mintReplyCap          => .unit
@@ -362,13 +366,13 @@ theorem syscallReturnShape_total (sid : SyscallId) :
   ⟨_, rfl⟩
 
 /-- The value-returning surface, pinned by enumeration over the ABI's own
-`SyscallId.all` (plan §1.3): eight syscalls return a value — the five WS-RA
-classified, WS-SM SM9.A's two audit reads, and WS-ZA ZA6.9's Consumed
-invocation. -/
+`SyscallId.all` (plan §1.3): nine syscalls return a value — the five WS-RA
+classified, WS-SM SM9.A's two audit reads, WS-ZA ZA6.9's Consumed invocation
+and WS-ZA ZA6.29's yieldTo invocation. -/
 theorem syscallReturnShape_value_returning :
     SyscallId.all.filter (fun sid => syscallReturnShape sid != .unit) =
       [.receive, .call, .serviceQuery, .notificationWait, .replyRecv,
-       .auditRead, .auditDrain, .schedContextConsumed] := by
+       .auditRead, .auditDrain, .schedContextConsumed, .schedContextYieldTo] := by
   decide
 
 /-- The refuted design, kept refuted (plan §3.4): a hand-maintained list of

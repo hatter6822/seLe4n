@@ -43,6 +43,115 @@ theorem schedContextConsumedOnCore_bankAgree {e e' : CoreId} {c0 : SeLe4n.Thread
         (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) fun _ => rfl)
   · exact .refl _
 
+/-- WS-ZA ZA6.29: a step keeping core `e`'s bank and slot and the saved context
+of each thread current on `e` after it. -/
+theorem bankFrame.of_savedRegs {e : CoreId} {c0 : SeLe4n.ThreadId} {pre post : SystemState}
+    (hM : post.machine.regsOnCore e = pre.machine.regsOnCore e) (hK : currentKeptOnCore e pre post)
+    (hR : ∀ t, post.scheduler.currentOnCore e = some t → post.savedRegs t = pre.savedRegs t) :
+    bankFrame e c0 pre post :=
+  ⟨hM, hK, fun t ht => by rw [hR t ht]⟩
+
+theorem yieldToLinkPrefix_machine (S : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pC pT : SeLe4n.Priority) :
+    (SchedContextOps.yieldToLinkPrefix S c s caller t pC pT).machine = S.machine := by
+  unfold SchedContextOps.yieldToLinkPrefix
+  simp only [SystemState.runEnqueueHeadOnCore_machine]
+  unfold SystemState.runDescheduleOnCore
+  simp only [SystemState.runRemoveOnCore_machine, SystemState.setYieldLink_machine]
+
+theorem yieldToRequeue_machine (S : SystemState) (home : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : (SchedContextOps.yieldToRequeue S home t p).machine = S.machine := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · rfl
+  · simp
+
+theorem yieldToRequeue_currentOnCore (S : SystemState) (home : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c : CoreId) :
+    (SchedContextOps.yieldToRequeue S home t p).scheduler.currentOnCore c =
+      S.scheduler.currentOnCore c := by
+  unfold SchedContextOps.yieldToRequeue
+  split
+  · rfl
+  · simp only [SystemState.markReschedulePendingOnCore_scheduler,
+      SchedulerState.markReschedulePendingOnCore_currentOnCore,
+      SystemState.runEnqueueHeadOnCore_currentOnCore]
+    simp [SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore,
+      SchedulerState.currentOnCore]
+
+/-- WS-ZA ZA6.29: **the yieldTo invocation keeps the agreement**: the completion
+writes the context's earlier yielder, which is linked and so not the caller;
+the resume and the requeue write no saved context; `setConsumed` writes the
+caller's return window; the linked branch's prefix writes no saved context and
+keeps or clears the core's slot, and its scheduling point keeps the
+agreement. -/
+theorem schedContextYieldToOnCore_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadId}
+    {s : SeLe4n.SchedContextId} {st st' : SystemState} (hne : e ≠ e')
+    (hInv : st.objects.invExt) (hYA : st.yieldLinksAgree) (hYN : st.yieldLinkedNotResident)
+    (hCur : st.scheduler.currentOnCore e = some c0)
+    (hA : bankAgree e c0 st) (h : SchedContextOps.schedContextYieldToOnCore s e st = .ok st') :
+    bankAgree e c0 st' := by
+  obtain ⟨caller, -, t, -, -, hC, -, -, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  rw [hCur] at hC; cases hC
+  have F1 : bankFrame e c0 st (completeYieldFrom st s) :=
+    .of_savedRegs (by rw [SystemState.completeYieldFrom_eq_objects])
+      (.of_eq (by rw [SystemState.completeYieldFrom_scheduler])) fun u hu => by
+        rw [SystemState.completeYieldFrom_scheduler, hCur] at hu
+        cases hu
+        refine completeYieldFrom_savedRegsKeptExcept hInv _ ?_
+        rintro ⟨sc, k, hS, hCd, hk⟩
+        rw [hk] at hCur
+        exact ((offCoreFree_of_yieldCode (e := e') hYN (yieldCode_of_yieldFrom hYA hS hCd)) e hne).1 hCur
+  have hInv1 := SystemState.completeYieldFrom_preserves_objects_invExt st s hInv
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  have hW := SystemState.releasePlace_releaseOnlyWrite (completeYieldFrom st s)
+    (determineTargetCore (completeYieldFrom st s) t) s
+  have F2 : bankFrame e c0 (completeYieldFrom st s) ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s) :=
+    .of_savedRegs (by rw [hW.machine]) (.of_eq (hW.currentOnCore e)) fun u _ =>
+      (savedRegsKeptExcept.of_releaseLinks (W := fun _ => False)
+        (SystemState.releasePlace_agree _ _ _)) u id
+  have hInv2 := SystemState.releasePlace_objects_invExt _
+    (determineTargetCore (completeYieldFrom st s) t) s hInv1
+  have hA2 := (F1.trans F2).bankAgree hA
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
+    s = st2 at hA2 hInv2 ⊢
+  have hSet : ∀ X : SystemState, X.objects.invExt → bankAgree e c0 X →
+      bankAgree e c0 (setConsumed X s c0) := fun X hX hAX =>
+    (bankFrame.mk (by rw [SystemState.setConsumed_eq_objects])
+      (.of_eq (by rw [SystemState.setConsumed_scheduler])) fun u _ => (by
+        unfold setConsumed
+        split
+        · exact (regsMaskKept.of_kept (savedRegsKeptExcept.updateSchedContext (W := fun _ => False)
+            X _ _ hX)).trans (regsMaskKept.updateTcb_caller _
+              (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hX) fun _ => rfl)
+        · exact .refl _ : regsMaskKept c0 X (setConsumed X s c0)) u).bankAgree hAX
+  have hLink : ∀ pC pT, bankAgree e c0 (SchedContextOps.yieldToLink st2 e s c0 t pC pT) :=
+    fun pC pT => bankAgree_schedPoint
+      (SchedContextOps.yieldToLinkPrefix_objects_invExt st2 e s c0 t pC pT hInv2)
+      ((bankFrame.of_savedRegs (by rw [yieldToLinkPrefix_machine])
+        (yieldToLinkPrefix_currentKeptOnCore st2 e s c0 t pC pT) fun u _ =>
+          (yieldToLinkPrefix_savedRegsKeptExcept (W := fun _ => False) st2 e s c0 t pC pT
+            hInv2) u id).bankAgree hA2)
+      (.inr (SchedContextOps.yieldToLink_sgi st2 e s c0 t pC pT))
+  split
+  · exact hSet _ hInv2 hA2
+  · split
+    · exact hSet _ hInv2 hA2
+    · split
+      · exact hSet _ hInv2 hA2
+      · split
+        · split
+          · exact hSet _ (SchedContextOps.yieldToRequeue_objects_invExt _ _ _ _ hInv2)
+              ((bankFrame.of_savedRegs (by rw [yieldToRequeue_machine])
+                (.of_eq (yieldToRequeue_currentOnCore _ _ _ _ e)) fun u _ =>
+                  (yieldToRequeue_savedRegsKeptExcept (W := fun _ => False) st2 _ t _) u id).bankAgree
+                hA2)
+          · exact hLink _ _
+        · exact hSet _ hInv2 hA2
+
 /-- **The resume keeps the agreement**: its fault retire writes the restart frame
 of a suspended thread, which no core runs, and writes no bank and no slot; then
 the resume's prefix and scheduling point. -/
@@ -154,6 +263,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
            exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA)
         | exact hP (schedContextUnbindOnCore_schedPointPrefix hInv hS)
         | exact schedContextConsumedOnCore_bankAgree hne hInv P.current hA hS
+        | exact schedContextYieldToOnCore_bankAgree hne hInv hYA hYN P.current hA hS
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)
             ((unbindNotification_keyFrame _ _ _ hInv hS).stepCoversInv (e := e')
               (hRes := by rw [unbindNotification_machine_eq hS])

@@ -4374,6 +4374,25 @@ def lockSet_schedContextConsumed (callerTid : ThreadId) (cnodeRootObjId : ObjId)
      (cnodeLock cnodeRootObjId, .read),
      (schedContextLock scid, .write)]
 
+/-- WS-ZA ZA6.29: `lockSet` for `schedContextYieldTo`.  The invocation writes
+the invoked SchedContext (its yield-from code, its consumed time and its
+release link), the caller's TCB (its yield-to code, its run-queue links and the
+consumed time in its saved registers), the bound thread's TCB (its run-queue
+links), and the TCB of the thread the context's earlier yield names, which the
+completion hands its consumed time (`yielder`, read from the context's
+yield-from code: absent when it records none); the CSpace root is read for the
+capability resolution.  The queue neighbours' links and the queues themselves
+are the scheduler domain's (`schedLockSet_schedContextYieldToOnCore`). -/
+def lockSet_schedContextYieldTo (callerTid : ThreadId) (cnodeRootObjId : ObjId)
+    (scid : SchedContextId) (targetTcbTid : ThreadId) (yielder : Option ThreadId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (schedContextLock scid, .write),
+       (tcbLock targetTcbTid, .write)])
+    (yielder.map (fun y => (tcbLock y, .write)))
+
 /-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
 `boundNotification`) and the notification (write — `boundTCB`) both mutate; the
 caller TCB is read (identity) and the CSpace root read (cap resolution). -/
@@ -5081,6 +5100,11 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- caller's TCB and reads the CSpace root.
   | .schedContextConsumed =>
       [.tcb, .cnode, .schedContext]
+  -- WS-ZA ZA6.29: the yieldTo invocation writes the invoked SchedContext, the
+  -- caller's, the bound thread's and the earlier yielder's TCBs and reads the
+  -- CSpace root.
+  | .schedContextYieldTo =>
+      [.tcb, .cnode, .schedContext]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
@@ -5169,6 +5193,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextYieldTo
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
@@ -6935,6 +6960,28 @@ theorem lockSet_consistent_schedContextConsumed (callerTid : ThreadId) (cnRoot :
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+
+/-- WS-ZA ZA6.29: SM3.B.4 for `.schedContextYieldTo`. -/
+theorem lockSet_consistent_schedContextYieldTo (callerTid : ThreadId) (cnRoot : ObjId)
+    (scid : SchedContextId) (targetTcb : ThreadId) (yielder : Option ThreadId) :
+    ∀ p ∈ (lockSet_schedContextYieldTo callerTid cnRoot scid targetTcb yielder).pairs,
+      p.fst.kind ∈ permittedKinds .schedContextYieldTo :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h)))
+    (fun pp h => by
+      cases yielder with
+      | none => cases h
+      | some y => cases h; simp; decide)
 
 /-- WS-SM SM6.B.4 for `.tcbBindNotification`. -/
 theorem lockSet_consistent_tcbBindNotification (callerTid : ThreadId)

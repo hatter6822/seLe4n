@@ -552,6 +552,61 @@ theorem schedContextConsumedOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   obtain ⟨caller, -, rfl⟩ := schedContextConsumedOnCore_ok h
   exact .of_stage (SystemState.setConsumed_runQueueStage st s caller)
 
+/-- WS-ZA ZA6.29: two readiness frames compose over a step that keeps the link
+invariants. -/
+theorem readyKeptStage.trans_links {S : SeLe4n.ThreadId → Prop} {a b c : SystemState}
+    (L : a.objects.invExt → a.runQueueRefined → b.objects.invExt ∧ b.runQueueRefined)
+    (h1 : readyKeptStage S a b) (h2 : readyKeptStage S b c) : readyKeptStage S a c :=
+  fun hI hR => let ⟨hI', hR'⟩ := L hI hR; (h1 hI hR).trans (h2 hI' hR')
+
+/-- WS-ZA ZA6.29: **the yieldTo blocks no thread**: the completion, the resume's
+re-placement, the consumed time, the requeue and the link's writes keep every
+thread's state fields, and the link's scheduling point keeps them too. -/
+theorem schedContextYieldToOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
+    {s : SeLe4n.SchedContextId} {c : CoreId} {st st' : SystemState}
+    (h : SchedContextOps.schedContextYieldToOnCore s c st = .ok st') : readyKeptStage S st st' := by
+  obtain ⟨caller, -, t, -, -, -, -, -, -, -, -, -, -, -, rfl⟩ :=
+    SchedContextOps.schedContextYieldToOnCore_ok h
+  have h1 := SystemState.completeYieldFrom_runQueueStage st s
+  have h2 := releasePlace_runQueueFrameStage (completeYieldFrom st s)
+    (determineTargetCore (completeYieldFrom st s) t) s
+  have hK : readyKeptStage S st ((completeYieldFrom st s).releasePlace
+      (determineTargetCore (completeYieldFrom st s) t) s) :=
+    (readyKeptStage.of_stage h1).trans h1.1 (fun hI hR => .of_stateMono (h2.2.2 hI hR))
+  have hL : st.objects.invExt → st.runQueueRefined →
+      ((completeYieldFrom st s).releasePlace
+        (determineTargetCore (completeYieldFrom st s) t) s).objects.invExt ∧
+      ((completeYieldFrom st s).releasePlace
+        (determineTargetCore (completeYieldFrom st s) t) s).runQueueRefined := fun hI hR =>
+    let ⟨a, b⟩ := h1.1.links hI hR; h2.1.links a b
+  refine readyKeptStage.trans_links hL hK ?_
+  unfold SchedContextOps.yieldToBound
+  dsimp only
+  generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
+    = st2
+  have hSet : ∀ X : SystemState, readyKeptStage S X (setConsumed X s caller) := fun X =>
+    .of_stage (SystemState.setConsumed_runQueueStage X s caller)
+  have hLink : ∀ pC pT,
+      readyKeptStage S st2 (SchedContextOps.yieldToLink st2 c s caller t pC pT) := fun pC pT =>
+    readyKeptStage.trans_links (fun hI hR => (yieldToLinkPrefix_links st2 c s caller t pC pT hI hR).1)
+      (fun hI hR => .of_stateMono (yieldToLinkPrefix_links st2 c s caller t pC pT hI hR).2)
+      (handleRescheduleSgiOnCore_readyKeptStage (SchedContextOps.yieldToLink_sgi st2 c s caller t pC pT))
+  have hReq : ∀ home pT,
+      readyKeptStage S st2 (setConsumed (SchedContextOps.yieldToRequeue st2 home t pT) s caller) :=
+    fun home pT => readyKeptStage.trans_links (yieldToRequeue_links st2 home t pT)
+      (fun _ _ => .of_stateMono (yieldToRequeue_stateMono st2 home t pT)) (hSet _)
+  split
+  · exact hSet _
+  · split
+    · exact hSet _
+    · split
+      · exact hSet _
+      · split
+        · split
+          · exact hReq _ _
+          · exact hLink _ _
+        · exact hSet _
+
 /-- The yield blocks no thread: its charge is a preemption window, closed by the
 reschedule. -/
 theorem yieldOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} {st st' : SystemState}
@@ -959,6 +1014,22 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
               simp only [hC] at hStep
               cases hStep
               exact schedContextConsumedOnCore_readyKeptStage hC
+    all_goals try cases hStep
+  case schedContextYieldTo =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hVal : validateObjIdArg scId with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hC : SchedContextOps.schedContextYieldToOnCore
+              (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
+          | error e => simp only [hC] at hStep; cases hStep
+          | ok stC =>
+              simp only [hC] at hStep
+              cases hStep
+              exact schedContextYieldToOnCore_readyKeptStage hC
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1471,9 +1542,9 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
     · cases h
     rename_i stPost hD
     cases h
-    suffices hP : SystemState.RunQueueEntryStage st stPost ∧
-        readyKeptStage (· = tid) st stPost from
-      readyKeptStage.trans hP.1.1 hP.2 (readyKeptStage.of_stage
+    suffices hP : SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore)
+        st stPost ∧ readyKeptStage (· = tid) st stPost from
+      readyKeptStage.trans_links hP.1.1.links hP.2 (readyKeptStage.of_stage
         (SystemState.RunQueueStage.of_objectsAgreeOffTaint
           (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
           (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
@@ -1486,7 +1557,7 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
       have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
-      exact ⟨dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _
+      exact ⟨dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _
         stPost P hD,
         dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
   · unfold syscallInvokeResolved at hD
@@ -1495,7 +1566,7 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
     · rename_i cap s1 hRz
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
-      exact ⟨dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _
+      exact ⟨dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _
         stPost P hD,
         dispatchWithCapChecked_readyKeptStage ctx decoded tid executingCore _ cap _ stPost P hD⟩
 
@@ -1674,10 +1745,11 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
   have B := (stageCallerReturnFor_runQueueStage ((Architecture.IpcBufferRead.syncUserWords
     (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e)
     st' e outcome)
-  have ABC := A.trans (B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
+  have ABC := A.trans ((B.entry.trans (scheduleLocalSuccessorFrom_runQueueEntryStage
     ((Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame)
-      bytes n).scheduler.currentOnCore e) _ e))
-  have Full := hS.entry.trans (ABC.trans (settleThenActivateOnCore_runQueueEntryStage _ e))
+      bytes n).scheduler.currentOnCore e) _ e)).toOn _)
+  have Full := (hS.entry.toOn _).trans (ABC.trans
+    ((settleThenActivateOnCore_runQueueEntryStage _ e).toOn _))
   obtain ⟨hInvM, hRM⟩ := ABC.1.links hInvS hRS
   obtain ⟨hDc, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInvS hB hPlaced hAwayCur hD
   obtain ⟨hStage, hStageInv⟩ := stageCallerReturnFor_stepCovers e
@@ -1690,7 +1762,7 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
   have r : readyKeptStage (fun t => (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some t)
       _ _ :=
-    (syscallDispatchFromAbi_readyKeptStage ES hD).trans A.1
+    (syscallDispatchFromAbi_readyKeptStage ES hD).trans_links A.1.links
       ((readyKeptStage.of_stage B).trans B.entry.1 fun hI hR =>
         .of_stateMono (scheduleLocalSuccessorFrom_stateMono
           ((Architecture.IpcBufferRead.syncUserWords

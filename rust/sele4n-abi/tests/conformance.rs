@@ -1171,13 +1171,14 @@ fn kernel_error_variant_count() {
 /// 34; WS-RR RR8.16 added CspaceRevoke at 35; WS-BP BP7.1 added UntypedRetype at
 /// 36, UntypedReset at 37, TcbSetSpace at 38, and PageTableMap / PageTableUnmap
 /// at 39 and 40; WS-ZA ZA4.3 added Yield at 41; WS-ZA ZA5.4 part 14 retired
-/// LifecycleRetype at 8; WS-ZA ZA6.9 added SchedContextConsumed at 42, leaving
-/// 42 variants under an encoding bound of 43).
+/// LifecycleRetype at 8; WS-ZA ZA6.9 added SchedContextConsumed at 42; WS-ZA
+/// ZA6.29 added SchedContextYieldTo at 43, leaving 43 variants under an
+/// encoding bound of 44).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 42;
+    const SYSCALL_COUNT: u64 = 43;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
-    assert_eq!(SyscallId::ENCODING_BOUND, 43);
+    assert_eq!(SyscallId::ENCODING_BOUND, 44);
     for i in live_syscall_numbers() {
         assert!(
             SyscallId::from_u64(i).is_some(),
@@ -1322,7 +1323,8 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is 42 (WS-ZA ZA6.9 added SchedContextConsumed at 42, after
+/// AA1-B-5: COUNT is 43 (WS-ZA ZA6.29 added SchedContextYieldTo at 43, after
+/// WS-ZA ZA6.9 added SchedContextConsumed at 42, after
 /// WS-ZA ZA5.4 part 14 retired LifecycleRetype at 8,
 /// after WS-ZA ZA4.3 added Yield, on top of
 /// WS-BP BP7.1's UntypedRetype,
@@ -1334,7 +1336,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 42);
+    assert_eq!(SyscallId::COUNT, 43);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1767,16 +1769,17 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 42 is out of range for SyscallId
+/// D6-D5: Boundary — discriminant 44 is out of range for SyscallId
 /// (WS-BP BP7.1 added PageTableMap and PageTableUnmap, moving the boundary
 /// from 39 to 41; WS-ZA ZA4.3 added Yield, moving it to 42; WS-ZA ZA6.9 added
-/// SchedContextConsumed, moving it to 43).
+/// SchedContextConsumed, moving it to 43; WS-ZA ZA6.29 added
+/// SchedContextYieldTo, moving it to 44).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(42).is_some()); // Last valid
-    assert!(SyscallId::from_u64(43).is_none()); // First invalid
+    assert!(SyscallId::from_u64(43).is_some()); // Last valid
+    assert!(SyscallId::from_u64(44).is_none()); // First invalid
     assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
-    assert_eq!(SyscallId::COUNT, 42);
+    assert_eq!(SyscallId::COUNT, 43);
 }
 
 /// WS-ZA ZA6.9: SchedContextConsumed roundtrip (discriminant 42).
@@ -1787,6 +1790,17 @@ fn sched_context_consumed_roundtrip() {
     let sid = SyscallId::from_u64(42).expect("SchedContextConsumed must exist");
     assert_eq!(sid, SyscallId::SchedContextConsumed);
     assert_eq!(sid.to_u64(), 42);
+    assert_eq!(sid.required_right(), AccessRight::Write);
+}
+
+/// WS-ZA ZA6.29: SchedContextYieldTo roundtrip (discriminant 43).
+/// `seL4_SchedContext_YieldTo`: the scheduling-context capability with the
+/// write right, no message registers; the consumed time returns in MR0.
+#[test]
+fn sched_context_yield_to_roundtrip() {
+    let sid = SyscallId::from_u64(43).expect("SchedContextYieldTo must exist");
+    assert_eq!(sid, SyscallId::SchedContextYieldTo);
+    assert_eq!(sid.to_u64(), 43);
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
@@ -2078,7 +2092,7 @@ enum ReturnShape {
 /// someone decides what it returns.
 ///
 /// Deliberately grouped by shape rather than by subsystem, so the value
-/// surface — the seven arms that are not `Unit` — reads at a glance and a
+/// surface — the nine arms that are not `Unit` — reads at a glance and a
 /// misplacement is visible rather than buried in an alphabetical list.
 fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
     match sid {
@@ -2088,11 +2102,13 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         // the frame is staged by the reply and delivered at the context
         // restore, never composed at the call's own boundary.
         // WS-ZA ZA6.9: the Consumed invocation returns its reading in MR0 with
-        // a one-register MessageInfo in x1.
+        // a one-register MessageInfo in x1; WS-ZA ZA6.29's yieldTo invocation
+        // returns the consumed time the same way.
         SyscallId::Receive
         | SyscallId::Call
         | SyscallId::ReplyRecv
-        | SyscallId::SchedContextConsumed => ReturnShape::Message,
+        | SyscallId::SchedContextConsumed
+        | SyscallId::SchedContextYieldTo => ReturnShape::Message,
 
         // --- Badge: a full-width badge the *sender* chose. ---
         SyscallId::NotificationWait => ReturnShape::Badge,
@@ -2184,9 +2200,10 @@ fn return_shape_mirror_is_total_and_partitions_the_surface() {
             SyscallId::Receive,
             SyscallId::Call,
             SyscallId::ReplyRecv,
-            SyscallId::SchedContextConsumed
+            SyscallId::SchedContextConsumed,
+            SyscallId::SchedContextYieldTo
         ],
-        "the message-shaped surface is the three rendezvous reads and the Consumed invocation"
+        "the message-shaped surface is the three rendezvous reads and the Consumed and yieldTo invocations"
     );
     assert_eq!(
         badge,
@@ -2206,8 +2223,8 @@ fn return_shape_mirror_is_total_and_partitions_the_surface() {
     // variant: a new syscall cannot be absorbed without moving this number.
     assert_eq!(
         unit_count,
-        SyscallId::COUNT - 8,
-        "exactly eight syscalls are value-returning; the rest are Unit"
+        SyscallId::COUNT - 9,
+        "exactly nine syscalls are value-returning; the rest are Unit"
     );
 }
 
@@ -2359,9 +2376,9 @@ fn abi_layout_matches_the_lean_table() {
     );
 }
 
-/// WS-RA RA.D.4: exactly eight syscalls are value-returning — the five the
-/// plan §1.3 enumerates, WS-SM SM9.A's two audit accessors and WS-ZA ZA6.9's
-/// Consumed invocation — pinned by
+/// WS-RA RA.D.4: exactly nine syscalls are value-returning — the five the
+/// plan §1.3 enumerates, WS-SM SM9.A's two audit accessors, WS-ZA ZA6.9's
+/// Consumed invocation and WS-ZA ZA6.29's yieldTo invocation — pinned by
 /// iteration over every variant, mirroring Lean's
 /// `syscallReturnShape_value_returning`.
 #[test]
@@ -2384,6 +2401,7 @@ fn return_shape_value_returning_surface() {
             SyscallId::AuditRead,
             SyscallId::AuditDrain,
             SyscallId::SchedContextConsumed,
+            SyscallId::SchedContextYieldTo,
         ]
     );
 }
@@ -2660,6 +2678,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("yield_now", SyscallId::Yield);
     let _ = sele4n_sys::sched_context::sched_context_consumed(cap);
     assert_clears("sched_context_consumed", SyscallId::SchedContextConsumed);
+    let _ = sele4n_sys::sched_context::sched_context_yield_to(cap);
+    assert_clears("sched_context_yield_to", SyscallId::SchedContextYieldTo);
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,

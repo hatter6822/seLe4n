@@ -215,6 +215,22 @@ theorem dispatchCapabilityOnly_mappingStage
               cases hStep
               exact schedContextConsumedOnCore_mappingStage hC
     all_goals try cases hStep
+  case schedContextYieldTo =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hVal : validateObjIdArg scId with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hC : SchedContextOps.schedContextYieldToOnCore
+              (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
+          | error e => simp only [hC] at hStep; cases hStep
+          | ok stC =>
+              simp only [hC] at hStep
+              cases hStep
+              exact schedContextYieldToOnCore_mappingStage hC
+    all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>

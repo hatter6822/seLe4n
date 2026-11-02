@@ -481,6 +481,26 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           exact schedLockSet_schedContextUnbindOnCore_coversWrites st st₁ vScId e sgi S hObjInv
             hStep hSched
         · exact absurd hDisp (by simp)
+  -- ---- `.schedContextYieldTo` (WS-ZA ZA6.29) -------------------------------
+  case schedContextYieldTo =>
+    cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
+    rename_i scId
+    subst hOps
+    simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
+      Option.bind_some] at hSched
+    rw [hT] at hDisp
+    simp only at hDisp
+    split at hDisp
+    · exact absurd hDisp (by simp)
+    · rename_i vScId hV
+      rw [← validateObjIdArg_ok_val _ _ hV] at hSched
+      split at hDisp
+      · rename_i st₁ hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+        subst hDisp
+        exact schedLockSet_schedContextYieldToOnCore_coversWrites st st₁ vScId.val e S hObjInv
+          hStep hSched
+      · exact absurd hDisp (by simp)
   -- ---- `.notificationSignal` ----------------------------------------------
   case notificationSignal =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps

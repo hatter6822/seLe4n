@@ -68,13 +68,49 @@ theorem currentsRecordUnlinked.of_frame {pre X Y : SystemState}
   · exact Or.inl e
   · exact Or.inr fun t ht => e t (by rw [← hT]; exact ht)
 
-/-- **The payoff's composition**: from a state with no linked thread current or
-resident, a step that links no thread, makes no linked thread resident
-(`YieldLinkLiveFrame`) and makes only unlinked threads current reaches one. -/
-theorem yieldLinkedNotResident_of_live {pre post : SystemState}
-    (hPre : pre.yieldLinkedNotResident) (hL : YieldLinkLiveFrame post pre)
-    (hC : currentsRecordUnlinked post pre) : post.yieldLinkedNotResident := by
+/-- WS-ZA ZA6.29: **every current or resident thread of `post` on `L` holds no
+yield link** — the obligation a step that may link the threads of `L`
+(`YieldLinkLiveFrameOn`) leaves its caller. -/
+def linkedOnUnlinked (L : SeLe4n.ObjId → Prop) (post : SystemState) : Prop :=
+  ∀ d tid t, (post.scheduler.currentOnCore d = some tid ∨ post.machine.residentOnCore d = some tid) →
+    L tid.toObjId → post.getTcb? tid = some t → t.yieldToCode = 0
+
+/-- The obligation carries across a step writing neither the scheduler, the
+objects nor the residency records. -/
+theorem linkedOnUnlinked.of_frame {L : SeLe4n.ObjId → Prop} {X Y : SystemState}
+    (h : linkedOnUnlinked L X) (hS : Y.scheduler = X.scheduler) (hO : Y.objects = X.objects)
+    (hM : Y.machine.residentCode = X.machine.residentCode) : linkedOnUnlinked L Y :=
+  fun d tid t hR hL hT => by
+    have hRes : ∀ c, Y.machine.residentOnCore c = X.machine.residentOnCore c := fun c => by
+      unfold MachineState.residentOnCore; rw [hM]
+    rw [hS, hRes] at hR
+    exact h d tid t hR hL (by unfold SystemState.getTcb? at hT ⊢; rw [hO] at hT; exact hT)
+
+theorem linkedOnUnlinked.clearLedgers' {L : SeLe4n.ObjId → Prop} {X : SystemState}
+    (h : linkedOnUnlinked L X) : linkedOnUnlinked L
+      (Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance X)) :=
+  h.of_frame rfl rfl rfl
+
+theorem linkedOnUnlinked.clearUserWords {L : SeLe4n.ObjId → Prop} {X : SystemState}
+    (h : linkedOnUnlinked L X) :
+    linkedOnUnlinked L (Architecture.IpcBufferRead.clearUserWords X) :=
+  h.of_frame (Architecture.IpcBufferRead.syncUserWords_scheduler _ _ _)
+    (Architecture.IpcBufferRead.syncUserWords_objects _ _ _) (by
+      unfold Architecture.IpcBufferRead.clearUserWords Architecture.IpcBufferRead.syncUserWords
+      split <;> rfl)
+
+/-- **The payoff's composition** (WS-ZA ZA6.29 form): from a state with no
+linked thread current or resident, a step that links only threads of `L` and
+makes no linked thread resident but one of `L` (`YieldLinkLiveFrameOn`), makes
+only unlinked threads current, and leaves every current or resident thread of
+`L` unlinked reaches one. -/
+theorem yieldLinkedNotResident_of_liveOn {L : SeLe4n.ObjId → Prop} {pre post : SystemState}
+    (hPre : pre.yieldLinkedNotResident) (hL : YieldLinkLiveFrameOn L post pre)
+    (hC : currentsRecordUnlinked post pre) (hLU : linkedOnUnlinked L post) :
+    post.yieldLinkedNotResident := by
   intro d tid t hR hT
+  by_cases hk : L tid.toObjId
+  · exact hLU d tid t hR hk hT
   have pre0 : (pre.scheduler.currentOnCore d = some tid ∨ pre.machine.residentOnCore d = some tid) →
       (objYieldCodes pre.objects[tid.toObjId]?).1 = 0 := fun h =>
     objYieldCodes_fst_zero_of_getTcb? fun t' hT' => hPre d tid t' h hT'
@@ -82,11 +118,20 @@ theorem yieldLinkedNotResident_of_live {pre post : SystemState}
     rw [objYieldCodes_of_getTcb? hT] at h0; exact h0
   rcases hR with h | h
   · rcases hC d tid h with h' | h'
-    · exact post0 (hL.unset.zero (fun h => h) (pre0 (Or.inl h')))
+    · exact post0 (hL.unset.zero hk (pre0 (Or.inl h')))
     · exact h' t hT
-  · rcases hL.residents d tid h with h' | h'
-    · exact post0 (hL.unset.zero (fun h => h) (pre0 (Or.inr h')))
+  · rcases hL.residents d tid h with h' | h' | h'
+    · exact post0 (hL.unset.zero hk (pre0 (Or.inr h')))
     · exact post0 h'
+    · exact absurd h' hk
+
+/-- **The payoff's composition**: from a state with no linked thread current or
+resident, a step that links no thread, makes no linked thread resident
+(`YieldLinkLiveFrame`) and makes only unlinked threads current reaches one. -/
+theorem yieldLinkedNotResident_of_live {pre post : SystemState}
+    (hPre : pre.yieldLinkedNotResident) (hL : YieldLinkLiveFrame post pre)
+    (hC : currentsRecordUnlinked post pre) : post.yieldLinkedNotResident :=
+  yieldLinkedNotResident_of_liveOn hPre (hL.toOn fun _ => False) hC fun _ _ _ _ h => h.elim
 
 theorem currentsRecordUnlinked.clearLedgers {pre X : SystemState}
     (h : currentsRecordUnlinked X pre) : currentsRecordUnlinked
@@ -153,42 +198,6 @@ theorem coreIdOfUInt64?_some {coreId : UInt64} {c : CoreId}
 theorem not_lt_of_coreIdOfUInt64?_none {coreId : UInt64}
     (h : Concurrency.coreIdOfUInt64? coreId = none) : ¬ coreId.toNat < Concurrency.numCores :=
   fun hc => by rw [Concurrency.coreIdOfUInt64?_eq_some coreId hc] at h; cases h
-
-/-! ### The trap-frame saves write no scheduler state -/
-
-theorem saveCapturedTrapFrame_scheduler (st : SystemState) (c : CoreId)
-    (frame : Option Architecture.InFlightContext) :
-    (Architecture.saveCapturedTrapFrame st c frame).scheduler = st.scheduler := by
-  cases frame with
-  | none => rfl
-  | some ic =>
-    simp only [Architecture.saveCapturedTrapFrame, Architecture.saveVacatedFrameOnCore_scheduler,
-      Architecture.saveTrapFrameOnCore_scheduler]
-
-theorem saveCapturedSyscallFrame_scheduler (st : SystemState) (c : CoreId)
-    (frame : Option Architecture.InFlightContext) :
-    (Architecture.saveCapturedSyscallFrame st c frame).scheduler = st.scheduler := by
-  cases frame with
-  | none => rfl
-  | some ic =>
-    simp only [Architecture.saveCapturedSyscallFrame, Architecture.saveVacatedFrameOnCore_scheduler,
-      Architecture.saveTrapFrameOnCore_scheduler]
-
-theorem saveCapturedTrapFrameAt_scheduler (st : SystemState) (coreId : UInt64)
-    (frame : Option Architecture.InFlightContext) :
-    (Concurrency.saveCapturedTrapFrameAt st coreId frame).scheduler = st.scheduler := by
-  unfold Concurrency.saveCapturedTrapFrameAt
-  split
-  · exact saveCapturedTrapFrame_scheduler st _ frame
-  · rfl
-
-theorem saveCapturedSyscallFrameAt_scheduler (st : SystemState) (coreId : UInt64)
-    (frame : Option Architecture.InFlightContext) :
-    (Concurrency.saveCapturedSyscallFrameAt st coreId frame).scheduler = st.scheduler := by
-  unfold Concurrency.saveCapturedSyscallFrameAt
-  split
-  · exact saveCapturedSyscallFrame_scheduler st _ frame
-  · rfl
 
 /-! ### Every committing entry -/
 
@@ -354,56 +363,5 @@ theorem fpAccessEntryState_preserves_yieldLinkedNotResident (coreId : UInt64)
   · intro hc
     unfold fpAccessEntryStep
     rw [hc, saveCapturedTrapFrameAt_scheduler]
-
-/-- **The syscall entry keeps no linked thread current or resident.**  The
-dispatch's coverage reads its premises at the state the dispatch runs from —
-the saved state with the entry's IPC-buffer words handed to it — as the seam's
-does (`syscallDispatchCrossCoreStep_stepCovers`). -/
-theorem syscallDispatchEntryState_preserves_yieldLinkedNotResident (ctx : LabelingContext)
-    (e : CoreId) (trapped : Architecture.InFlightContext)
-    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
-    (st : SystemState) (E : EntryPremises st)
-    (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined)
-    (hB : finalisingDeleteBundle (Architecture.IpcBufferRead.syncUserWords
-      (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
-    (hPlaced : placedThreadsHaveTcbs (Architecture.IpcBufferRead.syncUserWords
-      (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
-    (hAwayCur : ∀ t, (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).scheduler.currentOnCore e = some t →
-      ∀ c, (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st e frame) bytes n).queuedOn c t = false)
-    (hY : st.yieldLinkedNotResident) :
-    (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
-        (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).yieldLinkedNotResident := by
-  refine yieldLinkedNotResident_of_live hY
-    ((syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).1.live
-      hInv0 hR0) (currentsRecordUnlinked.clearUserWords ?_)
-  have hInv : (Architecture.IpcBufferRead.syncUserWords
-      (Architecture.saveCapturedSyscallFrame st e frame) bytes n).objects.invExt := by
-    rw [Architecture.IpcBufferRead.syncUserWords_objects]
-    exact ((saveCapturedSyscallFrame_runQueueStage st e frame).1.links hInv0 hR0).1
-  have hK0 : currentKeptOffCore e st (Architecture.IpcBufferRead.syncUserWords
-      (Architecture.saveCapturedSyscallFrame st e frame) bytes n) :=
-    currentKeptOffCore_of_eq fun _ _ => by
-      rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler]
-  obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e trapped.syscallId
-    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
-    trapped.pstate trapped.sp trapped.x30
-    (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)
-  show currentsRecordUnlinked (syscallDispatchCrossCoreStep ctx e trapped.syscallId
-    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6 trapped.pc
-    trapped.pstate trapped.sp trapped.x30
-    (Architecture.IpcBufferRead.syncUserWords (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2 st
-  rw [syscallDispatchCrossCoreStep_of_ok hD]
-  obtain ⟨-, hDInv⟩ := syscallDispatchFromAbi_stepCovers hInv hB hPlaced hAwayCur hD
-  refine currentsRecordUnlinked.clearLedgers' (currentsRecordUnlinked_of_kept
-    (currentKeptOffCore_trans hK0
-      (syscallDispatchCrossCoreStep_stepCovers hInv hB hPlaced hAwayCur hD).currentKept)
-    (activateThreadOnCore_currentUnlinkedOn _ e ?_))
-  exact settleResidencyOnCore_preserves_objects_invExt e _
-    (scheduleLocalSuccessorFrom_preserves_objects_invExt e _ _
-      (stageCallerReturnFor_stepCovers e _ st' outcome hDInv).2)
 
 end SeLe4n.Kernel

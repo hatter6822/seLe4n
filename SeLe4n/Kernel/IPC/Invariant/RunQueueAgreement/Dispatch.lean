@@ -195,15 +195,18 @@ theorem validateThreadIdArg_ok_val_not_idle {tid : SeLe4n.ThreadId} {vtid : SeLe
   exact validateThreadIdArg_ok_not_reserved _ _ h
 
 /-- The capability-only dispatch keeps the run queues in agreement with the
-threads' links on every arm. -/
+threads' links on every arm but the yieldTo, which links its caller
+(`dispatchCapabilityOnly_runQueueEntryStageOn`). -/
 theorem dispatchCapabilityOnly_runQueueEntryStage
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
+    (hNY : decoded.syscallId ≠ .schedContextYieldTo)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
     (hStep : k st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
+  case schedContextYieldTo => exact absurd hSy hNY
   case cspaceDelete =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>
@@ -637,6 +640,47 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       exact pageTableUnmap_runQueueStage hStep
     all_goals try cases hStep
 
+/-- WS-ZA ZA6.29: **the capability-only dispatch is a kernel entry that links
+only the executing core's current thread**: the yieldTo arm links it
+(`schedContextYieldToOnCore_runQueueEntryStage`); every other arm links no
+thread. -/
+theorem dispatchCapabilityOnly_runQueueEntryStageOn
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
+    (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
+    (hStep : k st = .ok ((), st')) :
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore) st st' := by
+  by_cases hNY : decoded.syscallId = .schedContextYieldTo
+  · unfold dispatchCapabilityOnly at hArm
+    simp only [hNY] at hArm
+    cases hArm
+    cases hTgt : cap.target with
+    | object scId =>
+      simp only [hTgt] at hStep
+      try dsimp only [] at hStep
+      cases hVal : validateObjIdArg scId with
+      | error e => simp only [hVal] at hStep; cases hStep
+      | ok vScId =>
+          simp only [hVal] at hStep
+          cases hC : SchedContextOps.schedContextYieldToOnCore
+              (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
+          | error e => simp only [hC] at hStep; cases hStep
+          | ok stC =>
+              simp only [hC] at hStep
+              cases hStep
+              exact schedContextYieldToOnCore_runQueueEntryStage hC
+    | _ => simp only [hTgt] at hStep; cases hStep
+  · exact (dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hNY
+      hArm hStep).toOn _
+
+/-- The yieldTo is a capability-only arm: the capability dispatch never falls
+through to the routed arms for it. -/
+theorem dispatchCapabilityOnly_yieldTo_isSome {decoded : SyscallDecodeResult} {cap : Capability}
+    {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId}
+    (hNY : decoded.syscallId = .schedContextYieldTo) :
+    dispatchCapabilityOnly decoded cap tid executingCore ≠ none := by
+  unfold dispatchCapabilityOnly; simp [hNY]
+
 /-! ### The wrapping steps of the capability dispatch -/
 
 /-- Clearing a woken receiver's stash rewrites one TCB's stash field. -/
@@ -757,21 +801,22 @@ theorem notificationSignalDeclassifiedOnCore_runQueueStage (ctx : GenericLabelin
       rw [recordDeclassifiedHops_frame _ _ _ _ _ hRec]
       exact hB.trans (RunQueueStage.of_frame rfl rfl rfl)
 
-/-- **Every arm `dispatchWithCapChecked` routes keeps the run queues in
-agreement with the threads' links**, the capability-only arms it delegates
-included. -/
+/-- **Every arm `dispatchWithCapChecked` routes but the yieldTo keeps the run
+queues in agreement with the threads' links**, the capability-only arms it
+delegates included. -/
 theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
+    (hNY : decoded.syscallId ≠ .schedContextYieldTo)
     (h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchWithCapChecked at h
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hNY hC
       (dispatchCapabilityOnlyChecked_ok hC h)
   | none =>
   rw [hC] at h
@@ -917,6 +962,27 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
         (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
     · cases h
 
+/-- WS-ZA ZA6.29: **every arm `dispatchWithCapChecked` routes links only the
+executing core's current thread**: the yieldTo's capability-only arm links it,
+and every other arm links no thread. -/
+theorem dispatchWithCapChecked_runQueueEntryStageOn (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (st st' : SystemState)
+    (P : SyscallArmPremises st executingCore tid)
+    (h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore) st st' := by
+  by_cases hNY : decoded.syscallId = .schedContextYieldTo
+  · unfold dispatchWithCapChecked at h
+    cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
+    | some k =>
+      rw [hC] at h
+      exact dispatchCapabilityOnly_runQueueEntryStageOn decoded cap tid executingCore k st st' hC
+        (dispatchCapabilityOnlyChecked_ok hC h)
+    | none => exact absurd hC (dispatchCapabilityOnly_yieldTo_isSome hNY)
+  · exact (dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore gate cap st st'
+      P hNY h).toOn _
+
 /-- **The checked syscall dispatch keeps the run queues in agreement with the
 threads' links**: the yield, the capability resolution (a read), the routed arm,
 and the taint pass, which writes the taint table and the taint words alone.  The one premise is the
@@ -926,7 +992,7 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
     (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
-    SystemState.RunQueueEntryStage st st' := by
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore) st st' := by
   unfold dispatchSyscallChecked at h
   split at h
   · cases h
@@ -936,7 +1002,7 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     · rename_i hYieldOk
       cases h
-      exact yieldOnCore_runQueueEntryStage hYieldOk (P.placeable executingCore)
+      exact (yieldOnCore_runQueueEntryStage hYieldOk (P.placeable executingCore)).toOn _
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
@@ -947,11 +1013,11 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     rename_i stPost hD
     cases h
-    refine SystemState.RunQueueEntryStage.trans (st' := stPost) ?_ (RunQueueStage.of_objectsAgreeOffTaint
+    refine SystemState.RunQueueEntryStageOn.trans (st' := stPost) ?_ ((RunQueueStage.of_objectsAgreeOffTaint
       (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
       (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
       (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-      (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry
+      (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry.toOn _)
   · unfold syscallInvoke at hD
     split at hD
     · cases hD
@@ -959,7 +1025,7 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
       have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
-      exact dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _ stPost
+      exact dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _ stPost
         P hD
   · unfold syscallInvokeResolved at hD
     split at hD
@@ -967,22 +1033,24 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     · rename_i cap s1 hRz
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
-      exact dispatchWithCapChecked_runQueueEntryStage ctx decoded tid executingCore _ cap _ stPost
+      exact dispatchWithCapChecked_runQueueEntryStageOn ctx decoded tid executingCore _ cap _ stPost
         P hD
 
 /-- **Every arm the unchecked `dispatchWithCap` routes keeps the run queues in
-agreement with the threads' links**, the capability-only arms included. -/
+agreement with the threads' links** but the yieldTo, the capability-only arms
+included. -/
 theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
+    (hNY : decoded.syscallId ≠ .schedContextYieldTo)
     (h : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold dispatchWithCap at h
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hC h
+    exact dispatchCapabilityOnly_runQueueEntryStage decoded cap tid executingCore k st st' hNY hC h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -1072,13 +1140,31 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.dequeued P.queueHeads
       P.current P.notIdle hRR).trans (stageDeliveredMessage_runQueueStage _ _ _).entry
 
+/-- WS-ZA ZA6.29: **every arm the unchecked `dispatchWithCap` routes links only
+the executing core's current thread.** -/
+theorem dispatchWithCap_runQueueEntryStageOn (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (st st' : SystemState)
+    (P : SyscallArmPremises st executingCore tid)
+    (h : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore) st st' := by
+  by_cases hNY : decoded.syscallId = .schedContextYieldTo
+  · unfold dispatchWithCap at h
+    cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
+    | some k =>
+      rw [hC] at h
+      exact dispatchCapabilityOnly_runQueueEntryStageOn decoded cap tid executingCore k st st' hC h
+    | none => exact absurd hC (dispatchCapabilityOnly_yieldTo_isSome hNY)
+  · exact (dispatchWithCap_runQueueEntryStage decoded tid executingCore gate cap st st' P hNY
+      h).toOn _
+
 /-- **The unchecked syscall dispatch keeps the run queues in agreement with the
-threads' links.** -/
+threads' links**, linking only the executing core's current thread. -/
 theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
     (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
-    SystemState.RunQueueEntryStage st st' := by
+    SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st executingCore) st st' := by
   unfold dispatchSyscall at h
   split at h
   · cases h
@@ -1088,7 +1174,7 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     · cases h
     · rename_i hYieldOk
       cases h
-      exact yieldOnCore_runQueueEntryStage hYieldOk (P.placeable executingCore)
+      exact (yieldOnCore_runQueueEntryStage hYieldOk (P.placeable executingCore)).toOn _
   simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
@@ -1096,11 +1182,11 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
   · cases h
   rename_i stPost hD
   cases h
-  refine SystemState.RunQueueEntryStage.trans (st' := stPost) ?_ (RunQueueStage.of_objectsAgreeOffTaint
+  refine SystemState.RunQueueEntryStageOn.trans (st' := stPost) ?_ ((RunQueueStage.of_objectsAgreeOffTaint
     (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
     (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
     (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
-    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry
+    (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry.toOn _)
   unfold syscallInvoke at hD
   split at hD
   · cases hD
@@ -1108,7 +1194,7 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
     have hRz := syscallResolveCap_of_lookup _ st cap s1 hLk
     obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
     subst hStEq
-    exact dispatchWithCap_runQueueEntryStage decoded tid executingCore _ cap _ stPost
+    exact dispatchWithCap_runQueueEntryStageOn decoded tid executingCore _ cap _ stPost
       P hD
 
 end SeLe4n.Kernel

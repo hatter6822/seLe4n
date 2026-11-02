@@ -636,10 +636,18 @@ just restored from; a new entry states that it writes the saved registers of
 no thread current on another core (`currentSavedRegsKeptOffCore`); and a new
 syscall arm states its `bankAgree` frame, writing into the caller only its
 return window.
-ZA6.29 is seL4's `seL4_SchedContext_YieldTo`: the head enqueue,
-the stage's `live` field generalised to `YieldToCodesSetOnly L` across the
-dispatch chain (its linked branch sets the caller's yield-to code), the
-invocation and its live-link tests.  ZA6.30 puts
+Since `v0.36.192`, ZA6.29 adds seL4's `seL4_SchedContext_YieldTo`
+(`schedContextYieldToOnCore`, syscall 43): the head enqueue
+(`RunQueue.insertHead`, `runEnqueueHeadOnCore`, a run-queue stage), the
+invocation with every arm proof, and its live-link tests.  The dispatch
+chain's stage is `RunQueueEntryStageOn (currentObjOn st e)`, whose `live`
+field (`YieldLinkLiveFrameOn L`, `YieldToCodesSetOnly L`) lets a step set the
+yield-to code of the executing core's current thread alone.  **New code must
+assume it**: a new syscall arm states its stage as `RunQueueEntryStageOn L`
+(a plain `RunQueueEntryStage` lifts by `.toOn`), only a step that deschedules
+the caller before its scheduling point may set the caller's yield-to code, and
+the syscall entry's `yieldLinkedNotResident` payoff takes
+`currentNotResidentElsewhere`.  ZA6.30 puts
 the per-core tick, drain, yield charge and yieldTo inside the non-interference
 step relation, and the rest of ZA6 covers the other entries and makes the rule
 standing.  Plan:

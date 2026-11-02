@@ -4623,11 +4623,11 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-five cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 35))
-  assertBool "twenty-five of the thirty-five can name a core other than the executing one"
+  assertBool "thirty-six cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 36))
+  assertBool "twenty-six of the thirty-six can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 25))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 26))
   assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the declassification, the two audit readers, the yield and the Consumed invocation are the ten that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
@@ -4635,9 +4635,19 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch,
       .schedContextConsumedDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "twenty-eight of the thirty-five are the arms the live syscall dispatch reaches"
+  assertBool "twenty-nine of the thirty-six are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 28))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 29))
+  -- WS-ZA ZA6.29: the yieldTo invocation is a live, delegation-backed arm
+  -- naming its own syscall, and it writes a remote core: the bound thread's
+  -- home core, where the resume places the context and the unlinked branch
+  -- re-queues the thread at its band's head.
+  assertBool "the yieldTo invocation is a live, delegation-backed arm that may write a remote core"
+    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .schedContextYieldToDispatch
+      && (SeLe4n.Kernel.crossCoreLiveArmEvidence .schedContextYieldToDispatch).isDelegationBacked
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .schedContextYieldToDispatch
+                   = some SeLe4n.Model.SyscallId.schedContextYieldTo)
+      && SeLe4n.Kernel.crossCoreTransitionWritesRemote .schedContextYieldToDispatch)
   -- WS-ZA ZA5.4 part 22: the space change takes the executing core for the
   -- retire of what its slot replace destroyed, and is a live, delegation-backed
   -- arm naming its own syscall.  WS-ZA ZA5.4 part 26: it may write remote cores
@@ -4724,8 +4734,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "nineteen live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 20))
+  assertBool "twenty-one live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 21))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -5327,9 +5337,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "64 entries: 50 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations and the yield) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 65) &&
-     decide (enforcementBoundaryExtended.length = 51) &&
+  assertBool "66 entries: 52 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation and the yieldTo invocation) + 14 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 66) &&
+     decide (enforcementBoundaryExtended.length = 52) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -9414,7 +9424,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 42) &&
+     decide (SyscallId.count = 43) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10039,9 +10049,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 42, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 43, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 42) &&
+     decide (SyscallId.count = 43) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit
