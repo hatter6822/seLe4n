@@ -643,8 +643,10 @@ end FaultReplyOutcome
 context, unchanged.  A reply that overrides nothing restarts the thread at
 the faulting instruction with the registers it had, which is the right
 behaviour once the handler has repaired what faulted (mapped the page,
-grown the stack). -/
-def faultRestartFrameOfContext (ctx : FaultContext) : FaultRestartFrame :=
+grown the stack).  WS-ZA ZA6.31: inlined, as `RegisterFile.stageRestartFrame`
+and `TCB.withRestartFrame` are, so a resume that answers a fault writes the
+context's words into the register file and builds no frame record. -/
+@[inline] def faultRestartFrameOfContext (ctx : FaultContext) : FaultRestartFrame :=
   { pc := ctx.faultIP, sp := ctx.sp, lr := ctx.lr
     x0 := ctx.gprAt 0, x1 := ctx.gprAt 1, x2 := ctx.gprAt 2, x3 := ctx.gprAt 3
     x4 := ctx.gprAt 4, x5 := ctx.gprAt 5, x6 := ctx.gprAt 6, x7 := ctx.gprAt 7 }

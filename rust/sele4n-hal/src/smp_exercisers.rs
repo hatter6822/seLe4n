@@ -3637,8 +3637,9 @@ const fn fault_trip(kind: usize, name: &'static str) -> TrapTrip {
     }
 }
 
-/// Each kind's scenario names: with no handler, delivered to a handler
-/// waiting on the endpoint, and that handler's reply.
+/// Each kind's scenario names: with no handler, the resume of the thread that
+/// suspended, delivered to a handler waiting on the endpoint, and that
+/// handler's reply.
 #[cfg(feature = "hw_target")]
 const FAULT_SUSPENDS: [&str; 5] = [
     "vm-fault-data-suspends",
@@ -3646,6 +3647,14 @@ const FAULT_SUSPENDS: [&str; 5] = [
     "cap-fault-suspends",
     "unknown-syscall-suspends",
     "user-exception-suspends",
+];
+#[cfg(feature = "hw_target")]
+const FAULT_RESUMES: [&str; 5] = [
+    "vm-fault-data-resume",
+    "vm-fault-instruction-resume",
+    "cap-fault-resume",
+    "unknown-syscall-resume",
+    "user-exception-resume",
 ];
 #[cfg(feature = "hw_target")]
 const FAULT_DELIVERED: [&str; 5] = [
@@ -3743,7 +3752,8 @@ fn suspend_partner() -> bool {
 /// each scenario run twice, at first call and at steady state:
 /// - with no handler (its capability's slot empty), each fault suspends the
 ///   root task fail-closed; the partner, which then runs, resumes it
-///   (measured: the resume of a thread a fault suspended), and the root task,
+///   (measured: the resume answers the fault the thread carries, restarting
+///   it at the faulting instruction), and the root task,
 ///   chosen over the partner whenever both are runnable, suspends the partner;
 /// - a VM fault raised while the handler is not waiting queues the root task
 ///   on the endpoint, and the partner's receive takes the fault message and its
@@ -3792,8 +3802,8 @@ fn fault_entries() -> Option<bool> {
     ) {
         return Some(false);
     }
-    let resume_root = invocation("resume-faulted-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]);
     for (kind, name) in FAULT_SUSPENDS.iter().enumerate() {
+        let resume_root = invocation(FAULT_RESUMES[kind], TCB_RESUME, ROOT_TCB_CAP, [0; 4]);
         for first in [true, false] {
             let which = if first { " (first call)" } else { "" };
             if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")

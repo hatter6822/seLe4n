@@ -456,6 +456,47 @@ for driver in drivers:
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
         })
+        # WS-ZA ZA6.31: the fault entries (each fault kind with no handler, a
+        # VM fault queued on a handler not yet waiting, each kind delivered to
+        # a waiting handler and its reply) and the FP/SIMD access trap.  The
+        # entries cross their commit as words, and the FP/SIMD switch builds
+        # nothing; what each fault scenario still reads is the fault record
+        # and its delivery (QEMU trace of lean_alloc_small's callers): the
+        # trap's register window and the fault context are arrays of boxed
+        # words (`faultEntryFrame?`, `FaultContext.ofRegisterFile`, 24), the
+        # fault and the record the thread keeps (`faultOfExceptionContext`,
+        # `faultDeliverOnCoreChecked`, `recordPendingFault`, 5) and the
+        # handler's lookup (`resolveCapAddress`, 2): 31.  An unknown syscall
+        # names its fault from the window (30).  A capability fault re-runs
+        # the syscall's decode and lookup to name its fault and spills the
+        # syscall's window (`syscallCapFaultOf`, `syscallWindow`, 34).  A
+        # delivered fault adds the endpoint call and the encoded message
+        # (108 to 122); a reply decodes the fault and restarts the thread
+        # (87); a queued fault's receive transfers the message (47) and its
+        # reply restarts the thread (54).  The release of a switched-out FP
+        # owner captures the registers into a new context (`ffi_fp_capture`,
+        # 1).  Registered in docs/REGISTERED_DEBT.md; the rows that bring
+        # them to zero lower these pins.
+        pinned.update({
+            "vm-fault-data-suspends": (31, 31), "vm-fault-instruction-suspends": (31, 31),
+            "cap-fault-suspends": (34, 34), "unknown-syscall-suspends": (30, 30),
+            "user-exception-suspends": (31, 31),
+            # The resume of a thread a fault suspended answers its fault: the
+            # restart frame's words are written into its register file.
+            "vm-fault-data-resume": (0, 0), "vm-fault-instruction-resume": (0, 0),
+            "cap-fault-resume": (0, 0), "unknown-syscall-resume": (0, 0),
+            "user-exception-resume": (0, 0),
+            "vm-fault-queued": (59, 59), "receive-queued-fault": (47, 47),
+            "reply-queued-fault": (54, 54),
+            "vm-fault-data-delivered": (109, 109), "vm-fault-instruction-delivered": (108, 108),
+            "cap-fault-delivered": (112, 112), "unknown-syscall-delivered": (122, 122),
+            "user-exception-delivered": (113, 113),
+            "vm-fault-data-reply": (87, 87), "vm-fault-instruction-reply": (87, 87),
+            "cap-fault-reply": (87, 87), "unknown-syscall-reply": (87, 87),
+            "user-exception-reply": (87, 87),
+            "fp-access": (0, 0), "fp-owner-blocks": (1, 1), "fp-access-partner": (0, 0),
+            "fp-owner-wakes-root": (0, 0),
+        })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
