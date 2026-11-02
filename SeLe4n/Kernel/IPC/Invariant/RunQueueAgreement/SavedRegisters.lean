@@ -36,7 +36,7 @@ WS-ZA ZA6.15 adds the final delete's two kinds of write: the yield completion
 (`completeYieldFrom`, whose yielder is linked, so no core holds it at an entry
 boundary: `offCoreFree_of_yieldCode`) and the cancellation restore
 (`restoreToReadyCancelled`, of a thread blocked in IPC).  The dispatch's arms
-are ZA6.23 and ZA6.24, which consume these lemmas, with ZA6.16's invariant that
+are ZA6.23 to ZA6.26, which consume these lemmas, with ZA6.16's invariant that
 a thread blocked in IPC is resident on no core and ZA6.21's that every core's
 resident thread has a TCB.
 -/

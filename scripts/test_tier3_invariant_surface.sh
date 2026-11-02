@@ -4418,6 +4418,17 @@ run_check "INVARIANT" bash -lc 'rg -n -U "^def abortPendingIpcOnEndpoint[^\n]*(\
 run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_check "INVARIANT" rg -n '^private def runCancelledFaultChecks($|[ ({:\[\]])' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n '^  runCancelledFaultChecks$' tests/FaultHandlingSuite.lean
+# WS-ZA ZA6.23: the saved-register frame -- every saved context of the pre-state
+# is one of the post-state -- gives the census under the syscall's premises, and
+# the capability-only dispatch's object arms keep it.
+run_check "INVARIANT" rg -n -U '^def savedRegsKept \(pre post : SystemState\) : Prop :=\n  ∀ t r, pre\.savedRegs t = some r → post\.savedRegs t = some r$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n -U '^theorem trans \{a b d : SystemState\} \(h₁ : savedRegsKept a b\) \(h₂ : savedRegsKept b d\) :\n    savedRegsKept a d :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n -U '^    \(hF : savedRegsKept pre post\) \(hD : pre\.currentDequeuedUnique\)\n    \(hRT : pre\.residentsHaveTcbs\)\n    \(hK : currentKeptOffCore e pre post\) \(hR : residentKeptOffCore e pre post\) :\n    savedRegsKeptOffCore e pre post :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n '^theorem pageTableUnmap_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
+run_check "INVARIANT" rg -n -U '^    \(hArm : decoded\.syscallId\.capabilityObjectArm = true\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

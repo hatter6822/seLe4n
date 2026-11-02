@@ -1,3 +1,53 @@
+## v0.36.186 — WS-ZA ZA6.23: the saved-register frame and the capability-only dispatch's object arms
+
+Proofs only.
+
+- **The frame.** `savedRegsKept pre post`: every saved context the pre-state
+  holds is held by the post-state unchanged. It admits a new TCB, which the
+  retype carves into an empty slot, and no write to an existing one's
+  registers. It has `refl` and `trans`, and is built per write:
+  - slot by slot (`of_objectsAt`, `of_unchangedOrNoTcb`, `of_objects_eq`);
+  - a store over a slot that held no TCB (`storeObject`);
+  - the slot-link writes, which rewrite a thread's space-slot links alone
+    (`of_linkReach`, `of_withCdt_linkReach`, `cdtAddChild`);
+  - the arms' existing frames (`of_vspaceRootOnlyWrite`,
+    `of_serviceRecordRewrite`), the capability insert (`cspaceInsertSlot`)
+    and the free-index write (`setCapFreeIndex`).
+- **The census from the frame.** Under the syscall's premises every thread
+  another core holds has a TCB: a current thread is active
+  (`currentDequeuedUnique.currentActive`) and a resident has one
+  (`residentsHaveTcbs`, ZA6.21). So the frame gives the census
+  (`savedRegsKeptOffCore_of_savedRegsKept`).
+- **The arms.**
+  - The reply-capability mint, the CSpace arm that deletes nothing
+    (`mintReplyCapWithCdt_savedRegsKept`).
+  - The untyped retype through the carve (`untypedRetypeObject_savedRegsKept`,
+    `untypedRetypeFromCap_savedRegsKept`) and the reset
+    (`untypedResetFromCap_savedRegsKept`).
+  - The VSpace map with its tag and record (`vspaceMapFromFrameCap_savedRegsKept`,
+    `tagFrameMapping_savedRegsKept`, `cspaceRecordFrameMapping_savedRegsKept`),
+    the unmap (`vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept`)
+    and the instruction unification (`vspaceUnifyInstructionPage_savedRegsKept`).
+  - The page-table map and unmap (`pageTableMap_savedRegsKept`,
+    `pageTableUnmap_savedRegsKept`).
+  - The service revoke (`revokeServiceByRecordedRegistration_savedRegsKept`),
+    and the service query, which stages its answer into the caller alone
+    (`writeReturnFrameToTcb_savedRegsKeptOffCore`).
+  - Over the dispatch: `dispatchCapabilityOnly_objectArm_savedRegsKeptOffCore`,
+    for every arm `SyscallId.capabilityObjectArm` admits.
+- **Module.** `IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean`,
+  staged infrastructure (imported by `Platform/Staged.lean`, listed in
+  `scripts/staged_module_allowlist.txt`), with Tier 3 anchors on the
+  relation, its `trans`, the census bridge and the dispatch theorem.
+- **Plan.** `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` splits ZA6.23 into
+  the frame with the object arms (ZA6.23), the final delete and revoke
+  (ZA6.24), and the TCB and scheduling-context arms with the capability-only
+  dispatch's census (ZA6.25). The rows after it move up two (ZA6.24 to
+  ZA6.35 become ZA6.26 to ZA6.37), and the citations in the plans, the spec,
+  the claim index, `WORKSTREAM_CONTEXT.md`, `docs/REGISTERED_DEBT.md`, the
+  Lean docstrings and `trap.rs` follow. The `faultRecordParked` debt row's
+  closure target moves from ZA6.35 to ZA6.37.
+
 ## v0.36.185 — WS-ZA ZA6.22: a cancelled fault IPC retires the fault
 
 Security fix. Found while auditing the capability-only dispatch's census.
