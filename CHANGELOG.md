@@ -1,3 +1,47 @@
+## v0.36.183 — WS-ZA ZA6.20: blocked threads resident on no core, across the syscall entry
+
+Proofs only.
+
+- **Every syscall dispatch arm blocks at most its caller.** A new module,
+  `IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean`, gives each arm a
+  readiness frame (`readyKeptStage`) beside its run-queue entry-stage proof.
+  The frames are a separate family because a field of `RunQueueEntryStage`
+  would not compose: a thread dispatched mid-step and blocked later in the
+  same step would break it.
+  - The blocking arms keep every thread but the caller ready. These are
+    send, receive, call, the notification wait and the reply-receive, plus
+    their checked cross-core wrappers.
+  - The reply, scheduling, TCB, scheduling-context and lifecycle arms keep
+    every thread ready, given the caller's `currentDequeuedUnique`.
+  - A finalising delete's readiness is carried together with its entry stage
+    through `finaliseFinalObject_closed`.
+- **The scheduling-context unbind's stage is split out.**
+  `schedContextUnbind_runQueueEntryStage` is now built from two halves:
+  `schedContextUnbind_runQueueLinkStage` and
+  `schedContextUnbind_runQueueStage_of_dequeued`. The unbind arm's readiness
+  frame consumes the second half under the caller's dequeued premise.
+- **The dispatch and the entry block only the executing core's current
+  thread.** The routed dispatch keeps every thread but its caller ready
+  (`dispatchCapabilityOnly_readyKeptStage`,
+  `dispatchWithCapChecked_readyKeptStage`,
+  `dispatchSyscallChecked_readyKeptStage`), and so do the checked entry and
+  the ABI dispatch (`syscallEntryChecked_readyKeptStage`,
+  `syscallDispatchFromAbi_readyKeptStage`). The capability-fault delivery
+  and the refusal record are covered as well.
+- **The syscall entry carries `blockedNotResident`.**
+  `syscallDispatchEntryState_preserves_blockedNotResident` composes four
+  pieces:
+  - the save and the IPC-buffer words, which block no thread;
+  - the dispatch's readiness frame;
+  - the return staging, a stage, and the successor, which blocks no thread;
+  - the coverage relation's resident frame.
+
+  It closes with `settleThenActivateOnCore_blockedNotResident` (plus
+  `BlockedNotResident.clearLedgers'` for the syscall step's drain order).
+  Every kernel entry now keeps a thread blocked in IPC resident on no core.
+  No reachable blocked resident was found.
+- Tier 3 anchors pin the dispatch, ABI and entry statements.
+
 ## v0.36.182 — WS-ZA ZA6.19: blocked threads resident on no core, across the timer, fault and unknown-syscall entries
 
 Proofs only.

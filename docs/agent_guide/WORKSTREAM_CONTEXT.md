@@ -558,8 +558,12 @@ invariant across the reschedule, secondary and FP/SIMD entries.  Since
 states the fault delivery's readiness frame beside its block window
 (`readyKeptStage`: the call blocks only its caller, the delivery only the
 executing core's current thread) and carries the invariant across the timer,
-fault and unknown-syscall entries.  ZA6.20 carries it across the syscall
-entry, ZA6.21 to ZA6.23 census the
+fault and unknown-syscall entries.  Since `v0.36.183`, ZA6.20 gives each
+syscall dispatch arm a readiness frame (`IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean`,
+a mirror family beside the arms' entry-stage proofs: every arm blocks at most
+its caller) and carries the invariant across the syscall entry, so every entry
+keeps it.  New dispatch arms must ship a readiness frame beside their entry
+stage.  ZA6.21 to ZA6.23 census the
 dispatch's arms (capability-only, IPC and notification, the rest), ZA6.24
 derives the syscall's id and argument
 registers from the entry's saved frame, and ZA6.25 composes them into the
