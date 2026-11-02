@@ -1,3 +1,85 @@
+## v0.36.189 — WS-ZA ZA6.26: the saved-register census over the IPC and notification arms, and the whole syscall dispatch
+
+Proofs only. No syscall writes the saved registers of a thread another core
+holds, current or resident (`syscallDispatchFromAbi_savedRegsKeptOffCore`).
+This is the proof of the remote stall's rule (ZA6.11).
+
+- **The transitions write no saved register.** `savedRegsUnwritten pre post`
+  means no thread's saved registers change and the store stays well formed.
+  It is built per write: `of_modifyTcb`, `of_storeObject_*`, the blocking and
+  receive-completion stores, the wake, the deschedule, the send-cap record,
+  the notification links, the reply links, the scheduling-context lend and
+  its return, the priority-inheritance walks and the reply-frame splices.
+  - A send, a call and a reply hand their receiver the message as a pending
+    message, and a signal hands its waiter the badge the same way.
+  - The theorems: `endpointSendCrossCoreDispatchChecked_savedRegsUnwritten`,
+    `notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten`,
+    `notificationSignalDeclassifiedCrossCoreDispatch_savedRegsUnwritten`,
+    `notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten`,
+    `endpointCallCrossCoreDispatchChecked_savedRegsUnwritten`,
+    `endpointReceiveDualWithCapsOnCore_savedRegsUnwritten`,
+    `applyReceiveRendezvousHandoff_savedRegsUnwritten`,
+    `endpointReplyCrossCoreDispatchChecked_savedRegsUnwritten`, and the
+    reply-and-receive legs (`replyRecvPopDonation_savedRegsUnwritten`,
+    `replyRecvPostReceiveDonation_savedRegsUnwritten`,
+    `applyReceiveLegPipHandoff_savedRegsUnwritten`).
+- **Each staging names a thread blocked in IPC at the entry's start, or the
+  caller.** A thread with no ready TCB is held by no core
+  (`offCoreFree_of_notReady`).
+  - The woken receiver is the receive queue's head, the bound thread or the
+    notification's head waiter (`offCoreFree_of_receiveHead`,
+    `offCoreFree_of_boundTarget`, `offCoreFree_of_signalWaiter`).
+  - The woken sender is the send queue's head (`offCoreFree_of_sendHead`).
+    In the reply-and-receive, the reply leg and the donation pop write no
+    endpoint, so the head carries back (`sendHead_backward`).
+  - The answered caller is one the reply leg found blocked on its reply
+    (`endpointReplyCrossCoreDispatchChecked_ok_target_notReady`). The fault
+    reply's restart frame is the same case
+    (`faultReplyOnCore_savedRegsWrittenFree`).
+- **The arms:** `sendArm_savedRegsWrittenFree`,
+  `notificationSignalArm_savedRegsWrittenFree`,
+  `declassifySignalArm_savedRegsWrittenFree`,
+  `notificationWaitArm_savedRegsWrittenFree`, `callArm_savedRegsWrittenFree`,
+  `receiveArm_savedRegsWrittenFree`,
+  `replyTransferOnCoreChecked_savedRegsWrittenFree` and
+  `endpointReplyRecvOnCore_savedRegsWrittenFree`.
+- **The rest of the dispatch.**
+  - The CSpace mint, copy and move write CNodes, a thread's space slots and
+    the derivation tree (`cspaceMintWithCdt_savedRegsKept`,
+    `cspaceCopy_savedRegsKept`, `cspaceMove_savedRegsKept`,
+    `cspaceDeleteSlotCore_savedRegsKept`).
+  - The registry, the declassification and the audit arms write no other
+    thread's saved context. Every routed arm is covered by
+    `dispatchWithCapChecked_savedRegsKeptOffCore`.
+  - The yield writes the caller alone (`yieldOnCore_savedRegsWrittenFree`).
+    Its charge writes no saved register and moves no current thread
+    (`yieldChargeOnCore_savedRegsUnwritten`,
+    `yieldChargeOnCore_currentOnCore`), so the scheduling point saves the
+    caller (`scheduleEffectiveOnCore_savedRegsKeptExcept`).
+  - The taint pass writes taint words alone
+    (`savedRegsKeptExcept.of_objectsAgreeOffTaint`). Together these give
+    `dispatchSyscallChecked_savedRegsKeptOffCore` and
+    `syscallEntryChecked_savedRegsKeptOffCore`.
+  - The ABI dispatch spills the arguments into the caller. The entry's
+    premises carry across that register-only write
+    (`residentsHaveTcbs_updateTcb`, `blockedNotResident_updateTcb`,
+    `yieldLinkedNotResident_updateTcb`,
+    `currentNotResidentElsewhere_updateTcb`).
+  - A capability fault's delivery writes only the handler endpoint's receive
+    head (`faultDeliverOnCoreChecked_savedRegsWrittenFree`). A refusal record
+    writes no object.
+- **Modules.** Three staged modules, imported by `Platform/Staged.lean` and
+  listed in `scripts/staged_module_allowlist.txt`:
+  `IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean`,
+  `SavedRegistersCallReply.lean` and `SavedRegistersDispatch.lean`. Tier 3
+  anchors cover the frame, the transitions, the stagings, the free-ness, the
+  arms, the yield, the taint pass, the entry and the ABI dispatch.
+- **The plan.** ZA6.26 lands as one row and is recorded as landed in
+  `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`. The spec, the claim index,
+  `WORKSTREAM_CONTEXT.md` and the bank-match row of `REGISTERED_DEBT.md` are
+  updated. No vulnerability was found: every register write in these arms
+  targets the caller or a thread blocked at the entry's start.
+
 ## v0.36.188 — WS-ZA ZA6.25: the saved-register census over the TCB and scheduling-context arms, and the whole capability-only dispatch
 
 Proofs only.
