@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Model.State
 import SeLe4n.Kernel.SchedContext.ReleaseLinks
+import SeLe4n.Kernel.Scheduler.RunQueueHeadEnqueue
 
 /-! # SchedContext Operations — WS-Z Phase Z5
 
@@ -2391,5 +2392,212 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
     (hStep : schedContextUnbind vScId st = .ok ((), st')) : SystemState.RunQueueEntryStage st st' :=
   SystemState.RunQueueEntryStage.of_cond (schedContextUnbind_runQueueLinkStage vScId st st' hStep)
     fun hD => schedContextUnbind_runQueueStage_of_dequeued vScId st st' hD hStep
+
+/-! ## The yieldTo invocation (WS-ZA ZA6.29)
+
+seL4-MCS's `seL4_SchedContext_YieldTo` (`decodeSchedContext_YieldTo`,
+`invokeSchedContext_YieldTo`): the caller, the executing core's current
+thread, yields to the thread bound to the invoked context. -/
+
+/-- **The unlinked branch's requeue** (`tcbSchedDequeue(tcb);
+SCHED_ENQUEUE(tcb)`): the target `t`, unless it runs on its home core `home`,
+leaves `home`'s queue and joins its band's head (`runEnqueueHeadOnCore`,
+seL4's `tcbSchedEnqueue`); `home` is flagged to reschedule, as a bind's
+placement flags it, so a target outranking the thread `home` runs preempts it
+there.  A target running on its home core is left running, as seL4 leaves a
+thread no queue holds. -/
+def yieldToRequeue (st : SystemState) (home : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : SystemState :=
+  if st.scheduler.currentOnCore home = some t then st
+  else ((st.runRemoveOnCore home t).runEnqueueHeadOnCore home t p).markReschedulePendingOnCore home
+
+/-- **The linked branch** (`cur->tcbYieldTo = sc; sc->scYieldFrom = cur;
+tcbSchedDequeue(tcb); tcbSchedEnqueue(cur); tcbSchedEnqueue(tcb);
+rescheduleRequired()`) on core `c`: the link set (`setYieldLink`), the target
+off `c`'s queue, the caller off `c`'s slot and at its band's head, the target
+at its band's head ahead of it, and `c`'s scheduling point
+(`handleRescheduleOnCoreState`).  The caller's registers were saved at the
+entry, so the slot is cleared with no save, as a self-suspend clears it; the
+caller's consumed time is written when it next runs (`activateThreadOnCore`). -/
+def yieldToLink (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) (pCaller pTarget : SeLe4n.Priority) : SystemState :=
+  let st1 := setYieldLink st s caller
+  let st2 := st1.runRemoveOnCore c t
+  let st3 := st2.runDescheduleOnCore c caller
+  let st4 := st3.runEnqueueHeadOnCore c caller pCaller
+  let st5 := st4.runEnqueueHeadOnCore c t pTarget
+  handleRescheduleOnCoreState st5 c
+
+/-- **seL4-MCS's `invokeSchedContext_YieldTo`** once its checks pass, for the
+caller `caller` on core `c` and the thread `t` context `s` is bound to: the
+context's earlier yield completed (`completeYieldFrom`), the context resumed
+on its thread's home core (`releasePlace`, seL4's `schedContext_resume`:
+postponed while its head refill is not ready, so no refill is written but the
+postpone's), then for a schedulable target (runnable, not idle, with budget)
+either the requeue and the consumed time returned now (`setConsumed`), when the
+target is homed off `c` or ranks below the caller, or the link
+(`yieldToLink`); an unschedulable target gets neither, and the consumed time is
+returned now.  The priorities compared and enqueued at are the run queues'
+(`TCB.boostedPriority`), read before any queue write. -/
+def yieldToBound (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (caller t : SeLe4n.ThreadId) : SystemState :=
+  let st1 := completeYieldFrom st s
+  let home := determineTargetCore st1 t
+  let st2 := st1.releasePlace home s
+  match st2.getTcb? t with
+  | none => setConsumed st2 s caller
+  | some tT =>
+    match st2.getTcb? caller with
+    | none => setConsumed st2 s caller
+    | some cT =>
+      match st2.getSchedContext? s with
+      | none => setConsumed st2 s caller
+      | some sc =>
+        if tT.isRunnable && !isIdleThreadId t && sc.budgetRemaining.isPositive then
+          if home.val != c.val || decide (tT.boostedPriority.val < cT.boostedPriority.val) then
+            setConsumed (yieldToRequeue st2 home t tT.boostedPriority) s caller
+          else yieldToLink st2 c s caller t cT.boostedPriority tT.boostedPriority
+        else setConsumed st2 s caller
+
+/-- **seL4-MCS's `seL4_SchedContext_YieldTo` on core `c`**
+(`decodeSchedContext_YieldTo`, then `invokeSchedContext_YieldTo`).  Every check
+comes before any write, and each of seL4's is refused as its
+`seL4_IllegalOperation` (`.illegalState`): the context is bound
+(`sc->scTcb != NULL`), its thread is not the caller, its thread's priority is
+within the caller's maximum controlled priority (`tcbMCP`), and the caller has
+no pending yield (`tcbYieldTo == NULL`).  A core with no current thread has no
+caller (`.illegalState`, as `yieldOnCore`), a capability naming no context
+names nothing to yield to (`.invalidCapability`), and a bound thread or a
+caller with no TCB is `.objectNotFound`, which a kernel whose bindings name
+threads never meets. -/
+def schedContextYieldToOnCore (s : SeLe4n.SchedContextId) (c : Concurrency.CoreId)
+    (st : SystemState) : Except KernelError SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => .error .illegalState
+  | some caller =>
+    match st.getSchedContext? s with
+    | none => .error .invalidCapability
+    | some sc =>
+      match sc.boundThreadCode with
+      | 0 => .error .illegalState
+      | k + 1 =>
+        if k == caller.val then .error .illegalState
+        else
+          match st.getTcb? ⟨k⟩ with
+          | none => .error .objectNotFound
+          | some tT =>
+            match st.getTcb? caller with
+            | none => .error .objectNotFound
+            | some cT =>
+              if decide (cT.maxControlledPriority.val < tT.priority.val) then .error .illegalState
+              else if cT.yieldToCode != 0 then .error .illegalState
+              else .ok (yieldToBound st c s caller ⟨k⟩)
+
+/-- The yieldTo invocation's checks, read before its writes. -/
+@[inline] def schedContextYieldToAdmitted (st : SystemState) (s : SeLe4n.SchedContextId)
+    (c : Concurrency.CoreId) : Bool :=
+  match st.scheduler.currentOnCore c with
+  | none => false
+  | some caller =>
+    match st.getSchedContext? s with
+    | none => false
+    | some sc =>
+      match sc.boundThreadCode with
+      | 0 => false
+      | k + 1 =>
+        if k == caller.val then false
+        else
+          match st.getTcb? ⟨k⟩ with
+          | none => false
+          | some tT =>
+            match st.getTcb? caller with
+            | none => false
+            | some cT =>
+              !decide (cT.maxControlledPriority.val < tT.priority.val) && cT.yieldToCode == 0
+
+/-- The yieldTo invocation's writes once admitted. -/
+@[inline] def schedContextYieldToPerform (st : SystemState) (s : SeLe4n.SchedContextId)
+    (c : Concurrency.CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st
+  | some caller =>
+    match st.getSchedContext? s with
+    | none => st
+    | some sc =>
+      match sc.boundThreadCode with
+      | 0 => st
+      | k + 1 => yieldToBound st c s caller ⟨k⟩
+
+theorem schedContextYieldToOnCore_of_admitted (st : SystemState) (s : SeLe4n.SchedContextId)
+    (c : Concurrency.CoreId) (h : schedContextYieldToAdmitted st s c = true) :
+    schedContextYieldToOnCore s c st = .ok (schedContextYieldToPerform st s c) := by
+  unfold schedContextYieldToAdmitted at h
+  unfold schedContextYieldToOnCore schedContextYieldToPerform
+  cases hC : st.scheduler.currentOnCore c with
+  | none => simp [hC] at h
+  | some caller =>
+    simp only [hC] at h ⊢
+    cases hS : st.getSchedContext? s with
+    | none => simp [hS] at h
+    | some sc =>
+      simp only [hS] at h ⊢
+      cases hk : sc.boundThreadCode with
+      | zero => simp [hk] at h
+      | succ k =>
+        simp only [hk] at h ⊢
+        by_cases hne : (k == caller.val) = true
+        · simp [hne] at h
+        · simp only [hne, Bool.false_eq_true, ↓reduceIte] at h ⊢
+          cases hT : st.getTcb? ⟨k⟩ with
+          | none => simp [hT] at h
+          | some tT =>
+            simp only [hT] at h ⊢
+            cases hCT : st.getTcb? caller with
+            | none => simp [hCT] at h
+            | some cT =>
+              simp only [hCT] at h ⊢
+              simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not,
+                beq_iff_eq] at h
+              simp [h.1, h.2]
+
+/-- A yieldTo that succeeds is `yieldToBound` for the core's current thread
+and the context's bound thread, which is not the caller and whose priority is
+within the caller's, the caller holding no yield link. -/
+theorem schedContextYieldToOnCore_ok {s : SeLe4n.SchedContextId} {c : Concurrency.CoreId}
+    {st st' : SystemState} (h : schedContextYieldToOnCore s c st = .ok st') :
+    ∃ caller sc t tT cT, st.scheduler.currentOnCore c = some caller ∧
+      st.getSchedContext? s = some sc ∧ sc.boundThreadCode = t.val + 1 ∧ t ≠ caller ∧
+      st.getTcb? t = some tT ∧ st.getTcb? caller = some cT ∧
+      tT.priority.val ≤ cT.maxControlledPriority.val ∧ cT.yieldToCode = 0 ∧
+      st' = yieldToBound st c s caller t := by
+  unfold schedContextYieldToOnCore at h
+  split at h
+  · cases h
+  · rename_i caller hC
+    split at h
+    · cases h
+    · rename_i sc hS
+      split at h
+      · cases h
+      · rename_i k hk
+        split at h
+        · cases h
+        · rename_i hne
+          split at h
+          · cases h
+          · rename_i tT hT
+            split at h
+            · cases h
+            · rename_i cT hCT
+              split at h
+              · cases h
+              · rename_i hP
+                split at h
+                · cases h
+                · rename_i hY
+                  cases h
+                  refine ⟨caller, sc, ⟨k⟩, tT, cT, hC, hS, hk, fun e => hne ?_, hT, hCT,
+                    Nat.le_of_not_lt (by simpa using hP), by simpa using hY, rfl⟩
+                  rw [← e]; simp
 
 end SeLe4n.Kernel.SchedContextOps

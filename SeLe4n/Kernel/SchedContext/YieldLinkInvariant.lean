@@ -372,6 +372,52 @@ theorem of_kept {st' st : SystemState} (hY : YieldLinksKept st' st)
 
 end YieldLinkLiveFrame
 
+/-- WS-ZA ZA6.29: **every resident thread of the post-state was resident on
+its core before, holds no yield link, or is on `L`** — `ResidentsRecordUnlinked`
+with the threads a step may link (`L`) let through. -/
+def ResidentsRecordUnlinkedOn (L : SeLe4n.ObjId → Prop) (st' st : SystemState) : Prop :=
+  ∀ (c : Concurrency.CoreId) (t : SeLe4n.ThreadId), st'.machine.residentOnCore c = some t →
+    st.machine.residentOnCore c = some t ∨ (objYieldCodes st'.objects[t.toObjId]?).1 = 0 ∨
+      L t.toObjId
+
+/-- WS-ZA ZA6.29: **a step links only threads of `L` and makes no linked thread
+resident but one of `L`**: the dispatch chain's `live` frame.  The yieldTo
+invocation's linked branch links its caller, the executing core's current
+thread, so the syscall entry's stage carries `L` as that thread's slot; every
+other step carries it with `L` empty (`YieldLinkLiveFrame.toOn`). -/
+structure YieldLinkLiveFrameOn (L : SeLe4n.ObjId → Prop) (st' st : SystemState) : Prop where
+  unset : YieldToCodesSetOnly L st' st
+  residents : ResidentsRecordUnlinkedOn L st' st
+
+namespace YieldLinkLiveFrameOn
+
+theorem refl (L : SeLe4n.ObjId → Prop) (st : SystemState) : YieldLinkLiveFrameOn L st st :=
+  ⟨.refl L st, fun _ _ h => Or.inl h⟩
+
+theorem trans {L : SeLe4n.ObjId → Prop} {a b d : SystemState} (h₁ : YieldLinkLiveFrameOn L a b)
+    (h₂ : YieldLinkLiveFrameOn L b d) : YieldLinkLiveFrameOn L a d :=
+  ⟨h₁.unset.trans h₂.unset, fun c t h => by
+    rcases h₁.residents c t h with e | e | e
+    · rcases h₂.residents c t e with e' | e' | e'
+      · exact Or.inl e'
+      · by_cases hL : L t.toObjId
+        · exact Or.inr (Or.inr hL)
+        · exact Or.inr (Or.inl (h₁.unset.zero hL e'))
+      · exact Or.inr (Or.inr e')
+    · exact Or.inr (Or.inl e)
+    · exact Or.inr (Or.inr e)⟩
+
+theorem mono {L L' : SeLe4n.ObjId → Prop} {st' st : SystemState} (hL : ∀ k, L k → L' k)
+    (h : YieldLinkLiveFrameOn L st' st) : YieldLinkLiveFrameOn L' st' st :=
+  ⟨h.unset.mono hL, fun c t hr => (h.residents c t hr).imp_right (Or.imp_right (hL _))⟩
+
+end YieldLinkLiveFrameOn
+
+/-- A step that links no thread links only threads of any `L`. -/
+theorem YieldLinkLiveFrame.toOn {st' st : SystemState} (h : YieldLinkLiveFrame st' st)
+    (L : SeLe4n.ObjId → Prop) : YieldLinkLiveFrameOn L st' st :=
+  ⟨h.unset.mono (fun _ h => h.elim), fun c t hr => (h.residents c t hr).imp_right Or.inl⟩
+
 /-- **No thread a core runs or holds the live registers of has a pending
 yield**: a core's current thread and its resident thread (the one whose frame
 its bank holds, `MachineState.residentOnCore`) each have yield-to code 0.
