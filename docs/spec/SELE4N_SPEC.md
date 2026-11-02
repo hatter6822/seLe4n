@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.192` (`lakefile.toml`) |
+| **Package version** | `0.36.193` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 565,317 across 515 Lean files |
-| **Test LoC** | 88,402 across 70 Lean test suites |
-| **Proved declarations** | 21,666 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 567,703 across 516 Lean files |
+| **Test LoC** | 88,436 across 70 Lean test suites |
+| **Proved declarations** | 21,782 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5935,12 +5935,14 @@ Every kernel object has a decidable well-formedness predicate:
   (`Architecture.saveVacatedFrameOnCore`, after the HAL's stall,
   `Concurrency.stallChangedCores`), and until then no other core resumes the
   thread (`PriorityInheritance.deferResidentElsewhere`).  The projection
-  erases the link fields, and every release-queue edit leaves every
-  observer's projection unchanged with no domain hypothesis
-  (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`);
-  the per-core tick, the drain and the yield's charge are outside the per-core
-  non-interference step relation, as before this cut (`docs/REGISTERED_DEBT.md`,
-  ZA6.30).  The compiled link edits, the re-placement and the charge each read
+  erases the successor link and, since `v0.36.193` (ZA6.30), keeps each
+  context's release core and release time, so each core's release queue is
+  projected filtered to the observable contexts
+  (`releaseQueuedOn_eq_of_projectObjects`); a release-queue edit of a hidden
+  context leaves every observer's projection unchanged
+  (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`),
+  and the per-core tick, the drain and the yield's charge are inside the
+  per-core non-interference step relation (below).  The compiled link edits, the re-placement and the charge each read
   what they need before they write and write through one call
   (`releaseUnlinkWrite`, `releaseLinkWrite`, `releasePlaceImpl`,
   `spendBudgetWrite`), and a refill behind the first is one straight-line
@@ -6072,9 +6074,10 @@ Every kernel object has a decidable well-formedness predicate:
     (`addConsumed_refillView`, `chargeBudget_refillView`) and is erased with
     the refills (`SchedContext.refillsErased`), so `refillsSound`, refill
     conservation, the window bound and the run-queue stages are unchanged.
-    Its projection is decided with the per-core tick's non-interference
-    (ZA6.30); until then it is projected as the context's other budget fields
-    are.
+    It is projected as the context's other budget fields are (decided with
+    the per-core tick's non-interference, ZA6.30, `v0.36.193`): a hidden
+    context's count is invisible with the context, and an observable context's
+    count is read only by its own capability's holders.
   - **Zero allocation.**  The count is one field written in the charge's own
     record update, so every charge scenario still reads 0 heap cells.
 - **A pending yield completes when the yielder next runs** (`v0.36.170`, WS-ZA
@@ -6108,7 +6111,12 @@ Every kernel object has a decidable well-formedness predicate:
     input when either is 0.  It and `activateThreadAt` are out of line, as is
     the linked case (`completeCurrentYield`): inlined, the step's branches met
     in the timer entry's body and the join point built the tick's result pair,
-    one heap cell per tick.
+    one heap cell per tick.  The linked case's own compiled form
+    (`completeCurrentYieldImpl`, `completeCurrentYield_eq_impl`, `v0.36.193`)
+    writes the bank out of line (`writeConsumedToBank`), so the state and
+    machine records are rewritten in place, and writes the register file by a
+    call (`RegisterFile.withConsumedOwned`) after its slot hands it over, so
+    the file is not copied.
   - **Lock coverage.**  Every footprint the kernel declares names the table
     write lock (`schedFootprintOfCores`,
     `mem_unifiedLockSetForSyscall_objStore`), which covers every object at
@@ -6132,7 +6140,8 @@ Every kernel object has a decidable well-formedness predicate:
     and invisible to an observer who sees neither the linked context nor, on
     the boot core, the current thread
     (`activateThreadOnCore_preserves_projection`).  Its per-core
-    non-interference is ZA6.30's.
+    non-interference is `activateThreadOnCore_lowEquivalent` and, for an
+    observable yielder, `activateThreadOnCore_lowEquivalent_pair` (ZA6.30).
   - **The yielder's saved registers are its live ones.**  A context's final
     delete completes its yielder's yield by writing the yielder's saved
     context (`setConsumed`, ZA6.6), which is sound only while no core holds
@@ -6929,7 +6938,51 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   builds no `some` cell.  The exerciser's `sched-context-yield-to` scenario,
   run while the partner is suspended, checks the call succeeded with the
   consumed-info word in `x1` and reads 0 allocations at first call and steady
-  state.
+  state.  Since `v0.36.193` two more cover the other branches, each at 0 at
+  first call and steady state: `sched-context-yield-to-requeue` (a partner
+  ranked below the caller is requeued and the consumed time returns at once)
+  and `sched-context-yield-to-linked` (the link, the partner's run until it
+  blocks, and the caller's activation, counted over the whole round trip, with
+  the resumed caller's `x1` and the cleared link checked).  The head enqueue's
+  bucket ends are rewritten in their cell (`prependEndsImpl`,
+  `prependEnds_eq_impl`).
+- **The per-core scheduler steps are inside the non-interference step
+  relation** (`v0.36.193`, WS-ZA ZA6.30;
+  `InformationFlow/PerCoreSchedulerNonInterference.lean`).  The projection
+  keeps each scheduling context's release core and release time and erases its
+  release successor link, so each core's release queue is projected filtered
+  to the observable contexts, in release order
+  (`releaseQueuedOn_eq_of_projectObjects`).  A release-only write at one
+  context (`releaseWriteAt`) is invisible when that context is hidden
+  (`projectObjects_of_releaseWriteAt`, `projectState_of_releaseOnlyWrite`).
+  Each per-core step has a one-sided low-equivalence theorem, as the
+  relation's other constructors do: the release drain
+  (`processReplenishmentsDueOnCore_lowEquivalent`, every context queued on the
+  core hidden with its bound thread, `releaseHiddenOn`), the charge with its
+  consumed-time accumulation (`timerTickBudgetOnCore_lowEquivalent`), the
+  exhaustion (`budgetExhaustOnCore_lowEquivalent`), the tick
+  (`timerTickOnCore_lowEquivalent`, `tickHidden`), the yield charge and the
+  yield (`yieldChargeOnCore_lowEquivalent`, `yieldOnCore_lowEquivalent`),
+  yieldTo (`schedContextYieldToOnCore_lowEquivalent`, `yieldToHidden`), the
+  reschedule SGI (`handleRescheduleSgiOnCore_lowEquivalent`,
+  `perCoreRescheduleStep_lowEquivalent`), the residency settle
+  (`settleResidencyOnCore_lowEquivalent`,
+  `deferResidentElsewhere_lowEquivalent`) and the reschedule entry's committed
+  state (`perCoreRescheduleEntryState_lowEquivalent`), which is the secondary
+  core's entry (`secondaryKernelMain_commits`).  The activation of a hidden
+  yielder is `activateThreadOnCore_lowEquivalent`; for an observable yielder,
+  two low-equivalent states whose activations read the same current thread,
+  linked context and consumed time stay low-equivalent
+  (`activateThreadOnCore_lowEquivalent_pair`).  The consumed time is the flow
+  seL4-MCS's `schedContext_completeYieldTo` makes to the yielder through its
+  capability to the context.  `PerCoreNonInterferenceStep` takes every
+  `KernelOperation` lift and one constructor per scheduler step
+  (`perCoreNonInterferenceStep_sound`), and `niStepCoverage_perCore_count`
+  counts 50 distinct theorems over `PerCoreOperation` (36 kernel operations,
+  14 scheduler steps).  Because release cores are projected, the affinity
+  change's and the reply cancellation's replenishment migrations take the
+  migrated context hidden (`setThreadCpuAffinityWithMigration_preserves_projection`,
+  `cancelledDonationContextHigh`, `cancelledDonationContextHigh_of_replyHeadHidden`).
 - **Every configured address space owns a table page** (`v0.36.13`).  The
   binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
   RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's

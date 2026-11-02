@@ -2164,8 +2164,11 @@ drift apart.
 
 The match is exhaustive, so a new `KernelOperation` variant fails to compile
 until it is given a per-core theorem — the same tripwire the single-core
-mapping carries, one layer up.  `niStepCoverage_perCore_injective` and
-`niStepCoverage_perCore_count` make the correspondence 1:1 and complete. -/
+mapping carries, one layer up.  `niStepCoverage_perCore_injective` makes the
+correspondence 1:1; the coverage count over the whole per-core taxonomy, these
+thirty-six and the per-core scheduler steps beside them, is
+`niStepCoverage_perCore_count` in `PerCoreSchedulerNonInterference.lean`
+(WS-ZA ZA6.30). -/
 def kernelOperationPerCoreNiTheorem : KernelOperation → String
   | .chooseThread                   => niName! nonInterference_perCore_chooseThread
   | .endpointSendDual               => niName! nonInterference_perCore_endpointSendDual
@@ -2212,20 +2215,6 @@ theorem niStepCoverage_perCore_injective :
   intro op₁ op₂ hEq
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationPerCoreNiTheorem] at hEq)
 
-/-- SM8.B.5: thirty-six distinct per-core theorem names — the count the plan
-re-anchored at the SM8.A cut (`kernelOperation_count` /
-`niStepCoverage_count` are the authority).
-
-**Stated over `KernelOperation.all`** (WS-SM SM8.E.2), so it counts operations
-rather than list positions: its predecessor spelled the thirty-five applications
-out, which meant a new `KernelOperation` variant left it true and unedited.
-Paired with `KernelOperation.mem_all` the enumeration is now tied to the type,
-and `eraseDups` makes the "distinct" in the sentence above a checked word rather
-than a claim resting on `niStepCoverage_perCore_injective` alone. -/
-theorem niStepCoverage_perCore_count :
-    (KernelOperation.all.map kernelOperationPerCoreNiTheorem).eraseDups.length = 36 := by
-  decide
-
 /-- SM8.B.5: **whether the operation's own semantics establish the confinement
 premise**, or whether the caller must supply it.
 
@@ -2255,9 +2244,9 @@ def perCoreConfinementDerived : KernelOperation → Bool
 /-- SM8.B.5: thirty-two of the thirty-six operations discharge the confinement
 premise from their own semantics; exactly four — the catch-alls — do not.
 
-**Stated over `KernelOperation.all`** (WS-SM SM8.E.2) for the reason
-`niStepCoverage_perCore_count` is: the thirty-five-element literal this
-replaced could not notice a thirty-sixth operation.  The complement is stated
+**Stated over `KernelOperation.all`** (WS-SM SM8.E.2), as the coverage count
+is over its enumeration: the thirty-five-element literal this replaced could
+not notice a thirty-sixth operation.  The complement is stated
 too, so the two numbers are checked against the same enumeration rather than
 against each other's arithmetic. -/
 theorem perCoreConfinementDerived_count :

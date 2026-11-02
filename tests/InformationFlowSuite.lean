@@ -193,6 +193,11 @@ def test_schedContext_configure_budget_held_once : IO Bool := do
 #check @SeLe4n.Kernel.purgeReplenishment_preserves_projection
 #check @SeLe4n.Kernel.replenishOnCore_preserves_projection
 #check @SeLe4n.Kernel.projectState_of_releaseOnlyWrite
+-- WS-ZA ZA6.30: the projection keeps each context's release core and time, so
+-- a release edit is invisible only at a hidden context (`releaseWriteAt`).
+#check @SeLe4n.Kernel.releaseWriteAt
+#check @SeLe4n.Kernel.projectObjects_of_releaseWriteAt
+#check @SeLe4n.Kernel.releaseQueuedOn_eq_of_projectObjects
 -- SM5.H.4 audit-pass-2: the *unconditional* affinity-write NI — the affinity write
 -- preserves the projection for ANY target (high OR low), because the projection
 -- erases cpuAffinity (`projectKernelObject_tcb_cpuAffinity_irrelevant`).  Strictly

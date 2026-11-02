@@ -265,6 +265,12 @@ for driver in drivers:
             "root-set-ipc-buffer", "sched-context-configure", "sched-context-bind",
             "sched-context-unbind", "sched-context-consumed", "sched-context-consumed-reset", "sched-context-rebind",
             "sched-context-yield-to",
+            # WS-ZA ZA6.29's other branches (added at ZA6.30): a schedulable
+            # partner ranked below the caller, requeued at its band's head with
+            # the consumed time returned at once; and one ranked with it on its
+            # core, the yield linked, read across the switch to the partner and
+            # back, the activation writing the consumed time.
+            "sched-context-yield-to-requeue", "sched-context-yield-to-linked",
             "tcb-resume-bound",
             "tcb-suspend-bound",
             # WS-ZA ZA5.5: a service query reads the code its endpoint records,

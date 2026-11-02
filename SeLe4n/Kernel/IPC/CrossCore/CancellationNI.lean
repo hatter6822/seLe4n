@@ -102,18 +102,20 @@ theorem setReplenishQueueOnCore_preserves_projectionOnCore
       st.scheduler c cObs rq)
     rfl
 
-/-- WS-SM SM6.E: the donated-arm replenishment migration (§2b) is invisible
+/-- WS-SM SM6.E: the donated-arm replenishment migration (§2b) of a
+non-observable context is invisible
 on *every* core — the per-core strengthening of the production SM5.H.4
 boot-core frame. -/
 theorem migrateSchedContextReplenishment_preserves_projectionOnCore
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) (c : CoreId) :
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) (c : CoreId)
+    (hS : objectObservable ctx observer scId.toObjId = false) :
     projectStateOnCore ctx observer
       (migrateSchedContextReplenishment st scId fromCore toCore) c =
     projectStateOnCore ctx observer st c := by
   refine projectStateOnCore_congr ctx observer
     (migrateSchedContextReplenishment_preserves_projection ctx observer st scId
-      fromCore toCore)
+      fromCore toCore hS)
     ?_ ?_ ?_ ?_ ?_ ?_ <;>
     first
       | rw [migrateSchedContextReplenishment_machine]
@@ -183,30 +185,57 @@ theorem descheduleThread_cancellation_NI_smp
 -- §3  The cancellation composite
 -- ============================================================================
 
+/-- WS-ZA ZA6.30: the labelling obligation of the reply arm's replenishment
+migration — the context the cancellation returns is non-observable.  The
+projection keeps each context's release core and release time
+(`releaseQueuedOn_eq_of_projectObjects`), so moving an observable context's
+release entry between cores is a visible write; the migration is invisible
+exactly when the migrated context is hidden.  Quantified over the resolution,
+as `descheduledHolderHigh` is, and discharged outright where none is resolved
+(`cancelledDonationContextHigh_of_no_donation`). -/
+def cancelledDonationContextHigh (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB) : Prop :=
+  ∀ scId holder,
+    Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
+      objectObservable ctx observer scId.toObjId = false
+
+/-- With no donation resolved nothing migrates, so the obligation is vacuous. -/
+theorem cancelledDonationContextHigh_of_no_donation (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    cancelledDonationContextHigh ctx observer st victim tcb := by
+  intro scId holder hW
+  rw [h] at hW
+  exact absurd hW (by simp)
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the SM5.H replenishment migration
-the corrected reply arm obliges is invisible — the projection shows run queues,
-current slots and the domain schedule, not replenishments. -/
+the corrected reply arm obliges is invisible when the returned context is
+non-observable (`cancelledDonationContextHigh`). -/
 theorem cancelIpcBlockingMigrated_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectState ctx observer (cancelIpcBlockingMigrated victim tcb st)
       = projectState ctx observer (cancelIpcBlocking st victim tcb) := by
   unfold cancelIpcBlockingMigrated
   split
-  · rename_i scId holder _
+  · rename_i scId holder hRes
     exact migrateSchedContextReplenishment_preserves_projection ctx observer _ scId _ _
+      (hCtxHigh scId holder hRes)
   · rfl
 
 /-- The per-core form of the same. -/
 theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
     (ctx : LabelingContext) (observer : IfObserver)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (c : CoreId) :
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (c : CoreId)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectStateOnCore ctx observer (cancelIpcBlockingMigrated victim tcb st) c
       = projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c := by
   unfold cancelIpcBlockingMigrated
   split
-  · rename_i scId holder _
+  · rename_i scId holder hRes
     exact migrateSchedContextReplenishment_preserves_projectionOnCore ctx observer _ scId _ _ c
+      (hCtxHigh scId holder hRes)
   · rfl
 
 -- ============================================================================
@@ -313,7 +342,8 @@ theorem cancelIpcBlockingOnCore_cancellation_NI
     (hVictimHigh : threadObservable ctx observer victim = false)
     (hTeardownProj : projectState ctx observer (cancelIpcBlocking st victim tcb)
         = projectState ctx observer st)
-    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb) :
+    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st := by
@@ -321,7 +351,7 @@ theorem cancelIpcBlockingOnCore_cancellation_NI
       descheduleAtPlacement_preserves_projection ctx observer _ victim hVictimHigh]
   unfold cancelIpcBlockingReclaimed
   rw [descheduleUnboundHolder_preserves_projection ctx observer st victim tcb hHolderHigh,
-      cancelIpcBlockingMigrated_preserves_projection]
+      cancelIpcBlockingMigrated_preserves_projection ctx observer victim tcb st hCtxHigh]
   exact hTeardownProj
 
 /-- WS-SM SM6.E (∀-core form): the cross-core cancellation of a high victim
@@ -337,7 +367,8 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
     (hTeardownProj : ∀ c : CoreId,
         projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c
           = projectStateOnCore ctx observer st c)
-    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb) :
+    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     lowEquivalent_smp ctx observer
       (cancelIpcBlockingOnCore victim tcb executingCore st).1 st := by
   intro c
@@ -350,7 +381,7 @@ theorem cancelIpcBlockingOnCore_cancellation_NI_smp
   unfold cancelIpcBlockingReclaimed
   rw [descheduleUnboundHolder_preserves_projectionOnCore ctx observer st victim tcb c
         hHolderHigh,
-      cancelIpcBlockingMigrated_preserves_projectionOnCore]
+      cancelIpcBlockingMigrated_preserves_projectionOnCore ctx observer victim tcb st c hCtxHigh]
   exact hTeardownProj c
 
 /-- WS-SM SM6.E (boot-core form, fully substantive): cancelling a `.ready`
@@ -404,15 +435,19 @@ theorem cancelDonatedDonationOnCore_cancellation_NI
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hReturnProj : ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
         projectState ctx observer stR = projectState ctx observer st)
+    (hCtxHigh : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
+        objectObservable ctx observer scId.toObjId = false)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold cancelDonatedDonationOnCore at h
   split at h
-  · split at h
+  · rename_i scId owner hBind
+    split at h
     · cases h
     · injection h with h
       subst h
-      rw [migrateSchedContextReplenishment_preserves_projection]
+      rw [migrateSchedContextReplenishment_preserves_projection ctx observer _ _ _ _
+        (hCtxHigh scId owner hBind)]
       exact hReturnProj _ (by assumption)
   · cases h
 
@@ -424,17 +459,21 @@ theorem cancelDonatedDonationOnCore_cancellation_NI_smp
     (hReturnProj : ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
         ∀ c : CoreId, projectStateOnCore ctx observer stR c
           = projectStateOnCore ctx observer st c)
+    (hCtxHigh : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
+        objectObservable ctx observer scId.toObjId = false)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     lowEquivalent_smp ctx observer st' st := by
   intro c
   show projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c
   unfold cancelDonatedDonationOnCore at h
   split at h
-  · split at h
+  · rename_i scId owner hBind
+    split at h
     · cases h
     · injection h with h
       subst h
-      rw [migrateSchedContextReplenishment_preserves_projectionOnCore]
+      rw [migrateSchedContextReplenishment_preserves_projectionOnCore ctx observer _ _ _ _ c
+        (hCtxHigh scId owner hBind)]
       exact hReturnProj _ (by assumption) c
   · cases h
 
@@ -757,15 +796,20 @@ Registered as WS-RR RR8.8 debt rather than papered over here.
 **What this arm carries.**  `v0.36.136` retired the reclaim's holder abort (the
 holder of a returned donation keeps waiting, unbound, as seL4 MCS leaves it), so
 the reply arm no longer reaches the queue-neighbour gap through the holder: its
-object writes are all the victim's own or erased by the projection, and the one
-labelling obligation it carries is `descheduledHolderHigh`, the scheduler side.
+object writes are all the victim's own or erased by the projection, and it
+carries two labelling obligations.  The first is `descheduledHolderHigh`, the
+scheduler side.  The second (WS-ZA ZA6.30) is `cancelledDonationContextHigh`:
+the returned context's release entry moves to its owner's home core, and the
+projection keeps release cores, so that context must be hidden.
 The reclaim takes the holder it unbound off the scheduler slot the state places
 it on, and a run-queue removal is filtered by the removed thread's own
 observability.  It quantifies over the resolution (the holder comes out of
 `cancelledCallerDonation?`, not a parameter), it is discharged outright where no
 donation is resolved (`descheduledHolderHigh_of_no_donation`), and it closes in
 general from the `Call`-time flow check
-(`descheduledHolderHigh_of_donationOwnerFlowsToHolder`). -/
+(`descheduledHolderHigh_of_donationOwnerFlowsToHolder`).  The second is
+discharged where no donation is resolved
+(`cancelledDonationContextHigh_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
@@ -776,14 +820,15 @@ theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb) :
+    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st :=
   cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
     (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
       hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv)
-    hHolderHigh
+    hHolderHigh hCtxHigh
 
 -- ============================================================================
 -- §6  WS-RR RR8.9 — the deschedule obligation, discharged from the labelling

@@ -647,10 +647,20 @@ assume it**: a new syscall arm states its stage as `RunQueueEntryStageOn L`
 (a plain `RunQueueEntryStage` lifts by `.toOn`), only a step that deschedules
 the caller before its scheduling point may set the caller's yield-to code, and
 the syscall entry's `yieldLinkedNotResident` payoff takes
-`currentNotResidentElsewhere`.  ZA6.30 puts
-the per-core tick, drain, yield charge and yieldTo inside the non-interference
-step relation, and the rest of ZA6 covers the other entries and makes the rule
-standing.  Plan:
+`currentNotResidentElsewhere`.
+Since `v0.36.193`, ZA6.30 puts the per-core tick, drain, charges, yield,
+yieldTo, activation, reschedule SGI, residency settle and the reschedule and
+secondary entries inside the per-core non-interference step relation
+(`PerCoreNonInterferenceStep`,
+`InformationFlow/PerCoreSchedulerNonInterference.lean`), and the projection
+keeps each scheduling context's release core and release time.  **New code
+must assume it**: a release-queue edit is invisible only at a hidden context
+(`projectState_of_releaseOnlyWrite` takes `releaseWriteAt s` and `s` hidden),
+so a step that moves an observable context's release entry is a visible
+write; a new per-core scheduler step adds a `PerCoreSchedulerOperation`
+variant, a `PerCoreNonInterferenceStep` constructor and its theorem, and
+`niStepCoverage_perCore_count` moves with them.  The rest of ZA6 covers the
+other entries and makes the rule standing.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA6).
 

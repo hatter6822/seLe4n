@@ -556,12 +556,13 @@ theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfO
     ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
       SystemState.updateSchedContext_objects_ne _ _ _ k
         (fun e => by rw [← e, hSc] at hk; cases hk) hInv⟩
-  -- The purge writes contexts' release fields alone, which the projection strips.
+  -- The purge writes release fields alone: the hidden context's own, and its
+  -- queue neighbours' next links, which the projection strips.
   refine Eq.trans (hiddenObjectsWrite.updateTcb (ctx := ctx) (observer := observer) _ tid _
     (SchedContextOps.purgeReplenishment_objects_invExt _ _ hI1) hT).projection ?_
   exact (projectState_of_releaseOnlyWrite ctx observer
     (SchedContextOps.purgeReplenishment_releaseOnlyWrite _ scId)
-    (SchedContextOps.purgeReplenishment_agree _ scId)).trans hA.projection
+    (releaseWriteAt.releaseRemoveAnywhere _ scId) hSc).trans hA.projection
 
 /-- **A finalised thread's notification unbind is invisible** when the thread
 and its notification are hidden; it keeps the thread's IPC state, its
@@ -1215,6 +1216,24 @@ theorem descheduledHolderHigh_of_replyHeadHeldByServer (ctx : LabelingContext)
     exact hBlockingChainHigh s c holder hHigh (by
       unfold PriorityInheritance.blockingServer; rw [hT]; exact hS)
 
+/-- WS-ZA ZA6.30: **the context a finalised caller's cancel returns is the one its
+reply heads**, so a hidden head context discharges the migration's labelling
+obligation (`cancelledDonationContextHigh`): the cancel resolves no donation
+unless the reply heads a context (`replyCallerFinalisable_cases`). -/
+theorem cancelledDonationContextHigh_of_replyHeadHidden (ctx : LabelingContext)
+    (observer : IfObserver) {s : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} (hX : s.getObject? x = some (.reply r))
+    (hF : replyCallerFinalisable s x r c t = true)
+    (hHead : ∀ sc, r.next = some (.head sc) → objectObservable ctx observer sc.toObjId = false) :
+    cancelledDonationContextHigh ctx observer s c t := by
+  intro scId holder hRes
+  rcases replyCallerFinalisable_cases hX hF with ⟨-, hD⟩ |
+      ⟨s', sc, hd, ht, hN, -, -, -, -, -, -, hD⟩
+  · rw [hD] at hRes; cases hRes
+  · rw [hD] at hRes
+    cases hRes
+    exact hHead _ hN
+
 /-- **A reply-blocked caller's cancel is invisible** when the caller is hidden
 and so is every server on its blocking chain: the cancel's reply arm, with the
 donation return a head reply makes (`cancelIpcBlocking_blockedOnReply_preserves_projection`),
@@ -1231,7 +1250,10 @@ theorem finaliseReplyCallerCancel_hidden (ctx : LabelingContext) (observer : IfO
       threadObservable ctx observer t = false →
       PriorityInheritance.blockingServer s t = some server →
       threadObservable ctx observer server = false)
-    (hT : s.getTcb? c = some t) (hHigh : threadObservable ctx observer c = false) :
+    (hT : s.getTcb? c = some t) (hHigh : threadObservable ctx observer c = false)
+    (hHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+      objectObservable ctx observer sc.toObjId = false) :
     projectState ctx observer (finaliseReplyCallerCancel s c t) = projectState ctx observer s := by
   unfold finaliseReplyCallerCancel
   split
@@ -1248,7 +1270,9 @@ theorem finaliseReplyCallerCancel_hidden (ctx : LabelingContext) (observer : IfO
         unfold cancelIpcBlockingReclaimed
         rw [descheduleUnboundHolder_preserves_projection ctx observer s _ t
           (descheduledHolderHigh_of_replyHeadHeldByServer ctx observer hX hF hHS hT
-            hBlockingChainHigh hHigh), cancelIpcBlockingMigrated_preserves_projection, hP1]
+            hBlockingChainHigh hHigh), cancelIpcBlockingMigrated_preserves_projection ctx observer
+          c t s (cancelledDonationContextHigh_of_replyHeadHidden ctx observer hX hF (fun sc => hHead r sc hX)),
+          hP1]
       have hI1 := cancelIpcBlockingReclaimed_objects_invExt c t s
         (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt s c t hInv)
       rw [finaliseReplyCancel_eq hX hF]
@@ -1283,7 +1307,10 @@ theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserv
     (hNp : ∀ b, t.ntfnPrev = some b → objectObservable ctx observer b.toObjId = false)
     (hNx : ∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false)
     (hQp : ∀ p, t.queuePPrev = some (.tcbNext p) → objectObservable ctx observer p.toObjId = false)
-    (hQn : ∀ b, t.queueNext = some b → objectObservable ctx observer b.toObjId = false) :
+    (hQn : ∀ b, t.queueNext = some b → objectObservable ctx observer b.toObjId = false)
+    (hHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+      objectObservable ctx observer sc.toObjId = false) :
     projectState ctx observer (finaliseThreadCancel s tid) = projectState ctx observer s ∧
       (finaliseThreadCancel s tid).objects.invExt := by
   have hEnd : ∀ e q, objectObservable ctx observer e = false →
@@ -1315,7 +1342,7 @@ theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserv
   · next e hB => exact hEnd e false (hW e (by simp [waitsOn, hB]))
   · next e hB => exact hEnd e false (hW e (by simp [waitsOn, hB]))
   · exact ⟨finaliseReplyCallerCancel_hidden ctx observer hInv hValid hIdx hSet
-      hBlockingChainHigh hT hThr, (finaliseReplyCallerCancel_binding hInv hT).1⟩
+      hBlockingChainHigh hT hThr hHead, (finaliseReplyCallerCancel_binding hInv hT).1⟩
   · exact ⟨rfl, hInv⟩
 
 /-- **A finalised thread's IPC cancel keeps the object index complete and well
@@ -1467,13 +1494,16 @@ theorem finaliseReplyWaiter_hidden (ctx : LabelingContext) (observer : IfObserve
       PriorityInheritance.blockingServer s t = some server →
       threadObservable ctx observer server = false)
     (hT : s.getTcb? w = some t) (hObj : objectObservable ctx observer w.toObjId = false)
-    (hThr : threadObservable ctx observer w = false) :
+    (hThr : threadObservable ctx observer w = false)
+    (hHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+      objectObservable ctx observer sc.toObjId = false) :
     projectState ctx observer (finaliseReplyWaiter s w t) = projectState ctx observer s := by
   obtain ⟨hI1, -, -⟩ := finaliseReplyCallerCancel_objectIndexFacts s w t hInv hIdx hSet
   unfold finaliseReplyWaiter
   rw [finaliseThreadSuspend_hidden ctx observer _ w hI1 hObj hThr]
   exact finaliseReplyCallerCancel_hidden ctx observer hInv hValid hIdx hSet hBlockingChainHigh
-    hT hThr
+    hT hThr hHead
 
 /-- **What a waiter's end leaves in another thread's binding**: it is still a
 thread, keeping its context code or — a head reply's pop taking the context from
@@ -1522,7 +1552,10 @@ theorem waiterEndKeeps.step {ctx : LabelingContext} {observer : IfObserver}
       threadObservable ctx observer server = false)
     (hWait : ∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some x →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false)
+      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
+      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+        objectObservable ctx observer sc.toObjId = false)
     (h : waiterEndKeeps ctx observer st x code s) {w : SeLe4n.ThreadId} {t : TCB}
     (hT : s.getTcb? w = some t) (hE : replyWaiterEndable s x w t = true) :
     waiterEndKeeps ctx observer st x code (finaliseReplyWaiter s w t) := by
@@ -1533,13 +1566,13 @@ theorem waiterEndKeeps.step {ctx : LabelingContext} {observer : IfObserver}
     unfold PriorityInheritance.blockingServer; rw [hT]
     show t.blockingServer? = some x
     rw [← ofOptCode_replyCallerServerCode, hS]; rfl
-  obtain ⟨hObj, hThr⟩ := hWait s w hBs
+  obtain ⟨hObj, hThr, hHd⟩ := hWait s w hBs
   have hF := finaliseReplyWaiter_objectIndexFacts s w t hInv hIdx hSet
   have hxw : x ≠ w := fun e => hNe (by rw [e])
   obtain ⟨tx', hTx', hc'⟩ := finaliseReplyWaiter_otherBinding hInv hT hxw hTx
   refine ⟨hF.1, hF.2.1, hF.2.2, ?_, tx', hTx', ?_⟩
   · rw [finaliseReplyWaiter_hidden ctx observer hInv hValid hIdx hSet hBlockingChainHigh hT hObj
-      hThr]; exact hP
+      hThr (hHd t hT)]; exact hP
   · rcases hc' with e | e
     · rw [e]; exact hc
     · exact Or.inr e
@@ -1554,7 +1587,10 @@ theorem waiterEndKeeps.walk {ctx : LabelingContext} {observer : IfObserver}
       threadObservable ctx observer server = false)
     (hWait : ∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some x →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false) :
+      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
+      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+        objectObservable ctx observer sc.toObjId = false) :
     ∀ (fuel : Nat) (s : SystemState), waiterEndKeeps ctx observer st x code s →
       waiterEndKeeps ctx observer st x code (finaliseReplyWaiters x fuel s)
   | 0, s, h => h
@@ -1583,7 +1619,10 @@ theorem waiterEndKeeps.endAll {ctx : LabelingContext} {observer : IfObserver}
       threadObservable ctx observer server = false)
     (hWait : ∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some x →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false)
+      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
+      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+        objectObservable ctx observer sc.toObjId = false)
     (h : waiterEndKeeps ctx observer st x code s) :
     waiterEndKeeps ctx observer st x code
       (finaliseThreadEndWaiters (finaliseThreadReturnLoan s x) x) := by
@@ -1622,7 +1661,9 @@ notification, its scheduling context, the notification or endpoint it waits on
 and its neighbours in that queue, and the context its reply heads (a head reply's
 pop hands that context back to it, and the reservation unbind then writes it) —
 each hidden; every thread that waits on it for a reply, as an object and as a
-thread (the waiters' end cancels and suspends each) — and, since the suspend takes it
+thread (the waiters' end cancels and suspends each), with the context that
+waiter's reply heads (the cancel moves that context's release entry to its owner's
+home core, and the projection keeps release cores) — and, since the suspend takes it
 off whichever core holds it, the thread is hidden as a thread too. -/
 def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
@@ -1641,7 +1682,10 @@ def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
       objectObservable ctx observer sc.toObjId = false) ∧
     (∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some ⟨x.val⟩ →
-      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false) ∧
+      objectObservable ctx observer w.toObjId = false ∧ threadObservable ctx observer w = false ∧
+      ∀ t, s.getTcb? w = some t → ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+        s.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) → r.next = some (.head sc) →
+        objectObservable ctx observer sc.toObjId = false) ∧
     threadObservable ctx observer ⟨x.val⟩ = false
 
 /-- **What a scheduling context's finalisation writes, besides the context**:
@@ -1719,6 +1763,9 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
       hBlockingChainHigh h8 hX
       (by rw [e1]; exact h3) (by rw [e2]; exact h4) (by rw [e3]; exact h5)
       (by rw [e4]; exact h6) (by rw [e5]; exact h7)
+      (fun r sc hR hN => by
+        rw [e7, SystemState.getObject?_eq_getElem] at hR
+        exact h9 r sc (by rw [SystemState.getObject?_eq_getElem]; exact hRp _ r hR) hN)
     obtain ⟨t2, hT2, f2⟩ := finaliseThreadCancel_scBinding hI1 hT1
     -- The loan return and the waiters' end.
     obtain ⟨hIdx2, hSet2⟩ := finaliseThreadCancel_objectIndexFacts (tid := ⟨x.val⟩) hI1 hIdx1 hSet1
@@ -1874,7 +1921,8 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
   · rfl
 
 /-- **What a reply's finalisation writes, besides the reply**: the caller waiting
-on it, or the receiver that has it stashed — hidden.  The cancel's other writes
+on it, or the receiver that has it stashed — hidden, and the context the reply
+heads, whose release entry the cancel's migration moves.  The cancel's other writes
 are stack links and reply-waiter links, which the projection strips, and the
 boost revert's are threads on the caller's blocking chain, which
 `hBlockingChainHigh` puts out of sight. -/
@@ -1883,7 +1931,9 @@ def replyFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
   (∀ r, st.getObject? x = some (.reply r) → r.callerCode ≠ 0 →
     threadObservable ctx observer (⟨r.callerCode - 1⟩ : SeLe4n.ThreadId) = false) ∧
   (∀ (tid : SeLe4n.ThreadId) (t : TCB), st.getTcb? tid = some t →
-    t.pendingReceiveReplyCode = x.val + 1 → objectObservable ctx observer tid.toObjId = false)
+    t.pendingReceiveReplyCode = x.val + 1 → objectObservable ctx observer tid.toObjId = false) ∧
+  (∀ r sc, st.getObject? x = some (.reply r) → r.next = some (.head sc) →
+    objectObservable ctx observer sc.toObjId = false)
 
 /-- **A stashed reply's unlink is invisible** when the receiver holding it is
 hidden: one rewrite in that receiver's slot (`hiddenObjectsWrite.updateTcb`). -/
@@ -1929,7 +1979,7 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
   split
   · next r hX =>
     split
-    · exact finaliseReplyUnstash_hidden ctx observer hInv hH.2
+    · exact finaliseReplyUnstash_hidden ctx observer hInv hH.2.1
     · next h0 =>
       dsimp only
       split
@@ -1946,7 +1996,9 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
             unfold cancelIpcBlockingReclaimed
             rw [descheduleUnboundHolder_preserves_projection ctx observer st _ t
               (descheduledHolderHigh_of_donationOwnerFlowsToHolder ctx observer st _ t hFlow hOwed
-                hHigh), cancelIpcBlockingMigrated_preserves_projection, hP1]
+                hHigh), cancelIpcBlockingMigrated_preserves_projection ctx observer _ t st
+                (cancelledDonationContextHigh_of_replyHeadHidden ctx observer hX hF (fun sc => hH.2.2 r sc hX)),
+                hP1]
           have hI1 := cancelIpcBlockingReclaimed_objects_invExt ⟨r.callerCode - 1⟩ t st
             (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st ⟨r.callerCode - 1⟩ t hInv)
           have hRev : projectState ctx observer
@@ -2154,7 +2206,9 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
       rw [SystemState.getObject?_eq_getElem] at hs ⊢; exact hBk hs (fun _ e => by cases e)))
     (fun _ => ⟨fun r hr => (hRF h0).1 r (by
         rw [SystemState.getObject?_eq_getElem] at hr ⊢; exact hBk hr (fun _ e => by cases e)),
-      fun tid t ht => (hRF h0).2 tid t (by rw [← hT0]; exact ht)⟩)
+      fun tid t ht => (hRF h0).2.1 tid t (by rw [← hT0]; exact ht),
+      fun r sc hr hN => (hRF h0).2.2 r sc (by
+        rw [SystemState.getObject?_eq_getElem] at hr ⊢; exact hBk hr (fun _ e => by cases e)) hN⟩)
     (fun holder owner scId hD => hFlow holder owner scId (by
       unfold replyDonationReturn? lookupTcb at hD ⊢; rw [← hT0]; exact hD))
     hValid

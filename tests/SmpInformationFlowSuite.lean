@@ -13,6 +13,7 @@ import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
 import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
+import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
 import SeLe4n.Testing.StateBuilder
 -- WS-SM SM9.B.9: the refusal seam.  §10 exercises `recordSyscallRefusal` and
 -- the boundary that calls it, which is where a refused declassification's
@@ -363,6 +364,29 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @kernelOperationPerCoreNiTheorem
 #check @niStepCoverage_perCore_injective
 #check @niStepCoverage_perCore_count
+#check @timerTickOnCore_lowEquivalent
+#check @processReplenishmentsDueOnCore_lowEquivalent
+#check @budgetExhaustOnCore_lowEquivalent
+#check @timerTickBudgetOnCore_lowEquivalent
+#check @yieldChargeOnCore_lowEquivalent
+#check @yieldOnCore_lowEquivalent
+#check @activateThreadOnCore_lowEquivalent
+#check @activateThreadOnCore_lowEquivalent_pair
+#check @schedContextYieldToOnCore_lowEquivalent
+#check @handleRescheduleSgiOnCore_lowEquivalent
+#check @perCoreRescheduleStep_lowEquivalent
+#check @perCoreRescheduleEntryState_lowEquivalent
+#check @perCoreRescheduleEntry_commits
+#check @secondaryKernelMain_commits
+#check @settleResidencyOnCore_lowEquivalent
+#check @deferResidentElsewhere_lowEquivalent
+#check @releaseQueuedOn_eq_of_projectObjects
+#check @projectObjects_of_releaseWriteAt
+#check @PerCoreOperation.mem_all
+#check @perCoreOperationNiTheorem_injective
+#check @PerCoreNonInterferenceStep
+#check @perCoreNonInterferenceStep_sound
+#check @secondaryKernelMain_covered
 #check @perCoreConfinementDerived
 #check @perCoreConfinementDerived_count
 #check @niStepCoverage_perCore
@@ -8347,6 +8371,11 @@ private def runPhaseSurfaceChecks : IO Unit := do
      have _e := perCoreConfinementNotDerived_count
      have _s := niStepCoverage_perCore_count
      decide (KernelOperation.all.eraseDups.length = KernelOperation.all.length))
+  -- WS-ZA ZA6.30: the per-core step relation's coverage — the kernel operations
+  -- plus the scheduler steps, fifty distinct theorems, executed rather than
+  -- only elaborated.
+  assertBool "per-core NI coverage names fifty distinct theorems"
+    (decide ((PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 50))
 
 
 

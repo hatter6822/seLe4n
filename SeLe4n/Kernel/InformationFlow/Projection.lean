@@ -280,18 +280,21 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- through a low-visible scheduling context for as long as the loan lasts —
       -- strictly longer than the `scReply` head, which moves with every push.
       --
-      -- **WS-ZA ZA6.3**: strip the release-queue links — `releaseNextCode`
-      -- (seL4-MCS's intrusive release-queue successor), `releaseCoreCode` (the
-      -- core whose queue holds the context) and `releaseAt` (its place in that
-      -- queue).  One core's release queue interleaves contexts of every domain,
-      -- so a low context's successor link can name a high context, and its
-      -- place moves when a high context is inserted ahead of it or drained.
-      -- Erased as the run-queue links are on the TCB arm (WS-ZA ZA4.5), and in
-      -- the cut that adds them: the queue is the scheduler's, and an observer
-      -- sees of it only what the scheduler's own projection carries.
+      -- **WS-ZA ZA6.3 / ZA6.30**: strip the release-queue successor link —
+      -- `releaseNextCode` (seL4-MCS's intrusive release-queue successor).  One
+      -- core's release queue interleaves contexts of every domain, so a low
+      -- context's successor link can name a high context; it is erased as the
+      -- run-queue links are on the TCB arm (WS-ZA ZA4.5).  The context's own
+      -- membership is kept: `releaseCoreCode` (the core whose queue holds it)
+      -- and `releaseAt` (its release time, its place in that queue).  So each
+      -- core's release queue is projected filtered to the observable contexts,
+      -- in release order, as `projectRunnable` filters the run queue
+      -- (`releaseQueuedOn_eq_of_projectObjects`): the drain refills an
+      -- observable context exactly when it is on the queue, and two
+      -- low-equivalent states agree on that.
       .schedContext { sc with boundThreadCode := 0, scReply := none,
                               donationOrigin := none,
-                              releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0,
+                              releaseNextCode := 0,
                               -- WS-ZA ZA6.6: the yield link's context end
                               -- (seL4-MCS's `scYieldFrom`) names the thread that
                               -- yielded to this context — a possibly-high
