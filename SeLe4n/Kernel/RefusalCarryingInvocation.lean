@@ -441,11 +441,17 @@ theorem resumeAdmitted_retirePendingFault {st : SystemState}
     | some tf =>
       simp only [hF, Option.isNone_some, Bool.false_or, Bool.and_eq_true] at h
       unfold Lifecycle.Suspend.resumeAdmitted
-      simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
-      rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
-      simp only [TCB.withRestartFrame_threadState, Option.isNone_none, Bool.true_or,
-        Bool.and_true]
-      exact h.1
+      cases hR : st.machine.residentOnSomeCore tid
+      · simp only [retirePendingFaultForResume, hT, hF, hR, Bool.false_eq_true, if_false,
+          applyFaultRestart]
+        rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
+        simp only [TCB.withRestartFrame_threadState, Option.isNone_none, Bool.true_or,
+          Bool.and_true]
+        exact h.1
+      · simp only [retirePendingFaultForResume, hT, hF, hR, if_true, discardPendingFault]
+        rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
+        simp only [Option.isNone_none, Bool.true_or, Bool.and_true]
+        exact h.1
 
 /-- WS-ZA ZA5.2: `dispatchInvocationBy`, refusal-carrying, with each arm whose
 write has been split into its checks and its in-slot write

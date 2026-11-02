@@ -2227,6 +2227,39 @@ private def runAbandonPlacementChecks : IO Unit := do
     (!(st'.queuedOn c2 orphan) && !(st'.queuedOn c3 orphan) &&
       !((st'.runQueueWalk c2).contains orphan))
 
+/-- WS-ZA ZA6.22: a fault-blocked thread whose fault IPC is cancelled leaves the
+cancellation with no fault record, so the reply seam answers its next ordinary
+Call through the ordinary branch (`threadHasPendingFault`); before the clear it
+kept the record and the server it called could set its PC or abandon it.  A
+resume of a thread some core still holds retires the record without writing
+the restart frame. -/
+private def runCancelledFaultChecks : IO Unit := do
+  IO.println "--- a cancelled fault IPC retires the fault (ZA6.22) ---"
+  match deliveryE with
+  | .error e => assertBool s!"delivery pipeline: {e}" false
+  | .ok d =>
+      assertBool "the delivered faulter carries its fault before the cancel"
+        (threadHasPendingFault d.afterFault faulter)
+      match d.afterFault.getTcb? faulter with
+      | none => assertBool "the faulter has a TCB" false
+      | some tcb =>
+          let stC := Lifecycle.Suspend.cancelIpcBlocking d.afterFault faulter tcb
+          assertBool "the cancel makes the faulter ready"
+            (ipcStateOf stC faulter == some .ready)
+          assertBool "the cancel retires the fault record"
+            (pendingFaultOf stC faulter == none)
+          assertBool "a reply to the cancelled faulter cannot take the fault branch"
+            (!threadHasPendingFault stC faulter)
+      let stR : SystemState :=
+        { d.afterFault with machine := d.afterFault.machine.setResidentOnCore c2 (some faulter) }
+      let stRet := retirePendingFaultForResume stR faulter
+      assertBool "a resume of a thread another core holds retires the fault"
+        (pendingFaultOf stRet faulter == none)
+      assertBool "and writes no restart frame into it"
+        (savedPcOf stRet faulter == savedPcOf stR faulter &&
+          ((stRet.getTcb? faulter).map (·.registerContext) ==
+            (stR.getTcb? faulter).map (·.registerContext)))
+
 def runFaultHandlingChecks : IO Unit := do
   IO.println "WS-RR RR4.26 — Fault handling suite (fault IPC, resume, restart, progress)"
   IO.println "===================================="
@@ -2249,6 +2282,7 @@ def runFaultHandlingChecks : IO Unit := do
   runResumeChecks
   runRestartChecks
   runAbandonPlacementChecks
+  runCancelledFaultChecks
   runReplySeamChecks
   runFaultDonationChecks
   runProgressChecks

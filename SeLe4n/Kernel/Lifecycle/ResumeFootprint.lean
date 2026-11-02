@@ -107,10 +107,13 @@ theorem retirePendingFaultForResume_determineTargetCore (st : SystemState)
     cases hF : tcb.pendingFault with
     | none => rfl
     | some tf =>
-      simp only [applyFaultRestart]
-      unfold determineTargetCore
-      rw [SystemState.updateTcb_getTcb?_self st t _ hInv, hT, Option.map_some]
-      rfl
+      simp only []
+      split
+      · unfold discardPendingFault determineTargetCore
+        rw [SystemState.updateTcb_getTcb?_self st t _ hInv, hT, Option.map_some]
+      · unfold applyFaultRestart determineTargetCore
+        rw [SystemState.updateTcb_getTcb?_self st t _ hInv, hT, Option.map_some]
+        rfl
 
 /-- **WS-LS LS2.3**: so the resume footprint resolved at the entry state is the
 one the arm's transition runs under after the retire. -/

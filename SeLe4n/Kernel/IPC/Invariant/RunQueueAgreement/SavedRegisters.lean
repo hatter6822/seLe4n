@@ -36,7 +36,7 @@ WS-ZA ZA6.15 adds the final delete's two kinds of write: the yield completion
 (`completeYieldFrom`, whose yielder is linked, so no core holds it at an entry
 boundary: `offCoreFree_of_yieldCode`) and the cancellation restore
 (`restoreToReadyCancelled`, of a thread blocked in IPC).  The dispatch's arms
-are ZA6.22 and ZA6.23, which consume these lemmas, with ZA6.16's invariant that
+are ZA6.23 and ZA6.24, which consume these lemmas, with ZA6.16's invariant that
 a thread blocked in IPC is resident on no core and ZA6.21's that every core's
 resident thread has a TCB.
 -/
@@ -288,5 +288,51 @@ theorem restoreToReadyCancelled_savedRegsKeptOffCore {e : CoreId} {base st : Sys
   revert hK hR
   unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
   exact savedRegsKeptOffCore_updateTcb hInv hFree
+
+/-! ### The resume's fault retire -/
+
+/-- WS-ZA ZA6.22: **the resume's fault retire writes the saved registers of no
+thread another core holds**, given the resumed thread is current on no other
+core.  A thread some core holds resident has its fault record retired without
+the restart frame (`discardPendingFault`), which writes no registers, so the
+frame is written only into a thread no core holds. -/
+theorem retirePendingFaultForResume_savedRegsKeptOffCore {e : CoreId} {st : SystemState}
+    {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hCur : ∀ d, d ≠ e → st.scheduler.currentOnCore d ≠ some tid) :
+    savedRegsKeptOffCore e st (retirePendingFaultForResume st tid) := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    rw [show retirePendingFaultForResume st tid = st by
+      simp only [retirePendingFaultForResume, hT]]
+    exact savedRegsKeptOffCore_refl e st
+  | some tcb =>
+    cases hF : tcb.pendingFault with
+    | none =>
+      rw [show retirePendingFaultForResume st tid = st by
+        simp only [retirePendingFaultForResume, hT, hF]]
+      exact savedRegsKeptOffCore_refl e st
+    | some tf =>
+      cases hR : st.machine.residentOnSomeCore tid with
+      | true =>
+        rw [show retirePendingFaultForResume st tid = discardPendingFault st tid by
+          simp only [retirePendingFaultForResume, hT, hF, hR, if_true]]
+        refine savedRegsKeptOffCore_of_savedRegs_eq fun t => ?_
+        by_cases hNe : t = tid
+        · subst hNe
+          unfold SystemState.savedRegs
+          rw [discardPendingFault_getTcb?_self st t tcb hT hInv, hT]
+          rfl
+        · unfold discardPendingFault
+          exact savedRegs_updateTcb_ne hInv hNe
+      | false =>
+        rw [show retirePendingFaultForResume st tid =
+            applyFaultRestart st tid (Architecture.faultRestartFrameOfContext tf.context) by
+          simp only [retirePendingFaultForResume, hT, hF, hR, Bool.false_eq_true, if_false]]
+        have hFree : offCoreFree e st tid := fun d hd =>
+          ⟨hCur d hd, (MachineState.residentOnSomeCore_eq_false_iff _ _).mp hR d⟩
+        unfold applyFaultRestart
+        exact savedRegsKeptOffCore_updateTcb hInv hFree
+          (currentKeptOffCore_of_eq fun _ _ => by rw [SystemState.updateTcb_scheduler])
+          (residentKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine]))
 
 end SeLe4n.Kernel

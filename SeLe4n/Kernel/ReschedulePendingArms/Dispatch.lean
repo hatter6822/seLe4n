@@ -312,7 +312,7 @@ theorem retirePendingFaultForResume_machine (st : SystemState) (tid : SeLe4n.Thr
     (retirePendingFaultForResume st tid).machine = st.machine := by
   unfold retirePendingFaultForResume
   repeat' split
-  all_goals simp [applyFaultRestart_machine_eq]
+  all_goals simp [applyFaultRestart_machine_eq, discardPendingFault_machine_eq]
 
 theorem vspaceMapFromFrameCap_machine_eq {tid : SeLe4n.ThreadId} {ec : CoreId}
     {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}

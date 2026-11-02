@@ -779,7 +779,9 @@ theorem retirePendingFaultForResume_runQueueStage (st : SystemState) (tid : SeLe
   unfold retirePendingFaultForResume
   split
   · split
-    · unfold applyFaultRestart; exact RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
+    · split
+      · unfold discardPendingFault; exact RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
+      · unfold applyFaultRestart; exact RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
     · exact RunQueueStage.refl _
   · exact RunQueueStage.refl _
 

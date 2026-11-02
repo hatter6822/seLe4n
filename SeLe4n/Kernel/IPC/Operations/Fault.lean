@@ -626,6 +626,34 @@ theorem applyFaultRestart_clears_pendingFault (st : SystemState)
   cases h
   rfl
 
+/-- WS-ZA ZA6.22: **retire a thread's fault record and nothing else** — the
+fault cleared, the saved registers, the scheduler and the machine untouched.
+The resume's retire takes this branch for a thread some core still holds
+(`retirePendingFaultForResume`). -/
+def discardPendingFault (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  st.updateTcb tid fun tcb => { tcb with pendingFault := none }
+
+theorem discardPendingFault_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (discardPendingFault st tid).objects.invExt :=
+  SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+
+@[simp] theorem discardPendingFault_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (discardPendingFault st tid).scheduler = st.scheduler :=
+  SystemState.updateTcb_scheduler st tid _
+
+@[simp] theorem discardPendingFault_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (discardPendingFault st tid).machine = st.machine :=
+  SystemState.updateTcb_machine st tid _
+
+/-- The retired thread is its record with the fault cleared. -/
+theorem discardPendingFault_getTcb?_self (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) :
+    (discardPendingFault st tid).getTcb? tid = some { tcb with pendingFault := none } := by
+  unfold discardPendingFault
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hObjInv, hTcb]
+  rfl
+
 
 -- ============================================================================
 -- §7  Review round (PR #887) — configuring a handler, and resuming past a fault
@@ -866,12 +894,26 @@ the faulting instruction with the register window it held at the trap
 configuration was repaired in between (`setThreadFaultHandlerOp`), the
 re-executed instruction faults again and is delivered this time; if not, it
 suspends again — either way through the fault path, never through a stale
-fault.  A thread carrying no fault is untouched. -/
+fault.  A thread carrying no fault is untouched.
+
+WS-ZA ZA6.22: a thread whose registers some core still holds
+(`MachineState.residentOnSomeCore`: a core it ran on was vacated by a remote
+suspend and has not yet taken the entry that saves them) has its fault record
+retired without the restart frame (`discardPendingFault`).  That core's save
+writes its live registers over the TCB's, so a frame written here would be lost
+while the record it answers was cleared; and the live registers are the
+thread's context, not the fault window, because it ran after the fault.  Once
+every cancellation restore retires the record (`TCB.restoredToReady`) a thread
+that ran carries none, so the branch is the fail-safe for a state the restores
+already exclude; it is what makes the resume's register write land only on a
+thread no core holds (`retirePendingFaultForResume_registers_of_resident`). -/
 def retirePendingFaultForResume (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
       match tcb.pendingFault with
-      | some tf => applyFaultRestart st tid (faultRestartFrameOfContext tf.context)
+      | some tf =>
+          if st.machine.residentOnSomeCore tid then discardPendingFault st tid
+          else applyFaultRestart st tid (faultRestartFrameOfContext tf.context)
       | none => st
   | none => st
 
@@ -892,11 +934,33 @@ theorem retirePendingFaultForResume_pendingFault_none (st : SystemState)
       cases hT'
       exact hF
   | some tf =>
-      have hEq : retirePendingFaultForResume st tid
-          = applyFaultRestart st tid (faultRestartFrameOfContext tf.context) := by
-        simp only [retirePendingFaultForResume, hTcb, hF]
-      rw [hEq] at hT'
-      exact applyFaultRestart_clears_pendingFault st tid _ tcb hTcb hObjInv tcb' hT'
+      cases hR : st.machine.residentOnSomeCore tid with
+      | true =>
+          have hEq : retirePendingFaultForResume st tid = discardPendingFault st tid := by
+            simp only [retirePendingFaultForResume, hTcb, hF, hR, if_true]
+          rw [hEq, discardPendingFault_getTcb?_self st tid tcb hTcb hObjInv] at hT'
+          cases hT'; rfl
+      | false =>
+          have hEq : retirePendingFaultForResume st tid
+              = applyFaultRestart st tid (faultRestartFrameOfContext tf.context) := by
+            simp only [retirePendingFaultForResume, hTcb, hF, hR, Bool.false_eq_true, if_false]
+          rw [hEq] at hT'
+          exact applyFaultRestart_clears_pendingFault st tid _ tcb hTcb hObjInv tcb' hT'
+
+/-- WS-ZA ZA6.22: after the retire step the thread carries no fault, whatever
+the store held — the form the resume's restore consumes (`TCB.restoredToReady`
+clears the record, so it rewrites nothing only on a thread carrying none). -/
+theorem retirePendingFaultForResume_noFault (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    ∀ tcb', (retirePendingFaultForResume st tid).getTcb? tid = some tcb' →
+      tcb'.pendingFault = none := by
+  cases hT : st.getTcb? tid with
+  | none =>
+      intro tcb' h
+      rw [show retirePendingFaultForResume st tid = st by
+        simp only [retirePendingFaultForResume, hT], hT] at h
+      cases h
+  | some tcb => exact retirePendingFaultForResume_pendingFault_none st tid tcb hT hObjInv
 
 /-- A thread with no fault is untouched — so on every resume of an ordinary
 suspended thread the arm is the pre-review body verbatim. -/
@@ -920,7 +984,9 @@ a field, and the resume that follows is what makes the thread runnable. -/
       | none => simp only [retirePendingFaultForResume, hT, hF]
       | some tf =>
           simp only [retirePendingFaultForResume, hT, hF]
-          exact applyFaultRestart_scheduler_eq st tid _
+          split
+          · exact discardPendingFault_scheduler_eq st tid
+          · exact applyFaultRestart_scheduler_eq st tid _
 
 -- ============================================================================
 -- §8  The trap frame's fault window, spilled into the thread (audit round;

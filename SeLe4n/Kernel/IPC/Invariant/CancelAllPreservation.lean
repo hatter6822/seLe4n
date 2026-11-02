@@ -192,25 +192,41 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
   have hFullStage := writeReturnFrameToTcb_preserves_ipcInvariantFull sRc t
     Architecture.cancelledIpcFrame hIRc hFullRc
   have hRcG : sRc.getTcb? t = some rc := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hRcAt
-  have hAgree : objectStoreAgrees (Architecture.writeReturnFrameToTcb sRc t
-      Architecture.cancelledIpcFrame) (s1.updateTcb t cancelledEndpointWaiterTcb) := by
-    intro k
+  -- WS-ZA ZA6.22: and the fault record retired, a third store of fields no
+  -- conjunct reads.
+  let sSt := Architecture.writeReturnFrameToTcb sRc t Architecture.cancelledIpcFrame
+  have hISt : sSt.objects.invExt :=
+    writeReturnFrameToTcb_preserves_objects_invExt sRc t _ hIRc
+  have hStG : sSt.getTcb? t = some (rc.withReturnFrame Architecture.cancelledIpcFrame) := by
+    show (Architecture.writeReturnFrameToTcb sRc t _).getTcb? t = _
     unfold Architecture.writeReturnFrameToTcb
-    rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hRcG]
-    show (s1.objects.insert t.toObjId _)[k]? = (sRc.objects.insert t.toObjId _)[k]?
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hIRc, hRcG]; rfl
+  have hFullClr : ipcInvariantFull (sSt.updateTcb t fun y =>
+      { y with pendingFault := none }) := by
+    rw [SystemState.updateTcb_eq_of_some hStG]
+    exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull sSt t _ _ hISt hFullStage
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hStG) rfl rfl rfl rfl rfl rfl rfl rfl rfl
+  have hAgree : objectStoreAgrees (sSt.updateTcb t fun y =>
+      { y with pendingFault := none })
+      (s1.updateTcb t cancelledEndpointWaiterTcb) := by
+    intro k
+    rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hStG]
+    show (s1.objects.insert t.toObjId _)[k]? = (sSt.objects.insert t.toObjId _)[k]?
     by_cases hk : k = t.toObjId
     · subst hk
       rw [RHTable_getElem?_eq_get?, RHTable_getElem?_eq_get?,
         RobinHood.RHTable.getElem?_insert_self _ _ _ hI1,
-        RobinHood.RHTable.getElem?_insert_self _ _ _ hIRc]
+        RobinHood.RHTable.getElem?_insert_self _ _ _ hISt]
       rfl
     · have hne : (t.toObjId == k) = false := by simp [Ne.symm hk]
       rw [RHTable_getElem?_eq_get?, RHTable_getElem?_eq_get?,
         RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hI1,
-        RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hIRc,
-        ← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?,
+        RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simp [hne]) hISt,
+        ← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?]
+      show s1.objects[k]? = (Architecture.writeReturnFrameToTcb sRc t _).objects[k]?
+      rw [Architecture.writeReturnFrameToTcb_objects_ne sRc t _ k hk hIRc,
         storeObject_objects_ne s1 sRc t.toObjId k _ hk hI1 hStoreRc]
-  exact ipcInvariantFull_of_storeAgrees hAgree hFullStage
+  exact ipcInvariantFull_of_storeAgrees hAgree hFullClr
 
 /-- **An endpoint waiter's cancel keeps the bundle.**  The pop relaxes it at the
 waiter (`endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership`) and
@@ -269,7 +285,11 @@ theorem storeEndpointWaiterCancelled_preserves_ipcInvariantFull
   refine enqueueRunnableOnCore_preserves_ipcInvariantFull _ _ t hI2 (fun tcbX hX => ?_) hFull2
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb] at hX
   cases hX
-  exact TCB.ipcState_setIpcState { tcbOffQueue tcb with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready
+  exact TCB.ipcState_setIpcState
+    { tcbOffQueue tcb with
+        pendingMessage := none
+        pendingReceiveReplyCode := 0
+        pendingFault := none } .ready
 
 -- ============================================================================
 -- §3  A notification waiter's cancel, and the unbind
