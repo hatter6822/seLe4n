@@ -438,7 +438,9 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueWindowStage.then_wake {p : Sched
         obtain ⟨y, hy, hry⟩ := hr
         rw [hx] at hy; cases hy; exact hb hry.1
     exact (RunQueueStage.then_wake pre c (fun c' h => hNC c' (hC c' h)) hB).2.1 (some p) h r
-      r'' d⟩
+      r'' d,
+    fun _ _ h r => let ⟨h1, _⟩ := pre.1 h r
+      (pre.2.2 h r).trans (enqueueRunnableOnCore_stateMono st1 _ w h1)⟩
 
 /-- **The block of core `c`'s current thread `t`**: stages, the IPC-state store
 that blocks `t`, more stages, then `t`'s deschedule — a scheduling point opened

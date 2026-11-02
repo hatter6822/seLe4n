@@ -3049,11 +3049,15 @@ theorem RunQueueFrameStage.of_invExt {P : SeLe4n.SchedContextId → Prop} {st st
 
 /-- **A step inside core `c`'s scheduling point**: it keeps the link agreement
 and keeps the point open.  A preemption's requeue of `c`'s outgoing thread is
-one; so is every stage. -/
+one; so is every stage.  Inside a preemption point it keeps the state fields
+monotone too (`StateMono`): a preemption blocks and suspends no thread (WS-ZA
+ZA6.19, the timer's readiness frame); a block point's own write is the one
+step that does not. -/
 def RunQueueWindowStage (p : SchedPoint) (st st' : SystemState) : Prop :=
   RunQueueLinkStage st st' ∧
   (st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
-    st.currentDequeuedUniqueExcept (some p) → st'.currentDequeuedUniqueExcept (some p))
+    st.currentDequeuedUniqueExcept (some p) → st'.currentDequeuedUniqueExcept (some p)) ∧
+  (∀ c, p = .preempt c → st.objects.invExt → st.runQueueRefined → StateMono st st')
 
 /-- **A dispatch on core `c`**: it keeps the link agreement and closes `c`'s
 scheduling point, leaving any other core's open. -/
@@ -3154,7 +3158,7 @@ theorem RunQueueLinkStage.of_stage {st st' : SystemState} (h : RunQueueStage st 
 /-- A stage is a step inside any core's scheduling point. -/
 theorem RunQueueStage.window {st st' : SystemState} (h : RunQueueStage st st') (p : SchedPoint) :
     RunQueueWindowStage p st st' :=
-  ⟨h.1, h.2.1 (some p)⟩
+  ⟨h.1, h.2.1 (some p), fun _ _ => h.2.2⟩
 
 /-- A stage is a kernel entry. -/
 theorem RunQueueStage.entry {st st' : SystemState} (h : RunQueueStage st st') :
@@ -3174,7 +3178,8 @@ theorem RunQueueWindowStage.trans {p : SchedPoint} {st st' st'' : SystemState}
     RunQueueWindowStage p st st'' :=
   ⟨h1.1.trans h2.1, fun h r r'' d =>
     let ⟨h', r'⟩ := h1.1 h r
-    h2.2 h' r' r'' (h1.2 h r r' d)⟩
+    h2.2.1 h' r' r'' (h1.2.1 h r r' d),
+    fun c hp h r => let ⟨h', r'⟩ := h1.1 h r; (h1.2.2 c hp h r).trans (h2.2.2 c hp h' r')⟩
 
 /-- A step inside a point that holds from a state whose object store keeps its
 invariant. -/
@@ -3183,7 +3188,7 @@ theorem RunQueueWindowStage.of_invExt {p : SchedPoint} {st st' : SystemState}
   ⟨⟨fun h r => (H h).1 h r, fun h r t => (H h).1.tables h r t, fun h r q => (H h).1.release h r q,
       fun S h r q s => (H h).1.refills S h r q s, fun h r y => (H h).1.yield h r y,
       fun h r => (H h).1.live h r⟩,
-    fun h r r' d => (H h).2 h r r' d⟩
+    fun h r r' d => (H h).2.1 h r r' d, fun c hp h r => (H h).2.2 c hp h r⟩
 
 theorem RunQueueEntryStage.trans {st st' st'' : SystemState}
     (h1 : RunQueueEntryStage st st') (h2 : RunQueueEntryStage st' st'') :
@@ -3200,7 +3205,7 @@ theorem RunQueueWindowStage.dispatch {p : SchedPoint} {st st' st'' : SystemState
   ⟨h1.1.trans h2.1, fun h r r'' d =>
     let ⟨h', r'⟩ := h1.1 h r
     h2.2.1 (some p) none (fun _ he hne => absurd (by cases he; rfl) hne) h' r' r''
-      (h1.2 h r r' (d.except _))⟩
+      (h1.2.1 h r r' (d.except _))⟩
 
 /-- A stage before a dispatch is part of it. -/
 theorem RunQueueStage.dispatch {c : CoreId} {st st' st'' : SystemState}
@@ -3267,7 +3272,7 @@ theorem RunQueueWindowStage.switch {c : CoreId} {st st' st'' : SystemState}
   ⟨h1.1.trans h2.1, fun h r r'' d =>
     let ⟨h', r'⟩ := h1.1 h r
     h2.2.1 (some (.preempt c)) none (fun _ he hne => absurd (by cases he; rfl) hne)
-      (fun h => by cases h) h' r' r'' (h1.2 h r r' (d.except _))⟩
+      (fun h => by cases h) h' r' r'' (h1.2.1 h r r' (d.except _))⟩
 
 /-- A kernel entry run from a state that has all three properties. -/
 theorem RunQueueEntryStage.run {st st' : SystemState} (h : RunQueueEntryStage st st')
@@ -4018,7 +4023,7 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
     (fun hInv => .insert hInv hO (by rw [hRaw]; rfl))
     (fun hInv => .insert hInv hO (by rw [hRaw]; simp only [objYieldCodes, hYc]))
     (by unfold SeLe4n.Model.storeObject at hS; cases hS; rfl),
-    fun hInv _ _ d => ?_⟩
+    fun hInv _ _ d => ?_, fun _ hp => by cases hp⟩
   have hGet : ∀ u, st'.getTcb? u = if u = t then some new else st.getTcb? u := fun u => by
     rw [getTcb?_eq_objTcb?, getTcb?_eq_objTcb? st u, hO]
     simp only [RHTable_getElem?_eq_get?]
