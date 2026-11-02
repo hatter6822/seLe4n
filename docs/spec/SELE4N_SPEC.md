@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.192` (`lakefile.toml`) |
+| **Package version** | `0.36.193` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 565,317 across 515 Lean files |
 | **Test LoC** | 88,402 across 70 Lean test suites |
@@ -5935,12 +5935,14 @@ Every kernel object has a decidable well-formedness predicate:
   (`Architecture.saveVacatedFrameOnCore`, after the HAL's stall,
   `Concurrency.stallChangedCores`), and until then no other core resumes the
   thread (`PriorityInheritance.deferResidentElsewhere`).  The projection
-  erases the link fields, and every release-queue edit leaves every
-  observer's projection unchanged with no domain hypothesis
-  (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`);
-  the per-core tick, the drain and the yield's charge are outside the per-core
-  non-interference step relation, as before this cut (`docs/REGISTERED_DEBT.md`,
-  ZA6.30).  The compiled link edits, the re-placement and the charge each read
+  erases the successor link and, since `v0.36.193` (ZA6.30), keeps each
+  context's release core and release time, so each core's release queue is
+  projected filtered to the observable contexts
+  (`releaseQueuedOn_eq_of_projectObjects`); a release-queue edit of a hidden
+  context leaves every observer's projection unchanged
+  (`projectState_of_releaseOnlyWrite`, `releasePlace_preserves_projection`),
+  and the per-core tick, the drain and the yield's charge are inside the
+  per-core non-interference step relation (below).  The compiled link edits, the re-placement and the charge each read
   what they need before they write and write through one call
   (`releaseUnlinkWrite`, `releaseLinkWrite`, `releasePlaceImpl`,
   `spendBudgetWrite`), and a refill behind the first is one straight-line
@@ -6072,9 +6074,10 @@ Every kernel object has a decidable well-formedness predicate:
     (`addConsumed_refillView`, `chargeBudget_refillView`) and is erased with
     the refills (`SchedContext.refillsErased`), so `refillsSound`, refill
     conservation, the window bound and the run-queue stages are unchanged.
-    Its projection is decided with the per-core tick's non-interference
-    (ZA6.30); until then it is projected as the context's other budget fields
-    are.
+    It is projected as the context's other budget fields are (decided with
+    the per-core tick's non-interference, ZA6.30, `v0.36.193`): a hidden
+    context's count is invisible with the context, and an observable context's
+    count is read only by its own capability's holders.
   - **Zero allocation.**  The count is one field written in the charge's own
     record update, so every charge scenario still reads 0 heap cells.
 - **A pending yield completes when the yielder next runs** (`v0.36.170`, WS-ZA
@@ -6132,7 +6135,8 @@ Every kernel object has a decidable well-formedness predicate:
     and invisible to an observer who sees neither the linked context nor, on
     the boot core, the current thread
     (`activateThreadOnCore_preserves_projection`).  Its per-core
-    non-interference is ZA6.30's.
+    non-interference is `activateThreadOnCore_lowEquivalent` and, for an
+    observable yielder, `activateThreadOnCore_lowEquivalent_pair` (ZA6.30).
   - **The yielder's saved registers are its live ones.**  A context's final
     delete completes its yielder's yield by writing the yielder's saved
     context (`setConsumed`, ZA6.6), which is sound only while no core holds
@@ -6930,6 +6934,43 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   run while the partner is suspended, checks the call succeeded with the
   consumed-info word in `x1` and reads 0 allocations at first call and steady
   state.
+- **The per-core scheduler steps are inside the non-interference step
+  relation** (`v0.36.193`, WS-ZA ZA6.30;
+  `InformationFlow/PerCoreSchedulerNonInterference.lean`).  The projection
+  keeps each scheduling context's release core and release time and erases its
+  release successor link, so each core's release queue is projected filtered
+  to the observable contexts, in release order
+  (`releaseQueuedOn_eq_of_projectObjects`).  A release-only write at one
+  context (`releaseWriteAt`) is invisible when that context is hidden
+  (`projectObjects_of_releaseWriteAt`, `projectState_of_releaseOnlyWrite`).
+  Each per-core step has a one-sided low-equivalence theorem, as the
+  relation's other constructors do: the release drain
+  (`processReplenishmentsDueOnCore_lowEquivalent`, every context queued on the
+  core hidden with its bound thread, `releaseHiddenOn`), the charge with its
+  consumed-time accumulation (`timerTickBudgetOnCore_lowEquivalent`), the
+  exhaustion (`budgetExhaustOnCore_lowEquivalent`), the tick
+  (`timerTickOnCore_lowEquivalent`, `tickHidden`), the yield charge and the
+  yield (`yieldChargeOnCore_lowEquivalent`, `yieldOnCore_lowEquivalent`),
+  yieldTo (`schedContextYieldToOnCore_lowEquivalent`, `yieldToHidden`), the
+  reschedule SGI (`handleRescheduleSgiOnCore_lowEquivalent`,
+  `perCoreRescheduleStep_lowEquivalent`), the residency settle
+  (`settleResidencyOnCore_lowEquivalent`,
+  `deferResidentElsewhere_lowEquivalent`) and the reschedule entry's committed
+  state (`perCoreRescheduleEntryState_lowEquivalent`), which is the secondary
+  core's entry (`secondaryKernelMain_commits`).  The activation of a hidden
+  yielder is `activateThreadOnCore_lowEquivalent`; for an observable yielder,
+  two low-equivalent states whose activations read the same current thread,
+  linked context and consumed time stay low-equivalent
+  (`activateThreadOnCore_lowEquivalent_pair`).  The consumed time is the flow
+  seL4-MCS's `schedContext_completeYieldTo` makes to the yielder through its
+  capability to the context.  `PerCoreNonInterferenceStep` takes every
+  `KernelOperation` lift and one constructor per scheduler step
+  (`perCoreNonInterferenceStep_sound`), and `niStepCoverage_perCore_count`
+  counts 50 distinct theorems over `PerCoreOperation` (36 kernel operations,
+  14 scheduler steps).  Because release cores are projected, the affinity
+  change's and the reply cancellation's replenishment migrations take the
+  migrated context hidden (`setThreadCpuAffinityWithMigration_preserves_projection`,
+  `cancelledDonationContextHigh`, `cancelledDonationContextHigh_of_replyHeadHidden`).
 - **Every configured address space owns a table page** (`v0.36.13`).  The
   binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
   RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's

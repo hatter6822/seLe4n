@@ -4261,64 +4261,71 @@ theorem repropagateFromWaiter_preserves_projection
 -- preservation theorem. These three lemmas close that gap.
 -- ============================================================================
 
-/-- WS-SM SM5.H.4 / WS-ZA ZA6.3 (NI): the per-core SchedContext
-**replenishment** migration preserves the projection **unconditionally** — it
-unlinks the context from one core's release queue and links it into another's,
-writing the contexts' release-queue fields (the moved context's and its old and
-new neighbours', of whatever domain), which the projection strips, and the
-scheduler's release-queue slots, which no projection reads
-(`projectState_of_releaseOnlyWrite`).  No hypothesis on the moved context or its
-neighbours' domains. -/
+/-- WS-SM SM5.H.4 / WS-ZA ZA6.3 / ZA6.30 (NI): the per-core SchedContext
+**replenishment** migration of a **non-observable** context preserves the
+projection — it unlinks the context from one core's release queue and links it
+into another's, writing the moved context's release fields, at a key the
+observer does not see, its old and new neighbours' successor links, which the
+projection strips, and the scheduler's release-queue slots, which no projection
+reads (`projectState_of_releaseOnlyWrite`).  An observable context's release
+core is projected, so its migration is a visible write. -/
 theorem migrateSchedContextReplenishment_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (scId : SeLe4n.SchedContextId)
-    (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (hS : objectObservable ctx observer scId.toObjId = false) :
     projectState ctx observer (migrateSchedContextReplenishment st scId fromCore toCore)
       = projectState ctx observer st :=
   projectState_of_releaseOnlyWrite ctx observer
     (migrateSchedContextReplenishment_releaseOnlyWrite st scId fromCore toCore)
-    (migrateSchedContextReplenishment_agree st scId fromCore toCore)
+    (releaseWriteAt.migrateSchedContextReplenishment st scId fromCore toCore) hS
 
-/-- WS-ZA ZA6.3 (NI): **every release-queue edit preserves the projection
-unconditionally** — the insert, the remove, the requeue (`releasePlace`, the
-exhausting charge's and the drain's re-placement), the purge (configure, unbind,
-suspend, destroy) and the scheduling primitive (`replenishOnCore`).  Each writes
-the contexts' release fields — its own and its neighbours', of whatever domain,
-so a low context's successor link naming a high context included — which the
+/-- WS-ZA ZA6.3 / ZA6.30 (NI): **every release-queue edit of a non-observable
+context preserves the projection** — the insert, the remove, the requeue
+(`releasePlace`, the exhausting charge's and the drain's re-placement), the purge
+(configure, unbind, suspend, destroy) and the scheduling primitive
+(`replenishOnCore`).  Each writes the edited context's release fields, at a key
+the observer does not see, its neighbours' successor links, which the
 projection strips, and the scheduler's release slots, which no projection reads
-(`projectState_of_releaseOnlyWrite`).  No hypothesis on any context's domain, as
-the run-queue links' edits in WS-ZA ZA4.5. -/
+(`projectState_of_releaseOnlyWrite`).  The high case of the release queue's
+projection: an observable context's release core and time are projected
+(`releaseQueuedOn_eq_of_projectObjects`). -/
 theorem releaseInsertOn_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId)
-    (t : Nat) : projectState ctx observer (st.releaseInsertOn c s t) = projectState ctx observer st :=
+    (t : Nat) (hS : objectObservable ctx observer s.toObjId = false) :
+    projectState ctx observer (st.releaseInsertOn c s t) = projectState ctx observer st :=
   projectState_of_releaseOnlyWrite ctx observer
-    (SystemState.releaseInsertOn_releaseOnlyWrite st c s t) (SystemState.releaseInsertOn_agree st c s t)
+    (SystemState.releaseInsertOn_releaseOnlyWrite st c s t) (releaseWriteAt.releaseInsertOn st c s t) hS
 
 theorem releaseRemoveOn_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (hS : objectObservable ctx observer s.toObjId = false) :
     projectState ctx observer (st.releaseRemoveOn c s) = projectState ctx observer st :=
   projectState_of_releaseOnlyWrite ctx observer
-    (SystemState.releaseRemoveOn_releaseOnlyWrite st c s) (SystemState.releaseRemoveOn_agree st c s)
+    (SystemState.releaseRemoveOn_releaseOnlyWrite st c s) (releaseWriteAt.releaseRemoveOn st c s) hS
 
 theorem releasePlace_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (hS : objectObservable ctx observer s.toObjId = false) :
     projectState ctx observer (st.releasePlace c s) = projectState ctx observer st :=
   projectState_of_releaseOnlyWrite ctx observer
-    (SystemState.releasePlace_releaseOnlyWrite st c s) (SystemState.releasePlace_agree st c s)
+    (SystemState.releasePlace_releaseOnlyWrite st c s) (releaseWriteAt.releasePlace st c s) hS
 
 theorem purgeReplenishment_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hS : objectObservable ctx observer s.toObjId = false) :
     projectState ctx observer (SchedContextOps.purgeReplenishment st s) =
       projectState ctx observer st :=
   projectState_of_releaseOnlyWrite ctx observer
     (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s)
-    (SchedContextOps.purgeReplenishment_agree st s)
+    (releaseWriteAt.releaseRemoveAnywhere st s) hS
 
 theorem replenishOnCore_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId)
+    (hS : objectObservable ctx observer s.toObjId = false) :
     projectState ctx observer (replenishOnCore st c s) = projectState ctx observer st :=
   projectState_of_releaseOnlyWrite ctx observer
-    (replenishOnCore_releaseOnlyWrite st c s) (replenishOnCore_agree st c s)
+    (replenishOnCore_releaseOnlyWrite st c s) (releaseWriteAt.releasePlace st c s) hS
 
 /-- WS-SM SM5.H.4 (NI): the full-thread-migration **run-queue** move preserves the
 projection when the migrated thread is **non-observable** (high). The op rewrites
@@ -4580,9 +4587,10 @@ composite preserves the projection when the target thread/object is non-observab
 (high) — the standard non-interference guarantee for a TCB-control op, the affinity
 analogue of `setPriorityOp_preserves_projection`. Chains the affinity write
 (`setThreadCpuAffinity_preserves_projection`), the optional replenishment migration
-(`migrateSchedContextReplenishment_preserves_projection`, unconditional), and the
-run-queue migration (`migrateRunQueueOnAffinityChange_preserves_projection`, high
-thread). -/
+(`migrateSchedContextReplenishment_preserves_projection`, for a non-observable bound
+context: the projection keeps each context's release core, so moving an observable
+context's release entry is visible), and the run-queue migration
+(`migrateRunQueueOnAffinityChange_preserves_projection`, high thread). -/
 theorem setThreadCpuAffinityWithMigration_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option SeLe4n.Kernel.Concurrency.CoreId)
@@ -4590,10 +4598,13 @@ theorem setThreadCpuAffinityWithMigration_preserves_projection
     (st' : SystemState) (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
     (hTargetThreadHigh : threadObservable ctx observer targetTid = false)
     (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
+    (hCtxHigh : ∀ tcb scId, st.getTcb? targetTid = some tcb →
+      tcb.schedContextBinding.scId? = some scId →
+      objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok (st', sgi)) :
     projectState ctx observer st' = projectState ctx observer st := by
-  obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape hStep
+  obtain ⟨tcb, stSet, hTcb, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape hStep
   rw [requeueVacatedOnNewHome_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh,
     migrateRunQueueOnAffinityChange_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh]
   have hSetProj : projectState ctx observer stSet = projectState ctx observer st :=
@@ -4601,7 +4612,9 @@ theorem setThreadCpuAffinityWithMigration_preserves_projection
       hTargetObjHigh (by rw [vacateForAffinityChange_objects]; exact hObjInv) hSet).trans
       (vacateForAffinityChange_preserves_projection ctx observer st targetTid _ _ hTargetThreadHigh)
   split
-  · rw [migrateSchedContextReplenishment_preserves_projection]; exact hSetProj
+  · next scId hBind =>
+    rw [migrateSchedContextReplenishment_preserves_projection ctx observer _ _ _ _
+      (hCtxHigh tcb scId hTcb hBind)]; exact hSetProj
   · exact hSetProj
 
 /-- WS-SM SM5.H.4 (NI, the syscall op): `setThreadCpuAffinityOp` (the production op the
@@ -4613,6 +4626,9 @@ theorem setThreadCpuAffinityOp_preserves_projection
     (affinity : Option SeLe4n.Kernel.Concurrency.CoreId)
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hCtxHigh : ∀ tcb scId, st.getTcb? vTargetTid.val = some tcb →
+      tcb.schedContextBinding.scId? = some scId →
+      objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hStep : setThreadCpuAffinityOp st vTargetTid affinity = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -4625,7 +4641,7 @@ theorem setThreadCpuAffinityOp_preserves_projection
     simp only [Except.ok.injEq] at hStep
     subst hStep
     exact setThreadCpuAffinityWithMigration_preserves_projection ctx observer st vTargetTid.val
-      affinity bootCoreId stWith sgi hTargetThreadHigh hTargetObjHigh hObjInv hWith
+      affinity bootCoreId stWith sgi hTargetThreadHigh hTargetObjHigh hCtxHigh hObjInv hWith
 
 /-- WS-SM SM8.B (PR #861 review round 42): the same, for the **live** wrapper.
 
@@ -4650,12 +4666,15 @@ theorem setThreadCpuAffinityOnCore_preserves_projection
     (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
     (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
     (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hCtxHigh : ∀ tcb scId, st.getTcb? vTargetTid.val = some tcb →
+      tcb.schedContextBinding.scId? = some scId →
+      objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hStep : setThreadCpuAffinityOnCore st vTargetTid affinity executingCore = .ok (st', sgi)) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold setThreadCpuAffinityOnCore at hStep
   exact setThreadCpuAffinityWithMigration_preserves_projection ctx observer st vTargetTid.val
-    affinity executingCore st' sgi hTargetThreadHigh hTargetObjHigh hObjInv hStep
+    affinity executingCore st' sgi hTargetThreadHigh hTargetObjHigh hCtxHigh hObjInv hStep
 
 -- ============================================================================
 -- AK6-F Step 3: setPriorityOp preservation

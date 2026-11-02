@@ -631,6 +631,12 @@ import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 -- bracket, and `crossCoreLeakage_bounded`.  Reachability: staged at SM8.B;
 -- SM8.C's per-core declassification audit is the next consumer.
 import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
+-- WS-ZA ZA6.30: the per-core scheduler steps inside the non-interference step
+-- relation — the tick, the release drain, the exhausting and yield charges,
+-- `yieldOnCore`, the consumed-time activation, `seL4_SchedContext_YieldTo`, the
+-- reschedule SGI, the reschedule entry, the secondary-core entry and the
+-- residency settle (`PerCoreNonInterferenceStep`, `niStepCoverage_perCore_count`).
+import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
 -- WS-SM SM8.B: the SMP enforcement boundary (`enforcementBoundaryPerCore`, the
 -- canonical 38 entries plus the 2PL bracket) with its completeness witness, the
 -- seven-entry accepted covert-channel inventory as data (CC-1 … CC-7, each

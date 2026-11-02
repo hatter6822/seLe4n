@@ -1679,6 +1679,14 @@ OBJECTS_FIELD_OWNERS = {
     # stores off every scheduler link (WS-ZA ZA4.5's run-queue links, and
     # ZA6.3's release-queue links); it indexes nothing.
     "OffSchedulerAgrees": ("s2.objectsAgreeOffSchedulerLinks", False),
+    # `Prop`-valued hidden-ness bundles of the per-core scheduler steps'
+    # non-interference (WS-ZA ZA6.30), whose `objects` field is the object
+    # table's well-formedness; they index nothing.
+    "schedulingPointHidden": ("st.objects.invExt", False),
+    "tickHidden": ("st.objects.invExt", False),
+    "yieldHidden": ("st.objects.invExt", False),
+    "yieldToHidden": ("st.objects.invExt", False),
+    "rescheduleEntryHidden": ("st.objects.invExt", False),
     # **A live ambiguity, not a hypothetical one.**  `List` has a `GetElem?`
     # instance, so `builder.objects[0]?` in the test state builder would be
     # counted as a kernel-state read and refused by the enforced zero.  There

@@ -1431,10 +1431,12 @@ run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_currentOnCore_ne($
 run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_runQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # ...and its information-flow obligation is carried, not assumed away: a
 # run-queue removal is filtered by the removed thread's own observability, and
-# the holder's label is not determined by the victim's.
+# the holder's label is not determined by the victim's.  Since WS-ZA ZA6.30 the
+# reply arm carries the returned context's obligation beside it, because the
+# projection keeps that context's release core.
 run_check "INVARIANT" rg -n '^def descheduledHolderHigh($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" rg -n '^theorem descheduledHolderHigh_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\)\n    \(hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # ...and the removal owes the bundle nothing: the cross-core steps agree with
 # the teardown off the run links, and no conjunct reads the scheduler.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull_of_objectsAgreeOffSchedulerLinks\n    \(cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
@@ -2444,14 +2446,22 @@ run_check "INVARIANT" rg -n '^  donationOrigin : Option SeLe4n.ThreadId := none'
 # It is ERASED by the projection, in the cut that added it -- a `ThreadId` naming a
 # possibly-high caller is the linkage `boundThread` and `Reply.caller` are erased for.
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationOrigin_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "donationOrigin := none,\n *releaseNextCode := 0, releaseCoreCode := 0, releaseAt := 0," SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "donationOrigin := none,\n *releaseNextCode := 0,\n" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# WS-ZA ZA6.30: only the successor link is erased; the context's release core and
+# release time stay in the projection, so each core's release queue is projected
+# filtered to the observable contexts.  Mutation: erase `releaseCoreCode` again.
+run_negative_check "INVARIANT" rg -n 'releaseCoreCode := 0|releaseAt := 0' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem releaseQueuedOn_eq_of_projectObjects($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 # WS-ZA ZA6.6: ...and the context's yield-link end, which names a thread.
 run_check "INVARIANT" rg -n '^ *yieldFromCode := 0 \}$' SeLe4n/Kernel/InformationFlow/Projection.lean
-# ...and the release links' erasure is what every release-queue edit's NI rests
-# on: one theorem over the release-only writes, with no domain hypothesis (a low
-# context's successor link may name a high one), and one corollary per edit.
-# Mutation: give a corollary a domain hypothesis, or prove one by unfolding.
-run_check "INVARIANT" rg -n -U '^theorem projectState_of_releaseOnlyWrite \(ctx : LabelingContext\) \(observer : IfObserver\)\n    \{st st. : SystemState\} \(hW : st.\.releaseOnlyWrite st\)\n    \(hA : st.\.objectsAgreeOffReleaseLinks st\) :\n' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+# ...and every release-queue edit's NI rests on one theorem over the release-only
+# writes at one context (`releaseWriteAt`): every other object agrees up to its
+# successor link, which the projection strips (a low context's successor link may
+# name a high one), and the edited context itself is hidden (WS-ZA ZA6.30: the
+# projection keeps its release core).  One corollary per edit.
+# Mutation: drop the hidden-context hypothesis, or prove a corollary by unfolding.
+run_check "INVARIANT" rg -n -U '^theorem projectState_of_releaseOnlyWrite \(ctx : LabelingContext\) \(observer : IfObserver\)\n    \{st st. : SystemState\} \{s : SeLe4n\.SchedContextId\} \(hW : st.\.releaseOnlyWrite st\)\n    \(hA : releaseWriteAt s st. st\) \(hS : objectObservable ctx observer s\.toObjId = false\) :\n' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^theorem projectObjects_of_releaseWriteAt($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 run_check "INVARIANT" rg -n -U '^theorem releaseInsertOn_preserves_projection [^\n]*(\n([ \t][^\n]*)?)*  projectState_of_releaseOnlyWrite ctx observer\n' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U '^theorem releaseRemoveOn_preserves_projection [^\n]*(\n([ \t][^\n]*)?)*  projectState_of_releaseOnlyWrite ctx observer\n' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U '^theorem releasePlace_preserves_projection [^\n]*(\n([ \t][^\n]*)?)*  projectState_of_releaseOnlyWrite ctx observer\n' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -6882,7 +6892,52 @@ run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyWithR
 run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleInterrupt($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def kernelOperationPerCoreNiTheorem($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^    \(PerCoreOperation\.all\.map perCoreOperationNiTheorem\)\.eraseDups\.length = 50 := by$' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+# WS-ZA ZA6.30: the per-core scheduler steps inside the NI step relation — the
+# tick, the drain, the charges, yieldOnCore, the activation (one-sided for a
+# hidden yielder, two-sided for an observable one), YieldTo, the reschedule SGI,
+# the reschedule entry, the secondary entry and the residency settle.
+run_check "INVARIANT" rg -n '^theorem timerTickOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem processReplenishmentsDueOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem processOneReplenishmentOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem budgetExhaustOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem timerTickBudgetOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem yieldChargeOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem yieldOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_eq_read($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem schedContextYieldToOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleStep_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntry_commits($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem secondaryKernelMain_commits($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem settleResidencyOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem perCoreOperationNiTheorem_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem perCoreNonInterferenceStep_sound($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem secondaryKernelMain_covered($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem PerCoreOperation\.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem PerCoreSchedulerOperation\.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^inductive PerCoreNonInterferenceStep($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^inductive PerCoreOperation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^inductive PerCoreSchedulerOperation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^def perCoreSchedulerNiTheorem($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^def perCoreOperationNiTheorem($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^def releaseHiddenOn($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^structure tickHidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^structure yieldToHidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^structure rescheduleEntryHidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+# The drain's NI is stated over the core's release queue: every context queued
+# there is hidden, with its bound thread (`releaseHiddenOn`).
+run_check "INVARIANT" rg -n -U '^theorem processReplenishmentsDueOnCore_lowEquivalent [^\n]*(\n([ \t][^\n]*)?)*releaseHiddenOn' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+# The cancellation's replenishment migration carries the returned context's
+# labelling obligation, discharged where no donation is resolved.
+run_check "INVARIANT" rg -n '^def cancelledDonationContextHigh($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem cancelledDonationContextHigh_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem cancelledDonationContextHigh_of_replyHeadHidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^def perCoreConfinementDerived($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem perCoreConfinementDerived_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
@@ -8151,7 +8206,7 @@ run_check "INVARIANT" rg -n '^theorem KernelOperation.all_nodup($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n 'KernelOperation.all.length = 36' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.filter perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n 'PerCoreOperation.all.map perCoreOperationNiTheorem' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 
 
 # ---------------------------------------------------------------------------

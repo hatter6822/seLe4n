@@ -216,32 +216,174 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
 
-/-- WS-ZA ZA6.3: the projection strips every release-queue field from a
-context, so two stores agreeing off those fields project equally — whichever
-contexts, of whichever domains, the links name. -/
-theorem projectObjects_of_objectsAgreeOffReleaseLinks
-    (ctx : LabelingContext) (observer : IfObserver) {st st' : SystemState}
-    (h : st'.objectsAgreeOffReleaseLinks st) :
-    projectObjects ctx observer st' = projectObjects ctx observer st := by
-  funext oid
-  unfold projectObjects SystemState.getObject?
+/-- A context with its release successor cleared: what every reader but the
+release queue's walk sees of it. -/
+def _root_.SeLe4n.Kernel.SchedContext.withoutReleaseNext (sc : SchedContext) : SchedContext :=
+  { sc with releaseNextCode := 0 }
+
+/-- An object with a context's release successor cleared. -/
+def _root_.SeLe4n.Model.KernelObject.withoutReleaseNext : KernelObject → KernelObject
+  | .schedContext sc => .schedContext sc.withoutReleaseNext
+  | o => o
+
+/-- **The release edits' frame at context `s`**: every other object is kept up
+to its release successor.  A release edit of `s` writes `s`'s own release
+fields, and of its neighbours only the successor link, which names a context of
+whatever domain. -/
+def releaseWriteAt (s : SeLe4n.SchedContextId) (st' st : SystemState) : Prop :=
+  ∀ x, x ≠ s.toObjId → (st'.objects[x]?).map KernelObject.withoutReleaseNext =
+    (st.objects[x]?).map KernelObject.withoutReleaseNext
+
+namespace releaseWriteAt
+
+theorem refl (s : SeLe4n.SchedContextId) (st : SystemState) : releaseWriteAt s st st :=
+  fun _ _ => rfl
+
+theorem trans {s : SeLe4n.SchedContextId} {a b d : SystemState} (h₂ : releaseWriteAt s d b)
+    (h₁ : releaseWriteAt s b a) : releaseWriteAt s d a :=
+  fun x hx => (h₂ x hx).trans (h₁ x hx)
+
+theorem congr {s : SeLe4n.SchedContextId} {a b d : SystemState} (e : d.objects = b.objects)
+    (h : releaseWriteAt s b a) : releaseWriteAt s d a :=
+  fun x hx => by rw [e]; exact h x hx
+
+/-- Context `s` itself rewritten in its slot. -/
+theorem mapSelf (st : SystemState) (s : SeLe4n.SchedContextId) (g : SchedContext → SchedContext) :
+    releaseWriteAt s (st.mapSchedContextInPlace s g) st := by
+  intro x hx
+  rw [SystemState.objects_mapSchedContextInPlace, if_neg (by simpa using fun e => hx e.symm)]
+
+/-- Any context's release successor rewritten in its slot. -/
+theorem mapNext (st : SystemState) (s y : SeLe4n.SchedContextId) (n : Nat) :
+    releaseWriteAt s (st.mapSchedContextInPlace y (SchedContext.withReleaseNext n)) st := by
+  intro x _
+  rw [SystemState.objects_mapSchedContextInPlace]
   split
-  · rcases h.pointwise oid with e | ⟨sc, sc', hp, hq, hE⟩
-    · rw [e]
-    · rw [hp, hq]
-      have hP : ∀ u : SchedContext, projectKernelObject ctx observer (.schedContext u) =
-          projectKernelObject ctx observer (.schedContext u.withoutRelease) := fun _ => rfl
-      simp only [Option.map_some, hP sc, hP sc', hE]
+  · cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> rfl
   · rfl
 
-/-- WS-ZA ZA6.3: **a release-queue edit is invisible to every observer** — it
-writes the contexts' release fields, which the projection strips, and the
-release-queue slots of the scheduler, which no projection reads. -/
+theorem releaseUnlinkOn (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    releaseWriteAt s (st.releaseUnlinkOn c s) st := by
+  unfold SystemState.releaseUnlinkOn
+  split
+  · dsimp only
+    split
+    · exact congr rfl (mapSelf st s _)
+    · exact congr rfl ((mapNext _ s _ _).trans (mapSelf st s _))
+  · exact refl s st
+
+theorem releaseRemoveOn (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    releaseWriteAt s (st.releaseRemoveOn c s) st :=
+  congr rfl (releaseUnlinkOn st c s)
+
+theorem releaseLinkIn (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) (t : Nat) :
+    releaseWriteAt s (st.releaseLinkIn c s t) st := by
+  unfold SystemState.releaseLinkIn
+  dsimp only
+  split
+  · exact congr rfl (mapSelf st s _)
+  · exact congr rfl ((mapNext _ s _ _).trans (mapSelf st s _))
+
+theorem releaseInsertOn (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) (t : Nat) :
+    releaseWriteAt s (st.releaseInsertOn c s t) st := by
+  unfold SystemState.releaseInsertOn
+  split
+  · exact refl s st
+  · exact congr rfl (releaseLinkIn st c s t)
+
+theorem releasePlace (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (s : SeLe4n.SchedContextId) :
+    releaseWriteAt s (st.releasePlace c s) st := by
+  unfold SystemState.releasePlace
+  split
+  · split
+    · exact (releaseInsertOn _ c s _).trans (releaseRemoveOn st c s)
+    · exact releaseRemoveOn st c s
+  · exact refl s st
+
+theorem releaseRemoveAnywhere (st : SystemState) (s : SeLe4n.SchedContextId) :
+    releaseWriteAt s (st.releaseRemoveAnywhere s) st := by
+  unfold SystemState.releaseRemoveAnywhere
+  split
+  · exact releaseRemoveOn st _ s
+  · exact refl s st
+
+end releaseWriteAt
+
+/-- The projection erases a context's release successor. -/
+theorem projectKernelObject_withoutReleaseNext (ctx : LabelingContext) (observer : IfObserver)
+    (o : KernelObject) :
+    projectKernelObject ctx observer o.withoutReleaseNext = projectKernelObject ctx observer o := by
+  cases o <;> rfl
+
+/-- **A release edit of a hidden context** leaves the projected store: the
+context's own release fields are at a key the observer does not see, and its
+neighbours' successor links are erased. -/
+theorem projectObjects_of_releaseWriteAt (ctx : LabelingContext) (observer : IfObserver)
+    {s : SeLe4n.SchedContextId} {st st' : SystemState}
+    (h : releaseWriteAt s st' st) (hS : objectObservable ctx observer s.toObjId = false) :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext x
+  unfold projectObjects SystemState.getObject?
+  split
+  · rename_i hx
+    have hne : x ≠ s.toObjId := fun e => by rw [e, hS] at hx; cases hx
+    have e := congrArg (Option.map (projectKernelObject ctx observer)) (h x hne)
+    simpa only [Option.map_map, Function.comp_def, projectKernelObject_withoutReleaseNext] using e
+  · rfl
+
+theorem releaseWriteAt.migrateSchedContextReplenishment (st : SystemState)
+    (s : SeLe4n.SchedContextId) (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    releaseWriteAt s (SeLe4n.Kernel.migrateSchedContextReplenishment st s fromCore toCore) st := by
+  unfold SeLe4n.Kernel.migrateSchedContextReplenishment
+  split
+  · exact releaseWriteAt.refl s st
+  · dsimp only
+    refine releaseWriteAt.congr rfl ?_
+    split
+    · exact (releaseWriteAt.releaseInsertOn _ _ s _).trans (releaseWriteAt.releaseRemoveOn st _ s)
+    · exact releaseWriteAt.refl s st
+
+/-- WS-ZA ZA6.30: **the projection shows each core's release queue filtered to
+the observable contexts**: an observable context's release core and release
+time are kept, so two states whose projected stores agree agree on whether
+each observable context is on core `c`'s release queue, and at what time.  Its
+successor link is erased, as a run-queue link is. -/
+theorem releaseQueuedOn_eq_of_projectObjects (ctx : LabelingContext) (observer : IfObserver)
+    {st₁ st₂ : SystemState} (h : projectObjects ctx observer st₁ = projectObjects ctx observer st₂)
+    {s : SeLe4n.SchedContextId} (hS : objectObservable ctx observer s.toObjId = true)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    st₁.releaseQueuedOn c s = st₂.releaseQueuedOn c s ∧ st₁.releaseAtOn c s = st₂.releaseAtOn c s := by
+  have e := congrFun h s.toObjId
+  unfold projectObjects SystemState.getObject? at e
+  rw [if_pos hS, if_pos hS] at e
+  unfold SystemState.releaseQueuedOn SystemState.releaseAtOn SystemState.getSchedContext?
+  cases h1 : st₁.objects[s.toObjId]? with
+  | none =>
+    cases h2 : st₂.objects[s.toObjId]? with
+    | none => exact ⟨rfl, rfl⟩
+    | some o => rw [h1, h2] at e; cases e
+  | some o₁ =>
+    cases h2 : st₂.objects[s.toObjId]? with
+    | none => rw [h1, h2] at e; cases e
+    | some o₂ =>
+      rw [h1, h2] at e
+      have e' := Option.some.inj e
+      cases o₁ <;> cases o₂ <;> simp_all [projectKernelObject]
+
+/-- WS-ZA ZA6.3 / ZA6.30: **a release-queue edit of a hidden context is invisible
+to every observer** — it writes that context's release fields, at a key the
+observer does not see, its neighbours' successor links, which the projection
+strips, and the release-queue slots of the scheduler, which no projection
+reads.  An observable context's release core and release time are projected
+(`releaseQueuedOn_eq_of_projectObjects`), so the edit of an observable context
+is a visible write. -/
 theorem projectState_of_releaseOnlyWrite (ctx : LabelingContext) (observer : IfObserver)
-    {st st' : SystemState} (hW : st'.releaseOnlyWrite st)
-    (hA : st'.objectsAgreeOffReleaseLinks st) :
+    {st st' : SystemState} {s : SeLe4n.SchedContextId} (hW : st'.releaseOnlyWrite st)
+    (hA : releaseWriteAt s st' st) (hS : objectObservable ctx observer s.toObjId = false) :
     projectState ctx observer st' = projectState ctx observer st := by
-  have hO := projectObjects_of_objectsAgreeOffReleaseLinks ctx observer hA
+  have hO := projectObjects_of_releaseWriteAt ctx observer hA hS
   obtain ⟨h1, h2⟩ := hW
   unfold projectState
   rw [hO, h1, h2]

@@ -1,3 +1,42 @@
+## v0.36.193 — WS-ZA ZA6.30: the per-core scheduler steps inside the non-interference step relation
+
+The per-core tick, the release drain, the exhausting and yield charges, the
+yield, yieldTo, the activation at entry exit, the reschedule SGI, the residency
+settle and the reschedule and secondary entries now have per-core
+low-equivalence theorems and are constructors of the per-core step relation
+(`PerCoreNonInterferenceStep`, new module
+`InformationFlow/PerCoreSchedulerNonInterference.lean`). No executable code
+changes.
+
+- **The release queue is projected.** The scheduling-context arm of the
+  projection now erases only the release successor link and keeps the
+  context's release core and release time, so each core's release queue is
+  projected filtered to the observable contexts
+  (`releaseQueuedOn_eq_of_projectObjects`). Before, two low-equivalent states
+  could disagree on whether a low context was queued and so on whether a tick
+  refilled it. The release-edit corollaries stay as the high case: a
+  release-only write at one context (`releaseWriteAt`) is invisible when that
+  context is hidden (`projectState_of_releaseOnlyWrite`,
+  `projectObjects_of_releaseWriteAt`).
+- **The theorems.** Each is one-sided: the drain (over `releaseHiddenOn`), the
+  charge with its consumed-time accumulation, the exhaustion, the tick (over
+  `tickHidden`), the yield charge, the yield, yieldTo (over `yieldToHidden`),
+  the reschedule SGI and step, the residency settle and defer, and the
+  reschedule entry's committed state, which is the secondary core's entry. The
+  activation is invisible for a hidden yielder and has a two-sided form for an
+  observable one (`activateThreadOnCore_lowEquivalent_pair`).
+- **The coverage count** moves to the new module over `PerCoreOperation` (36
+  kernel operations and 14 scheduler steps) and reads 50.
+- **Hypotheses the finer projection adds.** The affinity change's replenishment
+  migration takes the target's bound context hidden, the reply cancellation's
+  migration takes the returned context hidden (`cancelledDonationContextHigh`,
+  discharged in the finalise chain from a hidden reply-head context), and the
+  donated arm's migration takes the donated context hidden.
+- **Registered** in `docs/REGISTERED_DEBT.md`: the intermediate-state premises
+  of the tick and the reschedule entry, the activation of a hidden yielder
+  linked to an observable context, and the missing context-to-thread label
+  coherence. The ZA6.3 row on the per-core tick's non-interference is closed.
+
 ## v0.36.192 — WS-ZA ZA6.29: the `seL4_SchedContext_YieldTo` invocation
 
 The kernel now implements seL4-MCS's `seL4_SchedContext_YieldTo` as syscall
