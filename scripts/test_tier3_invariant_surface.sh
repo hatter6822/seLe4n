@@ -4428,11 +4428,10 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_savedRegsKept($|[ ({:\
 run_check "INVARIANT" rg -n '^theorem vspaceMapFromFrameCap_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
 run_check "INVARIANT" rg -n '^theorem pageTableUnmap_savedRegsKept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_savedRegsKeptOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFrame.lean
-run_check "INVARIANT" rg -n -U '^    \(hArm : decoded\.syscallId\.capabilityObjectArm = true\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
 # WS-ZA ZA6.24: the census over the final delete and revoke -- each finalisation
 # step writes only the thread it names, free at the entry's start; the retire
-# removes only a thread no core holds; the chains compose; and the object arms'
-# dispatch theorem admits both arms.
+# removes only a thread no core holds; the chains compose; and the dispatch
+# theorem reads both arms from them.
 run_check "INVARIANT" rg -n -U '^def savedRegsKeptExcept \(W : SeLe4n\.ThreadId → Prop\) \(pre post : SystemState\) : Prop :=\n  ∀ t, ¬ W t → post\.savedRegs t = pre\.savedRegs t$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegisters.lean
 run_check "INVARIANT" rg -n -U '^def savedRegsWrittenFree \(e : CoreId\) \(base pre post : SystemState\) : Prop :=\n  ∀ t, post\.savedRegs t = pre\.savedRegs t ∨ offCoreFree e base t$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
 run_check "INVARIANT" rg -n -U '^    \(hInv : st\.objects\.invExt\) :\n    savedRegsKeptExcept \(· = v\) st \(Lifecycle\.Suspend\.cancelIpcBlocking st v tcb\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
@@ -4441,9 +4440,22 @@ run_check "INVARIANT" rg -n -U '^    \(retireFinalObject ec target recorder st\)
 run_check "INVARIANT" rg -n -U '^    ∀ t, s.\.savedRegs t = s\.savedRegs t ∨ offCoreFree e st t ∨ offCoreFree e s. t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
 run_check "INVARIANT" rg -n -U '^    \(h : cspaceDeleteSlotZombie ec addr st = \.ok \(\(\), st.\)\) : savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
 run_check "INVARIANT" rg -n -U '^    \(h : cspaceRevokeCdtFinalising ec addr st = \.ok \(\(\), st.\)\) : savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
-run_check "INVARIANT" rg -n -U '^def _root_\.SeLe4n\.Model\.SyscallId\.capabilityObjectArm : SyscallId → Bool\n  \| \.cspaceDelete \| \.cspaceRevoke\n' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
-run_check "INVARIANT" rg -n '^    \| exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
-run_check "INVARIANT" rg -n '^    \| exact cspaceRevokeCdtFinalising_savedRegsKeptOffCore B hB h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersFinalise.lean
+run_check "INVARIANT" rg -n '^    \| exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^    \| exact cspaceRevokeCdtFinalising_savedRegsKeptOffCore B hB h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+# WS-ZA ZA6.25: the census over the capability-only dispatch's TCB and
+# scheduling-context arms -- the scheduling point saves only the executing core's
+# outgoing thread, the suspend writes a blocked victim, the resume's retire a
+# thread no core runs, the Consumed invocation the caller, the space change only
+# threads no core holds -- and the whole dispatch, with no arm restriction.
+run_check "INVARIANT" rg -n -U '^    savedRegsKeptExcept \(fun t => st\.scheduler\.currentOnCore c = some t\) st\n      \(handleRescheduleOnCoreState st c\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n -U '^    \(hB : blockedCurrentNowhere st\) \(hBN : st\.blockedNotResident\)\n    \(h : Lifecycle\.Suspend\.suspendThreadOnCore st vtid e = \.ok \(st., sgi\?\)\) :\n    savedRegsWrittenFree e st st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^  exact savedRegsKeptOffCore_trans_stepCovers \(retirePendingFaultForResume_savedRegsKeptOffCore hInv hCur\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n -U '^    \(hN : st\.currentNotResidentElsewhere\) \(h : schedContextConsumedOnCore s e st = \.ok st.\) :\n    savedRegsWrittenFree e st st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n -U '^    \(hB : finalisingDeleteBundle st\) \(h : copyThreadSpacesZombie ec st vtid cnSrc vrSrc = \.ok st.\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n -U '^    \(hBNR : st\.blockedNotResident\) \(hYA : st\.yieldLinksAgree\) \(hYN : st\.yieldLinkedNotResident\)\n    \(hK : dispatchCapabilityOnly decoded cap tid ec = some k\) \(h : k st = \.ok \(\(\), st.\)\)\n    \(hCK : currentKeptOffCore ec st st.\) \(hRK : residentKeptOffCore ec st st.\) :\n    savedRegsKeptOffCore ec st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^        \| exact tcbResume_savedRegsKeptOffCore hInv P\.refined P\.dequeued hN hS$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^        \| exact copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_negative_check "INVARIANT" rg -n 'capabilityObjectArm' SeLe4n
 run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \t][^\n]*)?){0,40}\n[^\n]*(threadHeldOnSomeCore|runCoreCode)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's

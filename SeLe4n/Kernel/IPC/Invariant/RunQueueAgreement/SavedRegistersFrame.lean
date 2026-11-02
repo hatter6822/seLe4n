@@ -29,10 +29,10 @@ untyped retype and reset, the VSpace map, unmap and instruction unification, the
 page-table map and unmap, and the service revoke, each `*_savedRegsKept`; the
 service query stages its answer into the caller alone
 (`writeReturnFrameToTcb_savedRegsKeptOffCore`).
-`dispatchCapabilityOnly_objectArm_savedRegsKeptOffCore` collects them over the
-dispatch (`SyscallId.capabilityObjectArm`) with the final delete and revoke
-(ZA6.24), in `SavedRegistersFinalise.lean`; the TCB and scheduling-context arms
-and the whole dispatch are ZA6.25.
+`dispatchCapabilityOnly_savedRegsKeptOffCore` collects them over the whole
+dispatch with the final delete and revoke (ZA6.24, `SavedRegistersFinalise.lean`)
+and the TCB and scheduling-context arms (ZA6.25,
+`SavedRegistersCapabilityDispatch.lean`).
 -/
 
 namespace SeLe4n.Kernel
