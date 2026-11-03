@@ -1782,7 +1782,8 @@ pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
 
 /// **WS-ZA ZA6.32**: the first shared peripheral interrupt's INTID — the first
 /// line a device raises and a handler capability names
-/// (`Architecture.deviceInterruptLine` on the Lean side).
+/// (`Architecture.deviceInterruptLine` on the Lean side, which also bounds the
+/// lines by the board's count, `MAX_INTID` here).
 pub const DEVICE_INTID_BASE: u32 = 32;
 
 /// **WS-ZA ZA6.32: a device interrupt enters the verified Lean kernel** —

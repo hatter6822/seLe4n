@@ -676,12 +676,13 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
             (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
-  -- WS-ZA ZA6.32: the acknowledge refuses only a line that is no device line,
-  -- read before the write, so the mask is written in place.
+  -- WS-ZA ZA6.32: the acknowledge refuses only a line that is no device line
+  -- of this board (`deviceInterruptLine`, the board's line count), read
+  -- before the write, so the mask is written in place.
   | .irqHandlerAck =>
     match cap.target with
     | .irqHandler line =>
-        RefusalCarrying.ofChecked (Architecture.deviceInterruptLine line)
+        RefusalCarrying.ofChecked (Architecture.deviceInterruptLine st line)
           (fun st => Architecture.setInterruptLineMask st line false)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)

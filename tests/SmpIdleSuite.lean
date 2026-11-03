@@ -1081,6 +1081,48 @@ private def runBootCapabilityLiveChecks : IO Unit := do
   assertBool "the dangling config is refused by the checked boot"
     ((SeLe4n.Platform.Boot.bootFromPlatformChecked dangling).isOk == false)
 
+/-- WS-ZA ZA6.32: **the boot issues interrupt-handler capabilities only for lines
+the board has**, as seL4's `seL4_IRQControl_Get` issues one only for a line
+`Arch_checkIRQ` admits, and binds no IRQ table entry past the board.  On a
+288-line board a handler capability for line 250 is accepted; one for line 300
+(inside the model's 320, past the board), one for a PPI, and an IRQ table
+entry at 300 are each refused, naming their own conjunct. -/
+private def runBootInterruptLineChecks : IO Unit := do
+  IO.println "--- WS-ZA ZA6.32: boot interrupt lines are the board's ---"
+  let mc : SeLe4n.MachineConfig :=
+    { SeLe4n.defaultMachineConfig with
+      memoryMap := [{ base := SeLe4n.PAddr.ofNat 0x1000_0000, size := 0x10_0000, kind := .ram }]
+      kernelReserved := []
+      interruptLineCount := 288 }
+  let cnId : SeLe4n.ObjId := ⟨131⟩
+  let cnEntry (slots : List (SeLe4n.Slot × Capability)) : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := cnId
+      obj := .cnode (SeLe4n.Model.CNode.ofSlots 4 0 0 4 (SeLe4n.UniqueSlotMap.ofListWF slots))
+      hSlots := fun _ h => by cases h; exact SeLe4n.Model.CNode.slotsUnique_holds _
+      hMappings := fun _ h => nomatch h }
+  let withLine (line : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], machineConfig := mc,
+      initialObjects := [cnEntry [(SeLe4n.Slot.ofNat 0, Capability.irqHandlerOf line)]] }
+  let onBoard := withLine 250
+  let offBoard := withLine 300
+  let ppi := withLine 27
+  let offTable : SeLe4n.Platform.Boot.PlatformConfig :=
+    { onBoard with irqTable := [{ irq := ⟨300⟩, handler := cnId }] }
+  assertBool "CONTROL: a handler capability for a line on the board is well-formed"
+    (onBoard.wellFormed == true)
+  assertBool "NEGATIVE: a handler capability for a line past the board is refused"
+    (offBoard.wellFormed == false &&
+      SeLe4n.Platform.Boot.bootInterruptLinesOnBoard offBoard == false)
+  assertBool "NEGATIVE: a handler capability for a banked PPI is refused"
+    (SeLe4n.Platform.Boot.bootInterruptLinesOnBoard ppi == false)
+  assertBool "NEGATIVE: an IRQ table entry past the board is refused"
+    (SeLe4n.Platform.Boot.bootInterruptLinesOnBoard offTable == false)
+  assertBool "...and the refusal names the interrupt line, not another conjunct"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic offBoard ==
+      SeLe4n.Platform.Boot.bootInterruptLineBootError)
+  assertBool "the off-board config is refused by the checked boot"
+    ((SeLe4n.Platform.Boot.bootFromPlatformChecked offBoard).isOk == false)
+
 /-- PR #889 review round 18: a successful boot must leave the object index
     inside `maxObjects`.  Nothing bounded the count before: the checked boot
     did not, and the idle fold adds one entry per core on top of it, so a
@@ -1248,6 +1290,7 @@ def runSmpIdleChecks : IO Unit := do
   runBootTablePoolChecks
   runBootUntypedCapabilityChecks
   runBootCapabilityLiveChecks
+  runBootInterruptLineChecks
   runBootInterfaceChecks
   runInactiveFlagChecks
   IO.println "===================================="

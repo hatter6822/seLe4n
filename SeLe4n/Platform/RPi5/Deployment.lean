@@ -423,12 +423,14 @@ theorem rpi5IrqTable_irqsUnique : irqsUnique rpi5IrqTable = true := by
   intro a b hab h
   exact hab (by simp only [Function.comp_def, SeLe4n.Irq.toNat] at h; omega)
 
+set_option maxRecDepth 8192 in
 /-- **WS-BP BP3.3**: on each family member, the bound configuration is
     well-formed — all seven conjuncts.  The IRQ table's duplicate check is
     `rpi5IrqTable_irqsUnique`, proved once for every member; the object
     table's runs a hash set the kernel cannot reduce, so it is rewritten to its
     transparent form first (`objectIdsUnique_eq_transparent`); everything else
-    is `decide`. -/
+    is `decide`.  WS-ZA ZA6.32: the interrupt-line conjunct walks the 288-entry
+    IRQ table, past the default recursion budget, so the budget is raised. -/
 private theorem member_wellFormed :
     ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).wellFormed = true := by
   apply rpi5Variants_cases <;>

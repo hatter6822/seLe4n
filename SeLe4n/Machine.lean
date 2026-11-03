@@ -947,6 +947,15 @@ structure MachineState where
       `MachineConfig.declaredCoreCount`; defaults to the model width, so the
       affinity refusal that reads it is inert on a full-width machine. -/
   declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
+  /-- **WS-ZA ZA6.32: the interrupt lines the board's distributor serves**,
+      INTIDs `[0, interruptLineCount)` (seL4's `maxIRQ + 1`), carried in
+      machine state so the interrupt entry and the handler's acknowledge
+      refuse a line the board does not have before any write
+      (`Architecture.deviceInterruptLine`, seL4's `Arch_checkIRQ`).  Set at
+      boot by `applyMachineConfig` from `MachineConfig.interruptLineCount`,
+      whose owner is the board's line count; defaults to the model's 320
+      lines. -/
+  interruptLineCount : Nat := 320
   /-- AG3-G: ARM64 system registers (exception, MMU configuration). -/
   systemRegisters : SystemRegisterFile := default
   /-- AG5-G/AJ3-E (L-04): Interrupt state — models PSTATE.I (IRQ mask bit).
@@ -2265,6 +2274,13 @@ structure MachineConfig where
       keeps the full-width model and the affinity refusal below is inert on
       them; only a binding that declares fewer narrows it. -/
   declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
+  /-- **WS-ZA ZA6.32**: the interrupt lines the board's distributor serves,
+      INTIDs `[0, interruptLineCount)` — the board's line count (on the RPi5
+      `gicSpiCount + 32`, on QEMU `virt` `qemuVirtGicSpiCount + 32`, the
+      numbers the HAL's `BoardMap.gic_intid_count` states).  It reaches the
+      live state through `applyMachineConfig`, where the interrupt entry and
+      the acknowledge read it.  The default is the model's 320 lines. -/
+  interruptLineCount : Nat := 320
   /-- **WS-BP BP3.2**: the physical ranges the kernel keeps for itself — the
       firmware's stub below the image, the image, its stacks, the Lean heap
       arena, and the window the boot places the device tree in.

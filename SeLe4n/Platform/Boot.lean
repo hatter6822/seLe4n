@@ -449,7 +449,10 @@ def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
       registerCount := config.registerCount
       -- PR #889 review round 20: the declared PE count travels with the rest
       -- of the machine description, so the live affinity check can read it.
-      declaredCoreCount := config.declaredCoreCount } }
+      declaredCoreCount := config.declaredCoreCount
+      -- WS-ZA ZA6.32: the board's interrupt lines, which the interrupt entry
+      -- and the acknowledge refuse a line outside of.
+      interruptLineCount := config.interruptLineCount } }
   hAllTables := ist.hAllTables
   hPerObjectSlots := ist.hPerObjectSlots
   hPerObjectMappings := ist.hPerObjectMappings
@@ -504,6 +507,11 @@ theorem applyMachineConfig_physicalAddressWidth (ist : IntermediateState) (confi
 theorem applyMachineConfig_declaredCoreCount (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.machine.declaredCoreCount =
     config.declaredCoreCount := rfl
+
+/-- WS-ZA ZA6.32: `applyMachineConfig` sets the board's interrupt-line count. -/
+theorem applyMachineConfig_interruptLineCount (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.interruptLineCount =
+    config.interruptLineCount := rfl
 
 /-- AG3-B: `applyMachineConfig` sets `registerWidth` from config. -/
 theorem applyMachineConfig_registerWidth (ist : IntermediateState) (config : MachineConfig) :
@@ -696,6 +704,12 @@ theorem bootEnableInterruptsOp_physicalAddressWidth_eq (ist : IntermediateState)
 theorem bootEnableInterruptsOp_declaredCoreCount_eq (ist : IntermediateState) :
     (bootEnableInterruptsOp ist).state.machine.declaredCoreCount =
       ist.state.machine.declaredCoreCount := rfl
+
+/-- WS-ZA ZA6.32: `bootEnableInterruptsOp` preserves the board's interrupt-line
+    count. -/
+theorem bootEnableInterruptsOp_interruptLineCount_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.interruptLineCount =
+      ist.state.machine.interruptLineCount := rfl
 
 /-- AK9-G: `bootEnableInterruptsOp` preserves machine.memoryMap. -/
 theorem bootEnableInterruptsOp_memoryMap_eq (ist : IntermediateState) :
@@ -1665,6 +1679,33 @@ def bootInterfaceBootError : String :=
   "boot: two configured service interfaces share an id, or one uses the reserved " ++
     "sentinel id 0 (WS-ZA ZA5.5)"
 
+/-- **WS-ZA ZA6.32**: the thirteenth `wellFormed` conjunct — **every interrupt
+    line the configuration names is one the board has.**
+
+    The board's lines are `[0, machineConfig.interruptLineCount)`, the count
+    the interrupt entry and the handler's acknowledge read
+    (`Architecture.deviceInterruptLine`).  An IRQ table entry past it would
+    bind a handler to a line no device raises, and a boot interrupt-handler
+    capability naming a line that is no device line of the board would hold an
+    acknowledge the kernel refuses.  seL4 issues a handler capability only for
+    a line `Arch_checkIRQ` admits (`seL4_IRQControl_Get` refuses one above
+    `maxIRQ`); with no IRQControl yet, the boot is where handler capabilities
+    are issued, so this is where the check is.  Not attacker-reachable — the
+    configuration is the integrator's. -/
+def bootInterruptLinesOnBoard (config : PlatformConfig) : Bool :=
+  config.irqTable.all (fun e => decide (e.irq.toNat < config.machineConfig.interruptLineCount)) &&
+    (config.initialObjects.flatMap bootEntryCapabilities).all fun c =>
+      match c.target with
+      | .irqHandler line =>
+          SeLe4n.Kernel.Architecture.deviceInterruptLineUnder
+            config.machineConfig.interruptLineCount line
+      | _ => true
+
+/-- The thirteenth conjunct's diagnostic. -/
+def bootInterruptLineBootError : String :=
+  "boot: an IRQ table entry or an interrupt-handler capability names a line the " ++
+    "board's distributor does not serve (WS-ZA ZA6.32)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1676,19 +1717,26 @@ def bootInterfaceBootError : String :=
     by at most one capability, (part 18) names only objects it installs, and
     (part 27) binds threads and notifications only in reciprocal pairs, and
     (WS-ZA ZA5.5) installs service interfaces under distinct, non-sentinel
-    ids. -/
+    ids, and (WS-ZA ZA6.32) names only interrupt lines the board has. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
     untypedPlacementRespected config && bootRootTablesPlaced config &&
     untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&
-    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config
+    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&
+    bootInterruptLinesOnBoard config
 
 /-- **WS-ZA ZA5.5**: a well-formed config installs service interfaces with
     distinct, non-sentinel ids. -/
 theorem PlatformConfig.wellFormed_bootInterfacesWellFormed (config : PlatformConfig)
     (h : config.wellFormed = true) : bootInterfacesWellFormed config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-ZA ZA6.32**: a well-formed config names only interrupt lines the
+    board has. -/
+theorem PlatformConfig.wellFormed_bootInterruptLinesOnBoard (config : PlatformConfig)
+    (h : config.wellFormed = true) : bootInterruptLinesOnBoard config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
@@ -1765,7 +1813,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError),
    (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError),
    (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError),
-   (bootInterfacesWellFormed config, bootInterfaceBootError)]
+   (bootInterfacesWellFormed config, bootInterfaceBootError),
+   (bootInterruptLinesOnBoard config, bootInterruptLineBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -4536,6 +4585,11 @@ theorem bootCapabilitiesNameInstalledObjects_withoutExtents (c : PlatformConfig)
   simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent, List.any_map,
     Function.comp_def, ObjectEntry.withoutUntypedExtent_id]
 
+theorem bootInterruptLinesOnBoard_withoutExtents (c : PlatformConfig) :
+    bootInterruptLinesOnBoard c.withoutExtents = bootInterruptLinesOnBoard c := by
+  unfold bootInterruptLinesOnBoard PlatformConfig.withoutExtents
+  simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent]
+
 theorem bootNotificationBindingsReciprocal_withoutExtents (c : PlatformConfig) :
     bootNotificationBindingsReciprocal c.withoutExtents =
       bootNotificationBindingsReciprocal c := by
@@ -4647,9 +4701,11 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   have hIfaces : bootInterfacesWellFormed c = bootInterfacesWellFormed c' := by
     have := congrArg PlatformConfig.initialInterfaces hEq
     unfold bootInterfacesWellFormed; exact this ▸ rfl
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩, wIf⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩
+  have hLines := bootInterruptLinesOnBoard_withoutExtents c
+  rw [hEq, bootInterruptLinesOnBoard_withoutExtents] at hLines
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w1, w2⟩, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩, wIf⟩, wLines⟩ := hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1 ▸ w1, h2 ▸ w2⟩, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩, hLines ▸ wLines⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -4976,6 +5032,28 @@ theorem bootFromPlatformChecked_ok_declaredCoreCount (config : PlatformConfig)
     show (bootFromPlatform config).state.machine.declaredCoreCount = _
     exact bootFromPlatform_machine_declaredCoreCount config
 
+/-- WS-ZA ZA6.32: the unchecked boot installs the config's interrupt-line
+    count (`applyMachineConfig`, the only writer of `machine` on this path). -/
+theorem bootFromPlatform_machine_interruptLineCount (config : PlatformConfig) :
+    (bootFromPlatform config).state.machine.interruptLineCount =
+    config.machineConfig.interruptLineCount := by
+  show _ = _; unfold bootFromPlatform
+  rw [applyMachineConfig_interruptLineCount]
+
+/-- WS-ZA ZA6.32: ...and the checked boot's two shapes preserve it. -/
+theorem bootFromPlatformChecked_ok_interruptLineCount (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.machine.interruptLineCount = config.machineConfig.interruptLineCount := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, hEq⟩ | ⟨entry, _, hEq⟩
+  · subst hEq
+    rw [bootEnableInterruptsOp_interruptLineCount_eq]
+    exact bootFromPlatform_machine_interruptLineCount config
+  · subst hEq
+    rw [bootEnableInterruptsOp_interruptLineCount_eq]
+    show (bootFromPlatform config).state.machine.interruptLineCount = _
+    exact bootFromPlatform_machine_interruptLineCount config
+
 /-- The idle store adds at most one index entry: it stores one TCB. -/
 theorem storeIdleThread_objectIndex_length_le (ist : IntermediateState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
@@ -5111,6 +5189,26 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount
         · injection h with h
           rw [← h, foldl_storeIdleThread_machine]
           exact bootFromPlatformChecked_ok_declaredCoreCount config ist hChecked
+        · cases h
+      · cases h
+
+/-- WS-ZA ZA6.32: the idle store keeps the board's interrupt-line count. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_interruptLineCount
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist' : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist') :
+    ist'.state.machine.interruptLineCount = config.machineConfig.interruptLineCount := by
+  unfold bootFromPlatformCheckedWithIdleThreadsFor at h
+  cases hChecked : bootFromPlatformChecked config with
+  | error e => rw [hChecked] at h; simp [Except.bind] at h
+  | ok ist =>
+      rw [hChecked] at h
+      simp only [Except.bind] at h
+      split at h
+      · split at h
+        · injection h with h
+          rw [← h, foldl_storeIdleThread_machine]
+          exact bootFromPlatformChecked_ok_interruptLineCount config ist hChecked
         · cases h
       · cases h
 

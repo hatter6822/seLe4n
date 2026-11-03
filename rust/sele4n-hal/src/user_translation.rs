@@ -285,6 +285,12 @@ pub fn decode_physical_write(
             }
         }
         PHYSICAL_WRITE_SET_INTERRUPT_MASK => {
+            // A backstop the kernel never reaches: the Lean side records a mask
+            // only for a line inside the board's count
+            // (`Architecture.deviceInterruptLine`, read from the machine
+            // configuration's `interruptLineCount`, which the boot-map fixture
+            // holds equal to `BOARD.gic_intid_count`), refusing any other line
+            // at the entry and the acknowledge before it writes.
             if !(32..u64::from(crate::gic::MAX_INTID)).contains(&addr) {
                 Err(PhysicalWriteRefusal::InterruptLineRefused(addr))
             } else if value > 1 {

@@ -654,7 +654,10 @@ Lean kernel (`interruptEntry`, `lean_handle_interrupt`, from
 the `CapTarget.irqHandler` capability.  **New code must assume it**: a new
 `CapTarget` constructor needs an arm wherever `.irqHandler` has one; an
 interrupt line's mask is machine state written only through
-`Architecture.setInterruptLineMask`, which records physical write tag 5; a
+`Architecture.setInterruptLineMask`, which records physical write tag 5, and
+only for a line `Architecture.deviceInterruptLine st` admits (the board's
+line count, `MachineState.interruptLineCount`; a new board sets
+`MachineConfig.interruptLineCount` from its own count); a
 step that wakes a thread stages its delivery (`stageWokenDelivery`), so its
 saved-register census is `savedRegsWrittenFree`, not `savedRegsUnwritten`; a
 new committing entry is added to `PerCoreNonInterferenceStep` and moves

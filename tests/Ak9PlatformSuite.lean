@@ -2546,8 +2546,11 @@ private def bootMapTableLines : List String :=
     -- `gicSpiCount` SPIs), as `gicIntIds <n>` — read back by `gic.rs`'s
     -- `the_board_interrupt_lines_are_the_lean_ones`, so the lines the HAL
     -- programs, and requires `GICD_TYPER.ITLinesNumber` to cover at boot, are
-    -- the ones the interrupt contract and the IRQ table name.
-    ++ [s!"gicIntIds {bootMapHex (gicSpiCount + 32)}"]
+    -- the ones the interrupt contract and the IRQ table name.  WS-ZA ZA6.32:
+    -- printed from the machine configuration's `interruptLineCount`, the
+    -- count the interrupt entry and the acknowledge read, so the HAL's board
+    -- is held to the number the kernel refuses lines by.
+    ++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]
     -- The BCM2712 address-map correction (v0.36.2): the MMIO windows the
     -- binding programs, as `mmio <name> <base> <size>`, taken from
     -- `mmioRegions` in order — read back by the HAL's UART and GIC tests, so
@@ -2698,7 +2701,7 @@ private def qemuVirtBootMapTableLines : List String :=
     ++ [s!"asidSpace {bootMapHex qemuVirtMachineConfig.maxASID}"]
     ++ [s!"tablePool {bootMapHex qemuVirtBootTablePoolBase} {bootMapHex qemuVirtBootTablePoolPages}"]
     ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := QemuVirtPlatform))}"]
-    ++ [s!"gicIntIds {bootMapHex (qemuVirtGicSpiCount + 32)}"]
+    ++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]
     ++ (["uart", "gicd", "gicc"].zip qemuVirtMmioRegions).map (fun (name, r) =>
         s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
     ++ map.map (fun r =>

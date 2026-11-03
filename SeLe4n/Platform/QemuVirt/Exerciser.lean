@@ -239,6 +239,13 @@ theorem qemuVirtExerciser_bindMachineConfig (board : SeLe4n.MachineConfig) :
     PlatformBinding.bindMachineConfig (platform := QemuVirtExerciserPlatform) board =
       qemuVirtMachineConfig := rfl
 
+/-- WS-ZA ZA6.32: the exerciser's bound configuration serves `virt`'s lines,
+    `qemuVirtGicSpiCount + 32`, the count the interrupt entry and the
+    acknowledge refuse a line outside of. -/
+theorem qemuVirtExerciser_bound_interruptLineCount (board : SeLe4n.MachineConfig) :
+    (PlatformBinding.bindMachineConfig (platform := QemuVirtExerciserPlatform)
+      board).interruptLineCount = qemuVirtGicSpiCount + 32 := rfl
+
 -- ============================================================================
 -- Every gate of the exerciser's checked boot, decided
 -- ============================================================================

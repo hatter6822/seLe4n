@@ -1401,6 +1401,21 @@ theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
     bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
 
+/-- WS-ZA ZA6.32: **the live interrupt-line count of a state the platform boot
+produces is the bound configuration's**, so the interrupt entry and the
+acknowledge refuse exactly the lines the board's configuration does not
+have. -/
+theorem bootAndInitialisePlatform_checked_interruptLineCount (platform : Type)
+    [PlatformBinding platform] (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor
+        (PlatformBinding.declaredCores (platform := platform))
+        (bindPlatformConfig platform config) = .ok ist) :
+    ist.state.machine.interruptLineCount =
+      (bindPlatformConfig platform config).machineConfig.interruptLineCount := by
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
+  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart,
+    bootFromPlatformCheckedWithIdleThreadsFor_interruptLineCount _ _ _ hBase]
+
 /-- **WS-ZA ZA5.5**: the bound configuration installs the binding's service
     interfaces. -/
 theorem bindPlatformConfig_initialInterfaces (platform : Type) [PlatformBinding platform]
@@ -1929,6 +1944,12 @@ right number on every RPi5 variant. -/
 theorem bootAndInitialiseRPi5_bound_config_declaredCoreCount (config : PlatformConfig) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig.declaredCoreCount
       = 4 := rfl
+
+/-- WS-ZA ZA6.32: the bound configuration's interrupt-line count is the
+GIC-400's, `gicSpiCount + 32`, on every account and every RPi5 variant. -/
+theorem bootAndInitialiseRPi5_bound_config_interruptLineCount (config : PlatformConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig.interruptLineCount
+      = SeLe4n.Platform.RPi5.gicSpiCount + 32 := rfl
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.

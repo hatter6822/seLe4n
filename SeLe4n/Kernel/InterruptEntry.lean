@@ -96,7 +96,7 @@ the run queues `interruptRunCores` names; nothing for an id naming no core or
 a line that is no device line, on which the step commits nothing. -/
 def declaredLockSetForInterrupt (coreId intId : UInt64) : SystemState → Option LockSet :=
   fun st => (Concurrency.coreIdOfUInt64? coreId).bind fun c =>
-    if Architecture.deviceInterruptLine intId.toNat then
+    if Architecture.deviceInterruptLine st intId.toNat then
       LockSet.ofList? (schedFootprintOfCores (interruptRunCores st c intId.toNat) [])
     else none
 
@@ -104,7 +104,7 @@ def declaredLockSetForInterrupt (coreId intId : UInt64) : SystemState → Option
 theorem declaredLockSetForInterrupt_some {coreId intId : UInt64} {st : SystemState}
     {S : LockSet} (hS : declaredLockSetForInterrupt coreId intId st = some S) :
     ∃ c, Concurrency.coreIdOfUInt64? coreId = some c ∧
-      Architecture.deviceInterruptLine intId.toNat = true ∧
+      Architecture.deviceInterruptLine st intId.toNat = true ∧
       S.pairs = schedFootprintOfCores (interruptRunCores st c intId.toNat) [] := by
   unfold declaredLockSetForInterrupt at hS
   cases hc : Concurrency.coreIdOfUInt64? coreId with
@@ -112,7 +112,7 @@ theorem declaredLockSetForInterrupt_some {coreId intId : UInt64} {st : SystemSta
   | some c =>
     rw [hc] at hS
     simp only [Option.bind_some] at hS
-    cases hd : Architecture.deviceInterruptLine intId.toNat with
+    cases hd : Architecture.deviceInterruptLine st intId.toNat with
     | false => rw [hd] at hS; cases hS
     | true =>
       rw [hd] at hS

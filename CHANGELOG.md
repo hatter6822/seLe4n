@@ -70,6 +70,32 @@ and fault entries do.
   in-place wake), and the signal with no waiter 11 then 9 (the store copied
   because the pre-state was still referenced after the signal, now the quiet
   branch, plus the boot ledger's one-time copy).
+- **The device-line range is the board's.**  The lines the entry delivers
+  and the acknowledge unmasks were INTIDs 32 to 319 for every board, while
+  QEMU `virt` serves 288.  A line inside the model but past the board was
+  accepted, and the HAL's validation of the recorded mask write would then
+  halt every core: a denial of service open to any holder of a handler
+  capability for such a line.  The range is now read from one owner, the
+  board's line count.  `MachineConfig.interruptLineCount` is set from
+  `gicSpiCount + 32` on the RPi5 (320) and `qemuVirtGicSpiCount + 32` on
+  `virt` (288), and `applyMachineConfig` installs it into
+  `MachineState.interruptLineCount`.  `Architecture.deviceInterruptLine st`
+  checks against that value, so a line past the board is refused before any
+  write, as seL4's `Arch_checkIRQ` refuses an IRQ above `maxIRQ`:
+  - the interrupt entry enters nothing (`interruptEntryStep_off_board`);
+  - the acknowledge returns `.invalidIrq` (`irqHandlerAck_refuses_off_board`),
+    on both the specification path and the refusal-carrying arm;
+  - the boot refuses an IRQ table entry or a handler capability for a line the
+    board does not have, through a new `wellFormed` conjunct
+    (`bootInterruptLinesOnBoard`, seL4's `seL4_IRQControl_Get` check).
+
+  The live count is the bound configuration's
+  (`bootAndInitialisePlatform_checked_interruptLineCount`), and the boot-map
+  fixtures print it, so `gic.rs` holds `BOARD.gic_intid_count` to the number
+  the kernel refuses lines by.  The HAL's mask-write validation stays as a
+  backstop the kernel never reaches.  New cases are
+  `runOffBoardInterruptLineChecks` in the negative-state suite and
+  `runBootInterruptLineChecks` in the SMP idle suite.
 - **The boot's physical-write ledger is the state's own**
   (`SystemState.withFreshPhysicalWrites`, applied by `initialiseKernelState`).
   The installed ledger was the shared initial constant, so the first physical

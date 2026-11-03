@@ -3798,7 +3798,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    bootInterruptLinesOnBoard config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # The boot keeps every untyped clear of the devices the kernel drives, as seL4
@@ -23019,12 +23019,13 @@ run_check "INVARIANT" rg -n '^def bootCapabilitiesNameInstalledObjects \(config 
 run_check "INVARIANT" rg -n '^   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.4 part 27: the eleventh conjunct, reciprocal notification bindings,
 # with its own diagnostic row.
-run_check "INVARIANT" rg -n '^    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^   \(bootNotificationBindingsReciprocal config, bootNotificationBindingBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.5: the boot installs the configured service interfaces (the only
 # writer of the interface registry), the binding supplies them, and the twelfth
 # conjunct refuses a duplicate or sentinel id with its own diagnostic row.
-run_check "INVARIANT" rg -n '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^   \(bootInterruptLinesOnBoard config, bootInterruptLineBootError\)\]$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootInterfacesWellFormed \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  let withInterfaces := foldInterfaces config\.initialInterfaces withObjects$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  applyMachineConfig withInterfaces config\.machineConfig$' SeLe4n/Platform/Boot.lean
@@ -23237,6 +23238,27 @@ run_check "INVARIANT" rg -n '^(@\[inline\] )?def deviceInterruptLine \(' SeLe4n/
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def setInterruptLineMask \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def irqHandlerAck \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerAck_unmasks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptMask.lean
+# The device-line range is the board's: one owner, the board's line count,
+# carried by the machine configuration into the live state and read by the
+# entry and the acknowledge before any write (seL4's Arch_checkIRQ / maxIRQ).
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def deviceInterruptLineUnder \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^  deviceInterruptLineUnder st\.machine\.interruptLineCount line$' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^  if deviceInterruptLine st line then \.ok \(\(\), setInterruptLineMask st line false\)$' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerAck_refuses_off_board($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_off_board($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^    interruptLineCount := gicSpiCount \+ 32$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^    interruptLineCount := qemuVirtGicSpiCount \+ 32 \}$' SeLe4n/Platform/QemuVirt/Board.lean
+run_check "INVARIANT" rg -n '^      interruptLineCount := config\.interruptLineCount \} \}$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_checked_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5_bound_config_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem qemuVirtExerciser_bound_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^def bootInterruptLinesOnBoard \(' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    bootInterruptLinesOnBoard config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootInterruptLinesOnBoard($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]' tests/
+run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]' tests/
+run_check "INVARIANT" rg -n '^  SeLe4n\.Testing\.runOffBoardInterruptLineChecks$' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n '^  runBootInterruptLineChecks$' tests/SmpIdleSuite.lean
 run_check "INVARIANT" rg -n '^theorem irqHandlerAck_ok($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptMask.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def handleInterruptOnCore \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptEntryStep \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
@@ -23281,5 +23303,5 @@ run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(r
 run_check "INVARIANT" rg -n '^  \| \.irqHandlerAck =>$' SeLe4n/Kernel/API.lean
 # The acknowledge's refusal-carrying arm writes the mask in place.
 run_check "INVARIANT" rg -n '^  \| \.irqHandlerAck =>$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
-run_check "INVARIANT" rg -n '^        RefusalCarrying\.ofChecked \(Architecture\.deviceInterruptLine line\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^        RefusalCarrying\.ofChecked \(Architecture\.deviceInterruptLine st line\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 finalize_report

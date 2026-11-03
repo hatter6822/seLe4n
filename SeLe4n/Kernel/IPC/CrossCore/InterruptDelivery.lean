@@ -36,8 +36,10 @@ prints `Undelivered IRQ` and delivers nothing, and the line is masked either
 way.
 
 The entry's raw form (`interruptEntryStep`) decodes the core and the line the
-HAL passes: an id naming no core, or a line that is no device line
-(`Architecture.deviceInterruptLine`), enters nothing.  The HAL never passes a
+HAL passes: an id naming no core, or a line that is no device line of this
+board (`Architecture.deviceInterruptLine`: an SPI below the board's line count,
+`MachineState.interruptLineCount`, as seL4's `Arch_checkIRQ` bounds a line by
+`maxIRQ`), enters nothing and writes nothing.  The HAL never passes a
 spurious INTID (`≥ 1020`, seL4's `handleSpuriousIRQ`, no EOI) or one past the
 distributor's lines (EOI'd without dispatch); the decode makes either inert
 if it did.
@@ -176,7 +178,7 @@ def interruptEntryStep (st : SystemState) (coreId intId : UInt64) : SystemState 
   match Concurrency.coreIdOfUInt64? coreId with
   | none => st
   | some c =>
-      if Architecture.deviceInterruptLine intId.toNat then handleInterruptOnCore st c intId.toNat
+      if Architecture.deviceInterruptLine st intId.toNat then handleInterruptOnCore st c intId.toNat
       else st
 
 /-! ### The step's shape -/
@@ -188,15 +190,26 @@ theorem interruptEntryStep_invalid_core (st : SystemState) (coreId intId : UInt6
 
 /-- A line that is no device line enters nothing. -/
 theorem interruptEntryStep_not_device (st : SystemState) (coreId intId : UInt64)
-    (h : Architecture.deviceInterruptLine intId.toNat = false) :
+    (h : Architecture.deviceInterruptLine st intId.toNat = false) :
     interruptEntryStep st coreId intId = st := by
   unfold interruptEntryStep
   cases Concurrency.coreIdOfUInt64? coreId <;> simp [h]
 
+/-- **A line the board does not have enters nothing**: an INTID at or past the
+board's line count (`MachineState.interruptLineCount`) is refused before any
+write, as seL4's `Arch_checkIRQ` refuses one above `maxIRQ`. -/
+theorem interruptEntryStep_off_board (st : SystemState) (coreId intId : UInt64)
+    (h : st.machine.interruptLineCount ≤ intId.toNat) :
+    interruptEntryStep st coreId intId = st := by
+  apply interruptEntryStep_not_device
+  simp only [Architecture.deviceInterruptLine, Architecture.deviceInterruptLineUnder,
+    Bool.and_eq_false_iff, decide_eq_false_iff_not, Nat.not_lt]
+  exact .inl (.inr h)
+
 /-- On a core and a device line the step is `handleInterruptOnCore`. -/
 theorem interruptEntryStep_device (st : SystemState) (coreId intId : UInt64) (c : CoreId)
     (hc : Concurrency.coreIdOfUInt64? coreId = some c)
-    (h : Architecture.deviceInterruptLine intId.toNat = true) :
+    (h : Architecture.deviceInterruptLine st intId.toNat = true) :
     interruptEntryStep st coreId intId = handleInterruptOnCore st c intId.toNat := by
   simp [interruptEntryStep, hc, h]
 
@@ -218,7 +231,7 @@ theorem handleInterruptOnCore_of {P : SystemState → Prop} (st : SystemState) (
 /-- …and the raw step's. -/
 theorem interruptEntryStep_of {P : SystemState → Prop} (st : SystemState) (coreId intId : UInt64)
     (hSt : P st) (hStep : ∀ c, Concurrency.coreIdOfUInt64? coreId = some c →
-      Architecture.deviceInterruptLine intId.toNat = true →
+      Architecture.deviceInterruptLine st intId.toNat = true →
       P (handleInterruptOnCore st c intId.toNat)) :
     P (interruptEntryStep st coreId intId) := by
   unfold interruptEntryStep
@@ -226,7 +239,7 @@ theorem interruptEntryStep_of {P : SystemState → Prop} (st : SystemState) (cor
   | none => exact hSt
   | some c =>
     dsimp only
-    cases hd : Architecture.deviceInterruptLine intId.toNat with
+    cases hd : Architecture.deviceInterruptLine st intId.toNat with
     | false => simpa using hSt
     | true => simpa using hStep c hc hd
 

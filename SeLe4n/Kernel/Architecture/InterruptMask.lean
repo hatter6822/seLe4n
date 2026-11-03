@@ -30,16 +30,26 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 
 /-- The interrupt lines the model names: the 320 the BCM2712 distributor
-serves (`InterruptId`). -/
-def interruptLineCount : Nat := 320
+serves (`InterruptId`), and the five mask words hold. -/
+def modelInterruptLineCount : Nat := 320
 
-/-- **The lines a device raises**: the shared peripheral interrupts, INTIDs 32
-to 319.  An SGI (0–15) is the kernel's own inter-core signal and a PPI (16–31)
-is a line banked per core, which the distributor enables and disables on the
-core that writes the register; neither is a line one handler capability names
-for the whole machine, so neither is delivered, masked or acknowledged here. -/
-@[inline] def deviceInterruptLine (line : Nat) : Bool :=
-  32 ≤ line && line < interruptLineCount
+/-- **The lines a device raises on a board of `count` lines**: the shared
+peripheral interrupts, INTIDs 32 up to the board's line count (and inside the
+model's).  An SGI (0–15) is the kernel's own inter-core signal and a PPI
+(16–31) is a line banked per core, which the distributor enables and disables
+on the core that writes the register; neither is a line one handler capability
+names for the whole machine, so neither is delivered, masked or acknowledged
+here.  A line at or past the board's count is no line the board has: seL4's
+`Arch_checkIRQ` refuses an IRQ above `maxIRQ` before anything is written. -/
+@[inline] def deviceInterruptLineUnder (count line : Nat) : Bool :=
+  32 ≤ line && line < count && line < modelInterruptLineCount
+
+/-- **The lines a device raises on this machine**: `deviceInterruptLineUnder`
+at the board's line count, which the boot installs from the bound machine
+configuration (`MachineState.interruptLineCount`,
+`MachineConfig.interruptLineCount`). -/
+@[inline] def deviceInterruptLine (st : SystemState) (line : Nat) : Bool :=
+  deviceInterruptLineUnder st.machine.interruptLineCount line
 
 /-- **Line `line` masked (`masked = true`) or unmasked at the interrupt
 controller**: the machine's mask written and the controller's write recorded. -/
@@ -72,9 +82,10 @@ def setInterruptLineMask (st : SystemState) (line : Nat) (masked : Bool) : Syste
 
 /-- **seL4's `invokeIRQHandler_AckIRQ`**: the line the handler capability names
 unmasked at the controller.  A line that is no device line is refused
-(`deviceInterruptLine`), so a capability naming one acknowledges nothing. -/
+(`deviceInterruptLine`, a line inside the board's count), so a capability
+naming one acknowledges nothing and writes nothing. -/
 def irqHandlerAck (line : Nat) : Kernel Unit := fun st =>
-  if deviceInterruptLine line then .ok ((), setInterruptLineMask st line false)
+  if deviceInterruptLine st line then .ok ((), setInterruptLineMask st line false)
   else .error .invalidIrq
 
 /-- The acknowledge leaves the line unmasked. -/
@@ -84,6 +95,18 @@ theorem irqHandlerAck_unmasks {line : Nat} {st st' : SystemState}
   split at h
   · cases h; simp
   · cases h
+
+/-- **A line the board does not have is refused**, and the state is not
+written: an acknowledge of a line at or past the board's line count is
+`.invalidIrq`. -/
+theorem irqHandlerAck_refuses_off_board {line : Nat} {st : SystemState}
+    (h : st.machine.interruptLineCount ≤ line) :
+    irqHandlerAck line st = .error .invalidIrq := by
+  have hN : deviceInterruptLine st line = false := by
+    simp only [deviceInterruptLine, deviceInterruptLineUnder, Bool.and_eq_false_iff,
+      decide_eq_false_iff_not, Nat.not_lt]
+    exact .inl (.inr h)
+  simp [irqHandlerAck, hN]
 
 /-- The acknowledge's state is the mask's. -/
 theorem irqHandlerAck_ok {line : Nat} {st st' : SystemState}

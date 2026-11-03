@@ -5914,7 +5914,11 @@ Every kernel object has a decidable well-formedness predicate:
   sets a woken thread's badge register, the signal (`interruptSignal`) stages
   the badge into the frame of the thread it wakes, and its `@[csimp]` form
   wakes a waiter in place; an unbound line is masked;
-  a spurious or non-device INTID enters nothing.  The acknowledge is the
+  a spurious or non-device INTID, or a line at or past the board's line
+  count (`MachineState.interruptLineCount`, the board's own count, as seL4's
+  `Arch_checkIRQ` bounds lines by `maxIRQ`), enters nothing, the acknowledge
+  refuses it before any write, and the boot issues no handler capability
+  for it.  The acknowledge is the
   `.irqHandlerAck` syscall (44) on an interrupt-handler capability
   (`CapTarget.irqHandler`, write right), which unmasks the line in place
   through its refusal-carrying arm.  The mask is
