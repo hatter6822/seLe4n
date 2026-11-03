@@ -655,6 +655,8 @@ the `CapTarget.irqHandler` capability.  **New code must assume it**: a new
 `CapTarget` constructor needs an arm wherever `.irqHandler` has one; an
 interrupt line's mask is machine state written only through
 `Architecture.setInterruptLineMask`, which records physical write tag 5; a
+step that wakes a thread stages its delivery (`stageWokenDelivery`), so its
+saved-register census is `savedRegsWrittenFree`, not `savedRegsUnwritten`; a
 new committing entry is added to `PerCoreNonInterferenceStep` and moves
 `niStepCoverage_perCore_count` (51 since this row).
 Since `v0.36.194`, ZA6.31 gives the fault, unknown-syscall and FP/SIMD

@@ -571,27 +571,6 @@ theorem notificationSignalBoundOnCore_savedRegsUnwritten (notificationId : SeLe4
         exact h2.trans (savedRegsUnwritten.of_wakeThread st2 _ c h2.2)
   · exact notificationSignalOnCore_savedRegsUnwritten _ _ _ hInv
 
-/-- WS-ZA ZA6.32: **the interrupt step writes no saved register**: the bound
-signal writes none (`notificationSignalBoundOnCore_savedRegsUnwritten`) and the
-mask writes the machine's mask words and the physical-write ledger only. -/
-theorem handleInterruptOnCore_savedRegsUnwritten (st : SystemState) (c : CoreId) (line : Nat)
-    (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (handleInterruptOnCore st c line) := by
-  have hM : ∀ s, savedRegsUnwritten st s →
-      savedRegsUnwritten st (Architecture.setInterruptLineMask s line true) :=
-    fun s hs => hs.trans ⟨fun _ _ => rfl, by simpa using hs.2⟩
-  unfold handleInterruptOnCore
-  split
-  · exact hM _ (notificationSignalBoundOnCore_savedRegsUnwritten _ _ c hInv)
-  · exact hM _ (.refl hInv)
-
-/-- …and so does the raw step. -/
-theorem interruptEntryStep_savedRegsUnwritten (st : SystemState) (coreId intId : UInt64)
-    (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (interruptEntryStep st coreId intId) :=
-  interruptEntryStep_of (P := savedRegsUnwritten st) st coreId intId (.refl hInv)
-    (fun c _ _ => handleInterruptOnCore_savedRegsUnwritten st c _ hInv)
-
 /-- The checked signal writes no saved register. -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
@@ -823,8 +802,8 @@ theorem sendArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjI
 and the stash clear write no saved register, and the two stagings name the
 bound thread blocked on receive and the notification's head waiter at the
 entry's start, both blocked there. -/
-theorem signalArm_savedRegsWrittenFree {nid : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
-    {ec e : CoreId} {st s1 s2 : SystemState} (P : SyscallArmPremises st ec tid)
+theorem signalArm_savedRegsWrittenFree {nid : SeLe4n.ObjId}
+    {e : CoreId} {st s1 s2 : SystemState} (P : EntryPremises st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (h1 : savedRegsUnwritten st s1)
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
     savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
@@ -849,7 +828,7 @@ theorem notificationSignalArm_savedRegsWrittenFree {ctx : LabelingContext} {nid 
   have h1 := notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten ctx nid tid badge
     ec P.objInv
   rw [hSig] at h1
-  exact signalArm_savedRegsWrittenFree P hRT hBNR h1 hClr
+  exact signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR h1 hClr
 
 /-- The declassifying signal arm. -/
 theorem declassifySignalArm_savedRegsWrittenFree {ctx : GenericLabelingContext}
@@ -863,8 +842,36 @@ theorem declassifySignalArm_savedRegsWrittenFree {ctx : GenericLabelingContext}
     savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
       (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
       (notificationSignalWaiter? st nid) 0) :=
-  signalArm_savedRegsWrittenFree P hRT hBNR
+  signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR
     (notificationSignalDeclassifiedCrossCoreDispatch_savedRegsUnwritten P.objInv hSig) hClr
+
+/-- WS-ZA ZA6.32: **the interrupt step writes only the threads its signal
+wakes**: seL4's `handleInterrupt` signals the bound notification
+(`interruptSignal`), whose signal and stash clear write no saved register and
+whose two stagings name the bound thread blocked on receive and the
+notification's head waiter, both blocked at the entry's start; the mask writes
+the machine's mask words and the physical-write ledger only. -/
+theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemState) (c : CoreId)
+    (line : Nat) (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
+    (hBNR : st.blockedNotResident) :
+    savedRegsWrittenFree e st st (handleInterruptOnCore st c line) := by
+  have hM : ∀ s, savedRegsWrittenFree e st st s →
+      savedRegsWrittenFree e st st (Architecture.setInterruptLineMask s line true) :=
+    fun _ hs t => hs t
+  have h1 := fun ntfn badge => notificationSignalBoundOnCore_savedRegsUnwritten ntfn badge c E.objInv
+  unfold handleInterruptOnCore
+  split
+  · exact hM _ (interruptSignal_of (P := savedRegsWrittenFree e st st) _ _ c st (h1 _ _).writtenFree
+      fun _ _ _ hClr => signalArm_savedRegsWrittenFree E hRT hBNR (h1 _ _) hClr)
+  · exact hM _ (.refl _)
+
+/-- …and so does the raw step. -/
+theorem interruptEntryStep_savedRegsWrittenFree {e : CoreId} (st : SystemState)
+    (coreId intId : UInt64) (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
+    (hBNR : st.blockedNotResident) :
+    savedRegsWrittenFree e st st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := savedRegsWrittenFree e st st) st coreId intId (.refl _)
+    (fun c _ _ => handleInterruptOnCore_savedRegsWrittenFree st c _ E hRT hBNR)
 
 /-- WS-ZA ZA6.26: **the wait arm writes only the caller**: the checked wait
 writes no saved register, and a consumed badge is staged into the caller, the

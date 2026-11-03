@@ -73,6 +73,17 @@ theorem footprintCoversWrites_of_frame {S : LockSet} {st mid post : SystemState}
   · rw [hS]; exact h2 d hd
   · rw [hS]; exact h3 d hd
 
+/-- …and a step after it that writes objects alone, under a footprint naming
+the table's write lock. -/
+theorem footprintCoversWrites_of_table {S : LockSet} {st mid post : SystemState}
+    (h : footprintCoversWrites S st mid)
+    (hT : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs)
+    (hS : post.scheduler = mid.scheduler) : footprintCoversWrites S st post := by
+  obtain ⟨-, h2, h3⟩ := h
+  refine ⟨fun hA => absurd hT hA, fun d hd => ?_, fun d hd => ?_⟩
+  · rw [hS]; exact h2 d hd
+  · rw [hS]; exact h3 d hd
+
 /-- **The run queues the interrupt entry declares**: the executing core's,
 and at a line a handler is bound to the cores the signal wakes onto. -/
 def interruptRunCores (st : SystemState) (c : CoreId) (line : Nat) : List CoreId :=
@@ -123,11 +134,17 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
     exact footprintCoversWrites_of_frame (footprintCoversWrites_refl S st) rfl rfl
   | some ntfn =>
     rw [hH] at hP
-    exact footprintCoversWrites_of_frame
-      (footprintCoversWrites_of_confined S _ [] st _ hP
-        ((notificationSignalBoundOnCore_confinedToCores ntfn _ c st hInv).mono
-          (fun _ h => List.mem_cons_of_mem _ h))
-        (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore _ _ c st d)) rfl rfl
+    have hT : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+      rw [hP]; exact List.mem_cons_self
+    have hB := footprintCoversWrites_of_confined S _ [] st _ hP
+      ((notificationSignalBoundOnCore_confinedToCores ntfn (SeLe4n.Badge.ofNatMasked intId.toNat)
+        c st hInv).mono (fun _ h => List.mem_cons_of_mem _ h))
+      (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore _ _ c st d)
+    refine footprintCoversWrites_of_frame
+      (interruptSignal_of (P := footprintCoversWrites S st) ntfn _ c st hB
+        (fun _ s2 _ hC => footprintCoversWrites_of_table hB hT ?_)) rfl rfl
+    rw [Architecture.stageWokenDelivery_scheduler_eq, Architecture.stageWokenDelivery_scheduler_eq,
+      clearWokenReceiverStash_scheduler_eq _ _ ((), s2) hC]
 
 /-- The declared footprint names the table write lock… -/
 theorem declaredLockSetForInterrupt_objStore {coreId intId : UInt64} {st : SystemState}

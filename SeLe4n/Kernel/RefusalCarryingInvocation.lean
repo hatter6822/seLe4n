@@ -676,6 +676,15 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
             (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore)
           (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
     | _ => .error (.invalidCapability, st)
+  -- WS-ZA ZA6.32: the acknowledge refuses only a line that is no device line,
+  -- read before the write, so the mask is written in place.
+  | .irqHandlerAck =>
+    match cap.target with
+    | .irqHandler line =>
+        RefusalCarrying.ofChecked (Architecture.deviceInterruptLine line)
+          (fun st => Architecture.setInterruptLineMask st line false)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>
@@ -1165,6 +1174,14 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         intro hA
         simp only [dispatchInvocationBy, hS,
           SchedContextOps.schedContextYieldToOnCore_of_admitted _ _ _ hA]
+    all_goals rfl
+  case irqHandlerAck =>
+    cases target
+    case irqHandler line =>
+      dsimp only
+      apply RefusalCarrying.ofChecked_eq
+      intro hA
+      simp only [dispatchInvocationBy, Architecture.irqHandlerAck, hA, ↓reduceIte]
     all_goals rfl
   case tcbBindNotification =>
     cases target

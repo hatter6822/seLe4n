@@ -11,6 +11,11 @@ and fault entries do.
   is seL4's `handleInterrupt` on the executing core.  At a line with a bound
   handler it signals the notification with the bound-aware per-core signal,
   badged with the line, then masks the line until the handler acknowledges it.
+  The signal (`interruptSignal`) is the syscall signal arm's: it clears the
+  bound receiver's stash and stages the badge into the frame of the thread it
+  wakes (seL4's `sendSignal` sets the woken thread's badge register).  Its
+  `@[csimp]` fast form (`interruptSignal_eq_impl`) wakes a notification's
+  waiter in place (`performSignalWokenDelivered`).
   A line with no handler is masked (`IRQInactive`).  A spurious or non-device
   INTID enters nothing.  The HAL masks a PPI other than the timer's on its own
   core, because PPIs are banked per core and no handler capability names one.
@@ -22,7 +27,10 @@ and fault entries do.
   (`gic::set_interrupt_line_masked`).
 - **The acknowledge** is the new `.irqHandlerAck` syscall (44, `seL4_IRQHandler_Ack`).
   It is invoked with the write right on the new `CapTarget.irqHandler`
-  capability and unmasks the line (`Architecture.irqHandlerAck`).  Every arm
+  capability and unmasks the line (`Architecture.irqHandlerAck`).  Its
+  refusal-carrying arm (`dispatchInvocationByR`) reads the line before the
+  write, so the mask is written in place, not through the shared-state
+  fallback.  Every arm
   proof, census, lock set, taint, enforcement and refusal table covers it.  On
   the Rust side, `SyscallId::IrqHandlerAck` is in `sele4n-types` and the HAL,
   and `sele4n_sys::irq::irq_handler_ack` is new.
@@ -37,11 +45,15 @@ and fault entries do.
     yield-linked-not-resident and residents-have-TCBs.
   - The remote save.
   - The bank match on the executing core and on every other core.
-  - The saved-register census (`interruptEntryStep_savedRegsUnwritten`).
+  - The saved-register census (`interruptEntryStep_savedRegsWrittenFree`):
+    the step writes only the threads its signal wakes, which are blocked at
+    the entry's start and so held by no core.
   - The mapping stage.
   - Per-core non-interference: `interruptEntryState_lowEquivalent`, built on
     a new all-paths theorem for the bound-aware signal
-    (`notificationSignalBoundOnCore_lowEquivalent`).  The step is the
+    (`notificationSignalBoundOnCore_lowEquivalent`), the stash clear at the
+    hidden bound receiver and the stagings, which write only register
+    contexts no projection shows.  The step is the
     `interruptEntry` constructor of `PerCoreNonInterferenceStep`, and
     `niStepCoverage_perCore_count` is now 51.
 - **The exerciser**, in the QEMU image, gets two lines: line 250 is bound to

@@ -23241,6 +23241,11 @@ run_check "INVARIANT" rg -n '^(@\[inline\] )?def handleInterruptOnCore \(' SeLe4
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptEntryStep \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
 run_check "INVARIANT" rg -n '^theorem handleInterruptOnCore_masks($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryStep_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+# The signal stages the badge into the woken thread's frame, as the syscall's
+# signal arm does, and runs in place through its `@[csimp]` fast form.
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptSignal \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem interruptSignal_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^theorem interruptSignal_of($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptRunCores \(' SeLe4n/Kernel/InterruptEntry.lean
 run_check "INVARIANT" rg -n '^(@\[inline\] )?def declaredLockSetForInterrupt \(' SeLe4n/Kernel/InterruptEntry.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/InterruptEntry.lean
@@ -23256,13 +23261,16 @@ run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_currentNotRe
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
-run_check "INVARIANT" rg -n '^theorem interruptEntryStep_savedRegsUnwritten($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_savedRegsWrittenFree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^theorem currentSavedRegsKeptOffCore_of_writtenFree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryTail_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem clearWokenReceiverStash_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntry_commits($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_irqHandlerAck($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_irqHandlerAck_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
@@ -23270,4 +23278,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_irqHandlerAck_size_le($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^@\[export lean_handle_interrupt\]$' SeLe4n/Kernel/InterruptEntry.lean
 run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_handle_interrupt"\) \};' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n '^  \| \.irqHandlerAck =>$' SeLe4n/Kernel/API.lean
+# The acknowledge's refusal-carrying arm writes the mask in place.
+run_check "INVARIANT" rg -n '^  \| \.irqHandlerAck =>$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^        RefusalCarrying\.ofChecked \(Architecture\.deviceInterruptLine line\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 finalize_report

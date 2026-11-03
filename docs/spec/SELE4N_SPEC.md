@@ -5910,10 +5910,14 @@ Every kernel object has a decidable well-formedness predicate:
   interrupt into `interruptEntry` (`lean_handle_interrupt`) in ZA3.1's form.
   The step (`handleInterruptOnCore`) signals the handler's notification with
   the bound-aware signal on the executing core, badged with the line, and
-  masks the line until the handler acknowledges it; an unbound line is masked;
+  masks the line until the handler acknowledges it; as seL4's `sendSignal`
+  sets a woken thread's badge register, the signal (`interruptSignal`) stages
+  the badge into the frame of the thread it wakes, and its `@[csimp]` form
+  wakes a waiter in place; an unbound line is masked;
   a spurious or non-device INTID enters nothing.  The acknowledge is the
   `.irqHandlerAck` syscall (44) on an interrupt-handler capability
-  (`CapTarget.irqHandler`, write right), which unmasks the line.  The mask is
+  (`CapTarget.irqHandler`, write right), which unmasks the line in place
+  through its refusal-carrying arm.  The mask is
   machine state and reaches the distributor as physical write tag 5.  PPIs
   other than the timer's are banked per core and masked by the HAL.  The entry
   carries the run-queue, bank-match, census, blocked-not-resident, footprint,

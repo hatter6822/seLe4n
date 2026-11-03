@@ -101,14 +101,18 @@ theorem perCoreRescheduleStep_mappingStage (st : SystemState) (coreId : UInt64) 
     · exact MappingStage.refl _
   · exact MappingStage.refl _
 
-/-- WS-ZA ZA6.32: the interrupt step: the bound signal, then the mask, which
-writes no object. -/
+/-- WS-ZA ZA6.32: the interrupt step: the bound signal, the stash clear and the
+woken thread's staging, then the mask, which writes no object. -/
 theorem interruptEntryStep_mappingStage (st : SystemState) (coreId intId : UInt64) :
     MappingStage st (interruptEntryStep st coreId intId) :=
   interruptEntryStep_of (P := MappingStage st) st coreId intId (.refl st) fun c _ _ =>
     handleInterruptOnCore_of (P := MappingStage st) st c _
       (fun _ h => h.trans (.of_objects_eq rfl)) (.refl st)
-      (fun _ _ => notificationSignalBoundOnCore_mappingStage)
+      (fun ntfn _ => interruptSignal_of (P := MappingStage st) ntfn _ c st
+        notificationSignalBoundOnCore_mappingStage
+        (fun _ _ _ hC => ((notificationSignalBoundOnCore_mappingStage.trans
+          (clearWokenReceiverStash_mappingStage _ hC)).trans
+          (stageWokenDelivery_mappingStage _ _ 0)).trans (stageWokenDelivery_mappingStage _ _ 0)))
 
 
 theorem dispatchVacatedCore_mappingStage (st : SystemState) (c : CoreId) :
