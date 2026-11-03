@@ -63,6 +63,13 @@ and fault entries do.
   takes it through the IAR.  It drives five branches and pins each in
   `scripts/qemu_exerciser_lib.sh`: the signal with no waiter, the acknowledge,
   the signal to a waiting thread, the unbound line and the spurious INTID.
+  Read on the untraced image against a fresh archive, every branch is 0 at
+  the first call and 0 at steady state.  On a traced build the acknowledge
+  read 6 (the shared-state generic fallback, now its own refusal-carrying
+  arm), the signal to a waiting thread 4 (the general signal, now the
+  in-place wake), and the signal with no waiter 11 then 9 (the store copied
+  because the pre-state was still referenced after the signal, now the quiet
+  branch, plus the boot ledger's one-time copy).
 - **The boot's physical-write ledger is the state's own**
   (`SystemState.withFreshPhysicalWrites`, applied by `initialiseKernelState`).
   The installed ledger was the shared initial constant, so the first physical
