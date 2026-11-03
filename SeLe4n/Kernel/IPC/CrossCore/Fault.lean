@@ -101,7 +101,7 @@ reply-declined disposition, retiring the answered fault. -/
 def faultAbandonOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     SystemState :=
   (removeRunnableOnCore st tid c).updateTcb tid fun tcb =>
-    { tcb with threadState := .Inactive, pendingFault := none }
+    { tcb.setPendingFault none with threadState := .Inactive }
 
 /-- WS-RR RR4.12: and at the boot core, the single-core form. -/
 @[simp] theorem faultAbandonOnCore_bootCoreId (st : SystemState)
@@ -549,6 +549,22 @@ The predicate the reply path branches on.  It is exactly seL4's
 is a **pre-state** read of the answered thread's own TCB. -/
 def threadHasPendingFault (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   ((st.getTcb? tid).bind (·.pendingFault)).isSome
+
+/-- WS-ZA ZA6.31: the compiled `threadHasPendingFault` — the kind code of the
+thread's fault record tested in place (`TCB.pendingFault_isSome`), so every
+reply's branch test builds no decoded record. -/
+@[inline] def threadHasPendingFaultImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some t => t.faultWords.isFault
+  | none => false
+
+@[csimp] theorem threadHasPendingFault_eq_impl :
+    @threadHasPendingFault = @threadHasPendingFaultImpl := by
+  funext st tid
+  unfold threadHasPendingFault threadHasPendingFaultImpl
+  cases st.getTcb? tid with
+  | none => rfl
+  | some t => exact TCB.pendingFault_isSome t
 
 @[simp] theorem threadHasPendingFault_of_none (st : SystemState) (tid : SeLe4n.ThreadId)
     (h : st.getTcb? tid = none) : threadHasPendingFault st tid = false := by

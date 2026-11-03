@@ -202,12 +202,12 @@ theorem cancelledEndpointWaiter_closes (s1 : SystemState) (t : SeLe4n.ThreadId) 
     unfold Architecture.writeReturnFrameToTcb
     rw [SystemState.updateTcb_getTcb?_self _ _ _ hIRc, hRcG]; rfl
   have hFullClr : ipcInvariantFull (sSt.updateTcb t fun y =>
-      { y with pendingFault := none }) := by
+      (y.setPendingFault none)) := by
     rw [SystemState.updateTcb_eq_of_some hStG]
     exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull sSt t _ _ hISt hFullStage
       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hStG) rfl rfl rfl rfl rfl rfl rfl rfl rfl
   have hAgree : objectStoreAgrees (sSt.updateTcb t fun y =>
-      { y with pendingFault := none })
+      (y.setPendingFault none))
       (s1.updateTcb t cancelledEndpointWaiterTcb) := by
     intro k
     rw [SystemState.updateTcb_eq_of_some hG1, SystemState.updateTcb_eq_of_some hStG]
@@ -286,10 +286,9 @@ theorem storeEndpointWaiterCancelled_preserves_ipcInvariantFull
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hI1, hFr.head_tcb] at hX
   cases hX
   exact TCB.ipcState_setIpcState
-    { tcbOffQueue tcb with
+    (TCB.setPendingFault { tcbOffQueue tcb with
         pendingMessage := none
-        pendingReceiveReplyCode := 0
-        pendingFault := none } .ready
+        pendingReceiveReplyCode := 0 } none) .ready
 
 -- ============================================================================
 -- §3  A notification waiter's cancel, and the unbind

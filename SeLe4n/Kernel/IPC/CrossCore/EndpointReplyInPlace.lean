@@ -43,16 +43,19 @@ theorem unlinkReplyWaiter_keepsFinds (st : SystemState) (w s : SeLe4n.ThreadId) 
 
 /-- **The reply writes only its slots**: the answered caller and its reply
 object each rewritten where they stand, each store changing only `objects`, the
-caller an unreserved thread carrying no fault, its reply object heading no
-stack and below no frame. -/
-@[inline] def replyWakesInPlace (st : SystemState) (c : SeLe4n.ThreadId) (ct : TCB)
+caller an unreserved thread, its reply object heading no stack and below no
+frame.  Whether the caller carries a fault is the arm's question, not the
+slots': an ordinary reply asks that it does not (`replyTransferChecked_inPlace`),
+a fault reply that it does (`faultReplyTransferChecked_inPlace`), and a
+reply-receive, whose reply leg is the ordinary reply's either way, does not
+ask. -/
+@[inline] def replyWakesInPlace (st : SystemState) (c : SeLe4n.ThreadId) (_ct : TCB)
     (rid : SeLe4n.ReplyId) : Bool :=
   !c.isReserved &&
   storeLeavesIndexAndTypes st c.toObjId .tcb &&
   st.objects.findsInPlace c.toObjId &&
   storeLeavesIndexAndTypes st rid.toObjId .reply &&
   st.objects.findsInPlace rid.toObjId &&
-  ct.pendingFault.isNone &&
   (match st.getReply? rid with
    | some rp => rp.next.isNone && rp.prev.isNone
    | none => false)
@@ -92,7 +95,7 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
          .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
       replyFrameHeadHolder? (storeReplyRendezvous st c server rid msg) rid = none := by
   simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-  obtain ⟨⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, _⟩, hRp⟩ := hG
+  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
   obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
       rp.next = none ∧ rp.prev = none := by
     split at hRp
@@ -193,6 +196,43 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
     rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hR5]
     simp only [Reply.consumed, hNext]
 
+/-- **The reply's dispatch, in place**: under `replyWakesInPlace` the
+cross-core reply dispatch returns the in-place writes followed by the server's
+priority walk, whatever the message and whether or not the caller carries a
+fault. -/
+theorem replyDispatch_inPlace (st : SystemState) (replier c server : SeLe4n.ThreadId)
+    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep (some server))
+    (hRO : ct.replyObject = some rid)
+    (hSRes : server.isReserved = false)
+    (hG : replyWakesInPlace st c ct rid = true) :
+    ∃ sgi, endpointReplyCrossCoreDispatch replier c msg core st =
+      ((PriorityInheritance.propagatePipChainCrossCore
+        (storeReplyRendezvous st c server rid msg) server core).1, .ok sgi) := by
+  have hG' := hG
+  simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true',
+    Option.isNone_iff_eq_none] at hG'
+  have hCRes : c.isReserved = false := hG'.1.1.1.1.1
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st replier c server ct ep rid msg core hSz
+    hT hIpc hRO hG
+  obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hCRes)
+  obtain ⟨sv, hsv⟩ := Option.isSome_iff_exists.mp
+    ((SeLe4n.ThreadId.toValid?_isSome_iff server).mpr hSRes)
+  have hRec : recordedReplyServer? st c = some server := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  have hAns : answeredReplyObject? st c = some rid := by
+    simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
+  unfold endpointReplyCrossCoreDispatch
+  rw [hEq]
+  simp only [hRec, hsv, hAns, hcv]
+  unfold applyReplyDonationOnCore
+  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, hHead]
+  exact ⟨_, rfl⟩
+
 /-- **The checked reply transfer, in place**: under the flow gate and
 `replyWakesInPlace`, a reply to an unfaulted caller blocked on it commits
 `performReplyRendezvous`'s state. -/
@@ -206,34 +246,20 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (hRO : ct.replyObject = some rid)
     (hSRes : server.isReserved = false)
     (hG : replyWakesInPlace st c ct rid = true)
+    (hNoF : ct.faultWords.isFault = false)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
     replyTransferOnCoreChecked ctx replier c mi regs msg core st =
       .ok ((), performReplyRendezvous st c server rid msg core) := by
-  have hG' := hG
-  simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true',
-    Option.isNone_iff_eq_none] at hG'
-  have hCRes : c.isReserved = false := hG'.1.1.1.1.1.1
-  have hPF : ct.pendingFault = none := hG'.1.2
+  have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-  obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st replier c server ct ep rid msg core hSz
-    hT hIpc hRO hG
-  obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hCRes)
-  obtain ⟨sv, hsv⟩ := Option.isSome_iff_exists.mp
-    ((SeLe4n.ThreadId.toValid?_isSome_iff server).mpr hSRes)
   have hNF : threadHasPendingFault st c = false := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
-  have hRec : recordedReplyServer? st c = some server := by
-    simp only [recordedReplyServer?, hTc, hIpc]
-  have hAns : answeredReplyObject? st c = some rid := by
-    simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
+  obtain ⟨sgi, hD⟩ := replyDispatch_inPlace st replier c server ct ep rid msg core hSz hT hIpc
+    hRO hSRes hG
   unfold replyTransferOnCoreChecked
   rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
   simp only [Bool.false_eq_true, ↓reduceIte]
-  unfold endpointReplyCrossCoreDispatch
-  rw [hEq]
-  simp only [hRec, hsv, hAns, hcv]
-  unfold applyReplyDonationOnCore
-  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, hHead]
+  rw [hD]
   rfl
 
 /-- **The in-place reply keeps the donation chain.**  Its reply object heads no

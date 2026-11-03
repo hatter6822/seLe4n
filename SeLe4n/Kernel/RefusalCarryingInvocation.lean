@@ -450,18 +450,22 @@ theorem resumeAdmitted_retirePendingFault {st : SystemState}
         simp only [retirePendingFaultForResume, hT, hF]
       rw [hE]; unfold Lifecycle.Suspend.resumeAdmitted; rw [hT]; exact h
     | some tf =>
-      simp only [hF, Option.isNone_some, Bool.false_or, Bool.and_eq_true] at h
+      have hIF : tcb.faultWords.isFault = true := by
+        rw [← TCB.pendingFault_isSome, hF]; rfl
+      simp only [hIF, Bool.not_true, Bool.false_or, Bool.and_eq_true] at h
+      have hClear : ∀ t : TCB, (t.setPendingFault none).faultWords.isFault = false :=
+        fun _ => rfl
       unfold Lifecycle.Suspend.resumeAdmitted
       cases hR : st.machine.residentOnSomeCore tid
       · simp only [retirePendingFaultForResume, hT, hF, hR, Bool.false_eq_true, if_false,
           applyFaultRestart]
         rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
-        simp only [TCB.withRestartFrame_threadState, Option.isNone_none, Bool.true_or,
+        simp only [TCB.withRestartFrame_threadState, hClear, Bool.not_false, Bool.true_or,
           Bool.and_true]
         exact h.1
       · simp only [retirePendingFaultForResume, hT, hF, hR, if_true, discardPendingFault]
         rw [updateTcb_getTcb?_self_of_findsInPlace _ hT h.2]
-        simp only [Option.isNone_none, Bool.true_or, Bool.and_true]
+        simp only [hClear, Bool.not_false, Bool.true_or, Bool.and_true]
         exact h.1
 
 /-- WS-ZA ZA5.2: `dispatchInvocationBy`, refusal-carrying, with each arm whose

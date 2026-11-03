@@ -377,6 +377,85 @@ theorem unknownSyscallEntryStep_eq_state (lctx : LabelingContext) (st : SystemSt
     · simp only [sgisOfRaised_raised_self]
   · simp only [sgisOfRaised_raised_self]
 
+/-- WS-ZA ZA6.31: the shared delivery's state handed the fault as words
+(`faultEntryDeliverState`, `faultEntryDeliverWords_eq`). -/
+@[inline] def faultEntryDeliverWords (lctx : LabelingContext) (st : SystemState) (k : Nat)
+    (flag : Bool) (w0 w1 : UInt64) (lk : KernelError) (elr spsr : UInt64)
+    (w : FaultRegisterWindow) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => PriorityInheritance.dispatchVacatedCore st c
+  | some tid =>
+      if isIdleThreadId tid then st else
+      PriorityInheritance.scheduleLocalSuccessorFrom (some tid)
+        (faultDeliveredWords lctx st k flag w0 w1 lk elr spsr w c tid) c
+
+theorem faultEntryDeliverWords_eq (lctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId) :
+    faultEntryDeliverWords lctx st (ThreadFaultWords.ofFault f {}).kind
+        (ThreadFaultWords.ofFault f {}).flag (ThreadFaultWords.ofFault f {}).word0
+        (ThreadFaultWords.ofFault f {}).word1 (ThreadFaultWords.ofFault f {}).lookup ectx.elr
+        ectx.spsr w c =
+      faultEntryDeliverState lctx st f ectx w c := by
+  unfold faultEntryDeliverWords faultEntryDeliverState faultDeliveredState
+  split
+  · rfl
+  · split
+    · rfl
+    · rw [faultDeliveredWords_eq]
+
+/-- WS-ZA ZA6.31: **the compiled `faultEntryStepState`** — the syndrome
+classified into the fault's words (`faultKindOfEsr`, `faultOfExceptionContext_words`)
+and the delivery handed them, so no fault, context or window record is built. -/
+@[inline] def faultEntryStepStateImpl (lctx : LabelingContext) (st : SystemState)
+    (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) : SystemState :=
+  if h : coreId.toNat < numCores then
+    if ectx.takenFromEl0 then
+      if faultKindOfEsr ectx.esr = 0 then st
+      else faultEntryDeliverWords lctx st (faultKindOfEsr ectx.esr) (faultFlagOfEsr ectx.esr)
+        (faultWord0OfEsr ectx.esr ectx.far) ectx.esr .invalidCapability ectx.elr ectx.spsr w
+        ⟨coreId.toNat, h⟩
+    else st
+  else st
+
+@[csimp] theorem faultEntryStepState_eq_impl :
+    @faultEntryStepState = @faultEntryStepStateImpl := by
+  funext lctx st ectx w coreId
+  unfold faultEntryStepState faultEntryStepStateImpl
+  split
+  · split
+    · cases hF : faultOfExceptionContext ectx with
+      | none =>
+        rw [if_pos ((faultOfExceptionContext_none_iff_kind ectx).mp hF)]
+      | some f =>
+        have hK : ¬ faultKindOfEsr ectx.esr = 0 := fun h =>
+          absurd ((faultOfExceptionContext_none_iff_kind ectx).mpr h) (by rw [hF]; simp)
+        obtain ⟨h1, h2, h3, h4, h5⟩ := faultOfExceptionContext_words ectx f hF
+        rw [if_neg hK, ← h1, ← h2, ← h3, ← h4, ← h5, faultEntryDeliverWords_eq]
+    · rfl
+  · rfl
+
+/-- WS-ZA ZA6.31: **the compiled `unknownSyscallEntryStepState`** — the
+unknown-syscall fault handed on as its words (kind `3`, the number in the
+window's `x7`). -/
+@[inline] def unknownSyscallEntryStepStateImpl (lctx : LabelingContext) (st : SystemState)
+    (ectx : ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64) : SystemState :=
+  if h : coreId.toNat < numCores then
+    if ectx.takenFromEl0 then
+      faultEntryDeliverWords lctx st 3 false w.x7 0 .invalidCapability ectx.elr ectx.spsr w
+        ⟨coreId.toNat, h⟩
+    else st
+  else st
+
+@[csimp] theorem unknownSyscallEntryStepState_eq_impl :
+    @unknownSyscallEntryStepState = @unknownSyscallEntryStepStateImpl := by
+  funext lctx st ectx w coreId
+  unfold unknownSyscallEntryStepState unknownSyscallEntryStepStateImpl
+  split
+  · split
+    · exact (faultEntryDeliverWords_eq lctx st (.unknownSyscall (w.gprAt 7)) ectx w _).symm
+    · rfl
+  · rfl
+
 /-- **`v0.36.40`: a trap on a core another core vacated hands the core a
 successor.**  The shared delivery body, on a core whose committed slot is
 already `none`, commits the core's reschedule — so neither fault producer leaves
@@ -453,13 +532,14 @@ does: nothing is read, nothing is committed, no restore is staged, and the
 trap layer, finding no restored frame, halts the PE.  Pure, so the host suite
 runs that arm and checks the decode word for word
 (`tests/FaultHandlingSuite.lean` §6g). -/
-def faultEntryFrame? (esr far : UInt64) : Option Architecture.InFlightContext →
+@[inline] def faultEntryFrame? (esr far : UInt64) : Option Architecture.InFlightContext →
     Option (Architecture.InFlightContext × ExceptionContext × FaultRegisterWindow)
   | none => none
   | some c =>
       some (c,
             { esr := esr, elr := c.pc, spsr := c.pstate, far := far },
-            { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
+            { x0 := c.x0, x1 := c.x1, x2 := c.x2, x3 := c.x3,
+              x4 := c.x4, x5 := c.x5, x6 := c.x6, x7 := c.x7,
               sp := c.sp, lr := c.x30 })
 
 /-- The decode, word for word: the saved frame is the context itself,
@@ -469,7 +549,8 @@ theorem faultEntryFrame?_some (esr far : UInt64) (c : Architecture.InFlightConte
     faultEntryFrame? esr far (some c) =
       some (c,
             { esr := esr, elr := c.pc, spsr := c.pstate, far := far },
-            { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
+            { x0 := c.x0, x1 := c.x1, x2 := c.x2, x3 := c.x3,
+              x4 := c.x4, x5 := c.x5, x6 := c.x6, x7 := c.x7,
               sp := c.sp, lr := c.x30 }) := rfl
 
 /-- …and the arm no hardware path reaches decodes nothing, so the entries

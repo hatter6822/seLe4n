@@ -149,7 +149,7 @@ theorem faultSuspendOnCore_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId
 theorem faultAbandonOnCore_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
     (hInv : st.objects.invExt) : (faultAbandonOnCore st t c).replyViews = st.replyViews := by
   have h := replyViews_updateTcb_eq (removeRunnableOnCore st t c) t
-    (f := fun tcb => { tcb with threadState := .Inactive, pendingFault := none })
+    (f := fun tcb => { tcb.setPendingFault none with threadState := .Inactive })
     (removeRunnableOnCore_objects_invExt _ _ _ hInv) (fun _ => rfl)
   unfold faultAbandonOnCore
   rw [h, removeRunnableOnCore_replyViews_eq]

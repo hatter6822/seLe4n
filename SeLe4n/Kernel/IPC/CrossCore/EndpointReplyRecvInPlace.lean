@@ -455,7 +455,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
-    exact hG.1.1.1.1.2
+    exact hG.1.1.1.2
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
     hT hIpc hRO hG
   obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
@@ -727,7 +727,7 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
   have hNo := replyWakesInPlace_noResizeDue hG
   have hFC : st.objects.findsInPlace c.toObjId = true := by
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
-    exact hG.1.1.1.1.2
+    exact hG.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
   rw [replyRecvOnCore_blocks_inPlace st epId tid c rid msg root slot core ct ep0 rt ep rp hSz
     hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash hRec]

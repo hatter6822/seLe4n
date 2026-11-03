@@ -460,7 +460,7 @@ theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId
 theorem replyWakesInPlace_noResizeDue {st : SystemState} {c : SeLe4n.ThreadId} {ct : TCB}
     {rid : SeLe4n.ReplyId} (h : replyWakesInPlace st c ct rid = true) : st.objects.noResizeDue := by
   simp only [replyWakesInPlace, Bool.and_eq_true] at h
-  exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.1.2
+  exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.2
 
 /-- The checked reply arm's rendezvous: a reply of at most four words is
 delivered straight into the caller's registers (`performReplyDelivered`). -/

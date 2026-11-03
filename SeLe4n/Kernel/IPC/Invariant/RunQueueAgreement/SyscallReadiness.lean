@@ -327,7 +327,7 @@ theorem faultReplyApplyOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} (st 
   unfold faultReplyApplyOnCore
   split
   · exact .of_stage (SystemState.RunQueueStage.updateTcb
-      (f := fun tcb => { tcb.withRestartFrame _ with pendingFault := none }) _ _ (fun _ _ => rfl))
+      (f := fun tcb => ((tcb.withRestartFrame _).setPendingFault none)) _ _ (fun _ _ => rfl))
   · unfold faultAbandonOnCore faultAbandonCore
     exact removeRunnableThenWrite_readyKeptStage _ _ _ _ fun _ h => h
 

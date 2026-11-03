@@ -71,7 +71,7 @@ theorem recordPendingFault_preserves_ipcInvariantFull
   | some tcb =>
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-        { tcb with pendingFault := some tf, ipcFaultSend := true } hObjInv hInv
+        { tcb.setPendingFault (some tf) with ipcFaultSend := true } hObjInv hInv
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
@@ -130,7 +130,7 @@ theorem faultAbandonOnCore_preserves_ipcInvariantFull
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
           (removeRunnableOnCore st tid c) tid tcb
-          { tcb with threadState := .Inactive, pendingFault := none } (removeRunnableOnCore_objects_invExt st tid c hObjInv) hInvR
+          { tcb.setPendingFault none with threadState := .Inactive } (removeRunnableOnCore_objects_invExt st tid c hObjInv) hInvR
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
@@ -151,7 +151,7 @@ theorem applyFaultRestart_preserves_ipcInvariantFull
   | some tcb =>
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-        { tcb.withRestartFrame frame with pendingFault := none } hObjInv hInv
+        ((tcb.withRestartFrame frame).setPendingFault none) hObjInv hInv
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

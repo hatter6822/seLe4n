@@ -379,7 +379,7 @@ theorem faultReplyApplyOnCore_runQueueEntryStage (st : SystemState) (faulted : S
     SystemState.RunQueueEntryStage st (faultReplyApplyOnCore st faulted outcome) := by
   unfold faultReplyApplyOnCore
   split
-  · exact (RunQueueStage.updateTcb (f := fun tcb => { tcb.withRestartFrame _ with pendingFault := none })
+  · exact (RunQueueStage.updateTcb (f := fun tcb => ((tcb.withRestartFrame _).setPendingFault none))
       _ _ (fun _ _ => rfl)).entry
   · unfold faultAbandonOnCore faultAbandonCore
     exact placedThenOffWrite_runQueueEntryStage st faulted _ (fun _ => hRdy) hNI

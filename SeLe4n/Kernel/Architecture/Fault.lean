@@ -125,8 +125,9 @@ abort classes whose EC encodes "current EL", but an alignment fault or an
 undefined instruction has one EC whichever EL raised it, and only the saved
 PSTATE says which.  A fault entry must deliver only exceptions taken from
 EL0 — the kernel has no fault handler to deliver to and a user handler must
-never be handed a kernel fault. -/
-def ExceptionContext.takenFromEl0 (ectx : ExceptionContext) : Bool :=
+never be handed a kernel fault.  Inline, so an entry asking it of the saved
+`SPSR_EL1` builds no exception context. -/
+@[inline] def ExceptionContext.takenFromEl0 (ectx : ExceptionContext) : Bool :=
   ((ectx.spsr >>> 2) &&& 0x3) == 0
 
 /-- WS-RR RR4.3: extract the Instruction Specific Syndrome (ISS) field from

@@ -555,6 +555,52 @@ def restoreTargetAt (st : SeLe4n.Model.SystemState) (coreId : UInt64) :
   | some c => Architecture.restoreTargetOnCore st c
   | none => .none
 
+/-- **WS-ZA ZA6.31: the switched-out owner's saved context, handed over.**  When
+core `c` must release its owner (`Architecture.fpReleaseNeeded`), the owner's
+saved context is read and its slot cleared to the shared default in place
+(`mapTcbInPlace`), so the context leaves the TCB with its one reference for the
+capture to rewrite; otherwise nothing is written.  The release that follows
+overwrites the slot, so the take is invisible to it
+(`fpReleaseOnCore_fpTakeOwnerCell`). -/
+@[inline] def fpTakeOwnerCell (st : SeLe4n.Model.SystemState) (c : CoreId) :
+    SeLe4n.FpContext × SeLe4n.Model.SystemState :=
+  match Architecture.fpReleaseNeeded st c with
+  | some o =>
+    match st.getTcb? o with
+    | some t => (t.fpContext, st.mapTcbInPlace o fun t => { t with fpContext := default })
+    | none => (default, st)
+  | none => (default, st)
+
+/-- **The take is invisible to the release**: on a table with no resize due, the
+release after `fpTakeOwnerCell` commits exactly the state the release commits
+alone — the take changes neither the owner nor the current thread
+(`fpReleaseNeeded`), and the release's write of the slot overwrites the take's. -/
+theorem fpReleaseOnCore_fpTakeOwnerCell (st : SeLe4n.Model.SystemState) (c : CoreId)
+    (live : SeLe4n.FpContext) (hNo : st.objects.noResizeDue) :
+    Architecture.fpReleaseOnCore (fpTakeOwnerCell st c).2 c live =
+      Architecture.fpReleaseOnCore st c live := by
+  unfold fpTakeOwnerCell
+  cases hR : Architecture.fpReleaseNeeded st c with
+  | none => rfl
+  | some o =>
+    dsimp only
+    cases hT : st.getTcb? o with
+    | none => rfl
+    | some t =>
+      dsimp only
+      have hR' : Architecture.fpReleaseNeeded
+          (st.mapTcbInPlace o fun t => { t with fpContext := default }) c = some o := by
+        rw [← hR]; rfl
+      unfold Architecture.fpReleaseOnCore
+      rw [hR', hR]
+      unfold Architecture.writeFpContextToTcb
+      dsimp only
+      rw [SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace _ _ _
+          ((SeLe4n.Model.SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNo),
+        SeLe4n.Model.SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo,
+        SeLe4n.Model.SystemState.mapTcbInPlace_mapTcbInPlace]
+      rfl
+
 /-- **WS-BP BP7.9: release a core's switched-out FP/SIMD owner.**
 
 Runs after an entry's atomic step and before its restore, under the same
@@ -572,7 +618,12 @@ def releaseSwitchedFpOwnerOnCore (c : CoreId) : BaseIO Unit := do
   match Architecture.fpReleaseNeeded st c with
   | none => pure ()
   | some _ =>
-    let live ← Platform.FFI.captureLiveFp
+    -- WS-ZA ZA6.31: the owner's saved context is taken out of its TCB first
+    -- (`fpTakeOwnerCell`), so the capture is handed the one reference to it and
+    -- rewrites it in place; the release then writes it back
+    -- (`fpReleaseOnCore_fpTakeOwnerCell`: the state is the release's alone).
+    let cell ← Platform.FFI.modifyGetKernelState (fun st => fpTakeOwnerCell st c)
+    let live ← Platform.FFI.ffiFpCaptureInto cell
     Platform.FFI.modifyGetKernelState (fun st => ((), Architecture.fpReleaseOnCore st c live))
 
 /-- **WS-BP BP7.9**: `releaseSwitchedFpOwnerOnCore` for a per-core entry's raw

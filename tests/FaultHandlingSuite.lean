@@ -419,7 +419,7 @@ private def dispatchableOn (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreI
 
 private def sampleCtx : FaultContext :=
   { faultIP := 0x4_0000, sp := 0x7000, lr := 0xF00D, spsr := 0x3C0,
-    gprs := #[1, 2, 3, 4, 5, 6, 7, 8] }
+    x0 := 1, x1 := 2, x2 := 3, x3 := 4, x4 := 5, x5 := 6, x6 := 7, x7 := 8 }
 
 /-- Every fault kind, so the round trip is checked on the whole inductive
 rather than on a representative. -/
@@ -752,7 +752,8 @@ differ from every register the fixture's TCB mirror holds (`gpr r = r * 100`,
 `x30 = 0xF00D`, `sp = 0x7000`), so a context built from the mirror instead of
 the window is distinguishable at every word. -/
 private def trapWindow : FaultRegisterWindow :=
-  { gprs := #[0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18], sp := 0x7770, lr := 0xBEEF }
+  { x0 := 0x11, x1 := 0x12, x2 := 0x13, x3 := 0x14, x4 := 0x15, x5 := 0x16, x6 := 0x17, x7 := 0x18,
+    sp := 0x7770, lr := 0xBEEF }
 
 private def runFlowGateChecks : IO Unit := do
   IO.println "--- §6c the flow gate on the live delivery (RR4.20) ---"
@@ -956,7 +957,8 @@ private def runEntryWindowChecks : IO Unit := do
       -- The recorded context is the window, word for word.
       let expectedCtx : FaultContext :=
         { faultIP := pcAlignCtx.elr, sp := trapWindow.sp, lr := trapWindow.lr,
-          spsr := pcAlignCtx.spsr, gprs := trapWindow.gprs }
+          spsr := pcAlignCtx.spsr,
+          x0 := trapWindow.x0, x1 := trapWindow.x1, x2 := trapWindow.x2, x3 := trapWindow.x3, x4 := trapWindow.x4, x5 := trapWindow.x5, x6 := trapWindow.x6, x7 := trapWindow.x7 }
       assertBool "the recorded fault context is the trap frame's window, not the mirror's"
         ((pendingFaultOf stE faulter).map (·.context) == some expectedCtx)
       assertBool "the delivered message's MR1 (SP_EL0) is the trap frame's stack pointer"
@@ -1067,7 +1069,7 @@ private def runEntryFrameDecodeChecks : IO Unit := do
       assertBool "…and the context's ELR_EL1 and SPSR_EL1"
         (ectx.elr == sampleTrapFrame.pc && ectx.spsr == sampleTrapFrame.pstate)
       assertBool "the window is x0..x7, in order"
-        (w.gprs == #[0x100, 0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107])
+        (w.x0 == 0x100 && w.x1 == 0x101 && w.x2 == 0x102 && w.x3 == 0x103 && w.x4 == 0x104 && w.x5 == 0x105 && w.x6 == 0x106 && w.x7 == 0x107)
       assertBool "the window's sp is SP_EL0 and its lr is x30"
         (w.sp == sampleTrapFrame.sp && w.lr == sampleTrapFrame.x30)
       assertBool "the frame saved into the core and the TCB is the context's register file"
@@ -1087,7 +1089,8 @@ private def runEntryFrameDecodeChecks : IO Unit := do
           assertBool "…and records the decoded window as the fault context"
             ((pendingFaultOf stE faulter).map (·.context) ==
               some { faultIP := ectx.elr, sp := w.sp, lr := w.lr, spsr := ectx.spsr,
-                     gprs := w.gprs })
+                     
+                     x0 := w.x0, x1 := w.x1, x2 := w.x2, x3 := w.x3, x4 := w.x4, x5 := w.x5, x6 := w.x6, x7 := w.x7 })
 
 -- ============================================================================
 -- §6f  The unknown-syscall producer (PR #887 review)
@@ -2015,7 +2018,7 @@ private def runLazyFpChecks : IO Unit := do
   -- 6. The fault entry is inert on EC 0x07: the switch owns it.
   assertBool "the fault entry commits nothing for an FP/SIMD access"
     ((faultEntryStep permissiveCtx stRunning fpEctx
-      { gprs := #[0, 0, 0, 0, 0, 0, 0, 0], sp := 0, lr := 0 } 0).1.isEmpty)
+      { sp := 0, lr := 0 } 0).1.isEmpty)
   -- 7. The destroy path refuses a thread whose live values a core still holds
   --    (it is current nowhere), and the CONTROL admits it once released.
   let stHeld : SystemState :=

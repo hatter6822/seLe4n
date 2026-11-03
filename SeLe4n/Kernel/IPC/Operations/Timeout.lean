@@ -108,13 +108,12 @@ def abortPendingIpcOnEndpoint
       -- restore does (`TCB.restoredToReady`): seL4's timeout reaches the
       -- thread through `cancelIPC`, which resets `tcbFault`, so a timed-out
       -- fault-blocked thread must not return to `.ready` carrying its fault.
-      let tcb' : TCB := ((TCB.setIpcState { tcb with
+      let tcb' : TCB := ((TCB.setIpcState (TCB.setPendingFault { tcb with
         pendingMessage := none,
         timeoutBudget := none,
         threadState := .Ready,
         timedOut := true,
-        pendingReceiveReplyCode := 0,
-        pendingFault := none } .ready) : TCB).withReturnFrame
+        pendingReceiveReplyCode := 0 } none) .ready) : TCB).withReturnFrame
           Architecture.timeoutFrame
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
@@ -223,13 +222,12 @@ theorem abortPendingIpcOnEndpoint_tcb_lookup
         have hTcbAt := lookupTcb_some_objects st1 tid tcb hLk
         rw [hTcbAt] at hk1
         obtain rfl : t1 = tcb := (KernelObject.tcb.inj (Option.some.inj hk1)).symm
-        refine ⟨(((TCB.setIpcState { t1 with
+        refine ⟨(((TCB.setIpcState (TCB.setPendingFault { t1 with
                     pendingMessage := none
                     timeoutBudget := none
                     threadState := .Ready
                     timedOut := true
-                    pendingReceiveReplyCode := 0
-                    pendingFault := none } .ready) : TCB).withReturnFrame
+                    pendingReceiveReplyCode := 0 } none) .ready) : TCB).withReturnFrame
                   Architecture.timeoutFrame), ?_, hAff1.symm⟩
         rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
           if_pos (beq_self_eq_true tid.toObjId)]

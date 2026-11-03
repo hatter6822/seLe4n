@@ -15,6 +15,7 @@ import SeLe4n.Platform.Boot.InitialThreads
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Kernel.Architecture.TrapFrameSave
 import SeLe4n.Kernel.Architecture.ContextRestore
+import SeLe4n.Kernel.IPC.CrossCore.FaultInPlace
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -2814,9 +2815,10 @@ syscall number, and `SP_EL0` / `x30` cross with the round's ABI extension —
 the same nine registers the abort entry spills, so a capability fault's
 context is built from what the thread held at the `SVC`, never from the
 mirror's stale last-syscall contents. -/
-def syscallWindow (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 : UInt64) :
+@[inline] def syscallWindow (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 : UInt64) :
     FaultRegisterWindow :=
-  { gprs := #[x0, x1, x2, x3, x4, x5, x6, syscallId.toUInt64], sp := spEl0, lr := x30 }
+  { x0 := x0, x1 := x1, x2 := x2, x3 := x3, x4 := x4, x5 := x5, x6 := x6,
+    x7 := syscallId.toUInt64, sp := spEl0, lr := x30 }
 
 /-- seL4's `FaultIP` on the syscall path: the `SVC` instruction itself, one
 instruction before the return address `ELR_EL1` holds, so a payload-free
@@ -2981,6 +2983,24 @@ def deliverSyscallCapFault (ctx : LabelingContext)
   let stW := writeFaultRegistersToTcb st tid w
   let fctx := Architecture.faultContextOfThread stW tid (svcFaultIP elr) spsr
   (faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore).1
+
+/-- WS-ZA ZA6.31: the compiled `deliverSyscallCapFault` — the fault handed on
+as its words and the context read off the spilled registers
+(`faultDeliveredWords_eq`), so no context record is built. -/
+@[inline] def deliverSyscallCapFaultImpl (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fault : Fault) (w : FaultRegisterWindow)
+    (elr spsr : UInt64) : SystemState :=
+  faultDeliveredWords ctx st (ThreadFaultWords.ofFault fault {}).kind
+    (ThreadFaultWords.ofFault fault {}).flag (ThreadFaultWords.ofFault fault {}).word0
+    (ThreadFaultWords.ofFault fault {}).word1 (ThreadFaultWords.ofFault fault {}).lookup
+    (svcFaultIP elr) spsr w executingCore tid
+
+@[csimp] theorem deliverSyscallCapFault_eq_impl :
+    @deliverSyscallCapFault = @deliverSyscallCapFaultImpl := by
+  funext ctx executingCore st tid fault w elr spsr
+  unfold deliverSyscallCapFault deliverSyscallCapFaultImpl
+  rw [faultDeliveredWords_eq]
 
 /-- A refusal on a syscall that returns its lookup failure (the recorded
 declassifying pair) produces no capability fault — one of the two discharges
@@ -3725,6 +3745,16 @@ theorem restoreTrapFrameParts_onCore (st : SystemState) (c : Concurrency.CoreId)
     Rust: `ffi_fp_capture` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_fp_capture"]
 opaque ffiFpCapture : BaseIO SeLe4n.FpContext
+
+/-- **WS-ZA ZA6.31**: `ffiFpCapture` into a context handed over — the
+switched-out owner's own saved context, taken out of its TCB
+(`Kernel.Concurrency.fpTakeOwnerCell`).  Rewritten in place when the reference
+is the only one, so a release allocates nothing; the answer holds the live
+values either way.
+
+    Rust: `ffi_fp_capture_into` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_capture_into"]
+opaque ffiFpCaptureInto : SeLe4n.FpContext → BaseIO SeLe4n.FpContext
 
 /-- **WS-BP BP7.9**: stage the context the executing PE loads, all
     `fpContextWordCount` words in one call.  Nothing reaches the registers until
