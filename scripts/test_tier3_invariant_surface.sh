@@ -5478,7 +5478,8 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 # (`syscallEntryCheckedK_outcome_eq` equates it to `syscallCapFaultOf`'s).
 run_check "INVARIANT" rg -n '^theorem dispatchOperandCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
-run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n          noCapRefusal \(capHeldNone c\) kArm onLookup \(arm c st\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n([ \t]*(--[^\n]*)?\n)*          if slotEmpty c then onLookup \.invalidCapability st\n          else noCapRefusal \(capHeldNone c\) kArm onLookup \(arm c st\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def slotEmpty \(c : @& Option Capability\) : Bool := c\.isNone$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def deliverSyscallLookupFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U '^        \(syscallLookupOutcome\n          \(fun s w b e => \.ok \(\.faulted, deliverSyscallLookupFault ctx executingCore s tid w b e$' SeLe4n/Platform/FFI.lean

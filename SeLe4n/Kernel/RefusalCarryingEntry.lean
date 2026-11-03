@@ -317,6 +317,13 @@ slot, or a capability naming a reserved idle object. -/
   | none => true
   | some cap => SeLe4n.Kernel.capTargetsReservedIdleObject cap
 
+/-- Whether a resolved slot is empty.  Out of line, with the slot borrowed, so
+the entry tests the slot's tag without projecting its capability: the arm
+alone takes the capability out of the slot, once.  An inlined test would give
+the compiled entry two projections of one field ahead of the arm's reuse of
+the cell, a shape Lean 4.28's reset-reuse expansion releases twice. -/
+@[noinline] def slotEmpty (c : @& Option Capability) : Bool := c.isNone
+
 /-- The arm's result on a resolved slot.  Where the slot holds no capability
 user space may hold (`noCap`: an empty slot, or a capability naming a reserved
 idle object, `capHeldNone`), the resolution `syscallResolveCap` fails with
@@ -356,7 +363,10 @@ operand's address and the error, so the lookup runs once. -/
         (fun e => onLookup e st)
         (fun cnode slot =>
           let c := SystemState.lookupSlotCap st { cnode := cnode, slot := slot }
-          noCapRefusal (capHeldNone c) kArm onLookup (arm c st))
+          -- an empty slot is the resolution's refusal, handed on without
+          -- running the arm, so no refusal is built as a value
+          if slotEmpty c then onLookup .invalidCapability st
+          else noCapRefusal (capHeldNone c) kArm onLookup (arm c st))
     | some _ => kPre (.error (.invalidCapability, st))
     | none => kPre (.error (.objectNotFound, st))
   | some _ => kPre (.error (.illegalState, st))
@@ -410,6 +420,8 @@ theorem dispatchOperandCheckedK_spec {β : Type} (capAddr : SeLe4n.CPtr)
         dsimp only
         cases hC : SystemState.lookupSlotCap st { cnode := cn, slot := sl } with
         | some cap =>
+          rw [if_neg (by simp only [slotEmpty, Option.isNone, Bool.false_eq_true,
+            not_false_eq_true])]
           unfold noCapRefusal capHeldNone
           rcases hA : arm (some cap) st with ⟨e, s⟩ | v <;> (try dsimp only)
           · by_cases hX : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true ∧
@@ -429,19 +441,9 @@ theorem dispatchOperandCheckedK_spec {β : Type} (capAddr : SeLe4n.CPtr)
                   reduceCtorEq] at h'
           · exact .inl ⟨rfl, fun ke s' h => by cases h⟩
         | none =>
-          unfold noCapRefusal capHeldNone
-          rcases hA : arm none st with ⟨e, s⟩ | v <;> (try dsimp only)
-          · by_cases hE : e = .invalidCapability
-            · rw [if_pos ⟨rfl, hE⟩]
-              refine .inr ⟨e, s, rfl, rfl, ?_⟩
-              simp only [syscallResolveCap, hRes, hC, hE]
-            · rw [if_neg (fun h => hE h.2)]
-              refine .inl ⟨rfl, fun ke s' h e' h' => ?_⟩
-              cases h
-              simp only [syscallResolveCap, hRes, hC, Except.error.injEq] at h'
-              subst h'
-              exact fun h => hE h.symm
-          · exact .inl ⟨rfl, fun ke s' h => by cases h⟩
+          rw [if_pos (by simp only [slotEmpty, Option.isNone])]
+          exact .inr ⟨.invalidCapability, st, rfl, hNone st,
+            by simp only [syscallResolveCap, hRes, hC]⟩
 
 /-- A function of `ipcBufferReadMrK`'s result is the read with the function
 taken into each continuation. -/
