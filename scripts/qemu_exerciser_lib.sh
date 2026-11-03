@@ -241,6 +241,11 @@ for driver in drivers:
             "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
             "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
             "send-blocks", "receive-from-sender",
+            # WS-ZA ZA6.32: the interrupt entry's branches — the bound line's
+            # signal with no waiter and to a waiting thread, the handler's
+            # acknowledge, the unbound line and the spurious INTID.
+            "irq-signal-no-waiter", "irq-handler-ack", "irq-signal-waiter",
+            "irq-unbound", "irq-spurious",
             # WS-ZA ZA5.3: the same through a badged endpoint capability.
             "receive-for-badged-send", "badged-send-to-receiver",
             "badged-send-blocks", "receive-from-badged-sender",

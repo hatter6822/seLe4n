@@ -1,3 +1,62 @@
+## v0.36.195 — WS-ZA ZA6.32: device interrupts enter the kernel as seL4's handleInterrupt
+
+Every shared peripheral interrupt now enters the verified kernel.
+`trap.rs::handle_irq_per_core` routes INTIDs 32 and up to the board's line
+count to `trap::device_interrupt`, which calls `Kernel.interruptEntry`
+(`@[export lean_handle_interrupt]`) inside the kernel-entry bracket and behind
+the `lean_ready` gate.  The entry takes ZA3.1's form, as the timer, reschedule
+and fault entries do.
+
+- **The step** (`handleInterruptOnCore`, `IPC/CrossCore/InterruptDelivery.lean`)
+  is seL4's `handleInterrupt` on the executing core.  At a line with a bound
+  handler it signals the notification with the bound-aware per-core signal,
+  badged with the line, then masks the line until the handler acknowledges it.
+  A line with no handler is masked (`IRQInactive`).  A spurious or non-device
+  INTID enters nothing.  The HAL masks a PPI other than the timer's on its own
+  core, because PPIs are banked per core and no handler capability names one.
+- **The mask** is machine state (`MachineState.setIrqLineMask`, five words).
+  It reaches the distributor as physical write tag 5
+  (`PhysicalWrite.setInterruptMask`).  The HAL validates the write
+  (`decode_physical_write`: a line from 32 up to the board's line count, and a
+  value of 0 or 1) and performs it through `GICD_ICENABLER` / `GICD_ISENABLER`
+  (`gic::set_interrupt_line_masked`).
+- **The acknowledge** is the new `.irqHandlerAck` syscall (44, `seL4_IRQHandler_Ack`).
+  It is invoked with the write right on the new `CapTarget.irqHandler`
+  capability and unmasks the line (`Architecture.irqHandlerAck`).  Every arm
+  proof, census, lock set, taint, enforcement and refusal table covers it.  On
+  the Rust side, `SyscallId::IrqHandlerAck` is in `sele4n-types` and the HAL,
+  and `sele4n_sys::irq::irq_handler_ack` is new.
+- **The footprint** (`declaredLockSetForInterrupt`) is the table lock plus the
+  run queues of the executing core and of every core the signal wakes onto.
+  It covers the step (`interruptEntryStep_coversWrites`) and the settle and
+  activation tail (`interruptEntryTail_coversWrites`).
+- **Entry-level carries.**
+  - The run-queue entry stage.
+  - Refills and yield links.
+  - Blocked-not-resident, current-not-resident-elsewhere,
+    yield-linked-not-resident and residents-have-TCBs.
+  - The remote save.
+  - The bank match on the executing core and on every other core.
+  - The saved-register census (`interruptEntryStep_savedRegsUnwritten`).
+  - The mapping stage.
+  - Per-core non-interference: `interruptEntryState_lowEquivalent`, built on
+    a new all-paths theorem for the bound-aware signal
+    (`notificationSignalBoundOnCore_lowEquivalent`).  The step is the
+    `interruptEntry` constructor of `PerCoreNonInterferenceStep`, and
+    `niStepCoverage_perCore_count` is now 51.
+- **The exerciser**, in the QEMU image, gets two lines: line 250 is bound to
+  the interrupt notification, and line 251 is left out of the IRQ table.  The
+  root task holds a handler capability for each.  The exerciser sets each line
+  pending at the distributor (`GICD_ISPENDR`), above the timer's priority, and
+  takes it through the IAR.  It drives five branches and pins each in
+  `scripts/qemu_exerciser_lib.sh`: the signal with no waiter, the acknowledge,
+  the signal to a waiting thread, the unbound line and the spurious INTID.
+- **Registered debt.**  There is no IRQControl yet: handler capabilities and
+  their notifications are configured at boot.  The reference dispatch's
+  device arm is recorded on the existing reference-dispatch row.
+
+Refs: docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md (ZA6.32)
+
 ## v0.36.194 — WS-ZA ZA6.31: the fault entries cross their commit as words and allocate nothing
 
 The fault, unknown-syscall and FP/SIMD access entries take ZA3.1's form, and

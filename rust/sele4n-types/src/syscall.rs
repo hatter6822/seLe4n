@@ -531,7 +531,10 @@ mod tests {
         );
         // WS-ZA ZA6.32: the interrupt acknowledge, appended the same way.
         assert_eq!(SyscallId::from_u64(44), Some(SyscallId::IrqHandlerAck));
-        assert_eq!(SyscallId::IrqHandlerAck.required_right(), AccessRight::Write);
+        assert_eq!(
+            SyscallId::IrqHandlerAck.required_right(),
+            AccessRight::Write
+        );
         assert_eq!(SyscallId::from_u64(45), None);
         assert_eq!(SyscallId::COUNT, 44);
         assert_eq!(SyscallId::ENCODING_BOUND, 45);

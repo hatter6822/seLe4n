@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.194` (`lakefile.toml`) |
+| **Package version** | `0.36.195` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 570,839 across 518 Lean files |
 | **Test LoC** | 88,450 across 70 Lean test suites |
@@ -5905,6 +5905,21 @@ Every kernel object has a decidable well-formedness predicate:
   and the FP/SIMD release captures into the owner's own context, which the
   thread's retype makes with its TCB, as seL4 allocates FPU state.  Every
   fault scenario reads 0, and a thread's retype 25.
+- **A device interrupt enters the kernel as seL4's `handleInterrupt`**
+  (`v0.36.195`, WS-ZA ZA6.32).  The HAL enters every shared peripheral
+  interrupt into `interruptEntry` (`lean_handle_interrupt`) in ZA3.1's form.
+  The step (`handleInterruptOnCore`) signals the handler's notification with
+  the bound-aware signal on the executing core, badged with the line, and
+  masks the line until the handler acknowledges it; an unbound line is masked;
+  a spurious or non-device INTID enters nothing.  The acknowledge is the
+  `.irqHandlerAck` syscall (44) on an interrupt-handler capability
+  (`CapTarget.irqHandler`, write right), which unmasks the line.  The mask is
+  machine state and reaches the distributor as physical write tag 5.  PPIs
+  other than the timer's are banked per core and masked by the HAL.  The entry
+  carries the run-queue, bank-match, census, blocked-not-resident, footprint,
+  mapping and per-core non-interference obligations every entry carries, and
+  every branch reads 0 in the exerciser.  Handler capabilities and their
+  notifications are boot-configured (no IRQControl yet; registered debt).
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged

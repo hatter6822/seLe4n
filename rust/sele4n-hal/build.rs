@@ -2359,6 +2359,9 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
     // runtime to commit `fpAccessOnCore` (a TCB's saved FP context and the
     // core's `fpOwner` slot) and load the faulting thread's context.
     ("src/trap.rs", "deliver_fp_access", "lean_handle_fp_access"),
+    // WS-ZA ZA6.32: the device-interrupt seam — `device_interrupt` enters the
+    // runtime to commit `interruptEntry`, seL4's `handleInterrupt`.
+    ("src/trap.rs", "device_interrupt", "lean_handle_interrupt"),
     // PR #887 review round 2: the classifier is a Lean-emitted symbol like
     // any other, so it consults the gate too; a not-ready core classifies
     // through the pinned Rust mirror instead.

@@ -648,6 +648,15 @@ assume it**: a new syscall arm states its stage as `RunQueueEntryStageOn L`
 the caller before its scheduling point may set the caller's yield-to code, and
 the syscall entry's `yieldLinkedNotResident` payoff takes
 `currentNotResidentElsewhere`.
+Since `v0.36.195`, ZA6.32 enters every shared peripheral interrupt into the
+Lean kernel (`interruptEntry`, `lean_handle_interrupt`, from
+`trap.rs::device_interrupt`) and adds the `.irqHandlerAck` syscall (44) and
+the `CapTarget.irqHandler` capability.  **New code must assume it**: a new
+`CapTarget` constructor needs an arm wherever `.irqHandler` has one; an
+interrupt line's mask is machine state written only through
+`Architecture.setInterruptLineMask`, which records physical write tag 5; a
+new committing entry is added to `PerCoreNonInterferenceStep` and moves
+`niStepCoverage_perCore_count` (51 since this row).
 Since `v0.36.194`, ZA6.31 gives the fault, unknown-syscall and FP/SIMD
 access entries ZA3.1's form, so every committing entry crosses its commit as
 words.  **New code must assume it**: the FP/SIMD owner table holds codes

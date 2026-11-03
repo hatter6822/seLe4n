@@ -35,6 +35,7 @@
 //! | `lean_per_core_timer_tick`         | `timer::per_core_timer_tick_isr` |
 //! | `lean_per_core_reschedule`         | `trap::reschedule_sgi_handler` |
 //! | `lean_secondary_kernel_main`       | `smp::rust_secondary_main` |
+//! | `lean_handle_interrupt`            | `trap::device_interrupt` |
 //!
 //! (The fault, unknown-syscall and FP/SIMD entries commit through the trap
 //! handler's bracket as well.)  **WS-ZA ZA6.10 retired the fifth row**, the raw
