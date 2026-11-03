@@ -85,6 +85,7 @@ def Capability.namedObject (c : Capability) : Option SeLe4n.ObjId :=
   | .replyCap r => some r.toObjId
   | .auditTrail => none
   | .schedControl _ => none
+  | .irqHandler _ => none
 
 /-- A capability's object is read from its target alone. -/
 theorem Capability.namedObject_of_target {c c' : Capability} (h : c'.target = c.target) :

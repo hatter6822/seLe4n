@@ -1391,6 +1391,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (vspaceUnifyInstructionPage_savedRegsKept h)
     | exact hF (pageTableMap_savedRegsKept hInv h)
     | exact hF (pageTableUnmap_savedRegsKept hInv h)
+    | exact hF (irqHandlerAck_savedRegsKept h)
     | exact hF (revokeServiceByRecordedRegistration_savedRegsKept hInv h)
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
     | exact hX (schedContextBind_savedRegsKeptExcept hInv h)

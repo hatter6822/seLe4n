@@ -122,6 +122,7 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- observer knows; the authority it carries is the configure's, whose writes
   -- are the context's.
   | .schedControl _ => true
+  | .irqHandler _ => true
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable

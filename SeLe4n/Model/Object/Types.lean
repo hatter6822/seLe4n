@@ -346,6 +346,13 @@ inductive CapTarget where
       boot and held by the root task; a scheduling-context capability binds,
       unbinds and names the context to configure, and configures nothing. -/
   | schedControl (core : Nat)
+  /-- WS-ZA ZA6.32: the handler capability of interrupt line `irq`, seL4's
+      `IRQHandler` capability: the authority to acknowledge the line
+      (`seL4_IRQHandler_Ack`), which re-enables it at the interrupt controller
+      after the kernel masked it to deliver its interrupt.  Fieldless beyond the
+      line, as seL4's is: it names no object, and the notification the line
+      signals is the interrupt table's (`SystemState.irqHandlers`). -/
+  | irqHandler (irq : Nat)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -749,6 +756,16 @@ def schedControlOf (core : Nat) : Capability :=
 /-- WS-ZA ZA6.4: a scheduling-control capability is non-null, so it survives the
 null-capability gate at every entry point that runs it. -/
 theorem schedControlOf_not_null (core : Nat) : (Capability.schedControlOf core).isNull = false := by
+  rfl
+
+/-- WS-ZA ZA6.32: **interrupt line `irq`'s handler capability**, as the boot
+hands it to the root task: the `.write` right an acknowledge requires
+(`syscallRequiredRight .irqHandlerAck`) and nothing else. -/
+def irqHandlerOf (irq : Nat) : Capability :=
+  { target := .irqHandler irq, rights := AccessRightSet.ofList [.write] }
+
+/-- WS-ZA ZA6.32: an interrupt-handler capability is non-null. -/
+theorem irqHandlerOf_not_null (irq : Nat) : (Capability.irqHandlerOf irq).isNull = false := by
   rfl
 
 /-- AK7-I (F-M07 / MEDIUM): Fail-closed gate helper for capability-using
@@ -4316,6 +4333,9 @@ inductive SyscallId where
   | schedContextYieldTo    -- WS-ZA ZA6.29: yield to the thread bound to a scheduling
                            -- context (seL4_SchedContext_YieldTo), through
                            -- `schedContextYieldToOnCore`
+  | irqHandlerAck          -- WS-ZA ZA6.32: re-enable an interrupt line the kernel
+                           -- masked when it delivered the line's interrupt
+                           -- (seL4_IRQHandler_Ack), through `irqHandlerAck`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -4366,13 +4386,14 @@ namespace SyscallId
   | .yield                 => 41
   | .schedContextConsumed  => 42
   | .schedContextYieldTo   => 43
+  | .irqHandlerAck         => 44
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 43
+def count : Nat := 44
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
-def encodingBound : Nat := 44
+def encodingBound : Nat := 45
 
 /-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
     lifecycle retype (WS-ZA ZA5.4 part 14). -/
@@ -4424,6 +4445,7 @@ def retiredNumbers : List Nat := [8]
   | 41 => some .yield
   | 42 => some .schedContextConsumed
   | 43 => some .schedContextYieldTo
+  | 44 => some .irqHandlerAck
   | _  => none
 
 instance : ToString SyscallId where
@@ -4471,6 +4493,7 @@ instance : ToString SyscallId where
     | .yield                 => "yield"
     | .schedContextConsumed  => "schedContextConsumed"
     | .schedContextYieldTo   => "schedContextYieldTo"
+    | .irqHandlerAck         => "irqHandlerAck"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -4490,7 +4513,7 @@ def all : List SyscallId :=
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
   , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
-  , .schedContextYieldTo ]
+  , .schedContextYieldTo, .irqHandlerAck ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -4522,9 +4545,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 =>
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44 =>
     intro s h; simp [ofNat?] at h <;> (subst h; rfl)
-  | n + 44 => intro s h; simp [ofNat?] at h
+  | n + 45 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
@@ -4544,8 +4567,8 @@ theorem ofNat?_isSome_iff (n : Nat) :
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 => rfl
-  | n + 44 => simp [ofNat?, encodingBound, retiredNumbers]
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44 => rfl
+  | n + 45 => simp [ofNat?, encodingBound, retiredNumbers]
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl

@@ -24,6 +24,7 @@ import SeLe4n.Kernel.SyscallDispatchStep
 import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SyscallSchedContainment
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
+import SeLe4n.Kernel.InterruptEntry
 
 namespace SeLe4n.Kernel
 
@@ -940,6 +941,25 @@ theorem perCoreRescheduleEntryTail_coversWrites (st : SystemState) (coreId : UIn
   rw [Concurrency.coreIdOfUInt64?_eq_some coreId h]
   exact footprintCoversWrites_trans _
     (footprintCoversWrites_trans _ (perCoreRescheduleStep_coversWrites st coreId h)
+      (settleResidencyOnCore_coversWrites _ _ _ hTable hRun))
+    (activateThreadOnCore_coversWrites _ _ _ hTable)
+
+/-- WS-ZA ZA6.32: **the interrupt entry's step, settle and activation are inside
+its declared footprint**: the step's own coverage
+(`interruptEntryStep_coversWrites`), and the settle and the activation under
+the table write lock and the executing core's run queue, which the footprint
+always names (`declaredLockSetForInterrupt_objStore`, `_runQueue`). -/
+theorem interruptEntryTail_coversWrites (st : SystemState) (coreId intId : UInt64)
+    (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c) (S : LockSet)
+    (hInv : st.objects.invExt) (hS : declaredLockSetForInterrupt coreId intId st = some S) :
+    footprintCoversWrites S st (activateThreadAt (PriorityInheritance.settleResidencyAt
+      ((interruptBracket coreId intId).run st).2 coreId) coreId) := by
+  have hTable := declaredLockSetForInterrupt_objStore hS
+  have hRun := declaredLockSetForInterrupt_runQueue hS c hc
+  unfold activateThreadAt PriorityInheritance.settleResidencyAt
+  rw [hc]
+  exact footprintCoversWrites_trans _
+    (footprintCoversWrites_trans _ (interruptEntryStep_coversWrites coreId intId st S hInv hS)
       (settleResidencyOnCore_coversWrites _ _ _ hTable hRun))
     (activateThreadOnCore_coversWrites _ _ _ hTable)
 

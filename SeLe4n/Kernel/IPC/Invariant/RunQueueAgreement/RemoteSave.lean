@@ -207,6 +207,17 @@ theorem perCoreRescheduleEntryState_holdsOnlyCurrentOn (coreId : UInt64) (c : Co
           (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))).holdsOnlyCurrentOn c :=
   entryTailAt_cleared_holdsOnlyCurrentOn _ coreId c hc
 
+/-- WS-ZA ZA6.32: the interrupt entry's committed state holds on core `c` only
+`c`'s current thread: its tail is every entry's. -/
+theorem interruptEntryState_holdsOnlyCurrentOn (coreId intId : UInt64) (c : CoreId)
+    (hc : Concurrency.coreIdOfUInt64? coreId = some c)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).holdsOnlyCurrentOn c :=
+  entryTailAt_cleared_holdsOnlyCurrentOn _ coreId c hc
+
 /-- **The fault entry leaves its core holding only its current thread.** -/
 theorem faultEntryState_holdsOnlyCurrentOn (lctx : LabelingContext) (coreId : UInt64)
     (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c)

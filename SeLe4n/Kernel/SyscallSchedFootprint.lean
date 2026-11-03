@@ -71,7 +71,7 @@ open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
 /-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
 declares**, at the decoded arm and the operands that arm's capability names.
 
-Twenty arms declare; the other twenty-three answer `none`.  Each declared arm is
+Twenty arms declare; the other twenty-four answer `none`.  Each declared arm is
 `LockSet.ofList?` of its own resolved footprint, and that constructor's
 `Nodup` obligation is `schedFootprintOfCores_keys_nodup` — so it provably never
 refuses a footprint this kernel declares, which the per-arm `_isSome_iff`
@@ -218,6 +218,9 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- WS-ZA ZA6.9: the Consumed invocation writes a context's consumed time and
   -- its caller's registers, no scheduler slot.
   | .schedContextConsumed
+  -- WS-ZA ZA6.32: the acknowledge writes the interrupt controller's mask, no
+  -- scheduler slot.
+  | .irqHandlerAck
   | .auditRead | .auditDrain => none
 
 /-- **Cut C4**: the arms `schedLockSetForSyscall` declares a footprint for.
@@ -230,8 +233,8 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 43` arms; **twenty** declare and twenty-three
-answer `none`.  *Which* of those twenty-three write a scheduler slot at all is this
+There are `SyscallId.count = 44` arms; **twenty** declare and twenty-four
+answer `none`.  *Which* of those twenty-four write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
 sequence identified, and one found to write one is a footprint to declare rather
 than a row to move.  `.cspaceDelete` and `.cspaceRevoke` were in the `none` group
@@ -266,7 +269,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
-  | .schedContextConsumed
+  | .schedContextConsumed | .irqHandlerAck
   | .auditRead | .auditDrain => false
 
 /-- **Cut C4**: every arm this module has not declared is undeclared, whatever
@@ -529,7 +532,7 @@ and the one a bracket reads as "no exclusion established". -/
 whatever its operands resolve to.
 
 The seam-level reading of `schedLockSetForSyscall_undeclared_none`, and the
-statement a bracket needs: the twenty-three arms this workstream has not given a
+statement a bracket needs: the twenty-four arms this workstream has not given a
 scheduler footprint fall back to the coarse serialisation rather than acquiring
 a footprint nobody proved covers them. -/
 theorem declaredSchedulerLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)

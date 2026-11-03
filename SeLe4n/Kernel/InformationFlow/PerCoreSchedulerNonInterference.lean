@@ -18,6 +18,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.TimerContextMatches
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersDispatch
 import SeLe4n.Kernel.SchedContext.YieldLinkInvariant
 import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingSchedulingPoints
+import SeLe4n.Kernel.InterruptEntry
 
 /-!
 # The per-core scheduler steps inside the non-interference step relation
@@ -1878,6 +1879,108 @@ theorem secondaryKernelMain_commits (coreId : UInt64) :
         Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
   (secondaryKernelMain_eq_perCoreRescheduleEntry coreId).trans (perCoreRescheduleEntry_commits coreId)
 
+/-! ### WS-ZA ZA6.32: the interrupt entry -/
+
+/-- The interrupt line's mask is no view's: the controller's mask words and the
+physical-write ledger. -/
+theorem setInterruptLineMask_lowEquivalent (st : SystemState) (line : Nat) (masked : Bool) :
+    lowEquivalent_smp ctx observer (Architecture.setInterruptLineMask st line masked) st :=
+  fun _ => rfl
+
+/-- **What the interrupt step writes, hidden**: at a line a handler is bound
+to, what the bound-aware signal to its notification writes. -/
+def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (line : Nat) : Prop :=
+  ∀ ntfn, st.irqHandlers[(⟨line⟩ : SeLe4n.Irq)]? = some ntfn → boundSignalHidden ctx observer st ntfn
+
+/-- **seL4's `handleInterrupt` is invisible on every core** when the signal it
+sends writes only hidden state: the signal
+(`notificationSignalBoundOnCore_lowEquivalent`) and the mask. -/
+theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (line : Nat)
+    (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st line) :
+    lowEquivalent_smp ctx observer (handleInterruptOnCore st c line) st :=
+  handleInterruptOnCore_of (P := fun s => lowEquivalent_smp ctx observer s st) st c line
+    (fun s hs => lowEquivalent_smp_trans (setInterruptLineMask_lowEquivalent s line true) hs)
+    (lowEquivalent_smp_refl st)
+    (fun ntfn hN => notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn _ c st hInv
+      (h ntfn hN))
+
+/-- …and so is the raw step. -/
+theorem interruptEntryStep_lowEquivalent (st : SystemState) (coreId intId : UInt64)
+    (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st intId.toNat) :
+    lowEquivalent_smp ctx observer (interruptEntryStep st coreId intId) st :=
+  interruptEntryStep_of (P := fun s => lowEquivalent_smp ctx observer s st) st coreId intId
+    (lowEquivalent_smp_refl st) (fun c _ _ => handleInterruptOnCore_lowEquivalent st c _ hInv h)
+
+/-- **The state the interrupt entry commits** on core `c` for the raw ids, with
+the frame the HAL handed over: the frame saved, the bracketed step, the
+residency settle, the activation, and both hardware ledgers cleared. -/
+def interruptEntryState (st : SystemState) (c : CoreId) (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) : SystemState :=
+  Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites
+    (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
+      ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c))
+
+/-- **What the interrupt entry reads, hidden**: core `c`'s current thread at
+the save, what the step's signal writes, the scheduling point the settle opens,
+and the context the activated thread yielded to. -/
+structure interruptEntryHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (c : CoreId) (coreId intId : UInt64) (frame : Option Architecture.InFlightContext) : Prop where
+  objects : st.objects.invExt
+  current : currentHiddenOn ctx observer st c
+  step : interruptStepHidden ctx observer (Architecture.saveCapturedTrapFrame st c frame) intId.toNat
+  settle : schedulingPointHidden ctx observer
+    ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+  activation : activationContextHidden ctx observer (PriorityInheritance.settleResidencyOnCore
+    ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
+
+/-- **The interrupt entry's commit is invisible on every core** when what it
+reads is hidden. -/
+theorem interruptEntryState_lowEquivalent (st : SystemState) (c : CoreId) (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext)
+    (h : interruptEntryHidden ctx observer st c coreId intId frame) :
+    lowEquivalent_smp ctx observer (interruptEntryState st c coreId intId frame) st := by
+  have hL0 := saveCapturedTrapFrame_lowEquivalent st c frame h.objects h.current
+  have hL1 := lowEquivalent_smp_trans (interruptEntryStep_lowEquivalent _ coreId intId
+    (saveCapturedTrapFrame_preserves_objects_invExt st c frame h.objects) h.step) hL0
+  have hL2 := lowEquivalent_smp_trans (settleResidencyOnCore_lowEquivalent _ c h.settle) hL1
+  have hL3 := lowEquivalent_smp_trans (activateThreadOnCore_lowEquivalent _ c
+    (settleResidencyOnCore_preserves_objects_invExt c _ h.settle.objects) h.activation
+    (currentHiddenOn_of_lowEquivalent (settleResidencyOnCore_lowEquivalent _ c h.settle)
+      h.settle.current)) hL2
+  exact lowEquivalent_smp_trans (clearIcacheMaintenance_lowEquivalent _)
+    (lowEquivalent_smp_trans (clearPhysicalWrites_lowEquivalent _) hL3)
+
+/-- **The interrupt entry commits `interruptEntryState`**: the state its atomic
+step writes back is that function's (`rfl`), and every value it reads out is
+read off the same post-state. -/
+theorem interruptEntry_commits (coreId intId : UInt64) :
+    interruptEntry coreId intId =
+      (match Concurrency.coreIdOfUInt64? coreId with
+      | none => pure ()
+      | some c => do
+        let frame ← Platform.FFI.ffiTrapContext
+        let (raised, kind, context, tableBase, asid, code, writes, icache) ←
+          Platform.FFI.modifyGetKernelState (fun st0 =>
+            let st := Architecture.saveCapturedTrapFrame st0 c frame
+            let pending0 := reschedulePendingSnapshot st
+            let mid := ((interruptBracket coreId intId).run st).2
+            let pending := mid.scheduler.reschedulePending
+            let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
+            (((pending0.raised pending).union (pending.raised post.scheduler.reschedulePending),
+              Architecture.restoreCommitKindOnCore post c, Architecture.restoreContextOnCore post c,
+              Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
+              post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
+              post.pendingIcacheMaintenance),
+              interruptEntryState st0 c coreId intId frame))
+        Platform.FFI.completePhysicalWrites writes
+        Concurrency.fireRaisedReschedules raised
+        Platform.FFI.completeIcacheMaintenance icache
+        Concurrency.releaseSwitchedFpOwnerOnCore c
+        Platform.FFI.restoreTrapFrameParts kind context tableBase asid
+        Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
+  rfl
+
 end Entry
 
 /-! ## §9 The per-core step relation and its coverage
@@ -1907,13 +2010,15 @@ inductive PerCoreSchedulerOperation where
   | secondaryEntry
   | residencySettle
   | residencyDefer
+  | interruptEntry
   deriving DecidableEq, Repr
 
 /-- Every per-core scheduler step, once. -/
 def PerCoreSchedulerOperation.all : List PerCoreSchedulerOperation :=
   [.tick, .replenishmentDrain, .budgetExhaust, .yieldCharge, .yieldStep,
     .activateHiddenYielder, .activateObservableYielder, .schedContextYieldTo, .rescheduleSgi,
-    .rescheduleStep, .rescheduleEntry, .secondaryEntry, .residencySettle, .residencyDefer]
+    .rescheduleStep, .rescheduleEntry, .secondaryEntry, .residencySettle, .residencyDefer,
+    .interruptEntry]
 
 theorem PerCoreSchedulerOperation.mem_all (op : PerCoreSchedulerOperation) :
     op ∈ PerCoreSchedulerOperation.all := by
@@ -1954,17 +2059,18 @@ def perCoreSchedulerNiTheorem : PerCoreSchedulerOperation → String
   | .secondaryEntry            => niName! secondaryKernelMain_commits
   | .residencySettle           => niName! settleResidencyOnCore_lowEquivalent
   | .residencyDefer            => niName! deferResidentElsewhere_lowEquivalent
+  | .interruptEntry            => niName! interruptEntryState_lowEquivalent
 
 /-- The theorem that covers each per-core operation. -/
 def perCoreOperationNiTheorem : PerCoreOperation → String
   | .kernel op => kernelOperationPerCoreNiTheorem op
   | .scheduler op => perCoreSchedulerNiTheorem op
 
-/-- **Fifty distinct per-core theorem names**: the thirty-six single-core
-operations' lifts and the fourteen per-core scheduler steps, counted over the
+/-- **Fifty-one distinct per-core theorem names**: the thirty-six single-core
+operations' lifts and the fifteen per-core scheduler steps, counted over the
 enumeration (`PerCoreOperation.mem_all` ties it to the type). -/
 theorem niStepCoverage_perCore_count :
-    (PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 50 := by
+    (PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 51 := by
   decide
 
 /-- The per-core theorem names are pairwise distinct. -/
@@ -2034,6 +2140,10 @@ inductive PerCoreNonInterferenceStep (ctx : LabelingContext) (observer : IfObser
       (hCur : currentHiddenOn ctx observer st c)
       (hIdle : threadObservable ctx observer (Kernel.idleThreadId c) = false) :
       PerCoreNonInterferenceStep ctx observer st (PriorityInheritance.deferResidentElsewhere st c)
+  | interruptEntry {st : SystemState} (c : CoreId) (coreId intId : UInt64)
+      (frame : Option Architecture.InFlightContext)
+      (h : interruptEntryHidden ctx observer st c coreId intId frame) :
+      PerCoreNonInterferenceStep ctx observer st (interruptEntryState st c coreId intId frame)
 
 /-- **The per-core relation is sound**: every step of it is invisible on every
 core. -/
@@ -2057,6 +2167,7 @@ theorem perCoreNonInterferenceStep_sound {ctx : LabelingContext} {observer : IfO
   | rescheduleEntry c coreId frame h => exact perCoreRescheduleEntryState_lowEquivalent _ c coreId frame h
   | residencySettle c h => exact settleResidencyOnCore_lowEquivalent _ c h
   | residencyDefer c hInv hCur hIdle => exact deferResidentElsewhere_lowEquivalent _ c hInv hCur hIdle
+  | interruptEntry c coreId intId frame h => exact interruptEntryState_lowEquivalent _ c coreId intId frame h
 
 /-- **The secondary core's entry is the reschedule entry's constructor**: the
 state it commits is `perCoreRescheduleEntryState` (`secondaryKernelMain_commits`),

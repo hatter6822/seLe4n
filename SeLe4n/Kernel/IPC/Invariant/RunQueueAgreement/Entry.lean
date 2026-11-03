@@ -7,6 +7,7 @@ import SeLe4n.Kernel.ReschedulePendingArms.Entry
 import SeLe4n.Kernel.PerCoreTimerEntry
 import SeLe4n.Kernel.PerCoreRescheduleEntry
 import SeLe4n.Kernel.ReschedulePendingArms.Tick
+import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 
 /-!
 # Every committing entry keeps the run-queue link agreement
@@ -966,5 +967,63 @@ theorem fpAccessEntryState_preserves_yieldLinksAgree (coreId : UInt64)
     (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId).yieldLinksAgree :=
   (fpAccessEntryState_runQueueEntryStage coreId frame live st).yieldLinksAgree hInv hR hY
+
+/-! ### The interrupt entry (WS-ZA ZA6.32) -/
+
+/-- The mask writes the machine's mask and the physical-write ledger alone. -/
+theorem setInterruptLineMask_runQueueStage (st : SystemState) (line : Nat) (masked : Bool) :
+    RunQueueStage st (Architecture.setInterruptLineMask st line masked) :=
+  RunQueueStage.of_frame rfl rfl rfl
+
+/-- **seL4's `handleInterrupt` on a core keeps the run queues in agreement**:
+the bound-aware signal's stage, then the mask. -/
+theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (line : Nat)
+    (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st (handleInterruptOnCore st c line) := by
+  unfold handleInterruptOnCore
+  split
+  · exact (notificationSignalBoundOnCore_runQueueStage _ _ c st hHeads hBlk).trans
+      (setInterruptLineMask_runQueueStage _ _ _)
+  · exact setInterruptLineMask_runQueueStage _ _ _
+
+theorem interruptEntryStep_runQueueStage (st : SystemState) (coreId intId : UInt64)
+    (E : EntryPremises st) : RunQueueStage st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := RunQueueStage st) st coreId intId (RunQueueStage.refl _)
+    (fun c _ _ => handleInterruptOnCore_runQueueStage st c _ E.ntfnHeads E.blocked)
+
+/-- **The interrupt entry's committed state keeps the agreement**: the save,
+the step, the settle and activation, and the ledger drains. -/
+theorem interruptEntryState_runQueueEntryStage (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st) :
+    SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))) :=
+  have hS := saveCapturedTrapFrameAt_runQueueStage st coreId frame
+  ((hS.entry.trans (interruptEntryStep_runQueueStage _ coreId intId
+    (E.of_ipcFrame hS (saveCapturedTrapFrameAt_ipcFrame st coreId _))).entry).trans
+    ((settleThenActivateAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
+
+/-- **The interrupt entry keeps the refill state sound.** -/
+theorem interruptEntryState_preserves_refillsSound (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).refillsSound :=
+  (interruptEntryState_runQueueEntryStage coreId intId frame st E).refillsSound
+    E.objInv E.refined hRel hS
+
+/-- **The interrupt entry keeps the yield link in agreement.** -/
+theorem interruptEntryState_preserves_yieldLinksAgree (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hY : st.yieldLinksAgree) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).yieldLinksAgree :=
+  (interruptEntryState_runQueueEntryStage coreId intId frame st E).yieldLinksAgree
+    E.objInv E.refined hY
 
 end SeLe4n.Kernel

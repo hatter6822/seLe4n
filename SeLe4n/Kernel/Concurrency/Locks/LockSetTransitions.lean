@@ -4393,6 +4393,16 @@ def lockSet_schedContextYieldTo (callerTid : ThreadId) (cnodeRootObjId : ObjId)
        (tcbLock targetTcbTid, .write)])
     (yielder.map (fun y => (tcbLock y, .write)))
 
+/-- WS-ZA ZA6.32: `lockSet` for `irqHandlerAck`.  The acknowledge writes no
+object: it unmasks a line at the interrupt controller, machine state, and
+records the controller's write in the entry's ledger.  The caller's TCB is
+written (its return is staged in its saved registers) and the CSpace root is
+read for the capability resolution. -/
+def lockSet_irqHandlerAck (callerTid : ThreadId) (cnodeRootObjId : ObjId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .write),
+     (cnodeLock cnodeRootObjId, .read)]
+
 /-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
 `boundNotification`) and the notification (write — `boundTCB`) both mutate; the
 caller TCB is read (identity) and the CSpace root read (cap resolution). -/
@@ -5105,6 +5115,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- CSpace root.
   | .schedContextYieldTo =>
       [.tcb, .cnode, .schedContext]
+  -- WS-ZA ZA6.32: the acknowledge writes the caller's TCB and reads the
+  -- CSpace root; the line it unmasks is machine state, no object.
+  | .irqHandlerAck =>
+      [.tcb, .cnode]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
@@ -5193,7 +5207,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo
+  | .schedContextYieldTo | .irqHandlerAck
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
@@ -6955,6 +6969,18 @@ theorem lockSet_consistent_schedContextConsumed (callerTid : ThreadId) (cnRoot :
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-ZA ZA6.32: SM3.B.4 for `.irqHandlerAck`. -/
+theorem lockSet_consistent_irqHandlerAck (callerTid : ThreadId) (cnRoot : ObjId) :
+    ∀ p ∈ (lockSet_irqHandlerAck callerTid cnRoot).pairs,
+      p.fst.kind ∈ permittedKinds .irqHandlerAck :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem

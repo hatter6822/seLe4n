@@ -248,6 +248,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         ((pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e'))
     | exact hF (pageTableUnmap_savedRegsKept hInv h)
         ((pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv (e := e'))
+    | exact hF (irqHandlerAck_savedRegsKept h) (irqHandlerAck_stepCovers (e := e') hInv h)
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
         (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact hX (schedContextBind_savedRegsKeptExcept hInv h)

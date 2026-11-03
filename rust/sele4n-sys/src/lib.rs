@@ -59,6 +59,7 @@ pub mod cap;
 pub mod cspace;
 pub mod declassify;
 pub mod ipc;
+pub mod irq;
 pub mod lifecycle;
 pub mod sched_context;
 pub mod service;

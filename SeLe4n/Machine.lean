@@ -1048,9 +1048,102 @@ structure MachineState where
   entryWordBytes : ByteArray := ByteArray.empty
   /-- **WS-ZA ZA5.2**: how many pairs of `entryWordBytes` this entry read. -/
   entryWordCount : Nat := 0
+  /-- **WS-ZA ZA6.32: the interrupt lines masked at the interrupt
+      controller**, seL4's `irq_masks`: bit `n % 64` of word `n / 64` is set
+      while line `n` is disabled at the distributor (`irqLineMasked`).  The
+      interrupt entry masks a line it delivers (seL4's `handleInterrupt`, which
+      masks an `IRQSignal` line until the handler acknowledges it) and a line
+      no handler is bound to (seL4's `IRQInactive` arm); the acknowledge
+      (`seL4_IRQHandler_Ack`) clears it.  Five words, as scalars in the state
+      itself, cover the model's 320 lines (`Architecture.InterruptId`), so a
+      mask is written in place and boxes nothing.  Every change is mirrored at
+      the controller by the physical write the step records
+      (`Architecture.PhysicalWrite.setInterruptMask`).  The boot masks nothing:
+      the HAL enables every line at initialisation. -/
+  irqMaskWord0 : UInt64 := 0
+  irqMaskWord1 : UInt64 := 0
+  irqMaskWord2 : UInt64 := 0
+  irqMaskWord3 : UInt64 := 0
+  irqMaskWord4 : UInt64 := 0
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
+
+-- ============================================================================
+-- WS-ZA ZA6.32 — the interrupt-line masks
+-- ============================================================================
+
+/-- The bit of line `n` within its mask word. -/
+@[inline] def irqMaskBit (n : Nat) : UInt64 := (1 : UInt64) <<< (n % 64).toUInt64
+
+/-- The mask word holding line `n`'s bit (`n / 64`; lines past the fifth word
+read the fifth, which no line the model names reaches). -/
+@[inline] def MachineState.irqMaskWord (ms : MachineState) (n : Nat) : UInt64 :=
+  match n / 64 with
+  | 0 => ms.irqMaskWord0
+  | 1 => ms.irqMaskWord1
+  | 2 => ms.irqMaskWord2
+  | 3 => ms.irqMaskWord3
+  | _ => ms.irqMaskWord4
+
+/-- **Whether line `n` is masked at the interrupt controller.** -/
+@[inline] def MachineState.irqLineMasked (ms : MachineState) (n : Nat) : Bool :=
+  ms.irqMaskWord n &&& irqMaskBit n != 0
+
+/-- A mask word with line `n`'s bit set (`masked`) or cleared. -/
+@[inline] def irqMaskWordWith (w : UInt64) (n : Nat) (masked : Bool) : UInt64 :=
+  if masked then w ||| irqMaskBit n else w &&& ~~~(irqMaskBit n)
+
+/-- **Line `n` masked (`masked = true`) or unmasked at the interrupt
+controller**: its word rewritten, every other word and every other field kept
+(each by `rfl`).  Written as one update of all five words, so the state is
+rewritten in place and no field but the masks is touched. -/
+@[inline] def MachineState.setIrqLineMask (ms : MachineState) (n : Nat) (masked : Bool) :
+    MachineState :=
+  let k := n / 64
+  { ms with
+    irqMaskWord0 := if k = 0 then irqMaskWordWith ms.irqMaskWord0 n masked else ms.irqMaskWord0
+    irqMaskWord1 := if k = 1 then irqMaskWordWith ms.irqMaskWord1 n masked else ms.irqMaskWord1
+    irqMaskWord2 := if k = 2 then irqMaskWordWith ms.irqMaskWord2 n masked else ms.irqMaskWord2
+    irqMaskWord3 := if k = 3 then irqMaskWordWith ms.irqMaskWord3 n masked else ms.irqMaskWord3
+    irqMaskWord4 := if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then ms.irqMaskWord4
+      else irqMaskWordWith ms.irqMaskWord4 n masked }
+
+/-- Every line's bit is a set bit. -/
+theorem irqMaskBit_ne_zero_fin : ∀ k : Fin 64, (1 : UInt64) <<< k.val.toUInt64 ≠ 0 := by decide
+
+theorem irqMaskBit_ne_zero (n : Nat) : irqMaskBit n ≠ 0 :=
+  irqMaskBit_ne_zero_fin ⟨n % 64, Nat.mod_lt _ (by decide)⟩
+
+/-- A word with line `n`'s bit set reads that bit as set, and cleared as clear. -/
+theorem irqMaskWordWith_bit (w : UInt64) (n : Nat) (masked : Bool) :
+    (irqMaskWordWith w n masked &&& irqMaskBit n != 0) = masked := by
+  have hb := irqMaskBit_ne_zero n
+  unfold irqMaskWordWith
+  generalize irqMaskBit n = b at hb
+  cases masked
+  · have : w &&& ~~~b &&& b = 0 := by
+      apply UInt64.toBitVec_inj.mp
+      simp [BitVec.and_assoc]
+    simp [this]
+  · have : (w ||| b) &&& b = b := by
+      apply UInt64.toBitVec_inj.mp
+      apply BitVec.eq_of_getLsbD_eq; intro i _
+      simp only [UInt64.toBitVec_and, UInt64.toBitVec_or, BitVec.getLsbD_and, BitVec.getLsbD_or]
+      cases b.toBitVec.getLsbD i <;> simp
+    simp [this, hb]
+
+/-- **The mask reads back what was written**: after `setIrqLineMask n masked`,
+line `n` reads `masked`. -/
+@[simp] theorem MachineState.irqLineMasked_setIrqLineMask_self (ms : MachineState) (n : Nat)
+    (masked : Bool) : (ms.setIrqLineMask n masked).irqLineMasked n = masked := by
+  have : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ ∃ k, n / 64 = k + 4 := by
+    rcases Nat.lt_or_ge (n / 64) 4 with h | h
+    · omega
+    · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨n / 64 - 4, by omega⟩)))
+  rcases this with h | h | h | h | ⟨k, h⟩ <;>
+    simp only [MachineState.setIrqLineMask, MachineState.irqLineMasked, MachineState.irqMaskWord,
+      h] <;> simp [irqMaskWordWith_bit]
 
 -- ============================================================================
 -- WS-SM SM5.I — per-core register-bank accessors + store/load algebra

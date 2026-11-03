@@ -1603,6 +1603,12 @@ theorem lockSet_schedContextYieldTo_size_le (a : ThreadId) (b : ObjId)
   exact Nat.le_trans (lockSetExtendOpt_size_le _ _)
     (Nat.add_le_add_right (Nat.le_trans (lockSetOfList_size_le _) (by size_bound)) _)
 
+/-- WS-ZA ZA6.32: `seL4_IRQHandler_Ack`'s footprint is two fixed locks. -/
+theorem lockSet_irqHandlerAck_size_le (a : ThreadId) (b : ObjId) :
+    (lockSet_irqHandlerAck a b).size ≤ maxLockSetSize := by
+  unfold lockSet_irqHandlerAck maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
 -- WS-OD (`v0.35.4`): `lockSet_tcbSuspend_size_le` retired with its footprint;
 -- the `.tcbSuspend` syscall's bound is `lockSet_tcbSuspendOnCore_size_le`
 -- (`ResolvedFootprintBounds.lean`), stated over the state-resolved footprint
@@ -1758,6 +1764,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d q, (lockSet_schedContextUnbind a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_schedContextConsumed a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d y, (lockSet_schedContextYieldTo a b c d y).size ≤ maxLockSetSize) ∧
+    (∀ a b, (lockSet_irqHandlerAck a b).size ≤ maxLockSetSize) ∧
     (∀ a b c q, (lockSet_tcbResume a b c q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetPriority a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_tcbSetMCPriority a b c d q).size ≤ maxLockSetSize) ∧
@@ -1789,6 +1796,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,
    lockSet_schedContextConsumed_size_le,
    lockSet_schedContextYieldTo_size_le,
+   lockSet_irqHandlerAck_size_le,
    lockSet_tcbResume_size_le,
    lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
    lockSet_tcbSetIPCBuffer_size_le, lockSet_tcbSetFaultHandler_size_le,

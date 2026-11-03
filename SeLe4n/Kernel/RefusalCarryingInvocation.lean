@@ -208,6 +208,10 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
               | .ok st' => .ok ((), st')
               | .error e => .error e
     | _ => .error .invalidCapability
+  | .irqHandlerAck =>
+    match cap.target with
+    | .irqHandler line => Architecture.irqHandlerAck line st
+    | _ => .error .invalidCapability
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId =>

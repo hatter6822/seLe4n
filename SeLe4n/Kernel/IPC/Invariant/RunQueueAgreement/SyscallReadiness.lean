@@ -834,6 +834,10 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     readyKeptStage S st st' := by
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
+  case irqHandlerAck =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line => exact readyKeptStage.of_stage (irqHandlerAck_runQueueStage hStep)
+    all_goals try cases hStep
   case cspaceDelete =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>

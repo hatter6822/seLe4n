@@ -322,6 +322,13 @@ theorem vspaceUnifyInstructionPage_savedRegsKept {asid : SeLe4n.ASID} {vaddr : S
     savedRegsKept st st' :=
   savedRegsKept.of_objects_eq (Architecture.vspaceUnifyInstructionPage_frame hStep).1
 
+/-- WS-ZA ZA6.32: **the interrupt acknowledge** writes the line's mask and the
+physical write ledger, no object. -/
+theorem irqHandlerAck_savedRegsKept {line : Nat} {st st' : SystemState}
+    (hStep : Architecture.irqHandlerAck line st = .ok ((), st')) : savedRegsKept st st' := by
+  rw [Architecture.irqHandlerAck_ok hStep]
+  exact savedRegsKept.of_objects_eq rfl
+
 /-- **The page-table map**: a store of the table over the table, the physical
 write ledger, and a store of the root over the root. -/
 theorem pageTableMap_savedRegsKept {tableId rootId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr}

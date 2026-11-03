@@ -70,6 +70,7 @@ import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 
 import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Architecture.InterruptMask
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.Architecture.VSpace
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
@@ -998,6 +999,10 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- scheduling-context capability has no rights of its own to check.
   | .schedContextConsumed  => .write
   | .schedContextYieldTo   => .write
+  -- WS-ZA ZA6.32: the acknowledge writes the interrupt controller's mask for
+  -- the line; seL4's interrupt-handler capability has no rights of its own to
+  -- check, so it carries the write right the other writing invocations carry.
+  | .irqHandlerAck         => .write
 
 /-- PR #870 round 5: **which syscalls validate the capability's target before
 its rights.**
@@ -1062,6 +1067,7 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .yield                 => false
   | .schedContextConsumed  => false
   | .schedContextYieldTo   => false
+  | .irqHandlerAck         => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -3087,6 +3093,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           | .ok st' => .ok ((), st')
           | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_Ack` — no arguments; the line from
+  -- the capability target, unmasked at the interrupt controller
+  -- (`Architecture.irqHandlerAck`, seL4's `invokeIRQHandler_AckIRQ`).
+  | .irqHandlerAck =>
+    some <| match cap.target with
+    | .irqHandler line => Architecture.irqHandlerAck line
+    | _ => fun _ => .error .invalidCapability
   -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
   -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
   | .tcbBindNotification =>
@@ -3638,6 +3651,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               simp only [hC] at hStep
               cases hStep
               exact schedContextYieldToOnCore_preserves_ipcInvariantFull hObjInv hInv hC
+    all_goals try cases hStep
+  case irqHandlerAck =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      exact ipcInvariantFull_of_objects_eq
+        (by rw [Architecture.irqHandlerAck_ok hStep]; rfl) hInv
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -5823,7 +5842,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
-            .schedContextYieldTo] : List SyscallId) := by
+            .schedContextYieldTo, .irqHandlerAck] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -5847,7 +5866,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
-            .schedContextYieldTo] : List SyscallId) := by
+            .schedContextYieldTo, .irqHandlerAck] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -8734,6 +8753,14 @@ def syscallDelegates : SyscallId → Prop
                   (SeLe4n.SchedContextId.ofObjId vScId.val) executingCore st with
            | .ok st' => .ok ((), st')
            | .error e => .error e)
+  -- WS-ZA ZA6.32: the acknowledge arm IS the acknowledge of the line the
+  -- capability names.
+  | .irqHandlerAck =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability) (line : Nat),
+        decoded.syscallId = .irqHandlerAck →
+        cap.target = .irqHandler line →
+        dispatchWithCap decoded tid executingCore gate cap = Architecture.irqHandlerAck line
   | _ => False
 
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
@@ -8750,6 +8777,12 @@ theorem syscallDelegates_schedContextConsumed : syscallDelegates .schedContextCo
 theorem syscallDelegates_schedContextYieldTo : syscallDelegates .schedContextYieldTo := by
   intro decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hValid]
+
+/-- WS-ZA ZA6.32: the `.irqHandlerAck` obligation, discharged. -/
+theorem syscallDelegates_irqHandlerAck : syscallDelegates .irqHandlerAck := by
+  intro decoded tid executingCore gate cap line hSyscall hTarget
+  funext st
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- The `.receive` obligation, discharged. -/
 theorem syscallDelegates_receive : syscallDelegates .receive := by

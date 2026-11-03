@@ -172,15 +172,21 @@ pub enum SyscallId {
     /// `MessageInfo` in x1, written when the call returns or, when the caller
     /// yielded its core to the target, when the caller next runs.
     SchedContextYieldTo = 43,
+    /// WS-ZA ZA6.32: acknowledge an interrupt line — seL4's
+    /// `seL4_IRQHandler_Ack`.  Invoked on the interrupt-handler capability
+    /// (`Write` right), with no message registers: the line the capability
+    /// names, masked since the kernel delivered it, is unmasked at the
+    /// interrupt controller.  Returns no value.
+    IrqHandlerAck = 44,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 43;
+    pub const COUNT: usize = 44;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
-    pub const ENCODING_BOUND: u64 = 44;
+    pub const ENCODING_BOUND: u64 = 45;
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
@@ -234,6 +240,7 @@ impl SyscallId {
             41 => Some(Self::Yield),
             42 => Some(Self::SchedContextConsumed),
             43 => Some(Self::SchedContextYieldTo),
+            44 => Some(Self::IrqHandlerAck),
             _ => None,
         }
     }
@@ -316,6 +323,9 @@ impl SyscallId {
             // WS-ZA ZA6.29: the yieldTo invocation resets the context's consumed
             // time and requeues its thread, so it carries the same write right.
             Self::SchedContextYieldTo => AccessRight::Write,
+            // WS-ZA ZA6.32: the acknowledge writes the line's mask, the right
+            // seL4's IRQHandler invocations need on the handler capability.
+            Self::IrqHandlerAck => AccessRight::Write,
         }
     }
 }
@@ -519,9 +529,12 @@ mod tests {
             SyscallId::from_u64(43),
             Some(SyscallId::SchedContextYieldTo)
         );
-        assert_eq!(SyscallId::from_u64(44), None);
-        assert_eq!(SyscallId::COUNT, 43);
-        assert_eq!(SyscallId::ENCODING_BOUND, 44);
+        // WS-ZA ZA6.32: the interrupt acknowledge, appended the same way.
+        assert_eq!(SyscallId::from_u64(44), Some(SyscallId::IrqHandlerAck));
+        assert_eq!(SyscallId::IrqHandlerAck.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::from_u64(45), None);
+        assert_eq!(SyscallId::COUNT, 44);
+        assert_eq!(SyscallId::ENCODING_BOUND, 45);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype

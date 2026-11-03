@@ -3,6 +3,7 @@ Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersCapabilityDispatch
+import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 
 /-!
 # The saved-register census over the send and notification arms
@@ -569,6 +570,27 @@ theorem notificationSignalBoundOnCore_savedRegsUnwritten (notificationId : SeLe4
         have h2 := h1.trans (savedRegsUnwritten.of_storeTcbReceiveComplete h1.2 hT)
         exact h2.trans (savedRegsUnwritten.of_wakeThread st2 _ c h2.2)
   · exact notificationSignalOnCore_savedRegsUnwritten _ _ _ hInv
+
+/-- WS-ZA ZA6.32: **the interrupt step writes no saved register**: the bound
+signal writes none (`notificationSignalBoundOnCore_savedRegsUnwritten`) and the
+mask writes the machine's mask words and the physical-write ledger only. -/
+theorem handleInterruptOnCore_savedRegsUnwritten (st : SystemState) (c : CoreId) (line : Nat)
+    (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (handleInterruptOnCore st c line) := by
+  have hM : ∀ s, savedRegsUnwritten st s →
+      savedRegsUnwritten st (Architecture.setInterruptLineMask s line true) :=
+    fun s hs => hs.trans ⟨fun _ _ => rfl, by simpa using hs.2⟩
+  unfold handleInterruptOnCore
+  split
+  · exact hM _ (notificationSignalBoundOnCore_savedRegsUnwritten _ _ c hInv)
+  · exact hM _ (.refl hInv)
+
+/-- …and so does the raw step. -/
+theorem interruptEntryStep_savedRegsUnwritten (st : SystemState) (coreId intId : UInt64)
+    (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := savedRegsUnwritten st) st coreId intId (.refl hInv)
+    (fun c _ _ => handleInterruptOnCore_savedRegsUnwritten st c _ hInv)
 
 /-- The checked signal writes no saved register. -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten

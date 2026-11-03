@@ -336,7 +336,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo
+  | .schedContextYieldTo | .irqHandlerAck
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
@@ -1171,7 +1171,7 @@ mechanically closed. The other direction — listing an arm that still answers
 and pre-state under which its arm declares, so an arm that had quietly become
 unconditionally `none` could not satisfy its own `iff`.
 
-There are `SyscallId.count = 43` arms; eight are declared and thirty-five
+There are `SyscallId.count = 44` arms; eight are declared and thirty-six
 answer `none`. -/
 def declaredFootprintSyscall : SyscallId → Bool
   | .tcbSuspend
@@ -1193,7 +1193,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo
+  | .schedContextYieldTo | .irqHandlerAck
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification

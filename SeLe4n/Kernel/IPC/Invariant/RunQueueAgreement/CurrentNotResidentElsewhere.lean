@@ -323,6 +323,34 @@ theorem perCoreRescheduleEntryState_preserves_currentNotResidentElsewhere (coreI
     exact ⟨saveCapturedTrapFrameAt_scheduler st coreId frame,
       saveCapturedTrapFrameAt_residentCode st coreId frame⟩
 
+/-- WS-ZA ZA6.32: **the interrupt entry keeps every core's current thread
+resident nowhere else**: its step moves no core's slot off the executing core
+(`interruptEntryStep_stepCovers`). -/
+theorem interruptEntryState_preserves_currentNotResidentElsewhere (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
+    (hC : st.currentNotResidentElsewhere) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).currentNotResidentElsewhere := by
+  have S := interruptEntryState_runQueueEntryStage coreId intId frame st E
+  have hU := currentsUnique_of_dequeuedUnique (S.2 hInv0 hR0 (S.1.links hInv0 hR0).2 hD0)
+  have hSt := saveCapturedTrapFrameAt_runQueueStage st coreId frame
+  have hSv := hSt.1.links hInv0 hR0
+  have ES := E.of_ipcFrame hSt (saveCapturedTrapFrameAt_ipcFrame st coreId frame)
+  have hInvM := ((interruptEntryStep_runQueueStage _ coreId intId ES).1.links hSv.1 hSv.2).1
+  refine CurrentNotResidentElsewhere.of_frame
+    (settleThenActivateAt_currentNotResidentElsewhere hC hInvM ?_ ?_ (hU.of_scheduler rfl)) rfl rfl
+  · intro c hc
+    exact keptOffCore_of_save_stepCovers (saveCapturedTrapFrameAt_scheduler st coreId frame)
+      (saveCapturedTrapFrameAt_residentCode st coreId frame)
+      (interruptEntryStep_stepCovers c _ coreId intId hSv.1)
+  · intro hc
+    rw [interruptEntryStep_invalid_core _ coreId intId hc]
+    exact ⟨saveCapturedTrapFrameAt_scheduler st coreId frame,
+      saveCapturedTrapFrameAt_residentCode st coreId frame⟩
+
 /-- **The fault entry keeps a core's current thread resident on no other
 core.** -/
 theorem faultEntryState_preserves_currentNotResidentElsewhere (lctx : LabelingContext)

@@ -231,6 +231,12 @@ theorem dispatchCapabilityOnly_mappingStage
               cases hStep
               exact schedContextYieldToOnCore_mappingStage hC
     all_goals try cases hStep
+  case irqHandlerAck =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      rw [Architecture.irqHandlerAck_ok hStep]
+      exact MappingStage.of_objects_eq rfl
+    all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>

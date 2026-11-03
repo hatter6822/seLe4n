@@ -194,6 +194,13 @@ theorem validateThreadIdArg_ok_val_not_idle {tid : SeLe4n.ThreadId} {vtid : SeLe
   rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ (validateThreadIdArg_ok_toValid? _ _ h)]
   exact validateThreadIdArg_ok_not_reserved _ _ h
 
+/-- WS-ZA ZA6.32: the interrupt acknowledge writes the line's mask and the
+controller write it owes, no object and no scheduler field. -/
+theorem irqHandlerAck_runQueueStage {line : Nat} {st st' : SystemState}
+    (h : Architecture.irqHandlerAck line st = .ok ((), st')) : RunQueueStage st st' := by
+  rw [Architecture.irqHandlerAck_ok h]
+  exact RunQueueStage.of_frame rfl rfl rfl
+
 /-- The capability-only dispatch keeps the run queues in agreement with the
 threads' links on every arm but the yieldTo, which links its caller
 (`dispatchCapabilityOnly_runQueueEntryStageOn`). -/
@@ -207,6 +214,10 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
   case schedContextYieldTo => exact absurd hSy hNY
+  case irqHandlerAck =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line => exact RunQueueStage.entry (irqHandlerAck_runQueueStage hStep)
+    all_goals try cases hStep
   case cspaceDelete =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>

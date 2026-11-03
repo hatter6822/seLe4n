@@ -177,14 +177,17 @@ pub enum SyscallId {
     /// WS-ZA ZA6.29: yield to the thread bound to a scheduling context
     /// (`seL4_SchedContext_YieldTo`); no message registers.
     SchedContextYieldTo = 43,
+    /// WS-ZA ZA6.32: acknowledge an interrupt line (`seL4_IRQHandler_Ack`);
+    /// no message registers.
+    IrqHandlerAck = 44,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 43;
+    pub const COUNT: u32 = 44;
 
     /// One past the largest syscall number (must match `sele4n-types`).
-    pub const ENCODING_BOUND: u32 = 44;
+    pub const ENCODING_BOUND: u32 = 45;
 
     /// Retired syscall numbers, reserved and never reassigned (must match
     /// `sele4n-types`): `8`, the in-place lifecycle retype.
@@ -237,6 +240,7 @@ impl SyscallId {
             41 => Some(Self::Yield),
             42 => Some(Self::SchedContextConsumed),
             43 => Some(Self::SchedContextYieldTo),
+            44 => Some(Self::IrqHandlerAck),
             _ => None,
         }
     }
@@ -293,6 +297,9 @@ impl SyscallId {
             // WS-ZA ZA6.29: the yieldTo invocation's only operand is the invoked
             // capability.
             Self::SchedContextYieldTo => 0,
+            // WS-ZA ZA6.32: the acknowledge's only operand is the invoked
+            // capability.
+            Self::IrqHandlerAck => 0,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
@@ -1239,7 +1246,9 @@ mod tests {
             SyscallId::from_u32(43),
             Some(SyscallId::SchedContextYieldTo)
         );
-        assert_eq!(SyscallId::from_u32(44), None);
+        assert_eq!(SyscallId::IrqHandlerAck.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(44), Some(SyscallId::IrqHandlerAck));
+        assert_eq!(SyscallId::from_u32(45), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

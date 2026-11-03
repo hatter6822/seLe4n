@@ -1202,6 +1202,17 @@ theorem schedContextYieldToOnCore_stepCovers {e : CoreId} {s : SeLe4n.SchedConte
           · exact hLink _ _
         · exact hSet _ hInv2
 
+/-! ### The interrupt acknowledge (WS-ZA ZA6.32) -/
+
+/-- WS-ZA ZA6.32: **the acknowledge covers**: it writes the line's mask and the
+controller write it owes, no object, no scheduler field and no register bank. -/
+theorem irqHandlerAck_stepCovers {e : CoreId} {line : Nat} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : Architecture.irqHandlerAck line st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  rw [Architecture.irqHandlerAck_ok h]
+  exact (capabilityKeyFrame_of_objects_scheduler_eq (st' := Architecture.setInterruptLineMask st
+      line false) hInv rfl rfl).stepCoversInv (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
+
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
@@ -1224,6 +1235,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first
+    | exact irqHandlerAck_stepCovers hInv h
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv

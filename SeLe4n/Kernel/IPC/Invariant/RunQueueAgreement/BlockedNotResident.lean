@@ -348,6 +348,39 @@ theorem perCoreRescheduleEntryState_preserves_blockedNotResident (coreId : UInt6
     rw [perCoreRescheduleStep_invalid_core _ coreId (not_lt_of_coreIdOfUInt64?_none hc)]
     exact saveCapturedTrapFrameAt_residentCode st coreId frame
 
+/-- WS-ZA ZA6.32: **the interrupt entry keeps a thread blocked in IPC resident on
+no core**: its signal wakes a thread and blocks none, and its mask writes no
+thread. -/
+theorem interruptEntryState_preserves_blockedNotResident (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
+    (hC : st.currentNotResidentElsewhere) (hB : st.blockedNotResident) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).blockedNotResident := by
+  have S := interruptEntryState_runQueueEntryStage coreId intId frame st E
+  have hD := S.2 hInv0 hR0 (S.1.links hInv0 hR0).2 hD0
+  have hSv := saveCapturedTrapFrameAt_runQueueStage st coreId frame
+  obtain ⟨hInvS, hRS⟩ := hSv.1.links hInv0 hR0
+  have ES := E.of_ipcFrame hSv (saveCapturedTrapFrameAt_ipcFrame st coreId frame)
+  have hStep := interruptEntryStep_runQueueStage _ coreId intId ES
+  have hM : SystemState.StateMono st (interruptEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId) :=
+    (hSv.2.2 hInv0 hR0).trans (hStep.2.2 hInvS hRS)
+  obtain ⟨hInvM, hRM⟩ := hStep.1.links hInvS hRS
+  refine BlockedNotResident.clearLedgers
+    (settleThenActivateAt_blockedNotResident hB hC hInvM hRM ?_ ?_
+      (currentDequeuedUnique_of_clearLedgers hD))
+  · intro c hc
+    exact ⟨(keptOffCore_of_save_stepCovers (saveCapturedTrapFrameAt_scheduler st coreId frame)
+      (saveCapturedTrapFrameAt_residentCode st coreId frame)
+      (interruptEntryStep_stepCovers c _ coreId intId hInvS)).2, .of_stateMono hM⟩
+  · intro hc
+    refine ⟨?_, .of_stateMono hM⟩
+    rw [interruptEntryStep_invalid_core _ coreId intId hc]
+    exact saveCapturedTrapFrameAt_residentCode st coreId frame
+
 /-- WS-ZA ZA6.18: **the FP/SIMD entry keeps a thread blocked in IPC resident on
 no core**: it switches FP/SIMD state and dispatches a vacated core, and blocks
 no thread. -/
