@@ -100,8 +100,9 @@ theorem rpi5BootContract_objectType_holds : rpi5BootContract.objectTypeMetadataC
       carry.  The HAL halts the boot if the distributor's
       `GICD_TYPER.ITLinesNumber` reports fewer lines than this.
 
-    **Handler mapping:** For supported IRQ lines, the handler must be
-    registered in the kernel's IRQ handler table (`st.irqHandlers`).
+    **Handler mapping:** a supported line is mapped when a handler capability
+    for it has been issued (`seL4_IRQControl_Get`), which puts the line in the
+    IRQSignal state (`st.irqSignalLines`).
     Unsupported IRQ lines (INTID ≥ 320) have no mapping requirement.
 
     WS-H15a/M-13: Decidable fields provided for both predicates. -/
@@ -110,7 +111,7 @@ def rpi5InterruptContract : InterruptBoundaryContract :=
     irqLineSupported := fun irq => irq.toNat < gicSpiCount + 32  -- SGIs + PPIs + SPIs
     irqHandlerMapped := fun st irq =>
       irq.toNat < gicSpiCount + 32 →   -- only for supported IRQs
-      st.irqHandlers[irq]? ≠ none       -- handler must be registered
+      st.irqSignalLines.mem irq.toNat = true
     irqLineSupportedDecidable := by intro irq; infer_instance
     irqHandlerMappedDecidable := by intro st irq; infer_instance
   }

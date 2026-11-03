@@ -535,15 +535,15 @@ passive object (`passiveObjectQuiescent.namedByNone`). -/
 /-- **Whether a final delete retires the passive object at `x`**: it is
 quiescent, read off its own links, and it holds no table back-link
 (`SystemState.tableBackLinksClear`) — no service registration records itself
-on it and no interrupt names it, one field of the object read in place of a
-walk of the registry and the interrupt table: the two answers agree on every
-reachable state (`SystemState.tableReferencesRecorded`,
-`SystemState.tableBackLinksClear.namedByNone`).  A passive object that fails
+on it, one field of the object read in place of a walk of the registry
+(`SystemState.tableBackLinksClear.namedByNone`).  A passive object that fails
 this outlives its last capability, as every kernel object did before
 `v0.36.133`; the cancelling finalisation that brings one here is
 `finaliseFinalObject`, after `releaseFinalRegistration` has dropped an
-endpoint's service registration, so only an interrupt's notification still
-fails the back-link half at its last capability. -/
+endpoint's service registration.  A notification an interrupt line is bound to
+is named by the capability in the line's interrupt node slot, so its last
+capability is never the one a delete removes while the binding stands
+(seL4's `cteDeleteOne` of the node slot ends the binding). -/
 @[inline] def passiveObjectRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   passiveObjectQuiescent st x && st.tableBackLinksClear x
 
@@ -1020,7 +1020,7 @@ theorem retireUnrecord_fields (recorder : Nat) (x : SeLe4n.ObjId) (st : SystemSt
 
 theorem storeUntypedWith_tables (st : SystemState) (w : SeLe4n.ObjId)
     (f : UntypedObject → UntypedObject) (p : SeLe4n.ObjId → Bool) (hw : p w = false) :
-    (st.storeUntypedWith w f).irqHandlers = st.irqHandlers ∧
+    (st.storeUntypedWith w f).irqSignalLines = st.irqSignalLines ∧
       (st.storeUntypedWith w f).objectIndex.filter p = st.objectIndex.filter p := by
   cases hW : st.objects[w]? with
   | none => unfold SystemState.storeUntypedWith; rw [hW]; exact ⟨rfl, rfl⟩
@@ -1045,10 +1045,10 @@ theorem retireUnrecord_tables (recorder : Nat) (x : SeLe4n.ObjId) (st : SystemSt
     (p : SeLe4n.ObjId → Bool)
     (hR : recorder ≠ 0 → p (SeLe4n.ObjId.ofNat (recorder - 1)) = false)
     (hK : ∀ c ∈ retiredChildren st x, p c.objId = false) :
-    (retireUnrecord recorder x st).irqHandlers = st.irqHandlers ∧
+    (retireUnrecord recorder x st).irqSignalLines = st.irqSignalLines ∧
       (retireUnrecord recorder x st).objectIndex.filter p = st.objectIndex.filter p := by
   have hP : ∀ kids st, (∀ c ∈ kids, p c.objId = false) →
-      (reparentChildren recorder kids st).irqHandlers = st.irqHandlers ∧
+      (reparentChildren recorder kids st).irqSignalLines = st.irqSignalLines ∧
       (reparentChildren recorder kids st).objectIndex.filter p = st.objectIndex.filter p := by
     intro kids
     induction kids with
@@ -1940,27 +1940,6 @@ theorem finalRetireWrite.memoryKindOrAbsent {st st' : SystemState} {x : SeLe4n.O
     · subst hx; exact absurd hp hNP
   · rw [hU, hU']; exact .inr ⟨trivial, trivial⟩
 
-/-- **The retire, decomposed**: nothing, or — with a nonzero target, headroom
-and the retire admitted — the passive erase followed by the recorded retire. -/
-theorem retireFinalObject_cases (ec : Concurrency.CoreId) (target recorder : Nat)
-    (st : SystemState) :
-    retireFinalObject ec target recorder st = st ∨
-      (st.objects.size < st.objects.capacity ∧
-        finalRetireAdmitted st (SeLe4n.ObjId.ofNat (target - 1)) = true ∧
-        retireFinalObject ec target recorder st =
-          retireRecordedObject ec recorder (SeLe4n.ObjId.ofNat (target - 1))
-            (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1)))) := by
-  unfold retireFinalObject
-  split
-  · exact .inl rfl
-  split
-  · next hSz =>
-    dsimp only
-    split
-    · next h => exact .inr ⟨hSz, h, rfl⟩
-    · exact .inl rfl
-  · exact .inl rfl
-
 /-- **What the retire leaves at each key**: what it held, or — where it held no
 thread and no capability — nothing or an untyped. -/
 theorem retireFinalObject_key (ec : Concurrency.CoreId) (target recorder : Nat)
@@ -2317,48 +2296,16 @@ theorem retireFinalObject_fields (ec : Concurrency.CoreId) (target recorder : Na
     · exact ⟨rfl, rfl, rfl⟩
   · exact ⟨rfl, rfl, rfl⟩
 
-theorem storeUntypedWith_referenceTables (st : SystemState) (w : SeLe4n.ObjId)
-    (f : UntypedObject → UntypedObject) :
-    (st.storeUntypedWith w f).referenceTables = st.referenceTables := by
-  cases hW : st.objects[w]? with
-  | none => unfold SystemState.storeUntypedWith; rw [hW]
-  | some o =>
-    cases o with
-    | untyped U =>
-      exact storeObject_referenceTables (SystemState.storeObject_untyped_eq_storeUntypedWith hW f)
-    | _ => unfold SystemState.storeUntypedWith; rw [hW]
-
-theorem retireUnrecord_referenceTables (recorder : Nat) (x : SeLe4n.ObjId) (st : SystemState) :
-    (retireUnrecord recorder x st).referenceTables = st.referenceTables := by
-  have hR : ∀ kids st, (reparentChildren recorder kids st).referenceTables = st.referenceTables := by
-    intro kids
-    induction kids with
-    | nil => intro st; rfl
-    | cons c rest ih =>
-      intro st
-      simp only [reparentChildren]
-      rw [ih, storeUntypedWith_referenceTables]
-  unfold retireUnrecord adoptChildren
-  dsimp only
-  split
-  · exact hR _ st
-  · rw [storeUntypedWith_referenceTables, hR]
-
-/-- **The retire writes no interrupt table, or writes nothing**: it erases
-objects and rewrites untypeds' records. -/
-theorem retireFinalObject_referenceTables (ec : Concurrency.CoreId) (target recorder : Nat)
+/-- **The retire's two shapes**: it writes nothing, or it is admitted at its
+target and is the recorded retire of the erased target. -/
+theorem retireFinalObject_cases (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) :
     retireFinalObject ec target recorder st = st ∨
-    ((retireFinalObject ec target recorder st).irqHandlers = st.irqHandlers ∧
-     target ≠ 0 ∧ st.objects.size < st.objects.capacity ∧
+    (target ≠ 0 ∧ st.objects.size < st.objects.capacity ∧
      finalRetireAdmitted st (SeLe4n.ObjId.ofNat (target - 1)) = true ∧
      retireFinalObject ec target recorder st =
        retireRecordedObject ec recorder (SeLe4n.ObjId.ofNat (target - 1))
          (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1)))) := by
-  have hE : ∀ x, (eraseRetiredObject st x).referenceTables = st.referenceTables := fun x => by
-    rw [eraseRetiredObject_eq]; split <;> rfl
-  have hC : ∀ (s : SystemState) x, (retireCarvedObject s x).referenceTables = s.referenceTables :=
-    fun s x => by unfold retireCarvedObject; split <;> rfl
   unfold retireFinalObject
   split
   · exact .inl rfl
@@ -2366,43 +2313,9 @@ theorem retireFinalObject_referenceTables (ec : Concurrency.CoreId) (target reco
   · next hT hSz =>
     dsimp only
     split
-    · next hAdm =>
-      refine .inr ⟨?_, hT, hSz, hAdm, rfl⟩
-      unfold retireRecordedObject
-      dsimp only
-      split
-      · exact (hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _))
-      · exact (hC _ _).trans ((retireUnrecord_referenceTables _ _ _).trans (hE _))
+    · next hAdm => exact .inr ⟨hT, hSz, hAdm, rfl⟩
     · exact .inl rfl
   · exact .inl rfl
-
-/-- **The retire keeps every interrupt back-link and service record**: the object
-it erases holds neither — a carved kind, a thread or a scheduling context holds
-none, and a passive object is retired only while its back-links are clear
-(`passiveObjectRetirable`) — and an untyped it rewrites holds none. -/
-theorem retireFinalObject_serviceIrqBackLinks (ec : Concurrency.CoreId) (target recorder : Nat)
-    (st : SystemState) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
-    ((objTableBackLinks (retireFinalObject ec target recorder st).objects[oid]?).1,
-      (objTableBackLinks (retireFinalObject ec target recorder st).objects[oid]?).2.1) =
-    ((objTableBackLinks st.objects[oid]?).1, (objTableBackLinks st.objects[oid]?).2.1) := by
-  rcases retireFinalObject_admitted ec target recorder st with hEq | hAdm
-  · rw [hEq]
-  rcases (retireFinalObject_frame ec target recorder st hInv).2.2.2.2 oid with
-    e | ⟨hxo, hcp, hn⟩ | ⟨U, U', -, hU, hU', -⟩
-  · rw [e]
-  · rw [hn]
-    rcases hcp with hc | hE
-    · rcases hc with ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> (rw [h]; rfl)
-    subst hxo
-    by_cases hP : passiveKernelObject st.objects[SeLe4n.ObjId.ofNat (target - 1)]?
-    · have hClear := (passiveObjectRetirable_parts (finalRetireAdmitted.retirable hAdm hP)).2
-      rw [SystemState.tableBackLinksClear_iff] at hClear
-      exact hClear.symm
-    · revert hE hP
-      cases st.objects[SeLe4n.ObjId.ofNat (target - 1)]? with
-      | none => intro h; cases h
-      | some o => cases o <;> intro _ hP <;> first | rfl | exact absurd trivial hP
-  · rw [hU, hU']; rfl
 
 /-- **An admitted retire leaves no thread or notification at its target**: one
 there is an erasable kind (`erasableKindAt` reads the store), so the passive
@@ -2434,22 +2347,6 @@ theorem retireFinalObject_target_taint_empty (ec : Concurrency.CoreId) (recorder
   · rw [hn]; rfl
   · exact absurd rfl hne
 
-/-- **The retire keeps the table references recorded**: it writes no interrupt
-table and keeps every object's interrupt back-link and service record. -/
-theorem retireFinalObject_preserves_tableReferencesRecorded (ec : Concurrency.CoreId)
-    (target recorder : Nat) (st : SystemState) (hInv : st.objects.invExt)
-    (hR : st.tableReferencesRecorded) :
-    (retireFinalObject ec target recorder st).tableReferencesRecorded := by
-  rcases retireFinalObject_referenceTables ec target recorder st with hEq | ⟨hI, -, -, -, -⟩
-  · rw [hEq]; exact hR
-  have hB := retireFinalObject_serviceIrqBackLinks ec target recorder st hInv
-  refine ⟨fun irq n h => ?_, fun n h => ?_⟩
-  · rw [hI] at h
-    have := congrArg Prod.snd (hB n); simp only at this
-    rw [this]; exact hR.irqHandlers irq n h
-  · have := congrArg Prod.snd (hB n); simp only at this
-    rw [this] at h; rw [hI]; exact hR.irqBound n h
-
 /-- **The retire forgets its target's declassification provenance and keeps
 every other object's**, or writes nothing: a thread or a notification at the
 target is an erasable kind, so the passive erase takes its taint words out
@@ -2461,7 +2358,7 @@ theorem retireFinalObject_taint_cleared (ec : Concurrency.CoreId) (target record
     retireFinalObject ec target recorder st = st ∨
       (retireFinalObject ec target recorder st).declassificationTaint =
         st.declassificationTaint.clearAt (SeLe4n.ObjId.ofNat (target - 1)) := by
-  rcases retireFinalObject_referenceTables ec target recorder st with hEq | ⟨-, -, hSz, -, hSt⟩
+  rcases retireFinalObject_cases ec target recorder st with hEq | ⟨-, hSz, -, hSt⟩
   · exact .inl hEq
   refine .inr (funext fun k => ?_)
   by_cases hk : k = SeLe4n.ObjId.ofNat (target - 1)
@@ -2537,7 +2434,7 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
     (hR : recorder ≠ 0 → p (SeLe4n.ObjId.ofNat (recorder - 1)) = false)
     (hK : target ≠ 0 → ∀ y, untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y = true →
       p y = false) :
-    (retireFinalObject ec target recorder st).irqHandlers = st.irqHandlers ∧
+    (retireFinalObject ec target recorder st).irqSignalLines = st.irqSignalLines ∧
     (retireFinalObject ec target recorder st).objectIndex.filter p = st.objectIndex.filter p := by
   unfold retireFinalObject
   split
@@ -2550,7 +2447,7 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
     · have hS0 : ∀ y, untypedRecordsChild (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1)))
           (SeLe4n.ObjId.ofNat (target - 1)) y = untypedRecordsChild st (SeLe4n.ObjId.ofNat (target - 1)) y :=
         fun y => eraseRetiredObject_untypedRecordsChild st _ hInv hSz _ y
-      have h1 : (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
+      have h1 : (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).irqSignalLines = st.irqSignalLines ∧
           (eraseRetiredObject st (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
             st.objectIndex.filter p := by
         rw [eraseRetiredObject_eq]
@@ -2568,7 +2465,7 @@ theorem retireFinalObject_tables (ec : Concurrency.CoreId) (target recorder : Na
       have h2 := retireUnrecord_tables recorder (SeLe4n.ObjId.ofNat (target - 1)) s0 p hR hK0
       rw [h1.1, h1.2] at h2
       generalize retireUnrecord recorder (SeLe4n.ObjId.ofNat (target - 1)) s0 = s1 at h2 ⊢
-      have h3 : (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).irqHandlers = st.irqHandlers ∧
+      have h3 : (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).irqSignalLines = st.irqSignalLines ∧
           (retireCarvedObject s1 (SeLe4n.ObjId.ofNat (target - 1))).objectIndex.filter p =
             st.objectIndex.filter p := by
         unfold retireCarvedObject

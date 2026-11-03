@@ -105,15 +105,16 @@ theorem simBootContract_objectType_holds :
     This matches the RPi5 production contract range, ensuring simulation tests
     exercise realistic interrupt bounds.
 
-    **Handler mapping:** For supported IRQ lines, the handler must be
-    registered in the kernel's IRQ handler table (`st.irqHandlers`).
+    **Handler mapping:** a supported line is mapped when a handler capability
+    for it has been issued (`seL4_IRQControl_Get`), which puts the line in the
+    IRQSignal state (`st.irqSignalLines`).
     Unsupported IRQ lines (INTID ≥ 320) have no mapping requirement. -/
 def simInterruptContract : InterruptBoundaryContract :=
   {
     irqLineSupported := fun irq => irq.toNat < simMaxIrqId
     irqHandlerMapped := fun st irq =>
       irq.toNat < simMaxIrqId →
-      st.irqHandlers[irq]? ≠ none
+      st.irqSignalLines.mem irq.toNat = true
     irqLineSupportedDecidable := by intro irq; infer_instance
     irqHandlerMappedDecidable := by intro st irq; infer_instance
   }

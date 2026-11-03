@@ -96,12 +96,11 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.of_releaseOnlyWrite
       st.refillsSoundExcept S → st'.refillsSoundExcept S) :
     SystemState.RunQueueFrameStage P st st' := by
   have hS := hW.2
-  refine SystemState.RunQueueFrameStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
-    ?_ ?_ ?_ ?_ hR hF (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
+  refine SystemState.RunQueueFrameStage.of_tcbFrame (fun t => hA.getTcb? t) hI
+    ?_ ?_ ?_ hR hF (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
   · rw [hS]
   · rw [hS]
   · rw [hS]
-  · rw [hW.1]; rfl
 
 /-- ...with the refill state carried off every set by `hF`. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
@@ -112,8 +111,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
       st'.refillsSoundExcept S) :
     SystemState.RunQueueStage st st' := by
   have hS := hW.2
-  exact SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hA.tableBackLinks hI
-    (by rw [hS]) (by rw [hS]) (by rw [hS]) (by rw [hW.1]; rfl) hR hF
+  exact SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hI
+    (by rw [hS]) (by rw [hS]) (by rw [hS]) hR hF
     (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
@@ -1573,9 +1572,9 @@ theorem markRefillKeyChange_extract_frame {F : Type} (extract : SystemState → 
   markRefillKeyChange_extract_frame (fun s => s.cdt) pre st scId
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markRefillKeyChange_irqHandlers (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
-    (markRefillKeyChange pre st scId).irqHandlers = st.irqHandlers :=
-  markRefillKeyChange_extract_frame (fun s => s.irqHandlers) pre st scId
+@[simp] theorem markRefillKeyChange_irqSignalLines (pre st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (markRefillKeyChange pre st scId).irqSignalLines = st.irqSignalLines :=
+  markRefillKeyChange_extract_frame (fun s => s.irqSignalLines) pre st scId
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markRefillKeyChange_tlbShootdown (pre st : SystemState) (scId : SeLe4n.SchedContextId) :

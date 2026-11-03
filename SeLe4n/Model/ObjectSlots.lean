@@ -457,11 +457,11 @@ reads. -/
 /-- **The table back-links an object holds**: an endpoint's service record
 while a service is registered on it (the flag and the registration's words,
 `Endpoint.service`; the clear record otherwise, so a clear flag is a clear
-back-link whatever words an endpoint carries) and a notification's interrupt
-flag; every other kind holds neither.  The part of the
-store the table references read: a registration names an endpoint, an interrupt
-names a notification, and each of those objects records the entry that names it
-(`SystemState.tableReferencesRecorded`).
+back-link whatever words an endpoint carries); every other kind holds none.
+The registry is read off these records (`SystemState.serviceRegistry`), so a
+registration names the endpoint recording it.  (An interrupt's notification is
+named by the capability in the interrupt's node slot, which the derivation tree
+sees, so it needs no back-link.)
 
 WS-ZA ZA5.11: and **the taint words** a thread or a notification holds (the
 carved words, the empty taint, on every other kind): the declassification
@@ -470,17 +470,17 @@ the entry naming it, so a write keeping an object's back-links keeps its taint
 (`kindPreservingWrite`, `SystemState.TableReferenceFrame`).  Only threads and
 notifications hold content (`contentTrackedFields`), so only they hold taint. -/
 @[inline] def tableBackLinks (o : KernelObject) :
-    EndpointService × Bool × SeLe4n.Kernel.TaintWords :=
+    EndpointService × SeLe4n.Kernel.TaintWords :=
   match o with
-  | .endpoint ep => (if ep.serviceRegistered then ep.service else {}, false, {})
-  | .notification n => ({}, n.irqBound, n.taintWords)
-  | .tcb t => ({}, false, t.taintWords)
-  | _ => ({}, false, {})
+  | .endpoint ep => (if ep.serviceRegistered then ep.service else {}, {})
+  | .notification n => ({}, n.taintWords)
+  | .tcb t => ({}, t.taintWords)
+  | _ => ({}, {})
 
 /-- WS-ZA ZA5.11: **the taint words an object holds** — a thread's or a
 notification's; the carved words on every other kind. -/
 @[inline] def taintWords (o : KernelObject) : SeLe4n.Kernel.TaintWords :=
-  o.tableBackLinks.2.2
+  o.tableBackLinks.2
 
 /-- WS-ZA ZA5.11: **the object with its taint words written** — a thread or a
 notification; every other kind holds none and is returned as it is. -/
@@ -521,14 +521,8 @@ theorem taintWords_withTaintWords {o : KernelObject} (h : o.holdsTaint = true)
 /-- A word write changes no back-link but the words. -/
 theorem tableBackLinks_withTaintWords {o : KernelObject} (h : o.holdsTaint = true)
     (w : SeLe4n.Kernel.TaintWords) :
-    (o.withTaintWords w).tableBackLinks = (o.tableBackLinks.1, o.tableBackLinks.2.1, w) := by
+    (o.withTaintWords w).tableBackLinks = (o.tableBackLinks.1, w) := by
   cases o <;> first | rfl | (simp [holdsTaint] at h)
-
-/-- A word write keeps the interrupt back-link, on every kind. -/
-@[simp] theorem tableBackLinks_withTaintWords_irq (o : KernelObject)
-    (w : SeLe4n.Kernel.TaintWords) :
-    (o.withTaintWords w).tableBackLinks.2.1 = o.tableBackLinks.2.1 := by
-  cases o <;> rfl
 
 /-- Erasure forgets every word write. -/
 @[simp] theorem eraseTaint_withTaintWords (o : KernelObject) (w : SeLe4n.Kernel.TaintWords) :

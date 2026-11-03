@@ -2276,8 +2276,9 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
     (bootYield stEmpty)
     .illegalState
 
-/-- L-P07: IRQ handler dispatch — register an IRQ handler and verify
-signal is dispatched to the correct notification object. -/
+/-- L-P07: IRQ handler dispatch — a line at `IRQSignal` whose interrupt node
+holds a notification capability resolves to that notification (WS-ZA ZA6.32),
+and the signal reaches it. -/
 private def chain25IrqHandlerDispatch : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨300⟩
   let irq : SeLe4n.Irq := ⟨5⟩
@@ -2287,8 +2288,9 @@ private def chain25IrqHandlerDispatch : IO Unit := do
       |>.withIrqHandler irq ntfnId
       |>.withLifecycleObjectType ntfnId .notification
       |>.buildChecked)
-  -- Verify IRQ handler registration
-  expect "chain25: IRQ handler registered" (st0.irqHandlers[irq]? == some ntfnId)
+  -- Verify the line's binding resolves through its interrupt node
+  expect "chain25: IRQ line bound" (SeLe4n.Kernel.Architecture.irqBinding? st0 irq.toNat ==
+    some (ntfnId, SeLe4n.Badge.zero))
   -- Signal the notification with badge encoding IRQ number
   let badge := SeLe4n.Badge.ofNatMasked (1 <<< irq.toNat)
   let (_, st1) ← expectOkSt "chain25: notification signal via IRQ"
@@ -2306,7 +2308,7 @@ private def chain25IrqHandlerDispatch : IO Unit := do
 -- ============================================================================
 
 /-- L-P08: Exercise bootFromPlatform — construct a PlatformConfig with initial
-objects and IRQ handlers, boot, and verify all 4 IntermediateState invariant
+objects, boot, and verify all 4 IntermediateState invariant
 witnesses are satisfied. Tests determinism: same config yields same state. -/
 private def chain26BootSequence : IO Unit := do
   -- Construct platform config with a notification and an endpoint
@@ -2317,11 +2319,8 @@ private def chain26BootSequence : IO Unit := do
   -- For non-CNode/non-VSpace objects, the proof is vacuously true.
   let ntfnEntry : SeLe4n.Platform.Boot.ObjectEntry := {
     id := ntfnId
-    -- The interrupt table names this notification, so it records the handler
-    -- back on itself (`Notification.irqBound`); the checked boot's reciprocal
-    -- gate refuses a named notification that does not.
     obj := .notification { state := .idle, hasPendingBadge := false
-                         , pendingWord := SeLe4n.Badge.zero, irqBound := true }
+                         , pendingWord := SeLe4n.Badge.zero }
     hSlots := by intro cn h; cases h
     hMappings := by intro vs h; cases h
   }
@@ -2331,9 +2330,7 @@ private def chain26BootSequence : IO Unit := do
     hSlots := by intro cn h; cases h
     hMappings := by intro vs h; cases h
   }
-  let irqEntry : SeLe4n.Platform.Boot.IrqEntry := { irq := irq, handler := ntfnId }
   let config : SeLe4n.Platform.Boot.PlatformConfig := {
-    irqTable := [irqEntry]
     initialObjects := [ntfnEntry, epEntry]
   }
   -- Boot through the checked boot (WS-ZA ZA5.4: the unchecked boot is retired).
@@ -2355,8 +2352,8 @@ private def chain26BootSequence : IO Unit := do
   -- Verify booted state contains our objects
   expect "chain26: notification in booted state" (ist.state.objects[ntfnId]?.isSome)
   expect "chain26: endpoint in booted state" (ist.state.objects[epId]?.isSome)
-  -- Verify IRQ handler in booted state
-  expect "chain26: IRQ handler registered" (ist.state.irqHandlers[irq]? == some ntfnId)
+  -- WS-ZA ZA6.32: the boot binds no line (seL4's lines start `IRQInactive`)
+  expect "chain26: boot leaves the IRQ line inactive" (!ist.state.irqSignalLines.mem irq.toNat)
   -- Determinism: same config → same state
   let ist2 ← match SeLe4n.Platform.Boot.bootFromPlatformChecked config with
     | .ok ist => pure ist
@@ -2796,7 +2793,7 @@ private def chain33ServiceLifecycle : IO Unit := do
     (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
   -- The registration is recorded on the endpoint it names, so a final delete
   -- can read the endpoint instead of walking the registry
-  -- (`SystemState.tableReferencesRecorded`).
+  -- (`SystemState.tableBackLinksClear`).
   expect "chain33: the endpoint records the registration"
     (match st2.objects[epId1]? with
      | some (.endpoint ep) => ep.serviceRegistered

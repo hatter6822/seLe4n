@@ -89,8 +89,8 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     congrArg ObservableState.current hLow
   have hDomLow : projectActiveDomain ctx observer s₁ = projectActiveDomain ctx observer s₂ :=
     congrArg ObservableState.activeDomain hLow
-  have hIrqLow : projectIrqHandlers ctx observer s₁ = projectIrqHandlers ctx observer s₂ :=
-    congrArg ObservableState.irqHandlers hLow
+  have hIrqLow : projectIrqSignalLines ctx observer s₁ = projectIrqSignalLines ctx observer s₂ :=
+    congrArg ObservableState.irqSignalLines hLow
   have hIdxLow : projectObjectIndex ctx observer s₁ = projectObjectIndex ctx observer s₂ :=
     congrArg ObservableState.objectIndex hLow
   have hObj' : projectObjects ctx observer s₁' = projectObjects ctx observer s₂' := by
@@ -121,10 +121,10 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
     have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
     simpa [projectActiveDomain, hSched₁, hSched₂] using hDomLow
-  have hIrq' : projectIrqHandlers ctx observer s₁' = projectIrqHandlers ctx observer s₂' := by
-    have hIH₁ := storeObject_irqHandlers_eq s₁ s₁' targetId obj₁ hStore₁
-    have hIH₂ := storeObject_irqHandlers_eq s₂ s₂' targetId obj₂ hStore₂
-    funext irq; simp only [projectIrqHandlers, hIH₁, hIH₂]
+  have hIrq' : projectIrqSignalLines ctx observer s₁' = projectIrqSignalLines ctx observer s₂' := by
+    have hIH₁ := storeObject_irqSignalLines_eq s₁ s₁' targetId obj₁ hStore₁
+    have hIH₂ := storeObject_irqSignalLines_eq s₂ s₂' targetId obj₂ hStore₂
+    funext irq; simp only [projectIrqSignalLines, hIH₁, hIH₂]
     exact congrFun hIrqLow irq
   have hIdx' : projectObjectIndex ctx observer s₁' = projectObjectIndex ctx observer s₂' := by
     rw [storeObject_preserves_projectObjectIndex ctx observer s₁ s₁' targetId obj₁ hTargetHigh hStore₁,
@@ -480,8 +480,8 @@ theorem removeRunnable_preserves_projection
   have hDom : projectActiveDomain ctx observer (removeRunnable st tid) =
       projectActiveDomain ctx observer st := by
     rw [hD]; first | rfl | simp [projectActiveDomain, hS]
-  have hIrq : projectIrqHandlers ctx observer (removeRunnable st tid) =
-      projectIrqHandlers ctx observer st := by
+  have hIrq : projectIrqSignalLines ctx observer (removeRunnable st tid) =
+      projectIrqSignalLines ctx observer st := by
     rw [hD]; rfl
   have hIdx : projectObjectIndex ctx observer (removeRunnable st tid) =
       projectObjectIndex ctx observer st := by
@@ -589,8 +589,8 @@ theorem storeTcbIpcState_preserves_projection
         simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · -- activeDomain: scheduler preserved by storeObject
         simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · -- irqHandlers: preserved by storeObject
-        funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st pair.2 tid.toObjId _ hStore]
+      · -- irqSignalLines: preserved by storeObject
+        funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st pair.2 tid.toObjId _ hStore]
       · -- objectIndex: non-observable target
         exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
       · -- WS-H8: domainTimeRemaining
@@ -633,7 +633,7 @@ theorem storeTcbPendingMessage_preserves_projection
       · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st pair.2 tid.toObjId _ hStore]
+      · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st pair.2 tid.toObjId _ hStore]
       · exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
       · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
@@ -673,7 +673,7 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
       · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st pair.2 tid.toObjId _ hStore]
+      · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st pair.2 tid.toObjId _ hStore]
       · exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
       · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
@@ -703,7 +703,7 @@ theorem storeObject_preserves_projection
   · simp [projectRunnable, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid obj hStore]
-  · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' oid obj hStore]
+  · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st st' oid obj hStore]
   · exact storeObject_preserves_projectObjectIndex ctx observer st st' oid obj hOidHigh hStore
   · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectDomainSchedule, storeObject_scheduler_eq st st' oid obj hStore]
@@ -776,7 +776,7 @@ theorem storeObject_projectionStable_preserves_projection
   · simp [projectRunnable, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid _ hStore]
   · simp [projectActiveDomain, storeObject_scheduler_eq st st' oid _ hStore]
-  · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' oid _ hStore]
+  · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st st' oid _ hStore]
   · unfold storeObject at hStore; cases hStore
     simp only [projectObjectIndex, hIdxContains, if_true]
   · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' oid _ hStore]
@@ -1338,12 +1338,12 @@ theorem cspaceMint_preserves_lowEquivalent
       · simpa [projectCurrent, hSched₁, hSched₂] using hCurLow
       · -- activeDomain
         simpa [projectActiveDomain, hSched₁, hSched₂] using congrArg ObservableState.activeDomain hLow
-      · -- irqHandlers
+      · -- irqSignalLines
         funext irq
-        simp only [projectIrqHandlers]
-        rw [cspaceInsertSlot_preserves_irqHandlers s₁ s₁' dst c₁ hInsert₁,
-            cspaceInsertSlot_preserves_irqHandlers s₂ s₂' dst c₂ hInsert₂]
-        exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
+        simp only [projectIrqSignalLines]
+        rw [cspaceInsertSlot_preserves_irqSignalLines s₁ s₁' dst c₁ hInsert₁,
+            cspaceInsertSlot_preserves_irqSignalLines s₂ s₂' dst c₂ hInsert₂]
+        exact congrFun (congrArg ObservableState.irqSignalLines hLow) irq
       · -- objectIndex
         rw [cspaceInsertSlot_preserves_projectObjectIndex s₁ s₁' dst c₁ hDstHigh hInsert₁,
             cspaceInsertSlot_preserves_projectObjectIndex s₂ s₂' dst c₂ hDstHigh hInsert₂]
@@ -1491,10 +1491,10 @@ theorem cspaceRevoke_preserves_lowEquivalent
   · -- activeDomain
     simp only [projectActiveDomain]
     exact congrArg ObservableState.activeDomain hLow
-  · -- irqHandlers
+  · -- irqSignalLines
     funext irq
-    simp only [projectIrqHandlers]
-    exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
+    simp only [projectIrqSignalLines]
+    exact congrFun (congrArg ObservableState.irqSignalLines hLow) irq
   · -- objectIndex
     simp only [projectObjectIndex]
     have hIdx := congrArg ObservableState.objectIndex hLow
@@ -1784,10 +1784,10 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
   · simpa [projectRunnable, hSched₁, hSched₂] using congrArg ObservableState.runnable hLow
   · simpa [projectCurrent, hSched₁, hSched₂] using congrArg ObservableState.current hLow
   · simpa [projectActiveDomain, hSched₁, hSched₂] using congrArg ObservableState.activeDomain hLow
-  · funext irq; simp only [projectIrqHandlers]
-    rw [cspaceInsertSlot_preserves_irqHandlers s₁ s₁' dst cap hStep₁,
-        cspaceInsertSlot_preserves_irqHandlers s₂ s₂' dst cap hStep₂]
-    exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
+  · funext irq; simp only [projectIrqSignalLines]
+    rw [cspaceInsertSlot_preserves_irqSignalLines s₁ s₁' dst cap hStep₁,
+        cspaceInsertSlot_preserves_irqSignalLines s₂ s₂' dst cap hStep₂]
+    exact congrFun (congrArg ObservableState.irqSignalLines hLow) irq
   · rw [cspaceInsertSlot_preserves_projectObjectIndex s₁ s₁' dst cap hDstHigh hStep₁,
         cspaceInsertSlot_preserves_projectObjectIndex s₂ s₂' dst cap hDstHigh hStep₂]
     exact congrArg ObservableState.objectIndex hLow

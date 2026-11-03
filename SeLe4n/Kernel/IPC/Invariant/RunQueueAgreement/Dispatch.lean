@@ -1026,7 +1026,6 @@ theorem dispatchSyscallChecked_runQueueEntryStage (ctx : LabelingContext)
     cases h
     refine SystemState.RunQueueEntryStageOn.trans (st' := stPost) ?_ ((RunQueueStage.of_objectsAgreeOffTaint
       (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-      (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
       (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
       (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry.toOn _)
   · unfold syscallInvoke at hD
@@ -1195,7 +1194,6 @@ theorem dispatchSyscall_runQueueEntryStage (decoded : SyscallDecodeResult)
   cases h
   refine SystemState.RunQueueEntryStageOn.trans (st' := stPost) ?_ ((RunQueueStage.of_objectsAgreeOffTaint
     (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-    (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
     (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
     (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])).entry.toOn _)
   unfold syscallInvoke at hD

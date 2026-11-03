@@ -255,7 +255,6 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
       hInv hA)
     (by rw [hS]) (by rw [hS]) (fun hInv x => abortPendingIpcOnEndpoint_placement_frame hInv hA x)
     (fun hInv => abortPendingIpcOnEndpoint_stateMono hInv hA)
-    (fun hInv => abortPendingIpcOnEndpoint_tableReferenceFrame hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_releaseStateAgree hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_refillViewsKept hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_yieldLinksKept hInv hA)

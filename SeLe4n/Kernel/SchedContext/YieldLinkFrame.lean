@@ -209,13 +209,11 @@ theorem completeHeldYield_objectsAgreeOffYield (st : SystemState) (held : Nat)
   · exact completeYieldFrom_objectsAgreeOffYield _ _ hInv
 
 /-- **A step that writes only the yield link ends and no scheduler field is a
-run-queue stage**: every run link, release link, refill view, table back-link
-and thread state reads as before; the link agreement is the step's own
-(`hY`). -/
+run-queue stage**: every run link, release link, refill view and thread state
+reads as before; the link agreement is the step's own (`hY`). -/
 theorem RunQueueStage.of_objectsAgreeOffYield {st st' : SystemState}
     (hA : objectsAgreeOffYield st' st) (hS : st'.scheduler = st.scheduler)
     (hI : st.objects.invExt → st'.objects.invExt)
-    (hT : st'.referenceTables = st.referenceTables)
     (hY : st.objects.invExt → st.yieldLinksAgree → st'.yieldLinksAgree)
     (hU : st.objects.invExt → Kernel.YieldToCodesUnset st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
@@ -228,14 +226,12 @@ theorem RunQueueStage.of_objectsAgreeOffYield {st st' : SystemState}
       first | rfl | cases e | exact Option.some.inj e
   have hM : StateMono st st' :=
     StateMono.of_stateFields (fun t => hA.getTcb?_map _ (t := t))
-  have hF : TableReferenceFrame st st' :=
-    .of_map (g := KernelObject.withoutYield) (fun o => by cases o <;> rfl) hT hA
   have hRel : releaseStateAgree st' st :=
     ⟨.of_map KernelObject.withoutYield (fun o _ => by cases o <;> rfl) hA, by rw [hS]⟩
   have hV : Kernel.RefillViewsKept st' st :=
     Kernel.RefillViewsKept.of_map KernelObject.withoutYield (fun o => by cases o <;> rfl) hA
   exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩,
-      fun _ _ t => hF.preserves t, fun _ _ r => hRel.refined r,
+      fun _ _ r => hRel.refined r,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV
         (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
       fun h _ y => hY h y, fun h _ => .of_unset (hU h) hRes⟩,
@@ -249,7 +245,6 @@ theorem RunQueueEntryStageOn.of_objectsAgreeOffYield {L : SeLe4n.ObjId → Prop}
     {st st' : SystemState}
     (hA : objectsAgreeOffYield st' st) (hS : st'.scheduler = st.scheduler)
     (hI : st.objects.invExt → st'.objects.invExt)
-    (hT : st'.referenceTables = st.referenceTables)
     (hY : st.objects.invExt → st.yieldLinksAgree → st'.yieldLinksAgree)
     (hU : st.objects.invExt → Kernel.YieldToCodesSetOnly L st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode) :
@@ -262,14 +257,12 @@ theorem RunQueueEntryStageOn.of_objectsAgreeOffYield {L : SeLe4n.ObjId → Prop}
       first | rfl | cases e | exact Option.some.inj e
   have hM : StateMono st st' :=
     StateMono.of_stateFields (fun t => hA.getTcb?_map _ (t := t))
-  have hF : TableReferenceFrame st st' :=
-    .of_map (g := KernelObject.withoutYield) (fun o => by cases o <;> rfl) hT hA
   have hRel : releaseStateAgree st' st :=
     ⟨.of_map KernelObject.withoutYield (fun o _ => by cases o <;> rfl) hA, by rw [hS]⟩
   have hV : Kernel.RefillViewsKept st' st :=
     Kernel.RefillViewsKept.of_map KernelObject.withoutYield (fun o => by cases o <;> rfl) hA
   exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩,
-      fun _ _ t => hF.preserves t, fun _ _ r => hRel.refined r,
+      fun _ _ r => hRel.refined r,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV
         (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
       fun h _ y => hY h y, fun h _ => ⟨hU h, fun c t hr => Or.inl (by
@@ -298,7 +291,6 @@ theorem setYieldLink_runQueueEntryStageOn {L : SeLe4n.ObjId → Prop} (st : Syst
       (setYieldLink_scheduler st s caller)
       (fun h => updateTcb_preserves_objects_invExt _ _ _
         (updateSchedContext_preserves_objects_invExt _ _ _ h))
-      (by rw [setYieldLink_eq_objects]; rfl)
       (fun h y => let ⟨_, _, hS, hS0, hT, hT0⟩ := hClear h
         setYieldLink_preserves_yieldLinksAgree st s caller h hS hS0 hT hT0 y)
       (fun h => setYieldLink_yieldToCodesSetOnly st s caller h hL)
@@ -312,7 +304,6 @@ theorem cancelYieldTo_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId) :
     RunQueueStage.of_objectsAgreeOffYield (cancelYieldTo_objectsAgreeOffYield st tid hInv)
       (cancelYieldTo_scheduler st tid)
       (fun h => cancelYieldTo_preserves_objects_invExt st tid h)
-      (by rw [cancelYieldTo_eq_objects]; rfl)
       (fun h y => cancelYieldTo_preserves_yieldLinksAgree st tid h y)
       (fun h => cancelYieldTo_yieldToCodesUnset st tid h)
       (by rw [cancelYieldTo_eq_objects])
@@ -329,7 +320,6 @@ theorem updateConsumed_runQueueStage (st : SystemState) (s : SeLe4n.SchedContext
   · intro hInv x
     exact congrArg (Option.map TCB.placement) (updateSchedContext_getTcb? st s _ hInv x)
   · exact fun hInv => StateMono.of_getTcb (updateSchedContext_getTcb? st s _ hInv)
-  · exact TableReferenceFrame.updateSchedContext st s _
   · exact fun hInv => .updateSchedContext st s _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
   · exact fun hInv => .updateSchedContext st s _ hInv (fun sc => by simp)
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st s _ hInv (fun _ => rfl)
@@ -370,7 +360,6 @@ theorem cancelYieldFrom_runQueueStage (st : SystemState) (s : SeLe4n.SchedContex
     RunQueueStage.of_objectsAgreeOffYield (cancelYieldFrom_objectsAgreeOffYield st s hInv)
       (cancelYieldFrom_scheduler st s)
       (fun h => cancelYieldFrom_preserves_objects_invExt st s h)
-      (by rw [cancelYieldFrom_eq_objects]; rfl)
       (fun h y => cancelYieldFrom_preserves_yieldLinksAgree st s h y)
       (fun h => cancelYieldFrom_yieldToCodesUnset st s h)
       (by rw [cancelYieldFrom_eq_objects])

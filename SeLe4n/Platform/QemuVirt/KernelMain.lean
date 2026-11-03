@@ -30,20 +30,20 @@ namespace SeLe4n.Platform.QemuVirt
 /-- The `virt` hardware boot entry: `lean_kernel_main_qemu_virt`. -/
 @[export lean_kernel_main_qemu_virt]
 def kernelMain (dtb : ByteArray) : BaseIO Unit :=
-  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuVirtIrqTable qemuVirtInitialObjects none
+  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuVirtInitialObjects none
 
 /-- A device tree the bridge refuses boots nothing: every PE halts. -/
 theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRefusal)
-    (h : qemuVirtPlatformConfigFromDtb dtb qemuVirtIrqTable qemuVirtInitialObjects none =
+    (h : qemuVirtPlatformConfigFromDtb dtb qemuVirtInitialObjects none =
       .error e) :
     kernelMain dtb = Platform.FFI.ffiFatalHaltAll :=
-  bootAndInitialiseQemuVirtFromDtbOrHalt_refused _ _ _ _ e h
+  bootAndInitialiseQemuVirtFromDtbOrHalt_refused _ _ _ e h
 
 /-- A device tree the bridge accepts maps the board's RAM outside the kernel's
     extent, then installs the deployment's boot state and the binding's
     labeling, and nothing else — the halt arm is never taken on it. -/
 theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
-    (h : qemuVirtPlatformConfigFromDtb dtb qemuVirtIrqTable qemuVirtInitialObjects none =
+    (h : qemuVirtPlatformConfigFromDtb dtb qemuVirtInitialObjects none =
       .ok config) :
     kernelMain dtb =
       (do
@@ -52,7 +52,7 @@ theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformCo
         Platform.FFI.initialiseKernelLabelingContext
           (PlatformBinding.labeling (platform := QemuVirtPlatform))) := by
   unfold kernelMain
-  rw [bootAndInitialiseQemuVirtFromDtbOrHalt_accepted _ _ _ _ config h,
+  rw [bootAndInitialiseQemuVirtFromDtbOrHalt_accepted _ _ _ config h,
     qemuVirtPlatformConfigFromDtb_deployment_ok dtb config h,
     bootAndInitialiseQemuVirtOrHalt_qemuVirtPlatformConfigFor]
 

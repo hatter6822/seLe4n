@@ -89,10 +89,10 @@ theorem updatePipBoost_preserves_lifecycle (st : SystemState) (tid : ThreadId) :
   updatePipBoost_frame (fun s => s.lifecycle) st tid
     (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
-/-- D4-P: `updatePipBoost` preserves `irqHandlers`. -/
-theorem updatePipBoost_preserves_irqHandlers (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).irqHandlers = st.irqHandlers :=
-  updatePipBoost_frame (fun s => s.irqHandlers) st tid
+/-- D4-P: `updatePipBoost` preserves `irqSignalLines`. -/
+theorem updatePipBoost_preserves_irqSignalLines (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).irqSignalLines = st.irqSignalLines :=
+  updatePipBoost_frame (fun s => s.irqSignalLines) st tid
     (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `asidTable`. -/
@@ -249,17 +249,17 @@ theorem propagate_preserves_lifecycle (st : SystemState) (tid : ThreadId)
     · rw [ih]; exact updatePipBoost_preserves_lifecycle st tid
     · exact updatePipBoost_preserves_lifecycle st tid
 
-/-- D4-P: `propagatePriorityInheritance` preserves `irqHandlers`. -/
-theorem propagate_preserves_irqHandlers (st : SystemState) (tid : ThreadId)
+/-- D4-P: `propagatePriorityInheritance` preserves `irqSignalLines`. -/
+theorem propagate_preserves_irqSignalLines (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).irqHandlers = st.irqHandlers := by
+    (propagatePriorityInheritance st tid fuel).irqSignalLines = st.irqSignalLines := by
   induction fuel generalizing st tid with
   | zero => simp [propagatePriorityInheritance]
   | succ n ih =>
     simp only [propagatePriorityInheritance]
     split
-    · rw [ih]; exact updatePipBoost_preserves_irqHandlers st tid
-    · exact updatePipBoost_preserves_irqHandlers st tid
+    · rw [ih]; exact updatePipBoost_preserves_irqSignalLines st tid
+    · exact updatePipBoost_preserves_irqSignalLines st tid
 
 /-- D4-P: `propagatePriorityInheritance` preserves `asidTable`. -/
 theorem propagate_preserves_asidTable (st : SystemState) (tid : ThreadId)
@@ -408,10 +408,10 @@ theorem revert_preserves_lifecycle (st : SystemState) (tid : ThreadId) (fuel : N
     (revertPriorityInheritance st tid fuel).lifecycle = st.lifecycle := by
   rw [revert_eq_propagate]; exact propagate_preserves_lifecycle st tid fuel
 
-/-- D4-P: `revertPriorityInheritance` preserves `irqHandlers`. -/
-theorem revert_preserves_irqHandlers (st : SystemState) (tid : ThreadId) (fuel : Nat) :
-    (revertPriorityInheritance st tid fuel).irqHandlers = st.irqHandlers := by
-  rw [revert_eq_propagate]; exact propagate_preserves_irqHandlers st tid fuel
+/-- D4-P: `revertPriorityInheritance` preserves `irqSignalLines`. -/
+theorem revert_preserves_irqSignalLines (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).irqSignalLines = st.irqSignalLines := by
+  rw [revert_eq_propagate]; exact propagate_preserves_irqSignalLines st tid fuel
 
 /-- D4-P: `revertPriorityInheritance` preserves `asidTable`. -/
 theorem revert_preserves_asidTable (st : SystemState) (tid : ThreadId) (fuel : Nat) :

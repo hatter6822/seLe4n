@@ -1654,28 +1654,15 @@ theorem endpointQueueRemove_tableBackLinks
              case hW => rfl)
           | split)
 
-/-- **The timeout splice keeps the table references**: it writes no reference
-table, and every slot keeps its back-links (`endpointQueueRemove_tableBackLinks`). -/
+/-- **The timeout splice keeps the table back-links**: every slot keeps its
+back-links (`endpointQueueRemove_tableBackLinks`). -/
 theorem endpointQueueRemove_tableReferenceFrame
     {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    SystemState.TableReferenceFrame st st' := by
-  refine .of_map_tableBackLinks ?_
+    SystemState.TableReferenceFrame st st' :=
+  .of_map_tableBackLinks
     (endpointQueueRemove_tableBackLinks endpointId isReceiveQ tid st st' hInv h)
-  unfold endpointQueueRemove SystemState.getObject? at h
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at h
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-      simp [hObj] at h
-    | endpoint ep =>
-      simp only [hObj] at h
-      cases hTcb : lookupTcb st tid with
-      | none => simp [hTcb] at h
-      | some tcb =>
-        simp only [hTcb, Except.ok.injEq] at h
-        rw [← h]; rfl
 
 /-- WS-OD OD1.4: the SchedContext instance, forwards — `donationOwnerValid`'s
     first clause names a SchedContext in the pre-state. -/

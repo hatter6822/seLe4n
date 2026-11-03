@@ -59,10 +59,10 @@ theorem migrateRunQueueBucket_lifecycle_eq
 -- Transport lemmas — updatePrioritySource (additional fields)
 -- ============================================================================
 
-theorem updatePrioritySource_irqHandlers_eq
+theorem updatePrioritySource_irqSignalLines_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (newPrio : SeLe4n.Priority) :
-    (updatePrioritySource st tid tcb newPrio).irqHandlers = st.irqHandlers := by
+    (updatePrioritySource st tid tcb newPrio).irqSignalLines = st.irqSignalLines := by
   obtain ⟨_, h⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPrio
   rw [h]
 
@@ -84,10 +84,10 @@ theorem updatePrioritySource_objectIndex_eq
 -- Transport lemmas — migrateRunQueueBucket (additional fields)
 -- ============================================================================
 
-theorem migrateRunQueueBucket_irqHandlers_eq
+theorem migrateRunQueueBucket_irqSignalLines_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).irqHandlers = st.irqHandlers := 
-  congrArg (·.irqHandlers) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
+    (migrateRunQueueBucket st tid newPrio).irqSignalLines = st.irqSignalLines := 
+  congrArg (·.irqSignalLines) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
 
 theorem migrateRunQueueBucket_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :

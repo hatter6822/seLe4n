@@ -1242,6 +1242,44 @@ def adapterFlushTlb (_tlb : TlbState) : TlbState :=
 def adapterFlushTlbByAsid (tlb : TlbState) (asid : SeLe4n.ASID) : TlbState :=
   { entries := tlb.entries.filter (·.asid != asid) }
 
+/-! ### The interrupt nodes' reserved ids
+
+WS-ZA ZA6.32: seL4's `interrupt_irq_node line`, a CNode of one slot per
+interrupt line that the kernel owns (`SeLe4n.Kernel.Architecture`'s interrupt
+node section reads and writes it). -/
+
+/-- The first interrupt node's object id: above the idle threads' reserved
+range (`idleThreadIdBase`) and the 16-bit range platform configurations assign
+their objects from. -/
+def irqNodeIdBase : Nat := 0x2_0000
+
+/-- **Line `line`'s interrupt node**, seL4's `interrupt_irq_node line`. -/
+@[inline] def irqNodeId (line : Nat) : SeLe4n.ObjId := SeLe4n.ObjId.ofNat (irqNodeIdBase + line)
+
+/-- The node's one slot. -/
+@[inline] def irqNodeSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+
+/-- The address of line `line`'s node slot. -/
+@[inline] def irqNodeAddr (line : Nat) : SlotRef := ⟨irqNodeId line, irqNodeSlot⟩
+
+/-- **Whether `oid` is an interrupt node's id**, on a board of `count` lines:
+the reserved range `[irqNodeIdBase, irqNodeIdBase + count)`. -/
+@[inline] def isIrqNodeObjId (count : Nat) (oid : SeLe4n.ObjId) : Bool :=
+  decide (irqNodeIdBase ≤ oid.toNat) && decide (oid.toNat < irqNodeIdBase + count)
+
+/-- Distinct lines have distinct nodes. -/
+theorem irqNodeId_injective {a b : Nat} (h : irqNodeId a = irqNodeId b) : a = b := by
+  have := congrArg SeLe4n.ObjId.toNat h
+  simp only [irqNodeId, SeLe4n.ObjId.toNat_ofNat] at this
+  omega
+
+/-- A line's node is in the reserved range of every board that has the line. -/
+theorem isIrqNodeObjId_irqNodeId {count line : Nat} (h : line < count) :
+    isIrqNodeObjId count (irqNodeId line) = true := by
+  simp only [isIrqNodeObjId, irqNodeId, SeLe4n.ObjId.toNat_ofNat, Bool.and_eq_true,
+    decide_eq_true_eq]
+  omega
+
 /-- R7-A.3: Per-VAddr TLB flush — invalidates entries for a specific (ASID, VAddr).
     On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`.
 
@@ -1299,7 +1337,13 @@ structure SystemState where
       this set is the runtime fast path. -/
   objectIndexSet : RHSet SeLe4n.ObjId := default
   scheduler : SchedulerState
-  irqHandlers : RHTable SeLe4n.Irq SeLe4n.ObjId
+  /-- WS-ZA ZA6.32: **the lines an interrupt-handler capability has been
+      issued for**, seL4's `intStateIRQTable` entries at `IRQSignal`: a line is
+      added by `seL4_IRQControl_Get` and removed when its last handler
+      capability is finalised (`IRQInactive`).  The notification a line
+      signals is the capability in its interrupt node's slot
+      (`SeLe4n.Kernel.Architecture.irqNodeId`), not a field of this set. -/
+  irqSignalLines : InterruptLineSet := {}
   lifecycle : LifecycleMetadata
   /-- WS-G3/F-P06: ASID→ObjId resolution table for O(1) VSpace lookups.
       Maintained by `storeObject` — insertions on `.vspaceRoot` stores, erasures
@@ -1890,7 +1934,7 @@ instance : Inhabited SystemState where
     objectIndex := []
     objectIndexSet := default
     scheduler := default
-    irqHandlers := {}
+    irqSignalLines := {}
     lifecycle := {
       objectTypes := {}
     }
@@ -1955,7 +1999,7 @@ satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys �
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation.
 
-AI6-D (L-02): This predicate uses a 7-deep conjunction (∧-chain) over the
+AI6-D (L-02): This predicate uses a 5-conjunct chain (∧-chain) over the
 RHTable/RHSet instances in the state.  The run queue's two tables are not in
 it: `RunQueue` carries their invariants as its own fields (WS-ZA ZA4.5). Tuple projection (e.g., `h.2.2.1`) is
 structurally fragile — adding a new table field shifts all subsequent
@@ -1968,7 +2012,6 @@ SystemState or its sub-structures. -/
 def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   -- SystemState direct fields
   st.objects.invExtK ∧
-  st.irqHandlers.invExtK ∧
   st.asidTable.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
@@ -1981,7 +2024,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -2138,12 +2180,11 @@ theorem default_auditLogBounded :
   SeLe4n.Kernel.auditLogBounded_nil
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 6 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 5 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.objects.invExtK ∧
-    st.irqHandlers.invExtK ∧
     st.asidTable.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
     st.interfaceRegistry.invExtK ∧
@@ -2155,14 +2196,13 @@ namespace SystemState.allTablesInvExtK
 a table added or removed shifts no reader. -/
 
 theorem objects {st : SystemState} (h : st.allTablesInvExtK) : st.objects.invExtK := h.1
-theorem irqHandlers {st : SystemState} (h : st.allTablesInvExtK) : st.irqHandlers.invExtK := h.2.1
-theorem asidTable {st : SystemState} (h : st.allTablesInvExtK) : st.asidTable.invExtK := h.2.2.1
+theorem asidTable {st : SystemState} (h : st.allTablesInvExtK) : st.asidTable.invExtK := h.2.1
 theorem objectTypes {st : SystemState} (h : st.allTablesInvExtK) :
-    st.lifecycle.objectTypes.invExtK := h.2.2.2.1
+    st.lifecycle.objectTypes.invExtK := h.2.2.1
 theorem interfaceRegistry {st : SystemState} (h : st.allTablesInvExtK) :
-    st.interfaceRegistry.invExtK := h.2.2.2.2.1
+    st.interfaceRegistry.invExtK := h.2.2.2.1
 theorem objectIndexSet {st : SystemState} (h : st.allTablesInvExtK) :
-    st.objectIndexSet.table.invExtK := h.2.2.2.2.2
+    st.objectIndexSet.table.invExtK := h.2.2.2.2
 
 end SystemState.allTablesInvExtK
 
@@ -2938,12 +2978,12 @@ theorem storeObject_scheduler_eq
   unfold storeObject at hStore; cases hStore
   rfl
 
-theorem storeObject_irqHandlers_eq
+theorem storeObject_irqSignalLines_eq
     (st st' : SystemState)
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.irqHandlers = st.irqHandlers := by
+    st'.irqSignalLines = st.irqSignalLines := by
   unfold storeObject at hStore; cases hStore
   rfl
 
@@ -6068,7 +6108,6 @@ theorem storeObject_preserves_allTablesInvExtK
   unfold storeObject at hStore; cases hStore
   -- Extract components from pre-state invariant
   have hObj := hAll.objects
-  have hIrq := hAll.irqHandlers
   have hAsid := hAll.asidTable
   have hObjTypes := hAll.objectTypes
   have hIfaceReg := hAll.interfaceRegistry
@@ -6102,7 +6141,7 @@ theorem storeObject_preserves_allTablesInvExtK
   -- Prove objectTypes insert preserves invExtK
   have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
   -- Compose all 6 components
-  exact ⟨hObj', hIrq, hAsid', hObjTypes', hIfaceReg, hObjIdxSet'⟩
+  exact ⟨hObj', hAsid', hObjTypes', hIfaceReg, hObjIdxSet'⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proof

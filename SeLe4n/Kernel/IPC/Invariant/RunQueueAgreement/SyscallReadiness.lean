@@ -271,16 +271,14 @@ theorem notificationWait_block_readyKeptStage {st st1 st2 st3 : SystemState}
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
-    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false)
-    (hI : n'.irqBound = ntfn.irqBound := by first | rfl | (simp_all; done))
-    (hNW : n'.taintWords = ntfn.taintWords := by taint_words_kept) :
+    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
     readyKeptStage (· = waiter) st (removeRunnableOnCore st3 waiter c) := by
   have hC1 : st1.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (storeObject_scheduler_eq _ _ _ _ hS1) hCur
   have hC3 : st3.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (linkNtfnWaiter_scheduler_eq hL)
       (currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hS2) hC1)
-  have hNs := storeObject_notificationOver_runQueueStage hN hS1 hI hNW
+  have hNs := storeObject_notificationOver_runQueueStage hN hS1
   have w : SystemState.RunQueueWindowStage (.block c) st st2 :=
     SystemState.RunQueueWindowStage.of_invExt fun hInv => by
       have hNo := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
@@ -766,7 +764,6 @@ theorem finaliseFinalObject_readyEntry {S : SeLe4n.ThreadId → Prop} (target : 
         · cases hU
         · exact Or.inl hU)
       (by rw [finaliseThreadReleaseCores_scheduler])
-      (by unfold finaliseThreadReleaseCores SystemState.referenceTables; dsimp only)
       (by rw [finaliseThreadReleaseCores_scheduler])))
     (fun _ s1 x _ _ _ h _ _ hR _ hS _ _ _ _ =>
       readyEntry_stage h ((storeObject_replyOver_runQueueStage hR hS).trans
@@ -1551,7 +1548,6 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
       readyKeptStage.trans_links hP.1.1.links hP.2 (readyKeptStage.of_stage
         (SystemState.RunQueueStage.of_objectsAgreeOffTaint
           (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-          (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
           (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
           (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])))
   · unfold syscallInvoke at hD
@@ -1660,7 +1656,6 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
         (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)))
   · rename_i hE
@@ -1722,7 +1717,6 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (st' := Architecture.IpcBufferRead.syncUserWords

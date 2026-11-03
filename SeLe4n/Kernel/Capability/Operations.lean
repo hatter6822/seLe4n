@@ -790,13 +790,13 @@ theorem cspaceInsertSlot_cdt_eq
   exact storeObject_cdt_eq _ _ _ _ hStore
 
 /-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
-theorem cspaceInsertSlot_preserves_irqHandlers
+theorem cspaceInsertSlot_preserves_irqSignalLines
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.irqHandlers = st.irqHandlers := by
+    st'.irqSignalLines = st.irqSignalLines := by
   obtain ⟨cn, _, _, _, hStore⟩ :=
     cspaceInsertSlot_ok_decompose st st' addr cap hStep
-  exact storeObject_irqHandlers_eq _ _ _ _ hStore
+  exact storeObject_irqSignalLines_eq _ _ _ _ hStore
 
 /-- WS-E4/H-02: `cspaceInsertSlot` rejects occupied slots. -/
 theorem cspaceInsertSlot_rejects_occupied_slot
@@ -1699,9 +1699,9 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
     (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndexSet = st.objectIndexSet := by
   obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
-@[simp] theorem detachRevokedSlots_irqHandlers (st : SystemState) (cnodeId : SeLe4n.ObjId)
+@[simp] theorem detachRevokedSlots_irqSignalLines (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
-    (detachRevokedSlots st cnodeId cn sourceSlot target).irqHandlers = st.irqHandlers := by
+    (detachRevokedSlots st cnodeId cn sourceSlot target).irqSignalLines = st.irqSignalLines := by
   obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
 @[simp] theorem detachRevokedSlots_asidTable (st : SystemState) (cnodeId : SeLe4n.ObjId)

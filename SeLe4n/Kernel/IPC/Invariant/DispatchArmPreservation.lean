@@ -4441,7 +4441,7 @@ theorem retireFinalObject_preserves_ipcInvariantFull (ec : Concurrency.CoreId)
     (hInv : ipcInvariantFull st) (hBudgets : allTimeoutBudgetsNone st) :
     ipcInvariantFull (retireFinalObject ec target recorder st) ∧
       (retireFinalObject ec target recorder st).objects.invExt := by
-  rcases retireFinalObject_cases ec target recorder st with hE | ⟨hSz, hAdm, hE⟩
+  rcases retireFinalObject_cases ec target recorder st with hE | ⟨-, hSz, hAdm, hE⟩
   · rw [hE]; exact ⟨hInv, hObjInv⟩
   rw [hE]
   generalize SeLe4n.ObjId.ofNat (target - 1) = x at hAdm ⊢

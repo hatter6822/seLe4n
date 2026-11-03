@@ -705,7 +705,6 @@ theorem spliceOutMidQueueNode_tableReferenceFrame (st : SystemState) (tid : SeLe
     (hInv : st.objects.invExt) :
     SystemState.TableReferenceFrame st (spliceOutMidQueueNode st tid) :=
   SystemState.TableReferenceFrame.of_offTcb
-    (by rw [spliceOutMidQueueNode_eq_patches]; split <;> rfl)
     (fun k o hNot => spliceOutMidQueueNode_nonTcb st tid hInv k o hNot)
     (spliceOutMidQueueNode_sameTaintWords st tid hInv)
 
@@ -810,13 +809,6 @@ theorem consumeCallerReply_tableReferenceFrame {st st' : SystemState}
         (SystemState.TableReferenceFrame.tcb_over
           ((SystemState.getTcb?_eq_some_iff st1 caller tcb).mp hT)))
 
-/-- The reply-waiter unlink writes no reference table. -/
-theorem unlinkReplyWaiterOpt_referenceTables (st : SystemState) (w : SeLe4n.ThreadId)
-    (s? : Option SeLe4n.ThreadId) :
-    (st.unlinkReplyWaiterOpt w s?).referenceTables = st.referenceTables := by
-  have h := congrArg SystemState.referenceTables (SystemState.unlinkReplyWaiterOpt_eq_objects st w s?)
-  exact h.trans rfl
-
 /-- The reply-link teardown rewrites a reply and a thread. -/
 theorem consumeReplyLink_tableReferenceFrame (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hInv : st.objects.invExt) :
@@ -837,10 +829,10 @@ theorem spliceThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : 
   · next rid _ =>
     rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
     · rw [h]; exact .refl _
-    · exact ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
+    · exact fun oid => by
         rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
-        · rw [h1, h2]; rfl⟩
+        · rw [h1, h2]; rfl
 
 /-- The restore rewrites its thread. -/
 theorem restoreToReadyStaging_tableReferenceFrame (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -899,8 +891,7 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
       (restoreToReadyStaging_tableReferenceFrame _ victim (some Architecture.cancelledIpcFrame) hS)
     have f4 := f3.trans (consumeReplyLink_tableReferenceFrame _ victim tcb hU)
     exact f4.trans (.of_agreeOffRunLinks
-      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _)
-      (unlinkReplyWaiterOpt_referenceTables _ _ _))
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
 
 /-- **WS-ZA ZA4.5: the teardown keeps the run queues in agreement with the
 links** — it writes no scheduler slot (`cancelIpcBlocking_scheduler_eq`) and moves
@@ -913,7 +904,6 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (by rw [hS]) (by rw [hS])
     (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
     (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
-    (fun hInv => cancelIpcBlocking_tableReferenceFrame st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)

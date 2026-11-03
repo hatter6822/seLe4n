@@ -150,7 +150,7 @@ private def fs011_freezeEmpty : IO Unit := do
   let ist := mkEmptyIntermediateState
   let fss := freeze ist
   expect "frozen objects data size 0" (fss.objects.data.size == 0)
-  expect "frozen IRQ handlers empty" (fss.irqHandlers.data.size == 0)
+  expect "frozen IRQ lines inactive" (fss.irqSignalLines.mem 0 == false)
   expect "frozen ASID table empty" (fss.asidTable.data.size == 0)
   expect "objectIndex empty" (fss.objectIndex.length == 0)
   expect "CDT edge bound zero" (fss.cdt.edgeBound == 0)
@@ -165,7 +165,7 @@ private def fs012_freezeDeterministic : IO Unit := do
   let fss1 := freeze ist
   let fss2 := freeze ist
   expect "same objects data size" (fss1.objects.data.size == fss2.objects.data.size)
-  expect "same irq data size" (fss1.irqHandlers.data.size == fss2.irqHandlers.data.size)
+  expect "same irq lines" (fss1.irqSignalLines == fss2.irqSignalLines)
   expect "same CDT edge bound" (fss1.cdt.edgeBound == fss2.cdt.edgeBound)
   expect "same objectIndex" (fss1.objectIndex == fss2.objectIndex)
 

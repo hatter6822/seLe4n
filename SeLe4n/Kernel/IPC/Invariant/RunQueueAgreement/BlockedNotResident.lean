@@ -238,7 +238,7 @@ theorem settleThenActivateOnCore_stateMono (st : SystemState) (c : CoreId)
   have D := dispatchVacatedCore_runQueueEntryStage st c
   obtain ⟨hInvD, hRD⟩ := D.1.links hInv hR
   obtain ⟨hInvY, hRY⟩ := (deferResidentElsewhere_runQueueEntryStage _ c).1.links hInvD hRD
-  obtain ⟨hO, hQ, hE, -, -, -⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
+  obtain ⟨hO, hQ, hE, -, -⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
   have hRS := SystemState.runQueueRefined_of_frame
     (fun c t => SystemState.runLinkOn_of_objects hO c t) hQ hE hRY
   exact ((dispatchVacatedCore_stateMono st c hInv hR).trans

@@ -409,8 +409,8 @@ theorem step_preserves_projection
       · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
-      · funext irq; simp only [projectIrqHandlers]
-        rw [cspaceInsertSlot_preserves_irqHandlers st st' dst c hInsert]
+      · funext irq; simp only [projectIrqSignalLines]
+        rw [cspaceInsertSlot_preserves_irqSignalLines st st' dst c hInsert]
       · exact cspaceInsertSlot_preserves_projectObjectIndex st st' dst c hDstH hInsert
       · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
@@ -449,8 +449,8 @@ theorem step_preserves_projection
     · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
-    · funext irq; simp only [projectIrqHandlers]
-      rw [cspaceInsertSlot_preserves_irqHandlers st st' dst cap hOp]
+    · funext irq; simp only [projectIrqSignalLines]
+      rw [cspaceInsertSlot_preserves_irqSignalLines st st' dst cap hOp]
     · exact cspaceInsertSlot_preserves_projectObjectIndex st st' dst cap hDH hOp
     · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]

@@ -1613,7 +1613,7 @@ def ak8a_06_allocate_preserves_region : IO Unit := do
 empty configs satisfy the disjointness predicate vacuously. -/
 def ak8a_07_empty_config_disjoint : IO Unit := do
   let emptyConfig : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [] }
+    { initialObjects := [] }
   expect "empty config initialObjects is empty"
     (emptyConfig.initialObjects.length == 0)
 
@@ -1861,8 +1861,7 @@ example (config : SeLe4n.Platform.Boot.PlatformConfig) :
 example :
     SeLe4n.Platform.Boot.idleSlotsFreshAt
       (SeLe4n.Platform.Boot.bootFromPlatform
-        { irqTable := []
-          initialObjects :=
+        { initialObjects :=
             [{ id := SeLe4n.ObjId.ofNat 5
                obj := KernelObject.tcb (SeLe4n.Kernel.createIdleThread bootCoreId)
                hSlots := (fun _ h => by cases h)
@@ -1879,7 +1878,7 @@ example :
     core — exercised here over the whole `allCores` enumeration, which is the
     genuine improvement over the boot-core-only witness. -/
 def bootFromPlatform_smp_witness_reachable : IO Unit := do
-  let config : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  let config : SeLe4n.Platform.Boot.PlatformConfig := { initialObjects := [] }
   let booted := (SeLe4n.Platform.Boot.bootFromPlatform config).state.scheduler
   -- Substantive (SM4.E.4 sourceTheorem for inventory entry 8): the booted
   -- scheduler's current-thread slot is `none` on the boot core.
@@ -1899,23 +1898,21 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
         booted.currentOnCore c = none ∨
         booted.currentOnCore c = some (SeLe4n.Kernel.idleThreadId c) :=
     fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_witness config c
-  -- ∀ config generality: boot a config with BOTH a non-empty IRQ table
-  -- (exercising `foldIrqs`) AND a non-empty object list (exercising
-  -- `foldObjects`), confirming the per-core current stays `none` through both
-  -- boot folds.
+  -- ∀ config generality: boot a config with a non-empty object list
+  -- (exercising `foldObjects`), confirming the per-core current stays `none`
+  -- through the boot fold.
   let idleObj : SeLe4n.Platform.Boot.ObjectEntry :=
     { id := SeLe4n.ObjId.ofNat 5
       obj := KernelObject.tcb (SeLe4n.Kernel.createIdleThread bootCoreId)
       hSlots := (fun _ h => by cases h)
       hMappings := (fun _ h => by cases h) }
   let cfgNonEmpty : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := SeLe4n.ObjId.ofNat 42 }]
-      initialObjects := [idleObj] }
+    { initialObjects := [idleObj] }
   let bootedNonEmpty := (SeLe4n.Platform.Boot.bootFromPlatform cfgNonEmpty).state.scheduler
   let _allNoneNonEmpty :
       ∀ c : SeLe4n.Kernel.Concurrency.CoreId, bootedNonEmpty.currentOnCore c = none :=
     fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone cfgNonEmpty c
-  expect "SM4.E: currentAllNone holds through foldIrqs + foldObjects"
+  expect "SM4.E: currentAllNone holds through foldObjects"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c => (bootedNonEmpty.currentOnCore c).isNone))
   -- SM4.G: the idle-thread boot path RUNS the install fold (createObject +
   -- setCurrentOnCore on every core) and installs each core's idle thread as
@@ -2174,11 +2171,11 @@ def an6b_architecture_assumptions_index_total : IO Unit := do
   let _ := @SeLe4n.Kernel.Architecture.archAssumptionConsumer
   let _ := @SeLe4n.Kernel.Architecture.archAssumptionConsumer_distinct
   -- AN6-B.post-audit: explicit reference to the 5th consumer theorem,
-  -- `bootFromPlatformChecked_ok_implies_irqHandlersValid`. If that
+  -- `irqBinding?_notification` (WS-ZA ZA6.32). If that
   -- theorem is renamed or deleted, this `@` reference fails at
   -- elaboration, catching the `archAssumptionConsumer` drift that the
   -- `Name`-literal mapping itself cannot catch.
-  let _ := @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
+  let _ := @SeLe4n.Kernel.Architecture.irqBinding?_notification
   -- Spot-check that each assumption maps to a non-trivial name.
   let nTimer := SeLe4n.Kernel.Architecture.archAssumptionConsumer .deterministicTimerProgress
   let nReg := SeLe4n.Kernel.Architecture.archAssumptionConsumer .deterministicRegisterContext
@@ -2192,8 +2189,8 @@ def an6b_architecture_assumptions_index_total : IO Unit := do
   expect "irq consumer name distinct from timer" (nIrq != nTimer)
   -- AN6-B.post-audit: confirm 5th name is non-trivial by spot-checking
   -- its string contains the expected suffix.
-  expect "irq consumer name ends with _ok_implies_irqHandlersValid"
-    (nIrq.toString.endsWith "bootFromPlatformChecked_ok_implies_irqHandlersValid")
+  expect "irq consumer name ends with irqBinding?_notification"
+    (nIrq.toString.endsWith "irqBinding?_notification")
 
 end SeLe4n.Testing.ModelIntegritySuite
 

@@ -24,7 +24,9 @@ interrupt controller acknowledged:
   serves stops interrupting.
 
 The step here is that function on core `c` (`handleInterruptOnCore`): the
-model's handler table (`SystemState.irqHandlers`) names the notification, and
+line's interrupt node slot names the notification and its badge
+(`Architecture.irqBinding?`: the line at `IRQSignal`, `SystemState.irqSignalLines`,
+and a notification capability with the send right in its node slot), and
 the signal is the one the `.notificationSignal` syscall's arm performs
 (`interruptSignal`): the per-core bound-aware signal
 (`notificationSignalBoundOnCore`), so a waiter on another core is woken there,
@@ -166,10 +168,9 @@ specification. -/
 signalled (`interruptSignal`, the badge staged into the thread it wakes) and
 the line masked, or, with no handler bound, the line masked. -/
 def handleInterruptOnCore (st : SystemState) (c : CoreId) (line : Nat) : SystemState :=
-  match st.irqHandlers[(⟨line⟩ : SeLe4n.Irq)]? with
-  | some ntfn =>
-      Architecture.setInterruptLineMask
-        (interruptSignal ntfn (SeLe4n.Badge.ofNatMasked line) c st) line true
+  match Architecture.irqBinding? st line with
+  | some (ntfn, badge) =>
+      Architecture.setInterruptLineMask (interruptSignal ntfn badge c st) line true
   | none => Architecture.setInterruptLineMask st line true
 
 /-- **The interrupt entry's step**, over the raw core id and INTID the HAL
@@ -220,13 +221,13 @@ theorem handleInterruptOnCore_of {P : SystemState → Prop} (st : SystemState) (
     (line : Nat)
     (hMask : ∀ s, P s → P (Architecture.setInterruptLineMask s line true))
     (hSt : P st)
-    (hSig : ∀ ntfn, st.irqHandlers[(⟨line⟩ : SeLe4n.Irq)]? = some ntfn →
-      P (interruptSignal ntfn (SeLe4n.Badge.ofNatMasked line) c st)) :
+    (hSig : ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
+      P (interruptSignal ntfn badge c st)) :
     P (handleInterruptOnCore st c line) := by
   unfold handleInterruptOnCore
-  cases h : st.irqHandlers[(⟨line⟩ : SeLe4n.Irq)]? with
+  cases h : Architecture.irqBinding? st line with
   | none => exact hMask _ hSt
-  | some ntfn => exact hMask _ (hSig ntfn h)
+  | some p => obtain ⟨ntfn, badge⟩ := p; exact hMask _ (hSig ntfn badge h)
 
 /-- …and the raw step's. -/
 theorem interruptEntryStep_of {P : SystemState → Prop} (st : SystemState) (coreId intId : UInt64)
@@ -254,7 +255,7 @@ theorem handleInterruptOnCore_preserves_objects_invExt (st : SystemState) (c : C
     (line : Nat) (h : st.objects.invExt) : (handleInterruptOnCore st c line).objects.invExt :=
   handleInterruptOnCore_of (P := fun s => s.objects.invExt) st c line
     (fun s hs => by simpa using hs) h
-    (fun ntfn _ => interruptSignal_of (P := fun s => s.objects.invExt) ntfn _ c st
+    (fun ntfn _ _ => interruptSignal_of (P := fun s => s.objects.invExt) ntfn _ c st
       (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st h)
       (fun _ s2 _ hC => stageWokenDelivery_preserves_objects_invExt _ _ _
         (stageWokenDelivery_preserves_objects_invExt _ _ _
@@ -275,7 +276,7 @@ theorem handleInterruptOnCore_replenishQueueOnCore (st : SystemState) (c d : Cor
   handleInterruptOnCore_of
     (P := fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
     st c line (fun s hs => by simpa using hs) rfl
-    (fun ntfn _ => interruptSignal_of
+    (fun ntfn _ _ => interruptSignal_of
       (P := fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
       ntfn _ c st (notificationSignalBoundOnCore_replenishQueueOnCore _ _ _ st d)
       (fun _ s2 _ hC => by

@@ -1154,6 +1154,141 @@ line `n` reads `masked`. -/
     simp only [MachineState.setIrqLineMask, MachineState.irqLineMasked, MachineState.irqMaskWord,
       h] <;> simp [irqMaskWordWith_bit]
 
+/-- **A set of interrupt lines**, one bit per line in five words (the 320
+lines the model names), so a line is added or removed in place. -/
+structure InterruptLineSet where
+  w0 : UInt64 := 0
+  w1 : UInt64 := 0
+  w2 : UInt64 := 0
+  w3 : UInt64 := 0
+  w4 : UInt64 := 0
+  deriving Repr, DecidableEq, Inhabited
+
+namespace InterruptLineSet
+
+/-- The word holding line `n`'s bit (lines past the fifth word read the fifth). -/
+@[inline] def word (s : InterruptLineSet) (n : Nat) : UInt64 :=
+  match n / 64 with
+  | 0 => s.w0
+  | 1 => s.w1
+  | 2 => s.w2
+  | 3 => s.w3
+  | _ => s.w4
+
+/-- The lines the set can hold: the 320 the model names. -/
+def capacity : Nat := 320
+
+/-- **Whether line `n` is in the set** (a line past `capacity` never is). -/
+@[inline] def mem (s : InterruptLineSet) (n : Nat) : Bool :=
+  decide (n < capacity) && (s.word n &&& irqMaskBit n != 0)
+
+/-- Line `n`'s word rewritten, every other word kept. -/
+@[inline] def setWord (s : InterruptLineSet) (n : Nat) (b : Bool) : InterruptLineSet :=
+  let k := n / 64
+  { w0 := if k = 0 then irqMaskWordWith s.w0 n b else s.w0
+    w1 := if k = 1 then irqMaskWordWith s.w1 n b else s.w1
+    w2 := if k = 2 then irqMaskWordWith s.w2 n b else s.w2
+    w3 := if k = 3 then irqMaskWordWith s.w3 n b else s.w3
+    w4 := if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then s.w4 else irqMaskWordWith s.w4 n b }
+
+/-- **Line `n` added (`b = true`) or removed**, in place; a line past
+`capacity` leaves the set as it is. -/
+@[inline] def set (s : InterruptLineSet) (n : Nat) (b : Bool) : InterruptLineSet :=
+  if n < capacity then s.setWord n b else s
+
+/-- The empty set holds no line. -/
+@[simp] theorem mem_default (n : Nat) : (default : InterruptLineSet).mem n = false := by
+  have h0 : ∀ x : UInt64, (0 : UInt64) &&& x = 0 := fun x => by
+    apply UInt64.toBitVec_inj.mp; simp
+  unfold mem word
+  split <;> simp [h0, show (default : InterruptLineSet).w0 = 0 from rfl,
+    show (default : InterruptLineSet).w1 = 0 from rfl,
+    show (default : InterruptLineSet).w2 = 0 from rfl,
+    show (default : InterruptLineSet).w3 = 0 from rfl,
+    show (default : InterruptLineSet).w4 = 0 from rfl]
+
+/-- A word with line `m`'s bit rewritten keeps line `n`'s bit when the two bits
+differ (`n % 64 ≠ m % 64`). -/
+theorem irqMaskWordWith_bit_ne (w : UInt64) (n m : Nat) (b : Bool) (h : n % 64 ≠ m % 64) :
+    (irqMaskWordWith w m b &&& irqMaskBit n != 0) = (w &&& irqMaskBit n != 0) := by
+  have hb : ∀ k : Nat, irqMaskBit k = (1 : UInt64) <<< (k % 64).toUInt64 := fun _ => rfl
+  have key : ∀ (i j : Fin 64), i ≠ j →
+      ((1 : UInt64) <<< i.val.toUInt64) &&& ((1 : UInt64) <<< j.val.toUInt64) = 0 := by decide
+  have hn := Nat.mod_lt n (show 64 > 0 by decide)
+  have hm := Nat.mod_lt m (show 64 > 0 by decide)
+  have hK := key ⟨n % 64, hn⟩ ⟨m % 64, hm⟩ (fun e => h (congrArg Fin.val e))
+  simp only at hK
+  unfold irqMaskWordWith
+  rw [hb n, hb m]
+  generalize (1 : UInt64) <<< (n % 64).toUInt64 = bn at hK ⊢
+  generalize (1 : UInt64) <<< (m % 64).toUInt64 = bm at hK ⊢
+  cases b
+  · have : w &&& ~~~bm &&& bn = w &&& bn := by
+      have hK' : bm &&& bn = 0 := by
+        rw [show bm &&& bn = bn &&& bm from UInt64.and_comm _ _]; exact hK
+      apply UInt64.toBitVec_inj.mp
+      have := congrArg UInt64.toBitVec hK'
+      apply BitVec.eq_of_getLsbD_eq; intro i hi
+      have hi' := congrArg (fun v => BitVec.getLsbD v i) this
+      simp only [UInt64.toBitVec_and, BitVec.getLsbD_and, UInt64.toBitVec_zero,
+        BitVec.getLsbD_zero] at hi'
+      simp only [UInt64.toBitVec_and, UInt64.toBitVec_not, BitVec.getLsbD_and,
+        BitVec.getLsbD_not, hi, decide_true, Bool.true_and]
+      cases hw : w.toBitVec.getLsbD i <;> cases hbm : bm.toBitVec.getLsbD i <;>
+        cases hbn : bn.toBitVec.getLsbD i <;> simp_all
+    simp [this]
+  · have : (w ||| bm) &&& bn = w &&& bn := by
+      apply UInt64.toBitVec_inj.mp
+      have := congrArg UInt64.toBitVec hK
+      apply BitVec.eq_of_getLsbD_eq; intro i _
+      have hi' := congrArg (fun v => BitVec.getLsbD v i) this
+      simp only [UInt64.toBitVec_and, BitVec.getLsbD_and, UInt64.toBitVec_zero,
+        BitVec.getLsbD_zero] at hi'
+      simp only [UInt64.toBitVec_and, UInt64.toBitVec_or, BitVec.getLsbD_and, BitVec.getLsbD_or]
+      cases hw : w.toBitVec.getLsbD i <;> cases hbm : bm.toBitVec.getLsbD i <;>
+        cases hbn : bn.toBitVec.getLsbD i <;> simp_all
+    simp [this]
+
+/-- **The set reads back what was written** at the line written. -/
+@[simp] theorem mem_set_self (s : InterruptLineSet) {n : Nat} (b : Bool) (hn : n < capacity) :
+    (s.set n b).mem n = b := by
+  simp only [set, hn, if_true, mem, decide_true, Bool.true_and]
+  have : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ ∃ k, n / 64 = k + 4 := by
+    rcases Nat.lt_or_ge (n / 64) 4 with h | h
+    · omega
+    · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨n / 64 - 4, by omega⟩)))
+  rcases this with h | h | h | h | ⟨k, h⟩ <;>
+    simp only [setWord, word, h] <;> simp [irqMaskWordWith_bit]
+
+/-- **…and every other line as it was.** -/
+theorem mem_set_ne (s : InterruptLineSet) {n m : Nat} (b : Bool) (h : n ≠ m) :
+    (s.set m b).mem n = s.mem n := by
+  unfold set
+  split
+  case isFalse => rfl
+  rename_i hmC
+  unfold mem
+  by_cases hnC : n < capacity
+  case neg => simp [hnC]
+  simp only [hnC, decide_true, Bool.true_and]
+  unfold capacity at hmC hnC
+  by_cases hw : n / 64 = m / 64
+  · have hb : n % 64 ≠ m % 64 := fun e => h (by omega)
+    have : m / 64 = 0 ∨ m / 64 = 1 ∨ m / 64 = 2 ∨ m / 64 = 3 ∨ ∃ k, m / 64 = k + 4 := by
+      rcases Nat.lt_or_ge (m / 64) 4 with h | h
+      · omega
+      · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨m / 64 - 4, by omega⟩)))
+    rcases this with h' | h' | h' | h' | ⟨k, h'⟩ <;>
+      simp only [setWord, word, hw, h'] <;> simp [irqMaskWordWith_bit_ne _ _ _ _ hb]
+  · have hn' : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ n / 64 = 4 := by omega
+    have hm' : m / 64 = 0 ∨ m / 64 = 1 ∨ m / 64 = 2 ∨ m / 64 = 3 ∨ m / 64 = 4 := by omega
+    rcases hn' with e | e | e | e | e <;> rcases hm' with f | f | f | f | f <;>
+      first
+      | omega
+      | simp [setWord, word, e, f]
+
+end InterruptLineSet
+
 -- ============================================================================
 -- WS-SM SM5.I — per-core register-bank accessors + store/load algebra
 -- ============================================================================

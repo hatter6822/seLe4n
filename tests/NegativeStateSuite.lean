@@ -3862,7 +3862,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
 
   -- X2-D: applyMachineConfig propagates physicalAddressWidth
   let bootedState : IntermediateState :=
-    SeLe4n.Platform.Boot.bootFromPlatform { irqTable := [], initialObjects := [] }
+    SeLe4n.Platform.Boot.bootFromPlatform { initialObjects := [] }
   let rpi5Config := SeLe4n.Platform.RPi5.rpi5MachineConfig
   let withPA : IntermediateState := SeLe4n.Platform.Boot.applyMachineConfig bootedState rpi5Config
   -- The v0.36.2 audit: the RPi5 width is the Cortex-A76's 40 bits (it read 44

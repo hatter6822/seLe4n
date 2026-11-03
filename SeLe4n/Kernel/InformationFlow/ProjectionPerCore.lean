@@ -21,7 +21,7 @@ scheduler-reading IF-M1 projection functions defined in
 `bootCoreId` after SM4.B) to per-core forms parameterised by an explicit
 `(c : CoreId)`, plus the aggregate `projectStateOnCore`.
 
-The non-scheduler projections (`projectObjects`, `projectIrqHandlers`,
+The non-scheduler projections (`projectObjects`, `projectIrqSignalLines`,
 `projectObjectIndex`, `projectDomainSchedule`, `projectMemory`) read no per-core scheduler
 field, so they are unchanged; only the six scheduler-reading projections
 (`projectRunnable`, `projectCurrent`, `projectActiveDomain`,
@@ -136,7 +136,7 @@ def projectStateOnCoreByLinks (ctx : LabelingContext) (observer : IfObserver)
     runnable := projectRunnableOnCoreByLinks ctx observer st c
     current := projectCurrentOnCore ctx observer st c
     activeDomain := projectActiveDomainOnCore ctx observer st c
-    irqHandlers := projectIrqHandlers ctx observer st
+    irqSignalLines := projectIrqSignalLines ctx observer st
     objectIndex := projectObjectIndex ctx observer st
     domainTimeRemaining := projectDomainTimeRemainingOnCore ctx observer st c
     domainSchedule := projectDomainSchedule ctx observer st

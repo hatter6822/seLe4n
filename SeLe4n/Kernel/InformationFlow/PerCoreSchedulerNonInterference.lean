@@ -94,7 +94,7 @@ theorem lowEquivalent_smp_of_views {st st' : SystemState}
   intro c
   refine ObservableState.ext_fragments ?_ ?_
   · simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq]
-    exact ⟨hShared.objects, hShared.irqHandlers, hShared.objectIndex,
+    exact ⟨hShared.objects, hShared.irqSignalLines, hShared.objectIndex,
       hShared.domainSchedule, hShared.memory⟩
   · simp only [projectStateOnCore_perCoreFragment, PerCoreObservableFragment.mk.injEq]
     exact ⟨hRun c, hCur c, projectActiveDomainOnCore_frame _ _ (hAD c),
@@ -134,12 +134,12 @@ theorem setLastTimeoutErrorsOnCore_lowEquivalent (st : SystemState) (c : CoreId)
 IRQ table, memory and the domain schedule kept. -/
 theorem sharedViewUnchanged_of_parts {st st' : SystemState}
     (hObj : projectObjects ctx observer st' = projectObjects ctx observer st)
-    (hIndex : st'.objectIndex = st.objectIndex) (hIrq : st'.irqHandlers = st.irqHandlers)
+    (hIndex : st'.objectIndex = st.objectIndex) (hIrq : st'.irqSignalLines = st.irqSignalLines)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     sharedViewUnchanged ctx observer st st' := by
   refine ⟨hObj, ?_, ?_, ?_, ?_⟩
-  · funext irq; simp only [projectIrqHandlers]; rw [hIrq]
+  · funext irq; simp only [projectIrqSignalLines]; rw [hIrq]
   · simp only [projectObjectIndex]; rw [hIndex]
   · simp only [projectDomainSchedule]; rw [hDomSched]
   · exact projectMemory_eq_of_memory_eq _ _ _ _ hMemory
@@ -162,7 +162,7 @@ theorem lowEquivalent_smp_of_objectsSchedulerWrite {st st' : SystemState}
     lowEquivalent_smp ctx observer st' st := by
   have hM : st'.machine = st.machine := by rw [hD]
   have hI : st'.objectIndex = st.objectIndex := by rw [hD]
-  have hQ : st'.irqHandlers = st.irqHandlers := by rw [hD]
+  have hQ : st'.irqSignalLines = st.irqSignalLines := by rw [hD]
   exact lowEquivalent_smp_of_views
     (sharedViewUnchanged_of_parts hObj hI hQ (by rw [hM]) hDS) hRun
     (fun c => projectCurrentOnCore_frame _ _ (hCur c)) hAD hDTR hDSI
@@ -290,7 +290,7 @@ theorem lowEquivalent_smp_of_regsWrite {st st' : SystemState} (c : CoreId)
   have hO : st'.objects = st.objects := by rw [hSt]
   have hS : st'.scheduler = st.scheduler := by rw [hSt]
   have hI : st'.objectIndex = st.objectIndex := by rw [hSt]
-  have hQ : st'.irqHandlers = st.irqHandlers := by rw [hSt]
+  have hQ : st'.irqSignalLines = st.irqSignalLines := by rw [hSt]
   have hProjObj : projectObjects ctx observer st' = projectObjects ctx observer st := by
     unfold projectObjects SystemState.getObject?; rw [hO]
   refine lowEquivalent_smp_of_views
@@ -350,7 +350,7 @@ theorem lowEquivalent_smp_of_currentWrite {st st' : SystemState} (c : CoreId)
   have hO : st'.objects = st.objects := by rw [hSt]
   have hM : st'.machine = st.machine := by rw [hSt]
   have hI : st'.objectIndex = st.objectIndex := by rw [hSt]
-  have hQ : st'.irqHandlers = st.irqHandlers := by rw [hSt]
+  have hQ : st'.irqSignalLines = st.irqSignalLines := by rw [hSt]
   have hProjObj : projectObjects ctx observer st' = projectObjects ctx observer st := by
     unfold projectObjects SystemState.getObject?; rw [hO]
   refine lowEquivalent_smp_of_views
@@ -1887,11 +1887,13 @@ theorem setInterruptLineMask_lowEquivalent (st : SystemState) (line : Nat) (mask
     lowEquivalent_smp ctx observer (Architecture.setInterruptLineMask st line masked) st :=
   fun _ => rfl
 
-/-- **What the interrupt step writes, hidden**: at a line a handler is bound
-to, what the bound-aware signal to its notification writes. -/
+/-- **What the interrupt step writes, hidden**: at a line bound to a
+notification (`Architecture.irqBinding?`, read off the line's interrupt node
+slot), what the bound-aware signal to that notification writes. -/
 def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (line : Nat) : Prop :=
-  ∀ ntfn, st.irqHandlers[(⟨line⟩ : SeLe4n.Irq)]? = some ntfn → boundSignalHidden ctx observer st ntfn
+  ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
+    boundSignalHidden ctx observer st ntfn
 
 /-- **A woken thread's delivery is invisible on every core**: it writes the
 thread's register context, which no projection shows, and neither the
@@ -1943,11 +1945,10 @@ theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (lin
   handleInterruptOnCore_of (P := fun s => lowEquivalent_smp ctx observer s st) st c line
     (fun s hs => lowEquivalent_smp_trans (setInterruptLineMask_lowEquivalent s line true) hs)
     (lowEquivalent_smp_refl st)
-    (fun ntfn hN =>
-      have hL := notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn _ c st hInv
-        (h ntfn hN)
-      have hI1 := notificationSignalBoundOnCore_preserves_objects_invExt ntfn
-        (SeLe4n.Badge.ofNatMasked line) c st hInv
+    (fun ntfn badge hN =>
+      have hL := notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn badge c st hInv
+        (h ntfn badge hN)
+      have hI1 := notificationSignalBoundOnCore_preserves_objects_invExt ntfn badge c st hInv
       interruptSignal_of (P := fun s => lowEquivalent_smp ctx observer s st) ntfn _ c st hL
         fun _ s2 _ hC =>
           have hI2 := clearWokenReceiverStash_preserves_objects_invExt _ _ ((), s2) hI1 hC
@@ -1958,7 +1959,7 @@ theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (lin
             | some p =>
               obtain ⟨t', epId⟩ := p
               rw [hB] at ht; cases ht
-              exact ((h ntfn hN).bound t' epId hB).2.2
+              exact ((h ntfn badge hN).bound t' epId hB).2.2
           lowEquivalent_smp_trans (stageWokenDelivery_lowEquivalent _ _ 0
               (stageWokenDelivery_preserves_objects_invExt _ _ 0 hI2))
             (lowEquivalent_smp_trans (stageWokenDelivery_lowEquivalent _ _ 0 hI2)

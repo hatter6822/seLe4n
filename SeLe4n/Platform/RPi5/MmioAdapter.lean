@@ -1109,8 +1109,8 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
   `mmioRegionDisjoint_holds`.
 
 - **P-L8** O(n²) boot IRQ scan in `bootFromPlatformWithWarnings`:
-  boot-only cost; the RPi5 `irqTable` is at most ~20 entries, and boot
-  runs once. Documented as accepted cost.
+  **RESOLVED** (WS-ZA ZA6.32) — the boot binds no interrupt line, so there
+  is no IRQ table to scan.
 
 - **P-L9** VSpaceRoot boot exclusion: **RESOLVED** (WS-RC R3 /
   DEEP-BOOT-01, v0.30.11).  `bootSafeObject` and `bootSafeObjectCheck`

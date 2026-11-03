@@ -266,10 +266,6 @@ theorem activateThreadOnCore_tlbShootdown (st : SystemState) (c : CoreId) :
     (activateThreadOnCore st c).tlbShootdown = st.tlbShootdown := by
   rw [activateThreadOnCore_eq_objects_machine]
 
-theorem activateThreadOnCore_referenceTables (st : SystemState) (c : CoreId) :
-    (activateThreadOnCore st c).referenceTables = st.referenceTables := by
-  rw [activateThreadOnCore_eq_objects_machine]; rfl
-
 /-- The activation's machine: its input's, or core `c`'s bank with the two
 registers the completion wrote. -/
 theorem activateThreadOnCore_machine (st : SystemState) (c : CoreId) :
@@ -332,8 +328,7 @@ theorem activateThreadOnCore_preserves_objects_invExt (st : SystemState) (c : Co
   · exact hInv
   · exact SystemState.completeYieldTo_preserves_objects_invExt st tid hInv
 
-/-- **The activation keeps every taint word and reference table** (a table
-reference frame): a thread's yield-to code and return registers and a context's
+/-- **The activation keeps every taint word** (a table reference frame): a thread's yield-to code and return registers and a context's
 yield-from code and consumed count are neither, so the declassification taint
 is unchanged and the step propagates none — as seL4's `activateThread`, which
 moves no capability and no badge. -/
@@ -341,7 +336,7 @@ theorem activateThreadOnCore_tableReferenceFrame (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt) :
     SystemState.TableReferenceFrame st (activateThreadOnCore st c) :=
   .of_map (g := KernelObject.withoutYield) (fun o => by cases o <;> rfl)
-    (activateThreadOnCore_referenceTables st c) (activateThreadOnCore_objectsAgreeOffYield st c hInv)
+    (activateThreadOnCore_objectsAgreeOffYield st c hInv)
 
 /-- **The activation propagates no taint.** -/
 theorem activateThreadOnCore_declassificationTaint (st : SystemState) (c : CoreId)

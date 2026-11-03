@@ -90,11 +90,11 @@ theorem FrozenMap.set_indexMap_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
 -- ============================================================================
 
 /-- Q7-D: `frozenStoreObject` preserves all non-object fields. -/
-theorem frozenStoreObject_preserves_irqHandlers
+theorem frozenStoreObject_preserves_irqSignalLines
     (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
     (st : FrozenSystemState) (st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.irqHandlers = st.irqHandlers := by
+    st'.irqSignalLines = st.irqSignalLines := by
   -- The frame is the write's, stated once at `frozenWithObjectStored`.
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
   rw [hSt]
@@ -208,11 +208,11 @@ theorem frozenQueuePushTail_preserves_cdt
   subst hSt; rfl
 
 /-- T1-E: `frozenQueuePushTail` preserves IRQ handlers. -/
-theorem frozenQueuePushTail_preserves_irqHandlers
+theorem frozenQueuePushTail_preserves_irqSignalLines
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
     (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
-    st'.irqHandlers = st.irqHandlers := by
+    st'.irqSignalLines = st.irqSignalLines := by
   obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
   subst hSt; rfl
 

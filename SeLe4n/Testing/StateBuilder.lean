@@ -24,7 +24,8 @@ structure BootstrapBuilder where
   objects : List (SeLe4n.ObjId × KernelObject) := []
   runnable : List SeLe4n.ThreadId := []
   current : Option SeLe4n.ThreadId := none
-  irqHandlers : List (SeLe4n.Irq × SeLe4n.ObjId) := []
+  /-- The lines at seL4's `IRQSignal` (WS-ZA ZA6.32). -/
+  irqSignalLines : List SeLe4n.Irq := []
   lifecycleObjectTypes : List (SeLe4n.ObjId × KernelObjectType) := []
   -- AN11-F (LOW): `panic!` in `withObject` requires `Inhabited
   -- BootstrapBuilder` for the return type.  Every field above carries a
@@ -71,11 +72,20 @@ def withRunnable (builder : BootstrapBuilder) (queue : List SeLe4n.ThreadId) : B
 def withCurrent (builder : BootstrapBuilder) (tid : Option SeLe4n.ThreadId) : BootstrapBuilder :=
   { builder with current := tid }
 
+/-- WS-ZA ZA6.32: **line `irq` at `IRQSignal`, bound to notification `oid`**, as
+`seL4_IRQControl_Get` then `seL4_IRQHandler_SetNotification` leave it: the line
+in the signal set and its interrupt node (`irqNodeId`) holding a notification
+capability to `oid` with the send right, carrying `badge` when one is given. -/
 def withIrqHandler
     (builder : BootstrapBuilder)
     (irq : SeLe4n.Irq)
-    (oid : SeLe4n.ObjId) : BootstrapBuilder :=
-  { builder with irqHandlers := (irq, oid) :: builder.irqHandlers }
+    (oid : SeLe4n.ObjId) (badge : Option SeLe4n.Badge := none) : BootstrapBuilder :=
+  let cap : Capability :=
+    ({ target := .object oid, rights := AccessRightSet.ofList [.write] } : Capability).withBadge badge
+  { builder with
+    irqSignalLines := irq :: builder.irqSignalLines
+    objects := (irqNodeId irq.toNat, .cnode (CNode.ofList 0 0 0 0 [(irqNodeSlot, cap)])) ::
+      builder.objects }
 
 def withLifecycleObjectType
     (builder : BootstrapBuilder)
@@ -101,7 +111,7 @@ private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
     -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
     scheduler := (default : SchedulerState).setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId builder.current
-    irqHandlers := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.irqHandlers
+    irqSignalLines := builder.irqSignalLines.foldl (fun s l => s.set l.toNat true) {}
     lifecycle := {
       objectTypes := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes
     }
@@ -194,9 +204,9 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
           t.replyWaitersHeadCode != 0 || t.replyWaitersCount != 0 then some oid else none
       | _ => none)
     .error s!"BuilderTestState check 9 failed: supplied TCB(s) carry reply-waiter links: {bad}"
-  -- Check 5: IRQ handlers reference existing objects
-  else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
-    .error "BuilderTestState check 5 failed: IRQ handler references non-existent object"
+  -- Check 5: every signalled line's interrupt node exists
+  else if builder.irqSignalLines.any (fun l => !oids.contains (irqNodeId l.toNat)) then
+    .error "BuilderTestState check 5 failed: a signalled line has no interrupt node"
   -- Check 6: VSpaceRoot ASID uniqueness
   else
     let asids := builder.objects.filterMap (fun (_, obj) =>
@@ -249,7 +259,7 @@ then has to be added in six places, and a suite that lags behind stops
 compiling — the duplication has no upside and one clear downside. -/
 def emptyFrozenSystemState : FrozenSystemState :=
   { objects := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    irqHandlers := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
+    irqSignalLines := {}
     asidTable := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     cdt := .empty

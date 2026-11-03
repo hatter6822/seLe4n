@@ -815,7 +815,7 @@ that actually *consume* it, closing the gap between "we declared it" and
 | `deterministicRegisterContext` | `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle` | `AdapterProofHooks.preserveWriteRegister` requires `contract.registerContextStable` |
 | `memoryAccessSafety` | `adapterReadMemory_ok_preserves_proofLayerInvariantBundle` | `AdapterProofHooks.preserveReadMemory` requires `contract.memoryAccessAllowed` |
 | `bootObjectTyping` | `default_system_state_proofLayerInvariantBundle` | Boot state satisfies lifecycle metadata consistency |
-| `irqRoutingTotality` | IRQ handler lookup (structural) | All IRQs map to handler objects |
+| `irqRoutingTotality` | `irqBinding?_notification` | Every delivered line resolves, through its interrupt node, to a notification |
 -/
 
 /-- M-08/WS-E6: The `deterministicTimerProgress` assumption is consumed by

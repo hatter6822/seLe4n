@@ -63,11 +63,13 @@ here:
   makes the two domains unable to reach each other in either direction; a root
   task holding a capability to the untrusted thread would be a flow the labeling
   exists to forbid.  Each initial thread's CNode names only its own objects.
-* **Device interrupts go to the boot domain, SPIs only.**  The table registers
-  every shared peripheral interrupt the contract supports (INTIDs 32–319,
-  `rpi5InterruptContract`) to one notification, badged by INTID
-  (`handleInterrupt`); SGIs are the kernel's inter-processor channel and PPIs are
-  per-core (the timer PPI is the kernel's tick), so neither is delegated.
+* **Device interrupts go to the boot domain, SPIs only.**  As in seL4, the boot
+  binds no line: the root task holds the IRQControl capability and issues each
+  handler itself (`seL4_IRQControl_Get`), binding it to its interrupt
+  notification (`seL4_IRQHandler_SetNotification`), whose signal carries the
+  handler's badge (`handleInterrupt`).  SGIs are the kernel's inter-processor
+  channel and PPIs are per-core (the timer PPI is the kernel's tick); the kernel
+  reserves both, so `Get` refuses them as it refuses an active line.
 * **Both threads are `.Inactive`**, as `bootSafeTcbCheck` requires of every boot
   thread: the boot installs them and runs neither.  Starting the root task is the
   first thing the booted kernel does for userspace, and it is not a configuration
@@ -77,8 +79,8 @@ here:
 
 `rpi5BoundPlatformConfigAt_wellFormed` and its siblings discharge every gate
 of the checked boot **by evaluation** (BP3.3), on every member of the RAM family
-(BP4.4) — `wellFormed` through the transparent duplicate checks
-(`irqsUnique_eq_transparent`), every other gate by `decide`.
+(BP4.4) — `wellFormed` through the transparent duplicate check
+(`objectIdsUnique_eq_transparent`), every other gate by `decide`.
 `rpi5BoundPlatformConfigAt_boot` is the acceptance statement at a variant: the
 checked boot on the binding's cores succeeds, and
 `rpi5DeploymentBootStateAt_witnessesInstalled` says it installs both witness
@@ -104,7 +106,7 @@ def rpi5RootTaskTcbId : SeLe4n.ObjId := ⟨rpi5LowerWitnessIndex⟩
 def rpi5RootTaskCNodeId : SeLe4n.ObjId := ⟨3⟩
 /-- The root task's VSpace. -/
 def rpi5RootTaskVSpaceId : SeLe4n.ObjId := ⟨4⟩
-/-- The notification every delegated SPI signals. -/
+/-- The notification the root task binds its interrupt handlers to. -/
 def rpi5InterruptNotificationId : SeLe4n.ObjId := ⟨5⟩
 /-- **WS-BP BP7.10**: the root task's `i`-th untyped — one per region of RAM
     the board has outside the kernel's reserved extent (`rpi5RootTaskUntypeds`).
@@ -335,10 +337,7 @@ private def untypedEntry (id : SeLe4n.ObjId) (ut : UntypedObject) : ObjectEntry 
 private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
   { id := id
     obj := .notification
-      -- The interrupt table names this notification, so it records the
-      -- interrupt back (`SystemState.tableReferencesRecorded`).
-      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-        irqBound := true }
+      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
@@ -368,14 +367,6 @@ def rpi5InitialObjectsFor (v : BCM2712Config) : List ObjectEntry :=
   , vspaceEntry rpi5UntrustedVSpaceId rpi5UntrustedAsid 1 ] ++
   (rpi5RootTaskUntypeds v).map fun u => untypedEntry u.1 u.2
 
-/-- **WS-BP BP3.1**: the IRQ table — every shared peripheral interrupt the
-    interrupt contract supports (`rpi5InterruptContract.irqLineSupported`,
-    INTIDs `32 … 32 + gicSpiCount - 1`) signals the boot domain's interrupt
-    notification.  SGIs (0–15) and PPIs (16–31) are not delegated. -/
-def rpi5IrqTable : List IrqEntry :=
-  (List.range gicSpiCount).map fun i =>
-    { irq := ⟨32 + i⟩, handler := rpi5InterruptNotificationId }
-
 /-- **WS-BP BP3.1 / BP4.4**: the RPi5 deployment's configuration on a board
     account — the caller's half.  `bindPlatformConfig` supplies the binding's
     boot VSpace root and binds the machine configuration; `board` is only the
@@ -384,16 +375,14 @@ def rpi5IrqTable : List IrqEntry :=
     `rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree`), so the deployment is
     stated over every account rather than over one board. -/
 def rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) : PlatformConfig :=
-  { irqTable := rpi5IrqTable
-    initialObjects := rpi5InitialObjectsFor (rpi5VariantFor board)
+  { initialObjects := rpi5InitialObjectsFor (rpi5VariantFor board)
     machineConfig := board }
 
 /-- **WS-BP BP4.4**: the configuration the hardware boot checks on a board whose
     account selects variant `v` — `bindPlatformConfig` at the RPi5 binding
     (`bindPlatformConfig_rpi5PlatformConfigFor`). -/
 def rpi5BoundPlatformConfigAt (v : BCM2712Config) : PlatformConfig :=
-  { irqTable := rpi5IrqTable
-    initialObjects := rpi5InitialObjectsFor v
+  { initialObjects := rpi5InitialObjectsFor v
     machineConfig := rpi5MachineConfigForVariant v
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := RPi5Platform)
     initialThreads := PlatformBinding.initialThreads (platform := RPi5Platform)
@@ -411,32 +400,16 @@ theorem bindPlatformConfig_rpi5PlatformConfigFor (board : SeLe4n.MachineConfig) 
 -- firmware may report (BP7.10)
 -- ============================================================================
 
-/-- The IRQ table names every INTID once: it is `32 + i` over `range
-    gicSpiCount`, an injective image of a duplicate-free list.  Proved
-    structurally, so the boot's duplicate check is not evaluated over the
-    table's 288 entries. -/
-theorem rpi5IrqTable_irqsUnique : irqsUnique rpi5IrqTable = true := by
-  apply irqsUnique_of_nodup
-  unfold rpi5IrqTable
-  rw [List.map_map]
-  apply List.Pairwise.map _ _ List.nodup_range
-  intro a b hab h
-  exact hab (by simp only [Function.comp_def, SeLe4n.Irq.toNat] at h; omega)
-
-set_option maxRecDepth 8192 in
 /-- **WS-BP BP3.3**: on each family member, the bound configuration is
-    well-formed — all seven conjuncts.  The IRQ table's duplicate check is
-    `rpi5IrqTable_irqsUnique`, proved once for every member; the object
-    table's runs a hash set the kernel cannot reduce, so it is rewritten to its
-    transparent form first (`objectIdsUnique_eq_transparent`); everything else
-    is `decide`.  WS-ZA ZA6.32: the interrupt-line conjunct walks the 288-entry
-    IRQ table, past the default recursion budget, so the budget is raised. -/
+    well-formed — every conjunct.  The object table's duplicate check runs a
+    hash set the kernel cannot reduce, so it is rewritten to its transparent
+    form first (`objectIdsUnique_eq_transparent`); everything else is
+    `decide`. -/
 private theorem member_wellFormed :
     ∀ v ∈ rpi5Variants, (rpi5BoundPlatformConfigAt v).wellFormed = true := by
   apply rpi5Variants_cases <;>
     (unfold PlatformConfig.wellFormed
-     rw [show ∀ v, (rpi5BoundPlatformConfigAt v).irqTable = rpi5IrqTable from fun _ => rfl,
-       rpi5IrqTable_irqsUnique, objectIdsUnique_eq_transparent, Bool.true_and]
+     rw [objectIdsUnique_eq_transparent]
      decide)
 
 private theorem member_bootSafe :
@@ -446,14 +419,6 @@ private theorem member_bootSafe :
 
 private theorem member_asidsDistinct :
     ∀ v ∈ rpi5Variants, bootVSpaceAsidsDistinct (rpi5BoundPlatformConfigAt v) = true := by
-  apply rpi5Variants_cases <;> decide
-
--- The BCM2712's 288 SPIs make the IRQ table the handler check walks longer
--- than the default recursion budget covers (as `virt`'s 256 do there), so the
--- budget is raised for this theorem only.
-set_option maxRecDepth 8192 in
-private theorem member_irqHandlers :
-    ∀ v ∈ rpi5Variants, irqHandlersAndNotificationsReciprocal (rpi5BoundPlatformConfigAt v) = true := by
   apply rpi5Variants_cases <;> decide
 
 private theorem member_rootDistinct :
@@ -646,15 +611,6 @@ theorem rpi5BoundPlatformConfigAt_asidsDistinct (v : BCM2712Config) (hv : v.Admi
     bootVSpaceAsidsDistinct_withoutExtents]
   exact member_asidsDistinct _ hv.1
 
-/-- **WS-BP BP3.3**: the config's interrupt table and its notifications are
-reciprocal -- every IRQ's handler is a notification that records the
-interrupt, and no notification records one no IRQ names. -/
-theorem rpi5BoundPlatformConfigAt_irqHandlers (v : BCM2712Config) (hv : v.Admissible) :
-    irqHandlersAndNotificationsReciprocal (rpi5BoundPlatformConfigAt v) = true := by
-  rw [← irqHandlersAndNotificationsReciprocal_withoutExtents,
-    rpi5BoundPlatformConfigAt_withoutExtents v hv, irqHandlersAndNotificationsReciprocal_withoutExtents]
-  exact member_irqHandlers _ hv.1
-
 /-- **WS-BP BP3.3, BP7.10**: the bound machine configuration is well-formed —
     the family's own `rpi5Variants_wellFormed`, carried to the configuration's
     first-gigabyte top by `rpi5MachineConfigForVariant_wellFormed`. -/
@@ -708,7 +664,7 @@ theorem rpi5BoundPlatformConfigAt_affinities (v : BCM2712Config) (hv : v.Admissi
 
 /-- **WS-BP BP3.3**: the checked boot takes its success arm — the one with the
     binding's root installed — on every admissible configuration, so none of
-    its ten refusals is reachable for this deployment on any Raspberry Pi 5
+    its nine refusals is reachable for this deployment on any Raspberry Pi 5
     whose firmware reports the kernel's extent as RAM. -/
 theorem rpi5BoundPlatformConfigAt_checked (v : BCM2712Config) (hv : v.Admissible) :
     bootFromPlatformChecked (rpi5BoundPlatformConfigAt v) =
@@ -718,7 +674,6 @@ theorem rpi5BoundPlatformConfigAt_checked (v : BCM2712Config) (hv : v.Admissible
           rpi5BootVSpaceRootEntry.hMappings)) :=
   bootFromPlatformChecked_admits_bootVSpace _ (rpi5BoundPlatformConfigAt_wellFormed v hv)
     (rpi5BoundPlatformConfigAt_bootSafe v hv) (rpi5BoundPlatformConfigAt_asidsDistinct v hv)
-    (rpi5BoundPlatformConfigAt_irqHandlers v hv)
     (rpi5BoundPlatformConfigAt_machineConfig_wellFormed v hv)
     (rpi5BoundPlatformConfigAt_physicalAddressWidth v)
     (rpi5BoundPlatformConfigAt_rootDistinct v hv)
@@ -955,9 +910,9 @@ theorem rpi5DeploymentBootStateAt_invariantBridge (v : BCM2712Config) (hv : v.Ad
     theorem above, stated over an arbitrary account, is a theorem about what the
     hardware entry boots. -/
 theorem rpi5PlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config : PlatformConfig)
-    (h : rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none = .ok config) :
+    (h : rpi5PlatformConfigFromDtb blob rpi5InitialObjectsFor none = .ok config) :
     config = rpi5PlatformConfigFor config.machineConfig := by
-  obtain ⟨dt, -, rfl⟩ := rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree _ _ _ _ _ h
+  obtain ⟨dt, -, rfl⟩ := rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree _ _ _ _ h
   rfl
 
 -- ============================================================================

@@ -32,32 +32,11 @@ open SeLe4n.Model
 -- ============================================================================
 
 -- The named projections of `allTablesInvExtK` live beside it
--- (`SystemState.allTablesInvExtK.objects`, `.irqHandlers`, `.asidTable`,
+-- (`SystemState.allTablesInvExtK.objects`, `.asidTable`,
 -- `.objectTypes`, `.interfaceRegistry`, `.objectIndexSet`), so no proof here
 -- counts conjuncts: a table added to or removed from the bundle shifts no
 -- reader (WS-ZA ZA5.9 removed the service registry's, the registry being the
 -- endpoints' records since).
-
--- ============================================================================
--- Q3-B.1: registerIrq — insert into irqHandlers
--- ============================================================================
-
-/-- Q3-B: Register an IRQ handler in the builder state. Only modifies
-`irqHandlers`; all other fields are unchanged. -/
-def registerIrq (ist : IntermediateState) (irq : SeLe4n.Irq) (handler : SeLe4n.ObjId)
-    : IntermediateState where
-  state := { ist.state with irqHandlers := ist.state.irqHandlers.insert irq handler }
-  hAllTables := by
-    have h := ist.hAllTables
-    exact ⟨h.objects, RHTable.insert_preserves_invExtK _ _ _ h.irqHandlers, h.asidTable,
-      h.objectTypes, h.interfaceRegistry, h.objectIndexSet⟩
-  hPerObjectSlots := by
-    intro id cn hObj
-    exact ist.hPerObjectSlots id cn hObj
-  hPerObjectMappings := by
-    intro id vs hObj
-    exact ist.hPerObjectMappings id vs hObj
-  hLifecycleConsistent := ist.hLifecycleConsistent
 
 -- ============================================================================
 -- registerInterface — insert into interfaceRegistry
@@ -71,7 +50,7 @@ def registerInterface (ist : IntermediateState) (spec : InterfaceSpec) : Interme
     interfaceRegistry := ist.state.interfaceRegistry.insert spec.ifaceId spec }
   hAllTables := by
     have h := ist.hAllTables
-    exact ⟨h.objects, h.irqHandlers, h.asidTable, h.objectTypes,
+    exact ⟨h.objects, h.asidTable, h.objectTypes,
            RHTable.insert_preserves_invExtK _ _ _ h.interfaceRegistry, h.objectIndexSet⟩
   hPerObjectSlots := by
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
@@ -114,7 +93,7 @@ def createObject (ist : IntermediateState)
   hAllTables := by
     have h := ist.hAllTables
     exact ⟨RHTable.insert_preserves_invExtK _ _ _ h.objects,
-           h.irqHandlers, h.asidTable,
+           h.asidTable,
            RHTable.insert_preserves_invExtK _ _ _ h.objectTypes,
            h.interfaceRegistry,
            RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.objectIndexSet⟩

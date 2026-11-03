@@ -956,8 +956,10 @@ def runInformationFlowChecks : IO Unit := do
   expect "activeDomain consistent across observers"
     (publicActiveDomain = adminActiveDomain)
 
-  -- ---------- IRQ handler projection ----------
-  -- Build a state with IRQ handlers pointing to both public and secret objects.
+  -- ---------- IRQ line projection (WS-ZA ZA6.32) ----------
+  -- Two lines at `IRQSignal`, bound to a public and a secret object.  A line's
+  -- state is labelled by its interrupt node, as seL4 labels an `irq_node` slot
+  -- by its IRQ's label: line 1's node is labelled secret.
   let irqState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})
@@ -965,33 +967,33 @@ def runInformationFlowChecks : IO Unit := do
       |>.withIrqHandler ⟨0⟩ ⟨1⟩   -- IRQ 0 → oid 1 (public object)
       |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
       |>.buildChecked)
+  let irqLabeling : SeLe4n.Kernel.LabelingContext :=
+    { sampleLabeling with
+      objectLabelOf := fun oid =>
+        if oid = ⟨2⟩ ∨ oid = SeLe4n.Model.irqNodeId 1 then secretLabel else publicLabel }
 
-  let irqPublicProj := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer irqState
-  let irqAdminProj := SeLe4n.Kernel.projectStateByLinks sampleLabeling admin irqState
+  let irqPublicProj := SeLe4n.Kernel.projectStateByLinks irqLabeling reviewer irqState
+  let irqAdminProj := SeLe4n.Kernel.projectStateByLinks irqLabeling admin irqState
 
-  -- Public observer sees IRQ 0 → oid 1 (public target)
-  expect "public observer sees IRQ handler to public object"
-    ((irqPublicProj.irqHandlers ⟨0⟩) = some ⟨1⟩)
+  expect "public observer sees the line whose node is public signalled"
+    (irqPublicProj.irqSignalLines ⟨0⟩)
 
-  -- Public observer cannot see IRQ 1 → oid 2 (secret target)
-  expect "public observer cannot see IRQ handler to secret object"
-    ((irqPublicProj.irqHandlers ⟨1⟩).isNone)
+  expect "public observer sees the line whose node is secret as inactive"
+    (!irqPublicProj.irqSignalLines ⟨1⟩)
 
-  -- Admin sees both IRQ handlers
-  expect "admin observer sees IRQ handler to public object"
-    ((irqAdminProj.irqHandlers ⟨0⟩) = some ⟨1⟩)
+  expect "admin observer sees the public node's line signalled"
+    (irqAdminProj.irqSignalLines ⟨0⟩)
 
-  expect "admin observer sees IRQ handler to secret object"
-    ((irqAdminProj.irqHandlers ⟨1⟩) = some ⟨2⟩)
+  expect "admin observer sees the secret node's line signalled"
+    (irqAdminProj.irqSignalLines ⟨1⟩)
 
-  -- Unmapped IRQ returns none for both observers
-  expect "unmapped IRQ returns none for public observer"
-    ((irqPublicProj.irqHandlers ⟨99⟩).isNone)
+  expect "an inactive line reads inactive for the public observer"
+    (!irqPublicProj.irqSignalLines ⟨99⟩)
 
-  expect "unmapped IRQ returns none for admin observer"
-    ((irqAdminProj.irqHandlers ⟨99⟩).isNone)
+  expect "an inactive line reads inactive for the admin observer"
+    (!irqAdminProj.irqSignalLines ⟨99⟩)
 
-  IO.println "IRQ handler projection checks passed"
+  IO.println "IRQ line projection checks passed"
 
   -- ---------- Object index projection ----------
   -- objectIndex is auto-built from builder objects list.
@@ -1100,7 +1102,7 @@ def runInformationFlowChecks : IO Unit := do
   -- Extend the distinct-state comparison to six ObservableState fields.
   let knownIrqs : List SeLe4n.Irq := [⟨0⟩, ⟨1⟩, ⟨2⟩, ⟨3⟩]
   let irqMatch := knownIrqs.all (fun irq =>
-    publicProjectionSample.irqHandlers irq = publicProjectionAlt.irqHandlers irq)
+    publicProjectionSample.irqSignalLines irq = publicProjectionAlt.irqSignalLines irq)
   let fullLowEq6 := objectsMatch
     && publicProjectionSample.runnable = publicProjectionAlt.runnable
     && publicProjectionSample.current = publicProjectionAlt.current
@@ -1340,7 +1342,7 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.12: 19, the taint read off the objects.
   expect "StateField enum has 19 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
-       .scheduler, .irqHandlers, .lifecycle,
+       .scheduler, .irqSignalLines, .lifecycle,
        .asidTable, .interfaceRegistry,
        .cdt,
        .tlb,

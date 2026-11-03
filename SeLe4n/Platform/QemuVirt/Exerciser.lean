@@ -43,14 +43,14 @@ scenarios (WS-ZA ZA6.32), and nothing else.
   qualify, and the root task holds the boot audit capability in slot 10
   (`qemuVirtExerciserAuditSlot`, the exerciser's copy slot), which the
   exerciser deletes before the invocation scenarios copy into it.
-* **Two interrupt-handler capabilities** (WS-ZA ZA6.32): the root task holds
-  the handler capabilities of two shared peripheral interrupts the `virt`
-  board wires to nothing, with the write right, in slots 24 and 25
-  (`qemuVirtExerciserIrqHandlerSlots`), and the first line's handler is the
-  interrupt notification as every shipped line's is, while the second line is
-  left out of the IRQ table (`qemuVirtExerciserIrqTable`), so the interrupt
-  entry's bound and unbound branches each have a line the exerciser raises at
-  the distributor.
+* **Interrupt handlers at run time** (WS-ZA ZA6.32): the boot binds no line,
+  as seL4's does not.  The exerciser issues the handler capabilities of two
+  shared peripheral interrupts the `virt` board wires to nothing
+  (`qemuVirtExerciserBoundLine`, `qemuVirtExerciserUnboundLine`) from the root
+  task's IRQControl capability (`seL4_IRQControl_Get`) into slots 24 and 25,
+  and binds the first to the interrupt notification
+  (`seL4_IRQHandler_SetNotification`), so the interrupt entry's bound and
+  unbound branches each have a line the exerciser raises at the distributor.
 
 The shipped `virt` entry (`QemuVirt.kernelMain`, `lean_kernel_main_qemu_virt`)
 is untouched: it boots `QemuVirtPlatform`, whose labeling is the confined
@@ -107,34 +107,20 @@ instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPla
     scenarios end, and whose next use is a copy rather than a carve. -/
 def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
 
-/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises with a
-    handler bound to it (the interrupt notification, as every shipped line). -/
+/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises after
+    issuing its handler and binding it to the interrupt notification. -/
 def qemuVirtExerciserBoundLine : Nat := 250
 
-/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises with no
-    handler bound to it. -/
+/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises after
+    issuing its handler and binding no notification to it. -/
 def qemuVirtExerciserUnboundLine : Nat := 251
 
-/-- WS-ZA ZA6.32: the exerciser's IRQ table: the shipped one without
-    `qemuVirtExerciserUnboundLine`. -/
-def qemuVirtExerciserIrqTable : List IrqEntry :=
-  qemuVirtIrqTable.filter fun e => e.irq.toNat != qemuVirtExerciserUnboundLine
-
-/-- WS-ZA ZA6.32: the two lines' interrupt-handler capabilities, with the write
-    right `.irqHandlerAck` takes, in slots 24 and 25. -/
-def qemuVirtExerciserIrqHandlerSlots : List (SeLe4n.Slot × Capability) :=
-  [ (SeLe4n.Slot.ofNat 24, { target := .irqHandler qemuVirtExerciserBoundLine
-                             rights := AccessRightSet.ofList [.write] })
-  , (SeLe4n.Slot.ofNat 25, { target := .irqHandler qemuVirtExerciserUnboundLine
-                             rights := AccessRightSet.ofList [.write] }) ]
-
-/-- The exerciser's root CNode: the shipped root CNode's capabilities, the
+/-- The exerciser's root CNode: the shipped root CNode's capabilities and the
     audit trail's, with read and write (`Capability.auditTrailManage`), in
-    `qemuVirtExerciserAuditSlot`, and the two interrupt-handler capabilities. -/
+    `qemuVirtExerciserAuditSlot`. -/
 def qemuVirtExerciserRootTaskCNode : CNode :=
   qemuVirtRootCNodeOf
-    (qemuVirtRootTaskCNodeSlots ++ [(qemuVirtExerciserAuditSlot, Capability.auditTrailManage)] ++
-      qemuVirtExerciserIrqHandlerSlots)
+    (qemuVirtRootTaskCNodeSlots ++ [(qemuVirtExerciserAuditSlot, Capability.auditTrailManage)])
 
 /-- The exerciser's initial objects: the shipped deployment's, its root CNode
     (the second entry) replaced by the exerciser's. -/
@@ -146,8 +132,7 @@ def qemuVirtExerciserInitialObjects : List ObjectEntry :=
 
 /-- The configuration the exerciser's boot checks, whatever the account. -/
 def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
-  { irqTable := qemuVirtExerciserIrqTable
-    initialObjects := qemuVirtExerciserInitialObjects
+  { initialObjects := qemuVirtExerciserInitialObjects
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtExerciserPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtExerciserPlatform)
@@ -175,9 +160,9 @@ def bootAndInitialiseQemuVirtExerciserOrHalt (config : PlatformConfig) : BaseIO 
     `lean_kernel_main_qemu_virt_exerciser` is, and what
     `SeLe4n/Testing/BootEntryContract.lean` holds that entry to. -/
 def bootAndInitialiseQemuVirtExerciserFromDtbOrHalt (blob : ByteArray)
-    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (initialObjects : List ObjectEntry)
     (bootVSpaceRoot : Option BootVSpaceRootEntry) : BaseIO Unit :=
-  match qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot with
+  match qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot with
   | .error _ => ffiFatalHaltAll
   | .ok config => do
       extendBootRamMap qemuVirtBootRamExtensions
@@ -188,8 +173,7 @@ def bootAndInitialiseQemuVirtExerciserFromDtbOrHalt (blob : ByteArray)
     `lean_kernel_main_qemu_virt` on an image built with `smp_exercisers`. -/
 @[export lean_kernel_main_qemu_virt_exerciser]
 def exerciserKernelMain (dtb : ByteArray) : BaseIO Unit :=
-  bootAndInitialiseQemuVirtExerciserFromDtbOrHalt dtb qemuVirtExerciserIrqTable
-    qemuVirtExerciserInitialObjects none
+  bootAndInitialiseQemuVirtExerciserFromDtbOrHalt dtb qemuVirtExerciserInitialObjects none
 
 -- ============================================================================
 -- What differs, and what does not
@@ -254,7 +238,7 @@ set_option maxRecDepth 8192 in
 theorem qemuVirtExerciserBoundPlatformConfig_wellFormed :
     qemuVirtExerciserBoundPlatformConfig.wellFormed = true := by
   unfold PlatformConfig.wellFormed
-  rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
+  rw [objectIdsUnique_eq_transparent]
   decide
 
 -- WS-ZA ZA6.4: the root CNode's 32 cells, as the shipped deployment's.
@@ -266,11 +250,6 @@ theorem qemuVirtExerciserBoundPlatformConfig_bootSafe :
 
 theorem qemuVirtExerciserBoundPlatformConfig_asidsDistinct :
     bootVSpaceAsidsDistinct qemuVirtExerciserBoundPlatformConfig = true := by
-  decide
-
-set_option maxRecDepth 8192 in
-theorem qemuVirtExerciserBoundPlatformConfig_irqHandlers :
-    irqHandlersAndNotificationsReciprocal qemuVirtExerciserBoundPlatformConfig = true := by
   decide
 
 theorem qemuVirtExerciserBoundPlatformConfig_rootDistinct :
@@ -297,7 +276,7 @@ theorem qemuVirtExerciserBoundPlatformConfig_checked :
   bootFromPlatformChecked_admits_bootVSpace _ qemuVirtExerciserBoundPlatformConfig_wellFormed
     qemuVirtExerciserBoundPlatformConfig_bootSafe
     qemuVirtExerciserBoundPlatformConfig_asidsDistinct
-    qemuVirtExerciserBoundPlatformConfig_irqHandlers qemuVirtMachineConfig_wellFormed
+    qemuVirtMachineConfig_wellFormed
     (by decide)
     qemuVirtExerciserBoundPlatformConfig_rootDistinct
     qemuVirtExerciserBoundPlatformConfig_rootNonSentinel

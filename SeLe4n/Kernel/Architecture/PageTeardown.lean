@@ -432,8 +432,7 @@ to, which held a VSpace root; nothing else moves in the object store. -/
 theorem vspaceUnmapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-      st'.referenceTables = st.referenceTables := by
+    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
   unfold Architecture.vspaceUnmapPage at hStep
   cases hRes : Architecture.resolveAsidRoot st asid with
   | none => rw [hRes] at hStep; cases hStep
@@ -449,8 +448,7 @@ theorem vspaceUnmapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
       obtain ⟨_, hObj, _⟩ :=
         Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
       refine ⟨storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv hStep, ?_,
-        (by have h := storeObject_scheduler_eq _ _ _ _ hStep; exact h),
-        (storeObject_referenceTables hStep).trans rfl⟩
+        (by have h := storeObject_scheduler_eq _ _ _ _ hStep; exact h)⟩
       intro oid
       by_cases hK : oid = rootId
       · subst hK
@@ -466,8 +464,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
       = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-      st'.referenceTables = st.referenceTables := by
+    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
   unfold Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast at hStep
   cases hK : Architecture.vspaceUnmapPageWithShootdownPerCore ec asid vaddr st with
   | error e =>
@@ -475,9 +472,7 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame
     cases hStep
   | ok pr =>
     obtain ⟨u, stK⟩ := pr; cases u
-    obtain ⟨hObjsK, -, hSchedK, -, -, -, -, hIrqK⟩ :=
-      Architecture.withIcacheBroadcast_frame hK hStep
-    have hTaintK := Architecture.withIcacheBroadcast_declassificationTaint hK hStep
+    obtain ⟨hObjsK, -, hSchedK, -⟩ := Architecture.withIcacheBroadcast_frame hK hStep
     unfold Architecture.vspaceUnmapPageWithShootdownPerCore at hK
     cases hS : Architecture.vspaceUnmapPageWithShootdown ec asid vaddr st with
     | error e => rw [hS] at hK; cases hK
@@ -503,12 +498,10 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame
           rw [hU] at hF
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
           subst hF
-          obtain ⟨hInvU, hWU, hSchU, hTU⟩ := vspaceUnmapPage_ok_frame asid vaddr st stU hObjInv hU
+          obtain ⟨hInvU, hWU, hSchU⟩ := vspaceUnmapPage_ok_frame asid vaddr st stU hObjInv hU
           have hObjs : st'.objects = stU.objects := hObjsK
           have hSch : st'.scheduler = stU.scheduler := hSchedK
-          have hT : st'.referenceTables = stU.referenceTables := by
-            simp only [SystemState.referenceTables, hIrqK, hTaintK]; rfl
-          refine ⟨hObjs ▸ hInvU, fun oid => ?_, hSch.trans hSchU, hT.trans hTU⟩
+          refine ⟨hObjs ▸ hInvU, fun oid => ?_, hSch.trans hSchU⟩
           rw [hObjs]; exact hWU oid
 
 /-- **One page-table map** stores a VSpace root at the key the ASID resolved to,
@@ -518,8 +511,7 @@ theorem vspaceMapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr) (perms : PagePermissions)
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : Architecture.vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-      st'.referenceTables = st.referenceTables := by
+    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
   unfold Architecture.vspaceMapPage at hStep
   cases hRes : Architecture.resolveAsidRoot st asid with
   | none => rw [hRes] at hStep; cases hStep
@@ -539,8 +531,7 @@ theorem vspaceMapPage_ok_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
           obtain ⟨_, hObj, _⟩ :=
             Architecture.resolveAsidRoot_some_implies_obj st asid rootId root hRes
           refine ⟨storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st _) _ _ _ hObjInv hStep, ?_,
-            (by have h := storeObject_scheduler_eq _ _ _ _ hStep; exact h),
-            (storeObject_referenceTables hStep).trans rfl⟩
+            (by have h := storeObject_scheduler_eq _ _ _ _ hStep; exact h)⟩
           intro oid
           by_cases hK : oid = rootId
           · subst hK
@@ -557,8 +548,7 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame
     (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore ec asid vaddr
       paddr perms st = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-      st'.referenceTables = st.referenceTables := by
+    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
   unfold Architecture.vspaceMapPageCheckedWithShootdownFromStatePerCore at hStep
   cases hS : Architecture.vspaceMapPageCheckedWithShootdownFromState ec asid vaddr paddr
       perms st with
@@ -568,15 +558,13 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame
     rw [hS] at hStep
     simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
     -- The drain and the fill write `perCoreTlb` alone.
-    have hTail : st'.objects = stM.objects ∧ st'.scheduler = stM.scheduler ∧
-        st'.referenceTables = stM.referenceTables := by
+    have hTail : st'.objects = stM.objects ∧ st'.scheduler = stM.scheduler := by
       subst hStep
       unfold Architecture.tlbFillOnCore Architecture.drainInitiatorPerCoreView
       split
-      · exact ⟨rfl, rfl, rfl⟩
+      · exact ⟨rfl, rfl⟩
       · exact ⟨(Architecture.tlbInsertOnCore_frame _ _ _).1,
-          (Architecture.tlbInsertOnCore_frame _ _ _).2.2.1, by
-            unfold Architecture.tlbInsertOnCore; split <;> rfl⟩
+          (Architecture.tlbInsertOnCore_frame _ _ _).2.2.1⟩
     unfold Architecture.vspaceMapPageCheckedWithShootdownFromState at hS
     dsimp only at hS
     cases hF : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st with
@@ -586,16 +574,15 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame
       rw [hF] at hS
       simp only at hS
       -- The optional round writes shootdown state alone.
-      have hRound : stM.objects = stF.objects ∧ stM.scheduler = stF.scheduler ∧
-          stM.referenceTables = stF.referenceTables := by
+      have hRound : stM.objects = stF.objects ∧ stM.scheduler = stF.scheduler := by
         split at hS
         · rw [Architecture.withShootdownRound_total] at hS
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
           subst hS
           exact ⟨(Architecture.tlbShootdownBroadcastCoalescing_frame stF ec _ _).1,
-            (Architecture.tlbShootdownBroadcastCoalescing_frame stF ec _ _).2.1, rfl⟩
+            (Architecture.tlbShootdownBroadcastCoalescing_frame stF ec _ _).2.1⟩
         · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
-          subst hS; exact ⟨rfl, rfl, rfl⟩
+          subst hS; exact ⟨rfl, rfl⟩
       unfold Architecture.vspaceMapPageCheckedWithFlushFromState at hF
       split at hF
       · cases hF
@@ -611,11 +598,10 @@ theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame
               rw [hB] at hF
               simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
               subst hF
-              obtain ⟨hInvB, hWB, hSchB, hTB⟩ :=
+              obtain ⟨hInvB, hWB, hSchB⟩ :=
                 vspaceMapPage_ok_frame asid vaddr paddr perms st stB hObjInv hB
               have hObjs : st'.objects = stB.objects := hTail.1.trans hRound.1
-              refine ⟨hObjs ▸ hInvB, fun oid => ?_, hTail.2.1.trans (hRound.2.1.trans hSchB),
-                hTail.2.2.trans (hRound.2.2.trans (Eq.trans rfl hTB))⟩
+              refine ⟨hObjs ▸ hInvB, fun oid => ?_, hTail.2.trans (hRound.2.trans hSchB)⟩
               rw [hObjs]; exact hWB oid
 
 /-- **The teardown** is a VSpace-root-only write that keeps the scheduler and the
@@ -624,12 +610,11 @@ theorem unmapLivePages_ok_frame (ec : Concurrency.CoreId) :
     ∀ (ps : List MappedPage) (st st' : SystemState),
       st.objects.invExt →
       unmapLivePages ec ps st = .ok ((), st') →
-      st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-        st'.referenceTables = st.referenceTables
+      st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler
   | [], st, st', hInv, hStep => by
       simp only [unmapLivePages, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
-      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl, rfl⟩
+      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl⟩
   | p :: rest, st, st', hInv, hStep => by
       simp only [unmapLivePages] at hStep
       split at hStep
@@ -639,11 +624,11 @@ theorem unmapLivePages_ok_frame (ec : Concurrency.CoreId) :
         | ok pr =>
           obtain ⟨u, st1⟩ := pr; cases u
           rw [h1] at hStep
-          obtain ⟨hInv1, hW1, hS1, hT1⟩ :=
+          obtain ⟨hInv1, hW1, hS1⟩ :=
             vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec p.asid p.vaddr
               st st1 hInv h1
-          obtain ⟨hInv2, hW2, hS2, hT2⟩ := unmapLivePages_ok_frame ec rest st1 st' hInv1 hStep
-          exact ⟨hInv2, hW1.trans hW2, hS2.trans hS1, hT2.trans hT1⟩
+          obtain ⟨hInv2, hW2, hS2⟩ := unmapLivePages_ok_frame ec rest st1 st' hInv1 hStep
+          exact ⟨hInv2, hW1.trans hW2, hS2.trans hS1⟩
       · exact unmapLivePages_ok_frame ec rest st st' hInv hStep
 
 end SeLe4n.Kernel

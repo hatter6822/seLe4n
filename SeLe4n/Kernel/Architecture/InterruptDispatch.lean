@@ -160,18 +160,19 @@ def handleInterruptWith (tick : Kernel Unit) (st : SystemState) (intId : Interru
   if intId = timerInterruptId then
     tick st
   else
-    let irq : Irq := ⟨intId.val⟩
-    match st.irqHandlers[irq]? with
-    | some handlerId =>
-        -- Deliver signal to the notification object bound to this IRQ
-        notificationSignal handlerId (Badge.ofNatMasked intId.val) st
+    match irqBinding? st intId.val with
+    | some (ntfn, badge) =>
+        -- Signal the notification the line's interrupt node slot names, with
+        -- that capability's badge (seL4's `handleInterrupt`, `IRQSignal`).
+        notificationSignal ntfn badge st
     | none => .error .invalidIrq
 
 /-- AG3-D: Handle a single interrupt by ID.
     Routes based on interrupt type:
     - Timer interrupt (PPI 30): Delegate to `timerTick`
-    - Mapped IRQ: Deliver notification via `notificationSignal`
-    - Unmapped IRQ: Return `.invalidIrq` error
+    - A line at IRQSignal whose interrupt node slot holds a notification
+      capability with the send right: deliver via `notificationSignal`
+    - Any other line: Return `.invalidIrq` error
 
     Design notes:
     - Uses `timerTick` (not `timerTickChecked`) because the timer interrupt
@@ -179,10 +180,9 @@ def handleInterruptWith (tick : Kernel Unit) (st : SystemState) (intId : Interru
       the responsibility of the exception entry path in ExceptionModel, not
       the interrupt handler. This matches seL4's design where `handleInterrupt`
       is called after exception context has already been saved.
-    - Badge is derived from the INTID value via `Badge.ofNatMasked`. In seL4,
-      badges are configured per-IRQ-handler at bind time. This simplification
-      is sufficient for the abstract model; the hardware binding phase (AG5)
-      will add per-handler badge configuration.
+    - WS-ZA ZA6.32: the badge is the badge of the capability
+      `seL4_IRQHandler_SetNotification` copied into the line's node slot
+      (`irqBinding?`), as seL4's `handleInterrupt` signals with it.
     - AI2-A (H-03): EOI is always sent regardless of handler outcome to
       prevent GIC lockup. Handler errors are non-fatal — the interrupt was
       acknowledged and EOI must complete the cycle. This matches Linux's
@@ -312,10 +312,10 @@ theorem endOfInterrupt_removes_from_eoiPending
   have := List.mem_filter.mp hMem
   simp at this
 
-/-- AG3-D: Unmapped IRQ returns `.invalidIrq`. -/
+/-- AG3-D: An unbound line returns `.invalidIrq`. -/
 theorem handleInterrupt_unmapped (st : SystemState) (intId : InterruptId)
     (hNotTimer : intId ≠ timerInterruptId)
-    (hNoHandler : st.irqHandlers[(⟨intId.val⟩ : Irq)]? = none) :
+    (hNoHandler : irqBinding? st intId.val = none) :
     handleInterrupt st intId = .error .invalidIrq := by
   unfold handleInterrupt handleInterruptWith
   simp [hNotTimer, hNoHandler]

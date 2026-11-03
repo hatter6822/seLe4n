@@ -228,6 +228,8 @@ def clearPhysicalWrites (st : SystemState) : SystemState :=
     (recordPhysicalWrites st ws).objects = st.objects := rfl
 @[simp] theorem recordPhysicalWrites_asidTable (st : SystemState) (ws : List PhysicalWrite) :
     (recordPhysicalWrites st ws).asidTable = st.asidTable := rfl
+@[simp] theorem recordPhysicalWrites_irqSignalLines (st : SystemState) (ws : List PhysicalWrite) :
+    (recordPhysicalWrites st ws).irqSignalLines = st.irqSignalLines := rfl
 @[simp] theorem recordPhysicalWrites_scheduler (st : SystemState) (ws : List PhysicalWrite) :
     (recordPhysicalWrites st ws).scheduler = st.scheduler := rfl
 @[simp] theorem recordPhysicalWrites_machine (st : SystemState) (ws : List PhysicalWrite) :

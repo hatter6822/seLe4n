@@ -318,8 +318,7 @@ def mmioRegions : List SeLe4n.MemoryRegion :=
     reads `GICD_TYPER.ITLinesNumber` before programming anything and halts
     the boot with a diagnostic when `32 × (ITLinesNumber + 1)` is below
     `gicSpiCount + 32`.  The interrupt contract's `irqLineSupported`, the
-    deployment's IRQ table (`rpi5IrqTable`), the model's `InterruptId`
-    bound, the machine configuration's `interruptLineCount` (which the
+    model's `InterruptId` bound, the machine configuration's `interruptLineCount` (which the
     interrupt entry and the acknowledge read) and the HAL's
     `RPI5.gic_intid_count` all follow this constant
     (`tests/fixtures/boot_map.expected`'s `gicIntIds` line holds the HAL to

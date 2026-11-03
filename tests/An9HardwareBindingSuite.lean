@@ -192,8 +192,7 @@ def main : IO Unit := do
   -- VSpace lookup paths can resolve it.
 
   let r3Cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := []
-      initialObjects := []
+    { initialObjects := []
       machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
 

@@ -1478,7 +1478,7 @@ theorem linkReach.allTablesInvExtK {st₀ st : SystemState} (h : linkReach st₀
     (hAll : st₀.allTablesInvExtK) : st.allTablesInvExtK := by
   have hK := h.invExtK hAll.objects.1 hAll.objects
   rw [h.fields]
-  exact ⟨hK, hAll.irqHandlers, hAll.asidTable, hAll.objectTypes, hAll.interfaceRegistry,
+  exact ⟨hK, hAll.asidTable, hAll.objectTypes, hAll.interfaceRegistry,
     hAll.objectIndexSet⟩
 
 /-- Link writes keep every object's kind at every key. -/
@@ -1732,8 +1732,8 @@ theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp
 @[simp] theorem cdtAddChild_scheduler (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).scheduler = st.scheduler := by rw [cdtAddChild_fields]
 
-@[simp] theorem cdtAddChild_irqHandlers (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).irqHandlers = st.irqHandlers := by rw [cdtAddChild_fields]
+@[simp] theorem cdtAddChild_irqSignalLines (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
+    (st.cdtAddChild p c op).irqSignalLines = st.irqSignalLines := by rw [cdtAddChild_fields]
 
 @[simp] theorem cdtAddChild_lifecycle (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).lifecycle = st.lifecycle := by rw [cdtAddChild_fields]
@@ -1794,8 +1794,8 @@ theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
 @[simp] theorem cdtSplice_scheduler (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).scheduler = st.scheduler := by rw [cdtSplice_fields]
 
-@[simp] theorem cdtSplice_irqHandlers (st : SystemState) (n : SlotRef) :
-    (st.cdtSplice n).irqHandlers = st.irqHandlers := by rw [cdtSplice_fields]
+@[simp] theorem cdtSplice_irqSignalLines (st : SystemState) (n : SlotRef) :
+    (st.cdtSplice n).irqSignalLines = st.irqSignalLines := by rw [cdtSplice_fields]
 
 @[simp] theorem cdtSplice_lifecycle (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).lifecycle = st.lifecycle := by rw [cdtSplice_fields]
@@ -1856,8 +1856,8 @@ theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
 @[simp] theorem cdtMove_scheduler (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).scheduler = st.scheduler := by rw [cdtMove_fields]
 
-@[simp] theorem cdtMove_irqHandlers (st : SystemState) (old new : SlotRef) :
-    (st.cdtMove old new).irqHandlers = st.irqHandlers := by rw [cdtMove_fields]
+@[simp] theorem cdtMove_irqSignalLines (st : SystemState) (old new : SlotRef) :
+    (st.cdtMove old new).irqSignalLines = st.irqSignalLines := by rw [cdtMove_fields]
 
 @[simp] theorem cdtMove_lifecycle (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).lifecycle = st.lifecycle := by rw [cdtMove_fields]

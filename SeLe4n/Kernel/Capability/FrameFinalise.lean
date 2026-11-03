@@ -453,11 +453,11 @@ theorem detachPageTables_ok_frame :
     ∀ (os : List (SeLe4n.ObjId × PageTableInstall)) (st st' : SystemState),
       st.objects.invExt → detachPageTables os st = .ok ((), st') →
       st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-        st'.machine = st.machine ∧ st'.referenceTables = st.referenceTables
+        st'.machine = st.machine
   | [], st, st', hInv, h => by
       simp only [detachPageTables, Except.ok.injEq, Prod.mk.injEq, true_and] at h
       subst h
-      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl, rfl, rfl⟩
+      exact ⟨hInv, vspaceRootOnlyWrite.refl _, rfl, rfl⟩
   | o :: rest, st, st', hInv, h => by
       simp only [detachPageTables] at h
       cases hR : st.getVSpaceRoot? o.2.root with
@@ -473,11 +473,10 @@ theorem detachPageTables_ok_frame :
           rw [hS] at h
           have hObj := (SystemState.getVSpaceRoot?_eq_some_iff st o.2.root root).mp hR
           have hInv1 := storeObject_preserves_objects_invExt (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hInv hS
-          obtain ⟨hI2, hW2, hS2, hM2, hT2⟩ := detachPageTables_ok_frame rest st1 st' hInv1 h
+          obtain ⟨hI2, hW2, hS2, hM2⟩ := detachPageTables_ok_frame rest st1 st' hInv1 h
           refine ⟨hI2, vspaceRootOnlyWrite.trans (fun oid => ?_) hW2,
             hS2.trans (storeObject_scheduler_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS),
-            hM2.trans (storeObject_machine_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS),
-            hT2.trans ((storeObject_referenceTables hS).trans rfl)⟩
+            hM2.trans (storeObject_machine_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hS)⟩
           by_cases hK : oid = o.2.root
           · subst hK
             exact Or.inr ⟨⟨root, hObj⟩, ⟨_, storeObject_objects_eq (Architecture.recordPhysicalWrites st (Architecture.detachWrites st root o.2 o.1)) _ _ _ hInv hS⟩⟩
@@ -560,12 +559,11 @@ the object table's invariant. -/
 theorem finaliseDestroyedCapabilities_ok_frame (ec : Concurrency.CoreId) (named : List SeLe4n.ObjId)
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (h : finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
-    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler ∧
-      st'.referenceTables = st.referenceTables := by
+    st'.objects.invExt ∧ vspaceRootOnlyWrite st st' ∧ st'.scheduler = st.scheduler := by
   obtain ⟨st1, hD, hF⟩ := finaliseDestroyedCapabilities_ok ec named pages st st' h
-  obtain ⟨hI1, hW1, hS1, -, hT1⟩ := detachPageTables_ok_frame _ st st1 hObjInv hD
-  obtain ⟨hI2, hW2, hS2, hT2⟩ := unmapLivePages_ok_frame ec _ st1 st' hI1 hF
-  exact ⟨hI2, hW1.trans hW2, hS2.trans hS1, hT2.trans hT1⟩
+  obtain ⟨hI1, hW1, hS1, -⟩ := detachPageTables_ok_frame _ st st1 hObjInv hD
+  obtain ⟨hI2, hW2, hS2⟩ := unmapLivePages_ok_frame ec _ st1 st' hI1 hF
+  exact ⟨hI2, hW1.trans hW2, hS2.trans hS1⟩
 
 /-- **The payoff for frames**: on a well-formed state, no page a destroyed frame
 capability recorded survives the finalisation. -/

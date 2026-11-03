@@ -203,28 +203,6 @@ theorem registryEndpointUnique_holds (st : SystemState) : registryEndpointUnique
   exact hs₁.trans hs₂.symm
 
 -- ============================================================================
--- The interrupt references across a registration and a revocation
--- ============================================================================
-
-/-- **A registration keeps the references recorded**: it writes one endpoint
-over an endpoint, and an endpoint holds no interrupt back-link. -/
-theorem registerService_preserves_tableReferencesRecorded {reg : ServiceRegistration}
-    {st st' : SystemState} (hStep : registerService reg st = .ok ((), st'))
-    (hObjInv : st.objects.invExt) (hR : st.tableReferencesRecorded) :
-    st'.tableReferencesRecorded := by
-  obtain ⟨_, _, _, hObj, _, _, rfl⟩ := registerService_ok hStep
-  exact SystemState.tableReferencesRecorded.of_endpoint_over_endpoint hObjInv hObj rfl rfl hR
-
-/-- **A revocation keeps the references recorded**: it writes one endpoint
-over an endpoint, and an endpoint holds no interrupt back-link. -/
-theorem revokeService_preserves_tableReferencesRecorded {sid : ServiceId}
-    {st st' : SystemState} (hStep : revokeService sid st = .ok ((), st'))
-    (hObjInv : st.objects.invExt) (hR : st.tableReferencesRecorded) :
-    st'.tableReferencesRecorded := by
-  obtain ⟨_, hObj, _, rfl⟩ := revokeService_ok hStep
-  exact SystemState.tableReferencesRecorded.of_endpoint_over_endpoint hObjInv hObj rfl rfl hR
-
--- ============================================================================
 -- The O(1) lookup is the specification
 -- ============================================================================
 

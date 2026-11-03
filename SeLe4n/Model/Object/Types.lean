@@ -351,7 +351,7 @@ inductive CapTarget where
       (`seL4_IRQHandler_Ack`), which re-enables it at the interrupt controller
       after the kernel masked it to deliver its interrupt.  Fieldless beyond the
       line, as seL4's is: it names no object, and the notification the line
-      signals is the interrupt table's (`SystemState.irqHandlers`). -/
+      signals is the interrupt table's (`SystemState.irqSignalLines`). -/
   | irqHandler (irq : Nat)
   deriving Repr, DecidableEq
 
@@ -3267,7 +3267,7 @@ structure Endpoint where
       registration keeps its endpoint capability outside every slot, so the
       finality the tree answers does not see it; this back-reference is what a
       final delete reads instead of walking the registry
-      (`SystemState.tableReferencesRecorded`).  A carved endpoint starts clear. -/
+      (`SystemState.tableBackLinksClear`).  A carved endpoint starts clear. -/
   serviceRegistered : Bool := false
   /-- **The registration's words** (WS-ZA ZA5.8), meaningful only while
       `serviceRegistered` is set: the interface the service implements, and the
@@ -3533,13 +3533,6 @@ structure Notification where
       stored as its scalar code (`SeLe4n.ThreadId.optCode`) and read through
       the view `Notification.boundTCB`, so a bind writes no `some` cell. -/
   boundTCBCode : Nat := 0
-  /-- **Whether an interrupt is handled through this notification**: the
-      interrupt table (`SystemState.irqHandlers`, written at boot only) names it
-      by id, where seL4 keeps a capability to it in the interrupt's slot.  Set
-      by the boot for every notification the table names
-      (`SystemState.tableReferencesRecorded`), so a final delete reads this flag
-      instead of walking the table.  A carved notification starts `false`. -/
-  irqBound : Bool := false
   /-- WS-ZA ZA5.11: **the notification's declassification provenance**, as plain
       words: eight tag words, the count of those in use and the saturated bit,
       read through `TCB.taintWords` (`SeLe4n.Kernel.TaintWords`) and written in
@@ -3591,14 +3584,14 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl true p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl true p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl false p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl false p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -3608,11 +3601,11 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
@@ -3649,7 +3642,7 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
@@ -3660,7 +3653,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by

@@ -698,10 +698,9 @@ Each theorem instantiates `freezeMap_get?_eq` for a specific
 `SystemState` → `FrozenSystemState` field. The `IntermediateState.hAllTables`
 witness provides the `invExt` precondition for each field's RHTable. -/
 
-/-- Q6-A: irqHandlers lookup preserved by freeze. -/
-theorem lookup_freeze_irqHandlers (ist : IntermediateState) (k : SeLe4n.Irq) :
-    ist.state.irqHandlers.get? k = (freeze ist).irqHandlers.get? k := by
-  exact freezeMap_get?_eq ist.state.irqHandlers k ist.hAllTables.irqHandlers.1
+/-- WS-ZA ZA6.32: the interrupt lines' states are copied by freeze. -/
+theorem freeze_irqSignalLines (ist : IntermediateState) :
+    (freeze ist).irqSignalLines = ist.state.irqSignalLines := rfl
 
 /-- Q6-A: asidTable lookup preserved by freeze. -/
 theorem lookup_freeze_asidTable (ist : IntermediateState) (k : SeLe4n.ASID) :
@@ -1320,11 +1319,11 @@ non-`objects` mutations vacuously preserved `apiInvariantBundle_frozenDirect`.
 The conjuncts cover every field of `FrozenSystemState`:
 
 - **Map fields (lookup-equivalent via `freezeMap`):** `objects` (with
-  `freezeObject`), `irqHandlers`, `asidTable`,
+  `freezeObject`), `asidTable`,
   `interfaceRegistry`, `objectTypes`,
   `objectIndexSet`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
-- **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
+- **Bitwise non-map fields:** `irqSignalLines`, `machine`, `objectIndex`, `tlb`,
   `cdt`, `scheduler.{current, activeDomain,
   domainTimeRemaining, domainSchedule, domainScheduleIndex,
   configDefaultTimeSlice, replenishQueue}`.
@@ -1340,9 +1339,8 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     -- --------------------------------------------------------------------
     -- Core object store (with per-object freeze)
     (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = fst.objects.get? oid) ∧
-    -- IRQ / ASID tables
-    (∀ (irq : SeLe4n.Irq),
-        sst.irqHandlers.get? irq = fst.irqHandlers.get? irq) ∧
+    -- Interrupt line states (copied) and the ASID table
+    sst.irqSignalLines = fst.irqSignalLines ∧
     (∀ (asid : SeLe4n.ASID),
         sst.asidTable.get? asid = fst.asidTable.get? asid) ∧
     (∀ (iid : SeLe4n.InterfaceId),
@@ -1431,7 +1429,7 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- Map fields (9)
   · exact fun oid => lookup_freeze_objects ist oid
-  · exact fun irq => lookup_freeze_irqHandlers ist irq
+  · exact (freeze_irqSignalLines ist).symm
   · exact fun asid => lookup_freeze_asidTable ist asid
   · exact fun iid => lookup_freeze_interfaceRegistry ist iid
   · exact fun oid => lookup_freeze_objectTypes ist oid
@@ -1630,18 +1628,13 @@ theorem thread_store_commutes_at_key (ist : IntermediateState)
   simp [freezeObject]
 
 /-- Thread store preserves non-object fields: modifying the objects table
-(via `RHTable.insert`) does not affect the frozen irqHandlers, because
-`freeze` constructs irqHandlers solely from `st.irqHandlers`. If the
-pre- and post-update states share the same `irqHandlers`, the frozen
-lookups agree. -/
-theorem thread_store_preserves_irqHandlers_freeze
+(via `RHTable.insert`) does not affect the frozen interrupt line states, because
+`freeze` copies them from `st.irqSignalLines`. If the pre- and post-update states
+share the same `irqSignalLines`, the frozen states agree. -/
+theorem thread_store_preserves_irqSignalLines_freeze
     (ist₁ ist₂ : IntermediateState)
-    (hIrq : ist₁.state.irqHandlers = ist₂.state.irqHandlers)
-    (k : SeLe4n.Irq) :
-    (freeze ist₁).irqHandlers.get? k = (freeze ist₂).irqHandlers.get? k := by
-  show (freezeMap ist₁.state.irqHandlers).get? k =
-       (freezeMap ist₂.state.irqHandlers).get? k
-  rw [hIrq]
+    (hIrq : ist₁.state.irqSignalLines = ist₂.state.irqSignalLines) :
+    (freeze ist₁).irqSignalLines = (freeze ist₂).irqSignalLines := hIrq
 
 -- ============================================================================
 -- Sub-task 5: Composition Theorem

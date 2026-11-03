@@ -25,12 +25,11 @@ theorem modifyTcb_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
-    (SystemState.objStateMono_tcb (hm tcb)) (hW tcb) (hY tcb)
+    (SystemState.objStateMono_tcb (hm tcb)) (hY tcb)
 
 theorem storeTcbQueueLinks_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -71,9 +70,8 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
       rw [h1, h2] at e <;> first | rfl | cases e | exact Option.some.inj e
   have hM : SystemState.StateMono st (recordSendCap st tid badge grant) :=
     SystemState.StateMono.of_stateFields (hG _ (fun _ => rfl))
-  exact ⟨.of_tableFrame (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
+  exact ⟨.of_frames (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
-      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _ fun _ => rfl),
@@ -85,13 +83,12 @@ theorem modifyTcb_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.Thread
     {f : TCB → TCB} {c : Concurrency.CoreId} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueWindowStage (.block c) st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact SystemState.RunQueueWindowStage.storeObject_block hS (getTcb?_of_lookupTcb st tid tcb hL)
-    (hf tcb) (hT tcb) hCur hNI (hW tcb) (hAf tcb) (hY tcb)
+    (hf tcb) (hT tcb) hCur hNI (hAf tcb) (hY tcb)
 
 theorem storeTcbIpcState_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {s : ThreadIpcState} {c : Concurrency.CoreId} (h : storeTcbIpcState st tid s = .ok st')
@@ -113,13 +110,12 @@ theorem modifyTcb_blockedRunQueueStage {st st' : SystemState} {tid : SeLe4n.Thre
     {f : TCB → TCB} (h : modifyTcb st tid f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) (hT : ∀ x, (f x).threadState = x.threadState)
     (hB : ∀ x, lookupTcb st tid = some x → x.ipcState ≠ .ready)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hAf : ∀ x, (f x).cpuAffinity = x.cpuAffinity := by intro _; rfl)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) : RunQueueStage st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact RunQueueStage.storeObject_tcb hS (lookupTcb_some_objects st tid tcb hL) (hf tcb)
     (SystemState.objStateMono_tcb ⟨fun hr => absurd hr (hB tcb hL),
-      fun ha => by unfold TCB.Active; rw [hT]; exact ha, hAf tcb⟩) (hW tcb) (hY tcb)
+      fun ha => by unfold TCB.Active; rw [hT]; exact ha, hAf tcb⟩) (hY tcb)
 
 theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {s : ThreadIpcState} {m : Option IpcMessage}
@@ -130,16 +126,9 @@ theorem storeTcbIpcStateAndMessage_blockedRunQueueStage {st st' : SystemState}
 /-- An endpoint stored over an endpoint. -/
 theorem storeObject_endpoint_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {ep ep' : Endpoint} (hOld : st.objects[k]? = some (.endpoint ep))
-    (hS : storeObject k (.endpoint ep') st = .ok ((), st'))
-    (hC : ep'.service = ep.service := by
-      first
-        | rfl
-        | (split <;> rfl)
-        | (rw [apply_ite Endpoint.service]; split <;> rfl)
-        | simp_all) : RunQueueStage st st' :=
+    (hS : storeObject k (.endpoint ep') st = .ok ((), st')) : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; rfl)
     (SystemState.objStateMono_nonTcb (by rw [hOld]; rfl) rfl)
-    (by rw [hOld]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, ← Endpoint.service_registered, hC])
 
 /-- A TCB stored over the thread's TCB with the same run-queue fields. -/
 theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -147,10 +136,9 @@ theorem storeObject_tcbOver_runQueueStage {st st' : SystemState} {tid : SeLe4n.T
     (hS : storeObject tid.toObjId (.tcb t) st = .ok ((), st'))
     (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
     (hm : TCB.StepMono old t := by exact ⟨id, id, by first | rfl | simp_all⟩)
-    (hW : t.taintWords = old.taintWords := by taint_words_kept)
     (hY : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject_tcb hS ((SystemState.getTcb?_eq_some_iff st tid old).mp hOld) h
-    (SystemState.objStateMono_tcb hm) hW hY
+    (SystemState.objStateMono_tcb hm) hY
 
 /-- A Reply stored over a Reply. -/
 theorem storeObject_replyOver_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -309,10 +297,8 @@ theorem endpointQueueEnqueue_runQueueStage {endpointId : SeLe4n.ObjId} {isReceiv
 /-- The wake keeps the link agreement whichever thread it wakes. -/
 theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) : SystemState.RunQueueLinkStage st (enqueueRunnableOnCore st c tid) :=
-  .of_tableFrame (fun h r => ⟨enqueueRunnableOnCore_preserves_objects_invExt st c tid h,
+  .of_frames (fun h r => ⟨enqueueRunnableOnCore_preserves_objects_invExt st c tid h,
     enqueueRunnableOnCore_runQueueRefined c tid h r⟩)
-    (fun h => .of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite st c tid h)
-      (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid).referenceTables)
     (fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h)
     (fun h => enqueueRunnableOnCore_refillViewsKept st c tid h)
     (fun h => enqueueRunnableOnCore_yieldLinksKept st c tid h)
@@ -771,78 +757,6 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
 -- Capability transfer and donation
 -- ============================================================================
 
-/-- A free-index write writes no reference table. -/
-theorem setCapFreeIndex_referenceTables (st : SystemState) (addr : CSpaceAddr) (idx : Nat) :
-    (setCapFreeIndex st addr idx).referenceTables = st.referenceTables := by
-  cases hO : st.objects[addr.cnode]? with
-  | some o =>
-    cases o with
-    | cnode cn => exact storeObject_referenceTables (setCapFreeIndex_eq_storeObject hO)
-    | _ => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
-  | none => unfold setCapFreeIndex SystemState.storeCNodeWith; rw [hO]
-
-/-- Setting an untyped source full writes no reference table. -/
-theorem untypedSourceSetFull_referenceTables (st : SystemState) (src : CSpaceAddr)
-    (cap : Capability) : (untypedSourceSetFull st src cap).referenceTables = st.referenceTables :=
-  untypedSourceSetFull_of (P := fun s => s.referenceTables = st.referenceTables) rfl
-    fun idx => setCapFreeIndex_referenceTables st src idx
-
-/-- A derivation-tree edge writes no reference table. -/
-theorem cdtAddChild_referenceTables (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).referenceTables = st.referenceTables := by
-  simp only [SystemState.referenceTables, SystemState.cdtAddChild_irqHandlers]
-
-/-- A slot insert writes no reference table. -/
-theorem cspaceInsertSlot_referenceTables {st st' : SystemState} {addr : CSpaceAddr}
-    {cap : Capability} (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.referenceTables = st.referenceTables := by
-  obtain ⟨_, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
-  exact storeObject_referenceTables hStore
-
-/-- One capability's transfer writes no reference table. -/
-theorem ipcTransferSingleCap_referenceTables {cap : Capability} {srcNode : SlotRef}
-    {receiverRoot : SeLe4n.ObjId} {slotBase : SeLe4n.Slot} {scanLimit : Nat}
-    {st st' : SystemState} {result : CapTransferResult}
-    (hStep : ipcTransferSingleCap cap srcNode receiverRoot slotBase scanLimit st
-             = .ok (result, st')) :
-    st'.referenceTables = st.referenceTables := by
-  obtain ⟨_, -, ⟨rfl, -⟩ | ⟨_, _, -, -, -, hIns, -, rfl⟩⟩ := ipcTransferSingleCap_ok_cases hStep
-  · rfl
-  · rw [untypedSourceSetFull_referenceTables, cdtAddChild_referenceTables]
-    exact cspaceInsertSlot_referenceTables hIns
-
-theorem ipcUnwrapCapsLoop_referenceTables
-    (caps : Array TransferCap) (receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hStep : ipcUnwrapCapsLoop caps receiverRoot idx nextBase accResults fuel st
-             = .ok (summary, st')) :
-    st'.referenceTables = st.referenceTables := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; rfl
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-    | some tc =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap tc.cap tc.srcSlot
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        simp [hTransfer] at hStep
-        obtain ⟨_, rfl⟩ := hStep; rfl
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        have hT := ipcTransferSingleCap_referenceTables hTransfer
-        simp [hTransfer] at hStep
-        cases result with
-        | installed c s => rw [ih _ _ _ _ hStep, hT]
-        | noSlot => rw [ih _ _ _ _ hStep, hT]
-        | grantDenied => rw [ih _ _ _ _ hStep, hT]
-        | sourceRevoked => rw [ih _ _ _ _ hStep, hT]
-
 /-- The objects at a key agreeing up to derivation metadata hold the same table
 back-links: a CNode and a thread hold none. -/
 theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.tableBackLinks
@@ -856,28 +770,24 @@ theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.tabl
     simp only [objTableBackLinks_some, KernelObject.tableBackLinks,
       TCB.proj_eq_of_withoutLinks_eq (·.taintWords) hw]
 
-/-- **The capability transfer keeps the table references**: it writes no
-reference table, and every object it writes is a CNode or a thread's links. -/
+/-- **The capability transfer keeps the table back-links**: every object it
+writes is a CNode or a thread's links. -/
 theorem ipcUnwrapCaps_tableReferenceFrame {caps : Array TransferCap} {root : SeLe4n.ObjId}
     {base : SeLe4n.Slot} {grant : Bool} {st st' : SystemState} {summary : CapTransferSummary}
     (hObjInv : st.objects.invExt)
     (h : ipcUnwrapCaps caps root base grant st = .ok (summary, st')) :
     SystemState.TableReferenceFrame st st' := by
-  refine ⟨?_, fun k => ?_⟩
-  · unfold ipcUnwrapCaps at h
-    split at h
-    · simp at h; obtain ⟨_, rfl⟩ := h; rfl
-    · exact ipcUnwrapCapsLoop_referenceTables _ _ _ _ _ _ _ _ _ h
-  · by_cases hk : k = root
-    · subst hk
-      rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
-        hObjInv h with e | ⟨cn', hc⟩
-      · rw [e]
-      · cases hC : st.getCNode? k with
-        | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
-        | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
-    · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
-        k hk hObjInv h).tableBackLinks
+  intro k
+  by_cases hk : k = root
+  · subst hk
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode caps k base grant st st' summary
+      hObjInv h with e | ⟨cn', hc⟩
+    · rw [e]
+    · cases hC : st.getCNode? k with
+      | none => rw [ipcUnwrapCaps_state_eq_of_root_not_cnode caps k base grant st st' summary hC h]
+      | some cn => rw [hc, (SystemState.getCNode?_eq_some_iff st k cn).mp hC]; rfl
+  · exact (ipcUnwrapCaps_preserves_objects_ne caps root base grant st st' summary
+      k hk hObjInv h).tableBackLinks
 
 /-- The objects at a key agreeing up to derivation metadata hold the same
 release links: a CNode and a thread hold none. -/
@@ -985,7 +895,6 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {root : SeLe4n.Ob
     (fun hInv => SystemState.StateMono.of_stateFields fun x =>
       TCB.map_proj_of_map_withoutLinks_eq (fun t => (t.ipcState, t.threadState, t.cpuAffinity))
         (ipcUnwrapCaps_getTcb?_eq caps root base grant st st' summary x hInv h))
-    (fun hInv => ipcUnwrapCaps_tableReferenceFrame hInv h)
     (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
     (fun hInv => ipcUnwrapCaps_refillViewsKept hInv h)
     (fun hInv => ipcUnwrapCaps_yieldLinksKept hInv h)
@@ -1022,9 +931,6 @@ theorem donateSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv x => donateSchedContext_getTcb?_placement_eq st st' client server scId hInv h x)
     (fun hInv => SystemState.StateMono.of_stateFields
       (donateSchedContext_getTcb?_stateFields_eq st st' client server scId hInv h))
-    (fun hInv => .of_kindPreservingWrite
-      (donateSchedContext_kindPreservingWrite st st' client server scId hInv h)
-      (donateSchedContext_referenceTables h))
     (fun hInv => donateSchedContext_releaseStateAgree st st' client server scId hInv h)
     (fun hInv => donateSchedContext_refillViewsKept st st' client server scId hInv h)
     (fun hInv => donateSchedContext_yieldLinksKept st st' client server scId hInv h)
@@ -1147,11 +1053,10 @@ theorem descheduleThenOffWrite_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st ((removeRunnableOnCore st tid c).updateTcb tid f) := by
   have hS := SystemState.RunQueueStage.runDescheduleOnCore st c tid
-  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hWf hYf),
+  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hYf),
     fun hInv hR _ d => ?_⟩
   obtain ⟨hInv1, hR1⟩ := hS.1 hInv hR
   refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv1
@@ -1188,12 +1093,11 @@ theorem placedThenOffWrite_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st
       ((removeRunnableOnCore st tid ((placedCoreOf? st tid).getD c₀)).updateTcb tid f) := by
   refine descheduleThenOffWrite_runQueueEntryStage st tid _ (fun d c' hq => ?_)
-    (fun d c' hc => ?_) hRdy hNI hf hReady hWf hYf
+    (fun d c' hc => ?_) hRdy hNI hf hReady hYf
   · cases hP : placedCoreOf? st tid with
     | none => rw [((placedCoreOf?_none_iff st tid).mp hP c').1] at hq; cases hq
     | some c =>
@@ -1220,20 +1124,19 @@ theorem descheduleAtPlacedThenOffWrite_runQueueEntryStage (st : SystemState)
     (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st
       ((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f) := by
   cases hP : placedCoreOf? st tid with
   | none =>
-    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf hWf hYf, fun hInv _ _ d => ?_⟩
+    refine ⟨SystemState.RunQueueLinkStage.updateTcb st tid hf hYf, fun hInv _ _ d => ?_⟩
     exact SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv d
       (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).2)
       (fun c => ((placedCoreOf?_none_iff st tid).mp hP c).1) hNI hf
       (fun x hx => .inl (hReady x (hRdy d x hx)))
   | some c =>
     have e : (placedCoreOf? st tid).getD c = c := by rw [hP]; rfl
-    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady hWf hYf
+    have h := placedThenOffWrite_runQueueEntryStage st tid c hRdy hNI hf hReady hYf
     rw [e] at h
     exact h
 
@@ -1247,15 +1150,13 @@ theorem descheduleAtPlacedThenOffWrites_runQueueEntryStage (st : SystemState)
     (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
     (hReady : ∀ x, x.ipcState = .ready → (g (f x)).ipcState = .ready)
-    (hWf : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
-    (hWg : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept)
     (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
     (hYg : ∀ x, (g x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     SystemState.RunQueueEntryStage st
       (((descheduleAt st tid (placedCoreOf? st tid)).updateTcb tid f).updateTcb tid g) := by
   have hW : ∀ s : SystemState, SystemState.RunQueueLinkStage s ((s.updateTcb tid f).updateTcb tid g) :=
-    fun s => (SystemState.RunQueueLinkStage.updateTcb s tid hf hWf hYf).trans
-      (SystemState.RunQueueLinkStage.updateTcb _ tid hg hWg hYg)
+    fun s => (SystemState.RunQueueLinkStage.updateTcb s tid hf hYf).trans
+      (SystemState.RunQueueLinkStage.updateTcb _ tid hg hYg)
   cases hP : placedCoreOf? st tid with
   | none =>
     refine ⟨hW st, fun hInv _ _ d => ?_⟩

@@ -246,9 +246,9 @@ theorem recordResidentThenActivate_runQueueEntryStage (st : SystemState) (c : Co
       (PriorityInheritance.deferResidentElsewhere (PriorityInheritance.dispatchVacatedCore st c) c)
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c) := by
   have A := (activateThreadOnCore_runQueueStage (PriorityInheritance.settleResidencyOnCore st c) c).entry
-  obtain ⟨hO, hQ, hE, hC, hT, hS⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
+  obtain ⟨hO, hQ, hE, hC, hS⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
   refine SystemState.RunQueueEntryStage.of_frameThen
-    (m := PriorityInheritance.settleResidencyOnCore st c) hO hQ hE hC hT hS A fun h r =>
+    (m := PriorityInheritance.settleResidencyOnCore st c) hO hQ hE hC hS A fun h r =>
     ⟨fun k hk => by
       rw [← hO]
       exact (A.1.live (hO ▸ h) (SystemState.runQueueRefined_of_frame
@@ -518,7 +518,6 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
         (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry.toOn _
   · rename_i hE
@@ -584,7 +583,6 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl))
   have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
@@ -603,21 +601,6 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
       rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler])
   ((hS.entry.toOn _).trans (hL ▸ syscallDispatchCrossCoreStep_runQueueEntryStage
     (E.of_ipcFrame hS hF))).trans (hC.entry.toOn _)
-
-/-- **The syscall entry keeps the table references recorded**, so the retire's
-read of an object's own back-links (`SystemState.tableBackLinksClear`) answers
-what a walk of the registry and the interrupt table would. -/
-theorem syscallDispatchEntryState_preserves_tableReferencesRecorded (ctx : LabelingContext)
-    (e : CoreId) (trapped : Architecture.InFlightContext)
-    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
-    (st : SystemState) (E : EntryPremises st) (hInv : st.objects.invExt)
-    (hR : st.runQueueRefined) (hT : st.tableReferencesRecorded) :
-    (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
-        (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).tableReferencesRecorded :=
-  (syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).tableReferencesRecorded
-    hInv hR hT
 
 /-! ### The timer, reschedule, fault and FP/SIMD entries -/
 
@@ -983,10 +966,9 @@ theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (lin
     RunQueueStage st (handleInterruptOnCore st c line) := by
   unfold handleInterruptOnCore
   split
-  · rename_i ntfn _
-    have hB := notificationSignalBoundOnCore_runQueueStage ntfn (SeLe4n.Badge.ofNatMasked line) c
-      st hHeads hBlk
-    exact (interruptSignal_of (P := RunQueueStage st) ntfn _ c st hB
+  · rename_i ntfn badge _
+    have hB := notificationSignalBoundOnCore_runQueueStage ntfn badge c st hHeads hBlk
+    exact (interruptSignal_of (P := RunQueueStage st) ntfn badge c st hB
       (fun _ _ _ hC => ((hB.trans (clearWokenReceiverStash_runQueueStage _ hC)).trans
         (stageWokenDelivery_runQueueStage _ _ 0)).trans
         (stageWokenDelivery_runQueueStage _ _ 0))).trans

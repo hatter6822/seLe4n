@@ -46,15 +46,15 @@ namespace SeLe4n.Platform.RPi5
 HAL owns the copy and hands its one reference over. -/
 @[export lean_kernel_main]
 def kernelMain (dtb : ByteArray) : BaseIO Unit :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5InitialObjectsFor none
 
 /-- **WS-BP BP4.4**: a device tree the bridge refuses — unparseable, or a board
 that is not the one this image was built for — boots nothing: every PE halts. -/
 theorem kernelMain_refuses (dtb : ByteArray) (e : Platform.FFI.DeviceTreeBootRefusal)
-    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjectsFor none =
+    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5InitialObjectsFor none =
       .error e) :
     kernelMain dtb = Platform.FFI.ffiFatalHaltAll :=
-  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_unparseable _ _ _ _ e h
+  Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_unparseable _ _ _ e h
 
 /-- **WS-BP BP4.4**: a device tree the bridge accepts installs the deployment's
 boot state on the variant the board's account selects, and the binding's
@@ -68,7 +68,7 @@ that configuration's too (`rpi5InitialObjectsFor`), so the RAM just mapped is
 the RAM the root task's untypeds describe (`rpi5RootTaskUntypeds_regions`,
 `rpi5DeploymentBootStateAt_untypedInstalled`). -/
 theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformConfig)
-    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5IrqTable rpi5InitialObjectsFor none =
+    (h : Platform.FFI.rpi5PlatformConfigFromDtb dtb rpi5InitialObjectsFor none =
       .ok config) :
     kernelMain dtb =
       (do
@@ -79,7 +79,7 @@ theorem kernelMain_installs (dtb : ByteArray) (config : Platform.Boot.PlatformCo
         Platform.FFI.initialiseKernelLabelingContext
           (PlatformBinding.labeling (platform := RPi5Platform))) := by
   unfold kernelMain
-  rw [Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_accepted _ _ _ _ config h,
+  rw [Platform.FFI.bootAndInitialiseRPi5FromDtbOrHalt_accepted _ _ _ config h,
     rpi5PlatformConfigFromDtb_deployment_ok dtb config h,
     bootAndInitialiseRPi5OrHalt_rpi5PlatformConfigFor]
   rfl

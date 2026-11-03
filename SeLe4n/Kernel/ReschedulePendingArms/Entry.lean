@@ -322,11 +322,11 @@ theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState) (c : Co
       (handleInterruptOnCore st c line).objects.invExt := by
   unfold handleInterruptOnCore
   split
-  · rename_i ntfn _
+  · rename_i ntfn badge _
     obtain ⟨h1, hI⟩ := notificationSignalBoundOnCore_stepCovers e
-      (notificationId := ntfn) (badge := SeLe4n.Badge.ofNatMasked line) (executingCore := c) hInv
+      (notificationId := ntfn) (badge := badge) (executingCore := c) hInv
     have hSig := interruptSignal_of
-      (P := fun s => stepCovers e st s ∧ s.objects.invExt) ntfn _ c st ⟨h1, hI⟩
+      (P := fun s => stepCovers e st s ∧ s.objects.invExt) ntfn badge c st ⟨h1, hI⟩
       (fun _ s2 _ hC => by
         have hF := clearWokenReceiverStash_keyFrame _ hI hC
         exact stepCoversInv_trans (stepCovers_trans h1 hF.stepCovers)

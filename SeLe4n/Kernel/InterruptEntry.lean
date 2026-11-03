@@ -85,10 +85,11 @@ theorem footprintCoversWrites_of_table {S : LockSet} {st mid post : SystemState}
   · rw [hS]; exact h3 d hd
 
 /-- **The run queues the interrupt entry declares**: the executing core's,
-and at a line a handler is bound to the cores the signal wakes onto. -/
+and at a line bound to a notification (`Architecture.irqBinding?`, the line's
+interrupt node slot) the cores the signal wakes onto. -/
 def interruptRunCores (st : SystemState) (c : CoreId) (line : Nat) : List CoreId :=
-  c :: match st.irqHandlers[(⟨line⟩ : SeLe4n.Irq)]? with
-    | some ntfn => notificationSignalBoundWriteSet st ntfn
+  c :: match Architecture.irqBinding? st line with
+    | some (ntfn, _) => notificationSignalBoundWriteSet st ntfn
     | none => []
 
 /-- **The footprint the interrupt entry declares**: the table write lock and
@@ -129,15 +130,17 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
   rw [interruptEntryStep_device st coreId intId c hc hd]
   unfold handleInterruptOnCore
   unfold interruptRunCores at hP
-  cases hH : st.irqHandlers[(⟨intId.toNat⟩ : SeLe4n.Irq)]? with
+  cases hH : Architecture.irqBinding? st intId.toNat with
   | none =>
     exact footprintCoversWrites_of_frame (footprintCoversWrites_refl S st) rfl rfl
-  | some ntfn =>
+  | some p =>
+    obtain ⟨ntfn, badge⟩ := p
     rw [hH] at hP
+    dsimp only
     have hT : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
       rw [hP]; exact List.mem_cons_self
     have hB := footprintCoversWrites_of_confined S _ [] st _ hP
-      ((notificationSignalBoundOnCore_confinedToCores ntfn (SeLe4n.Badge.ofNatMasked intId.toNat)
+      ((notificationSignalBoundOnCore_confinedToCores ntfn badge
         c st hInv).mono (fun _ h => List.mem_cons_of_mem _ h))
       (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore _ _ c st d)
     refine footprintCoversWrites_of_frame

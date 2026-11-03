@@ -1948,16 +1948,6 @@ theorem storeDonationFramePush_cdt_eq
   · exact e1
   · exact (storeObject_cdt_eq _ _ _ _ hS2).trans e1
 
-theorem storeDonationFramePush_referenceTables
-    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
-    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
-    st'.referenceTables = st.referenceTables := by
-  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
-  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
-  · exact storeObject_referenceTables hS1
-  · exact (storeObject_referenceTables hS2).trans (storeObject_referenceTables hS1)
-
 /-- The pushed frame's record afterwards. -/
 theorem storeDonationFramePush_getReply?_pushed
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
@@ -3939,15 +3929,6 @@ theorem storeDonationHeadClear_scheduler_eq
   · rfl
   · unfold storeObject at hS; cases hS; rfl
 
-/-- ...and every table that names an object by id. -/
-theorem storeDonationHeadClear_referenceTables
-    {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (h : storeDonationHeadClear head? st = .ok st') :
-    st'.referenceTables = st.referenceTables := by
-  rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, _, hS⟩
-  · rfl
-  · exact storeObject_referenceTables hS
-
 /-- WS-OD OD3.1: ...the TLB-shootdown half. -/
 theorem storeDonationHeadClear_tlbShootdown_eq
     {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -4254,15 +4235,6 @@ theorem storeReplyReHead_scheduler_eq
   · rfl
   · unfold storeObject at hS; cases hS; rfl
 
-/-- ...and every table that names an object by id. -/
-theorem storeReplyReHead_referenceTables
-    {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
-    (h : storeReplyReHead scId head? st = .ok st') :
-    st'.referenceTables = st.referenceTables := by
-  rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, _, hS⟩
-  · rfl
-  · exact storeObject_referenceTables hS
-
 /-- WS-OD OD3.1: ...the TLB-shootdown half. -/
 theorem storeReplyReHead_tlbShootdown_eq
     {scId : SeLe4n.SchedContextId} {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
@@ -4534,16 +4506,6 @@ theorem storeDonationHeadPop_scheduler_eq
   rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
   · rfl
   · rw [storeReplyReHead_scheduler_eq hReHead, storeDonationHeadClear_scheduler_eq hClear]
-
-/-- ...and every table that names an object by id. -/
-theorem storeDonationHeadPop_referenceTables
-    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
-    {st st' : SystemState}
-    (h : storeDonationHeadPop scId head? st = .ok st') :
-    st'.referenceTables = st.referenceTables := by
-  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, r, s1, _, hClear, hReHead⟩
-  · rfl
-  · rw [storeReplyReHead_referenceTables hReHead, storeDonationHeadClear_referenceTables hClear]
 
 theorem storeDonationHeadPop_tlbShootdown_eq
     {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
@@ -5838,20 +5800,6 @@ theorem spliceReplyFrameOut_scheduler_eq {st st' : SystemState} {rid : SeLe4n.Re
   · rfl
   · exact spliceReplyFrameStores_scheduler_eq hS
   · exact severReplyFrameBelowStores_scheduler_eq hS
-
-/-- The frame splice writes no table that names objects by id. -/
-theorem spliceReplyFrameOut_referenceTables {st st' : SystemState} {rid : SeLe4n.ReplyId}
-    (h : spliceReplyFrameOut st rid = .ok st') : st'.referenceTables = st.referenceTables := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, _, _, _, _, hS⟩ |
-      ⟨_, _, _, _, _, _, _, _, hS⟩
-  · rfl
-  · rcases spliceReplyFrameStores_cases hS with ⟨t1, _, hT1, hT2⟩ |
-        ⟨_, _, s1, s2, _, hS1, hS2, hS3⟩
-    · exact (storeObject_referenceTables hT2).trans (storeObject_referenceTables hT1)
-    · exact ((storeObject_referenceTables hS3).trans (storeObject_referenceTables hS2)).trans
-        (storeObject_referenceTables hS1)
-  · obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
-    exact (storeObject_referenceTables hS2).trans (storeObject_referenceTables hS1)
 
 theorem spliceReplyFrameOut_machine_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (h : spliceReplyFrameOut st rid = .ok st') : st'.machine = st.machine := by
@@ -9507,22 +9455,15 @@ theorem returnDonatedSchedContext_scheduler_eq
     storeDonationHeadPop_scheduler_eq hClear,
     SeLe4n.Model.storeObject_scheduler_eq st s1 _ _ h1]
 
-/-- **The donation return keeps the table references**: it writes no reference
-table, and its store chain is a `kindPreservingWrite`, which keeps every
-object's back-links. -/
+/-- **The donation return keeps the table back-links**: its store chain is a
+`kindPreservingWrite`, which keeps every object's back-links. -/
 theorem returnDonatedSchedContext_tableReferenceFrame
     {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
     {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
     {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
-    SystemState.TableReferenceFrame st st' := by
-  refine .of_kindPreservingWrite (returnDonatedSchedContext_kindPreservingWrite hObjInv h) ?_
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, h1, hClear, _, h3, _, h4, hEq⟩ :=
-    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
-  rw [hEq]
-  show s4.referenceTables = st.referenceTables
-  rw [storeObject_referenceTables h4, storeObject_referenceTables h3,
-    storeDonationHeadPop_referenceTables hClear, storeObject_referenceTables h1]
+    SystemState.TableReferenceFrame st st' :=
+  .of_kindPreservingWrite (returnDonatedSchedContext_kindPreservingWrite hObjInv h)
 
 /-- WS-ZA ZA6.3: the donation hand-back holds the release queues — its context
 store keeps the release fields, and its other stores are a reply's and two
@@ -9631,7 +9572,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
-              boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated
+              boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
@@ -9664,7 +9605,7 @@ def notificationWaitPark
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -10215,7 +10156,7 @@ theorem notificationWaitPark_badge_path_notification
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
           { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-            boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+            boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -10602,7 +10543,7 @@ theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.
               exact hW1
             let n' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             exact ⟨ntfn, n', tcb, st1, rfl, hBadge, rfl, rfl, hW0, hN1,
               fun x hx => storeObject_objects_ne st st1 nid x _ hx hObjInv hStore, hW2, hO2⟩
 

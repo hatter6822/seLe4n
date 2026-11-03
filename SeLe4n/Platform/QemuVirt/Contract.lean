@@ -119,12 +119,13 @@ def qemuVirtBootContract : SeLe4n.Kernel.Architecture.BootBoundaryContract :=
     objectStoreEmptyAtBoot := (default : SeLe4n.Model.SystemState).objects.size = 0
     irqRangeValid := qemuVirtGicSpiCount + 32 ≤ 1020 }
 
-/-- The `virt` interrupt contract: INTIDs `0 … 287`, and a supported line's
-    handler must be registered. -/
+/-- The `virt` interrupt contract: INTIDs `0 … 287`, and a supported line is
+    mapped when a handler capability for it has been issued, which puts the line
+    in the IRQSignal state (`st.irqSignalLines`). -/
 def qemuVirtInterruptContract : SeLe4n.Kernel.Architecture.InterruptBoundaryContract :=
   { irqLineSupported := fun irq => irq.toNat < qemuVirtGicSpiCount + 32
     irqHandlerMapped := fun st irq =>
-      irq.toNat < qemuVirtGicSpiCount + 32 → st.irqHandlers[irq]? ≠ none
+      irq.toNat < qemuVirtGicSpiCount + 32 → st.irqSignalLines.mem irq.toNat = true
     irqLineSupportedDecidable := by intro irq; infer_instance
     irqHandlerMappedDecidable := by intro st irq; infer_instance }
 
