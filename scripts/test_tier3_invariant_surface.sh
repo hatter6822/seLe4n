@@ -5470,6 +5470,28 @@ run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' S
 run_check "INVARIANT" rg -n '^def deliverSyscallCapFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def svcFaultIP \(elr : UInt64\) : UInt64 := elr - 4' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+# WS-ZA ZA6.31: the fault paths allocate nothing.  (1) A syscall's failed
+# operand resolution is delivered from the words the entry's own lookup
+# produced: the operand dispatch hands an empty slot and the resolution's
+# failure to its lookup continuation, and the seam's lookup continuation is
+# the out-of-line delivery of those words, never a second decode and lookup
+# (`syscallEntryCheckedK_outcome_eq` equates it to `syscallCapFaultOf`'s).
+run_check "INVARIANT" rg -n '^theorem dispatchOperandCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap st \{ cnode := cnode, slot := slot \}\n          noCapRefusal \(capHeldNone c\) kArm onLookup \(arm c st\)\)$' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def deliverSyscallLookupFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^        \(syscallLookupOutcome\n          \(fun s w b e => \.ok \(\.faulted, deliverSyscallLookupFault ctx executingCore s tid w b e$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^        \(syscallLookupOutcome\n          \(fun s w b e => \(Architecture\.SyscallOutcome\.faulted\.words,\n            deliverSyscallLookupFault ctx executingCore s tid w b e$' SeLe4n/Platform/FFI.lean
+# (2) A queued fault's receive takes the call in place and stages the fault's
+# words as the handler's message; its reply restarts the thread with the empty
+# message held as a constant.
+run_check "INVARIANT" rg -n '^theorem receiveCallTake_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveFaultTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
+run_check "INVARIANT" rg -n -U '^              if receiveCallTakesInPlace st epId tid s sTcb rid then\n                \.ok \(\(\), performFaultReceiveDelivered st epId s sTcb\.queueNextCode tid rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^theorem deliverFaultFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
+run_check "INVARIANT" rg -n '^theorem storeFaultReplyRendezvous_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
+run_check "INVARIANT" rg -n '^  let s1 := st\.updateTcb c faultReplyReceiverTcb$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 # PR #887 review round 5: a delivered syscall fault is a DISTINCT outcome
 # (tag 2) on which the trap layer halts — never the blocked-resume sentinel,
 # which would `eret` the caller past the `SVC` its handler restarts it at.

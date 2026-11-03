@@ -1001,13 +1001,19 @@ theorem faultOfExceptionContext_words (ectx : ExceptionContext) (f : Fault)
 -- §4  The fault reply, in place
 -- ============================================================================
 
+/-- The answered thread a fault reply wakes: ready, its message the empty one
+(`callReceiverTcb IpcMessage.empty`).  A function of its own, so the TCB write
+that applies it holds the empty message as a constant rather than taking it as
+an argument and building its `some` cell. -/
+def faultReplyReceiverTcb (t : TCB) : TCB := callReceiverTcb IpcMessage.empty t
+
 /-- The reply's writes with no message (`storeReplyRendezvous` at
 `IpcMessage.empty`), written out so the empty message the woken thread holds is
 the one constant cell, never a `some` built per reply
 (`storeFaultReplyRendezvous_eq`). -/
 @[noinline] def storeFaultReplyRendezvous (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) : SystemState :=
-  let s1 := st.updateTcb c (callReceiverTcb IpcMessage.empty)
+  let s1 := st.updateTcb c faultReplyReceiverTcb
   let s2 := enqueueRunnableOnCore s1 (determineTargetCore s1 c) c
   let s3 := (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
     (fun t => { t with replyObjectCode := 0 })
