@@ -107,8 +107,10 @@ def interruptSignalGeneral (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : Cor
 notification's head waiter, with no bound receiver and every write in its slot
 (`signalWakesInPlace`), writes the badge frame straight into the waiter's saved
 registers (`performSignalWokenDelivered`), as the `.notificationSignal`
-syscall's arm does (`notificationSignalCheckedArmR`); every other signal runs
-the specification. -/
+syscall's arm does (`notificationSignalCheckedArmR`); a signal with neither a
+bound receiver nor a waiter wakes no thread, so it clears no stash and stages
+nothing, and is the signal's own state; every other signal runs the
+specification. -/
 @[inline] def interruptSignalImpl (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
   if (boundDeliveryTarget? st ntfn).isNone then
@@ -119,7 +121,7 @@ the specification. -/
             if signalWakesInPlace st ntfn ⟨k⟩ then
               performSignalWokenDelivered st ntfn ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩) badge c
             else interruptSignalGeneral ntfn badge c st
-        | 0 => interruptSignalGeneral ntfn badge c st
+        | 0 => (notificationSignalBoundOnCore ntfn badge c st).1
     | none => interruptSignalGeneral ntfn badge c st
   else interruptSignalGeneral ntfn badge c st
 
@@ -147,7 +149,14 @@ the specification. -/
             Architecture.stageWokenDelivery_none, notificationSignalWaiter?]
           rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_delivered _ _ _ _ _ _ hNo]
         · exact hG
-      · exact hG
+      · next hK =>
+        have hHead : n.waitHead = none := by
+          rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
+        have hW : notificationSignalWaiter? st ntfn = none := by
+          simp only [notificationSignalWaiter?, hN, hHead]
+        simp only [interruptSignal, hBound, hW, Option.map_none, clearWokenReceiverStash,
+          Architecture.stageWokenDelivery_none]
+        split <;> next h => rw [h]
     · exact hG
   · exact hG
 

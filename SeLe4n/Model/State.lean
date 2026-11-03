@@ -1761,6 +1761,38 @@ theorem SystemState.withFreshPerCoreSlots_eq (st : SystemState) :
       = id := rfl
   simp only [SystemState.withFreshPerCoreSlots, hR, hE, hN, hD, hO, hL, Vector.map_id]
 
+/-- WS-ZA ZA6.32: the physical-write ledger rebuilt with its own buffer.  The
+boot's ledger is the shared initial constant (`PhysicalWriteLedger.empty`), so
+the first write recorded after boot copied its buffer and rebuilt its record
+(the first entry to record a write read 2 for it).  The buffer is copied here
+into a fresh one (`ByteArray.empty ++ b`, which the compiled kernel builds as a
+new array of `b`'s size), so the record and its buffer are the state's own.
+The ledger itself (`PhysicalWriteLedger.fresh_eq`). -/
+@[noinline] def _root_.SeLe4n.Kernel.Architecture.PhysicalWriteLedger.fresh
+    (l : SeLe4n.Kernel.Architecture.PhysicalWriteLedger) :
+    SeLe4n.Kernel.Architecture.PhysicalWriteLedger :=
+  { l with
+    bytes := ByteArray.empty ++ l.bytes
+    encodes := by rw [ByteArray.empty_append]; exact l.encodes
+    room := by rw [ByteArray.empty_append]; exact l.room }
+
+theorem _root_.SeLe4n.Kernel.Architecture.PhysicalWriteLedger.fresh_eq
+    (l : SeLe4n.Kernel.Architecture.PhysicalWriteLedger) : l.fresh = l := by
+  cases l
+  simp only [SeLe4n.Kernel.Architecture.PhysicalWriteLedger.fresh, ByteArray.empty_append]
+
+/-- WS-ZA ZA6.32: **the physical-write ledger prepared at boot** — the installed
+state's ledger gets its own record and buffer
+(`PhysicalWriteLedger.fresh`), so the first write recorded after boot is stored
+in place.  The state itself (`withFreshPhysicalWrites_eq`). -/
+def SystemState.withFreshPhysicalWrites (st : SystemState) : SystemState :=
+  { st with physicalWrites := st.physicalWrites.fresh }
+
+theorem SystemState.withFreshPhysicalWrites_eq (st : SystemState) :
+    st.withFreshPhysicalWrites = st := by
+  simp only [SystemState.withFreshPhysicalWrites,
+    SeLe4n.Kernel.Architecture.PhysicalWriteLedger.fresh_eq]
+
 /-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
 order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
 noncomputable def SystemState.pendingPhysicalWrites (st : SystemState) :

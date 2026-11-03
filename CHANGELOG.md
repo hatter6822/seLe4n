@@ -63,6 +63,19 @@ and fault entries do.
   takes it through the IAR.  It drives five branches and pins each in
   `scripts/qemu_exerciser_lib.sh`: the signal with no waiter, the acknowledge,
   the signal to a waiting thread, the unbound line and the spurious INTID.
+- **The boot's physical-write ledger is the state's own**
+  (`SystemState.withFreshPhysicalWrites`, applied by `initialiseKernelState`).
+  The installed ledger was the shared initial constant, so the first physical
+  write recorded after boot copied its buffer and rebuilt its record: 2 cells,
+  paid by whichever entry recorded first.  That was the first page-table
+  retype's first call, so `untyped-retype-page-table-1` moves from (15, 13) to
+  (13, 13).  The 2 cells were the ledger copy, not the destination slot's
+  capability record the old pin comment named.
+- **Fixtures.**  `main_trace_smoke.expected` reads "all 44 variants" and
+  `syscall_return_shape.expected` counts 44 syscalls (44 unit-returning
+  shapes), because `.irqHandlerAck` is syscall 44.  `smp_information_flow.expected`
+  is regenerated from its producer for the 67-entry boundary (53 canonical) and
+  the count of 44.  Each `.sha256` is refreshed.
 - **Registered debt.**  There is no IRQControl yet: handler capabilities and
   their notifications are configured at boot.  The reference dispatch's
   device arm is recorded on the existing reference-dispatch row.

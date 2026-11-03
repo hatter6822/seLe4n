@@ -1082,9 +1082,13 @@ unmap after boot allocates nothing, and an audit ring with its own slot array
 declassification record after boot writes its slot in place instead of copying
 the shared initial ring, and per-core slots of its own
 (`SystemState.withFreshPerCoreSlots`, the state itself), so the first entry on
-each core writes its register bank and scheduler slots in place. -/
+each core writes its register bank and scheduler slots in place, and a
+physical-write ledger of its own (`SystemState.withFreshPhysicalWrites`, the
+state itself), so the first physical write recorded after boot is stored in
+place instead of copying the shared initial buffer. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
-  kernelStateRef.set (Architecture.withShootdownSparesSeeded st).withFreshAuditRing.withFreshPerCoreSlots
+  kernelStateRef.set
+    (Architecture.withShootdownSparesSeeded st).withFreshAuditRing.withFreshPerCoreSlots.withFreshPhysicalWrites
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 
