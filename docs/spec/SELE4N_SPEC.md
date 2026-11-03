@@ -5895,9 +5895,16 @@ Every kernel object has a decidable well-formedness predicate:
   release checks build nothing (`fpOwnedElsewhere_eq_impl`,
   `fpReleaseNeeded_eq_impl`).  The exerciser drives every fault path,
   including a capability fault at an address `≥ 2^63`, whose fault now carries
-  the address's word.  The FP/SIMD access and the resume of a faulted thread
-  read 0; the release capture reads 1, and the fault record and its delivery
-  read 30 to 122 (registered in `docs/REGISTERED_DEBT.md`).
+  the address's word.  The fault record is
+  words in the TCB (`ThreadFaultWords`, with `TCB.pendingFault` the decoded
+  view); delivery to a waiting handler, a queued fault's receive and the reply
+  write the handler's and the faulter's cells in place
+  (`faultDeliverHandledWords_eq`, `receiveFaultTake_delivered`,
+  `faultReplyTransferChecked_inPlace`); a capability fault is named from the
+  decode and lookup the syscall entry ran (`syscallEntryCheckedK_outcome_eq`);
+  and the FP/SIMD release captures into the owner's own context, which the
+  thread's retype makes with its TCB, as seL4 allocates FPU state.  Every
+  fault scenario reads 0, and a thread's retype 25.
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged

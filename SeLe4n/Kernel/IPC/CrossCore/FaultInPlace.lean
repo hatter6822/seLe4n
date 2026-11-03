@@ -269,7 +269,7 @@ theorem faultFrameW_eq (f : Fault) (ctx : FaultContext) (overflow : Nat)
       faultInfoWord, Architecture.returnMessageInfo, faultLengthOfKind, faultLabelOfKind,
       faultMessageLength, faultLabel, ThreadFaultWords.ofFault, Fault.kindCode, regOf,
       FaultContext.gprAt, List.size_toArray, List.length_cons, List.length_nil,
-      Array.getElem?_toList, List.getElem?_toArray, List.getElem?_cons_zero,
+      List.getElem?_toArray, List.getElem?_cons_zero,
       List.getElem?_cons_succ, Option.map_some, Option.getD_some, Nat.toUInt64_eq,
       UInt64.ofNat_toNat] <;> simp only [Nat.reduceBEq, Bool.or_false, Bool.or_true,
         Bool.false_eq_true, ↓reduceIte] <;> rfl

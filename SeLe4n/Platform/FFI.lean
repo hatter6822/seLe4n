@@ -2933,12 +2933,15 @@ failure — from being delivered as a fault the CSpace did not raise.
 and the resolution's `KernelError` rides as the reason, the model's
 `lookup_fault_t`.
 
-The prologue is mirrored rather than shared because the dispatcher runs its
-lookup *inside* `syscallInvoke` and surfaces only the error; the state the
-mirror reads is the argument-spilled one the dispatcher decoded from, and the
-per-core TLB fill between the two touches no object
-(`tlbFillIpcBufferOnCore_frame`), so the two resolutions agree.  What the
-mirror does not re-run is a second lookup an arm performs after the first
+This is the specification's decision; the compiled entry does not run it.
+`syscallEntryCheckedK` hands the operand's failed resolution to the fault
+delivery with the address and error its own lookup produced
+(`deliverSyscallLookupFault`), so the decode and the lookup run once, and
+`syscallEntryCheckedK_outcome_eq` proves that outcome the one this decision
+gives on the dispatcher's refusal.  The prologue re-run here reads the
+argument-spilled state the dispatcher decoded from, and the per-core TLB fill
+between the two touches no object (`tlbFillIpcBufferOnCore_frame`), so the
+two resolutions agree.  What neither re-runs is a second lookup an arm performs after the first
 succeeded — `.replyRecv`'s reply capability — so that failure returns the
 error rather than faulting (seL4-MCS's `lookupReply` faults there);
 registered debt, not a silent divergence. -/

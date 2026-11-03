@@ -652,8 +652,14 @@ Since `v0.36.194`, ZA6.31 gives the fault, unknown-syscall and FP/SIMD
 access entries ZA3.1's form, so every committing entry crosses its commit as
 words.  **New code must assume it**: the FP/SIMD owner table holds codes
 (`MachineState.fpOwnerCode`; `MachineState.fpOwner` is the decoded view), so a
-write goes through `setFpOwnerOnCore`; a new fault path is driven by the
-exerciser's `fault_entries` and pinned in `scripts/qemu_exerciser_lib.sh`.
+write goes through `setFpOwnerOnCore`; a thread's fault record is words
+(`TCB.faultWords`; `TCB.pendingFault` is the decoded view), so a write goes
+through `recordFaultWords` or `TCB.withFaultWords`; a new fault path is driven
+by the exerciser's `fault_entries` and pinned at 0 in
+`scripts/qemu_exerciser_lib.sh`.  Until the toolchain reaches Lean 4.31, an
+inlined match on a value an inlined callee matches again can be released
+twice: read its row in `docs/REGISTERED_DEBT.md` before changing the
+syscall entry or an arm.
 Since `v0.36.193`, ZA6.30 puts the per-core tick, drain, charges, yield,
 yieldTo, activation, reschedule SGI, residency settle and the reschedule and
 secondary entries inside the per-core non-interference step relation

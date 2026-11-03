@@ -1,12 +1,11 @@
-## v0.36.194 — WS-ZA ZA6.31: the fault entries cross their commit as words
+## v0.36.194 — WS-ZA ZA6.31: the fault entries cross their commit as words and allocate nothing
 
 The fault, unknown-syscall and FP/SIMD access entries take ZA3.1's form, and
 the QEMU exerciser drives every fault path: each fault kind with no handler and
 the resume that answers it, each kind delivered to a waiting handler and its
 reply, a VM fault queued on a handler not yet waiting, and the FP/SIMD trap of
-each thread with the release at each switch.  The FP/SIMD access and the
-resume read 0; the fault record and its delivery still allocate and are
-registered.
+each thread with the release at each switch.  Every fault scenario and the
+FP/SIMD trap read 0, first call and steady state.
 
 - **The form.** Each entry decodes the raw core id once, and an id naming no
   core enters nothing.  Inside the atomic step it reads the restore target's
@@ -38,9 +37,44 @@ registered.
 - **A capability fault at an address `≥ 2^63`** carried its address through
   `UInt64.ofNat decoded.capAddr.toNat`, a heap number above `2^63`; it now
   carries the address's word (`syscallCapFaultOf`).
+- **The fault record is words.** `TCB.pendingFault` was an
+  `Option ThreadFault` cell and the trap's window and fault context arrays of
+  boxed words; the TCB now holds the record as words (`ThreadFaultWords`,
+  `TCB.faultWords`, with `TCB.pendingFault` the decoded view), written by
+  `recordFaultWords` (`recordPendingFault_eq_words`), and the fault is read
+  off the exception syndrome as words (`faultOfExceptionContext_words`).
+- **Delivery, a queued fault's receive and the reply run in place**
+  (`FaultInPlace.lean`, `FaultReceiveInPlace.lean`).  A fault delivered to a
+  waiting handler writes the handler's message registers and the faulter's
+  blocked state into their own cells (`faultDeliverHandledWords_eq`,
+  `performFaultCallDelivered_eq`, `deliverFaultFrame_eq`), a handler's
+  receive of a queued fault takes it in place (`receiveFaultTake_delivered`,
+  `receiveCallTake_inPlace`), and the reply restarts the faulter in place
+  (`faultReplyTransferChecked_inPlace`, `storeFaultReplyRendezvous_eq`, with
+  `faultReplyReceiverTcb` building no message cell).
+- **A capability fault reuses the entry's decode and lookup.** The routed
+  syscall entry runs in continuation-passing form (`syscallEntryCheckedK`,
+  `dispatchOperandCheckedK`), so a failed resolution reaches the fault
+  delivery with the address and error the entry computed
+  (`deliverSyscallLookupFault`); `dispatchOperandCheckedK_spec`,
+  `syscallEntryCheckedK_spec` and `syscallEntryCheckedK_outcome_eq` prove the
+  outcome the one `syscallEntryCheckedR` and `syscallCapFaultOf` give.  An
+  empty slot is refused before the arm runs, its tag tested out of line
+  (`slotEmpty`).
+- **The FP/SIMD release captures into the owner's own context**
+  (`ffi_fp_capture_into`, `fpTakeOwnerCell`).  The context is made with the
+  thread, so a thread's retype reads 25 (24 before): the extra cell is its
+  FP/SIMD state, which seL4 likewise allocates with the TCB.
+- **A Lean 4.28 compiler bug, worked around and registered.** A draft of the
+  entry, a match on the slot's `Option` around an arm that matches it again,
+  compiled to a double release (`ExpandResetReuse.eraseProjIncForAux` erases
+  the increments of two projections of one field before a reset; fixed in
+  Lean 4.31.0).  The landed form has one projection, a scan of every generated
+  C file for the shape reports 0 hits, and the toolchain move is registered in
+  `docs/REGISTERED_DEBT.md`, pending Adam's decision.
 - **The exerciser** (`smp_exercisers.rs`, `fault_entries`) traps through
   `handle_synchronous_exception` over an EL0 frame, and the gate pins every
-  scenario (`scripts/qemu_exerciser_lib.sh`).
+  fault scenario at 0 (`scripts/qemu_exerciser_lib.sh`).
 - Tier 3 anchors move to the new form and cover the new definitions and
   theorems; `tests/FaultHandlingSuite.lean` §4c checks the tagged switch on
   every arm.
