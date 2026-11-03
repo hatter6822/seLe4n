@@ -378,7 +378,7 @@ that takes it builds the message from `pendingFault` (`blockedSenderMessage`),
 as seL4 builds it from `tcbFault`. -/
 def recordPendingFault (st : SystemState) (tid : SeLe4n.ThreadId)
     (tf : ThreadFault) : SystemState :=
-  st.updateTcb tid fun tcb => { tcb with pendingFault := some tf, ipcFaultSend := true }
+  st.updateTcb tid fun tcb => { tcb.setPendingFault (some tf) with ipcFaultSend := true }
 
 -- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
 -- `IPC/Invariant/FaultPreservation.lean` — a frame over a production transition
@@ -466,7 +466,7 @@ must *keep* its message
 (`blockedThreadsPendingMessageConsistent`), and would buy no behaviour. -/
 def faultAbandon (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   (removeRunnable st tid).updateTcb tid fun tcb =>
-    { tcb with threadState := .Inactive, pendingFault := none }
+    { tcb.setPendingFault none with threadState := .Inactive }
 
 /-- WS-RR RR4.9: a suspended thread is `.Inactive` — the state the scheduler
 never dispatches. -/
@@ -555,10 +555,12 @@ bundle transports across a restart by the one-TCB-rewrite lever rather than by
 a case analysis.  The `pendingMessage` the reply delivered is left as
 delivered — see `faultAbandon` for why that is right rather than merely
 convenient.  The store is the typed in-place rewrite `SystemState.updateTcb`
-(`v0.35.70`). -/
-def applyFaultRestart (st : SystemState) (faulted : SeLe4n.ThreadId)
+(`v0.35.70`).  WS-ZA ZA6.31: inlined, so a restart built from the thread's
+own context (the resume's, `retirePendingFaultForResume`) writes that
+context's words into the register file and builds no frame record. -/
+@[inline] def applyFaultRestart (st : SystemState) (faulted : SeLe4n.ThreadId)
     (frame : Architecture.FaultRestartFrame) : SystemState :=
-  st.updateTcb faulted fun tcb => { tcb.withRestartFrame frame with pendingFault := none }
+  st.updateTcb faulted fun tcb => ((tcb.withRestartFrame frame).setPendingFault none)
 
 /-- WS-RR RR4.16: and it preserves the object-store invariant. -/
 theorem applyFaultRestart_preserves_objects_invExt
@@ -608,7 +610,7 @@ theorem applyFaultRestart_pc (st : SystemState) (faulted : SeLe4n.ThreadId)
     (frame : Architecture.FaultRestartFrame) (tcb : TCB)
     (hTcb : st.getTcb? faulted = some tcb) (hObjInv : st.objects.invExt) :
     (applyFaultRestart st faulted frame).getTcb? faulted
-      = some { tcb.withRestartFrame frame with pendingFault := none } := by
+      = some ((tcb.withRestartFrame frame).setPendingFault none) := by
   unfold applyFaultRestart
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hObjInv, hTcb]
   rfl
@@ -631,7 +633,7 @@ fault cleared, the saved registers, the scheduler and the machine untouched.
 The resume's retire takes this branch for a thread some core still holds
 (`retirePendingFaultForResume`). -/
 def discardPendingFault (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  st.updateTcb tid fun tcb => { tcb with pendingFault := none }
+  st.updateTcb tid fun tcb => (tcb.setPendingFault none)
 
 theorem discardPendingFault_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
@@ -649,7 +651,7 @@ theorem discardPendingFault_preserves_objects_invExt (st : SystemState)
 /-- The retired thread is its record with the fault cleared. -/
 theorem discardPendingFault_getTcb?_self (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) :
-    (discardPendingFault st tid).getTcb? tid = some { tcb with pendingFault := none } := by
+    (discardPendingFault st tid).getTcb? tid = some (tcb.setPendingFault none) := by
   unfold discardPendingFault
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hObjInv, hTcb]
   rfl
@@ -917,6 +919,45 @@ def retirePendingFaultForResume (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
       | none => st
   | none => st
 
+/-- WS-ZA ZA6.31: **the compiled resume retire** — the fault asked of the
+thread's kind code, and the restart frame read from the fault words of the
+thread the write is handed (`TCB.faultWords`), so the retire builds no decoded
+record and captures no thread (`retirePendingFaultForResume_eq_impl`). -/
+@[inline] def retirePendingFaultForResumeImpl (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      if tcb.faultWords.isFault then
+        if st.machine.residentOnSomeCore tid then discardPendingFault st tid
+        else st.updateTcb tid fun t =>
+          ((t.withRestartFrame (faultRestartFrameOfContext t.faultWords.context)).setPendingFault
+            none)
+      else st
+  | none => st
+
+@[csimp] theorem retirePendingFaultForResume_eq_impl :
+    @retirePendingFaultForResume = @retirePendingFaultForResumeImpl := by
+  funext st tid
+  unfold retirePendingFaultForResume retirePendingFaultForResumeImpl
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases hF : tcb.pendingFault with
+    | none =>
+      have hI : tcb.faultWords.isFault = false := by
+        rw [← TCB.pendingFault_isSome, hF]; rfl
+      simp only [hI, Bool.false_eq_true, ↓reduceIte]
+    | some tf =>
+      have hI : tcb.faultWords.isFault = true := by
+        rw [← TCB.pendingFault_isSome, hF]; rfl
+      have hC : tf.context = tcb.faultWords.context := ThreadFaultWords.decode_context hF
+      simp only [hI, ↓reduceIte]
+      split
+      · rfl
+      · unfold applyFaultRestart
+        rw [SystemState.updateTcb_eq_of_some hT, SystemState.updateTcb_eq_of_some hT, hC]
+
 /-- After the retire step the thread carries no fault — so the ordinary reply
 branch (`replyTransferOnCore_of_no_fault`) is the one every later reply to it
 takes. -/
@@ -1005,7 +1046,7 @@ message reports that window and a resume reinstalls it
 unchanged, and the delivery then fails closed on its own lookup.  The write is
 the typed in-place rewrite `SystemState.updateTcb` (`v0.35.69`), as the SVC
 seam's spill and the return-frame staging are. -/
-def writeFaultRegistersToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+@[inline] def writeFaultRegistersToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (w : FaultRegisterWindow) : SystemState :=
   st.updateTcb tid fun tcb => { tcb with registerContext := w.spill tcb.registerContext }
 
@@ -1043,7 +1084,8 @@ theorem faultContextOfThread_writeFaultRegistersToTcb (st : SystemState)
     (faultIP spsr : UInt64) :
     faultContextOfThread (writeFaultRegistersToTcb st tid w) tid faultIP spsr =
       { faultIP := faultIP, sp := w.sp, lr := w.lr, spsr := spsr,
-        gprs := (Array.range FaultContext.gprWindow).map w.gprAt } := by
+        x0 := w.x0, x1 := w.x1, x2 := w.x2, x3 := w.x3,
+        x4 := w.x4, x5 := w.x5, x6 := w.x6, x7 := w.x7 } := by
   unfold faultContextOfThread
   rw [writeFaultRegistersToTcb_getTcb? st tid w tcb hTcb hObjInv]
   exact FaultRegisterWindow.ofRegisterFile_spill w tcb.registerContext faultIP spsr

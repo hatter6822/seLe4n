@@ -127,7 +127,9 @@ cell and its slot record (WS-ZA ZA5.4). -/
 
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
-written in place; a thread's register file and spare space cells, a CNode's slot array and its slot
+written in place; a thread's register file, its saved FP/SIMD context (so the
+first release of its registers captures into a context the thread owns,
+`ffi_fp_capture_into`) and spare space cells, a CNode's slot array and its slot
 records, a VSpace root's mapping and epoch tables and their spare cells, and a
 page table's slot
 cell, are rebuilt the same way. -/
@@ -137,6 +139,7 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
       spaceCells := t.spaceCells.map unshareSpaceCell
       spaceLinks := t.spaceLinks.map opaqueId
       registerContext := { t.registerContext with x0 := opaqueWord t.registerContext.x0 }
+      fpContext := { t.fpContext with v0Lo := opaqueWord t.fpContext.v0Lo }
       spaceSpare := Quot.lift (fun a => Squash.mk (a.map unshareSpareCell))
         (fun _ _ _ => Subsingleton.elim _ _) t.spaceSpare }
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }

@@ -410,14 +410,17 @@ for driver in drivers:
             # lean_alloc_small's callers, `KernelObject.unshareFresh`): a
             # spare record, its `some` cell and its object target for each of
             # the two space slots (6), the thread's own slot, link and spare
-            # arrays (3) and its own register file (1): 24.  Each is the new
+            # arrays (3), its own register file (1) and, since WS-ZA ZA6.31,
+            # its own FP/SIMD context (1): 25.  seL4 likewise allocates a
+            # thread's FPU state with its TCB; the FP/SIMD trap then captures
+            # into that cell rather than building one.  Each is the new
             # thread's own; its first space set then writes over them.
             # A scheduling context adds its record (`SchedContext.empty`), its
             # object cell and the request and decode (4): 13, and 14 on its
             # first call, which also builds the capability's target record
             # (`CapTarget.objectOver`).
-            "untyped-retype-tcb": (24, 24), "untyped-retype-bound-tcb": (24, 24),
-            "untyped-retype-queued-tcb": (24, 24), "untyped-retype-shared-tcb": (24, 24),
+            "untyped-retype-tcb": (25, 25), "untyped-retype-bound-tcb": (25, 25),
+            "untyped-retype-queued-tcb": (25, 25), "untyped-retype-shared-tcb": (25, 25),
             # The first resume of a carved thread enqueues a run-queue key no
             # thread has held (a QEMU trace of lean_alloc_small's callers):
             # the run queue's membership table builds the new key's entry
@@ -425,7 +428,7 @@ for driver in drivers:
             # the queue's ends record its new priority bucket
             # (`RunQueueEnds.appendImpl`, 1).  The steady state reuses both.
             "resume-carved-tcb": (3, 0),
-            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (24, 24),
+            "untyped-retype-sched-context": (14, 13), "untyped-retype-sc-thread": (25, 25),
             "vspace-unmap-first": (0, 0), "vspace-map-again": (0, 0),
             "vspace-unify-instruction": (4, 3),
             "vspace-map-copy": (7, 5), "frame-revoke": (0, 0),
@@ -441,9 +444,10 @@ for driver in drivers:
             # whose target is the boot reply object's own (`replyCapTargetIn`
             # shares it), so `CapTarget.objectOver` builds the new one).  The
             # carved thread's first space set writes over the records the
-            # carve made, and the thread's cell in place (0).
+            # carve made, and the thread's cell in place (0).  The spaced
+            # thread's carve also makes its FP/SIMD context (25).
             "untyped-retype-populated-cnode": (30, 30), "untyped-retype-into-cnode": (11, 11),
-            "untyped-retype-spaced-tcb": (24, 24), "untyped-retype-space-cnode": (31, 31),
+            "untyped-retype-spaced-tcb": (25, 25), "untyped-retype-space-cnode": (31, 31),
             # The reset is seL4's (WS-ZA ZA5.4 part 36, `v0.36.149`; 30 before):
             # every refusal precedes its one write, the in-place rewind of the
             # invoked capability's free index, so its dispatch runs through
@@ -455,6 +459,31 @@ for driver in drivers:
             # (`registerServiceWordsPerform`), and its compiled arm builds no
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
+        })
+        # WS-ZA ZA6.31: the fault entries (each fault kind with no handler, a
+        # VM fault queued on a handler not yet waiting, each kind delivered to
+        # a waiting handler and its reply, the resume of a suspended thread)
+        # and the FP/SIMD access trap allocate nothing.  The entries cross
+        # their commit as words; the fault record is kept as words in the
+        # thread's own cell; a capability fault is named from the decode and
+        # lookup the syscall entry already ran (`syscallEntryCheckedK`), an
+        # empty slot refused before the arm runs; delivery, a queued fault's
+        # receive and the reply write the handler's and the faulter's cells
+        # in place; and the FP/SIMD switch captures a switched-out owner's
+        # registers into the context its TCB was created with.
+        pinned.update({
+            name: (0, 0) for name in (
+                "vm-fault-data-suspends", "vm-fault-instruction-suspends",
+                "cap-fault-suspends", "unknown-syscall-suspends", "user-exception-suspends",
+                "vm-fault-data-resume", "vm-fault-instruction-resume",
+                "cap-fault-resume", "unknown-syscall-resume", "user-exception-resume",
+                "vm-fault-queued", "receive-queued-fault", "reply-queued-fault",
+                "vm-fault-data-delivered", "vm-fault-instruction-delivered",
+                "cap-fault-delivered", "unknown-syscall-delivered", "user-exception-delivered",
+                "vm-fault-data-reply", "vm-fault-instruction-reply",
+                "cap-fault-reply", "unknown-syscall-reply", "user-exception-reply",
+                "fp-access", "fp-owner-blocks", "fp-access-partner", "fp-owner-wakes-root",
+            )
         })
         expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}

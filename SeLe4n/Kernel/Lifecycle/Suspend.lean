@@ -398,7 +398,7 @@ When they pass the operation's state is `resumePerform` of the answered state
   match st.getTcb? tid with
   | some tcb =>
     !(tcb.threadState != .Inactive) &&
-      (tcb.pendingFault.isNone || st.objects.findsInPlace tid.toObjId)
+      (!tcb.faultWords.isFault || st.objects.findsInPlace tid.toObjId)
   | none => false
 
 /-- WS-ZA ZA5.2: the resume once admitted.  The home core and the thread's

@@ -1650,7 +1650,7 @@ theorem finaliseThreadReleaseCores_hidden (ctx : LabelingContext) (observer : If
     (s : SystemState) (tid : SeLe4n.ThreadId) :
     projectState ctx observer (finaliseThreadReleaseCores s tid) = projectState ctx observer s := by
   have hHolds : ∀ fo rc, projectState ctx observer
-      { s with machine := { s.machine with fpOwner := fo, residentCode := rc } } =
+      { s with machine := { s.machine with fpOwnerCode := fo, residentCode := rc } } =
       projectState ctx observer s := fun _ _ => rfl
   rw [onlyObjectsSchedulerCoreHoldsDiffer.releaseCores s tid, finaliseThreadReleaseCores_objects,
     finaliseThreadReleaseCores_scheduler]

@@ -331,12 +331,12 @@ update rather than as a list of fields that agree, so a field added to `TCB` is
 covered by construction. -/
 theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) :
     restoredTcb tcb frame =
-      (TCB.setIpcState { tcb with
-          queuePrevCode := 0
-          queueNextCode := 0
-          queuePPrevCode := 0
-          pendingReceiveReplyCode := 0
-          pendingFault := none
+      (TCB.setIpcState
+        { TCB.setPendingFault { tcb with
+            queuePrevCode := 0
+            queueNextCode := 0
+            queuePPrevCode := 0
+            pendingReceiveReplyCode := 0 } none with
           registerContext := (restoredTcb tcb frame).registerContext } .ready) := by
   unfold restoredTcb; cases frame <;> rfl
 

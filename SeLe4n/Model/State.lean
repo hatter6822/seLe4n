@@ -1738,7 +1738,7 @@ def SystemState.withFreshPerCoreSlots (st : SystemState) : SystemState :=
   { st with
     machine := { st.machine with
       coreRegs := st.machine.coreRegs.map RegisterFile.fresh
-      fpOwner := st.machine.fpOwner.map opaqueId
+      fpOwnerCode := st.machine.fpOwnerCode.map opaqueId
       residentCode := st.machine.residentCode.map opaqueId }
     scheduler := { st.scheduler with
       runQueueEnds := st.scheduler.runQueueEnds.map SeLe4n.Kernel.RunQueueEnds.fresh

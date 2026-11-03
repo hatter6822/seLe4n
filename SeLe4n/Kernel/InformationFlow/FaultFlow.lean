@@ -114,8 +114,8 @@ theorem recordPendingFault_preserves_projection (ctx : LabelingContext)
   | some tcb =>
       rw [SystemState.updateTcb_eq_of_some hT]
       have hProj := projectObjects_insert_high ctx observer st
-        ({ st with objects := st.objects.insert tid.toObjId (KernelObject.tcb { tcb with pendingFault := some tf, ipcFaultSend := true }) } : SystemState)
-        tid (KernelObject.tcb { tcb with pendingFault := some tf, ipcFaultSend := true }) rfl hHighObj hObjInv
+        ({ st with objects := st.objects.insert tid.toObjId (KernelObject.tcb { tcb.setPendingFault (some tf) with ipcFaultSend := true }) } : SystemState)
+        tid (KernelObject.tcb { tcb.setPendingFault (some tf) with ipcFaultSend := true }) rfl hHighObj hObjInv
       -- `congr 1` discharges the twelve unchanged projections by `rfl` and the
       -- object projection from `hProj` (which it finds by `assumption`).
       simp only [projectState]

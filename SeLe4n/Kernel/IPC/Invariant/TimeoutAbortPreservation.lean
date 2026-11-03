@@ -39,13 +39,12 @@ theorem abortPendingIpcOnEndpoint_shape
       lookupTcb st1 tid = some tcb1 ∧
       storeObject tid.toObjId
         (.tcb (TCB.withReturnFrame
-          ((TCB.setIpcState { tcb1 with
+          ((TCB.setIpcState (TCB.setPendingFault { tcb1 with
              pendingMessage := none
              timeoutBudget := none
              threadState := .Ready
              timedOut := true
-             pendingReceiveReplyCode := 0
-             pendingFault := none } .ready)) Architecture.timeoutFrame)) st1
+             pendingReceiveReplyCode := 0 } none) .ready)) Architecture.timeoutFrame)) st1
         = .ok ((), st') := by
   unfold abortPendingIpcOnEndpoint at hStep
   cases hRem : endpointQueueRemove endpointId isReceiveQ tid st with

@@ -1011,9 +1011,12 @@ structure MachineState where
       clears it, saving the live values into the owner's TCB, at the first
       entry whose committed state no longer runs the owner there
       (`Architecture.fpReleaseOnCore`).  The trap is lifted exactly while the
-      core resumes its owner (`RestoreTarget.user`'s `fpLive`). -/
-  fpOwner : _root_.Vector (Option ThreadId) numCores :=
-    _root_.Vector.replicate numCores none
+      core resumes its owner (`RestoreTarget.user`'s `fpLive`).  WS-ZA
+      ZA6.31: stored as codes (`ThreadId.optCode`), as `residentCode` is, so
+      the switch records an owner as a scalar and builds no `some` cell;
+      `MachineState.fpOwner` is the decoded view. -/
+  fpOwnerCode : _root_.Vector Nat numCores :=
+    _root_.Vector.replicate numCores 0
   /-- **PR #904 review (`v0.36.41`): the thread whose EL0 context each core's
       registers hold** — the thread the core's last context restore resumed, or
       `none` for a core resuming its idle loop or nothing.  Written by
@@ -1145,23 +1148,28 @@ theorem MachineState.modifyRegsOnCore_eq (ms : MachineState) (c : CoreId)
 
 /-- **WS-BP BP7.9**: the thread whose FP/SIMD state core `c`'s registers hold. -/
 @[inline] def MachineState.fpOwnerOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
-  ms.fpOwner.get c
+  ThreadId.ofOptCode (ms.fpOwnerCode.get c)
+
+/-- Every core's FP/SIMD owner, decoded: the view the proofs read whole; the
+kernel reads one core's slot (`fpOwnerOnCore`). -/
+def MachineState.fpOwner (ms : MachineState) : _root_.Vector (Option ThreadId) numCores :=
+  ms.fpOwnerCode.map ThreadId.ofOptCode
 
 /-- **WS-BP BP7.9**: record `t?` as the owner of core `c`'s FP/SIMD registers. -/
 @[inline] def MachineState.setFpOwnerOnCore (ms : MachineState) (c : CoreId)
     (t? : Option ThreadId) : MachineState :=
-  { ms with fpOwner := ms.fpOwner.set c.val t? c.isLt }
+  { ms with fpOwnerCode := ms.fpOwnerCode.set c.val (ThreadId.optCode t?) c.isLt }
 
 @[simp] theorem MachineState.fpOwnerOnCore_setFpOwnerOnCore_self (ms : MachineState)
     (c : CoreId) (t? : Option ThreadId) : (ms.setFpOwnerOnCore c t?).fpOwnerOnCore c = t? := by
   simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
-  exact SeLe4n.PerCoreVector.get_set_eq ms.fpOwner c t?
+  rw [SeLe4n.PerCoreVector.get_set_eq ms.fpOwnerCode c _, ThreadId.ofOptCode_optCode]
 
 @[simp] theorem MachineState.fpOwnerOnCore_setFpOwnerOnCore_ne (ms : MachineState)
     (c c' : CoreId) (t? : Option ThreadId) (h : c ≠ c') :
     (ms.setFpOwnerOnCore c t?).fpOwnerOnCore c' = ms.fpOwnerOnCore c' := by
   simp only [MachineState.fpOwnerOnCore, MachineState.setFpOwnerOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne ms.fpOwner c c' t? h
+  rw [SeLe4n.PerCoreVector.get_set_ne ms.fpOwnerCode c c' _ h]
 
 /-- **PR #904 review (`v0.36.41`)**: the thread whose EL0 context core `c`'s
 registers hold. -/
@@ -1326,7 +1334,7 @@ def MachineState.releaseThreadOnCores (ms : MachineState) (tid : ThreadId) :
 theorem MachineState.releaseThreadOnCore_fields (ms : MachineState) (tid : ThreadId)
     (c : CoreId) :
     ms.releaseThreadOnCore tid c =
-      { ms with fpOwner := (ms.releaseThreadOnCore tid c).fpOwner,
+      { ms with fpOwnerCode := (ms.releaseThreadOnCore tid c).fpOwnerCode,
                 residentCode := (ms.releaseThreadOnCore tid c).residentCode } := by
   unfold MachineState.releaseThreadOnCore
   dsimp only
@@ -1340,7 +1348,7 @@ theorem MachineState.releaseThreadOnCore_fields (ms : MachineState) (tid : Threa
 theorem MachineState.releaseThreadOnCores_fields (ms : MachineState) (tid : ThreadId)
     (cs : List CoreId) :
     ms.releaseThreadOnCores tid cs =
-      { ms with fpOwner := (ms.releaseThreadOnCores tid cs).fpOwner,
+      { ms with fpOwnerCode := (ms.releaseThreadOnCores tid cs).fpOwnerCode,
                 residentCode := (ms.releaseThreadOnCores tid cs).residentCode } := by
   induction cs generalizing ms with
   | nil => rfl

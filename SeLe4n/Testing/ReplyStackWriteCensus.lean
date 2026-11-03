@@ -338,6 +338,14 @@ def chainNeutralConstructors : List (Name × String) :=
       "WS-ZA ZA4.7: the in-place call rendezvous; writes `Reply.caller` only (`replyWithCaller`), on a reply `callWakesInPlace` checks `isFree`, as `linkCallerReply`; no link field")
   , (`SeLe4n.Kernel.storeCallRendezvousReady,
       "WS-ZA ZA4.7: `storeCallRendezvous` with the receiver woken holding no message; the same `Reply.caller` write (`replyWithCaller`) on a reply `callWakesInPlace` checks `isFree`; no link field")
+    -- WS-ZA ZA6.31: a handler's receive of a queued caller, in place
+    -- (`receiveCallTake_inPlace`): the specification's state and its in-place
+    -- store each write `Reply.caller` only (`replyWithCaller`), on a reply
+    -- `receiveCallTakesInPlace` checks `isFree`, as `linkCallerReply`.
+  , (`SeLe4n.Kernel.receiveCallTakeState,
+      "WS-ZA ZA6.31: the receive's take of a queued caller; writes `Reply.caller` only (`replyWithCaller`) on a reply `receiveCallTakesInPlace` checks `isFree`, as `linkCallerReply`; no link field")
+  , (`SeLe4n.Kernel.storeReceiveCallReady,
+      "WS-ZA ZA6.31: `receiveCallTakeState` with the receiver woken holding no message; the same `Reply.caller` write (`replyWithCaller`) on a reply `receiveCallTakesInPlace` checks `isFree`; no link field")
   , (`SeLe4n.Model.SystemState.linkServerStashedReply,
       "`linkCallerReply` plus the server TCB's `pendingReceiveReply`; no chain field")
   , (`SeLe4n.Kernel.endpointReceiveDual,
@@ -772,6 +780,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.storeReplyRendezvous_preserves_donationChainWellFormed])
   , (`SeLe4n.Kernel.storeReplyRendezvousReady,
       .states [`SeLe4n.Kernel.storeReplyRendezvousReady_preserves_donationChainWellFormed])
+    -- WS-ZA ZA6.31: the fault reply's store is the reply's with no message
+    -- (`storeFaultReplyRendezvous_eq`, `rfl`).
+  , (`SeLe4n.Kernel.storeFaultReplyRendezvous,
+      .mirrors `SeLe4n.Kernel.storeReplyRendezvous)
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --

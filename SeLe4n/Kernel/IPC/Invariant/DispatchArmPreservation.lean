@@ -4820,7 +4820,7 @@ private theorem restoreToReady_getElem_eq_of_quiescent
         have h3 := hQ.noPrev tcb hLk
         have h4 := hQ.noPPrev tcb hLk
         have h5 := hQ.noStash tcb hLk
-        have h6 := hNoFault tcb hLk
+        have h6 := (TCB.pendingFault_eq_none_iff _).1 (hNoFault tcb hLk)
         cases tcb
         simp_all [ThreadIpcState.objectCode, ThreadIpcState.stateCode]
       rw [hSame]
@@ -4992,14 +4992,14 @@ theorem retirePendingFaultForResume_preserves_ipcInvariantFull
           · unfold discardPendingFault
             rw [SystemState.updateTcb_eq_of_some hT]
             exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-              { tcb with pendingFault := none } hObjInv hInv
+              (tcb.setPendingFault none) hObjInv hInv
               ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
               rfl rfl rfl rfl rfl rfl rfl rfl rfl
           · unfold applyFaultRestart
             rw [SystemState.updateTcb_eq_of_some hT]
             exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-              { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context) with
-                  pendingFault := none } hObjInv hInv
+              ((tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context)).setPendingFault
+                  none) hObjInv hInv
               ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
               rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
@@ -5035,9 +5035,9 @@ theorem threadIpcFieldsQuiescent_retirePendingFaultForResume
           have hPost : (if st.machine.residentOnSomeCore tid then discardPendingFault st tid
               else applyFaultRestart st tid
                 (Architecture.faultRestartFrameOfContext tf.context)).getTcb? tid =
-              some (if st.machine.residentOnSomeCore tid then { tcb with pendingFault := none }
-                else { tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context)
-                  with pendingFault := none }) := by
+              some (if st.machine.residentOnSomeCore tid then (tcb.setPendingFault none)
+                else (tcb.withRestartFrame (Architecture.faultRestartFrameOfContext tf.context)).setPendingFault
+                  none) := by
             split
             · exact discardPendingFault_getTcb?_self st tid tcb hT hObjInv
             · exact applyFaultRestart_pc st tid _ tcb hT hObjInv

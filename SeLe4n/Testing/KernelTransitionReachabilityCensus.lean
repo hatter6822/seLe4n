@@ -998,6 +998,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.dispatchExceptionWith
   , `SeLe4n.Kernel.Architecture.dispatchSynchronousException
   , `SeLe4n.Kernel.Architecture.endOfInterrupt
+  -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
+  -- access entries no longer run: each entry runs the state-only or tagged
+  -- form proven equal to it (`faultEntryStep_eq_state`,
+  -- `unknownSyscallEntryStep_eq_state`, `fpAccessOnCore_eq_tagged`), and its
+  -- committed state is the raw-id composition its carries are stated over
+  -- (`faultEntryCommitted_eq`, `unknownSyscallEntryCommitted_eq`,
+  -- `fpAccessEntryCommitted_eq`).
+  , `SeLe4n.Kernel.Architecture.fpAccessOnCore
   , `SeLe4n.Kernel.Architecture.handleInterrupt
   , `SeLe4n.Kernel.Architecture.handleInterruptWith
   , `SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCore
@@ -1054,6 +1062,16 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
+  -- WS-ZA ZA6.31: the raw-id form of a per-core step, which no entry runs
+  -- since every entry decodes its core id once and runs the per-core form; the
+  -- entries' carries are stated over it, and `faultEntryCommitted_eq` and its
+  -- siblings equate it with what the entries commit.
+  , `SeLe4n.Kernel.Concurrency.saveCapturedSyscallFrameAt
+  -- WS-ZA ZA6.31: the raw-id form of a per-core step, which no entry runs
+  -- since every entry decodes its core id once and runs the per-core form; the
+  -- entries' carries are stated over it, and `faultEntryCommitted_eq` and its
+  -- siblings equate it with what the entries commit.
+  , `SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt
   , `SeLe4n.Kernel.Concurrency.setSchedulerAction
   , `SeLe4n.Kernel.Concurrency.setTlbAction
   , `SeLe4n.Kernel.Concurrency.updateObjectAt
@@ -1083,9 +1101,19 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `scheduleLocalSuccessorFrom`, over the caller they captured before the
   -- transition, so the pre-state is not kept alive to read it.
   , `SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
+  -- WS-ZA ZA6.31: the raw-id form of a per-core step, which no entry runs
+  -- since every entry decodes its core id once and runs the per-core form; the
+  -- entries' carries are stated over it, and `faultEntryCommitted_eq` and its
+  -- siblings equate it with what the entries commit.
+  , `SeLe4n.Kernel.PriorityInheritance.settleResidencyAt
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
+  -- WS-ZA ZA6.31: the raw-id form of a per-core step, which no entry runs
+  -- since every entry decodes its core id once and runs the per-core form; the
+  -- entries' carries are stated over it, and `faultEntryCommitted_eq` and its
+  -- siblings equate it with what the entries commit.
+  , `SeLe4n.Kernel.activateThreadAt
   , `SeLe4n.Kernel.advanceDomainOnCore
   , `SeLe4n.Kernel.advanceDomainOnCoreN
   , `SeLe4n.Kernel.applyReplyDonation
@@ -1140,12 +1168,57 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointSweepBody
   , `SeLe4n.Kernel.ensureRunnable
   , `SeLe4n.Kernel.faultAbandon
+  -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
+  -- access entries no longer run: each entry runs the state-only or tagged
+  -- form proven equal to it (`faultEntryStep_eq_state`,
+  -- `unknownSyscallEntryStep_eq_state`, `fpAccessOnCore_eq_tagged`), and its
+  -- committed state is the raw-id composition its carries are stated over
+  -- (`faultEntryCommitted_eq`, `unknownSyscallEntryCommitted_eq`,
+  -- `fpAccessEntryCommitted_eq`).
+  , `SeLe4n.Kernel.faultEntryDeliver
+  -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
+  -- access entries no longer run: each entry runs the state-only or tagged
+  -- form proven equal to it (`faultEntryStep_eq_state`,
+  -- `unknownSyscallEntryStep_eq_state`, `fpAccessOnCore_eq_tagged`), and its
+  -- committed state is the raw-id composition its carries are stated over
+  -- (`faultEntryCommitted_eq`, `unknownSyscallEntryCommitted_eq`,
+  -- `fpAccessEntryCommitted_eq`).
+  , `SeLe4n.Kernel.faultEntryStep
+  -- WS-ZA ZA6.31: the routed syscall entry's refusal-carrying specification,
+  -- which the compiled entry no longer runs: it runs the continuation form
+  -- (`syscallEntryCheckedK`, `dispatchOperandCheckedK`) proven to hand on what
+  -- each of these returns (`syscallEntryCheckedK_spec`,
+  -- `dispatchOperandCheckedK_spec`, `syscallEntryCheckedK_outcome_eq`).
+  , `SeLe4n.Kernel.syscallEntryCheckedR
+  , `SeLe4n.Kernel.dispatchSendCheckedR
+  , `SeLe4n.Kernel.dispatchCallCheckedR
+  , `SeLe4n.Kernel.dispatchReplyCheckedR
+  , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  , `SeLe4n.Kernel.dispatchReceiveCheckedR
+  , `SeLe4n.Kernel.dispatchSignalCheckedR
+  , `SeLe4n.Kernel.dispatchWaitCheckedR
+  , `SeLe4n.Kernel.dispatchAuditedCheckedR
+  , `SeLe4n.Kernel.dispatchInvocationCheckedR
+  -- WS-ZA ZA6.31: specifications of in-place fault forms the entries run in
+  -- their place: the checked delivery's (`faultDeliverCheckedWords_eq`) and a
+  -- receive's take of a queued caller (`receiveCallTake_inPlace`,
+  -- `receiveCallTakeState_eq_hold`, run as `storeReceiveCallReady`).
+  , `SeLe4n.Kernel.faultDeliverCheckedOf
+  , `SeLe4n.Kernel.receiveCallTakeState
   , `SeLe4n.Kernel.faultSuspend
   -- WS-ZA ZA5.4 part 26: names for the states a thread's finalisation reaches
   -- part way (`FinaliseRetirable.lean`), which the carriage of its admission is
   -- stated on (part 34); the finalise runs the steps themselves (`finaliseThread`).
   , `SeLe4n.Kernel.finaliseThreadAfterCancel
   , `SeLe4n.Kernel.finaliseThreadAfterRelease
+  -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
+  -- access entries no longer run: each entry runs the state-only or tagged
+  -- form proven equal to it (`faultEntryStep_eq_state`,
+  -- `unknownSyscallEntryStep_eq_state`, `fpAccessOnCore_eq_tagged`), and its
+  -- committed state is the raw-id composition its carries are stated over
+  -- (`faultEntryCommitted_eq`, `unknownSyscallEntryCommitted_eq`,
+  -- `fpAccessEntryCommitted_eq`).
+  , `SeLe4n.Kernel.fpAccessEntryStep
   , `SeLe4n.Kernel.handleYield
   , `SeLe4n.Kernel.handleYieldChecked
   , `SeLe4n.Kernel.handleYieldWithBudget
@@ -1221,6 +1294,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.timerTickChecked
   , `SeLe4n.Kernel.timerTickOnCorePrepared
   , `SeLe4n.Kernel.timerTickWithBudget
+  -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
+  -- access entries no longer run: each entry runs the state-only or tagged
+  -- form proven equal to it (`faultEntryStep_eq_state`,
+  -- `unknownSyscallEntryStep_eq_state`, `fpAccessOnCore_eq_tagged`), and its
+  -- committed state is the raw-id composition its carries are stated over
+  -- (`faultEntryCommitted_eq`, `unknownSyscallEntryCommitted_eq`,
+  -- `fpAccessEntryCommitted_eq`).
+  , `SeLe4n.Kernel.unknownSyscallEntryStep
   , `SeLe4n.Kernel.withOutgoingContextChecked
   , `SeLe4n.Kernel.withObjects
   , `SeLe4n.Model.Builder.insertCap

@@ -11,6 +11,7 @@ import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
+import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -811,8 +812,16 @@ takes the general arm. -/
                                   maxMessageRegisters) &&
                                 securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && replyWakesInPlace st c ct rid then
-                              .ok ((), replyRendezvousDelivered st c server rid
-                                layout rf len cap.badgeWord cap.badged executingCore)
+                              if !ct.faultWords.isFault then
+                                .ok ((), replyRendezvousDelivered st c server rid
+                                  layout rf len cap.badgeWord cap.badged executingCore)
+                              else if ct.faultKind == 1 || ct.faultKind == 2 then
+                                .ok ((), performFaultReplyRestart st c server rid executingCore
+                                  ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1
+                                  ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
+                                  ct.faultX7)
+                              else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
+                                  tid executingCore cap st
                             else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                                 tid executingCore cap st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
@@ -859,14 +868,25 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                 obtain ⟨⟨⟨hSz, hFlow⟩, hSRes⟩, hW⟩ := hG
                 have hAns : replyAnsweredCaller? st rid0 = some c := by
                   rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
-                rw [replyRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ hW]
                 simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
-                rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
-                  { length := len, extraCaps := extraCaps, label := label }
-                  (Architecture.regMessageRegs layout rf) _ executingCore
-                  (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz)
-                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hFlow]
-                rfl
+                split
+                · next hNoF =>
+                  simp only [Bool.not_eq_true'] at hNoF
+                  rw [replyRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ hW]
+                  rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid
+                    { length := len, extraCaps := extraCaps, label := label }
+                    (Architecture.regMessageRegs layout rf) _ executingCore
+                    (by rw [← Architecture.regMessageBody_size layout rf len] at hSz; exact hSz)
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hNoF hFlow]
+                  rfl
+                · split
+                  · next hK =>
+                    rw [faultReplyTransferChecked_inPlace ctx st tid c server ct ep rid
+                      { length := len, extraCaps := extraCaps, label := label }
+                      (Architecture.regMessageRegs layout rf) _ executingCore
+                      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hK]
+                  · simp only [endpointReplyCheckedArmRegsR, endpointReplyCheckedArmGeneralR, hTgt,
+                      hAns, hFlow, ↓reduceIte]
               · rfl
             · rfl
           · rfl
@@ -1166,6 +1186,18 @@ other rendezvous goes through the specification
       | some s =>
         match st.getTcb? s with
         | some sTcb =>
+          if sTcb.ipcFaultSend && sTcb.faultWords.isFault then
+            match SeLe4n.ReplyId.ofOptCode replyCode with
+            | some rid =>
+              if receiveCallTakesInPlace st epId tid s sTcb rid then
+                .ok ((), performFaultReceiveDelivered st epId s sTcb.queueNextCode tid rid
+                  executingCore (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.faultKind
+                  sTcb.faultFlag sTcb.faultWord0 sTcb.faultWord1 sTcb.faultLookup sTcb.faultIp
+                  sTcb.faultSp sTcb.faultLr sTcb.faultSpsr sTcb.faultX0 sTcb.faultX1 sTcb.faultX2
+                  sTcb.faultX3 sTcb.faultX4 sTcb.faultX5 sTcb.faultX6 sTcb.faultX7)
+              else endpointReceiveRendezvousR epId tid replyCode executingCore st
+            | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+          else
           match Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
               sTcb.registerContext 32 with
           | .send _ mi =>
@@ -1192,6 +1224,32 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     · next s hH =>
       split
       · next sTcb hT =>
+        split
+        · next hFa =>
+          simp only [Bool.and_eq_true] at hFa
+          obtain ⟨hF, hIF⟩ := hFa
+          obtain ⟨f, hf⟩ : ∃ f, sTcb.faultWords.fault? = some f := by
+            cases h : sTcb.faultWords.fault? with
+            | some f => exact ⟨f, rfl⟩
+            | none =>
+              have h0 := (ThreadFaultWords.decode_eq_none_iff _).mpr h
+              have h1 := ThreadFaultWords.decode_isSome sTcb.faultWords
+              rw [h0, hIF] at h1
+              cases h1
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              obtain ⟨h1, h2, h3⟩ := receiveFaultTake_delivered st epId ep tid rid
+                (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0) executingCore s sTcb f
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hF hf
+              unfold endpointReceiveRendezvousR
+              simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
+                CapTransferSummary.installedCount_empty]
+              rw [h3]
+            · rfl
+          · rfl
         split
         · next capAddr mi hR =>
           split

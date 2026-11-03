@@ -15,6 +15,7 @@ import SeLe4n.Platform.Boot.InitialThreads
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Kernel.Architecture.TrapFrameSave
 import SeLe4n.Kernel.Architecture.ContextRestore
+import SeLe4n.Kernel.IPC.CrossCore.FaultInPlace
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -2814,9 +2815,10 @@ syscall number, and `SP_EL0` / `x30` cross with the round's ABI extension —
 the same nine registers the abort entry spills, so a capability fault's
 context is built from what the thread held at the `SVC`, never from the
 mirror's stale last-syscall contents. -/
-def syscallWindow (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 : UInt64) :
+@[inline] def syscallWindow (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 spEl0 x30 : UInt64) :
     FaultRegisterWindow :=
-  { gprs := #[x0, x1, x2, x3, x4, x5, x6, syscallId.toUInt64], sp := spEl0, lr := x30 }
+  { x0 := x0, x1 := x1, x2 := x2, x3 := x3, x4 := x4, x5 := x5, x6 := x6,
+    x7 := syscallId.toUInt64, sp := spEl0, lr := x30 }
 
 /-- seL4's `FaultIP` on the syscall path: the `SVC` instruction itself, one
 instruction before the return address `ELR_EL1` holds, so a payload-free
@@ -2931,12 +2933,15 @@ failure — from being delivered as a fault the CSpace did not raise.
 and the resolution's `KernelError` rides as the reason, the model's
 `lookup_fault_t`.
 
-The prologue is mirrored rather than shared because the dispatcher runs its
-lookup *inside* `syscallInvoke` and surfaces only the error; the state the
-mirror reads is the argument-spilled one the dispatcher decoded from, and the
-per-core TLB fill between the two touches no object
-(`tlbFillIpcBufferOnCore_frame`), so the two resolutions agree.  What the
-mirror does not re-run is a second lookup an arm performs after the first
+This is the specification's decision; the compiled entry does not run it.
+`syscallEntryCheckedK` hands the operand's failed resolution to the fault
+delivery with the address and error its own lookup produced
+(`deliverSyscallLookupFault`), so the decode and the lookup run once, and
+`syscallEntryCheckedK_outcome_eq` proves that outcome the one this decision
+gives on the dispatcher's refusal.  The prologue re-run here reads the
+argument-spilled state the dispatcher decoded from, and the per-core TLB fill
+between the two touches no object (`tlbFillIpcBufferOnCore_frame`), so the
+two resolutions agree.  What neither re-runs is a second lookup an arm performs after the first
 succeeded — `.replyRecv`'s reply capability — so that failure returns the
 error rather than faulting (seL4-MCS's `lookupReply` faults there);
 registered debt, not a silent divergence. -/
@@ -2958,7 +2963,7 @@ def syscallCapFaultOf (layout : SeLe4n.SyscallRegisterLayout) (st : SystemState)
               capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
           match syscallResolveCap gate st with
           | .error e =>
-              if e = ke then some (.capFault (UInt64.ofNat decoded.capAddr.toNat) inRecv e)
+              if e = ke then some (.capFault decoded.capAddr.word inRecv e)
               else none
           | .ok _ => none
         | _ => none
@@ -2981,6 +2986,24 @@ def deliverSyscallCapFault (ctx : LabelingContext)
   let stW := writeFaultRegistersToTcb st tid w
   let fctx := Architecture.faultContextOfThread stW tid (svcFaultIP elr) spsr
   (faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore).1
+
+/-- WS-ZA ZA6.31: the compiled `deliverSyscallCapFault` — the fault handed on
+as its words and the context read off the spilled registers
+(`faultDeliveredWords_eq`), so no context record is built. -/
+@[inline] def deliverSyscallCapFaultImpl (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fault : Fault) (w : FaultRegisterWindow)
+    (elr spsr : UInt64) : SystemState :=
+  faultDeliveredWords ctx st (ThreadFaultWords.ofFault fault {}).kind
+    (ThreadFaultWords.ofFault fault {}).flag (ThreadFaultWords.ofFault fault {}).word0
+    (ThreadFaultWords.ofFault fault {}).word1 (ThreadFaultWords.ofFault fault {}).lookup
+    (svcFaultIP elr) spsr w executingCore tid
+
+@[csimp] theorem deliverSyscallCapFault_eq_impl :
+    @deliverSyscallCapFault = @deliverSyscallCapFaultImpl := by
+  funext ctx executingCore st tid fault w elr spsr
+  unfold deliverSyscallCapFault deliverSyscallCapFaultImpl
+  rw [faultDeliveredWords_eq]
 
 /-- A refusal on a syscall that returns its lookup failure (the recorded
 declassifying pair) produces no capability fault — one of the two discharges
@@ -3118,6 +3141,124 @@ def syscallDispatchFromAbi
                    recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs)
       | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
 
+/-- **WS-RR RR7.3**: the FFI argument spill leaves the scheduler untouched.
+
+`writeFfiRegistersToTcb` rewrites one TCB's register mirror in the object store
+and nothing else, so the thread the entry finds on the executing core is the one
+the seam resolved before spilling. -/
+theorem writeFfiRegistersToTcb_scheduler
+    (st : SystemState) (tid : SeLe4n.ThreadId) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64) :
+    (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler = st.scheduler := by
+  unfold writeFfiRegistersToTcb
+  exact SystemState.updateTcb_scheduler st tid _
+
+/-- WS-ZA ZA6.31: a refusal of the entry, handed on as the specification hands
+it on: a refusal `syscallCapFaultOf` reads as a capability fault to `onFault`,
+any other refusal to `onRefuse`, a committed state to `onOk`. -/
+@[inline] def syscallRefusalOutcome {β : Type} (tid : SeLe4n.ThreadId)
+    (onFault : SystemState → Fault → β) (onRefuse : KernelError → SystemState → β)
+    (onOk : SystemState → β) (r : Except (KernelError × SystemState) (Unit × SystemState)) : β :=
+  match r with
+  | .error (ke, s) =>
+    match syscallCapFaultOf SeLe4n.arm64DefaultLayout s tid ke with
+    | some fault => onFault s fault
+    | none => onRefuse ke s
+  | .ok ((), st') => onOk st'
+
+/-- WS-ZA ZA6.31: an operand dispatch's arm result, whose refusals no
+resolution raised (`syscallEntryCheckedK_spec`): a refusal to `onRefuse`, a
+committed state to `onOk`. -/
+@[inline] def syscallArmOutcome {β : Type} (onRefuse : KernelError → SystemState → β)
+    (onOk : SystemState → β) (r : Except (KernelError × SystemState) (Unit × SystemState)) : β :=
+  match r with
+  | .error (ke, s) => onRefuse ke s
+  | .ok ((), st') => onOk st'
+
+/-- WS-ZA ZA6.31: an operand's failed resolution, as the entry found it: on a
+syscall seL4 faults on, the capability fault built from the operand's address
+word, the syscall's phase and the resolution's error, handed to
+`onLookupFault` as those words; otherwise the refusal. -/
+@[inline] def syscallLookupOutcome {β : Type}
+    (onLookupFault : SystemState → UInt64 → Bool → KernelError → β)
+    (onRefuse : KernelError → SystemState → β) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
+    (e : KernelError) (s : SystemState) : β :=
+  match capFaultReceivePhase? sid with
+  | some inRecv => onLookupFault s capAddr.word inRecv e
+  | none => onRefuse e s
+
+/-- WS-ZA ZA6.31: **the entry's lookup reused.**  Running the entry as
+`syscallEntryCheckedK`, with a failed operand resolution delivered from the
+words the entry already holds, is the specification's handling of
+`syscallEntryCheckedR`'s result, where `syscallCapFaultOf` decodes and resolves
+the operand again: the resolution the entry ran is the one the fault reads. -/
+theorem syscallEntryCheckedK_outcome_eq {β : Type} (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore executingCore = some tid)
+    (onFault : SystemState → Fault → β) (onRefuse : KernelError → SystemState → β)
+    (onOk : SystemState → β) (onLookupFault : SystemState → UInt64 → Bool → KernelError → β)
+    (hF : ∀ s w b e, onLookupFault s w b e = onFault s (.capFault w b e)) :
+    syscallEntryCheckedK ctx executingCore st (syscallRefusalOutcome tid onFault onRefuse onOk)
+        (syscallArmOutcome onRefuse onOk) (syscallLookupOutcome onLookupFault onRefuse) =
+      syscallRefusalOutcome tid onFault onRefuse onOk (syscallEntryCheckedR ctx executingCore st) := by
+  have hState : ∀ ke s, syscallEntryCheckedR ctx executingCore st = .error (ke, s) → s = st := by
+    intro ke s hE
+    rw [syscallEntryCheckedR_eq] at hE
+    unfold RefusalCarrying.ofKernel at hE
+    split at hE
+    · cases hE; rfl
+    · cases hE
+  rcases syscallEntryCheckedK_spec ctx executingCore st
+      (syscallRefusalOutcome tid onFault onRefuse onOk) (syscallArmOutcome onRefuse onOk)
+      (syscallLookupOutcome onLookupFault onRefuse) with
+    h | ⟨tid', tcb, decoded, rootCn, hCur', hObj, hDec, hRoot, h⟩
+  · exact h
+  rw [hCur] at hCur'
+  cases hCur'
+  rcases h with ⟨hK, hNe⟩ | ⟨e, s, hK, hE, hRes⟩
+  · rw [hK]
+    cases hR : syscallEntryCheckedR ctx executingCore st with
+    | ok v => obtain ⟨⟨⟩, st'⟩ := v; rfl
+    | error p =>
+      obtain ⟨ke, s⟩ := p
+      have hs := hState ke s hR
+      subst hs
+      have hNe' := hNe ke s hR
+      have hNone : syscallCapFaultOf SeLe4n.arm64DefaultLayout s tid ke = none := by
+        unfold syscallCapFaultOf
+        simp only [hObj, hDec, hRoot]
+        cases capFaultReceivePhase? decoded.syscallId with
+        | none => rfl
+        | some inRecv =>
+          simp only []
+          cases hG : syscallResolveCap ⟨tid, tcb.cspaceRoot, decoded.capAddr, rootCn.depth,
+              syscallRequiredRight decoded.syscallId⟩ s with
+          | ok _ => rfl
+          | error e => simp only [hNe' e hG, ↓reduceIte]
+      simp only [syscallArmOutcome, syscallRefusalOutcome, hNone]
+  · rw [hK, hE]
+    have hs := hState e s hE
+    subst hs
+    simp only [syscallLookupOutcome, syscallRefusalOutcome]
+    unfold syscallCapFaultOf
+    simp only [hObj, hDec, hRoot]
+    cases capFaultReceivePhase? decoded.syscallId with
+    | none => rfl
+    | some inRecv => simp only [hRes, ↓reduceIte, hF]
+
+/-- WS-ZA ZA6.31: a capability fault the entry's own resolution raised,
+delivered from its words: the operand's address word, the syscall's phase and
+the resolution's error, with the trap frame's registers.  Out of line, so the
+entry's every failed-resolution site calls it with scalars, and equal to
+`deliverSyscallCapFault` of the fault those words build by definition. -/
+@[noinline] def deliverSyscallLookupFault (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (inRecv : Bool) (e : KernelError)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr : UInt64) :
+    SystemState :=
+  deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e)
+    (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr
+
 /-- WS-ZA ZA1.3: the compiled `syscallDispatchFromAbi`.  The entry runs as
 `syscallEntryCheckedR`, whose refusal carries the state it was refused in, so
 the refusal arms read that state instead of keeping `stRegs` alive across the
@@ -3137,34 +3278,40 @@ dispatch; a syscall that checks before it writes then owns the state it writes
     | some tid =>
       if SeLe4n.Kernel.isIdleThreadId tid then
         .ok (.returns (Architecture.errorFrame .illegalState), st) else
-      let layout := SeLe4n.arm64DefaultLayout
-      match syscallEntryCheckedR ctx executingCore
-          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
-      | .error (ke, stRefused) =>
-          match syscallCapFaultOf layout stRefused tid ke with
-          | some fault =>
-              .ok (.faulted,
-                   deliverSyscallCapFault ctx executingCore stRefused tid fault
-                     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-                     elr spsr)
-          | none =>
-              .ok (.returns (Architecture.errorFrame ke),
-                   recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRefused)
-      | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
+      syscallEntryCheckedK ctx executingCore
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (syscallRefusalOutcome tid
+          (fun s fault => .ok (.faulted, deliverSyscallCapFault ctx executingCore s tid fault
+            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
+          (fun ke s => .ok (.returns (Architecture.errorFrame ke),
+            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
+          (fun st' => .ok (syscallReturnOutcome syscallId st' tid, st')))
+        (syscallArmOutcome
+          (fun ke s => .ok (.returns (Architecture.errorFrame ke),
+            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
+          (fun st' => .ok (syscallReturnOutcome syscallId st' tid, st')))
+        (syscallLookupOutcome
+          (fun s w b e => .ok (.faulted, deliverSyscallLookupFault ctx executingCore s tid w b e
+            syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
+          (fun ke s => .ok (.returns (Architecture.errorFrame ke),
+            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s)))
 
 @[csimp] theorem syscallDispatchFromAbi_eq_impl :
     @syscallDispatchFromAbi = @syscallDispatchFromAbiImpl := by
   funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
-  simp only [syscallDispatchFromAbiImpl, syscallEntryCheckedR_eq, RefusalCarrying.ofKernel]
-  unfold syscallDispatchFromAbi
+  unfold syscallDispatchFromAbiImpl syscallDispatchFromAbi
   split
   · rfl
-  · next tid _ =>
+  · next tid hC =>
     split
     · rfl
-    simp only []
-    rcases syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with _ | ⟨⟨⟩, st'⟩ <;> rfl
+    rw [syscallEntryCheckedK_outcome_eq ctx executingCore
+      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+      (by rw [writeFfiRegistersToTcb_scheduler]; exact hC)]
+    · simp only [syscallRefusalOutcome, syscallEntryCheckedR_eq, RefusalCarrying.ofKernel]
+      rcases syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with _ | ⟨⟨⟩, st'⟩ <;> rfl
+    · intros; rfl
 
 /-- WS-ZA ZA4: a returning caller's boundary words, read off its post-state:
 `syscallReturnOutcome`'s words (`returnOutcomeWords_eq`) with a value shape's
@@ -3228,20 +3375,25 @@ its words on as scalars, so no outcome is built. -/
       if SeLe4n.Kernel.isIdleThreadId tid then
         ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState)).words, st)
       else
-      let layout := SeLe4n.arm64DefaultLayout
-      match syscallEntryCheckedR ctx executingCore
-          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
-      | .error (ke, stRefused) =>
-          match syscallCapFaultOf layout stRefused tid ke with
-          | some fault =>
-              (Architecture.SyscallOutcome.faulted.words,
-               deliverSyscallCapFault ctx executingCore stRefused tid fault
-                 (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-                 elr spsr)
-          | none =>
-              ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
-               recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRefused)
-      | .ok ((), st') => (returnOutcomeWords syscallId st' tid, st')
+      syscallEntryCheckedK ctx executingCore
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (syscallRefusalOutcome tid
+          (fun s fault => (Architecture.SyscallOutcome.faulted.words,
+            deliverSyscallCapFault ctx executingCore s tid fault
+              (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
+          (fun ke s => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
+          (fun st' => (returnOutcomeWords syscallId st' tid, st')))
+        (syscallArmOutcome
+          (fun ke s => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
+          (fun st' => (returnOutcomeWords syscallId st' tid, st')))
+        (syscallLookupOutcome
+          (fun s w b e => (Architecture.SyscallOutcome.faulted.words,
+            deliverSyscallLookupFault ctx executingCore s tid w b e
+              syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
+          (fun ke s => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s)))
 
 theorem syscallDispatchFromAbiWords_eq
     (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -3254,7 +3406,7 @@ theorem syscallDispatchFromAbiWords_eq
   rw [syscallDispatchFromAbi_eq_impl] at h
   unfold syscallDispatchFromAbiImpl at h
   unfold syscallDispatchFromAbiWords
-  dsimp only at h ⊢
+  (try dsimp only at h ⊢)
   split at h
   · next hC => (try rw [hC]); cases h; rfl
   · next tid hC =>
@@ -3262,6 +3414,15 @@ theorem syscallDispatchFromAbiWords_eq
     by_cases hI : SeLe4n.Kernel.isIdleThreadId tid = true
     · simp only [hI, ↓reduceIte] at h ⊢; cases h; rfl
     · simp only [hI, Bool.false_eq_true, ↓reduceIte] at h ⊢
+      have hCR : (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler.currentOnCore
+          executingCore = some tid := by rw [writeFfiRegistersToTcb_scheduler]; exact hC
+      rw [syscallEntryCheckedK_outcome_eq ctx executingCore _ tid hCR] at h
+      rotate_left
+      · intros; rfl
+      rw [syscallEntryCheckedK_outcome_eq ctx executingCore _ tid hCR]
+      rotate_left
+      · intros; rfl
+      simp only [syscallRefusalOutcome] at h ⊢
       split at h
       · next ke stRefused hE =>
         split at h
@@ -3726,6 +3887,16 @@ theorem restoreTrapFrameParts_onCore (st : SystemState) (c : Concurrency.CoreId)
 @[extern "ffi_fp_capture"]
 opaque ffiFpCapture : BaseIO SeLe4n.FpContext
 
+/-- **WS-ZA ZA6.31**: `ffiFpCapture` into a context handed over — the
+switched-out owner's own saved context, taken out of its TCB
+(`Kernel.Concurrency.fpTakeOwnerCell`).  Rewritten in place when the reference
+is the only one, so a release allocates nothing; the answer holds the live
+values either way.
+
+    Rust: `ffi_fp_capture_into` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_fp_capture_into"]
+opaque ffiFpCaptureInto : SeLe4n.FpContext → BaseIO SeLe4n.FpContext
+
 /-- **WS-BP BP7.9**: stage the context the executing PE loads, all
     `fpContextWordCount` words in one call.  Nothing reaches the registers until
     `ffiFpLoadCommit`.
@@ -3973,18 +4144,6 @@ theorem syscallDispatchFromAbi_blocked_returns_no_frame
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st' tcb
         hCur hNI hSyscall hTcb hBlocked] at h
   exact absurd h (by simp)
-
-/-- **WS-RR RR7.3**: the FFI argument spill leaves the scheduler untouched.
-
-`writeFfiRegistersToTcb` rewrites one TCB's register mirror in the object store
-and nothing else, so the thread the entry finds on the executing core is the one
-the seam resolved before spilling. -/
-theorem writeFfiRegistersToTcb_scheduler
-    (st : SystemState) (tid : SeLe4n.ThreadId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 : UInt64) :
-    (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler = st.scheduler := by
-  unfold writeFfiRegistersToTcb
-  exact SystemState.updateTcb_scheduler st tid _
 
 /-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.
 

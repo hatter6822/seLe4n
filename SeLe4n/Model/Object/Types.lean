@@ -1522,8 +1522,35 @@ structure TCB where
 
       `none` = the thread has no outstanding fault, seL4's
       `seL4_Fault_NullFault`.  The default keeps every existing TCB
-      construction and the boot trace byte-identical. -/
-  pendingFault : Option ThreadFault := none
+      construction and the boot trace byte-identical.
+
+      WS-ZA ZA6.31: stored as plain words (`ThreadFaultWords`), one scalar
+      field each, and read through the decoded view `TCB.pendingFault`, so a
+      fault entry records the fault and a resume or reply retires it without
+      building a cell.  The kind code (`0`: no fault): -/
+  faultKind : Nat := 0
+  /-- The fault's flag word (`ThreadFaultWords.flag`). -/
+  faultFlag : Bool := false
+  /-- The fault's first word (`ThreadFaultWords.word0`). -/
+  faultWord0 : UInt64 := 0
+  /-- The fault's second word (`ThreadFaultWords.word1`). -/
+  faultWord1 : UInt64 := 0
+  /-- A capability fault's lookup failure (`ThreadFaultWords.lookup`). -/
+  faultLookup : KernelError := .invalidCapability
+  /-- The fault context's restart PC, `SP_EL0`, `LR`, `SPSR_EL1` and
+      `x0`-`x7` (`ThreadFaultWords.ip` …). -/
+  faultIp : UInt64 := 0
+  faultSp : UInt64 := 0
+  faultLr : UInt64 := 0
+  faultSpsr : UInt64 := 0
+  faultX0 : UInt64 := 0
+  faultX1 : UInt64 := 0
+  faultX2 : UInt64 := 0
+  faultX3 : UInt64 := 0
+  faultX4 : UInt64 := 0
+  faultX5 : UInt64 := 0
+  faultX6 : UInt64 := 0
+  faultX7 : UInt64 := 0
   /-- **WS-BP BP7.9: the thread's saved FP/SIMD context** — `v0`–`v31`, `FPCR`,
       `FPSR`.  Authoritative whenever no core's registers hold the thread's live
       values (`MachineState.fpOwner`); while one does, this copy may be stale and
@@ -1659,6 +1686,74 @@ structure TCB where
 the code alone reads the old value by `rfl`. -/
 @[reducible, inline] def TCB.yieldTo (t : TCB) : Option SeLe4n.SchedContextId :=
   SeLe4n.SchedContextId.ofOptCode t.yieldToCode
+
+/-- WS-ZA ZA6.31: **the thread's fault record, as the words it stores**.
+Reducible, as `TCB.yieldTo` is, so a record update that leaves the fault
+fields alone reads the old record by `rfl`. -/
+@[reducible, inline] def TCB.faultWords (t : TCB) : ThreadFaultWords :=
+  { kind := t.faultKind, flag := t.faultFlag, word0 := t.faultWord0, word1 := t.faultWord1,
+    lookup := t.faultLookup, ip := t.faultIp, sp := t.faultSp, lr := t.faultLr,
+    spsr := t.faultSpsr, x0 := t.faultX0, x1 := t.faultX1, x2 := t.faultX2,
+    x3 := t.faultX3, x4 := t.faultX4, x5 := t.faultX5, x6 := t.faultX6, x7 := t.faultX7 }
+
+/-- WS-ZA ZA6.31: the thread with its fault record's words written, each in
+its own field. -/
+@[reducible, inline] def TCB.withFaultWords (t : TCB) (w : ThreadFaultWords) : TCB :=
+  { t with faultKind := w.kind, faultFlag := w.flag, faultWord0 := w.word0,
+           faultWord1 := w.word1, faultLookup := w.lookup, faultIp := w.ip,
+           faultSp := w.sp, faultLr := w.lr, faultSpsr := w.spsr,
+           faultX0 := w.x0, faultX1 := w.x1, faultX2 := w.x2, faultX3 := w.x3,
+           faultX4 := w.x4, faultX5 := w.x5, faultX6 := w.x6, faultX7 := w.x7 }
+
+/-- WS-RR RR4 / WS-ZA ZA6.31: **the fault this thread is blocked on** —
+seL4's `tcbFault`, decoded from the words the thread stores
+(`TCB.faultWords`).  `none` is seL4's `seL4_Fault_NullFault`. -/
+@[reducible] def TCB.pendingFault (t : TCB) : Option ThreadFault := t.faultWords.decode
+
+/-- WS-ZA ZA6.31: the thread with its fault record written: the words of the
+fault and its context, or, for no fault, the kind code cleared alone — the
+other words are read only under a nonzero kind (`TCB.pendingFault_eq_none_iff`),
+so clearing a record already clear rewrites nothing
+(`TCB.setPendingFault_none_of_none`). -/
+@[reducible, inline] def TCB.setPendingFault (t : TCB) : Option ThreadFault → TCB
+  | none => { t with faultKind := 0 }
+  | some tf => t.withFaultWords (ThreadFaultWords.ofFault tf.fault tf.context)
+
+@[simp] theorem TCB.faultWords_withFaultWords (t : TCB) (w : ThreadFaultWords) :
+    (t.withFaultWords w).faultWords = w := rfl
+
+@[simp] theorem TCB.withFaultWords_faultWords (t : TCB) : t.withFaultWords t.faultWords = t := rfl
+
+/-- WS-ZA ZA6.31: **whether a thread carries a fault, asked of its kind code**
+— the test an executable guard makes, so asking builds no decoded record. -/
+theorem TCB.pendingFault_isNone (t : TCB) : t.pendingFault.isNone = !t.faultWords.isFault :=
+  ThreadFaultWords.decode_isNone _
+
+theorem TCB.pendingFault_isSome (t : TCB) : t.pendingFault.isSome = t.faultWords.isFault :=
+  ThreadFaultWords.decode_isSome _
+
+theorem TCB.pendingFault_eq_none_of_not_isFault {t : TCB} (h : t.faultWords.isFault = false) :
+    t.pendingFault = none := by
+  have := TCB.pendingFault_isNone t
+  rw [h] at this
+  exact Option.isNone_iff_eq_none.mp this
+
+/-- **A fault record written reads back.** -/
+@[simp] theorem TCB.pendingFault_setPendingFault (t : TCB) (x : Option ThreadFault) :
+    (t.setPendingFault x).pendingFault = x := by
+  cases x with
+  | none => rfl
+  | some tf => exact ThreadFaultWords.decode_ofFault tf.fault tf.context
+
+/-- A thread holds no fault exactly when its kind code is `0`. -/
+theorem TCB.pendingFault_eq_none_iff (t : TCB) : t.pendingFault = none ↔ t.faultKind = 0 :=
+  ThreadFaultWords.decode_eq_none_iff_kind t.faultWords
+
+/-- **Clearing a record already clear is the identity.** -/
+theorem TCB.setPendingFault_none_of_none {t : TCB} (h : t.pendingFault = none) :
+    t.setPendingFault none = t := by
+  have hk := (TCB.pendingFault_eq_none_iff t).1 h
+  cases t; simp only [TCB.setPendingFault] at hk ⊢; rw [hk]
 
 /-- WS-ZA ZA5.11: the thread's taint words. -/
 @[inline] def TCB.taintWords (t : TCB) : SeLe4n.Kernel.TaintWords :=
@@ -2012,26 +2107,26 @@ every other field is the record's. -/
 /-- WS-ZA ZA5.2: the binding of a constructed TCB is the one its two code fields
 stand for, so a record update writing a binding's codes reads back that binding
 (`SchedContextBinding.ofCodes_codes`). -/
-@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).schedContextBinding =
+@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f19 f20 := rfl
 
 /-- The roots of a constructed TCB are the objects its two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
-@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
 
-@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).ipcState = ThreadIpcState.ofCodes f7 f42 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ipcState = ThreadIpcState.ofCodes f7 f58 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).replyObject = SeLe4n.ReplyId.ofOptCode f26 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f27 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -2076,14 +2171,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -2093,11 +2188,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).ntfnPrev = SeLe4n.ThreadId.ofOptCode f30 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ntfnPrev = SeLe4n.ThreadId.ofOptCode f46 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59).ntfnNext = SeLe4n.ThreadId.ofOptCode f31 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ntfnNext = SeLe4n.ThreadId.ofOptCode f47 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -2397,9 +2492,9 @@ instance : BEq TCB where
     -- with `=`.
     a.replyObject == b.replyObject &&
     a.pendingReceiveReply == b.pendingReceiveReply &&
-    -- WS-RR RR4: the outstanding fault participates in structural equality.
-    -- `ThreadFault` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.pendingFault == b.pendingFault &&
+    -- WS-RR RR4: the outstanding fault participates in structural equality,
+    -- compared as the words the thread stores (WS-ZA ZA6.31).
+    a.faultWords == b.faultWords &&
     -- WS-BP BP7.9: the saved FP/SIMD context participates in structural
     -- equality.  `FpContext` derives `DecidableEq`, so its `==` agrees with `=`.
     a.fpContext == b.fpContext &&
@@ -2558,12 +2653,12 @@ window (`retirePendingFaultForResume`).  A resume runs that retire before this
 clear, so on its path the clear changes nothing. -/
 @[inline] def TCB.restoredToReady (tcb : TCB) : TCB :=
   TCB.setIpcState
-    { tcb with
-        queuePrevCode := 0
-        queueNextCode := 0
-        queuePPrevCode := 0
-        pendingReceiveReplyCode := 0
-        pendingFault := none } .ready
+    (TCB.setPendingFault
+      { tcb with
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0
+          pendingReceiveReplyCode := 0 } none) .ready
 
 /-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
 proof that unfolded the inline record update reduces this exactly as it reduced
@@ -2571,12 +2666,12 @@ that, so single-sourcing the clear costs no existing proof. -/
 @[simp] theorem TCB.restoredToReady_eq (tcb : TCB) :
     tcb.restoredToReady =
       TCB.setIpcState
-        { tcb with
-            queuePrevCode := 0
-            queueNextCode := 0
-            queuePPrevCode := 0
-            pendingReceiveReplyCode := 0
-            pendingFault := none } .ready := rfl
+        (TCB.setPendingFault
+          { tcb with
+              queuePrevCode := 0
+              queueNextCode := 0
+              queuePPrevCode := 0
+              pendingReceiveReplyCode := 0 } none) .ready := rfl
 
 /-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
 
@@ -2605,8 +2700,8 @@ theorem TCB.ext {a b : TCB}
     -- WS-SM Reply objects: extensionality covers the per-TCB reply-object links.
     (hReply : a.replyObject = b.replyObject)
     (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply)
-    -- WS-RR RR4: extensionality covers the outstanding-fault field.
-    (hPendFault : a.pendingFault = b.pendingFault)
+    -- WS-RR RR4 / WS-ZA ZA6.31: extensionality covers the fault record's words.
+    (hPendFault : a.faultWords = b.faultWords)
     -- WS-BP BP7.9: extensionality covers the saved FP/SIMD context.
     (hFp : a.fpContext = b.fpContext)
     -- WS-ZA ZA4.4: and the notification-queue links.
@@ -2665,11 +2760,15 @@ theorem TCB.ext {a b : TCB}
   clear hReply hPendReply hPip hBn
   simp only [TCB.taintWords, SeLe4n.Kernel.TaintWords.mk.injEq] at hTaint
   obtain ⟨hT0, hT1, hT2, hT3, hT4, hT5, hT6, hT7, hTC, hTS⟩ := hTaint
+  simp only [TCB.faultWords, ThreadFaultWords.mk.injEq] at hPendFault
+  obtain ⟨hF0, hF1, hF2, hF3, hF4, hF5, hF6, hF7, hF8, hF9, hF10, hF11, hF12, hF13, hF14,
+    hF15, hF16⟩ := hPendFault
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCells, hLinks, hBuf, hIpcO, hTs, hSlice, hDeadline,
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hScC, hScO, hTb, hMcp, hPipC, hTo,
-         hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
+         hCpuAff, hReplyC, hPendReplyC, hF0, hF1, hF2, hF3, hF4, hF5, hF6, hF7, hF8, hF9,
+         hF10, hF11, hF12, hF13, hF14, hF15, hF16, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
          hIpcS, hIBadge, hIBadged, hIGrant, hIFault, hOrigin, Subsingleton.elim _ _,
          hT0, hT1, hT2, hT3, hT4, hT5, hT6, hT7, hTC, hTS, hYield⟩

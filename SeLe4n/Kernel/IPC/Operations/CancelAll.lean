@@ -97,10 +97,9 @@ no message) and no fault record (WS-ZA ZA6.22: seL4's `cancelIPC` resets
 in its registers. -/
 @[inline] def cancelledEndpointWaiterTcb (t : TCB) : TCB :=
   (TCB.setIpcState
-      { t with
+      (TCB.setPendingFault { t with
           pendingMessage := none
-          pendingReceiveReplyCode := 0
-          pendingFault := none } .ready
+          pendingReceiveReplyCode := 0 } none) .ready
     ).withReturnFrame Architecture.cancelledIpcFrame
 
 /-- **Whether the head `t` of an endpoint's queue may be cancelled**: a cancel

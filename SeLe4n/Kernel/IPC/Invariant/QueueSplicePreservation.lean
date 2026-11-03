@@ -3727,11 +3727,10 @@ conjuncts across the eight modules that family is spread over: of the four
 fields, `timeoutBudget` is the only one any bundle conjunct reads, and this
 update sets it to `none`. -/
 def timeoutStagedTcb (tcb : TCB) : TCB :=
-  { tcb with
+  { tcb.setPendingFault none with
     timeoutBudget := none
     threadState := .Ready
     timedOut := true
-    pendingFault := none
     registerContext := tcb.registerContext.stageReturnFrame Architecture.timeoutFrame }
 
 @[simp] theorem timeoutStagedTcb_ipcState (tcb : TCB) :
@@ -3758,13 +3757,12 @@ the timeout increment staged on top — definitionally, so the split is a way of
 reading one record update rather than a second one. -/
 theorem abortStagedTcb_eq (tcb : TCB) :
     TCB.withReturnFrame
-        ((TCB.setIpcState { tcb with
+        ((TCB.setIpcState (TCB.setPendingFault { tcb with
            pendingMessage := none
            timeoutBudget := none
            threadState := .Ready
            timedOut := true
-           pendingReceiveReplyCode := 0
-           pendingFault := none } .ready))
+           pendingReceiveReplyCode := 0 } none) .ready))
         Architecture.timeoutFrame
       = timeoutStagedTcb
           ((TCB.setIpcState { tcb with

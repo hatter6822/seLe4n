@@ -170,11 +170,20 @@ structure FaultContext where
       override is the fail-closed direction — a handler can move a thread's
       PC, SP and arguments, never its privilege or interrupt-mask bits. -/
   spsr : UInt64 := 0
-  /-- The argument window `x0`-`x7` at the fault.  Only the unknown-syscall
-      message carries it (so a handler can emulate the call); shorter arrays
-      read as zero through `gprAt`, which is what keeps the encoded length
-      fixed per fault kind regardless of what the caller supplies. -/
-  gprs : Array UInt64 := #[]
+  /-- The argument window `x0`-`x7` at the fault, one word per register.
+      Only the unknown-syscall message carries it (so a handler can emulate
+      the call), and every resume reinstalls it.  WS-ZA ZA6.31: eight plain
+      fields rather than an array, so the window is a fixed eight words read
+      through `gprAt` and a context the TCB stores (`ThreadFaultWords`) is a
+      record of words with nothing behind it. -/
+  x0 : UInt64 := 0
+  x1 : UInt64 := 0
+  x2 : UInt64 := 0
+  x3 : UInt64 := 0
+  x4 : UInt64 := 0
+  x5 : UInt64 := 0
+  x6 : UInt64 := 0
+  x7 : UInt64 := 0
   deriving Repr, DecidableEq, Inhabited
 
 namespace FaultContext
@@ -183,9 +192,18 @@ namespace FaultContext
 seL4's `n_syscallMessage` argument range. -/
 def gprWindow : Nat := 8
 
-/-- WS-RR RR4.4: total read of the `x0`-`x7` window — absent entries read as
+/-- WS-RR RR4.4: total read of the `x0`-`x7` window — an index past it reads as
 zero, so the encoded message length is a function of the fault kind alone. -/
-def gprAt (ctx : FaultContext) (i : Nat) : UInt64 := ctx.gprs[i]?.getD 0
+@[inline] def gprAt (ctx : FaultContext) : Nat → UInt64
+  | 0 => ctx.x0
+  | 1 => ctx.x1
+  | 2 => ctx.x2
+  | 3 => ctx.x3
+  | 4 => ctx.x4
+  | 5 => ctx.x5
+  | 6 => ctx.x6
+  | 7 => ctx.x7
+  | _ => 0
 
 /-- WS-RR RR4.4: build a fault context from a thread's saved register file
 and the syndrome's return address.
@@ -194,12 +212,13 @@ and the syndrome's return address.
 is the file's `sp`, `LR` is `x30`); `faultIP` and `spsr` come from the
 exception entry, which is the only place they exist — the register file has
 no PSTATE field and its `pc` is not written by the trap path. -/
-def ofRegisterFile (rf : SeLe4n.RegisterFile) (faultIP spsr : UInt64) : FaultContext :=
+@[inline] def ofRegisterFile (rf : SeLe4n.RegisterFile) (faultIP spsr : UInt64) : FaultContext :=
   { faultIP := faultIP
     sp      := rf.sp
     lr      := rf.x30
     spsr    := spsr
-    gprs    := (Array.range gprWindow).map rf.word }
+    x0 := rf.x0, x1 := rf.x1, x2 := rf.x2, x3 := rf.x3
+    x4 := rf.x4, x5 := rf.x5, x6 := rf.x6, x7 := rf.x7 }
 
 /-- WS-RR RR4.4: the `x0`-`x7` window built by `ofRegisterFile` reads back
 register for register — the property the unknown-syscall message needs for a
@@ -207,13 +226,16 @@ handler to emulate the trapped call. -/
 theorem ofRegisterFile_gprAt (rf : SeLe4n.RegisterFile) (faultIP spsr : UInt64)
     (i : Nat) (hi : i < gprWindow) :
     (ofRegisterFile rf faultIP spsr).gprAt i = rf.word i := by
-  simp [ofRegisterFile, gprAt, hi]
-
-/-- WS-RR RR4.4: and the window is exactly `gprWindow` wide, so `gprAt`'s
-zero fallback is never reached inside it. -/
-@[simp] theorem ofRegisterFile_gprs_size (rf : SeLe4n.RegisterFile) (faultIP spsr : UInt64) :
-    (ofRegisterFile rf faultIP spsr).gprs.size = gprWindow := by
-  simp [ofRegisterFile]
+  unfold gprWindow at hi
+  match i, hi with
+  | 0, _ => rfl
+  | 1, _ => rfl
+  | 2, _ => rfl
+  | 3, _ => rfl
+  | 4, _ => rfl
+  | 5, _ => rfl
+  | 6, _ => rfl
+  | 7, _ => rfl
 
 end FaultContext
 
@@ -244,8 +266,16 @@ message reads and a fault reply writes — and no more: `x8`-`x29` are neither
 reported nor restorable through the fault IPC, so they stay in the trap frame
 the context restore (WS-BP BP7.6) merges the staged registers into. -/
 structure FaultRegisterWindow where
-  /-- `x0`-`x7`, in order; a shorter array reads as zero through `gprAt`. -/
-  gprs : Array UInt64 := #[]
+  /-- `x0`-`x7`, one word per register (WS-ZA ZA6.31: plain fields, so the
+      window the entry decodes from the trap context is words). -/
+  x0 : UInt64 := 0
+  x1 : UInt64 := 0
+  x2 : UInt64 := 0
+  x3 : UInt64 := 0
+  x4 : UInt64 := 0
+  x5 : UInt64 := 0
+  x6 : UInt64 := 0
+  x7 : UInt64 := 0
   /-- `SP_EL0`. -/
   sp : UInt64 := 0
   /-- `x30`, the link register. -/
@@ -254,16 +284,25 @@ structure FaultRegisterWindow where
 
 namespace FaultRegisterWindow
 
-/-- Total read of the `x0`-`x7` window, zero beyond what was supplied. -/
-def gprAt (w : FaultRegisterWindow) (i : Nat) : UInt64 := w.gprs[i]?.getD 0
+/-- Total read of the `x0`-`x7` window, zero past it. -/
+@[inline] def gprAt (w : FaultRegisterWindow) : Nat → UInt64
+  | 0 => w.x0
+  | 1 => w.x1
+  | 2 => w.x2
+  | 3 => w.x3
+  | 4 => w.x4
+  | 5 => w.x5
+  | 6 => w.x6
+  | 7 => w.x7
+  | _ => 0
 
 /-- Spill the window into a saved register file: `x0`-`x7` and `x30` from the
 window, `SP_EL0` into `sp`.  Every other register — `pc` included, which the
 exception entry carries separately as `ELR_EL1` — is left as it was. -/
-def spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
+@[inline] def spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
   { rf with
-    x0 := w.gprAt 0, x1 := w.gprAt 1, x2 := w.gprAt 2, x3 := w.gprAt 3,
-    x4 := w.gprAt 4, x5 := w.gprAt 5, x6 := w.gprAt 6, x7 := w.gprAt 7,
+    x0 := w.x0, x1 := w.x1, x2 := w.x2, x3 := w.x3,
+    x4 := w.x4, x5 := w.x5, x6 := w.x6, x7 := w.x7,
     x30 := w.lr, sp := w.sp }
 
 /-- The spill leaves the saved `pc` alone — the restart address is the
@@ -348,15 +387,8 @@ theorem ofRegisterFile_spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile
     (faultIP spsr : UInt64) :
     FaultContext.ofRegisterFile (w.spill rf) faultIP spsr =
       { faultIP := faultIP, sp := w.sp, lr := w.lr, spsr := spsr,
-        gprs := (Array.range FaultContext.gprWindow).map w.gprAt } := by
-  unfold FaultContext.ofRegisterFile
-  refine FaultContext.mk.injEq _ _ _ _ _ _ _ _ _ _ |>.mpr ⟨rfl, rfl, rfl, rfl, ?_⟩
-  apply Array.ext'
-  simp only [Array.toList_map, Array.toList_range]
-  apply List.map_congr_left
-  intro i hi
-  rw [List.mem_range] at hi
-  rw [spill_word, if_pos hi]
+        x0 := w.x0, x1 := w.x1, x2 := w.x2, x3 := w.x3,
+        x4 := w.x4, x5 := w.x5, x6 := w.x6, x7 := w.x7 } := rfl
 
 /-- The pointwise form of `ofRegisterFile_spill`, in the shape the message
 encoder reads (`FaultContext.gprAt`). -/
@@ -384,5 +416,162 @@ structure ThreadFault where
   /-- The register context the fault was taken in — what to restart from. -/
   context : FaultContext
   deriving Repr, DecidableEq, Inhabited
+
+/-- WS-ZA ZA6.31: **the fault record as the TCB stores it** — plain words.
+
+A thread's fault is written on every fault entry and cleared on every resume
+and reply, so a record of cells behind the TCB (`Option ThreadFault`: the
+option, the fault, the context) would be built on each.  seL4 keeps
+`tcbFault` as two words in the TCB; this is the same, widened to the context
+the model keeps beside it: the kind (`0` for no fault, then one code per
+`Fault` constructor), the fault's own words (`word0`, `word1`, `flag`,
+`lookup`), and the context's twelve words.  The TCB holds each as a scalar
+field (`TCB.faultWords`), and `TCB.pendingFault` is its decoded view
+(`decode`), which is what every theorem reads: the encoding of a fault
+decodes back to it (`decode_encode`). -/
+structure ThreadFaultWords where
+  /-- `0`: no fault; `1` VM fault, `2` capability fault, `3` unknown syscall,
+      `4` user exception (`Fault.kindCode`).  Only the kind says whether a
+      fault is held: the other words are read only under a nonzero kind. -/
+  kind : Nat := 0
+  /-- A VM fault's `prefetch`, a capability fault's `inReceivePhase`. -/
+  flag : Bool := false
+  /-- A VM fault's address, a capability fault's address, an unknown
+      syscall's number, a user exception's number. -/
+  word0 : UInt64 := 0
+  /-- A VM fault's status, a user exception's code. -/
+  word1 : UInt64 := 0
+  /-- A capability fault's lookup failure. -/
+  lookup : KernelError := .invalidCapability
+  ip : UInt64 := 0
+  sp : UInt64 := 0
+  lr : UInt64 := 0
+  spsr : UInt64 := 0
+  x0 : UInt64 := 0
+  x1 : UInt64 := 0
+  x2 : UInt64 := 0
+  x3 : UInt64 := 0
+  x4 : UInt64 := 0
+  x5 : UInt64 := 0
+  x6 : UInt64 := 0
+  x7 : UInt64 := 0
+  deriving Repr, DecidableEq
+
+instance : Inhabited ThreadFaultWords := ⟨{}⟩
+
+/-- The code of a fault's constructor, as `ThreadFaultWords.kind` stores it. -/
+@[inline] def Fault.kindCode : Fault → Nat
+  | .vmFault _ _ _ => 1
+  | .capFault _ _ _ => 2
+  | .unknownSyscall _ => 3
+  | .userException _ _ => 4
+
+namespace ThreadFaultWords
+
+/-- The context the words carry. -/
+@[inline] def context (w : ThreadFaultWords) : FaultContext :=
+  { faultIP := w.ip, sp := w.sp, lr := w.lr, spsr := w.spsr,
+    x0 := w.x0, x1 := w.x1, x2 := w.x2, x3 := w.x3,
+    x4 := w.x4, x5 := w.x5, x6 := w.x6, x7 := w.x7 }
+
+/-- The fault the words carry: `none` exactly for kind `0`, so clearing a
+fault is clearing its kind and the other words are then never read
+(`fault?_eq_none_iff`).  Every code from `4` up reads as a user exception,
+which keeps the view total without a second "no fault" code. -/
+def fault? (w : ThreadFaultWords) : Option Fault :=
+  match w.kind with
+  | 0 => none
+  | 1 => some (.vmFault w.word0 w.word1 w.flag)
+  | 2 => some (.capFault w.word0 w.flag w.lookup)
+  | 3 => some (.unknownSyscall w.word0)
+  | _ => some (.userException w.word0 w.word1)
+
+/-- **The decoded view**: the fault and its context, or `none`. -/
+def decode (w : ThreadFaultWords) : Option ThreadFault :=
+  match w.fault? with
+  | some f => some { fault := f, context := w.context }
+  | none => none
+
+/-- **Whether the words carry a fault**, read off the kind code alone: the test
+an executable path makes in place of `decode`'s `isSome`
+(`decode_isSome`), so asking it builds no record. -/
+@[inline] def isFault (w : ThreadFaultWords) : Bool :=
+  match w.kind with
+  | 0 => false
+  | _ => true
+
+theorem decode_isSome (w : ThreadFaultWords) : w.decode.isSome = w.isFault := by
+  unfold decode fault? isFault
+  match w.kind with
+  | 0 => rfl
+  | 1 => rfl
+  | 2 => rfl
+  | 3 => rfl
+  | n + 4 => rfl
+
+/-- A decoded record's context is the words' context. -/
+theorem decode_context {w : ThreadFaultWords} {tf : ThreadFault} (h : w.decode = some tf) :
+    tf.context = w.context := by
+  unfold decode at h
+  split at h
+  · cases h; rfl
+  · cases h
+
+theorem decode_isNone (w : ThreadFaultWords) : w.decode.isNone = !w.isFault := by
+  rw [← decode_isSome]; cases w.decode <;> rfl
+
+/-- The words of a fault taken in a context. -/
+@[inline] def ofFault (f : Fault) (ctx : FaultContext) : ThreadFaultWords :=
+  let base : ThreadFaultWords :=
+    { kind := f.kindCode, ip := ctx.faultIP, sp := ctx.sp, lr := ctx.lr, spsr := ctx.spsr,
+      x0 := ctx.x0, x1 := ctx.x1, x2 := ctx.x2, x3 := ctx.x3,
+      x4 := ctx.x4, x5 := ctx.x5, x6 := ctx.x6, x7 := ctx.x7 }
+  match f with
+  | .vmFault a s p => { base with word0 := a, word1 := s, flag := p }
+  | .capFault a r e => { base with word0 := a, flag := r, lookup := e }
+  | .unknownSyscall n => { base with word0 := n }
+  | .userException n c => { base with word0 := n, word1 := c }
+
+
+@[simp] theorem context_ofFault (f : Fault) (ctx : FaultContext) :
+    (ofFault f ctx).context = ctx := by
+  cases f <;> rfl
+
+@[simp] theorem fault?_ofFault (f : Fault) (ctx : FaultContext) :
+    (ofFault f ctx).fault? = some f := by
+  cases f <;> rfl
+
+@[simp] theorem kind_ofFault (f : Fault) (ctx : FaultContext) :
+    (ofFault f ctx).kind = f.kindCode := by
+  cases f <;> rfl
+
+/-- **The words decode back to the fault they encode.** -/
+@[simp] theorem decode_ofFault (f : Fault) (ctx : FaultContext) :
+    (ofFault f ctx).decode = some { fault := f, context := ctx } := by
+  simp [decode]
+
+/-- No fault is kind `0`, and a decoded fault is the kind its code names. -/
+theorem decode_eq_none_iff (w : ThreadFaultWords) :
+    w.decode = none ↔ w.fault? = none := by
+  unfold decode; cases w.fault? <;> simp
+
+theorem kindCode_ne_zero (f : Fault) : f.kindCode ≠ 0 := by
+  cases f <;> simp [Fault.kindCode]
+
+/-- The fault is absent exactly when the kind is `0`. -/
+theorem fault?_eq_none_iff (w : ThreadFaultWords) : w.fault? = none ↔ w.kind = 0 := by
+  unfold fault?
+  match w.kind with
+  | 0 => simp
+  | 1 => simp
+  | 2 => simp
+  | 3 => simp
+  | n + 4 => simp
+
+/-- The decoded view is absent exactly when the kind is `0`. -/
+theorem decode_eq_none_iff_kind (w : ThreadFaultWords) : w.decode = none ↔ w.kind = 0 :=
+  (decode_eq_none_iff w).trans (fault?_eq_none_iff w)
+
+end ThreadFaultWords
 
 end SeLe4n.Model

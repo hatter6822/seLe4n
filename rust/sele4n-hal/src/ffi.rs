@@ -1535,6 +1535,38 @@ pub fn scalar_words_to_lean<const N: usize>(words: &[u64; N]) -> crate::lean_run
     o
 }
 
+/// **`words` written into the Lean scalar-words object `o`**, which the caller
+/// hands over: when `o` has the constructor's shape ([`scalar_words_of_lean`])
+/// and the reference is the only one (`lean_is_exclusive`), its fields are
+/// rewritten where they stand and `o` itself is answered, so nothing is
+/// allocated; otherwise the reference is released and a fresh object is built
+/// ([`scalar_words_to_lean`]).  Either way the answer holds `words`.
+///
+/// # Safety
+///
+/// `o` is an owned reference: a scalar, or a live heap object whose one
+/// reference the caller gives up.
+pub unsafe fn scalar_words_into_lean<const N: usize>(
+    o: crate::lean_runtime::Obj,
+    words: &[u64; N],
+) -> crate::lean_runtime::Obj {
+    let reusable =
+        // SAFETY: `o` is live for the call by the caller's contract; the shape
+        // test refuses a scalar before `is_exclusive` reads a header.
+        unsafe { scalar_words_of_lean::<N>(o).is_some() && crate::lean_runtime::is_exclusive(o) };
+    if reusable {
+        for (i, word) in words.iter().enumerate() {
+            // SAFETY: `o` is an exclusive constructor of `8 · N` scalar bytes and
+            // no object fields (checked above), and `8 · i` is below that.
+            unsafe { crate::lean_runtime::ctor_set_u64(o, 8 * i, *word) };
+        }
+        return o;
+    }
+    // SAFETY: the caller's one reference, given up here.
+    unsafe { crate::lean_runtime::dec(o) };
+    scalar_words_to_lean(words)
+}
+
 /// The `N` words of the Lean constructor `o`, or `None` when `o` is not a
 /// constructor of `N` `UInt64` fields — a boundary defect the caller halts on.
 ///
@@ -1793,6 +1825,26 @@ pub unsafe fn fp_context_of_lean(
 #[no_mangle]
 pub extern "C" fn ffi_fp_capture() -> crate::lean_runtime::Obj {
     fp_context_to_lean(&crate::fp_context::capture())
+}
+
+/// **WS-ZA ZA6.31**: [`ffi_fp_capture`] into the context the Lean side hands
+/// over — the switched-out owner's own saved context, taken out of its TCB
+/// (`Concurrency.fpTakeOwnerCell`).  Held by no one else, it is rewritten in
+/// place and handed back ([`scalar_words_into_lean`]), so a release allocates
+/// nothing; a shared or misshapen one is released and a fresh context built.
+///
+/// # Safety
+///
+/// `context` is an owned reference ([`scalar_words_into_lean`]'s contract),
+/// which the compiled Lean binding (an owned argument) supplies.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiFpCaptureInto`.
+#[no_mangle]
+pub unsafe extern "C" fn ffi_fp_capture_into(
+    context: crate::lean_runtime::Obj,
+) -> crate::lean_runtime::Obj {
+    // SAFETY: forwarded from the caller.
+    unsafe { scalar_words_into_lean(context, &crate::fp_context::capture()) }
 }
 
 /// `ffi_fp_stage_context` over the given load buffers (the testable form):
@@ -2450,6 +2502,42 @@ mod tests {
                 Some([0; crate::fp_context::FP_CONTEXT_WORDS])
             );
             crate::lean_runtime::dec(o);
+        }
+    }
+
+    /// The capture into an exclusive context rewrites that very object; into a
+    /// shared one it leaves the shared object as it was and answers a fresh one.
+    #[test]
+    fn ffi_fp_capture_into_rewrites_an_exclusive_context_in_place() {
+        let words = distinct_fp_words();
+        let owned = fp_context_to_lean(&words);
+        // SAFETY: `owned` is the live object just built, its one reference
+        // handed over.
+        let o = unsafe { ffi_fp_capture_into(owned) };
+        assert_eq!(o, owned);
+        // SAFETY: `o` is live.
+        unsafe {
+            assert_eq!(
+                fp_context_of_lean(o),
+                Some([0; crate::fp_context::FP_CONTEXT_WORDS])
+            );
+            crate::lean_runtime::dec(o);
+        }
+        let shared = fp_context_to_lean(&words);
+        // SAFETY: `shared` is live; the extra reference is the one kept here.
+        unsafe { crate::lean_runtime::inc(shared) };
+        // SAFETY: one of the two references is handed over.
+        let fresh = unsafe { ffi_fp_capture_into(shared) };
+        assert_ne!(fresh, shared);
+        // SAFETY: both are live.
+        unsafe {
+            assert_eq!(fp_context_of_lean(shared), Some(words));
+            assert_eq!(
+                fp_context_of_lean(fresh),
+                Some([0; crate::fp_context::FP_CONTEXT_WORDS])
+            );
+            crate::lean_runtime::dec(fresh);
+            crate::lean_runtime::dec(shared);
         }
     }
 

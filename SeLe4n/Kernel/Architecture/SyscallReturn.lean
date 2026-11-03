@@ -1808,7 +1808,7 @@ namespace FaultRestartFrame
 
 /-- WS-RR RR4.16: the `x0`-`x5` sub-frame, so the restart writeback can hand
 it to the syscall-return stager rather than repeating its six writes. -/
-def returnWindow (f : FaultRestartFrame) : SyscallReturnFrame :=
+@[inline] def returnWindow (f : FaultRestartFrame) : SyscallReturnFrame :=
   { x0 := f.x0, x1 := f.x1, x2 := f.x2, x3 := f.x3, x4 := f.x4, x5 := f.x5 }
 
 end FaultRestartFrame
@@ -1820,7 +1820,7 @@ is written by the syscall-return stager and this adds only what a restart
 reaches beyond it (`x6`, `x7`, `x30`, `pc`, `sp`).  One mechanism, so a
 change to how a frame lands in a register file cannot apply to syscall
 returns and miss fault restarts. -/
-def _root_.SeLe4n.RegisterFile.stageRestartFrame
+@[inline] def _root_.SeLe4n.RegisterFile.stageRestartFrame
     (rf : SeLe4n.RegisterFile) (f : FaultRestartFrame) : SeLe4n.RegisterFile :=
   { rf.stageReturnFrame f.returnWindow with
     x6 := f.x6, x7 := f.x7, x30 := f.lr, pc := f.pc, sp := f.sp }
@@ -1907,7 +1907,7 @@ theorem _root_.SeLe4n.RegisterFile.stageRestartFrame_gpr_untouched
 the single record update the restart path goes through, mirroring
 `TCB.withReturnFrame`.  `registerContext` moves; every other TCB field is
 definitionally unchanged. -/
-def _root_.SeLe4n.Model.TCB.withRestartFrame (tcb : TCB) (f : FaultRestartFrame) : TCB :=
+@[inline] def _root_.SeLe4n.Model.TCB.withRestartFrame (tcb : TCB) (f : FaultRestartFrame) : TCB :=
   { tcb with registerContext := tcb.registerContext.stageRestartFrame f }
 
 @[simp] theorem _root_.SeLe4n.Model.TCB.withRestartFrame_ipcState
