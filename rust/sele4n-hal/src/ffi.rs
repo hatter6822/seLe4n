@@ -1550,9 +1550,9 @@ pub unsafe fn scalar_words_into_lean<const N: usize>(
     o: crate::lean_runtime::Obj,
     words: &[u64; N],
 ) -> crate::lean_runtime::Obj {
-    // SAFETY: `o` is live for the call by the caller's contract; the shape test
-    // refuses a scalar before `is_exclusive` reads a header.
     let reusable =
+        // SAFETY: `o` is live for the call by the caller's contract; the shape
+        // test refuses a scalar before `is_exclusive` reads a header.
         unsafe { scalar_words_of_lean::<N>(o).is_some() && crate::lean_runtime::is_exclusive(o) };
     if reusable {
         for (i, word) in words.iter().enumerate() {

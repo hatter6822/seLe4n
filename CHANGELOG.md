@@ -71,7 +71,8 @@ FP/SIMD trap read 0, first call and steady state.
   the increments of two projections of one field before a reset; fixed in
   Lean 4.31.0).  The landed form has one projection, a scan of every generated
   C file for the shape reports 0 hits, and the toolchain move is registered in
-  `docs/REGISTERED_DEBT.md`, pending Adam's decision.
+  `docs/REGISTERED_DEBT.md`: Adam decided (2026-11-03) to move to Lean ≥4.31
+  after ZA6.37.
 - **The exerciser** (`smp_exercisers.rs`, `fault_entries`) traps through
   `handle_synchronous_exception` over an EL0 frame, and the gate pins every
   fault scenario at 0 (`scripts/qemu_exerciser_lib.sh`).

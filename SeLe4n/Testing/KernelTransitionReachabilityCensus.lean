@@ -1184,6 +1184,27 @@ def nonExecutedTransitionsPlain : List Name :=
   -- (`faultEntryCommitted_eq`, `unknownSyscallEntryCommitted_eq`,
   -- `fpAccessEntryCommitted_eq`).
   , `SeLe4n.Kernel.faultEntryStep
+  -- WS-ZA ZA6.31: the routed syscall entry's refusal-carrying specification,
+  -- which the compiled entry no longer runs: it runs the continuation form
+  -- (`syscallEntryCheckedK`, `dispatchOperandCheckedK`) proven to hand on what
+  -- each of these returns (`syscallEntryCheckedK_spec`,
+  -- `dispatchOperandCheckedK_spec`, `syscallEntryCheckedK_outcome_eq`).
+  , `SeLe4n.Kernel.syscallEntryCheckedR
+  , `SeLe4n.Kernel.dispatchSendCheckedR
+  , `SeLe4n.Kernel.dispatchCallCheckedR
+  , `SeLe4n.Kernel.dispatchReplyCheckedR
+  , `SeLe4n.Kernel.dispatchReplyRecvCheckedR
+  , `SeLe4n.Kernel.dispatchReceiveCheckedR
+  , `SeLe4n.Kernel.dispatchSignalCheckedR
+  , `SeLe4n.Kernel.dispatchWaitCheckedR
+  , `SeLe4n.Kernel.dispatchAuditedCheckedR
+  , `SeLe4n.Kernel.dispatchInvocationCheckedR
+  -- WS-ZA ZA6.31: specifications of in-place fault forms the entries run in
+  -- their place: the checked delivery's (`faultDeliverCheckedWords_eq`) and a
+  -- receive's take of a queued caller (`receiveCallTake_inPlace`,
+  -- `receiveCallTakeState_eq_hold`, run as `storeReceiveCallReady`).
+  , `SeLe4n.Kernel.faultDeliverCheckedOf
+  , `SeLe4n.Kernel.receiveCallTakeState
   , `SeLe4n.Kernel.faultSuspend
   -- WS-ZA ZA5.4 part 26: names for the states a thread's finalisation reaches
   -- part way (`FinaliseRetirable.lean`), which the carriage of its admission is
