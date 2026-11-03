@@ -75,7 +75,10 @@ and fault entries do.
   QEMU `virt` serves 288.  A line inside the model but past the board was
   accepted, and the HAL's validation of the recorded mask write would then
   halt every core: a denial of service open to any holder of a handler
-  capability for such a line.  The range is now read from one owner, the
+  capability for such a line (today only boot-granted ones; found in an
+  earlier commit of this change, so no released version carried it).  It
+  is fixed, not left to the HAL's fail-closed halt: the range is now read
+  from one owner, the
   board's line count.  `MachineConfig.interruptLineCount` is set from
   `gicSpiCount + 32` on the RPi5 (320) and `qemuVirtGicSpiCount + 32` on
   `virt` (288), and `applyMachineConfig` installs it into
