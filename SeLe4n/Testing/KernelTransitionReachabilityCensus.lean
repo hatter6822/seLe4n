@@ -1222,6 +1222,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.handleYield
   , `SeLe4n.Kernel.handleYieldChecked
   , `SeLe4n.Kernel.handleYieldWithBudget
+  -- WS-ZA ZA6.32: the interrupt entry's committed state, named for its
+  -- non-interference theorem; `interruptEntry_commits` restates the entry,
+  -- which builds the same state inline, over it.
+  , `SeLe4n.Kernel.interruptEntryState
   , `SeLe4n.Kernel.lifecycleCleanupPipeline
   , `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken
   -- WS-ZA ZA5.4 part 31: the registry fold is the service lookup's

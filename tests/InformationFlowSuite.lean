@@ -862,8 +862,8 @@ def runInformationFlowChecks : IO Unit := do
   -- is carved, through `retypeFromUntyped`, already on the list.
   -- WS-ZA ZA6.9: `schedContextConsumedOnCore` joined, capability-only, and
   -- WS-ZA ZA6.29 `schedContextYieldToOnCore`, capability-only.
-  expect "enforcement boundary: total 52 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 52)
+  expect "enforcement boundary: total 53 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 53)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
@@ -1408,12 +1408,12 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA6.9: 32 → 33 with `schedContextConsumedOnCore`, and WS-ZA ZA6.29
   -- 33 → 34 with `schedContextYieldToOnCore`, both capability-only: the
   -- context capability's write right is their whole authority.
-  expect "enforcement boundary has 34 capability-only"
-    (coCount = 34)
+  expect "enforcement boundary has 35 capability-only"
+    (coCount = 35)
   expect "enforcement boundary has 3 read-only"
     (roCount = 3)
-  expect "enforcement boundary total is 52"
-    (boundary.length = 52)
+  expect "enforcement boundary total is 53"
+    (boundary.length = 53)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1516,8 +1516,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 52 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 52)
+  expect "enforcementBoundaryExtended has 53 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 53)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

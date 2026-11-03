@@ -5361,9 +5361,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "66 entries: 52 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation and the yieldTo invocation) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 66) &&
-     decide (enforcementBoundaryExtended.length = 52) &&
+  assertBool "67 entries: 53 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation, the yieldTo invocation and the interrupt acknowledge) + 14 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 67) &&
+     decide (enforcementBoundaryExtended.length = 53) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -8372,10 +8372,10 @@ private def runPhaseSurfaceChecks : IO Unit := do
      have _s := niStepCoverage_perCore_count
      decide (KernelOperation.all.eraseDups.length = KernelOperation.all.length))
   -- WS-ZA ZA6.30: the per-core step relation's coverage — the kernel operations
-  -- plus the scheduler steps, fifty distinct theorems, executed rather than
-  -- only elaborated.
-  assertBool "per-core NI coverage names fifty distinct theorems"
-    (decide ((PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 50))
+  -- plus the scheduler steps and the interrupt entry, fifty-one distinct
+  -- theorems, executed rather than only elaborated.
+  assertBool "per-core NI coverage names fifty-one distinct theorems"
+    (decide ((PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 51))
 
 
 
@@ -9453,7 +9453,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 43) &&
+     decide (SyscallId.count = 44) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10078,9 +10078,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 43, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 44, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 43) &&
+     decide (SyscallId.count = 44) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit
