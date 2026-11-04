@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/project-thread-wt98p2",
-      "commit_sha": "a6f44d5d59e6a1c03b56b987c9ec6dd54b038291",
-      "tree_sha": "57f0d44cd74a7244be9f36c24487f8eb248f383a",
-      "committed_at_utc": "2026-11-04T17:54:36-05:00"
+      "commit_sha": "480ae5491e0d7030676691e03668fd404b3e2e50",
+      "tree_sha": "5fa96be593b042db220c47145a17ba3ccde63dad",
+      "committed_at_utc": "2026-11-04T23:46:02+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1bf6f7ce8f92bdb19ea05a8ad9ef7b942e2f80de0bf15e80fc73d6e6002c5f66"
+    "source_digest": "f20d204543840d8d34b279dc6941d2f7b01ef05465e6f7339873022800a85f3d"
   },
   "summary": {
     "module_count": 609,
@@ -29,7 +29,7 @@
     "production_files": 539,
     "production_loc": 574013,
     "test_files": 70,
-    "test_loc": 88448,
+    "test_loc": 88451,
     "proved_theorem_lemma_decls": 22015,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -471615,7 +471615,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1858,
+          "line": 1861,
           "called": [
             "SeLe4n.Testing.runAk6Suite",
             "SeLe4n.Testing.runInformationFlowChecks",
