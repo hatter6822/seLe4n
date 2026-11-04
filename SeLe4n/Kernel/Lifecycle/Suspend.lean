@@ -727,12 +727,17 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
   match tcb.ipcState with
   | .ready => st
-  | .blockedOnSend _ | .blockedOnReceive _ | .blockedOnCall _ =>
+  | .blockedOnSend ep | .blockedOnReceive ep | .blockedOnCall ep =>
     -- WS-RR RR7.14: `restoreToReadyCancelled`, not the plain restore — the
     -- unblocked thread is owed the `.ipcCancelled` frame, see there.  The
     -- `.ready` arm above stages nothing: it is the no-op for a thread that was
     -- not blocked, and it commits no write at all.
-    restoreToReadyCancelled (removeFromAllEndpointQueues st tid) tid
+    --
+    -- WS-ZA ZA6.33: the dequeue is seL4's `tcbEPDequeue` on the one endpoint
+    -- the thread state names (`removeFromBlockingEndpoint`), not a sweep of
+    -- every endpoint in the store.  The restore clears the receiver's stashed
+    -- reply, which is seL4's `reply_unlink` on the receive arm.
+    restoreToReadyCancelled (removeFromBlockingEndpoint st tid ep) tid
   | .blockedOnReply _ _ =>
     -- WS-SM SM6.D (PR #822 review): a cancelled/suspended caller awaiting a
     -- reply must also relinquish its single-use reply link, else the Reply

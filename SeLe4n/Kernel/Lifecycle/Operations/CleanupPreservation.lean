@@ -279,6 +279,75 @@ theorem removeFromAllEndpointQueues_preserves_objects_invExt
         · exact hAcc
       · exact hAcc)
 
+-- ============================================================================
+-- WS-ZA ZA6.33: the targeted dequeue (`removeFromBlockingEndpoint`, seL4's
+-- `tcbEPDequeue`) — the splice, then at most one endpoint rewrite
+-- ============================================================================
+
+/-- **The targeted dequeue is the splice, or the splice with one endpoint
+rewritten**, at the endpoint named, to the boundary-advanced endpoint. -/
+theorem removeFromBlockingEndpoint_cases (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    removeFromBlockingEndpoint st tid e = spliceOutMidQueueNode st tid ∨
+      ∃ ep hEp, (spliceOutMidQueueNode st tid).objects[e]? = some (.endpoint ep) ∧
+        removeFromBlockingEndpoint st tid e =
+          (spliceOutMidQueueNode st tid).rewriteObject e
+            (.endpoint ((ep.withSendQ (removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.sendQ tid)).withReceiveQ
+              (removeThreadFromQueue (spliceOutMidQueueNode st tid) ep.receiveQ tid))) hEp := by
+  unfold removeFromBlockingEndpoint
+  dsimp only
+  split
+  · rename_i ep hEp hW
+    split
+    · refine Or.inr ⟨ep, SystemState.rewriteAdmissible_endpoint hEp _, ?_, rfl⟩
+      exact (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+    · exact Or.inl rfl
+  · exact Or.inl rfl
+
+/-- **A property the splice has and every rewrite keeps, the targeted dequeue
+has.** -/
+theorem removeFromBlockingEndpoint_preserves_of (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (P : SystemState → Prop) (hS : P (spliceOutMidQueueNode st tid))
+    (hR : ∀ s k o h, P s → P (SystemState.rewriteObject s k o h)) :
+    P (removeFromBlockingEndpoint st tid e) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨_, _, _, h⟩ <;> rw [h]
+  · exact hS
+  · exact hR _ _ _ _ hS
+
+theorem removeFromBlockingEndpoint_preserves (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    (removeFromBlockingEndpoint st tid e).scheduler = st.scheduler ∧
+    (removeFromBlockingEndpoint st tid e).lifecycle = st.lifecycle :=
+  removeFromBlockingEndpoint_preserves_of st tid e
+    (fun s => s.scheduler = st.scheduler ∧ s.lifecycle = st.lifecycle)
+    (spliceOutMidQueueNode_preserves st tid) (fun _ _ _ _ h => h)
+
+theorem removeFromBlockingEndpoint_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : (removeFromBlockingEndpoint st tid e).scheduler = st.scheduler :=
+  (removeFromBlockingEndpoint_preserves st tid e).1
+
+theorem removeFromBlockingEndpoint_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : (removeFromBlockingEndpoint st tid e).lifecycle = st.lifecycle :=
+  (removeFromBlockingEndpoint_preserves st tid e).2
+
+theorem removeFromBlockingEndpoint_tlbShootdown_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) :
+    (removeFromBlockingEndpoint st tid e).tlbShootdown = st.tlbShootdown :=
+  removeFromBlockingEndpoint_preserves_of st tid e (fun s => s.tlbShootdown = st.tlbShootdown)
+    (spliceOutMidQueueNode_tlbShootdown_eq st tid) (fun _ _ _ _ h => h)
+
+theorem removeFromBlockingEndpoint_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : (removeFromBlockingEndpoint st tid e).machine = st.machine :=
+  removeFromBlockingEndpoint_preserves_of st tid e (fun s => s.machine = st.machine)
+    (spliceOutMidQueueNode_machine_eq st tid) (fun _ _ _ _ h => h)
+
+theorem removeFromBlockingEndpoint_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    (removeFromBlockingEndpoint st tid e).objects.invExt :=
+  removeFromBlockingEndpoint_preserves_of st tid e (fun s => s.objects.invExt)
+    (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+    (fun _ _ _ _ h => SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ h)
+
 /-- **WS-RR RR7.22 (residual)**: `a` is `b` with (only) its three intrusive-queue
 links rewritten.
 
@@ -3472,5 +3541,232 @@ theorem cancelDonationArmOnCore_runCoresAgree {st st' : SystemState}
   · cases h; exact SystemState.RunCoresAgree.refl _
   · exact cancelBoundDonationOnCore_runCoresAgree hInv h
   · exact cancelDonatedDonationOnCore_runCoresAgree hInv h
+
+-- ============================================================================
+-- WS-ZA ZA6.33: the targeted dequeue's TCB and IPC frames
+-- ============================================================================
+
+/-- **A TCB before the targeted dequeue is a TCB after it, at the same
+placement**: the splice rewrites only queue links, and the one endpoint rewrite
+lands on an endpoint key, which holds no TCB. -/
+theorem removeFromBlockingEndpoint_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    (removeFromBlockingEndpoint st tid e).objects.invExt
+    ∧ ∃ t' : TCB,
+      (removeFromBlockingEndpoint st tid e).objects[k]? = some (.tcb t')
+      ∧ t'.placement = t0.placement := by
+  obtain ⟨t₁, hL1, hRw1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
+  have hAff1 : t₁.placement = t0.placement :=
+    hRw1.field TCB.placement (fun _ _ _ _ _ _ => rfl)
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact ⟨hInvS, t₁, hL1, hAff1⟩
+  · have hNe : e ≠ k := fun hek => by
+      subst hek; rw [hL1] at hE; cases hE
+    exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInvS, t₁,
+      (SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hInvS).trans hL1, hAff1⟩
+
+/-- **A key holding no TCB before the targeted dequeue holds none after it.** -/
+theorem removeFromBlockingEndpoint_no_tcb
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt)
+    (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
+    (removeFromBlockingEndpoint st tid e).objects.invExt
+    ∧ ∀ t : TCB,
+      (removeFromBlockingEndpoint st tid e).objects[tid.toObjId]? ≠ some (.tcb t) := by
+  have hSplice : spliceOutMidQueueNode st tid = st :=
+    spliceOutMidQueueNode_eq_self_of_lookupTcb_none st tid
+      (lookupTcb_eq_none_of_no_tcb st tid hNo)
+  have hObj : (spliceOutMidQueueNode st tid).objects = st.objects := by rw [hSplice]
+  have hInvS : (spliceOutMidQueueNode st tid).objects.invExt := by rw [hObj]; exact hInv
+  have hNoS : ∀ t : TCB, (spliceOutMidQueueNode st tid).objects[tid.toObjId]? ≠ some (.tcb t) := by
+    rw [hObj]; exact hNo
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact ⟨hInvS, hNoS⟩
+  · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInvS, fun t ht => ?_⟩
+    by_cases hx : e = tid.toObjId
+    · subst hx
+      have hclash := (SystemState.rewriteObject_objects_self _ tid.toObjId _ _ hInvS).symm.trans ht
+      cases hclash
+    · exact hNoS t ((SystemState.rewriteObject_objects_ne _ e tid.toObjId _ _ hx hInvS).symm.trans ht)
+
+/-- **The targeted dequeue preserves `ipcInvariant`**: the splice writes TCBs and
+the one rewrite is an endpoint. -/
+theorem removeFromBlockingEndpoint_preserves_ipcInvariant
+    (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
+    ipcInvariant (removeFromBlockingEndpoint st tid e) := by
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  have hIpcS := spliceOutMidQueueNode_preserves_ipcInvariant st tid hInv hIpc
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact hIpcS
+  · exact ipcInvariant_insert_endpoint _ _ _ hInvS hIpcS
+
+/-- **No endpoint other than `e` names `tid` at a boundary of either queue** —
+the condition under which the store sweep and the targeted dequeue agree.  Under
+`queueHeadBlockedConsistent` and `endpointQueueTailBlockedConsistent` it holds
+of every thread blocked on `e` (`endpointBoundariesOnly_of_blocked`). -/
+def endpointBoundariesOnly (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) :
+    Prop :=
+  ∀ k ep, k ≠ e → st.objects[k]? = some (.endpoint ep) →
+    ep.sendQ.head ≠ some tid ∧ ep.sendQ.tail ≠ some tid ∧
+      ep.receiveQ.head ≠ some tid ∧ ep.receiveQ.tail ≠ some tid
+
+/-- The sweep's body is the identity at a key `k ≠ e` whose accumulator value is
+the spliced state's, when no endpoint but `e` names the thread. -/
+theorem endpointSweepBody_id_off (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) (hOnly : endpointBoundariesOnly st tid e)
+    (acc : SystemState) (k : SeLe4n.ObjId) (v : KernelObject) (hk : k ≠ e)
+    (hAcc : ∀ ep, acc.objects[k]? = some (.endpoint ep) →
+      (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep)) :
+    endpointSweepBody (spliceOutMidQueueNode st tid) tid acc k v = acc := by
+  unfold endpointSweepBody
+  cases v with
+  | endpoint _ =>
+    dsimp only
+    split
+    · rename_i ep hEp _
+      have hA := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+      have hSt := (spliceOutMidQueueNode_nonTcb st tid hInv k _ (fun _ h => by cases h)).mp (hAcc ep hA)
+      obtain ⟨h1, h2, h3, h4⟩ := hOnly k ep hk hSt
+      have hG : (ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid) = false := by
+        simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne]; exact ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩
+      rw [if_neg (by rw [hG]; exact Bool.false_ne_true)]
+    · rfl
+  | _ => rfl
+
+/-- **The store sweep is the targeted dequeue** when no endpoint but `e` names
+the thread at a boundary (seL4's `tcbEPDequeue` is the sweep restricted to the
+one endpoint a blocked thread can be a boundary of). -/
+theorem removeFromAllEndpointQueues_eq_blocking (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hInv : st.objects.invExt) (hOnly : endpointBoundariesOnly st tid e) :
+    removeFromAllEndpointQueues st tid = removeFromBlockingEndpoint st tid e := by
+  rw [removeFromAllEndpointQueues_eq_fold]
+  have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  -- The targeted dequeue is the body run once at `e` on the spliced state.
+  have hT : ∀ x, removeFromBlockingEndpoint st tid e =
+      endpointSweepBody (spliceOutMidQueueNode st tid) tid (spliceOutMidQueueNode st tid) e
+        (.endpoint x) := by
+    intro x; unfold removeFromBlockingEndpoint endpointSweepBody; dsimp only
+    split <;> rename_i h <;> simp only [h]
+  cases hE : (spliceOutMidQueueNode st tid).objects[e]? with
+  | some o =>
+    cases o with
+    | endpoint ep0 =>
+      -- A rewrite at `e` keeps every other key, so the spliced state's values.
+      have hOffT : ∀ k, k ≠ e → ∀ ep,
+          (removeFromBlockingEndpoint st tid e).objects[k]? = some (.endpoint ep) →
+          (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep) := by
+        intro k hk ep h
+        rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨_, _, _, hc⟩ <;> rw [hc] at h
+        · exact h
+        · rwa [SystemState.rewriteObject_objects_ne _ _ _ _ _ (fun h' => hk h'.symm) hInvS] at h
+      have hQ := SeLe4n.Kernel.RobinHood.RHTable.fold_pointwise (spliceOutMidQueueNode st tid).objects
+        (spliceOutMidQueueNode st tid) (endpointSweepBody (spliceOutMidQueueNode st tid) tid)
+        (fun j acc => j = e → acc = spliceOutMidQueueNode st tid)
+        (fun j acc => j = e → acc = removeFromBlockingEndpoint st tid e) hInvS
+        (fun _ _ => rfl)
+        (fun acc k k' v' hne hPre hk => by
+          subst hk
+          rw [hPre rfl]
+          exact endpointSweepBody_id_off st tid k hInv hOnly _ k' v' (fun h => hne h.symm)
+            (fun _ h => h))
+        (fun acc k v hv hPre hk => by
+          subst hk
+          rw [hPre rfl]
+          rw [← RHTable_getElem?_eq_get?, hE] at hv
+          cases hv
+          exact (hT ep0).symm)
+        (fun acc k k' v' hne hQ hk => by
+          subst hk
+          rw [hQ rfl]
+          exact endpointSweepBody_id_off st tid k hInv hOnly _ k' v' (fun h => hne h.symm)
+            (hOffT k' (fun h => hne h.symm)))
+        e (.endpoint ep0) (by rw [← RHTable_getElem?_eq_get?]; exact hE)
+      exact hQ rfl
+    | _ =>
+      all_goals
+      have hNone : (spliceOutMidQueueNode st tid).getEndpoint? e = none := by
+        cases hG : (spliceOutMidQueueNode st tid).getEndpoint? e with
+        | none => rfl
+        | some ep =>
+          have := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hG
+          rw [hE] at this; cases this
+      have hTS : removeFromBlockingEndpoint st tid e = spliceOutMidQueueNode st tid := by
+        unfold removeFromBlockingEndpoint; dsimp only
+        rw [SystemState.getEndpointWitnessed?_eq_none hNone]
+      rw [hTS]
+      refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+        (spliceOutMidQueueNode st tid) _ (fun acc => acc = spliceOutMidQueueNode st tid) hInvS rfl
+        (fun acc k v hv hAcc => ?_)
+      subst hAcc
+      by_cases hk : k = e
+      · subst hk
+        rw [← RHTable_getElem?_eq_get?, hE] at hv
+        cases hv
+        unfold endpointSweepBody; rfl
+      · exact endpointSweepBody_id_off st tid e hInv hOnly _ k v hk (fun _ h => h)
+  | none =>
+    have hNone : (spliceOutMidQueueNode st tid).getEndpoint? e = none := by
+      cases hG : (spliceOutMidQueueNode st tid).getEndpoint? e with
+      | none => rfl
+      | some ep =>
+        have := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hG
+        rw [hE] at this; cases this
+    have hTS : removeFromBlockingEndpoint st tid e = spliceOutMidQueueNode st tid := by
+      unfold removeFromBlockingEndpoint; dsimp only
+      rw [SystemState.getEndpointWitnessed?_eq_none hNone]
+    rw [hTS]
+    refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects
+      (spliceOutMidQueueNode st tid) _ (fun acc => acc = spliceOutMidQueueNode st tid) hInvS rfl
+      (fun acc k v hv hAcc => ?_)
+    subst hAcc
+    by_cases hk : k = e
+    · subst hk
+      rw [← RHTable_getElem?_eq_get?, hE] at hv
+      cases hv
+    · exact endpointSweepBody_id_off st tid e hInv hOnly _ k v hk (fun _ h => h)
+
+/-- The targeted dequeue writes TCBs only through the splice: every TCB the
+splice leaves survives verbatim. -/
+theorem removeFromBlockingEndpoint_tcb_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (t0 : TCB)
+    (h : (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t0)) :
+    (removeFromBlockingEndpoint st tid e).objects[k]? = some (.tcb t0) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep, hA, hE, hc⟩ <;> rw [hc]
+  · exact h
+  · have hNe : e ≠ k := fun hek => by subst hek; rw [h] at hE; cases hE
+    rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hExt]; exact h
+
+/-- A TCB reading after the targeted dequeue is the splice's. -/
+theorem removeFromBlockingEndpoint_tcb_source (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (t' : TCB)
+    (h : (removeFromBlockingEndpoint st tid e).objects[k]? = some (.tcb t')) :
+    (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') := by
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep, hA, hE, hc⟩ <;> rw [hc] at h
+  · exact h
+  · by_cases hNe : e = k
+    · subst hNe
+      have := (SystemState.rewriteObject_objects_self _ e _ _ hExt).symm.trans h
+      cases this
+    · rwa [SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hExt] at h
+
+/-- An endpoint reading after the targeted dequeue had an endpoint at the same
+key before it. -/
+theorem removeFromBlockingEndpoint_endpoint_source (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hExt : (spliceOutMidQueueNode st tid).objects.invExt)
+    (k : SeLe4n.ObjId) (ep : Endpoint)
+    (h : (removeFromBlockingEndpoint st tid e).objects[k]? = some (.endpoint ep)) :
+    ∃ ep0, (spliceOutMidQueueNode st tid).objects[k]? = some (.endpoint ep0) := by
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep1, hA, hE, hc⟩ <;> rw [hc] at h
+  · exact ⟨ep, h⟩
+  · by_cases hNe : e = k
+    · subst hNe; exact ⟨ep1, hE⟩
+    · rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hExt] at h; exact ⟨ep, h⟩
 
 end SeLe4n.Kernel

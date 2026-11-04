@@ -387,18 +387,18 @@ theorem cancelIpcBlocking_placement_frame (st : SystemState) (v : SeLe4n.ThreadI
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => rfl
-  | blockedOnSend _ =>
+  | blockedOnSend e =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
-      removeFromAllEndpointQueues_placement_frame st v hInv x]
-  | blockedOnReceive _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv) x),
+      removeFromBlockingEndpoint_placement_frame st v e hInv x]
+  | blockedOnReceive e =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
-      removeFromAllEndpointQueues_placement_frame st v hInv x]
-  | blockedOnCall _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv) x),
+      removeFromBlockingEndpoint_placement_frame st v e hInv x]
+  | blockedOnCall e =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
-      removeFromAllEndpointQueues_placement_frame st v hInv x]
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv) x),
+      removeFromBlockingEndpoint_placement_frame st v e hInv x]
   | blockedOnNotification _ =>
     rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
         (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) x),
@@ -453,17 +453,17 @@ scheduling-context bindings and the reply link. -/
 theorem cancelIpcBlocking_stateMono (st : SystemState) (v : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) :
     SystemState.StateMono st (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) := by
-  have hQ : SystemState.StateMono st (removeFromAllEndpointQueues st v) :=
+  have hQ : ∀ e, SystemState.StateMono st (removeFromBlockingEndpoint st v e) := fun e =>
     SystemState.StateMono.of_stateFields fun t => by
-      rw [removeFromAllEndpointQueues_getTcb?_eq_splice st v hInv t]
+      rw [removeFromBlockingEndpoint_getTcb?_eq_splice st v e hInv t]
       exact spliceOutMidQueueNode_tcbField_frame (fun x => (x.ipcState, x.threadState, x.cpuAffinity))
         (fun _ _ _ _ _ _ => rfl) st v hInv t
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact SystemState.StateMono.refl _
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact hQ.trans (restoreToReadyStaging_stateMono _ v _
-      (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    exact (hQ e).trans (restoreToReadyStaging_stateMono _ v _
+      (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
   | blockedOnNotification _ =>
     exact (SystemState.StateMono.of_stateFields fun t =>
       removeFromNotificationWaitQueue_tcbField_frame (fun x => (x.ipcState, x.threadState, x.cpuAffinity))

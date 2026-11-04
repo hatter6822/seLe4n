@@ -55,6 +55,15 @@ theorem removeFromAllEndpointQueues_replyViews_eq (st : SystemState) (tid : SeLe
     (fun k t0 hk => ⟨t0, removeFromAllEndpointQueues_tcb_frame st tid hS k t0 hk, rfl⟩)
     (fun k t' hk => ⟨t', removeFromAllEndpointQueues_tcb_source st tid hS k t' hk⟩)
 
+theorem removeFromBlockingEndpoint_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    (removeFromBlockingEndpoint st tid e).replyViews = st.replyViews := by
+  have hS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  rw [← spliceOutMidQueueNode_replyViews_eq st tid hInv]
+  exact replyViews_eq_of_tcbs
+    (fun k t0 hk => ⟨t0, removeFromBlockingEndpoint_tcb_frame st tid e hS k t0 hk, rfl⟩)
+    (fun k t' hk => ⟨t', removeFromBlockingEndpoint_tcb_source st tid e hS k t' hk⟩)
+
 theorem removeFromNotificationWaitQueue_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     (removeFromNotificationWaitQueue st tid).replyViews = st.replyViews :=
@@ -150,8 +159,8 @@ theorem cancelIpcBlocking_preserves_replyWaitersConsistent (st : SystemState)
   all_goals rename_i hIpc
   all_goals first
     | (refine replyWaitersConsistent.of_views ?_ hC
-       rw [restoreToReadyCancelled_replyViews _ _ (removeFromAllEndpointQueues_preserves_objects_invExt _ _ hInv)]
-       exact hReady _ (removeFromAllEndpointQueues_replyViews_eq _ _ hInv)
+       rw [restoreToReadyCancelled_replyViews _ _ (removeFromBlockingEndpoint_preserves_objects_invExt _ _ _ hInv)]
+       exact hReady _ (removeFromBlockingEndpoint_replyViews_eq _ _ _ hInv)
          (by simp [TCB.blockingServer?, hIpc]))
     | (refine replyWaitersConsistent.of_views ?_ hC
        rw [restoreToReadyCancelled_replyViews _ _ (removeFromNotificationWaitQueue_preserves_objects_invExt _ _ hInv)]

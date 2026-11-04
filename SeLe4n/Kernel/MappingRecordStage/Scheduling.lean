@@ -173,6 +173,16 @@ theorem removeFromAllEndpointQueues_mappingStage (st : SystemState) (tid : SeLe4
     · exact MappingStage.refl _
   | _ => exact MappingStage.refl _
 
+/-- The targeted dequeue: the splice, then the one endpoint whose queue ends
+name the thread rewritten in place. -/
+theorem removeFromBlockingEndpoint_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : MappingStage st (removeFromBlockingEndpoint st tid e) := by
+  refine (spliceOutMidQueueNode_mappingStage st tid).trans ?_
+  rcases removeFromBlockingEndpoint_cases st tid e with hc | ⟨ep, hA, hE, hc⟩ <;> rw [hc]
+  · exact MappingStage.refl _
+  · exact MappingStage.rewriteObject _ _ _ (fun old hOld => by rw [hE] at hOld; cases hOld; rfl)
+      (fun old hOld => by rw [hE] at hOld; cases hOld; rfl)
+
 theorem restoreToReadyCancelled_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
     MappingStage st (Lifecycle.Suspend.restoreToReadyCancelled st tid) := by
   unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
@@ -186,9 +196,9 @@ theorem cancelIpcBlocking_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId
   cases hB : tcb.ipcState with
   | ready =>
     unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]; exact MappingStage.refl _
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
     unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
-    exact (removeFromAllEndpointQueues_mappingStage st tid).trans
+    exact (removeFromBlockingEndpoint_mappingStage st tid e).trans
       (restoreToReadyCancelled_mappingStage _ tid)
   | blockedOnReply _ _ =>
     exact MappingStage.of_finaliseFrameAny fun hI => FinaliseFrameAny.replyCancel st tid tcb hI hB

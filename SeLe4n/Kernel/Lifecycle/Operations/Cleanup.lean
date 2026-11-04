@@ -364,6 +364,27 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
       | none => acc
     | _ => acc
 
+/-- **Dequeue a thread from the one endpoint it waits on** (seL4's
+`tcbEPDequeue`, which `cancelIPC` runs on the endpoint the thread state names):
+the thread's interior queue links are spliced out (`spliceOutMidQueueNode`), and
+when the thread is a boundary of that endpoint's send or receive queue the
+endpoint's head or tail moves to its neighbour, as one rewrite of that one
+endpoint.  This is `removeFromAllEndpointQueues` with the sweep over the store
+replaced by the one endpoint a blocked thread can be a boundary of; the two agree
+on every state where no other endpoint names the thread at a boundary.  It
+writes the thread's two neighbours and that endpoint, nothing else. -/
+def removeFromBlockingEndpoint (st : SystemState) (tid : SeLe4n.ThreadId)
+    (endpointId : SeLe4n.ObjId) : SystemState :=
+  let stSpliced := spliceOutMidQueueNode st tid
+  match stSpliced.getEndpointWitnessed? endpointId with
+  | some ⟨ep, hEp⟩ =>
+    if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+        || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+      let ep' : Endpoint := (ep.withSendQ (removeThreadFromQueue stSpliced ep.sendQ tid)).withReceiveQ (removeThreadFromQueue stSpliced ep.receiveQ tid)
+      stSpliced.rewriteObject endpointId (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
+    else stSpliced
+  | none => stSpliced
+
 /-- R4-A.2 (M-12), WS-ZA ZA4.4: Remove a thread from the notification wait queue
 it is linked into.
 

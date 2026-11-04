@@ -205,8 +205,8 @@ theorem cancelIpcBlocking_scheduler_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    -- restoreToReadyCancelled preserves scheduler, removeFromAllEndpointQueues preserves scheduler
-    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
+    -- restoreToReadyCancelled preserves scheduler, the targeted dequeue preserves scheduler
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromBlockingEndpoint_scheduler_eq]
   | blockedOnReply _ _ =>
     -- WS-SM SM6.D (PR #822 review): the reply-link consume only writes `objects`.
     -- WS-RR RR7.22 (residual, remediation): so does the donation return — its
@@ -236,7 +236,7 @@ theorem cancelIpcBlocking_machine_eq
   cases tcb.ipcState with
   | ready => rfl
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromBlockingEndpoint_machine_eq]
   | blockedOnReply _ _ =>
     dsimp only
     rw [SystemState.unlinkReplyWaiterOpt_machine, consumeReplyLink_machine_eq,
@@ -1099,7 +1099,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
   | ready => exact hInv
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     exact restoreToReadyCancelled_invExt _ _
-      (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
+      (removeFromBlockingEndpoint_preserves_objects_invExt st tid _ hInv)
   | blockedOnReply _ _ =>
     exact SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _
       (consumeReplyLink_preserves_objects_invExt _ _ _
@@ -1207,9 +1207,9 @@ theorem cancelIpcBlocking_tcb_lookup
   | ready => exact ⟨t0, hPre, rfl⟩
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     obtain ⟨hInvE, t₁, hL1, hAff1⟩ :=
-      removeFromAllEndpointQueues_tcb_lookup st tid k t0 hInv hPre
+      removeFromBlockingEndpoint_tcb_lookup st tid _ k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReadyCancelled_tcb_lookup (removeFromAllEndpointQueues st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromBlockingEndpoint st tid _) tid k t₁
         hInvE hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
   | blockedOnReply _ _ =>
@@ -1282,14 +1282,14 @@ theorem cancelIpcBlocking_getTcb?_none
   unfold cancelIpcBlocking
   cases tcb.ipcState with
   | ready => exact hT
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    obtain ⟨hInvE, hNoE⟩ := removeFromAllEndpointQueues_no_tcb st tid hInv hNo
-    have hTE : (removeFromAllEndpointQueues st tid).getTcb? tid = none := by
-      cases hX : (removeFromAllEndpointQueues st tid).getTcb? tid with
+  | blockedOnSend ep | blockedOnReceive ep | blockedOnCall ep =>
+    obtain ⟨hInvE, hNoE⟩ := removeFromBlockingEndpoint_no_tcb st tid ep hInv hNo
+    have hTE : (removeFromBlockingEndpoint st tid ep).getTcb? tid = none := by
+      cases hX : (removeFromBlockingEndpoint st tid ep).getTcb? tid with
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoE t)
-    show (restoreToReadyCancelled (removeFromAllEndpointQueues st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromBlockingEndpoint st tid ep) tid).getTcb? tid
       = none
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTE]
     exact hTE
@@ -1469,8 +1469,8 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
   | ready => exact hIpc
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
-      (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
-      (removeFromAllEndpointQueues_preserves_ipcInvariant st tid hInv hIpc)
+      (removeFromBlockingEndpoint_preserves_objects_invExt st tid _ hInv)
+      (removeFromBlockingEndpoint_preserves_ipcInvariant st tid _ hInv hIpc)
   | blockedOnReply _ _ =>
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
     have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR

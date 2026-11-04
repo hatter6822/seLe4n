@@ -463,10 +463,10 @@ theorem of_map {pre post : SystemState}
     savedRegsKeptExcept W pre post := fun t _ => h t
 
 /-- The endpoint-queue removal writes queue links alone. -/
-theorem of_removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : savedRegsKeptExcept W st (removeFromAllEndpointQueues st tid) :=
+theorem of_removeFromBlockingEndpoint (st : SystemState) (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) : savedRegsKeptExcept W st (removeFromBlockingEndpoint st tid e) :=
   of_map fun x => by
-    rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv x]
+    rw [removeFromBlockingEndpoint_getTcb?_eq_splice st tid e hInv x]
     exact spliceOutMidQueueNode_tcbField_frame TCB.registerContext (fun _ _ _ _ _ _ => rfl) st tid
       hInv x
 
@@ -549,15 +549,15 @@ theorem cancelIpcBlocking_savedRegsKeptExcept (st : SystemState) (v : SeLe4n.Thr
       (some Architecture.cancelledIpcFrame) hs rfl
   cases tcb.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ =>
-    exact (savedRegsKeptExcept.of_removeFromAllEndpointQueues st v hInv).trans
-      (hQ _ (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
-  | blockedOnReceive _ =>
-    exact (savedRegsKeptExcept.of_removeFromAllEndpointQueues st v hInv).trans
-      (hQ _ (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
-  | blockedOnCall _ =>
-    exact (savedRegsKeptExcept.of_removeFromAllEndpointQueues st v hInv).trans
-      (hQ _ (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv))
+  | blockedOnSend e =>
+    exact (savedRegsKeptExcept.of_removeFromBlockingEndpoint st v e hInv).trans
+      (hQ _ (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
+  | blockedOnReceive e =>
+    exact (savedRegsKeptExcept.of_removeFromBlockingEndpoint st v e hInv).trans
+      (hQ _ (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
+  | blockedOnCall e =>
+    exact (savedRegsKeptExcept.of_removeFromBlockingEndpoint st v e hInv).trans
+      (hQ _ (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv))
   | blockedOnNotification _ =>
     exact (savedRegsKeptExcept.of_removeFromNotificationWaitQueue st v hInv).trans
       (hQ _ (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv))

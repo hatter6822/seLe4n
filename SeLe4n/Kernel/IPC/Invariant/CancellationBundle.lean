@@ -110,19 +110,25 @@ theorem cancelIpcBlocking_victim_ready
     cases h
     exact hIp
   | blockedOnSend ep =>
-    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inl hIp)]
-    unfold sweptAndRestored
-    obtain ⟨hI1, t1, hL1, _⟩ := removeFromAllEndpointQueues_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v ep) v by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    unfold Lifecycle.Suspend.restoreToReadyCancelled
+    obtain ⟨hI1, t1, hL1, _⟩ := removeFromBlockingEndpoint_tcb_lookup st v ep v.toObjId tcbV hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnReceive ep =>
-    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inr (Or.inl hIp))]
-    unfold sweptAndRestored
-    obtain ⟨hI1, t1, hL1, _⟩ := removeFromAllEndpointQueues_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v ep) v by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    unfold Lifecycle.Suspend.restoreToReadyCancelled
+    obtain ⟨hI1, t1, hL1, _⟩ := removeFromBlockingEndpoint_tcb_lookup st v ep v.toObjId tcbV hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnCall ep =>
-    rw [cancelIpcBlocking_endpoint_arm_eq st v tcbV ep (Or.inr (Or.inr hIp))]
-    unfold sweptAndRestored
-    obtain ⟨hI1, t1, hL1, _⟩ := removeFromAllEndpointQueues_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+    rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
+        Lifecycle.Suspend.restoreToReadyCancelled (removeFromBlockingEndpoint st v ep) v by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    unfold Lifecycle.Suspend.restoreToReadyCancelled
+    obtain ⟨hI1, t1, hL1, _⟩ := removeFromBlockingEndpoint_tcb_lookup st v ep v.toObjId tcbV hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnNotification nId =>
     rw [cancelIpcBlocking_notification_arm_eq st v tcbV nId hIp]
@@ -424,18 +430,18 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => rfl
-  | blockedOnSend _ =>
+  | blockedOnSend e =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
-  | blockedOnReceive _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+      removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
+  | blockedOnReceive e =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
-  | blockedOnCall _ =>
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+      removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
+  | blockedOnCall e =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-      removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+        (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+      removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
   | blockedOnNotification _ =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
         (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv),
@@ -516,19 +522,19 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
     (tcbV : TCB) (hInv : st.objects.invExt) :
     SystemState.releaseStateAgree (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
   refine ⟨?_, by rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st v tcbV]; rfl⟩
-  have hEp : ∀ s, (Lifecycle.Suspend.restoreToReadyStaging
-      (removeFromAllEndpointQueues st v) v
+  have hEp : ∀ e s, (Lifecycle.Suspend.restoreToReadyStaging
+      (removeFromBlockingEndpoint st v e) v
       (some Architecture.cancelledIpcFrame)).getSchedContext? s = st.getSchedContext? s :=
-    fun s => by
+    fun e s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-          (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-        removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+          (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+        removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ => exact .of_getSchedContext? hEp
-  | blockedOnReceive _ => exact .of_getSchedContext? hEp
-  | blockedOnCall _ => exact .of_getSchedContext? hEp
+  | blockedOnSend e => exact .of_getSchedContext? (hEp e)
+  | blockedOnReceive e => exact .of_getSchedContext? (hEp e)
+  | blockedOnCall e => exact .of_getSchedContext? (hEp e)
   | blockedOnNotification _ =>
     exact .of_getSchedContext? fun s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
@@ -575,19 +581,19 @@ a context only through the donation return, which keeps it. -/
 theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) :
     RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
-  have hEp : ∀ s, (Lifecycle.Suspend.restoreToReadyStaging
-      (removeFromAllEndpointQueues st v) v
+  have hEp : ∀ e s, (Lifecycle.Suspend.restoreToReadyStaging
+      (removeFromBlockingEndpoint st v e) v
       (some Architecture.cancelledIpcFrame)).getSchedContext? s = st.getSchedContext? s :=
-    fun s => by
+    fun e s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-          (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv),
-        removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
+          (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv),
+        removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv]
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ => exact .of_getSchedContext?_eq hEp
-  | blockedOnReceive _ => exact .of_getSchedContext?_eq hEp
-  | blockedOnCall _ => exact .of_getSchedContext?_eq hEp
+  | blockedOnSend e => exact .of_getSchedContext?_eq (hEp e)
+  | blockedOnReceive e => exact .of_getSchedContext?_eq (hEp e)
+  | blockedOnCall e => exact .of_getSchedContext?_eq (hEp e)
   | blockedOnNotification _ =>
     exact .of_getSchedContext?_eq fun s => by
       rw [restoreToReadyStaging_getSchedContext?_eq _ v _
@@ -642,20 +648,20 @@ links, IPC fields, bindings and the reply link, never a yield end. -/
 theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId)
     (tcbV : TCB) (hInv : st.objects.invExt) :
     YieldLinksKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
-  have hEp : YieldLinksKept (removeFromAllEndpointQueues st v) st :=
+  have hEp : ∀ e, YieldLinksKept (removeFromBlockingEndpoint st v e) st := fun e =>
     .of_tcbMap (fun t => by
-        rw [removeFromAllEndpointQueues_getTcb?_eq_splice st v hInv t]
+        rw [removeFromBlockingEndpoint_getTcb?_eq_splice st v e hInv t]
         exact spliceOutMidQueueNode_tcbField_frame TCB.yieldToCode
           (fun _ _ _ _ _ _ => rfl) st v hInv t)
-      (removeFromAllEndpointQueues_getSchedContext?_eq st v hInv)
-  have hEpR := (restoreToReadyStaging_yieldLinksKept _ v (some Architecture.cancelledIpcFrame)
-    (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv)).trans hEp
+      (removeFromBlockingEndpoint_getSchedContext?_eq st v e hInv)
+  have hEpR := fun e => (restoreToReadyStaging_yieldLinksKept _ v (some Architecture.cancelledIpcFrame)
+    (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv)).trans (hEp e)
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases hIp : tcbV.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ => exact hEpR
-  | blockedOnReceive _ => exact hEpR
-  | blockedOnCall _ => exact hEpR
+  | blockedOnSend e => exact hEpR e
+  | blockedOnReceive e => exact hEpR e
+  | blockedOnCall e => exact hEpR e
   | blockedOnNotification _ =>
     exact (restoreToReadyStaging_yieldLinksKept _ v _
       (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv)).trans
@@ -707,6 +713,17 @@ theorem spliceOutMidQueueNode_tableReferenceFrame (st : SystemState) (tid : SeLe
   SystemState.TableReferenceFrame.of_offTcb
     (fun k o hNot => spliceOutMidQueueNode_nonTcb st tid hInv k o hNot)
     (spliceOutMidQueueNode_sameTaintWords st tid hInv)
+
+/-- WS-ZA ZA6.33: the targeted dequeue rewrites one endpoint's queue ends only,
+so it keeps every endpoint's registration flag. -/
+theorem removeFromBlockingEndpoint_tableReferenceFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    SystemState.TableReferenceFrame st (removeFromBlockingEndpoint st tid e) := by
+  have hS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  refine (spliceOutMidQueueNode_tableReferenceFrame st tid hInv).trans ?_
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  · exact .refl _
+  · exact SystemState.TableReferenceFrame.rewriteObject _ hS (by rw [hE]; rfl)
 
 /-- The endpoint sweep rewrites queue ends only, so it keeps every endpoint's
 registration flag. -/
@@ -870,10 +887,10 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
   unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
   cases tcb.ipcState with
   | ready => exact .refl _
-  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
-    exact (removeFromAllEndpointQueues_tableReferenceFrame st victim hInv).trans
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    exact (removeFromBlockingEndpoint_tableReferenceFrame st victim e hInv).trans
       (restoreToReadyStaging_tableReferenceFrame _ victim _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st victim hInv))
+        (removeFromBlockingEndpoint_preserves_objects_invExt st victim e hInv))
   | blockedOnNotification _ =>
     exact (removeFromNotificationWaitQueue_tableReferenceFrame st victim hInv).trans
       (restoreToReadyStaging_tableReferenceFrame _ victim _
