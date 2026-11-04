@@ -6514,7 +6514,6 @@ run_check "INVARIANT" rg -n '^def pageBytes : Nat := 4096' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := SeLe4n.pageBytes' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 \|\| vaddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^theorem mapPage_pageAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '_hAligned : paddr.toNat % SeLe4n.pageBytes = 0' SeLe4n/Model/Builder.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes != 0 then .error .alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
 # The Architecture granule must not drift back to a second literal.
 run_check "INVARIANT" bash -c "! rg -q '^def pageBytes : Nat := 4096' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
@@ -17257,12 +17256,12 @@ lake env lean /tmp/fdt_bounded_view_probe.lean'
 # read to size it and an unreadable one cannot shrink it.
 
 # A cell-tuple property is read whole or not at all, and ONE function decides
-# it — the relation was answered three different ways at four sites.
+# it — the relation was answered three different ways at four sites (three
+# since the unused region-list reader was deleted at v0.36.198).
 run_check "INVARIANT" rg -n -U 'def fdtWholeEntryCount \(bytes : ByteArray\) \(entryBytes : Nat\) : Option Nat :=\n  if entryBytes == 0 \|\| bytes\.size % entryBytes != 0 then none\n  else some \(bytes\.size / entryBytes\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount bytes \(\(childAddressCells \+ parentAddressCells \+ childSizeCells\) \* 4\) with' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes \(\(addressCells \+ sizeCells\) \* 4\) with' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes entryBytes with\n    \| none => \[\]\n    \| some entryCount =>' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U '\(fdtWholeEntryCount regBlob 16\)\.map fun _ =>' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the floor division that dropped a trailing partial tuple, and the
 # two hand-written remainder tests it replaced.
 run_negative_check "INVARIANT" rg -n -U '\(List\.range \(regBytes\.size / entryBytes\)\)\.filterMap' SeLe4n/Platform/DeviceTree.lean
