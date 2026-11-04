@@ -406,7 +406,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendReleasePerform,
       "the bound release proven equal to `cancelBoundDonationOnCore` (exempt below): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendPerform,
-      "the admitted suspend: `suspendReleasePerform`, the deschedule and the TCB's state; a victim blocked on nothing holds no reply link to consume")
+      "the admitted suspend: the notification wait's cancel in its slots, then the loan's return (`cancelDonatedDonationOnCore`, the specification's own, exempt) or the bound release (`suspendReleasePerform`), the deschedule and the TCB's state; an admitted victim waits on no reply, so holds no reply link to consume")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.dispatchInvocationByR,

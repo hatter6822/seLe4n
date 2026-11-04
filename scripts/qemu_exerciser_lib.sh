@@ -284,6 +284,10 @@ for driver in drivers:
             # core, the yield linked, read across the switch to the partner and
             # back, the activation writing the consumed time.
             "sched-context-yield-to-requeue", "sched-context-yield-to-linked",
+            # WS-ZA ZA6.33: the partner, blocked on the notification wait and
+            # holding the bound context, suspended: the wait cancelled in
+            # place and the context released.
+            "tcb-suspend-waiting",
             "tcb-resume-bound",
             "tcb-suspend-bound",
             # WS-ZA ZA5.5: a service query reads the code its endpoint records,

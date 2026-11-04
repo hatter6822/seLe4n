@@ -3152,6 +3152,14 @@ const YIELD_TO_PARTNER_BLOCKS: RoundTrip = partner_step(
     [0, 0],
     true,
 );
+/// **The suspend of a blocked partner** (WS-ZA ZA6.33): the partner, blocked on
+/// the notification wait and holding the bound context, suspended by the root
+/// task.  The suspend cancels the wait (the notification's queue and the
+/// partner's own links, each in its slot), releases the context and sets the
+/// partner inactive, so the second run finds the state the first did.
+#[cfg(feature = "hw_target")]
+const SUSPEND_WAITING_PARTNER: RoundTrip =
+    invocation("tcb-suspend-waiting", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]);
 /// The link cleared: a caller with a pending yield is refused, so a second
 /// yieldTo (the partner blocked, so not schedulable) succeeds only if the
 /// activation cleared the root task's end of the link.  Unmeasured.
@@ -4381,8 +4389,9 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
 
 /// **WS-ZA ZA6.29's requeue and linked branches**: the setup, the measured
 /// requeue, the partner raised, the measured linked round trip, the link's
-/// clearing checked, and the partner suspended (which releases the context),
-/// so the second run finds the state the first did.
+/// clearing checked, and the partner, blocked on the notification wait,
+/// suspended (measured; the suspend releases the context), so the second run
+/// finds the state the first did.
 #[cfg(feature = "hw_target")]
 fn yield_to_branches(which: &str) -> Option<bool> {
     for step in YIELD_TO_SETUP.iter() {
@@ -4405,13 +4414,10 @@ fn yield_to_branches(which: &str) -> Option<bool> {
     ) {
         return Some(false);
     }
-    let suspend = invocation(
-        "yield-to-suspend-partner",
-        TCB_SUSPEND,
-        PARTNER_TCB_CAP,
-        [0; 4],
-    );
-    if !unmeasured(&suspend, "the partner was not suspended") {
+    // WS-ZA ZA6.33: the partner, blocked on the notification wait and holding
+    // the bound context, is suspended through the routed arm (its wait
+    // cancelled in place, the context released), measured.
+    if heap_allocations_round_trip(&SUSPEND_WAITING_PARTNER, which) != Some(true) {
         return Some(false);
     }
     Some(true)

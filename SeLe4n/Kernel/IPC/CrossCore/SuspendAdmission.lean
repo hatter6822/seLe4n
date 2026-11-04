@@ -405,7 +405,7 @@ binding codes (`.donated`, `SchedContextBinding.ofCodes`). -/
 specification's `cancelDonatedDonationOnCore`: the context handed back to its
 lender through the reply-stack resolver, its replenishments moved to the
 lender's core).  On a state the admission reads it never refuses
-(`suspendLoanReturnState_eq`); the identity otherwise. -/
+(`cancelDonationArmOnCore_eq_bindingState`); the identity otherwise. -/
 def suspendLoanReturnState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>

@@ -22936,7 +22936,19 @@ run_negative_check "INVARIANT" rg -n 'clearReschedulePendingOnCore' SeLe4n/Kerne
 # runs.  Mutation: drop the purge, or have the suspend call the specification's
 # release.
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_eq_release \{' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*  let st0 := suspendReleasePerform st tid" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendPerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*  let st0 := suspendBindingState \(suspendTeardownState st tid\) tid" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendBindingState \(st : SystemState\)[^\n]*\n  if suspendHoldsLoan st tid then suspendLoanReturnState st tid\n  else suspendReleasePerform st tid" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
+# WS-ZA ZA6.33 part 1 (`v0.36.197`): the suspend's checks are read before any
+# write.  RELATION: the notification arm's teardown is the in-place cancel, the
+# admission asks for the victim's slot in place and no loan there, and the
+# donated return's refusal is decided on the pre-state by `donatedReturnCommits`;
+# the equality to the specification is a theorem.  Mutation: drop the in-place
+# or loan clause of the notification arm, or the commit check of the loan.
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_of_admitted \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean
+run_check "INVARIANT" rg -n '^theorem storeNotificationBlockedCancelled_bindingsKept \{' SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_ok_of_commits_nr \{' SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "      \| 2 =>\n        st\.objects\.findsInPlace tid\.toObjId && tcb\.scBindingOwnerCode == 0 &&\n          \(st\.getNotification\? ⟨tcb\.ipcObjectCode⟩\)\.isSome" SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean'
+run_check "INVARIANT" rg -n '    \| o \+ 1 => !tid\.isReserved && donatedReturnCommits st tid ⟨s⟩ ⟨o⟩' SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendReleasePerform \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*      let st2 := SchedContextOps\.purgeReplenishment st1 scId\n      markKeyChangeParts" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The faulted resume is admitted only when its slot is found in place, which is
 # what lets the fault's retirement read back without the store invariant.

@@ -1,3 +1,36 @@
+## v0.36.197 — WS-ZA: the suspend's checks are read before any write (ZA6.33 part 1)
+
+The suspend of a thread blocked on a notification, and of a thread holding a
+context on loan, now runs every check before any write and changes each object
+in its slot, as the quiescent and bound suspends already did.
+
+- **The admission** (`SeLe4n/Kernel/IPC/CrossCore/SuspendAdmission.lean`, new).
+  `suspendAdmitted` reads, on the state the suspend is handed, every question
+  the specification's later steps ask of the states they run on.  It admits a
+  thread blocked on no IPC whatever it holds: a context it holds on loan goes
+  back to its lender, the return's refusal decided first (`donatedReturnCommits`,
+  as seL4 decides `reply_pop`'s before writing).  It admits a thread blocked on a
+  notification and holding no loan: the wait is cancelled in its slots
+  (`storeNotificationBlockedCancelled`) and every thread's binding is read back
+  after the cancel (`TcbBindingsKept`).  No check assumes the store invariant:
+  each read-back is the table's own frame on a table no insert resizes
+  (`RHTable.noResizeDue`, asked once), so the compiled entry's unconditional
+  equality holds (`returnDonatedSchedContextResolved_ok_of_commits_nr`).
+- **The perform** (`suspendPerform`): the teardown, the end of the reservation
+  (`suspendBindingState`: the loan's return or the bound release), the
+  deschedule, `.Inactive`, the yield link and the local scheduling point.  It is
+  the specification's state (`suspendThreadOnCore_of_admitted`).  The earlier
+  quiescent-only admission and perform in `Cancellation.lean` are removed.
+- **The exerciser.**  The yieldTo branches end with the partner blocked on the
+  notification wait, holding the bound context; its suspend is now measured as
+  `tcb-suspend-waiting`, pinned at 0 at first call and steady state
+  (`scripts/qemu_exerciser_lib.sh`).
+- **Still on the general path** (`docs/REGISTERED_DEBT.md`, ZA6.33): the
+  suspend of a thread blocked on an endpoint (the specification's teardown is a
+  sweep of every object in the store, where seL4 dequeues from the one endpoint
+  the thread state names), on a reply (the binding must be carried through the
+  priority-inheritance revert walk), or on a notification while holding a loan.
+
 ## v0.36.196 — WS-ZA: syscall entries dispatch over out-of-line arms
 
 A build-structure change: every syscall entry now compiles to a small dispatch

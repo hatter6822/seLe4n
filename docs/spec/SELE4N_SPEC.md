@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.196` (`lakefile.toml`) |
+| **Package version** | `0.36.197` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 575,022 across 538 Lean files |
 | **Test LoC** | 88,478 across 70 Lean test suites |
@@ -6489,8 +6489,21 @@ Every kernel object has a decidable well-formedness predicate:
   of (address, word) pairs and never writes model memory
   (`ffi_capture_user_words`, `overflowRuns`, `userWordAt`), and a core's TLB
   view holds each translation once (`tlbInsertOnCore_of_mem`).  Each of the
-  five scheduling-context scenarios reads 0 allocations.  The suspend of a
-  thread blocked in IPC or holding a donated context keeps the general path
+  five scheduling-context scenarios reads 0 allocations.
+- **The suspend's checks come first** (`v0.36.197`, WS-ZA ZA6.33 part 1).
+  `suspendAdmitted` (`Kernel/IPC/CrossCore/SuspendAdmission.lean`) asks, on
+  the state the suspend is handed, every question its later steps ask: a
+  thread blocked on no IPC is admitted whatever it holds, the return of a
+  context it holds on loan decided there (`donatedReturnCommits`); a thread
+  blocked on a notification and holding no loan is admitted, its wait
+  cancelled in its slots (`storeNotificationBlockedCancelled`) and every
+  thread's binding read back after the cancel (`TcbBindingsKept`).  No check
+  assumes the store invariant: each read-back is the table's own frame on a
+  table no insert resizes (`RHTable.noResizeDue`, asked once).  The perform
+  is the specification's state (`suspendThreadOnCore_of_admitted`), and the
+  suspend of the partner waiting on the notification reads 0 allocations.
+  The suspend of a thread blocked on an endpoint or a reply, or on a
+  notification while holding a loan, keeps the general path
   (`docs/REGISTERED_DEBT.md`, ZA6.33).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
