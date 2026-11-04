@@ -442,8 +442,11 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
 
 /-- The send's dispatch for a sender whose saved registers hold its message and
 no capability addresses: `dispatchOperandCheckedR` with the send's arm
-(`dispatchSendCheckedR_eq`). -/
-@[inline] def dispatchSendCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+(`dispatchSendCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchSendCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore
@@ -666,8 +669,11 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
 
 /-- The call's dispatch for a caller whose saved registers hold its message
 and no capability addresses: `dispatchOperandCheckedR` with the call's arm
-(`dispatchCallCheckedR_eq`). -/
-@[inline] def dispatchCallCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+(`dispatchCallCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchCallCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore
@@ -971,8 +977,11 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
 
 /-- WS-ZA ZA4.7: the reply's dispatch: `dispatchOperandCheckedR` with the
-reply's arm (`dispatchReplyCheckedR_eq`). -/
-@[inline] def dispatchReplyCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+reply's arm (`dispatchReplyCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchReplyCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
@@ -1503,8 +1512,11 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
 
 /-- The receive's dispatch, on the message length and first message register
 the entry read: `dispatchOperandCheckedR` with the receive's arm
-(`dispatchReceiveCheckedR_eq`). -/
-@[inline] def dispatchReceiveCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
+(`dispatchReceiveCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchReceiveCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
     (len : Nat) (replyAddr : SeLe4n.CPtr) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) :
     RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore

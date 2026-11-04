@@ -1,3 +1,42 @@
+## v0.36.197 — Build speed: dead specification code, decode theorems off the critical path, CI lanes
+
+A build-structure change with no semantics change: the kernel's live C is
+byte-identical to v0.36.196's, so every allocation pin reads what it read.
+
+- **Superseded specifications generate no code.**  Eleven definitions whose
+  compiled form is something else were `@[inline] def`s, so Lean emitted a
+  standalone C body for each that no root reaches: the routed dispatch
+  compositions `dispatchSignalCheckedR`, `dispatchWaitCheckedR`,
+  `dispatchSendCheckedR`, `dispatchCallCheckedR`, `dispatchReplyCheckedR`,
+  `dispatchReceiveCheckedR`, `dispatchReplyRecvCheckedR`,
+  `dispatchInvocationCheckedR` and `dispatchAuditedCheckedR` (the entry runs
+  each arm out of line through `syscallEntryRoutedK`), `seedWords` (the taint
+  step folds the ring through `seedWordsFrom`) and `TaintWords.joinImpl`
+  (`join` is compiled as `joinFlat`).  Each is now `noncomputable`; its
+  equality theorems are unchanged.  The compiled C of every function reached
+  from an export, a `main` or a module initializer is unchanged; only seven
+  dead closed terms and three initializers that set them up differ.  Clang
+  spends about 110 s less CPU per architecture, and the slowest single C
+  file (`RefusalCarryingInvocation`) drops from 124 s to 63 s.
+- **The routed decode theorems have their own module.**  The eleven
+  `decodeSyscallArgsFromState_of_routed*` theorems move from
+  `Architecture/RegisterDecode.lean` to the new
+  `Architecture/RoutedRegisterDecode.lean`, imported by the two modules that
+  use them (`RefusalCarryingEntry`, `IPC/CrossCore/EndpointReceiveInPlace`).
+  `RegisterDecode`, which most of the kernel imports, elaborates in 2 s
+  instead of 98 s.  Cold `lake build`: 848 s → 812 s on four cores.
+- **Tier 1 is one Lake invocation.**  `test_tier1_build.sh` collects the
+  default targets, the three static libraries, `Staged` and the eleven census
+  executables into one `lake build`, so Lake schedules them as one graph
+  rather than draining the cores between calls.
+- **CI.**  The Tiered Tests build cache key no longer hashes `lakefile.toml`
+  (every PR bumps its version, so every PR's first run missed the cache); it
+  hashes the toolchain, manifest and setup script and ends in the commit SHA,
+  restoring the newest older cache by prefix.  The aarch64 archive lane's key
+  does the same.  Smoke and Full restore the Fast lane's cache read-only
+  instead of re-saving 1.3 GB each, and Full runs beside Smoke rather than
+  after it.  `docs/CI_POLICY.md` describes the new keys and lane order.
+
 ## v0.36.196 — WS-ZA: syscall entries dispatch over out-of-line arms
 
 A build-structure change: every syscall entry now compiles to a small dispatch

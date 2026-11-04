@@ -15,40 +15,27 @@ cd "${REPO_ROOT}"
 
 ensure_lake_available
 
-run_check "BUILD" lake build
-
-# WS-RR RR5.16: the archive a kernel image links must define every Lean kernel
-# entry the HAL declares as `extern "C"`.  Whether an `@[export]` emits a symbol
-# is decided by `SeLe4n.lean`'s import closure, and nothing checked that: before
-# RR5.15 three of the five state-committing entries lived in staged-only modules
-# and the archive carried a single `T lean_*` symbol.  The staged/production
-# partition gate reports which modules are staged, not which symbols link; a
-# Tier-3 text anchor on an `@[export]` line is satisfied by a module nothing
-# imports.  This asks the question of the object code.
+# Every target this tier builds is built by ONE `lake build`, below, rather than
+# one invocation per target in sequence.  Lake schedules the whole graph at
+# once, so the staged tier and the elaborator censuses elaborate on cores the
+# kernel's own build leaves idle along its critical path, instead of each
+# starting only after the previous invocation has finished.  A failing target
+# fails the build and Lake names it; every check after the build reads what
+# it built.
 #
-# The self-test runs first (token-preserving cases on both derivations), since a
-# scan that stopped matching would otherwise report PASS on an empty requirement.
-run_check "BUILD" lake build SeLe4n:static SeLe4nQemuVirtExerciser:static
-run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py" --self-test
-run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py"
+# The package's default targets (`lake build` with no argument).
+tier1_targets=(@seLe4n)
 
-# The boundary layout test: the compiled Lean's `RegisterFile` and `FpContext`
-# place field `i` at scalar offset `8 · i`, where the HAL reads and writes it.
-# The proofs pin that declared position `i` is layout word `i` and the HAL
-# refuses an object of any other size; neither reaches a same-size permutation
-# applied consistently on one side, or a compiler that lays scalar fields out
-# other than in declaration order.  `rust/sele4n-lean-boundary` links the host
-# archive built just above (and the test-only probes' library) with the
-# toolchain's runtime and executes the layout in both directions.  It needs
-# `cargo` as well as `lake`, and fails rather than skips without either.
-run_check "BUILD" "${SCRIPT_DIR}/test_lean_boundary_layout.sh"
+# The host static archives: the kernel-entry export check reads them, and the
+# boundary layout test links them with the test-only probes' library.
+tier1_targets+=(SeLe4n:static SeLe4nQemuVirtExerciser:static SeLe4nBoundaryProbes:static)
 
 # AN7-D.7 (PLT-M07): force the seven staged platform-binding modules into
 # the build graph.  Without this, regressions in modules not reached from
 # `Main.lean` (e.g., the RPi5 boot VSpaceRoot AN7-D.2) would go undetected
 # until a future workstream reaches them.  See `SeLe4n/Platform/Staged.lean`
 # for the module list.
-run_check "BUILD" lake build SeLe4n.Platform.Staged
+tier1_targets+=(SeLe4n.Platform.Staged)
 
 # WS-RR review round 25: the elaborator-backed de-threading census.  The
 # module's `run_cmd` walks the elaborated environment — telescopes, named
@@ -57,7 +44,7 @@ run_check "BUILD" lake build SeLe4n.Platform.Staged
 # hypothesises a measured conjunct of its conclusion's state.  It imports
 # `Platform.Staged` (the payoff tier is staged), so it must be built as
 # its own root; the text gate remains the fast pre-commit approximation.
-run_check "BUILD" lake build SeLe4n.Testing.IpcDethreadingEnvironmentCensus
+tier1_targets+=(SeLe4n.Testing.IpcDethreadingEnvironmentCensus)
 
 # PR #889 review round 17: the hardware boot entry's contract, decided by the
 # elaborator.  The declaration carrying `@[export lean_kernel_main]` is
@@ -69,7 +56,7 @@ run_check "BUILD" lake build SeLe4n.Testing.IpcDethreadingEnvironmentCensus
 # on inputs other than the one live entry.  It replaces eleven review rounds of regular expressions in
 # `check_kernel_entry_exports.py`, each of which read one more Lean spelling
 # wrongly; a resolved constant has one definition and no spelling.
-run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
+tier1_targets+=(SeLe4n.Testing.BootEntryContract)
 
 # WS-RR RR7.13: every `@[export]` that commits kernel state is classified, and
 # the classification is decided by the elaborator rather than by a scanner.
@@ -88,7 +75,7 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # passing vacuously, and the bare-commit one is the shape the row exists to
 # catch.  Today: seven committing seams, five of them bracketed (the syscall
 # seam, the suspend seam and the three per-core scheduler entries).
-run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
+tier1_targets+=(SeLe4n.Testing.ExportCommitDisciplineCensus)
 
 # WS-BP BP2.2: the kernel's Lean runtime answers a few primitives without an
 # operating system -- zero entropy, no file system -- and refuses floating-point
@@ -98,7 +85,7 @@ run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 # constant implemented by one of those symbols.  Building it IS the check; its
 # witnesses (a generator read, a fail-closed call through a helper, one through
 # `implemented_by`, and a clean body) keep it decisive.
-run_check "BUILD" lake build SeLe4n.Testing.RuntimeEnvironmentCensus
+tier1_targets+=(SeLe4n.Testing.RuntimeEnvironmentCensus)
 
 # v0.35.114: which declarations carry a body has ONE answer.  Four of the
 # censuses below derive a domain from the environment and each has to decide it
@@ -110,7 +97,7 @@ run_check "BUILD" lake build SeLe4n.Testing.RuntimeEnvironmentCensus
 # eight-constructor match is exhaustive with no `_`, so a ninth constructor in a
 # future toolchain is a build error, and three witnesses (a `def`, an `opaque`,
 # a `theorem` control) decide the arms on a real environment.
-run_check "BUILD" lake build SeLe4n.Testing.DeclarationKind
+tier1_targets+=(SeLe4n.Testing.DeclarationKind)
 
 # WS-RR RR7.18: every declared `LockSet` footprint has a size bound, stated at
 # the footprint's OWN arity.  The bound is what `boundedWait_under_2pl` and the
@@ -120,7 +107,7 @@ run_check "BUILD" lake build SeLe4n.Testing.DeclarationKind
 # defaulted trailing `Option` is filled in silently at the citation.  The
 # footprint set is derived from the environment; building the module IS the
 # check.
-run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
+tier1_targets+=(SeLe4n.Testing.LockFootprintBoundCensus)
 
 # WS-RR RR8.12 Cut C5: the object census's counterpart for the scheduler domain,
 # asking the two questions that domain's economy rests on.  A scheduler
@@ -135,7 +122,7 @@ run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
 # theorems with neither a consumer nor an anchor.  Both are derived from the
 # environment and reconciled against the exemption register in both directions;
 # building the module IS the check, and its self-test decides every branch.
-run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus
+tier1_targets+=(SeLe4n.Testing.SchedFootprintCensus)
 
 # WS-RM RM5.3: every definition that writes reply-stack data names a chain
 # result, or is recorded as a half-step of the composite that does.  `v0.35.4`
@@ -145,7 +132,7 @@ run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus
 # leave its frame on the stack.  The write-site set is derived from the
 # environment and reconciled against the registry in both directions; building
 # the module IS the check.
-run_check "BUILD" lake build SeLe4n.Testing.ReplyStackWriteCensus
+tier1_targets+=(SeLe4n.Testing.ReplyStackWriteCensus)
 
 # PR #895 review round 5: `scripts/lean_store_read_census.py` decides which
 # declaration owns a line and whether that declaration is executable -- two
@@ -155,7 +142,7 @@ run_check "BUILD" lake build SeLe4n.Testing.ReplyStackWriteCensus
 # miss one, and fails the build wherever the two disagree.  It is the
 # `a Lean question goes to the Lean elaborator` rule applied at the tier that
 # can, since the classifier's own tier cannot.
-run_check "BUILD" lake build SeLe4n.Testing.StoreReadClassificationCensus
+tier1_targets+=(SeLe4n.Testing.StoreReadClassificationCensus)
 
 # WS-RR RR8.12 (third cut): the counterpart of the export-commit census, walked
 # the other way.  That one asks how each state-committing `@[export]` commits;
@@ -169,7 +156,7 @@ run_check "BUILD" lake build SeLe4n.Testing.StoreReadClassificationCensus
 # directions, and the rows that stand beside a live re-composition carry a pin
 # theorem, which is what makes a step added to one side and not the other a
 # build failure rather than a reading nobody did.
-run_check "BUILD" lake build SeLe4n.Testing.KernelTransitionReachabilityCensus
+tier1_targets+=(SeLe4n.Testing.KernelTransitionReachabilityCensus)
 
 # WS-ZA ZA5.12: no compiled path reads the specification's taint map.  The
 # stored table is gone; `SystemState.declassificationTaint` decodes the thread
@@ -178,7 +165,34 @@ run_check "BUILD" lake build SeLe4n.Testing.KernelTransitionReachabilityCensus
 # `@[csimp]` or `@[implemented_by]` replacement in place of the body it
 # replaces), the reader must be unreachable; the specification dispatcher,
 # walked into its own body, must reach it, so the census can fire.
-run_check "BUILD" lake build SeLe4n.Testing.TaintReaderCompiledReachCensus
+tier1_targets+=(SeLe4n.Testing.TaintReaderCompiledReachCensus)
+
+run_check "BUILD" lake build "${tier1_targets[@]}"
+
+# WS-RR RR5.16: the archive a kernel image links must define every Lean kernel
+# entry the HAL declares as `extern "C"`.  Whether an `@[export]` emits a symbol
+# is decided by `SeLe4n.lean`'s import closure, and nothing checked that: before
+# RR5.15 three of the five state-committing entries lived in staged-only modules
+# and the archive carried a single `T lean_*` symbol.  The staged/production
+# partition gate reports which modules are staged, not which symbols link; a
+# Tier-3 text anchor on an `@[export]` line is satisfied by a module nothing
+# imports.  This asks the question of the object code.
+#
+# The self-test runs first (token-preserving cases on both derivations), since a
+# scan that stopped matching would otherwise report PASS on an empty requirement.
+run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py" --self-test
+run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py"
+
+# The boundary layout test: the compiled Lean's `RegisterFile` and `FpContext`
+# place field `i` at scalar offset `8 · i`, where the HAL reads and writes it.
+# The proofs pin that declared position `i` is layout word `i` and the HAL
+# refuses an object of any other size; neither reaches a same-size permutation
+# applied consistently on one side, or a compiler that lays scalar fields out
+# other than in declaration order.  `rust/sele4n-lean-boundary` links the host
+# archive the build above made (and the test-only probes' library) with the
+# toolchain's runtime and executes the layout in both directions.  It needs
+# `cargo` as well as `lake`, and fails rather than skips without either.
+run_check "BUILD" "${SCRIPT_DIR}/test_lean_boundary_layout.sh"
 
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per
@@ -189,9 +203,10 @@ run_check "BUILD" lake build SeLe4n.Testing.TaintReaderCompiledReachCensus
 #
 # It lives in Tier 1 rather than Tier 0 because round 29 moved detection to
 # Lean's elaborated environment: it runs `lake env lean` over a probe, so it
-# needs the build above.  That is also why it must come *after* both `lake
-# build` calls — the probe imports `SeLe4n` and `SeLe4n.Platform.Staged`, and a
-# staged per-core primitive is invisible without the second.
+# needs the build above.  That is also why it must come *after* it, and why
+# `SeLe4n.Platform.Staged` is among the build's targets — the probe imports
+# `SeLe4n` and `SeLe4n.Platform.Staged`, and a staged per-core primitive is
+# invisible without the second.
 #
 # The self-test runs first: it re-walks the pre-SMP operations and fails if the
 # gate no longer detects them, so a gate that has lost its reach fails loudly

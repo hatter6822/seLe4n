@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.36.196-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.36.197-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -81,9 +81,9 @@ Lean प्रकार-परीक्षक द्वारा मशीन-�
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण** | `0.36.196` |
+| **संस्करण** | `0.36.197` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 538 फ़ाइलों में 575,022 |
+| **उत्पादन Lean LoC** | 539 फ़ाइलों में 575,089 |
 | **परीक्षण Lean LoC** | 70 परीक्षण सुइट्स में 88,478 |
 | **प्रमाणित घोषणाएँ** | 22,015 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **Rust क्रेट्स** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`), 80 स्रोत फ़ाइलों में |

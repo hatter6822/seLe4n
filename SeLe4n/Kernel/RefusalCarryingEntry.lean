@@ -11,6 +11,7 @@ import SeLe4n.Kernel.RefusalCarryingEndpoint
 import SeLe4n.Kernel.RefusalCarryingReplyRecv
 import SeLe4n.Kernel.RefusalCarryingInvocation
 import SeLe4n.Kernel.RefusalCarryingDeclassification
+import SeLe4n.Kernel.Architecture.RoutedRegisterDecode
 
 /-!
 # The checked syscall entry, refusing in the state it was refused in

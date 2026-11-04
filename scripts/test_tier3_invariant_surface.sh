@@ -10520,7 +10520,7 @@ run_check "INVARIANT" rg -n 'every declared member is unheld on the ghost table 
 # The check IS the module's elaboration (Tier 1 builds it); these anchors pin
 # that it is wired, that both reconciliation directions exist, and that the
 # planted bare-commit witness is there.
-run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.ExportCommitDisciplineCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.ExportCommitDisciplineCensus\)$' scripts/test_tier1_build.sh
 run_check "INVARIANT" rg -n '^def commitDisciplineRegistry($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n '^def reconciliationViolations($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n 'censusWitnessBareCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
@@ -10651,7 +10651,7 @@ run_check "INVARIANT" rg -n 'SELF-TEST PASS \(12 checks\)' scripts/test_code_vie
 # the right name, because a defaulted trailing `Option` is filled in silently at
 # the citation.  The set is DERIVED from the elaborated environment; building
 # the module is the check, and Tier 1 builds it.
-run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.LockFootprintBoundCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.LockFootprintBoundCensus\)$' scripts/test_tier1_build.sh
 run_check "INVARIANT" rg -n '^def isFootprintDecl($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
 run_check "INVARIANT" rg -n '^def requiredBoundType($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
 run_check "INVARIANT" rg -n '^def boundViolation($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
@@ -11957,7 +11957,7 @@ run_check "INVARIANT" rg -n '^def bootEntryContractViolations($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^def bootEntryDeclarations($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.BootEntryContract' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.BootEntryContract\)$' scripts/test_tier1_build.sh
 # ...and the link-level half that stays in the Python gate: the extern block is
 # resolved rather than spelled, and unassembled regions provide nothing.
 run_check "INVARIANT" rg -n '^def extern_blocks($|[ ({:\[\]])' scripts/rust_code_view.py
@@ -18949,7 +18949,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def pinCheckWitnesses[^\n]*(\n([ \t][
 run_check "INVARIANT" bash -lc 'rg -U -n "pinViolations env live unreachable standsBesideLive \+\+(\n([ \t][^\n]*)?)*pinCheckWitnessViolations env" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 
 # Tier 1 runs it.  A census nothing builds reports nothing.
-run_check "INVARIANT" rg -n 'lake build SeLe4n\.Testing\.KernelTransitionReachabilityCensus' \
+run_check "INVARIANT" rg -n '^tier1_targets\+=\(SeLe4n\.Testing\.KernelTransitionReachabilityCensus\)$' \
   scripts/test_tier1_build.sh
 
 
@@ -21851,7 +21851,7 @@ run_check "INVARIANT" rg -n '^private def censusPlantedIndirectNamer($|[ ({:\[\]
 # arm, so it separates the two readings on the live tree.
 run_check "INVARIANT" rg -F -n 'consumed.contains ``SeLe4n.Kernel.notificationSignalBoundWriteSet' SeLe4n/Testing/SchedFootprintCensus.lean
 # Building the module IS the check, so Tier 1 must build it.
-run_check "INVARIANT" rg -F -n 'run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus' scripts/test_tier1_build.sh
+run_check "INVARIANT" rg -F -x -n 'tier1_targets+=(SeLe4n.Testing.SchedFootprintCensus)' scripts/test_tier1_build.sh
 
 # ============================================================================
 # WS-RR RR8.12 Cut C6a (`v0.35.174`): the non-donating arms' footprints are not

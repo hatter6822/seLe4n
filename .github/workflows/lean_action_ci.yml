@@ -63,16 +63,22 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          # AN11-F (LOW): job-tagged cache key.  The fast / smoke / full /
-          # nightly jobs build different target sets (`.lake/build` content
-          # diverges); a shared key would let one job's smaller cache
-          # overwrite another's larger cache, forcing a full recompile on
-          # the lower-coverage job's next run.  Tag the key with `-fast`
-          # so each job owns its own `.lake/build` slice.  The
-          # `restore-keys` fallback still lets a fresh job seed off any
-          # prior cache for the same Lean toolchain.
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # The key names this commit, so every fast run that passes saves its
+          # build, and the next run (the PR's next push, or a PR opened after
+          # this push to `main`) restores the newest build it can see through
+          # the prefix.  A key without the commit would hit exactly on every
+          # push after a PR's first, restore that first push's build, and save
+          # nothing: every later push rebuilt the whole PR's change.  The prefix
+          # hashes what makes a build reusable at all (the toolchain, the
+          # dependency manifest and the setup script), not `lakefile.toml`,
+          # whose version every PR bumps.
+          #
+          # AN11-F (LOW): the key is job-tagged (`-fast`), so a lane that
+          # builds a smaller target set never overwrites this one.  The smoke
+          # and full lanes restore this run's fast build and save nothing.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh') }}-
             ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
@@ -153,24 +159,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Restore Lean and Lake caches
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Tier 2 reads the build this run's fast job saved (it holds every
+      # kernel module and the host archives) and adds the suites.  Restore
+      # only: the suites import the kernel, so a cached suite build is stale
+      # whenever the kernel changed, and re-saving 1.3 GB per run would only
+      # push the fast builds out of the cache.
+      - name: Restore this run's Lean build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
             .lake/packages
             .lake/build
-          # AN11-F (LOW): job-tagged cache key (smoke lane).  See the
-          # comment at test-fast above for the rationale.
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
-          # On a key miss (every PR bumps `lakefile.toml`'s version, so a PR's
-          # first run and the push merging it always miss), seed from the
-          # cache this run's fast job has just saved under the same key: it
-          # holds this cut's kernel build.  An older smoke cache is the
-          # fallback.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
-            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh') }}-
             ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
@@ -211,29 +214,26 @@ jobs:
   test-full:
     name: Tiered Tests / Full (Tier 3)
     runs-on: ubuntu-latest
-    needs: test-smoke
+    # Tier 3 needs only what the fast lane built (the kernel, the staged tier
+    # and the censuses), so it runs beside Tier 2 rather than after it.
+    needs: test-fast
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Restore Lean and Lake caches
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Tier 3 reads the build this run's fast job saved; restore only (see
+      # the smoke lane).
+      - name: Restore this run's Lean build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.elan
             .lake/packages
             .lake/build
-          # AN11-F (LOW): job-tagged cache key (full lane).  Tier 3 builds
-          # the broadest set of targets, so its `.lake/build` is the
-          # canonical seed for the smaller smoke / fast lanes.
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-full-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
-          # Key miss: seed from this run's smoke, then fast, cache under the
-          # same key (see the smoke lane's comment), before any older cache.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
-            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
-            ${{ runner.os }}-${{ runner.arch }}-lean-full-
-            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh') }}-
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
@@ -448,8 +448,11 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh', 'rust/sele4n-hal/lean_include/lean/config.h') }}
+          # Keyed by commit, as the fast lane's is (see there), so each passing
+          # run saves its build and the next restores the newest.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh', 'rust/sele4n-hal/lean_include/lean/config.h') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'scripts/setup_lean_env.sh', 'rust/sele4n-hal/lean_include/lean/config.h') }}-
             ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 

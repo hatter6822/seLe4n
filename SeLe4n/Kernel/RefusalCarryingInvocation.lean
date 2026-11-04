@@ -1619,8 +1619,11 @@ there is none. -/
         else .error (.illegalAuthority, st)
 
 /-- `dispatchSyscallChecked` for a routed invocation, its operand address, syscall
-and arguments read from the caller's register file (`dispatchInvocationCheckedR_eq`). -/
-@[inline] def dispatchInvocationCheckedR (ctx : LabelingContext) (sid : SyscallId)
+and arguments read from the caller's register file (`dispatchInvocationCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchInvocationCheckedR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (regs : RegisterFile) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore

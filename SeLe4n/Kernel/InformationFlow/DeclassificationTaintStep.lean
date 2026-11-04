@@ -283,8 +283,11 @@ theorem auditTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 /-- **A flow source's seed, over words**: the source's words `w` joined with
 the timestamp of each recorded event naming the source as its target, then as
 its subject — the specification's seed (`applyOrigination` of the origination
-tags) at that key, read through words (`decode_seedWords`). -/
-def seedWords (k : SeLe4n.ObjId) (w : TaintWords) : List DeclassificationEvent → TaintWords
+tags) at that key, read through words (`decode_seedWords`).
+
+A specification: the taint step folds the ring through `seedWordsFrom`, so no
+code is generated for it. -/
+noncomputable def seedWords (k : SeLe4n.ObjId) (w : TaintWords) : List DeclassificationEvent → TaintWords
   | [] => w
   | e :: events =>
     let w := if e.targetObject == k then TaintWords.join w (TaintWords.singletonWords e.timestamp)
