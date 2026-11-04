@@ -152,12 +152,14 @@ bind is written in place (`irqHandlerSetNotificationInPlace`). -/
 emptied by the plain delete (`cspaceDeletePerform`, seL4's `cteDeleteOne` of a
 capability that finalises nothing), then the copy of `src` into it
 (`cspaceCopyPerform`, `cteInsert`). -/
-def irqHandlerSetNotificationPerform (line : Nat) (src : CSpaceAddr) (st : SystemState) :
+@[inline] def irqHandlerSetNotificationPerform (line : Nat) (src : CSpaceAddr)
+    (st : SystemState) :
     SystemState :=
   cspaceCopyPerform src (irqNodeAddr line) (cspaceDeletePerform (irqNodeAddr line) st)
 
 /-- `irqHandlerSetNotificationPerform` on the source slot's words, so the live
-arm builds no address record. -/
+arm builds no address record (the perform is inlined, so every read of the
+source is a read of its words). -/
 def irqHandlerSetNotificationPerformAt (line : Nat) (srcCnode : SeLe4n.ObjId)
     (srcSlot : SeLe4n.Slot) (st : SystemState) : SystemState :=
   irqHandlerSetNotificationPerform line ⟨srcCnode, srcSlot⟩ st
