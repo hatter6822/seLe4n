@@ -203,6 +203,14 @@ and fault entries do.
     holds the interrupt-control capability.
   - The registered "No IRQControl" debt row is deleted.  The reference
     dispatch's device arm stays on the existing reference-dispatch row.
+- **The entry-export gate reads only this tree's cross archives.**
+  `check_kernel_entry_exports.py` decided its aarch64 side on whatever archive
+  pair `.lake/build` held, so a pair restored from an earlier tree's build
+  cache, which lacks `lean_handle_interrupt`, failed Tier 1 for the wrong
+  reason.  The cross pair is now read only when its build record names this
+  tree (`archive_staleness`, the one answer `--check-fresh` also reports);
+  otherwise that side is skipped, and `--require-cross`, which the archive
+  lane passes after building the pair, fails.
 
 Refs: docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md (ZA6.32)
 
