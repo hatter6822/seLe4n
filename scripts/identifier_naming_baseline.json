@@ -268,24 +268,6 @@
  "ak9b_02_rpi5_objectStoreEmptyAtBoot": {
   "tests/Ak9PlatformSuite.lean": 2
  },
- "ak9c_01_empty_irqs_accepted": {
-  "tests/Ak9PlatformSuite.lean": 2
- },
- "ak9c_02_missing_handler_rejected": {
-  "tests/Ak9PlatformSuite.lean": 2
- },
- "ak9c_03_non_notification_rejected": {
-  "tests/Ak9PlatformSuite.lean": 2
- },
- "ak9c_04_notification_accepted": {
-  "tests/Ak9PlatformSuite.lean": 2
- },
- "ak9ce_01_checked_boot_rejects_bad_irq": {
-  "tests/Ak9PlatformSuite.lean": 2
- },
- "ak9ce_02_checked_boot_rejects_tcb_handler": {
-  "tests/Ak9PlatformSuite.lean": 2
- },
  "ak9d_01_range_within_gic_dist": {
   "tests/Ak9PlatformSuite.lean": 2
  },
