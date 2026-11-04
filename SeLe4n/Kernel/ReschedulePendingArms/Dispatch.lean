@@ -925,6 +925,21 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
         SystemState.completeYieldFrom_preserves_objects_invExt _ _ h.2⟩⟩
     target st ⟨stepCovers_refl e st, hInv⟩
 
+/-- WS-ZA ZA6.32: a node's retire writes the tree's issued lines and the mask
+alone, so it covers. -/
+theorem setIrqLineSignal_stepCovers (e : CoreId) (st : SystemState) (line : Nat)
+    (signal : Bool) (hInv : st.objects.invExt) :
+    stepCovers e st (Architecture.setIrqLineSignal st line signal) ∧
+      (Architecture.setIrqLineSignal st line signal).objects.invExt :=
+  (capabilityKeyFrame_of_objects_scheduler_eq
+    (st' := Architecture.setIrqLineSignal st line signal) hInv rfl rfl).stepCoversInv
+    (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
+
+theorem retireIrqNode_stepCovers (e : CoreId) (st : SystemState) (x : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (retireIrqNode st x) ∧ (retireIrqNode st x).objects.invExt :=
+  setIrqLineSignal_stepCovers e st _ false hInv
+
 /-- WS-ZA ZA5.4 part 23: **the finalising delete covers**: the delete and the
 page teardown move no key input and no scheduler field, the finalisation covers
 (`finaliseFinalObject_stepCovers`), and so does the retire. -/
@@ -951,8 +966,19 @@ theorem cspaceDeleteSlotFinalising_stepCovers (e ec : CoreId) (addr : CSpaceAddr
     rw [releaseFinalRegistration_machine,
       (finaliseDestroyedCapabilities_framed ec _ _ st1 st2 hF).2,
       (cspaceDeleteSlot_scheduler_machine addr st st1 hD).2]
-  exact stepCoversInv_trans (stepCovers_trans (h2.stepCovers (hRes := by rw [hM2]) (hBank := banksKeptOffCore_of_eq (by rw [hM2]))) h3.1)
-    (retireFinalObject_stepCovers e ec _ _ _ h3.2 hB3.1.1 hB3.2)
+  rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+    (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨-, hE⟩ | ⟨-, hE⟩
+  · rw [hE]
+    have hk := h1.trans (finaliseDestroyedCapabilities_keyFrame ec _ _ st1 st2 h1.2.2 hF)
+    have hM : st2.machine = st.machine := by
+      rw [(finaliseDestroyedCapabilities_framed ec _ _ st1 st2 hF).2,
+        (cspaceDeleteSlot_scheduler_machine addr st st1 hD).2]
+    exact stepCoversInv_trans
+      (hk.stepCovers (hRes := by rw [hM]) (hBank := banksKeptOffCore_of_eq (by rw [hM])))
+      (retireIrqNode_stepCovers e st2 _ hk.2.2)
+  · rw [hE]
+    exact stepCoversInv_trans (stepCovers_trans (h2.stepCovers (hRes := by rw [hM2]) (hBank := banksKeptOffCore_of_eq (by rw [hM2]))) h3.1)
+      (retireFinalObject_stepCovers e ec _ _ _ h3.2 hB3.1.1 hB3.2)
 
 /-- What the delete loops carry: coverage from the start state, and the bundle
 the delete carries. -/
@@ -1213,6 +1239,43 @@ theorem irqHandlerAck_stepCovers {e : CoreId} {line : Nat} {st st' : SystemState
   exact (capabilityKeyFrame_of_objects_scheduler_eq (st' := Architecture.setInterruptLineMask st
       line false) hInv rfl rfl).stepCoversInv (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
 
+/-- WS-ZA ZA6.32: **`seL4_IRQControl_Get` covers**: the line put at
+`IRQSignal` writes the tree's issued lines and the mask, then the handler
+capability's insert and its derivation edge. -/
+theorem irqControlGet_stepCovers {e : CoreId} {control dst : CSpaceAddr} {line : Nat}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : irqControlGet control dst line st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨-, stI, hI, rfl⟩ := irqControlGet_ok h
+  have k0 := capabilityKeyFrame_of_objects_scheduler_eq
+    (st' := Architecture.setIrqLineSignal st line true) hInv rfl rfl
+  have k1 := cspaceInsertSlot_keyFrame _ stI dst _ k0.2.2 hI
+  have k2 := k1.trans (cdtRecord_keyFrame stI control dst .mint k1.2.2)
+  have hM : (stI.cdtAddChild control dst .mint).machine =
+      (Architecture.setIrqLineSignal st line true).machine := by
+    rw [SystemState.cdtAddChild_machine, cspaceInsertSlot_preserves_machine _ _ _ _ hI]
+  exact stepCoversInv_trans (k0.stepCovers (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl))
+    (k2.stepCoversInv (hRes := by rw [hM]) (hBank := banksKeptOffCore_of_eq (by rw [hM])))
+
+/-- WS-ZA ZA6.32: **`seL4_IRQHandler_SetNotification` covers**: the node slot's
+finalising delete, then the copy. -/
+theorem irqHandlerSetNotification_stepCovers {e ec : CoreId} {line : Nat} {src : CSpaceAddr}
+    {st st' : SystemState} (hB : finalisingDeleteBundle st)
+    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok h
+  have h1 := cspaceDeleteSlotZombie_stepCovers e ec _ st st1 hB hD
+  exact stepCoversInv_trans h1.1 ((cspaceCopy_keyFrame _ _ _ _ h1.2 hC).stepCoversInv
+    (hRes := by rw [cspaceCopy_machine_eq hC])
+    (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq hC])))
+
+/-- WS-ZA ZA6.32: **`seL4_IRQHandler_Clear` covers**: the node slot's
+finalising delete. -/
+theorem irqHandlerClear_stepCovers {e ec : CoreId} {line : Nat} {st st' : SystemState}
+    (hB : finalisingDeleteBundle st) (h : irqHandlerClear ec line st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  cspaceDeleteSlotZombie_stepCovers e ec _ st st' hB (irqHandlerClear_ok h).2
+
 /-! ### The capability-only arms -/
 
 /-- **Every arm `dispatchCapabilityOnly` routes covers**, on the executing core,
@@ -1236,6 +1299,11 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
   all_goals first | (cases h; done) | skip
   all_goals try first
     | exact irqHandlerAck_stepCovers hInv h
+    | exact irqHandlerClear_stepCovers hB h
+    | exact irqControlGet_stepCovers hInv
+        (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2
+    | exact irqHandlerSetNotification_stepCovers hB
+        (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB h
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv

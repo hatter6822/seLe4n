@@ -180,10 +180,10 @@ theorem threadSlotFilled_preserves_capabilityInvariantBundle
     refine hShape.addChild .copy (slotCapAt_ne_none_of_lookupSlotCap (by rw [hSrc]; rfl)) hDstFresh
       (by show st1.cdt.addEdge _ _ _ = _; rw [hCdt1]) (fun r hr => hS1 r hr) (fun o hp => ?_)
       (.inl ⟨fun o => ?_, fun u => ?_, fun u hu => (hSrcNotUt u hu).elim⟩)
-    · show st1.objects[o]? ≠ none
+    · refine ⟨?_, SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt1) o hp.2⟩
       by_cases h : o = tid.toObjId
       · rw [h, hAt]; exact Option.some_ne_none _
-      · rw [hNe _ (Ne.symm h)]; exact hp
+      · rw [hNe _ (Ne.symm h)]; exact hp.1
     all_goals have hDst : st1.slotCapAt { cnode := tid.toObjId, slot := slot } = some c := by
                 rw [SystemState.slotCapAt_of_object hAt]
                 show (t.insertSpaceCap slot c).spaceSlotCap slot = some c

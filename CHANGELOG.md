@@ -57,8 +57,9 @@ and fault entries do.
     `interruptEntry` constructor of `PerCoreNonInterferenceStep`, and
     `niStepCoverage_perCore_count` is now 51.
 - **The exerciser**, in the QEMU image, gets two lines: line 250 is bound to
-  the interrupt notification, and line 251 is left out of the IRQ table.  The
-  root task holds a handler capability for each.  The exerciser sets each line
+  the interrupt notification, and line 251 is left unbound.  Each pass issues
+  a handler capability for each from the root task's IRQControl capability and
+  binds the first (see the interrupt nodes below).  The exerciser sets each line
   pending at the distributor (`GICD_ISPENDR`), above the timer's priority, and
   takes it through the IAR.  It drives five branches and pins each in
   `scripts/qemu_exerciser_lib.sh`: the signal with no waiter, the acknowledge,
@@ -88,9 +89,10 @@ and fault entries do.
   - the interrupt entry enters nothing (`interruptEntryStep_off_board`);
   - the acknowledge returns `.invalidIrq` (`irqHandlerAck_refuses_off_board`),
     on both the specification path and the refusal-carrying arm;
-  - the boot refuses an IRQ table entry or a handler capability for a line the
-    board does not have, through a new `wellFormed` conjunct
-    (`bootInterruptLinesOnBoard`, seL4's `seL4_IRQControl_Get` check).
+  - `.irqControlGet` refuses it with `.invalidIrq` (`irqControlLineRefusal`,
+    seL4's `Arch_checkIRQ` in `seL4_IRQControl_Get`), and the boot issues no
+    handler capability at all (`bootIssuesNoInterruptHandler`, a `wellFormed`
+    conjunct), so every handler capability names a line the board has.
 
   The live count is the bound configuration's
   (`bootAndInitialisePlatform_checked_interruptLineCount`), and the boot-map
@@ -98,7 +100,7 @@ and fault entries do.
   the kernel refuses lines by.  The HAL's mask-write validation stays as a
   backstop the kernel never reaches.  New cases are
   `runOffBoardInterruptLineChecks` in the negative-state suite and
-  `runBootInterruptLineChecks` in the SMP idle suite.
+  `runBootInterruptHandlerChecks` in the SMP idle suite.
 - **The boot's physical-write ledger is the state's own**
   (`SystemState.withFreshPhysicalWrites`, applied by `initialiseKernelState`).
   The installed ledger was the shared initial constant, so the first physical
@@ -112,9 +114,60 @@ and fault entries do.
   shapes), because `.irqHandlerAck` is syscall 44.  `smp_information_flow.expected`
   is regenerated from its producer for the 67-entry boundary (53 canonical) and
   the count of 44.  Each `.sha256` is refreshed.
-- **Registered debt.**  There is no IRQControl yet: handler capabilities and
-  their notifications are configured at boot.  The reference dispatch's
-  device arm is recorded on the existing reference-dispatch row.
+- **The interrupt nodes and IRQControl, as seL4's.**  The line-to-notification
+  table (`SystemState.irqHandlers`, `Notification.irqBound`, the boot's IRQ
+  table and its reciprocity check, the projection's handler view) is retired.
+  - **The nodes.**  As in seL4's abstract specification (`interrupt_irq_node`),
+    each line has a CNode of one slot.  The boot creates them
+    (`installIrqNodes`, `SeLe4n/Platform/Boot/IrqNodes.lean`), one per line
+    below the board's `interruptLineCount`, at the reserved ids
+    `irqNodeId line`.  A new `wellFormed` conjunct (`irqNodeIdsReserved`) keeps
+    those ids free of configured objects, and the object budget now reserves
+    `InterruptLineSet.capacity` ids for them, so the install never overwrites
+    an object (`bootFromPlatformCheckedStartedFor_irqNodesFresh`).
+  - **The line state** (`IRQInactive` / `IRQSignal`) is the capability tree's
+    issued-line set (`SystemState.irqSignalLines`), written only through
+    `Architecture.setIrqLineSignal` (seL4's `setIRQState`, which also masks an
+    inactive line).  `objectPresent` holds of a node only while its line is
+    issued.
+  - **Delivery** reads the node's slot: a notification capability with the
+    send right is signalled with that capability's badge
+    (`irqBinding?_notification`).
+  - **No capability reaches a node**: a capability naming one is
+    kernel-reserved, as the idle threads are, so it resolves
+    `.invalidCapability` (`syscallResolveCap_ok_not_irqNode`).  The per-core
+    projection shows a line only where its node is observable
+    (`projectIrqSignalLines`), as seL4 labels `irq_node` slots.
+  - **IRQControl.**  The root task holds the IRQControl capability
+    (`CapTarget.irqControl`; QEMU slot 20, RPi5 slot 11).  `.irqControlGet`
+    (45, `seL4_IRQControl_Get`) refuses a line the board lacks or that a
+    handler holds, then puts the line at `IRQSignal` and inserts the handler
+    capability as a derivation child of the control capability, so a revoke
+    of the control capability reaches every handler.
+    `.irqHandlerSetNotification` (46) empties the node's slot by the
+    finalising delete (`cteDeleteOne`) and copies a send-right notification
+    capability there.  `.irqHandlerClear` (47) empties it.
+  - **Finalisation.**  The last handler capability's delete empties the node's
+    slot through the zombie loop (`deletingIRQHandler`), then retires the
+    node (`retireIrqNode`, `deletedIRQHandler`): the line goes to
+    `IRQInactive` and is masked.
+  - **Coverage.**  Each invocation has its decode, its check-perform split
+    where the checks precede every write (`irqControlGetAdmitted` /
+    `irqControlGetPerform`, and the clear through `ofChecked`; the
+    notification bind's delete can be followed by a refused copy, so it stays
+    on the shared-state arm), and its dispatch-arm, census, lock-set,
+    footprint (`irqControlGet_stepCovers`, `irqHandlerSetNotification_stepCovers`,
+    `irqHandlerClear_stepCovers`), mapping-stage, run-queue, enforcement,
+    refusal, taint and non-interference coverage.  On the Rust side the three
+    ids are in `sele4n-types` and the HAL, `sele4n_sys::irq` gains
+    `irq_control_get`, `irq_handler_set_notification` and `irq_handler_clear`,
+    and the ABI conformance suite covers them.
+  - **The exerciser** issues, binds, clears and deletes the handlers on every
+    pass (`irq-control-get`, `irq-handler-set-notification`,
+    `irq-handler-clear`, `irq-handler-delete`), each pinned at 0 in
+    `scripts/qemu_exerciser_lib.sh`.
+  - The registered "No IRQControl" debt row is deleted.  The reference
+    dispatch's device arm stays on the existing reference-dispatch row.
 
 Refs: docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md (ZA6.32)
 

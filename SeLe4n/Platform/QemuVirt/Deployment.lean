@@ -127,13 +127,18 @@ def qemuVirtRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
     `c`'s at `16 + c`. -/
 def qemuVirtSchedControlSlotBase : Nat := 16
 
+/-- **WS-ZA ZA6.32**: the root task's interrupt-control slot, above the
+    scheduling controls — seL4's boot info `seL4_CapIRQControl`. -/
+def qemuVirtIrqControlSlot : Nat := 20
+
 /-- The root task's boot capabilities, by slot: its own TCB, CNode and VSpace,
     the interrupt notification, the untyped, and the allocation exerciser's
     partner thread, endpoint and reply object, and in slot 0 the exerciser's
     scheduling context (slot 9 is left free for the reply capability the
     exerciser mints from slot 8, and slots 10 to 15 for the objects it copies
-    and carves), and (WS-ZA ZA6.4) each core's scheduling control from
-    `qemuVirtSchedControlSlotBase`. -/
+    and carves), (WS-ZA ZA6.4) each core's scheduling control from
+    `qemuVirtSchedControlSlotBase`, and (WS-ZA ZA6.32) the interrupt control
+    at `qemuVirtIrqControlSlot`. -/
 def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
@@ -143,7 +148,8 @@ def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
-  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ] ++
+  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write])
+  , (SeLe4n.Slot.ofNat qemuVirtIrqControlSlot, Capability.irqControl) ] ++
   SeLe4n.Platform.RPi5.schedControlBootSlots qemuVirtSchedControlSlotBase
 
 /-- The root task's CNode: its boot capabilities (`qemuVirtRootTaskCNodeSlots`)
@@ -321,7 +327,8 @@ def qemuVirtDeploymentStartedState : IntermediateState :=
 /-- The state the `virt` boot installs: the started stage with its capabilities
     linked into the derivation tree. -/
 def qemuVirtDeploymentBootState : IntermediateState :=
-  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState
+  linkBootCapabilities qemuVirtBoundPlatformConfig
+    (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) qemuVirtDeploymentStartedState)
 
 theorem qemuVirtBoundPlatformConfig_idleBoot :
     bootFromPlatformCheckedWithIdleThreadsFor
@@ -389,7 +396,15 @@ theorem qemuVirtBoundPlatformConfig_boot :
         qemuVirtBoundPlatformConfig =
       .ok qemuVirtDeploymentBootState := by
   rw [bootFromPlatformCheckedStartedFor_of_idle _ _ _ qemuVirtBoundPlatformConfig_idleBoot]
-  exact congrArg (Except.map (linkBootCapabilities qemuVirtBoundPlatformConfig))
+  exact congrArg (Except.map fun started => linkBootCapabilities qemuVirtBoundPlatformConfig
+      (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) started))
+    qemuVirtDeployment_startInitialThreads
+
+/-- The started state leaves every interrupt node's id free. -/
+theorem qemuVirtDeploymentStartedState_irqNodesFresh :
+    irqNodesFresh (irqNodeLineCount qemuVirtBoundPlatformConfig)
+      qemuVirtDeploymentStartedState.state = true :=
+  bootFromPlatformCheckedStartedFor_irqNodesFresh _ _ _ _ qemuVirtBoundPlatformConfig_idleBoot
     qemuVirtDeployment_startInitialThreads
 
 /-- Both witnesses are installed on the state the boot installs, so its last
@@ -397,7 +412,8 @@ theorem qemuVirtBoundPlatformConfig_boot :
 theorem qemuVirtDeploymentBootState_witnessesInstalled :
     declaredWitnessesInstalled qemuVirtDeploymentBootState.state
       (PlatformBinding.labeling (platform := QemuVirtPlatform)) = true := by
-  rw [qemuVirtDeploymentBootState, linkBootCapabilities_declaredWitnessesInstalled]
+  rw [qemuVirtDeploymentBootState, linkBootCapabilities_declaredWitnessesInstalled,
+    installIrqNodes_declaredWitnessesInstalled qemuVirtDeploymentStartedState_irqNodesFresh]
   refine startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     qemuVirtDeployment_startInitialThreads _ ?_
   unfold declaredWitnessesInstalled
@@ -468,6 +484,7 @@ theorem qemuVirtDeploymentBootState_untypedInstalled :
     qemuVirtDeploymentBootState.state.objects[qemuVirtRootTaskUntypedId]? =
       some (.untyped qemuVirtRootTaskUntyped) :=
   ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
+  installIrqNodes_objects_of_some qemuVirtDeploymentStartedState_irqNodesFresh <|
   startInitialThreads_objects_of_nonTcb _ _ _
     qemuVirtDeployment_startInitialThreads _ _ (fun _ h => by cases h)
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _

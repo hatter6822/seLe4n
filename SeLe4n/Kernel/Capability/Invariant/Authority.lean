@@ -797,7 +797,8 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     (fun _ => by rw [hObjs])
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
     (by rw [hObjs]; exact h.2.2.2.2.1)
-    (fun o hp => by unfold SystemState.objectPresent at hp ⊢; rw [hObjs]; exact hp)
+    (fun o hp => ⟨by rw [hObjs]; exact hp.1,
+      SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt) o hp.2⟩)
     (funext fun o => by rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind, hObjs])
 
 /-- WS-RR RR8.16 (`v0.35.197`): the **pointwise** instance, which is the one the
@@ -824,7 +825,8 @@ theorem capabilityInvariantBundle_of_kindPreservingUpToBindings {st st' : System
     (hAt : kindPreservingWriteUpToBindings st st') :
     capabilityInvariantBundle st' := by
   refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv
-    (SystemState.kindPreservingWriteUpToBindings.present hAt)
+    (SystemState.kindPreservingWriteUpToBindings.present hAt
+      (SystemState.irqSignalLines_of_cdt hCdt))
     (funext fun o => by
       rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]; exact hAt.untyped o)
   · intro oid cn hCn

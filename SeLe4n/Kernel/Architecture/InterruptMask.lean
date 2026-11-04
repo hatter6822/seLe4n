@@ -144,13 +144,14 @@ def setInterruptLineMask (st : SystemState) (line : Nat) (masked : Bool) : Syste
 /-- **seL4's `setIRQState`**: line `line` put at `IRQSignal` (`signal`) or at
 `IRQInactive`, and masked at the controller exactly when it is inactive. -/
 def setIrqLineSignal (st : SystemState) (line : Nat) (signal : Bool) : SystemState :=
-  setInterruptLineMask { st with irqSignalLines := st.irqSignalLines.set line signal } line (!signal)
+  setInterruptLineMask { st with cdt := st.cdt.withIrqLineIssued line signal } line (!signal)
 
 /-- The line's state reads back what was written. -/
 @[simp] theorem setIrqLineSignal_mem (st : SystemState) {line : Nat} (signal : Bool)
     (h : line < InterruptLineSet.capacity) :
     (setIrqLineSignal st line signal).irqSignalLines.mem line = signal := by
-  simp [setIrqLineSignal, setInterruptLineMask, recordPhysicalWrites_irqSignalLines, h]
+  simp [setIrqLineSignal, setInterruptLineMask, recordPhysicalWrites_irqSignalLines,
+    SystemState.irqSignalLines, h]
 
 /-- …and the mask is set exactly when the line goes inactive. -/
 @[simp] theorem setIrqLineSignal_irqLineMasked (st : SystemState) (line : Nat) (signal : Bool) :
@@ -161,9 +162,23 @@ def setIrqLineSignal (st : SystemState) (line : Nat) (signal : Bool) : SystemSta
 @[simp] theorem setIrqLineSignal_objects (st : SystemState) (line : Nat) (signal : Bool) :
     (setIrqLineSignal st line signal).objects = st.objects := rfl
 
+/-- …and no derivation edge: of the tree it writes the issued lines alone. -/
+@[simp] theorem setIrqLineSignal_cdt (st : SystemState) (line : Nat) (signal : Bool) :
+    (setIrqLineSignal st line signal).cdt = st.cdt.withIrqLineIssued line signal := rfl
+
 /-- …and no scheduler field. -/
 @[simp] theorem setIrqLineSignal_scheduler (st : SystemState) (line : Nat) (signal : Bool) :
     (setIrqLineSignal st line signal).scheduler = st.scheduler := rfl
+
+/-- …and no ASID table, object index or lifecycle metadata. -/
+@[simp] theorem setIrqLineSignal_asidTable (st : SystemState) (line : Nat) (signal : Bool) :
+    (setIrqLineSignal st line signal).asidTable = st.asidTable := rfl
+
+@[simp] theorem setIrqLineSignal_objectIndex (st : SystemState) (line : Nat) (signal : Bool) :
+    (setIrqLineSignal st line signal).objectIndex = st.objectIndex := rfl
+
+@[simp] theorem setIrqLineSignal_lifecycle (st : SystemState) (line : Nat) (signal : Bool) :
+    (setIrqLineSignal st line signal).lifecycle = st.lifecycle := rfl
 
 /-- **seL4's `invokeIRQHandler_AckIRQ`**: the line the handler capability names
 unmasked at the controller.  A line that is no device line is refused

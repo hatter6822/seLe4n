@@ -277,6 +277,11 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   case tcbSetSpace =>
     simp only [schedLockSetForSyscall] at hSched
     exact schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hSched
+  -- ---- the interrupt handler's set and clear (WS-ZA ZA6.32: the node slot's
+  -- finalising delete) ----------------------------------------------------
+  case irqHandlerSetNotification | irqHandlerClear =>
+    simp only [schedLockSetForSyscall] at hSched
+    exact schedLockSet_capabilityDestroyOnCore_coversWrites st st' S hSched
   -- ---- `.tcbSuspend` ------------------------------------------------------
   case tcbSuspend =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps

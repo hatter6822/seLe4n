@@ -222,6 +222,12 @@ def contentFlowClass : SyscallId → ContentFlowClass
   -- WS-ZA ZA6.32: the acknowledge unmasks the line its capability names; no
   -- message, badge or capability moves.
   | .irqHandlerAck => .inert
+  -- WS-ZA ZA6.32: the interrupt-control and handler invocations issue, copy or
+  -- delete a capability between slots, as the CSpace arms do; no message or
+  -- badge moves.
+  | .irqControlGet => .inert
+  | .irqHandlerSetNotification => .inert
+  | .irqHandlerClear => .inert
   | .schedContextConfigure => .inert
   -- Services: a registration is a name, not content.
   | .serviceRegister => .inert
@@ -281,7 +287,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
   | .schedContextBind | .schedContextUnbind | .schedContextConfigure | .schedContextConsumed
-  | .schedContextYieldTo | .irqHandlerAck => false
+  | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear => false
   | .serviceRegister | .serviceRevoke | .serviceQuery => false
 
 /-- WS-SM SM9.D.13a: **the two arms that record, named.**
@@ -784,7 +790,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo | .irqHandlerAck
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -966,7 +972,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo | .irqHandlerAck
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -1003,7 +1009,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo | .irqHandlerAck
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -1077,7 +1083,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo | .irqHandlerAck
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction

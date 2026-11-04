@@ -2444,6 +2444,11 @@ theorem retireFinalisedObject_preserves_teardownWellFormed (ec : Concurrency.Cor
     (target recorder : Nat) (st : SystemState) (hW : teardownWellFormed st) :
     teardownWellFormed (retireFinalisedObject ec target recorder st) ∧
       vspaceRootsShrink st (retireFinalisedObject ec target recorder st) := by
+  rcases retireFinalisedObject_cases ec target recorder st with ⟨_, hR⟩ | ⟨_, hR⟩
+  · rw [hR]
+    exact ⟨teardownWellFormed_of_tables_eq (retireIrqNode_objects _ _)
+      (retireIrqNode_asidTable _ _) hW, vspaceRootsShrink_of_tables_eq (retireIrqNode_objects _ _)⟩
+  rw [hR]
   obtain ⟨h0, s0⟩ := (releaseFinalRegistration_frame target st hW.1).preserves_teardownWellFormed hW
   obtain ⟨h1, s1⟩ := finaliseFinalObject_preserves_teardownWellFormed target _ h0
   obtain ⟨h2, s2⟩ := retireFinalObject_preserves_teardownWellFormed ec target recorder _ h1

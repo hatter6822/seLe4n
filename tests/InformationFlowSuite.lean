@@ -861,9 +861,10 @@ def runInformationFlowChecks : IO Unit := do
   -- `lifecycleRevokeDeleteRetype` left with the in-place retype; every object
   -- is carved, through `retypeFromUntyped`, already on the list.
   -- WS-ZA ZA6.9: `schedContextConsumedOnCore` joined, capability-only, and
-  -- WS-ZA ZA6.29 `schedContextYieldToOnCore`, capability-only.
-  expect "enforcement boundary: total 53 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 53)
+  -- WS-ZA ZA6.29 `schedContextYieldToOnCore`, capability-only; WS-ZA ZA6.32
+  -- the interrupt acknowledge, issue, bind and unbind, capability-only.
+  expect "enforcement boundary: total 56 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 56)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false) default publicEndpointState
@@ -1340,9 +1341,10 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-ZA ZA5.9: 21, the service registry read off the endpoints.
   -- WS-ZA ZA5.10: 20, the audit trail and its epoch one field (the ring).
   -- WS-ZA ZA5.12: 19, the taint read off the objects.
-  expect "StateField enum has 19 variants, one per SystemState field"
+  -- WS-ZA ZA6.32: 18, the interrupt lines' state read off the derivation tree.
+  expect "StateField enum has 18 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
-       .scheduler, .irqSignalLines, .lifecycle,
+       .scheduler, .lifecycle,
        .asidTable, .interfaceRegistry,
        .cdt,
        .tlb,
@@ -1350,7 +1352,7 @@ def runInformationFlowChecks : IO Unit := do
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .physicalWrites,
        .physicalWritesDrained,
        .declassificationAudit,
-       .declassificationRefusals ].length = 19)
+       .declassificationRefusals ].length = 18)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation added `lifecycleObjectTypeLockstep_fields`; the
@@ -1409,13 +1411,15 @@ def runInformationFlowChecks : IO Unit := do
   -- `lookupServiceByRecordedRegistration` are replaced by their policy-gated wrappers.
   -- WS-ZA ZA6.9: 32 → 33 with `schedContextConsumedOnCore`, and WS-ZA ZA6.29
   -- 33 → 34 with `schedContextYieldToOnCore`, both capability-only: the
-  -- context capability's write right is their whole authority.
-  expect "enforcement boundary has 35 capability-only"
-    (coCount = 35)
+  -- context capability's write right is their whole authority.  WS-ZA ZA6.32
+  -- 34 → 35 with `irqHandlerAck`, and 35 → 38 with `irqControlGetFromCap`,
+  -- `irqHandlerSetNotificationFromCap` and `irqHandlerClear`.
+  expect "enforcement boundary has 38 capability-only"
+    (coCount = 38)
   expect "enforcement boundary has 3 read-only"
     (roCount = 3)
-  expect "enforcement boundary total is 53"
-    (boundary.length = 53)
+  expect "enforcement boundary total is 56"
+    (boundary.length = 56)
 
   IO.println "enforcement boundary completeness verified"
 

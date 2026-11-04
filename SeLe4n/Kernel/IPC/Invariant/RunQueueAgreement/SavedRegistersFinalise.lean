@@ -932,7 +932,16 @@ theorem cspaceDeleteSlotFinalising_savedRegsWritten {e ec : CoreId} {addr : CSpa
   have hI4 := (finaliseFinalObject_preserves_finalisingDeleteBundle
     (slotRetireTarget s addr.cnode addr.slot) _ hB3).1.2.1
   intro t
-  unfold retireFinalisedObject
+  rcases retireFinalisedObject_cases ec (slotRetireTarget s addr.cnode addr.slot)
+      (slotRetireRecorder s addr.cnode addr.slot) st2 with ⟨-, hE⟩ | ⟨-, hE⟩
+  · rw [hE]
+    left
+    have k2 : savedRegsKeptExcept (fun _ => False) s st2 :=
+      (savedRegsKeptExcept.of_cspaceDeleteSlot hB.1.2.1 hD).trans
+        (savedRegsKeptExcept.of_vspaceRootOnlyWrite hV)
+    refine Eq.trans ?_ (k2 t id)
+    simp only [SystemState.savedRegs, SystemState.getTcb?, retireIrqNode_objects]
+  rw [hE]
   have hFr := retireFinalObject_fields ec (slotRetireTarget s addr.cnode addr.slot)
     (slotRetireRecorder s addr.cnode addr.slot)
     (finaliseFinalObject (slotRetireTarget s addr.cnode addr.slot)

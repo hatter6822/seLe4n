@@ -2201,6 +2201,9 @@ def frozenOpCoverage : SyscallId → Bool
   | .schedContextConsumed => false   -- WS-ZA ZA6.9: writes the executing core's caller's registers; no frozen-phase variant defined
   | .schedContextYieldTo => false    -- WS-ZA ZA6.29: per-core scheduler op (the executing core's caller and run queue); no frozen-phase variant defined
   | .irqHandlerAck => false          -- WS-ZA ZA6.32: writes the interrupt controller's mask (a machine write); no frozen-phase variant defined
+  | .irqControlGet => false          -- WS-ZA ZA6.32: writes the line's state and mask (machine writes); no frozen-phase variant defined
+  | .irqHandlerSetNotification => false -- WS-ZA ZA6.32: a finalising delete and a copy into the line's node; no frozen-phase variant defined
+  | .irqHandlerClear => false        -- WS-ZA ZA6.32: a finalising delete of the line's node slot; no frozen-phase variant defined
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant

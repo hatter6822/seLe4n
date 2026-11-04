@@ -160,8 +160,8 @@ theorem finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle
     · rw [hr] at hR; exact absurd rfl hR
   · intro o hp
     rcases hW o with e | ⟨-, ⟨r, hr⟩⟩
-    · show st'.objects[o]? ≠ none; rw [e]; exact hp
-    · show st'.objects[o]? ≠ none; rw [hr]; exact Option.some_ne_none _
+    · exact ⟨by rw [e]; exact hp.1, SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt) o hp.2⟩
+    · exact ⟨by rw [hr]; exact Option.some_ne_none _, SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt) o hp.2⟩
 
 /-- Whether an untyped records a child reads the untyped records alone. -/
 theorem untypedRecordsChild_congr {st st' : SystemState} (h : st'.getUntyped? = st.getUntyped?)
@@ -287,9 +287,9 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
       hCdt hCap (fun _ hp => hp) rfl⟩
   · have hA := h.2.2.1; unfold cdtAcyclicity at hA ⊢; rw [hCdt]; exact hA
   · rcases hW o with e | ⟨he, -, -⟩ | ⟨U, U', -, -, hU', -⟩
-    · show st'.objects[o]? ≠ none; rw [e]; exact hp
+    · exact ⟨by rw [e]; exact hp.1, SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt) o hp.2⟩
     · exact absurd he ho
-    · show st'.objects[o]? ≠ none; rw [hU']; exact Option.some_ne_none _
+    · exact ⟨by rw [hU']; exact Option.some_ne_none _, SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt) o hp.2⟩
   · have hu' := (SystemState.getUntyped?_eq_some_iff st' u U').mp hu
     rcases hW u with e | ⟨-, -, hn⟩ | ⟨U, U'', -, hU, hU', -, hSz, -, hch, -⟩
     · refine ⟨U', (SystemState.getUntyped?_eq_some_iff st u U').mpr (e ▸ hu'), rfl,
@@ -314,6 +314,33 @@ theorem retireFinalObject_preserves_capabilityInvariantBundle (ec : Concurrency.
 
 theorem objId_ofNat_succ_sub_one (x : SeLe4n.ObjId) : SeLe4n.ObjId.ofNat (x.val + 1 - 1) = x := by
   simp [SeLe4n.ObjId.ofNat]
+
+/-- WS-ZA ZA6.32: **clearing a line no capability's node is keeps the
+capability invariants**: of the state it changes the tree's issued lines
+alone, which no conjunct but the presence and tree-shape ones reads. -/
+theorem capabilityInvariantBundle_withIrqLineCleared (st : SystemState) (l : Nat)
+    (h : capabilityInvariantBundle st)
+    (hN : ∀ r, ¬ SystemState.namesAt st.slotCapAt r (irqNodeId l)) :
+    capabilityInvariantBundle { st with cdt := st.cdt.withIrqLineIssued l false } := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := h
+  refine ⟨?_, fun r hm => h2 r hm, h3, fun c cn hc => h4 c cn hc, h5, ?_,
+      SystemState.CapTreeShape.linksAgree_withIrqLineIssued.mpr h7,
+      SystemState.CapTreeShape.withIrqLineCleared h8 _ hN⟩
+  · exact h1
+  · exact h6
+
+/-- WS-ZA ZA6.32: **the line retire of a node no capability names keeps the
+capability invariants** (`deletedIRQHandler` after the handler's last
+capability is deleted): it writes no object and, of the tree, the issued
+lines alone, and the line it deactivates is one no capability's node is. -/
+theorem retireIrqNode_preserves_capabilityInvariantBundle (st : SystemState) (target : Nat)
+    (h : capabilityInvariantBundle st) (hNode : retireTargetsIrqNode target = true)
+    (hNamed : ∀ r, ¬ SystemState.namesAt st.slotCapAt r (SeLe4n.ObjId.ofNat (target - 1))) :
+    capabilityInvariantBundle (retireIrqNode st (SeLe4n.ObjId.ofNat (target - 1))) :=
+  capabilityInvariantBundle_of_objects_and_cdt_eq
+    (capabilityInvariantBundle_withIrqLineCleared st _ h
+      (fun r => (retireTargetsIrqNode_irqNodeId hNode).symm ▸ hNamed r))
+    (retireIrqNode_objects _ _) (retireIrqNode_cdt _ _)
 
 /-- **What a nonzero retire word names**: the slot's capability names the
 target (`Capability.namedObject`: by `.object`, as a reply capability's reply
@@ -360,7 +387,16 @@ theorem slotRetireTarget_names {st : SystemState} {cnode : SeLe4n.ObjId} {slot :
       · exact absurd rfl hT
     | auditTrail => rw [hTg] at hT; exact absurd rfl hT
     | schedControl _ => rw [hTg] at hT; exact absurd rfl hT
-    | irqHandler _ => rw [hTg] at hT; exact absurd rfl hT
+    | irqControl => rw [hTg] at hT; exact absurd rfl hT
+    | irqHandler l =>
+      rw [hTg] at hT
+      dsimp only at hT ⊢
+      split at hT
+      · next hc =>
+        rw [if_pos hc]
+        simp only [Bool.and_eq_true] at hc
+        exact ⟨c, rfl, by unfold Capability.namedObject; rw [hTg, objId_ofNat_succ_sub_one], hc.2⟩
+      · exact absurd rfl hT
 
 /-- **What a nonzero retire word names, under the capability bundle**: the
 target's final capability (`slotRetireTarget_names`, `capIsFinal_iff_capFinalSpec`). -/
@@ -416,6 +452,30 @@ theorem cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle
   have h2 := finaliseDestroyedCapabilities_preserves_capabilityInvariantBundle ec _ _ st1 st2 h1 hF
   obtain ⟨-, -, hC2, hU2, -⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st2 h1.2.2.2.2.1 hF
   obtain ⟨hC1n, hC1, hU1⟩ := cspaceDeleteSlot_slots hInv.2.2.2.2.1 hD
+  -- WS-ZA ZA6.32: no slot of the state after the delete names the target, whose
+  -- final capability the delete destroyed.
+  have hGoneNamed : slotRetireTarget st addr.cnode addr.slot ≠ 0 → ∀ r,
+      ¬ SystemState.namesAt st2.slotCapAt r
+        (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) := by
+    intro hT r hr
+    obtain ⟨c, hc, ht, hFin⟩ := slotRetireTarget_spec hInv hT
+    have hAddr : SystemState.namesAt st.slotCapAt ⟨addr.cnode, addr.slot⟩
+        (SeLe4n.ObjId.ofNat (slotRetireTarget st addr.cnode addr.slot - 1)) := ⟨c, hc, ht⟩
+    rw [SystemState.namesAt_of_eq (hC2 r)] at hr
+    by_cases hra : r = addr
+    · subst hra
+      obtain ⟨c', hc', -⟩ := hr
+      rw [hC1n] at hc'; cases hc'
+    · rw [SystemState.namesAt_of_eq (hC1 r hra)] at hr
+      exact hFin _ hAddr r hra hr
+  -- WS-ZA ZA6.32: an interrupt node's retire is its line's (`retireIrqNode`).
+  rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+      (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨hNode, hR⟩ | ⟨_, hR⟩
+  · rw [hR]
+    have hT : slotRetireTarget st addr.cnode addr.slot ≠ 0 := by
+      intro h0; rw [h0] at hNode; cases hNode
+    exact retireIrqNode_preserves_capabilityInvariantBundle st2 _ h2 hNode (hGoneNamed hT)
+  rw [hR]
   -- The finalisation writes threads, endpoints and notifications only, each
   -- keeping its kind and slots (`FinaliseFrame`).
   -- The release of an endpoint's registration first (`releaseFinalRegistration`)
@@ -522,19 +582,25 @@ theorem spliceNode_edges_length_lt {cdt : CapDerivationTree} {p c : SlotRef}
       have := List.find?_some (p := fun (x : CapDerivationEdge) => x.isChildOf e.child) hF; simpa [CapDerivationEdge.isChildOf] using this
     exact spliceEdges_length_lt_of_parent hF (hUc ▸ CapDerivationTree.edgeWellFounded_no_self_edge hWF hUp)
 
-/-- **A finalising delete's tree is the splice of its slot**: the delete
-splices the slot out and the teardown writes no edge. -/
-theorem cspaceDeleteSlotFinalising_ok_cdt {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+/-- **A finalising delete's tree edges are the splice of its slot's**: the
+delete splices the slot out and the teardown writes no edge; an interrupt
+node's retire (WS-ZA ZA6.32) writes the tree's issued lines alone. -/
+theorem cspaceDeleteSlotFinalising_ok_edges {ec : Concurrency.CoreId} {addr : CSpaceAddr}
     {st st' : SystemState} (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    st'.cdt = st.cdt.spliceNode addr := by
+    st'.cdt.edges = (st.cdt.spliceNode addr).edges := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
   rw [finaliseDestroyedCapabilities_eq_ok_state] at hF
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hF
   subst hF
   obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st1 hD
-  rw [retireFinalisedObject, retireFinalObject_cdt, finaliseFinalObject_cdt,
-    releaseFinalRegistration_cdt, finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
-    cspaceDeleteSlotCore_cdt_eq st stC addr hC]
+  rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+      (slotRetireRecorder st addr.cnode addr.slot) _ with ⟨_, hR⟩ | ⟨_, hR⟩ <;> rw [hR]
+  · rw [retireIrqNode_cdt, CapDerivationTree.withIrqLineIssued_edges,
+      finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
+      cspaceDeleteSlotCore_cdt_eq st stC addr hC]
+  · rw [retireFinalObject_cdt, finaliseFinalObject_cdt,
+      releaseFinalRegistration_cdt, finaliseDestroyedCapabilitiesState_cdt, spliceDeletedCdtNode_cdt,
+      cspaceDeleteSlotCore_cdt_eq st stC addr hC]
 
 /-- A slot's link, read as the loop reads it: its two words, decoded. -/
 theorem slotLinkAt_eq_decodeLink (st : SystemState) (o : SeLe4n.ObjId) (s : SeLe4n.Slot)
@@ -633,6 +699,10 @@ theorem spliceEdgesFrom_avoid_self (node : SlotRef) (kids : List CapDerivationEd
 def CdtAvoids (cdt : CapDerivationTree) (a : SlotRef) : Prop :=
   ∀ e ∈ cdt.edges, e.parent ≠ a ∧ e.child ≠ a
 
+/-- Avoidance reads the edges alone. -/
+theorem CdtAvoids.of_edges {c d : CapDerivationTree} {a : SlotRef} (hE : c.edges = d.edges)
+    (h : CdtAvoids d a) : CdtAvoids c a := fun e he => h e (hE ▸ he)
+
 theorem CdtAvoids.splice {cdt : CapDerivationTree} {a : SlotRef} (h : CdtAvoids cdt a)
     (node : SlotRef) : CdtAvoids (cdt.spliceNode node) a := by
   unfold CdtAvoids
@@ -689,25 +759,27 @@ theorem RevokeProgress.step {src c : SlotRef} {E : Nat} {ec : Concurrency.CoreId
     RevokeProgress src c E s' ∧ (x = c → s'.cdt.edges.length < E ∨ CdtAvoids s'.cdt src) := by
   obtain ⟨hInv, hLe, hOr⟩ := h
   have hInv' := cspaceDeleteSlotFinalising_preserves_capabilityInvariantBundle ec x s s' hInv hD
-  have hCdt := cspaceDeleteSlotFinalising_ok_cdt hD
+  have hE := cspaceDeleteSlotFinalising_ok_edges hD
   have hLe' : s'.cdt.edges.length ≤ s.cdt.edges.length := by
-    rw [hCdt, CapDerivationTree.spliceNode_edges_eq]; exact CapDerivationTree.spliceEdges_length_le _ _
+    rw [hE, CapDerivationTree.spliceNode_edges_eq]; exact CapDerivationTree.spliceEdges_length_le _ _
   have hStrict : c ∈ s.cdt.childrenOf src → x = c → s'.cdt.edges.length < E := fun hm hx => by
     have := spliceNode_edges_length_lt hInv.2.2.1 hm
-    rw [← hx, ← hCdt] at this; omega
+    rw [← hx, ← hE] at this; omega
   refine ⟨⟨hInv', by omega, ?_⟩, fun hx => ?_⟩
   · rcases hOr with hm | hl | ha
     · by_cases hxc : x = c
       · exact .inr (.inl (hStrict hm hxc))
       · by_cases hxs : x = src
-        · subst hxs; rw [hCdt]; exact .inr (.inr (CdtAvoids.of_splice_self hInv.2.2.1 _))
-        · rw [hCdt]; exact .inl (mem_childrenOf_splice hm hxs hxc)
+        · subst hxs; exact .inr (.inr (CdtAvoids.of_edges hE (CdtAvoids.of_splice_self hInv.2.2.1 _)))
+        · refine .inl ?_
+          unfold CapDerivationTree.childrenOf; rw [hE]
+          exact mem_childrenOf_splice hm hxs hxc
     · exact .inr (.inl (by omega))
-    · rw [hCdt]; exact .inr (.inr (ha.splice x))
+    · exact .inr (.inr (CdtAvoids.of_edges hE (ha.splice x)))
   · rcases hOr with hm | hl | ha
     · exact .inl (hStrict hm hx)
     · exact .inl (by omega)
-    · rw [hCdt]; exact .inr (ha.splice x)
+    · exact .inr (CdtAvoids.of_edges hE (ha.splice x))
 
 /-- **A finalisation keeps the progress**: it writes no edge. -/
 theorem RevokeProgress.finalise {src c : SlotRef} {E : Nat} {s : SystemState} (target : Nat)
@@ -726,7 +798,7 @@ theorem FinalisingDeleteChain.avoids {ec : Concurrency.CoreId} {src : SlotRef}
   hC.closed (fun s => CdtAvoids s.cdt src)
     (fun x s s' hs hD => by
       show CdtAvoids s'.cdt src
-      rw [cspaceDeleteSlotFinalising_ok_cdt hD]; exact hs.splice x)
+      exact CdtAvoids.of_edges (cspaceDeleteSlotFinalising_ok_edges hD) (hs.splice x))
     (fun d s hs => by
       show CdtAvoids (finaliseFinalObject d s).cdt src
       rw [finaliseFinalObject_cdt]; exact hs) h

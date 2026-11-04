@@ -1133,6 +1133,7 @@ theorem cspaceDeleteSlot_preserves_projection
     projectState_of_agreeOffDerivationLinks ctx observer
       (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt _ _ _ hObjInv hCore) addr).1
       (by rw [spliceDeletedCdtNode_cdt]; exact spliceDeletedCdtNode_fields stC addr)
+      (by rw [spliceDeletedCdtNode, SystemState.cdtSplice_irqSignalLines])
   rw [hLeaf]
   exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st stC hAddrHigh hObjInv hCore
 

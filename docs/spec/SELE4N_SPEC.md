@@ -5430,7 +5430,9 @@ gone since `v0.36.145`, plan row 32, and the registry table since `v0.36.159`,
 WS-ZA ZA5.9, so the invariant states the interrupt table's references and the
 registry's hold by construction) and refused at boot when a configuration
 would come up violating it (`bootSafeEndpointCheck`,
-`irqHandlersAndNotificationsReciprocal`).  **The table back-references read**
+`irqHandlersAndNotificationsReciprocal`; the interrupt half went with the table at
+`v0.36.195`, WS-ZA ZA6.32, whose interrupt nodes are capability slots the
+retire reads like any other).  **The table back-references read**
 (`v0.36.144`, plan row 31): the boot establishes the invariant
 (`bootFromPlatformChecked_ok_tableReferencesRecorded`, carried in the boot
 shapes) and every syscall and kernel entry keeps it — the run-queue link stage
@@ -5926,8 +5928,32 @@ Every kernel object has a decidable well-formedness predicate:
   other than the timer's are banked per core and masked by the HAL.  The entry
   carries the run-queue, bank-match, census, blocked-not-resident, footprint,
   mapping and per-core non-interference obligations every entry carries, and
-  every branch reads 0 in the exerciser.  Handler capabilities and their
-  notifications are boot-configured (no IRQControl yet; registered debt).
+  every branch reads 0 in the exerciser.  **The interrupt nodes and
+  IRQControl** (same release): the line-to-notification table is gone.  As in
+  seL4's abstract specification (`interrupt_irq_node`), each line has a
+  one-slot CNode the boot creates (`installIrqNodes`, one per line below the
+  board's `interruptLineCount`, at the reserved ids `irqNodeId line`, kept
+  free by the `wellFormed` conjunct `irqNodeIdsReserved` and counted in the
+  object budget), and the line's state (`IRQInactive` / `IRQSignal`) is the
+  capability tree's issued-line set (`SystemState.irqSignalLines`).  Delivery
+  reads the node's slot: a notification capability with the send right is
+  signalled with that capability's badge.  No capability names a node's slot
+  (`syscallResolveCap_ok_not_irqNode`: `capTargetsReservedKernelObject`
+  refuses it at the resolution every invoked capability passes through), and the
+  per-core non-interference projection labels a line by its node
+  (`projectIrqSignalLines`), as seL4 labels `irq_node` slots.  The boot hands
+  the root task the IRQControl capability (`CapTarget.irqControl`), which
+  invokes `.irqControlGet` (45, `seL4_IRQControl_Get`: a device line of the
+  board no handler holds is put at `IRQSignal` and its handler capability is
+  inserted as a derivation child of the control capability);
+  `.irqHandlerSetNotification` (46) empties the node's slot by the finalising
+  delete and copies a send-right notification capability there, and
+  `.irqHandlerClear` (47) empties it.  The last handler capability's delete
+  runs `deletingIRQHandler` (the zombie loop empties the node's slot) and
+  `deletedIRQHandler` (`retireIrqNode`, the line put at `IRQInactive` and
+  masked).  Each invocation has its decode, dispatch-arm, census, lock-set,
+  taint, enforcement, refusal, non-interference and run-queue coverage, and
+  the exerciser's issue, bind, clear and delete each read 0.
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged
@@ -10833,7 +10859,7 @@ qualified `Lean.Name` of its consuming theorem. The mapping is:
 | `.deterministicRegisterContext`   | `deterministicRegisterContext_consumed_by_writeRegister` |
 | `.memoryAccessSafety`             | `memoryAccessSafety_consumed_by_readMemory` |
 | `.bootObjectTyping`               | `default_system_state_proofLayerInvariantBundle` |
-| `.irqRoutingTotality`             | `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid` |
+| `.irqRoutingTotality`             | `SeLe4n.Kernel.Architecture.irqBinding?_notification` |
 | `.singleCoreOperation`            | `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness` |
 
 Three complementary guards enforce the index cannot silently drift:
@@ -10897,7 +10923,7 @@ is the boot-core member of the per-core family.
 Three properties bound what the per-core observer can learn.
 
 1. **The observable state's components partition into shared and
-   per-core.** Five components (`objects`, `irqHandlers`,
+   per-core.** Five components (`objects`, `irqSignalLines`,
    `objectIndex`, `domainSchedule`, `memory`) are
    filtered by the observer's *label* only and are identical from every
    core; six (`runnable`, `current`, `activeDomain`,

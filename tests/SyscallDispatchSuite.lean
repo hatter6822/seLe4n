@@ -1023,8 +1023,8 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
      | _ => false)
     "the ordinary capability beside it must still resolve"
   expect "sd054_idle_cap_is_the_reserved_kind"
-    (SeLe4n.Kernel.capTargetsReservedIdleObject idleCap &&
-     !SeLe4n.Kernel.capTargetsReservedIdleObject tcbCap)
+    (SeLe4n.Kernel.capTargetsReservedKernelObject idleCap &&
+     !SeLe4n.Kernel.capTargetsReservedKernelObject tcbCap)
     "the capability predicate must decide by target"
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,

@@ -1702,7 +1702,12 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
 @[simp] theorem detachRevokedSlots_irqSignalLines (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
     (detachRevokedSlots st cnodeId cn sourceSlot target).irqSignalLines = st.irqSignalLines := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
+  unfold detachRevokedSlots
+  refine SeLe4n.Model.CNode.foldCells_preserves cn st _
+    (fun acc => acc.irqSignalLines = st.irqSignalLines) rfl (fun acc slot cap _ hAcc => ?_)
+  split
+  · exact hAcc
+  · rw [spliceDeletedCdtNode, SystemState.cdtSplice_irqSignalLines]; exact hAcc
 
 @[simp] theorem detachRevokedSlots_asidTable (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :

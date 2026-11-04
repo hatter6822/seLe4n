@@ -393,7 +393,7 @@ operand resolved to, every refusal carrying the state it was handed
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -428,7 +428,7 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
   rcases operand with _ | cap
   · rfl
   · simp only [sendOperandArmThenTaintR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
@@ -617,7 +617,7 @@ Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let headCode := sendTaintHeadCode st cap
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -652,7 +652,7 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
   rcases operand with _ | cap
   · rfl
   · simp only [callOperandArmThenTaintR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
@@ -924,7 +924,7 @@ caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let callerCode := ThreadId.optCode (replyTaintCaller? st cap)
           withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -958,7 +958,7 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
   rcases operand with _ | cap
   · rfl
   · simp only [replyOperandArmThenTaintR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
@@ -1090,7 +1090,7 @@ a refusal to `onErr`, so no `Except` or `some` cell is built. -/
   match cap? with
   | none => onErr .invalidCapability
   | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
       else if !cap.hasRight .write then onErr .illegalAuthority
       else
         match cap.target with
@@ -1135,7 +1135,7 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       | none => rfl
       | some cap =>
         simp only []
-        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
         · simp only [hIdle, ↓reduceIte]
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
@@ -1455,7 +1455,7 @@ operand resolved to, every refusal carrying the state it was handed
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           withTaintWordsAt st (threadObjOfCode sourceCode) fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
@@ -1489,7 +1489,7 @@ theorem receiveOperandArmThenTaintR_eq (ctx : LabelingContext)
   rcases operand with _ | cap
   · rfl
   · simp only [receiveOperandArmThenTaintR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,

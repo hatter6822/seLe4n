@@ -201,6 +201,24 @@ theorem irqHandlerAck_runQueueStage {line : Nat} {st st' : SystemState}
   rw [Architecture.irqHandlerAck_ok h]
   exact RunQueueStage.of_frame rfl rfl rfl
 
+/-- WS-ZA ZA6.32: `seL4_IRQControl_Get` keeps the run queues: the line's
+state, the handler capability's insert and its derivation edge. -/
+theorem irqControlGet_runQueueStage {control dst : CSpaceAddr} {line : Nat}
+    {st st' : SystemState} (h : irqControlGet control dst line st = .ok ((), st')) :
+    RunQueueStage st st' := by
+  obtain ⟨-, stI, hI, rfl⟩ := irqControlGet_ok h
+  exact ((setIrqLineSignal_runQueueStage st line true).trans
+    (cspaceInsertSlot_runQueueStage hI)).trans (cdtRecord_runQueueStage stI control dst .mint)
+
+/-- WS-ZA ZA6.32: `seL4_IRQHandler_SetNotification` keeps the run queues: the
+node slot's finalising delete, then the copy. -/
+theorem irqHandlerSetNotification_runQueueEntryStage {ec : Concurrency.CoreId} {line : Nat}
+    {src : CSpaceAddr} {st st' : SystemState}
+    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' := by
+  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok h
+  exact (cspaceDeleteSlotZombie_runQueueEntryStage hD).trans (cspaceCopy_runQueueStage hC).entry
+
 /-- The capability-only dispatch keeps the run queues in agreement with the
 threads' links on every arm but the yieldTo, which links its caller
 (`dispatchCapabilityOnly_runQueueEntryStageOn`). -/
@@ -217,6 +235,23 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
   case irqHandlerAck =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line => exact RunQueueStage.entry (irqHandlerAck_runQueueStage hStep)
+    all_goals try cases hStep
+  case irqControlGet =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqControl =>
+      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ hStep
+      exact RunQueueStage.entry (irqControlGet_runQueueStage hG)
+    all_goals try cases hStep
+  case irqHandlerSetNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      obtain ⟨_, _, -, hN⟩ := irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ hStep
+      exact irqHandlerSetNotification_runQueueEntryStage hN
+    all_goals try cases hStep
+  case irqHandlerClear =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      exact cspaceDeleteSlotZombie_runQueueEntryStage (irqHandlerClear_ok hStep).2
     all_goals try cases hStep
   case cspaceDelete =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

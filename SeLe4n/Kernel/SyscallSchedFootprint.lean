@@ -205,7 +205,11 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- such deletes; neither reads an operand.  **Part 26**: and the space change,
   -- whose old CSpace root, when it is the last capability to a populated CNode,
   -- is deleted by the zombie loop, a sequence of such deletes.
-  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace =>
+  -- WS-ZA ZA6.32: so are the interrupt handler's set and clear, whose
+  -- finalising delete of the line's node slot may destroy the last capability
+  -- to the notification it held.
+  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace
+  | .irqHandlerSetNotification | .irqHandlerClear =>
       LockSet.ofList? schedLockSet_capabilityDestroyOnCore
   | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
@@ -218,9 +222,10 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- WS-ZA ZA6.9: the Consumed invocation writes a context's consumed time and
   -- its caller's registers, no scheduler slot.
   | .schedContextConsumed
-  -- WS-ZA ZA6.32: the acknowledge writes the interrupt controller's mask, no
+  -- WS-ZA ZA6.32: the acknowledge writes the interrupt controller's mask, and
+  -- the issue of a handler capability a slot, the line's state and its mask; no
   -- scheduler slot.
-  | .irqHandlerAck
+  | .irqHandlerAck | .irqControlGet
   | .auditRead | .auditDrain => none
 
 /-- **Cut C4**: the arms `schedLockSetForSyscall` declares a footprint for.
@@ -260,7 +265,8 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv
   | .yield
-  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace => true
+  | .cspaceDelete | .cspaceRevoke | .tcbSetSpace
+  | .irqHandlerSetNotification | .irqHandlerClear => true
   | .cspaceMint | .cspaceCopy | .cspaceMove
   | .untypedRetype | .untypedReset
   | .mintReplyCap
@@ -269,7 +275,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSetIPCBuffer | .tcbSetFaultHandler | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
-  | .schedContextConsumed | .irqHandlerAck
+  | .schedContextConsumed | .irqHandlerAck | .irqControlGet
   | .auditRead | .auditDrain => false
 
 /-- **Cut C4**: every arm this module has not declared is undeclared, whatever
@@ -469,7 +475,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
     (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
   unfold schedLockSetForSyscall at hS
   cases sid <;> simp only [Option.bind_eq_some_iff, reduceCtorEq] at hS
-  case cspaceDelete | cspaceRevoke | tcbSetSpace =>
+  case cspaceDelete | cspaceRevoke | tcbSetSpace | irqHandlerSetNotification | irqHandlerClear =>
     rw [LockSet.ofList?_pairs hS]
     exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals

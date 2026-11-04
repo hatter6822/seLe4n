@@ -4403,6 +4403,46 @@ def lockSet_irqHandlerAck (callerTid : ThreadId) (cnodeRootObjId : ObjId) : Lock
     [(tcbLock callerTid, .write),
      (cnodeLock cnodeRootObjId, .read)]
 
+/-- WS-ZA ZA6.32: `lockSet` for `irqControlGet`.  The issue writes the
+destination CNode's slot and the derivation tree (`stateLevelLock`), as a
+reply-capability mint does; the caller's TCB is written (its return is staged)
+and the CSpace root read.  The line's state and mask are no object. -/
+def lockSet_irqControlGet (callerTid : ThreadId) (cnodeRootObjId dstCnodeObjId : ObjId) :
+    LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .write),
+     (cnodeLock cnodeRootObjId, .read),
+     (cnodeLock dstCnodeObjId, .write),
+     (stateLevelLock, .write)]
+
+/-- WS-ZA ZA6.32: `lockSet` for `irqHandlerSetNotification`.  The line's node
+slot is emptied by the finalising delete (`cspaceDelete`'s footprint, the
+unmapped root among it) and the notification capability copied there from
+the source CNode (`cspaceCopy`'s, which may set the source full). -/
+def lockSet_irqHandlerSetNotification (callerTid : ThreadId)
+    (cnodeRootObjId srcCnodeObjId nodeObjId : ObjId)
+    (unmappedRootObjId : Option ObjId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (cnodeLock srcCnodeObjId, .write),
+       (cnodeLock nodeObjId, .write),
+       (stateLevelLock, .write)])
+    (unmappedRootObjId.map (fun o => (vspaceRootLock o, AccessMode.write)))
+
+/-- WS-ZA ZA6.32: `lockSet` for `irqHandlerClear`: the line's node slot emptied
+by the finalising delete (`cspaceDelete`'s footprint). -/
+def lockSet_irqHandlerClear (callerTid : ThreadId) (cnodeRootObjId nodeObjId : ObjId)
+    (unmappedRootObjId : Option ObjId := none) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (cnodeLock nodeObjId, .write),
+       (stateLevelLock, .write)])
+    (unmappedRootObjId.map (fun o => (vspaceRootLock o, AccessMode.write)))
+
 /-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
 `boundNotification`) and the notification (write — `boundTCB`) both mutate; the
 caller TCB is read (identity) and the CSpace root read (cap resolution). -/
@@ -5119,6 +5159,15 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- CSpace root; the line it unmasks is machine state, no object.
   | .irqHandlerAck =>
       [.tcb, .cnode]
+  -- WS-ZA ZA6.32: the issue reads the caller and its CSpace root and writes a
+  -- CNode slot and the derivation tree, as a reply-capability mint does; the
+  -- line's state and mask are no object.
+  | .irqControlGet =>
+      [.tcb, .cnode, .objStore]
+  -- WS-ZA ZA6.32: the set and the clear delete the line's node slot by the
+  -- finalising delete, so they write the kinds the delete writes.
+  | .irqHandlerSetNotification | .irqHandlerClear =>
+      [.tcb, .cnode, .objStore, .vspaceRoot]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
   -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
@@ -5207,7 +5256,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo | .irqHandlerAck
+  | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .tcbBindNotification | .tcbUnbindNotification
@@ -6986,6 +7035,70 @@ theorem lockSet_consistent_irqHandlerAck (callerTid : ThreadId) (cnRoot : ObjId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+
+/-- WS-ZA ZA6.32: SM3.B.4 for `.irqControlGet`. -/
+theorem lockSet_consistent_irqControlGet (callerTid : ThreadId) (cnRoot dstCn : ObjId) :
+    ∀ p ∈ (lockSet_irqControlGet callerTid cnRoot dstCn).pairs,
+      p.fst.kind ∈ permittedKinds .irqControlGet :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-ZA ZA6.32: SM3.B.4 for `.irqHandlerSetNotification`. -/
+theorem lockSet_consistent_irqHandlerSetNotification (callerTid : ThreadId)
+    (cnRoot srcCn nodeCn : ObjId) (unmappedRoot : Option ObjId) :
+    ∀ p ∈ (lockSet_irqHandlerSetNotification callerTid cnRoot srcCn nodeCn unmappedRoot).pairs,
+      p.fst.kind ∈ permittedKinds .irqHandlerSetNotification :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases unmappedRoot with
+        | none => cases hpp
+        | some o =>
+            cases hpp
+            simp [vspaceRootLock]; decide)
+
+/-- WS-ZA ZA6.32: SM3.B.4 for `.irqHandlerClear`. -/
+theorem lockSet_consistent_irqHandlerClear (callerTid : ThreadId) (cnRoot nodeCn : ObjId)
+    (unmappedRoot : Option ObjId) :
+    ∀ p ∈ (lockSet_irqHandlerClear callerTid cnRoot nodeCn unmappedRoot).pairs,
+      p.fst.kind ∈ permittedKinds .irqHandlerClear :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases unmappedRoot with
+        | none => cases hpp
+        | some o =>
+            cases hpp
+            simp [vspaceRootLock]; decide)
 
 /-- WS-ZA ZA6.29: SM3.B.4 for `.schedContextYieldTo`. -/
 theorem lockSet_consistent_schedContextYieldTo (callerTid : ThreadId) (cnRoot : ObjId)

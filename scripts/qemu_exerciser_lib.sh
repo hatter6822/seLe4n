@@ -246,6 +246,11 @@ for driver in drivers:
             # acknowledge, the unbound line and the spurious INTID.
             "irq-signal-no-waiter", "irq-handler-ack", "irq-signal-waiter",
             "irq-unbound", "irq-spurious",
+            # the handler capability issued from IRQControl and bound to a
+            # notification, then cleared and deleted (the last handler's
+            # finalisation leaves the line inactive).
+            "irq-control-get", "irq-handler-set-notification",
+            "irq-handler-clear", "irq-handler-delete",
             # WS-ZA ZA5.3: the same through a badged endpoint capability.
             "receive-for-badged-send", "badged-send-to-receiver",
             "badged-send-blocks", "receive-from-badged-sender",

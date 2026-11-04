@@ -121,9 +121,14 @@ theorem cspaceDeleteSlotFinalising_threadSlotsDrawnFrom (ec : Concurrency.CoreId
     exact (spliceDeletedCdtNode_reach stC addr).invExt hIC
   obtain ⟨hI2, -, -, -, hV2⟩ := finaliseDestroyedCapabilities_slots ec _ _ st1 st2 hI1 hF
   have hFr := finaliseReleased_frame (slotRetireTarget st addr.cnode addr.slot) st2 hI2
-  unfold retireFinalisedObject
-  exact (((cspaceDeleteSlot_threadSlotsDrawnFrom hInv hD).trans hV2.threadSlotsDrawnFrom).trans
-    hFr.threadSlotsDrawnFrom).trans (retireFinalObject_threadSlotsDrawnFrom ec _ _ _ hFr.invExt)
+  have h2 := (cspaceDeleteSlot_threadSlotsDrawnFrom hInv hD).trans hV2.threadSlotsDrawnFrom
+  rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+      (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨-, hR⟩ | ⟨-, hR⟩
+  · rw [hR]
+    exact h2.trans fun _ t _ _ hT hC => .inr ⟨t, by rwa [retireIrqNode_objects] at hT, hC⟩
+  · rw [hR]
+    exact (h2.trans hFr.threadSlotsDrawnFrom).trans
+      (retireFinalObject_threadSlotsDrawnFrom ec _ _ _ hFr.invExt)
 
 /-- **The finalisation keeps the mappings recorded**: it keeps every root, every
 frame and every slot's capability (`FinaliseFrameAny`). -/
@@ -223,13 +228,19 @@ theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded (ec : Concurre
     simp at hNot
   · refine ⟨s, cap, fid, f, ?_, ht, ?_, hb, ha ▸ hmap⟩
     · rw [hEq]
-      unfold retireFinalisedObject
-      rw [retireFinalObject_slotCapAt _ _ _ _ hFr.invExt, hFr.slotCapAt, hC2, hC1 s hs]
+      rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+          (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨-, hR⟩ | ⟨-, hR⟩
+      · rw [hR, retireIrqNode_slotCapAt, hC2, hC1 s hs]
+        exact hc
+      rw [hR, retireFinalObject_slotCapAt _ _ _ _ hFr.invExt, hFr.slotCapAt, hC2, hC1 s hs]
       exact hc
     · have hf2 := hV2.keeps_frame (cspaceDeleteSlot_keeps_frame hW.1 hD hf)
       have hf3 := hFr.write.keeps hf2 (not_finaliseWritableAny_frame f)
       rw [hEq]
-      unfold retireFinalisedObject
+      rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+          (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨-, hR⟩ | ⟨-, hR⟩
+      · rw [hR, retireIrqNode_objects]; exact hf2
+      rw [hR]
       rcases retireFinalObject_keeps_frame ec _ (slotRetireRecorder st addr.cnode addr.slot) _
           hFr.invExt hf3 with hk | ⟨hT, hx⟩
       · exact hk

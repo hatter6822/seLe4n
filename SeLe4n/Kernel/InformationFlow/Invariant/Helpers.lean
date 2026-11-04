@@ -1376,8 +1376,11 @@ every projected CNode's and thread's links. -/
 theorem projectState_of_agreeOffDerivationLinks (ctx : LabelingContext)
     (observer : IfObserver) {st st' : SystemState}
     (h : SystemState.objectsAgreeOffDerivationLinks st' st)
-    (hF : st' = { st with objects := st'.objects, cdt := st'.cdt }) :
+    (hF : st' = { st with objects := st'.objects, cdt := st'.cdt })
+    (hL : st'.irqSignalLines = st.irqSignalLines) :
     projectState ctx observer st' = projectState ctx observer st := by
+  have hI : projectIrqSignalLines ctx observer st' = projectIrqSignalLines ctx observer st := by
+    funext irq; simp only [projectIrqSignalLines, hL]
   have hO : projectObjects ctx observer st' = projectObjects ctx observer st := by
     funext oid
     unfold projectObjects SystemState.getObject?
@@ -1397,6 +1400,7 @@ theorem projectState_of_agreeOffDerivationLinks (ctx : LabelingContext)
           (hw ▸ rfl)
       rw [ha, hb]
       simp only [Option.map_some, hp]
+  rw [hF] at hI
   rw [hF]
   simp only [projectState]
   congr 1
@@ -1410,7 +1414,7 @@ theorem projectState_detachRevokedSlots (ctx : LabelingContext) (observer : IfOb
       projectState ctx observer st := by
   obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target
   exact projectState_of_agreeOffDerivationLinks ctx observer (h.agree hInv)
-    (by rw [h.cdt]; exact h.fields)
+    (by rw [h.cdt]; exact h.fields) (detachRevokedSlots_irqSignalLines _ _ _ _ _)
 
 /-- A run of slot-link writes is invisible to every observer: the projection
 clears every CNode's link words. -/
@@ -1418,7 +1422,7 @@ theorem projectState_of_linkReach (ctx : LabelingContext) (observer : IfObserver
     {st₀ st : SystemState} (h : SystemState.linkReach st₀ st) (hInv : st₀.objects.invExt) :
     projectState ctx observer st = projectState ctx observer st₀ :=
   projectState_of_agreeOffDerivationLinks ctx observer (h.agree hInv)
-    (by rw [h.cdt]; exact h.fields)
+    (by rw [h.cdt]; exact h.fields) (by simp only [SystemState.irqSignalLines]; rw [h.cdt])
 
 /-- Adding a derivation edge, tree and slot links together, is invisible to
 every observer: the projection reads neither. -/
@@ -1427,7 +1431,7 @@ theorem projectState_cdtAddChild (ctx : LabelingContext) (observer : IfObserver)
     projectState ctx observer (st.cdtAddChild p c op) = projectState ctx observer st := by
   rw [projectState_of_linkReach ctx observer (SystemState.cdtAddChild_reach st p c op) hInv]
   exact projectState_of_agreeOffDerivationLinks ctx observer
-    (SystemState.objectsAgreeOffDerivationLinks.of_objects_eq rfl) rfl
+    (SystemState.objectsAgreeOffDerivationLinks.of_objects_eq rfl) rfl rfl
 
 /-- Moving a derivation node, tree and slot links together, is invisible to
 every observer. -/
@@ -1436,7 +1440,7 @@ theorem projectState_cdtMove (ctx : LabelingContext) (observer : IfObserver)
     projectState ctx observer (st.cdtMove src dst) = projectState ctx observer st := by
   rw [projectState_of_linkReach ctx observer (SystemState.cdtMove_reach st src dst) hInv]
   exact projectState_of_agreeOffDerivationLinks ctx observer
-    (SystemState.objectsAgreeOffDerivationLinks.of_objects_eq rfl) rfl
+    (SystemState.objectsAgreeOffDerivationLinks.of_objects_eq rfl) rfl rfl
 
 /-- Revoking capabilities in a non-observable CNode preserves low-equivalence. -/
 theorem cspaceRevoke_preserves_lowEquivalent

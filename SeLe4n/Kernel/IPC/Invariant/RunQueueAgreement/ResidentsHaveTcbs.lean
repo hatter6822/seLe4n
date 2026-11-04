@@ -518,7 +518,7 @@ theorem bootFromPlatformCheckedStartedFor_residentsHaveTcbs
     ist.state.residentsHaveTcbs := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
   refine ResidentsHaveTcbs.of_defaultCodes ?_
-  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart]
+  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart]
   exact bootFromPlatformCheckedWithIdleThreadsFor_ok_residentCode cores config base hBase
 
 end SeLe4n.Platform.Boot

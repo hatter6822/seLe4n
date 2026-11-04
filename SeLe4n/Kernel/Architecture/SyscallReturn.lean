@@ -359,6 +359,9 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- WS-ZA ZA6.32: an acknowledge returns nothing — seL4's `seL4_IRQHandler_Ack`
   -- returns only an error code.
   | .irqHandlerAck         => .unit
+  | .irqControlGet         => .unit
+  | .irqHandlerSetNotification => .unit
+  | .irqHandlerClear       => .unit
 
 /-- Totality anchor (RA.A.2).  The *mechanism* is the definition itself —
 an exhaustive match with no wildcard, so elaboration rejects a tree where a

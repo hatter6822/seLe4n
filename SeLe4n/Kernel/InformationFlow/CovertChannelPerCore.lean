@@ -165,7 +165,7 @@ are live and both must be classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 64 entries — the live canonical 50 (39
+/-- SM8.B.6: the per-core boundary has 70 entries — the live canonical 56 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
 the PR #887 review round's fault-handler configuration `setThreadFaultHandlerOp`,
@@ -177,7 +177,8 @@ page-table operations `pageTableMap` / `pageTableUnmap`, plus WS-ZA ZA4.3's
 yield `yieldOnCore`, WS-ZA ZA6.9's Consumed invocation
 `schedContextConsumedOnCore`, WS-ZA ZA6.29's yieldTo invocation
 `schedContextYieldToOnCore` and WS-ZA ZA6.32's interrupt acknowledge
-`irqHandlerAck`, less WS-ZA ZA5.4 part 14's two retired in-place retype
+`irqHandlerAck`, handler issue `irqControlGetFromCap`, handler bind
+`irqHandlerSetNotificationFromCap` and handler clear `irqHandlerClear`, less WS-ZA ZA5.4 part 14's two retired in-place retype
 entries `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype`) and the
 fourteen cross-core wrappers (the in-place retype's left with it).  Re-anchored at the
 SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
@@ -194,7 +195,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 67 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 70 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fourteen live cross-core

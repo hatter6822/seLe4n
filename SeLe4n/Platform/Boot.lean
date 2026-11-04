@@ -899,7 +899,7 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: a boot **CNode**'s capabilities, by their targets
-    (`capTargetsReservedIdleObject`). -/
+    (`capTargetsReservedKernelObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
   -- The derivation links name slots of CNodes, never an idle object, and so do
@@ -907,7 +907,7 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   -- (`SpareCells`: logically one value).
   | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slotsGhost, _cells, _, _, _links, _, _occ, _,
       _occHead, _, _spare⟩ =>
-    !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedIdleObject cap)
+    !(cn.allCells fun _ cap => !SeLe4n.Kernel.capTargetsReservedKernelObject cap)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
     object, thread, scheduling-context or reply id, classified one by one.
@@ -1283,9 +1283,12 @@ theorem embeddedIdentitiesMatchSlots_iff (config : PlatformConfig) :
     violating `objectIndexBounded`, the invariant `retypeFromUntyped` enforces
     at every later allocation.  The headroom is `numCores`, not the binding's
     `coreCount`: the idle slots are reserved model-wide, so the budget must
-    hold for any binding this config could boot on. -/
+    hold for any binding this config could boot on.  WS-ZA ZA6.32 adds the
+    interrupt nodes the started boot installs (`InterruptLineSet.capacity` of
+    them at most, reserved model-wide for the same reason). -/
 def objectBudgetRespected (config : PlatformConfig) : Bool :=
-  config.initialObjects.length + 1 + SeLe4n.Kernel.Concurrency.numCores ≤ maxObjects
+  config.initialObjects.length + 1 + SeLe4n.Kernel.Concurrency.numCores +
+    InterruptLineSet.capacity ≤ maxObjects
 
 /-- PR #889 review round 19: the object budget's own boot diagnostic.  Round 18
     added the conjunct without a branch in `bootFromPlatformChecked`'s error
@@ -1295,8 +1298,9 @@ def objectBudgetRespected (config : PlatformConfig) : Bool :=
     `split` in the downstream `_ok_` results, and a `toString` application there
     defeats the dependent elimination. -/
 def objectBudgetBootError : String :=
-  "boot: platform config leaves no object-index room for the boot VSpace root and the " ++
-    "per-core idle threads (initialObjects + 1 + numCores must not exceed maxObjects) " ++
+  "boot: platform config leaves no object-index room for the boot VSpace root, the " ++
+    "per-core idle threads and the interrupt nodes " ++
+    "(initialObjects + 1 + numCores + the line capacity must not exceed maxObjects) " ++
     "(PR #889 review rounds 18 and 19)"
 
 /-- The first conjunct's diagnostic. -/
@@ -1658,6 +1662,23 @@ def bootInterruptHandlerBootError : String :=
   "boot: a configured capability is an interrupt handler; handlers are issued by " ++
     "seL4_IRQControl_Get (WS-ZA ZA6.32)"
 
+/-- **WS-ZA ZA6.32: the thirteenth `wellFormed` conjunct — the interrupt nodes'
+    ids are the kernel's.**  The boot installs one interrupt node per line of
+    the board at its reserved id (`irqNodeId`, seL4's `intStateIRQNode`, kernel
+    memory no untyped covers), so a configured object — an initial object or
+    the binding's VSpace root — at one of those ids would be overwritten by the
+    install, or would be a node no line's state reaches.  The boot refuses it,
+    as it refuses an object at an idle thread's reserved slot
+    (`idleSlotsReserved`).  Not attacker-reachable — the configuration is the
+    integrator's. -/
+def irqNodeIdsReserved (config : PlatformConfig) : Bool :=
+  config.initialObjects.all (fun e => !isIrqNodeObjId InterruptLineSet.capacity e.id) &&
+    config.bootVSpaceRoot.all (fun r => !isIrqNodeObjId InterruptLineSet.capacity r.id)
+
+/-- The thirteenth conjunct's diagnostic. -/
+def irqNodeIdReservationBootError : String :=
+  "boot: a configured object holds an interrupt node's reserved id (WS-ZA ZA6.32)"
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
@@ -1669,7 +1690,8 @@ def bootInterruptHandlerBootError : String :=
     by at most one capability, (part 18) names only objects it installs, and
     (part 27) binds threads and notifications only in reciprocal pairs, and
     (WS-ZA ZA5.5) installs service interfaces under distinct, non-sentinel
-    ids, and (WS-ZA ZA6.32) names only interrupt lines the board has. -/
+    ids, and (WS-ZA ZA6.32) names only interrupt lines the board has and
+    places no object at an interrupt node's reserved id. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
@@ -1677,7 +1699,7 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
     untypedPlacementRespected config && bootRootTablesPlaced config &&
     untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&
     bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&
-    bootIssuesNoInterruptHandler config
+    bootIssuesNoInterruptHandler config && irqNodeIdsReserved config
 
 /-- **WS-ZA ZA5.5**: a well-formed config installs service interfaces with
     distinct, non-sentinel ids. -/
@@ -1690,6 +1712,25 @@ theorem PlatformConfig.wellFormed_bootInterfacesWellFormed (config : PlatformCon
 theorem PlatformConfig.wellFormed_bootIssuesNoInterruptHandler (config : PlatformConfig)
     (h : config.wellFormed = true) : bootIssuesNoInterruptHandler config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-ZA ZA6.32**: a well-formed config places no object at an interrupt
+    node's id. -/
+theorem PlatformConfig.wellFormed_irqNodeIdsReserved (config : PlatformConfig)
+    (h : config.wellFormed = true) : irqNodeIdsReserved config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+theorem irqNodeIdsReserved_initialObject {config : PlatformConfig}
+    (h : irqNodeIdsReserved config = true) {e : ObjectEntry} (he : e ∈ config.initialObjects) :
+    isIrqNodeObjId InterruptLineSet.capacity e.id = false := by
+  simp only [irqNodeIdsReserved, Bool.and_eq_true, List.all_eq_true] at h
+  simpa using h.1 e he
+
+theorem irqNodeIdsReserved_bootVSpaceRoot {config : PlatformConfig}
+    (h : irqNodeIdsReserved config = true) {v : BootVSpaceRootEntry}
+    (hv : config.bootVSpaceRoot = some v) :
+    isIrqNodeObjId InterruptLineSet.capacity v.id = false := by
+  simp only [irqNodeIdsReserved, Bool.and_eq_true, hv] at h
+  simpa [Option.all] using h.2
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1765,7 +1806,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError),
    (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError),
    (bootInterfacesWellFormed config, bootInterfaceBootError),
-   (bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError)]
+   (bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError),
+   (irqNodeIdsReserved config, irqNodeIdReservationBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -4261,6 +4303,11 @@ theorem bootIssuesNoInterruptHandler_withoutExtents (c : PlatformConfig) :
   unfold bootIssuesNoInterruptHandler PlatformConfig.withoutExtents
   simp only [List.flatMap_map, bootEntryCapabilities_withoutUntypedExtent]
 
+theorem irqNodeIdsReserved_withoutExtents (c : PlatformConfig) :
+    irqNodeIdsReserved c.withoutExtents = irqNodeIdsReserved c := by
+  unfold irqNodeIdsReserved PlatformConfig.withoutExtents
+  simp only [List.all_map, Function.comp_def, ObjectEntry.withoutUntypedExtent_id]
+
 theorem bootNotificationBindingsReciprocal_withoutExtents (c : PlatformConfig) :
     bootNotificationBindingsReciprocal c.withoutExtents =
       bootNotificationBindingsReciprocal c := by
@@ -4353,9 +4400,12 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
     unfold bootInterfacesWellFormed; exact this ▸ rfl
   have hLines := bootIssuesNoInterruptHandler_withoutExtents c
   rw [hEq, bootIssuesNoInterruptHandler_withoutExtents] at hLines
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩, wIf⟩, wLines⟩ := hWf
-  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩, hLines ▸ wLines⟩
+  have hNodes := irqNodeIdsReserved_withoutExtents c
+  rw [hEq, irqNodeIdsReserved_withoutExtents] at hNodes
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩, wIf⟩, wLines⟩, wNodes⟩ :=
+    hWf
+  exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
+    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩, hLines ▸ wLines⟩, hNodes ▸ wNodes⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
@@ -4743,7 +4793,7 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded
         have hBudget := PlatformConfig.wellFormed_objectBudgetRespected config hWf
         unfold objectBudgetRespected at hBudget
         have hBudget' : config.initialObjects.length + 1 +
-            SeLe4n.Kernel.Concurrency.numCores ≤ maxObjects := by
+            SeLe4n.Kernel.Concurrency.numCores + InterruptLineSet.capacity ≤ maxObjects := by
           simpa using decide_eq_true_eq.mp hBudget
         have hChecked := bootFromPlatformChecked_ok_objectIndex_length_le config base hBase
         have hFold := foldl_storeIdleThread_objectIndex_length_le cores base
@@ -7932,17 +7982,20 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive
     rw [hn] at hC
     simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq] at hC
     rcases hC with ⟨e', he', rfl⟩ | hv
-    · show ist.state.objects[e'.id]? ≠ none
-      rw [bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem cores config ist h e' he']
-      exact Option.some_ne_none _
+    · refine ⟨?_, ?_⟩
+      · rw [bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem cores config ist h e' he']
+        exact Option.some_ne_none _
+      · exact SystemState.irqNodeIssued_of_not_node _
+          (irqNodeIdsReserved_initialObject (config.wellFormed_irqNodeIdsReserved hWf) he')
     · cases hR : config.bootVSpaceRoot with
       | none => rw [hR] at hv; cases hv
       | some v =>
         rw [hR] at hv
         simp only [Option.any_some, decide_eq_true_eq] at hv
         subst hv
-        exact bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present cores config ist
-          h v hR
+        exact ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_bootVSpaceRoot_present cores config ist
+          h v hR, SystemState.irqNodeIssued_of_not_node _
+            (irqNodeIdsReserved_bootVSpaceRoot (config.wellFormed_irqNodeIdsReserved hWf) hR)⟩
 
 /-- **WS-ZA ZA5.4 part 19**: **every untyped the idle-storing boot holds is a
     configured untyped at its id** — the binding's root and the idle threads

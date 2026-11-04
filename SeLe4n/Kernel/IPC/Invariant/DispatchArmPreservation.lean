@@ -25,6 +25,7 @@ import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.Operations.Fault
 import SeLe4n.Kernel.Capability.FrameFinalise
+import SeLe4n.Kernel.Capability.IrqControl
 import SeLe4n.Kernel.Lifecycle.Operations.SetSpace
 import SeLe4n.Kernel.Architecture.PageTableInstall
 
@@ -4462,9 +4463,12 @@ theorem cspaceDeleteSlotFinalising_preserves_objects_invExt
     (hStep : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     st'.objects.invExt := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' hStep
-  exact (retireFinalObject_frame ec _ _ _ (finaliseReleased_frame _ st2
-    (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
-      (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1).invExt).1
+  have h2 := (finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2
+      (cspaceDeleteSlot_preserves_objects_invExt st st1 addr hObjInv hD) hF).1
+  rcases retireFinalisedObject_cases ec (slotRetireTarget st addr.cnode addr.slot)
+      (slotRetireRecorder st addr.cnode addr.slot) st2 with ⟨_, hR⟩ | ⟨_, hR⟩ <;> rw [hR]
+  · rw [retireIrqNode_objects]; exact h2
+  · exact (retireFinalObject_frame ec _ _ _ (finaliseReleased_frame _ st2 h2).invExt).1
 
 /-- **WS-ZA ZA5.4 part 14: every object a carve makes is pristine** — a thread
 unblocked, unqueued, unbound and with empty space slots, an endpoint with both
@@ -6133,5 +6137,88 @@ theorem stageWokenSendCompletion_donationChainFrame
           · exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
           · exact donationChainFrame.refl st
 
+
+
+/-! ### WS-ZA ZA6.32: the interrupt-control and interrupt-handler invocations -/
+
+/-- **What a successful `seL4_IRQControl_Get` is**: the line checks passed, the
+handler capability inserted into the state with the line at `IRQSignal`, and the
+derivation edge recorded. -/
+theorem irqControlGet_ok {control dst : CSpaceAddr} {line : Nat} {st st' : SystemState}
+    (h : irqControlGet control dst line st = .ok ((), st')) :
+    irqControlLineRefusal st line = none ∧
+    ∃ stI, cspaceInsertSlot dst (Capability.irqHandlerOf line)
+        (Architecture.setIrqLineSignal st line true) = .ok ((), stI) ∧
+      st' = stI.cdtAddChild control dst .mint := by
+  unfold irqControlGet at h
+  cases hR : irqControlLineRefusal st line with
+  | some e => rw [hR] at h; cases h
+  | none =>
+    rw [hR] at h
+    simp only at h
+    cases hI : cspaceInsertSlot dst (Capability.irqHandlerOf line)
+        (Architecture.setIrqLineSignal st line true) with
+    | error e => rw [hI] at h; cases h
+    | ok r =>
+      obtain ⟨⟨⟩, stI⟩ := r
+      rw [hI] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      exact ⟨rfl, stI, rfl, h.symm⟩
+
+/-- **`seL4_IRQControl_Get` preserves `ipcInvariantFull`**: the line's state is
+no object, the handler capability carries no badge, and the derivation edge
+moves nothing the bundle reads. -/
+theorem irqControlGet_preserves_ipcInvariantFull {control dst : CSpaceAddr} {line : Nat}
+    {st st' : SystemState} (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (h : irqControlGet control dst line st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨-, stI, hI, rfl⟩ := irqControlGet_ok h
+  have hInv1 : ipcInvariantFull (Architecture.setIrqLineSignal st line true) :=
+    ipcInvariantFull_of_objects_eq (Architecture.setIrqLineSignal_objects st line true) hInv
+  have hObjInv1 : (Architecture.setIrqLineSignal st line true).objects.invExt := hObjInv
+  exact cdtRecord_bundle_frame stI control dst DerivationOp.mint
+    (cspaceInsertSlot_preserves_objects_invExt _ stI dst _ hObjInv1 hI)
+    (cspaceInsertSlot_preserves_ipcInvariantFull _ stI dst _ hObjInv1 hInv1
+      (by intro b hb; simp [Capability.irqHandlerOf] at hb) hI)
+
+/-- **What a successful `seL4_IRQHandler_SetNotification` is**: the source
+admitted, the node slot's delete, then the copy into it. -/
+theorem irqHandlerSetNotification_ok {ec : Concurrency.CoreId} {line : Nat}
+    {src : CSpaceAddr} {st st' : SystemState}
+    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
+    ∃ cap st1, st.lookupSlotCap src = some cap ∧ irqNotificationCapAdmitted st cap = true ∧
+      cnodeInvoked (irqNodeId line) st = true ∧
+      cspaceDeleteSlotZombie ec (irqNodeAddr line) st = .ok ((), st1) ∧
+      cspaceCopy src (irqNodeAddr line) st1 = .ok ((), st') := by
+  unfold irqHandlerSetNotification at h
+  cases hL : st.lookupSlotCap src with
+  | none => rw [hL] at h; cases h
+  | some cap =>
+    rw [hL] at h
+    simp only at h
+    by_cases hA : irqNotificationCapAdmitted st cap = true
+    · by_cases hC : cnodeInvoked (irqNodeId line) st = true
+      · simp only [hA, hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+        cases hD : cspaceDeleteSlotZombie ec (irqNodeAddr line) st with
+        | error e => rw [hD] at h; cases h
+        | ok r =>
+          obtain ⟨⟨⟩, st1⟩ := r
+          rw [hD] at h
+          exact ⟨cap, st1, rfl, hA, hC, rfl, h⟩
+      · simp only [Bool.not_eq_true] at hC
+        simp [hA, hC] at h
+    · simp only [Bool.not_eq_true] at hA
+      simp [hA] at h
+
+/-- **What a successful `seL4_IRQHandler_Clear` is**: the node slot's delete. -/
+theorem irqHandlerClear_ok {ec : Concurrency.CoreId} {line : Nat} {st st' : SystemState}
+    (h : irqHandlerClear ec line st = .ok ((), st')) :
+    cnodeInvoked (irqNodeId line) st = true ∧
+      cspaceDeleteSlotZombie ec (irqNodeAddr line) st = .ok ((), st') := by
+  unfold irqHandlerClear at h
+  by_cases hC : cnodeInvoked (irqNodeId line) st = true
+  · simp only [hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+    exact ⟨hC, h⟩
+  · simp at hC; simp [hC] at h
 
 end SeLe4n.Kernel

@@ -440,7 +440,7 @@ theorem enforcementSoundness_revokeServiceChecked
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 50 entries, matching the canonical `enforcementBoundary`.
+    has exactly 56 entries, matching the canonical `enforcementBoundary`.
 
     WS-ZA ZA5.4 part 14 removed the in-place retype's two entries
     (`lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`) with the retype.
@@ -467,12 +467,14 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     added `schedContextConsumedOnCore`, the Consumed invocation's transition,
     capability-only, and WS-ZA ZA6.29 `schedContextYieldToOnCore`, the yieldTo
     invocation's, capability-only, and WS-ZA ZA6.32 `irqHandlerAck`, the
-    interrupt-handler acknowledge, capability-only.
+    interrupt-handler acknowledge, and `irqControlGetFromCap`,
+    `irqHandlerSetNotificationFromCap` and `irqHandlerClear`, the handler issue,
+    bind and unbind, all capability-only.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 53 := by rfl
+    enforcementBoundaryExtended.length = 56 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

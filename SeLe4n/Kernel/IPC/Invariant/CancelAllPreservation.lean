@@ -845,6 +845,17 @@ the retire's (`retireFinalObject_preserves_ipcInvariantFull`,
 theorem retireFinalisedObject_preserves_finalisingDeleteBundle (ec : Concurrency.CoreId)
     (target recorder : Nat) (st : SystemState) (h : finalisingDeleteBundle st) :
     finalisingDeleteBundle (retireFinalisedObject ec target recorder st) := by
+  rcases retireFinalisedObject_cases ec target recorder st with ⟨_, hR⟩ | ⟨_, hR⟩ <;> rw [hR]
+  · -- WS-ZA ZA6.32: an interrupt node's retire writes no object and no
+    -- scheduler field.
+    have hO := retireIrqNode_objects st (SeLe4n.ObjId.ofNat (target - 1))
+    have hS := retireIrqNode_scheduler st (SeLe4n.ObjId.ofNat (target - 1))
+    obtain ⟨⟨hI, hX, hH⟩, hL⟩ := h
+    refine ⟨⟨ipcInvariantFull_of_objects_eq hO hI, by rw [hO]; exact hX, ?_⟩,
+      SchedLinkFrame.preserves ⟨fun o => by rw [hO], fun o => by rw [hO], fun o => by rw [hO],
+        by rw [hS]⟩ hL⟩
+    unfold lentContextHeadsLenderFrame at hH ⊢
+    rw [hO]; exact hH
   have h0 := releaseFinalRegistration_closed finalisingDeleteBundle
     (fun _ _ _ hs hR => revokeService_preserves_finalisingDeleteBundle hs hR) target st h
   obtain ⟨h1, hL⟩ := finaliseFinalObject_preserves_finalisingDeleteBundle target _ h0
@@ -962,5 +973,18 @@ theorem cspaceDeleteSlotZombie_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   (cspaceDeleteSlotZombie_preserves_finalisingDeleteBundle ec addr st st'
     ⟨⟨hInv, hObjInv, hW⟩, hL⟩ hStep).1.1
+
+/-- **`seL4_IRQHandler_SetNotification` preserves `ipcInvariantFull`**, as the
+delete and the copy each do. -/
+theorem irqHandlerSetNotification_preserves_ipcInvariantFull {ec : Concurrency.CoreId}
+    {line : Nat} {src : CSpaceAddr} {st st' : SystemState}
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hW : lentContextHeadsLenderFrame st) (hL : schedContextLinkInvariant st)
+    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok h
+  have hB := cspaceDeleteSlotZombie_preserves_finalisingDeleteBundle ec _ st st1
+    ⟨⟨hInv, hObjInv, hW⟩, hL⟩ hD
+  exact cspaceCopy_preserves_ipcInvariantFull st1 st' src _ hB.1.2.1 hB.1.1 hC
 
 end SeLe4n.Kernel

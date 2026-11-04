@@ -336,7 +336,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo | .irqHandlerAck
+  | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
@@ -1193,7 +1193,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo | .irqHandlerAck
+  | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification

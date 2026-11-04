@@ -111,7 +111,8 @@ private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
     -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
     scheduler := (default : SchedulerState).setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId builder.current
-    irqSignalLines := builder.irqSignalLines.foldl (fun s l => s.set l.toNat true) {}
+    cdt := builder.irqSignalLines.foldl
+      (fun c l => c.withIrqLineIssued l.toNat true) CapDerivationTree.empty
     lifecycle := {
       objectTypes := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes
     }
@@ -259,7 +260,6 @@ then has to be added in six places, and a suite that lags behind stops
 compiling — the duplication has no upside and one clear downside. -/
 def emptyFrozenSystemState : FrozenSystemState :=
   { objects := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    irqSignalLines := {}
     asidTable := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     cdt := .empty

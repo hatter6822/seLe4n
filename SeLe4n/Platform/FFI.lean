@@ -1397,7 +1397,7 @@ theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
         (bindPlatformConfig platform config) = .ok ist) :
     ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
-  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart,
+  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
 
@@ -1413,7 +1413,7 @@ theorem bootAndInitialisePlatform_checked_interruptLineCount (platform : Type)
     ist.state.machine.interruptLineCount =
       (bindPlatformConfig platform config).machineConfig.interruptLineCount := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
-  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart,
+  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_interruptLineCount _ _ _ hBase]
 
 /-- **WS-ZA ZA5.5**: the bound configuration installs the binding's service
@@ -2908,6 +2908,9 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .schedContextConsumed   => some false
   | .schedContextYieldTo    => some false
   | .irqHandlerAck          => some false
+  | .irqControlGet          => some false
+  | .irqHandlerSetNotification => some false
+  | .irqHandlerClear        => some false
   -- WS-ZA ZA4.3: a yield looks up no capability, so it has no lookup failure
   -- to deliver in either phase.
   | .yield                  => none

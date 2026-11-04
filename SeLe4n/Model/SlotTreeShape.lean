@@ -76,8 +76,11 @@ namespace SeLe4n.Model
 
 /-- **The object a capability names**, seL4's `sameObjectAs` by object id,
 untyped included: `.object o` names `o`, a reply capability its reply, a CNode
-slot capability its CNode, and the audit-trail and scheduling-control
-capabilities nothing, so each is the same object as no other capability. -/
+slot capability its CNode, an interrupt-handler capability its line's interrupt
+node (seL4's `sameObjectAs` on two `IRQHandlerCap`s compares their lines, and
+the node is the line's object: `interrupt_irq_node`), and the audit-trail,
+scheduling-control and interrupt-control capabilities nothing, so each is the
+same object as no other capability. -/
 def Capability.namedObject (c : Capability) : Option SeLe4n.ObjId :=
   match c.target with
   | .object o => some o
@@ -85,7 +88,8 @@ def Capability.namedObject (c : Capability) : Option SeLe4n.ObjId :=
   | .replyCap r => some r.toObjId
   | .auditTrail => none
   | .schedControl _ => none
-  | .irqHandler _ => none
+  | .irqControl => none
+  | .irqHandler l => some (irqNodeId l)
 
 /-- A capability's object is read from its target alone. -/
 theorem Capability.namedObject_of_target {c c' : Capability} (h : c'.target = c.target) :
@@ -160,8 +164,21 @@ theorem CarvedFrom.not_of_childless {ut : SeLe4n.ObjId → Option UntypedObject}
   obtain ⟨v, U, hu, ch, hch, -⟩ := h.first
   rw [hU U hu] at hch; cases hch
 
-/-- **Object `o` is in the store.** -/
-abbrev objectPresent (st : SystemState) (o : SeLe4n.ObjId) : Prop := st.objects[o]? ≠ none
+/-- **WS-ZA ZA6.32: an interrupt node is issued only while its line is
+active**: when `o` is line `l`'s interrupt node (`isIrqNodeObjId`, over every
+line the model names), `l` is at `IRQSignal`.  An interrupt-handler capability
+names its line's node (`Capability.namedObject`), so a capability naming a node
+names a line `seL4_IRQControl_Get` activated and no finalisation has since
+deactivated: seL4's `valid_irq_handlers` (every `IRQHandlerCap irq` is of a line
+not at `IRQInactive`). -/
+abbrev irqNodeIssued (st : SystemState) (o : SeLe4n.ObjId) : Prop :=
+  isIrqNodeObjId InterruptLineSet.capacity o = true →
+    st.irqSignalLines.mem (o.toNat - irqNodeIdBase) = true
+
+/-- **Object `o` is in the store**, and, when it is an interrupt node, its line
+is active (`irqNodeIssued`): what a capability naming `o` needs of the state. -/
+abbrev objectPresent (st : SystemState) (o : SeLe4n.ObjId) : Prop :=
+  st.objects[o]? ≠ none ∧ st.irqNodeIssued o
 
 /-- **Every slot holding a capability is in the derivation tree**, as every
 non-null capability is in seL4's mapping database. -/
@@ -195,33 +212,58 @@ theorem objectsAgreeOffDerivationLinks.getUntyped? {st st' : SystemState}
     intro x; cases x <;> simp
   rw [hB, (hA o).map_withoutLinks, ← hB]
 
+/-- The issued lines are the tree's: a step that keeps the tree keeps them. -/
+theorem irqSignalLines_of_cdt {st st' : SystemState} (h : st'.cdt = st.cdt) :
+    st'.irqSignalLines = st.irqSignalLines := by
+  simp only [SystemState.irqSignalLines, h]
+
+/-- An id that is no interrupt node's is issued on every state. -/
+theorem irqNodeIssued_of_not_node (st : SystemState) {o : SeLe4n.ObjId}
+    (h : isIrqNodeObjId InterruptLineSet.capacity o = false) : st.irqNodeIssued o := by
+  intro hN; rw [h] at hN; cases hN
+
+/-- A write keeping the interrupt lines keeps every node's issue. -/
+theorem irqNodeIssued_of_lines {st st' : SystemState}
+    (hL : st'.irqSignalLines = st.irqSignalLines) (o : SeLe4n.ObjId) (h : st.irqNodeIssued o) :
+    st'.irqNodeIssued o := by
+  intro hN; rw [hL]; exact h hN
+
+/-- A state with another's objects and tree has its present objects. -/
+theorem objectPresent_of_objects_cdt {st st' : SystemState} (hO : st'.objects = st.objects)
+    (hC : st'.cdt = st.cdt) (o : SeLe4n.ObjId) (h : st.objectPresent o) :
+    st'.objectPresent o :=
+  ⟨by rw [hO]; exact h.1, irqNodeIssued_of_lines (irqSignalLines_of_cdt hC) o h.2⟩
+
 /-- Link writes keep every object in the store. -/
 theorem objectsAgreeOffDerivationLinks.present {st st' : SystemState}
-    (hA : objectsAgreeOffDerivationLinks st' st) (o : SeLe4n.ObjId) (h : st.objectPresent o) :
-    st'.objectPresent o := by
+    (hA : objectsAgreeOffDerivationLinks st' st) (hL : st'.irqSignalLines = st.irqSignalLines)
+    (o : SeLe4n.ObjId) (h : st.objectPresent o) : st'.objectPresent o := by
+  refine ⟨?_, irqNodeIssued_of_lines hL o h.2⟩
   have e := hA.objectType o
   intro h0; rw [h0] at e
   cases h1 : st.objects[o]? with
-  | none => exact h h1
+  | none => exact h.1 h1
   | some _ => rw [h1] at e; cases e
 
 /-- A kind-preserving write keeps every object in the store. -/
 theorem kindPreservingWriteUpToBindings.present {st st' : SystemState}
-    (h : kindPreservingWriteUpToBindings st st')
+    (h : kindPreservingWriteUpToBindings st st') (hL : st'.irqSignalLines = st.irqSignalLines)
     (o : SeLe4n.ObjId) (hp : st.objectPresent o) : st'.objectPresent o := by
+  refine ⟨?_, irqNodeIssued_of_lines hL o hp.2⟩
   rcases h o with e | ⟨_, _, _, hq, _⟩
-  · rw [objectPresent, e]; exact hp
-  · rw [objectPresent, hq]; exact Option.some_ne_none _
+  · rw [e]; exact hp.1
+  · rw [hq]; exact Option.some_ne_none _
 
 /-- A kind-preserving write keeps every object in the store. -/
 theorem kindPreservingWrite.present {st st' : SystemState} (h : kindPreservingWrite st st')
+    (hL : st'.irqSignalLines = st.irqSignalLines)
     (o : SeLe4n.ObjId) (hp : st.objectPresent o) : st'.objectPresent o :=
-  kindPreservingWriteUpToBindings.present h.upToBindings o hp
+  kindPreservingWriteUpToBindings.present h.upToBindings hL o hp
 
 /-- Link writes keep every slot's capability. -/
 theorem SlotTreeFrame.of_agree {st st' : SystemState} (hA : objectsAgreeOffDerivationLinks st' st)
     (hCdt : st'.cdt = st.cdt) : SlotTreeFrame st st' :=
-  ⟨hCdt, hA.slotCapAt, hA.present, hA.getUntyped?⟩
+  ⟨hCdt, hA.slotCapAt, hA.present (irqSignalLines_of_cdt hCdt), hA.getUntyped?⟩
 
 /-- A run of link writes keeps every slot's capability. -/
 theorem SlotTreeFrame.of_linkReach {st₀ st : SystemState} (hR : linkReach st₀ st)
@@ -248,10 +290,12 @@ theorem slotCapAt_storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o' : Ke
 theorem objectPresent_storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o' : KernelObject}
     (hInv : st.objects.invExt) (hStore : storeObject k o' st = .ok ((), st')) (o : SeLe4n.ObjId)
     (hp : st.objectPresent o) : st'.objectPresent o := by
+  refine ⟨?_, irqNodeIssued_of_lines
+    (irqSignalLines_of_cdt (storeObject_cdt_eq st st' k o' hStore)) o hp.2⟩
   by_cases e : o = k
-  · subst e; rw [objectPresent, storeObject_objects_eq st st' o o' hInv hStore]
+  · subst e; rw [storeObject_objects_eq st st' o o' hInv hStore]
     exact Option.some_ne_none _
-  · rw [objectPresent, storeObject_objects_ne st st' k o o' e hInv hStore]; exact hp
+  · rw [storeObject_objects_ne st st' k o o' e hInv hStore]; exact hp.1
 
 /-- A capability `lookupSlotCap` reads is the slot's. -/
 theorem slotCapAt_of_lookupSlotCap {st : SystemState} {r : SlotRef} {c : Capability}
@@ -578,7 +622,8 @@ structure TreeShapeOver (cdt : CapDerivationTree) (cap : SlotRef → Option Capa
     ∀ r, CapDerivationTree.CdtChildReachable cdt p r → ¬ untypedCapAt cap ut r u
   carvedBelow : ∀ u x, CarvedFrom ut u x → ∀ p r, untypedCapAt cap ut p u → namesAt cap r x →
     CapDerivationTree.CdtChildReachable cdt p r
-  childLive : ∀ u U, ut u = some U → ∀ ch ∈ U.children, present ch.objId
+  childLive : ∀ u U, ut u = some U → ∀ ch ∈ U.children,
+    present ch.objId ∧ isIrqNodeObjId InterruptLineSet.capacity ch.objId = false
   childUnique : ∀ u v U V, ut u = some U → ut v = some V → ∀ ch ∈ U.children,
     ∀ ch' ∈ V.children, ch.objId = ch'.objId → u = v
   untypedNamed : ∀ r u, namesAt cap r u → ut u ≠ none → untypedCapAt cap ut r u
@@ -659,7 +704,7 @@ theorem of_sub (h : TreeShapeOver cdt cap present ut off)
     fun u p r hp hr => h.chainLinear u p r (hU hp) (hU hr),
     fun u p r hp hr hpr => ?_, fun p c u U ho hc ht hu hf r hr hru => ?_,
     fun u x hx p r hp hr => h.carvedBelow u x hx p r (hU hp) (hN hr),
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun u U hu ch hch => ⟨hP _ (h.childLive u U hu ch hch).1, (h.childLive u U hu ch hch).2⟩, h.childUnique,
     fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · exact h.below p c o hc (hN hcO) (by rw [← hS1 p hp]; exact hp)
       (fun e => hpO ((namesAt_of_eq (hS1 p hp)).mpr e)) r (hN hr)
@@ -715,7 +760,7 @@ theorem splice (h : TreeShapeOver cdt cap present ut off) {n : SlotRef} {cdt' : 
     fun p c o hc hcO hp hpO r hr => ?_, fun u p r hp hr => ?_, fun u p r hp hr hpr => ?_,
     fun p c u U ho hc ht hu hf r hr hru => ?_,
     fun u x hx p r hp hr => hFwd (h.carvedBelow u x hx p r (hUt hp) (hN hr)) (hrnU hp) (hrn hr),
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun u U hu ch hch => ⟨hP _ (h.childLive u U hu ch hch).1, (h.childLive u U hu ch hch).2⟩, h.childUnique,
     fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · have hrn' : r ≠ n := fun e => hr (e ▸ hn)
     refine (hP'.mem_iff r).mp (List.mem_filter.mpr ⟨(hPo.mem_iff r).mpr (h.inTree r ?_),
@@ -799,7 +844,7 @@ theorem rewrite (h : TreeShapeOver cdt cap present ut off) {off' : SlotRef → P
     fun u p r hp hr => h.chainLinear u p r ((hU _ _).mp hp) ((hU _ _).mp hr),
     fun u p r hp hr hpr => ?_, fun p d u U ho hd ht hu hf r hr hru => ?_,
     fun u x hx p r hp hr => h.carvedBelow u x hx p r ((hU _ _).mp hp) ((hN _ _).mp hr),
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun u U hu ch hch => ⟨hP _ (h.childLive u U hu ch hch).1, (h.childLive u U hu ch hch).2⟩, h.childUnique,
     fun r u hr hu => (hU _ _).mpr (h.untypedNamed r u ((hN _ _).mp hr) hu),
     fun Q hQ o => (h.sameObjectContiguous Q hQ o).congr fun x _ => hN x o⟩
   · exact h.below p c₀ o hc ((hN _ _).mp hcO) ((hOcc p).mp hp)
@@ -914,7 +959,7 @@ theorem addChild (h : TreeShapeOver cdt cap present ut (fun _ => False)) {src ds
       exact .inr ⟨h1, h4⟩
   refine ⟨fun r hr => ?_, ?_, fun r o hr => ?_, fun p c o hc hcO hp hpO r hr => ?_,
     fun u p r hp hr => ?_, fun u p r hp hr hpr => ?_, fun p c u U ho hc ht hu hf r hr hru => ?_,
-    fun t x hx p r hp hr => ?_, fun u U hu ch hch => hP _ (h.childLive u U hu ch hch),
+    fun t x hx p r hp hr => ?_, fun u U hu ch hch => ⟨hP _ (h.childLive u U hu ch hch).1, (h.childLive u U hu ch hch).2⟩,
     h.childUnique, fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · rw [CapDerivationTree.mentions_addEdge]
     by_cases e : r = dst
@@ -1153,7 +1198,7 @@ theorem move (h : TreeShapeOver cdt cap present ut (fun _ => False)) {old new : 
   refine ⟨fun r hr => ?_, ⟨_, hP'⟩, fun r o hr => hP o (h.live _ o ((hN (hro hr)).mp hr)),
     fun p c o hc hcO hp hpO r hr => ?_, fun u p r hp hr => ?_, fun u p r hp hr hpr => ?_,
     fun p c u U _ hc ht hu hf r hr hru => ?_, fun t x hx p r hp hr => ?_,
-    fun u U hu ch hch => hP _ (h.childLive u U hu ch hch), h.childUnique,
+    fun u U hu ch hch => ⟨hP _ (h.childLive u U hu ch hch).1, (h.childLive u U hu ch hch).2⟩, h.childUnique,
     fun r u hr hu => ?_, fun Q hQ o => ?_⟩
   · refine (hP'.mem_iff r).mp (List.mem_map.mpr ?_)
     by_cases e : r = new
@@ -1219,6 +1264,7 @@ theorem carveRecord (h : TreeShapeOver cdt cap present ut off)
     (hOther : ∀ v, v ≠ u → v ≠ w → ut' v = ut v)
     (hW : ∀ W, ut' w = some W → W.children = [])
     (hw : ∀ r, ¬ namesAt cap r w) (hwP : ¬ present w) (hwP' : present' w)
+    (hwNode : isIrqNodeObjId InterruptLineSet.capacity w = false)
     (hP : ∀ o, present o → present' o) :
     TreeShapeOver cdt cap present' ut' off := by
   have hNone : ∀ v, v ≠ w → (ut' v ≠ none ↔ ut v ≠ none) := by
@@ -1288,9 +1334,10 @@ theorem carveRecord (h : TreeShapeOver cdt cap present ut off)
     · rw [e, hU'] at hv
       obtain rfl := Option.some.inj hv
       rcases hCh ch hch with h1 | h1
-      · exact hP _ (h.childLive u U hU ch h1)
-      · rw [h1]; exact hwP'
-    · rw [hOther v e hvw] at hv; exact hP _ (h.childLive v V hv ch hch)
+      · exact ⟨hP _ (h.childLive u U hU ch h1).1, (h.childLive u U hU ch h1).2⟩
+      · rw [h1]; exact ⟨hwP', hwNode⟩
+    · rw [hOther v e hvw] at hv
+      exact ⟨hP _ (h.childLive v V hv ch hch).1, (h.childLive v V hv ch hch).2⟩
   · have hrA : recordsChild ut' a ch.objId := ⟨A, ha, ch, hch, rfl⟩
     have hrB : recordsChild ut' b ch.objId := ⟨B, hb, ch', hch', hc.symm⟩
     obtain ⟨-, hA⟩ := hRec hrA
@@ -1298,7 +1345,7 @@ theorem carveRecord (h : TreeShapeOver cdt cap present ut off)
     have hlive : ∀ {v}, recordsChild ut v ch.objId → ch.objId ≠ w := by
       intro v hv e
       obtain ⟨V, hv, c0, hc0, hx⟩ := hv
-      exact hwP (by rw [← e, ← hx]; exact h.childLive v V hv c0 hc0)
+      exact hwP (by rw [← e, ← hx]; exact (h.childLive v V hv c0 hc0).1)
     rcases hA with hA | ⟨ea, ex⟩ <;> rcases hB with hB | ⟨eb, ex'⟩
     · obtain ⟨A0, ha0, c1, hc1, hx1⟩ := hA
       obtain ⟨B0, hb0, c2, hc2, hx2⟩ := hB
@@ -1382,6 +1429,77 @@ theorem move (h : CapTreeShape st) {old new : SlotRef} (hon : old ≠ new)
     (hUt : st'.getUntyped? = st.getUntyped?) : CapTreeShape st' := by
   unfold CapTreeShape; rw [hUt]
   exact TreeShapeOver.move h hon hOld hNew hCdt hOld' hMoved hS hP
+
+/-- WS-ZA ZA6.32: the issued lines are no part of a derivation path. -/
+theorem cdtChildReachable_withIrqLineIssued {c : CapDerivationTree} {l : Nat} {b : Bool}
+    {p r : SlotRef} : (c.withIrqLineIssued l b).CdtChildReachable p r ↔ c.CdtChildReachable p r := by
+  constructor
+  · intro h
+    induction h with
+    | child hc => exact .child hc
+    | trans _ hc ih => exact .trans ih hc
+  · intro h
+    induction h with
+    | child hc => exact .child hc
+    | trans _ hc ih => exact .trans ih hc
+
+/-- WS-ZA ZA6.32: …nor of a preorder of the tree. -/
+theorem treeOrder_withIrqLineIssued {c : CapDerivationTree} {l : Nat} {b : Bool}
+    {P : List SlotRef} : (c.withIrqLineIssued l b).TreeOrder P ↔ c.TreeOrder P :=
+  ⟨fun hP => ⟨hP.forest, hP.nodup, hP.complete, hP.oneChain⟩,
+    fun hP => ⟨hP.forest, hP.nodup, hP.complete, hP.oneChain⟩⟩
+
+/-- WS-ZA ZA6.32: …nor of the slots' links' agreement with the tree. -/
+theorem linksAgree_withIrqLineIssued {L : LinkView} {c : CapDerivationTree} {l : Nat}
+    {b : Bool} : LinksAgree L (c.withIrqLineIssued l b) ↔ LinksAgree L c :=
+  ⟨fun h => ⟨h.childrenUnique, h.rootsNodup, h.rootsParentless, h.parent, h.firstChild, h.next,
+      h.prev⟩,
+    fun h => ⟨h.childrenUnique, h.rootsNodup, h.rootsParentless, h.parent, h.firstChild, h.next,
+      h.prev⟩⟩
+
+/-- WS-ZA ZA6.32: **line `l` put at `IRQInactive` keeps the shape when no
+capability names its node** (seL4's `valid_irq_handlers` across
+`deletedIRQHandler`): the tree's edges and chains are the tree's, and every
+object a capability names is still present, its node's line untouched. -/
+theorem withIrqLineCleared {st : SystemState} (h : st.CapTreeShape) (l : Nat)
+    (hN : ∀ r, ¬ namesAt st.slotCapAt r (irqNodeId l)) :
+    ({ st with cdt := st.cdt.withIrqLineIssued l false } : SystemState).CapTreeShape :=
+  { h with
+    ordered := let ⟨P, hP⟩ := h.ordered; ⟨P, treeOrder_withIrqLineIssued.mpr hP⟩
+    below := fun p c o hc hn hp hnp r hr =>
+      cdtChildReachable_withIrqLineIssued.mpr (h.below p c o hc hn hp hnp r hr)
+    chainLinear := fun u p r hp hr =>
+      (h.chainLinear u p r hp hr).imp id
+        (Or.imp cdtChildReachable_withIrqLineIssued.mpr cdtChildReachable_withIrqLineIssued.mpr)
+    chainFirst := fun u p r hp hr hpr =>
+      let ⟨c, hc, hcu, hcr⟩ := h.chainFirst u p r hp hr (cdtChildReachable_withIrqLineIssued.mp hpr)
+      ⟨c, hc, hcu, hcr.imp id cdtChildReachable_withIrqLineIssued.mpr⟩
+    notFullLeaf := fun p c u U ho hc ht hu hf r hr =>
+      h.notFullLeaf p c u U ho hc ht hu hf r (cdtChildReachable_withIrqLineIssued.mp hr)
+    carvedBelow := fun u x hx p r hp hr =>
+      cdtChildReachable_withIrqLineIssued.mpr (h.carvedBelow u x hx p r hp hr)
+    sameObjectContiguous := fun P hP o =>
+      h.sameObjectContiguous P (treeOrder_withIrqLineIssued.mp hP) o
+    live := fun r o hn => by
+      have hp := h.live r o hn
+      refine ⟨hp.1, fun hNode => ?_⟩
+      have hne : o.toNat - irqNodeIdBase ≠ l := by
+        intro he
+        apply hN r
+        have : irqNodeId l = o := by
+          subst he
+          simp only [isIrqNodeObjId, Bool.and_eq_true, decide_eq_true_eq] at hNode
+          apply SeLe4n.ObjId.ext
+          simp only [irqNodeId, SeLe4n.ObjId.ofNat]
+          simp only [SeLe4n.ObjId.toNat] at hNode ⊢
+          omega
+        rw [this]; exact hn
+      show (st.cdt.issuedIrqLines.set l false).mem (o.toNat - irqNodeIdBase) = true
+      rw [InterruptLineSet.mem_set_ne _ _ hne]
+      exact hp.2 hNode
+    childLive := fun u U hu ch hch =>
+      have hc := h.childLive u U hu ch hch
+      ⟨⟨hc.1.1, fun hN => absurd (hc.2.symm.trans hN) Bool.false_ne_true⟩, hc.2⟩ }
 
 end CapTreeShape
 

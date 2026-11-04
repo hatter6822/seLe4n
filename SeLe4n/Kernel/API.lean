@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Capability.FrameFinalise
+import SeLe4n.Kernel.Capability.IrqControl
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
@@ -291,7 +292,7 @@ def syscallResolveCap (gate : SyscallGate) : Kernel Capability :=
         -- (`syscallLookupCap` is defined as it plus the rights gate), which
         -- is what makes `syscallResolveCap_ok_not_reserved` a statement about
         -- every syscall rather than about the arms that happen to check.
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error .invalidCapability
         else .ok (cap, st)
 
 /-- WS-H15c/A-42: Resolve and validate a capability from a syscall gate.
@@ -741,7 +742,7 @@ theorem syscallResolveCap_congr_objects (gate : SyscallGate) (st₁ st₂ : Syst
     | some cap' =>
       rw [hLk] at h
       simp only at h ⊢
-      by_cases hRes : capTargetsReservedIdleObject cap' = true
+      by_cases hRes : capTargetsReservedKernelObject cap' = true
       · rw [if_pos hRes] at h; exact absurd h (by simp)
       · rw [if_neg hRes] at h ⊢
         simp only [Except.ok.injEq, Prod.mk.injEq] at h
@@ -779,7 +780,7 @@ reservation. -/
 theorem syscallResolveCap_ok_not_reserved
     (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
     (hOk : syscallResolveCap gate st = .ok (cap, st')) :
-    SeLe4n.Kernel.capTargetsReservedIdleObject cap = false := by
+    SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
   unfold syscallResolveCap at hOk
   split at hOk
   · simp at hOk
@@ -794,6 +795,24 @@ theorem syscallResolveCap_ok_not_reserved
         obtain ⟨hCap, _⟩ := hOk
         rw [← hCap]
         simpa using hNot
+
+/-- WS-ZA ZA6.32: **no resolved capability reaches an interrupt node.**  A
+line's node is kernel-reserved as the idle threads are
+(`capTargetsReservedKernelObject_irqNode`), so a capability naming the node, or
+a slot of it, resolves `.invalidCapability` at the one resolution every invoked
+capability passes through: the node's slot is written only by
+`seL4_IRQHandler_SetNotification` and `seL4_IRQHandler_Clear`, through the
+handler capability, as seL4's `irq_node` slots are. -/
+theorem syscallResolveCap_ok_not_irqNode
+    (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
+    (hOk : syscallResolveCap gate st = .ok (cap, st')) {line : Nat}
+    (hLine : line < SeLe4n.InterruptLineSet.capacity) :
+    cap.target ≠ .object (irqNodeId line) ∧
+      ∀ s, cap.target ≠ .cnodeSlot (irqNodeId line) s := by
+  have hR := syscallResolveCap_ok_not_reserved gate st cap st' hOk
+  refine ⟨fun h => ?_, fun s h => ?_⟩
+  · rw [capTargetsReservedKernelObject_irqNode cap hLine (.inl h)] at hR; cases hR
+  · rw [capTargetsReservedKernelObject_irqNode cap hLine (.inr ⟨s, h⟩)] at hR; cases hR
 
 /-- PR #870 round 5: a full-lookup success is a resolve success — the rights
 gate only filters, never resolves.  What lets `syscallResolveCap`-based
@@ -1003,6 +1022,12 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- the line; seL4's interrupt-handler capability has no rights of its own to
   -- check, so it carries the write right the other writing invocations carry.
   | .irqHandlerAck         => .write
+  -- WS-ZA ZA6.32: seL4's interrupt-control and interrupt-handler capabilities
+  -- carry no rights of their own; the issue, bind and unbind write kernel
+  -- state, so each carries the write right the other writing invocations do.
+  | .irqControlGet         => .write
+  | .irqHandlerSetNotification => .write
+  | .irqHandlerClear       => .write
 
 /-- PR #870 round 5: **which syscalls validate the capability's target before
 its rights.**
@@ -1068,6 +1093,9 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .schedContextConsumed  => false
   | .schedContextYieldTo   => false
   | .irqHandlerAck         => false
+  | .irqControlGet         => false
+  | .irqHandlerSetNotification => false
+  | .irqHandlerClear       => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -1587,7 +1615,7 @@ theorem resolveSchedContextBindThread_refuses_idle_capability
     (hRef : resolveCapAddress callerTcb.cspaceRoot (args.tcbCPtr)
       rootCn.depth st = .ok ref)
     (hSlot : SystemState.lookupSlotCap st ref = some idleCap)
-    (hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject idleCap = true) :
+    (hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject idleCap = true) :
     resolveSchedContextBindThread callerTid args? st = .error .invalidCapability := by
   unfold resolveSchedContextBindThread
   rw [hArgs]
@@ -1674,7 +1702,7 @@ reads part of the answer builds no triple. -/
         match SystemState.lookupSlotCap st ref with
         | none => .error .invalidCapability
         | some cap =>
-          if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability
+          if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error .invalidCapability
           else if cap.hasRight right then
             match cap.target with
             | .object oid => .ok (ref, cap, oid)
@@ -1807,7 +1835,7 @@ gate, slot reference or result triple is built (`resolveCallerCapSlotK_eq`). -/
           match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
           | none => onErr .invalidCapability
           | some cap =>
-            if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+            if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
             else if cap.hasRight right then
               match cap.target with
               | .object oid => onOk cnode slot cap oid
@@ -1841,7 +1869,7 @@ theorem resolveCallerCapSlotK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
         | none => rfl
         | some cap =>
           simp only []
-          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
           · simp only [hIdle, ↓reduceIte]
           · by_cases hR : cap.hasRight right = true
             · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
@@ -1914,7 +1942,7 @@ theorem resolveSchedControlConfigureTargetK_eq {α : Type} (callerTid : SeLe4n.T
         | none => rfl
         | some cap =>
           dsimp only
-          by_cases hI : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+          by_cases hI : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
           · simp only [hI, if_true]
           · simp only [hI, Bool.false_eq_true, ↓reduceIte]
             by_cases hR : cap.hasRight .write = true
@@ -1996,7 +2024,7 @@ result triple is built (`resolveVSpaceMapFrameK_eq`). -/
           match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
           | none => onErr .invalidCapability
           | some cap =>
-            if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+            if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
             else if cap.hasRight .read then
               match cap.target with
               | .object frameObjId =>
@@ -2032,7 +2060,7 @@ theorem resolveVSpaceMapFrameK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
         | none => rfl
         | some cap =>
           simp only []
-          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+          by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
           · simp only [hIdle, ↓reduceIte]
           · by_cases hR : cap.hasRight .read = true
             · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
@@ -2091,20 +2119,22 @@ theorem resolveSetSpace_ok_authorised (callerTid : SeLe4n.ThreadId)
     · have hB : (!cnCap.hasRight .write) = true := by simpa using hW
       rw [hB] at h; cases h
 
-/-- **WS-BP BP7.1 (`v0.36.5`): the two slots a carve names, resolved through the
-caller's own CSpace.**
+/-- **WS-BP BP7.1 (`v0.36.5`): the two slots an issuing invocation names,
+resolved through the caller's own CSpace** — a carve's (`seL4_Untyped_Retype`)
+and, since WS-ZA ZA6.32, a handler issue's (`seL4_IRQControl_Get`).
 
 The *source* is the slot the syscall's own capability was resolved from — the
 caller's CSpace root, the invoked address, the root's depth, which is exactly the
-resolution `syscallResolveCap` performed — so the untyped capability the carve
-checks and records its derivation from is the one the caller presented.  The
-*destination* CNode is MR2, resolved with `.write`, as `resolveVSpaceMapFrame`
-resolves its frame: a carve installs a capability, and installing into a CNode is
-writing it, so a caller can deposit the new capability only in a CNode it holds a
-writable capability to.  The destination slot is MR3 verbatim — the install
-primitive refuses an index its CNode cannot address. -/
-def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (args : UntypedRetypeArgs) (st : SystemState) :
+resolution `syscallResolveCap` performed — so the capability the invocation
+checks and records the derivation from is the one the caller presented.  The
+*destination* CNode (a carve's MR2, a handler issue's MR1) is resolved with
+`.write`, as `resolveVSpaceMapFrame` resolves its frame: issuing installs a
+capability, and installing into a CNode is writing it, so a caller can deposit
+the new capability only in a CNode it holds a writable capability to.  The
+destination slot is taken verbatim — the install primitive refuses an index its
+CNode cannot address. -/
+def resolveIssuingSlots (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+    (dstCNode : SeLe4n.CPtr) (dstSlot : SeLe4n.Slot) (st : SystemState) :
     Except KernelError (CSpaceAddr × CSpaceAddr) :=
   match st.getTcb? callerTid with
   | none => .error .objectNotFound
@@ -2118,7 +2148,7 @@ def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
         let dstGate : SyscallGate := {
           callerId      := callerTid
           cspaceRoot    := callerTcb.cspaceRoot
-          capAddr       := args.dstCNode
+          capAddr       := dstCNode
           capDepth      := rootCn.depth
           requiredRight := .write
         }
@@ -2129,15 +2159,15 @@ def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
           | .object cnodeId =>
             match st.getCNode? cnodeId with
             | none => .error .invalidCapability
-            | some _ => .ok (src, { cnode := cnodeId, slot := args.dstSlot })
+            | some _ => .ok (src, { cnode := cnodeId, slot := dstSlot })
           | _ => .error .invalidCapability
 
-/-- WS-ZA ZA5.4: `resolveUntypedRetype` in continuation form: the source slot
+/-- WS-ZA ZA5.4: `resolveIssuingSlots` in continuation form: the source slot
 through `resolveCapAddressKUnrolled` and the destination CNode through
 `resolveCallerCapObjectK`, each handed on as words, so no slot reference, pair or
-result cell is built (`resolveUntypedRetypeK_eq`). -/
-@[inline] def resolveUntypedRetypeK {α : Type} (callerTid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) (args : UntypedRetypeArgs) (st : SystemState)
+result cell is built (`resolveIssuingSlotsK_eq`). -/
+@[inline] def resolveIssuingSlotsK {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr : SeLe4n.CPtr) (dstCNode : SeLe4n.CPtr) (dstSlot : SeLe4n.Slot) (st : SystemState)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
   match st.getTcb? callerTid with
@@ -2148,20 +2178,20 @@ result cell is built (`resolveUntypedRetypeK_eq`). -/
     | some rootCn =>
       resolveCapAddressKUnrolled callerTcb.cspaceRoot srcAddr rootCn.depth st onErr
         (fun srcCnode srcSlot =>
-          resolveCallerCapObjectK callerTid args.dstCNode .write st onErr (fun _ cnodeId =>
+          resolveCallerCapObjectK callerTid dstCNode .write st onErr (fun _ cnodeId =>
             match st.getCNode? cnodeId with
             | none => onErr .invalidCapability
-            | some _ => onOk srcCnode srcSlot cnodeId args.dstSlot))
+            | some _ => onOk srcCnode srcSlot cnodeId dstSlot))
 
-theorem resolveUntypedRetypeK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) (args : UntypedRetypeArgs) (st : SystemState)
+theorem resolveIssuingSlotsK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
+    (srcAddr : SeLe4n.CPtr) (dstCNode : SeLe4n.CPtr) (dstSlot : SeLe4n.Slot) (st : SystemState)
     (onErr : KernelError → α)
     (onOk : SeLe4n.ObjId → SeLe4n.Slot → SeLe4n.ObjId → SeLe4n.Slot → α) :
-    resolveUntypedRetypeK callerTid srcAddr args st onErr onOk =
-      match resolveUntypedRetype callerTid srcAddr args st with
+    resolveIssuingSlotsK callerTid srcAddr dstCNode dstSlot st onErr onOk =
+      match resolveIssuingSlots callerTid srcAddr dstCNode dstSlot st with
       | .error e => onErr e
       | .ok (src, dst) => onOk src.cnode src.slot dst.cnode dst.slot := by
-  unfold resolveUntypedRetypeK resolveUntypedRetype
+  unfold resolveIssuingSlotsK resolveIssuingSlots
   cases hT : st.getTcb? callerTid with
   | none => rfl
   | some callerTcb =>
@@ -2178,7 +2208,7 @@ theorem resolveUntypedRetypeK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
         rw [resolveCallerCapObjectK_eq]
         unfold resolveCallerCapObject resolveCallerCapSlot
         simp only [hT, hC, syscallLookupCap, syscallResolveCap]
-        cases resolveCapAddress callerTcb.cspaceRoot args.dstCNode rootCn.depth st with
+        cases resolveCapAddress callerTcb.cspaceRoot dstCNode rootCn.depth st with
         | error e => rfl
         | ok dst =>
           simp only []
@@ -2186,7 +2216,7 @@ theorem resolveUntypedRetypeK_eq {α : Type} (callerTid : SeLe4n.ThreadId)
           | none => rfl
           | some dstCap =>
             simp only []
-            by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject dstCap = true
+            by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject dstCap = true
             · simp only [hIdle, ↓reduceIte]
             · by_cases hR : dstCap.hasRight .write = true
               · simp only [hIdle, hR, Bool.false_eq_true, ↓reduceIte]
@@ -2311,9 +2341,94 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (executingCore : Concurrency.Co
         match validateObjIdArg args.childId with
         | .error e => .error e
         | .ok vChild =>
-          match resolveUntypedRetype tid srcAddr args st with
+          match resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
           | .error e => .error e
           | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
+
+/-- **WS-ZA ZA6.32: the live `.irqControlGet` arm's transition** — seL4's
+`seL4_IRQControl_Get`.  The decode, then the line checks
+(`irqControlLineRefusal`: a device line of the board with its node, held by no
+handler — seL4's `Arch_checkIRQ` and `isIRQActive`, read before the slots as
+seL4's `decodeIRQControlInvocation` reads them), then the two slots
+(`resolveIssuingSlots`: the invoked interrupt-control capability's own slot and a
+slot of a CNode the caller can write), then `irqControlGet`. -/
+def irqControlGetFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+    (args? : Except KernelError IrqControlGetArgs) : Kernel Unit :=
+  fun st =>
+    match args? with
+    | .error e => .error e
+    | .ok args =>
+      match irqControlLineRefusal st args.line with
+      | some e => .error e
+      | none =>
+        match resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
+        | .error e => .error e
+        | .ok (control, dst) => irqControlGet control dst args.line st
+
+/-- **WS-ZA ZA6.32: the live `.irqHandlerSetNotification` arm's transition** —
+seL4's `seL4_IRQHandler_SetNotification`.  The decode, then the notification
+capability's slot resolved through the caller's own CSpace with the send right
+(`resolveCallerCapSlot … .write`, seL4's `capNtfnCanSend`), then
+`irqHandlerSetNotification`. -/
+def irqHandlerSetNotificationFromCap (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (line : Nat)
+    (args? : Except KernelError IrqHandlerSetNotificationArgs) : Kernel Unit :=
+  fun st =>
+    match args? with
+    | .error e => .error e
+    | .ok args =>
+      match resolveCallerCapSlot tid args.notificationCPtr .write st with
+      | .error e => .error e
+      | .ok (src, _, _) => irqHandlerSetNotification executingCore line src st
+
+/-- **WS-ZA ZA6.32**: what a successful `.irqControlGet` consists of — the
+decode, the line checks, the resolved slots, and the issue. -/
+theorem irqControlGetFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+    (args? : Except KernelError IrqControlGetArgs) (st st' : SystemState)
+    (h : irqControlGetFromCap tid srcAddr args? st = .ok ((), st')) :
+    ∃ (args : IrqControlGetArgs) (control dst : CSpaceAddr),
+      args? = .ok args ∧ irqControlLineRefusal st args.line = none ∧
+      resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st = .ok (control, dst) ∧
+      irqControlGet control dst args.line st = .ok ((), st') := by
+  unfold irqControlGetFromCap at h
+  cases hD : args? with
+  | error e => rw [hD] at h; cases h
+  | ok args =>
+    rw [hD] at h
+    simp only at h
+    cases hR : irqControlLineRefusal st args.line with
+    | some e => rw [hR] at h; cases h
+    | none =>
+      rw [hR] at h
+      simp only at h
+      cases hS : resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
+      | error e => rw [hS] at h; cases h
+      | ok pr =>
+        obtain ⟨control, dst⟩ := pr
+        rw [hS] at h
+        exact ⟨args, control, dst, rfl, hR, hS, h⟩
+
+/-- **WS-ZA ZA6.32**: what a successful `.irqHandlerSetNotification` consists
+of — the decode, the notification capability's slot, and the bind. -/
+theorem irqHandlerSetNotificationFromCap_ok (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (line : Nat)
+    (args? : Except KernelError IrqHandlerSetNotificationArgs) (st st' : SystemState)
+    (h : irqHandlerSetNotificationFromCap tid ec line args? st = .ok ((), st')) :
+    ∃ (args : IrqHandlerSetNotificationArgs) (src : CSpaceAddr),
+      args? = .ok args ∧
+      irqHandlerSetNotification ec line src st = .ok ((), st') := by
+  unfold irqHandlerSetNotificationFromCap at h
+  cases hD : args? with
+  | error e => rw [hD] at h; cases h
+  | ok args =>
+    rw [hD] at h
+    simp only at h
+    cases hS : resolveCallerCapSlot tid args.notificationCPtr .write st with
+    | error e => rw [hS] at h; cases h
+    | ok q =>
+      obtain ⟨src, _, _⟩ := q
+      rw [hS] at h
+      exact ⟨args, src, rfl, h⟩
 
 /-- **WS-BP BP7.1**: what a successful `.untypedRetype` consists of — the typed
 decode, the carve request, the validated child id, the resolved slots, and the
@@ -2328,7 +2443,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId
       args? = .ok args ∧
       carveRequestOf? st ec args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
-      resolveUntypedRetype tid srcAddr args st = .ok (src, dst) ∧
+      resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st = .ok (src, dst) ∧
       untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
   unfold untypedRetypeFromCap at h
   cases hD : args? with
@@ -2346,7 +2461,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (ec : Concurrency.CoreId
       | ok vChild =>
         rw [hV] at h
         simp only at h
-        cases hR : resolveUntypedRetype tid srcAddr args st with
+        cases hR : resolveIssuingSlots tid srcAddr args.dstCNode args.dstSlot st with
         | error e => rw [hR] at h; cases h
         | ok pr =>
           obtain ⟨src, dst⟩ := pr
@@ -3100,6 +3215,28 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .irqHandler line => Architecture.irqHandlerAck line
     | _ => fun _ => .error .invalidCapability
+  -- WS-ZA ZA6.32: seL4's `seL4_IRQControl_Get` — the interrupt-control
+  -- capability issues line MR0's handler capability into slot MR2 of the CNode
+  -- MR1 names, as a derivation child of the invoked slot (`irqControlGetFromCap`).
+  | .irqControlGet =>
+    some <| match cap.target with
+    | .irqControl => irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
+    | _ => fun _ => .error .invalidCapability
+  -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_SetNotification` — the notification
+  -- capability at MR0's address bound to the handler's line
+  -- (`irqHandlerSetNotificationFromCap`).
+  | .irqHandlerSetNotification =>
+    some <| match cap.target with
+    | .irqHandler line =>
+        irqHandlerSetNotificationFromCap tid executingCore line
+          (decodeIrqHandlerSetNotificationArgs decoded)
+    | _ => fun _ => .error .invalidCapability
+  -- WS-ZA ZA6.32: seL4's `seL4_IRQHandler_Clear` — no arguments; the line's
+  -- node slot emptied (`irqHandlerClear`).
+  | .irqHandlerClear =>
+    some <| match cap.target with
+    | .irqHandler line => irqHandlerClear executingCore line
+    | _ => fun _ => .error .invalidCapability
   -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
   -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
   | .tcbBindNotification =>
@@ -3657,6 +3794,25 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     case irqHandler line =>
       exact ipcInvariantFull_of_objects_eq
         (by rw [Architecture.irqHandlerAck_ok hStep]; rfl) hInv
+    all_goals try cases hStep
+  case irqControlGet =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqControl =>
+      obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid _ _ st st' hStep
+      exact irqControlGet_preserves_ipcInvariantFull hObjInv hInv hG
+    all_goals try cases hStep
+  case irqHandlerSetNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      obtain ⟨_, _, _, hS⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line _ st st' hStep
+      exact irqHandlerSetNotification_preserves_ipcInvariantFull hObjInv hInv
+        hPack.lentContextsHeadedByLender hPack.schedContextLinks hS
+    all_goals try cases hStep
+  case irqHandlerClear =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      exact cspaceDeleteSlotZombie_preserves_ipcInvariantFull _ _ st st' hObjInv hInv
+        hPack.lentContextsHeadedByLender hPack.schedContextLinks (irqHandlerClear_ok hStep).2
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -5842,7 +5998,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
-            .schedContextYieldTo, .irqHandlerAck] : List SyscallId) := by
+            .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
+            .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -5866,7 +6023,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
-            .schedContextYieldTo, .irqHandlerAck] : List SyscallId) := by
+            .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
+            .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -7759,7 +7917,7 @@ theorem dispatchSyscallChecked_audit_target_first
     -- PR #889 review round 2: the resolution now refuses a capability naming a
     -- reserved idle object before the arm runs; either way the answer is
     -- `.invalidCapability`.
-    by_cases hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true <;> simp [hRes, hArm]
+    by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;> simp [hRes, hArm]
   · have hArm := dispatchWithCapChecked_audit_rejects_non_audit_capability ctx decoded tid executingCore
       { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
         capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
@@ -7774,7 +7932,7 @@ theorem dispatchSyscallChecked_audit_target_first
     -- PR #889 review round 2: the resolution now refuses a capability naming a
     -- reserved idle object before the arm runs; either way the answer is
     -- `.invalidCapability`.
-    by_cases hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true <;> simp [hRes, hArm]
+    by_cases hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true <;> simp [hRes, hArm]
 
 /-- **WS-SM SM9.A.9 (PR #870 round 5, the order's other half)**: an audit-target
 capability lacking the required right is refused `.illegalAuthority` — after
@@ -7812,8 +7970,8 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     -- PR #889 review round 2: an audit-trail capability names no reserved idle
     -- object, so the resolution's reservation refusal does not fire and the
     -- arm's rights verdict is the answer.
-    have hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = false := by
-      simp [SeLe4n.Kernel.capTargetsReservedIdleObject, hTarget]
+    have hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
+      simp [SeLe4n.Kernel.capTargetsReservedKernelObject, hTarget]
     simp [hRes, hArm]
   · have hArm := dispatchWithCapChecked_audit_insufficient_right_denied ctx decoded tid executingCore
       { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -7829,8 +7987,8 @@ theorem dispatchSyscallChecked_audit_right_checked_second
     -- PR #889 review round 2: an audit-trail capability names no reserved idle
     -- object, so the resolution's reservation refusal does not fire and the
     -- arm's rights verdict is the answer.
-    have hRes : SeLe4n.Kernel.capTargetsReservedIdleObject cap = false := by
-      simp [SeLe4n.Kernel.capTargetsReservedIdleObject, hTarget]
+    have hRes : SeLe4n.Kernel.capTargetsReservedKernelObject cap = false := by
+      simp [SeLe4n.Kernel.capTargetsReservedKernelObject, hTarget]
     simp [hRes, hArm]
 
 
@@ -8761,6 +8919,31 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .irqHandlerAck →
         cap.target = .irqHandler line →
         dispatchWithCap decoded tid executingCore gate cap = Architecture.irqHandlerAck line
+  -- WS-ZA ZA6.32: the issue arm IS the issue from the invoked interrupt-control
+  -- capability's slot.
+  | .irqControlGet =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability),
+        decoded.syscallId = .irqControlGet →
+        cap.target = .irqControl →
+        dispatchWithCap decoded tid executingCore gate cap =
+          irqControlGetFromCap tid decoded.capAddr (decodeIrqControlGetArgs decoded)
+  -- WS-ZA ZA6.32: the bind arm IS the bind of the line the capability names.
+  | .irqHandlerSetNotification =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability) (line : Nat),
+        decoded.syscallId = .irqHandlerSetNotification →
+        cap.target = .irqHandler line →
+        dispatchWithCap decoded tid executingCore gate cap =
+          irqHandlerSetNotificationFromCap tid executingCore line
+            (decodeIrqHandlerSetNotificationArgs decoded)
+  -- WS-ZA ZA6.32: the clear arm IS the clear of the line the capability names.
+  | .irqHandlerClear =>
+      ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability) (line : Nat),
+        decoded.syscallId = .irqHandlerClear →
+        cap.target = .irqHandler line →
+        dispatchWithCap decoded tid executingCore gate cap = irqHandlerClear executingCore line
   | _ => False
 
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
@@ -8780,6 +8963,25 @@ theorem syscallDelegates_schedContextYieldTo : syscallDelegates .schedContextYie
 
 /-- WS-ZA ZA6.32: the `.irqHandlerAck` obligation, discharged. -/
 theorem syscallDelegates_irqHandlerAck : syscallDelegates .irqHandlerAck := by
+  intro decoded tid executingCore gate cap line hSyscall hTarget
+  funext st
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+
+/-- WS-ZA ZA6.32: the `.irqControlGet` obligation, discharged. -/
+theorem syscallDelegates_irqControlGet : syscallDelegates .irqControlGet := by
+  intro decoded tid executingCore gate cap hSyscall hTarget
+  funext st
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+
+/-- WS-ZA ZA6.32: the `.irqHandlerSetNotification` obligation, discharged. -/
+theorem syscallDelegates_irqHandlerSetNotification :
+    syscallDelegates .irqHandlerSetNotification := by
+  intro decoded tid executingCore gate cap line hSyscall hTarget
+  funext st
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
+
+/-- WS-ZA ZA6.32: the `.irqHandlerClear` obligation, discharged. -/
+theorem syscallDelegates_irqHandlerClear : syscallDelegates .irqHandlerClear := by
   intro decoded tid executingCore gate cap line hSyscall hTarget
   funext st
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]

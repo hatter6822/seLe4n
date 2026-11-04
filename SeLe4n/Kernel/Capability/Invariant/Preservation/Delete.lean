@@ -304,7 +304,8 @@ theorem detachRevokedSlots_preserves (st : SystemState) (cnodeId : SeLe4n.ObjId)
                 split
                 · rw [g9] at hr ⊢; exact hSub r hr
                 · rfl)
-            (fun o hp => hA.present o hp)
+            (fun o hp => hA.present
+              (by rw [spliceDeletedCdtNode, SystemState.cdtSplice_irqSignalLines]) o hp)
             (fun hc => by
               have hm : acc.cdt.mentions ⟨cnodeId, slot⟩ :=
                 (CapDerivationTree.mentions_iff _ _).mpr (.inr (.inl hc))

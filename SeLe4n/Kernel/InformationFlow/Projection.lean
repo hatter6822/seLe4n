@@ -125,7 +125,11 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- observer knows; the authority it carries is the configure's, whose writes
   -- are the context's.
   | .schedControl _ => true
-  | .irqHandler _ => true
+  -- WS-ZA ZA6.32: the interrupt-control capability names no object; a handler
+  -- capability is observable where its line's interrupt node is, seL4's IRQ
+  -- label (`pasIRQAbs`), as the line's state is (`projectIrqSignalLines`).
+  | .irqControl => true
+  | .irqHandler l => objectObservable ctx observer (irqNodeId l)
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable

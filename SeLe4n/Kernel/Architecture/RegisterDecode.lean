@@ -769,7 +769,7 @@ def routedInvocation : SyscallId → Bool
   | .mintReplyCap | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-  | .schedContextYieldTo | .irqHandlerAck
+  | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true

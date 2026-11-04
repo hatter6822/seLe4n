@@ -1609,6 +1609,27 @@ theorem lockSet_irqHandlerAck_size_le (a : ThreadId) (b : ObjId) :
   unfold lockSet_irqHandlerAck maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
+/-- WS-ZA ZA6.32: `seL4_IRQControl_Get`'s footprint is four fixed locks. -/
+theorem lockSet_irqControlGet_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_irqControlGet a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_irqControlGet maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+/-- WS-ZA ZA6.32: `seL4_IRQHandler_SetNotification`'s footprint is five fixed
+locks and the unmapped root. -/
+theorem lockSet_irqHandlerSetNotification_size_le (a : ThreadId) (b c d : ObjId)
+    (e : Option ObjId) :
+    (lockSet_irqHandlerSetNotification a b c d e).size ≤ maxLockSetSize := by
+  unfold lockSet_irqHandlerSetNotification maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+/-- WS-ZA ZA6.32: `seL4_IRQHandler_Clear`'s footprint is four fixed locks and
+the unmapped root. -/
+theorem lockSet_irqHandlerClear_size_le (a : ThreadId) (b c : ObjId) (d : Option ObjId) :
+    (lockSet_irqHandlerClear a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_irqHandlerClear maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
 -- WS-OD (`v0.35.4`): `lockSet_tcbSuspend_size_le` retired with its footprint;
 -- the `.tcbSuspend` syscall's bound is `lockSet_tcbSuspendOnCore_size_le`
 -- (`ResolvedFootprintBounds.lean`), stated over the state-resolved footprint

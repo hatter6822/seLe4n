@@ -142,8 +142,10 @@ theorem zombieDeleteSlot_slots (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
         st2.slotCapAt r := by
       intro r
       rw [e]
-      unfold retireFinalisedObject
-      rw [retireFinalObject_slotCapAt ec _ _ _
+      rcases retireFinalisedObject_cases ec (slotRetireTarget st cnode slot)
+          (slotRetireRecorder st cnode slot) st2 with ⟨-, hR⟩ | ⟨-, hR⟩
+      · rw [hR, retireIrqNode_slotCapAt]
+      rw [hR, retireFinalObject_slotCapAt ec _ _ _
           (finaliseReleased_frame _ st2 hI2).invExt r,
         (finaliseReleased_frame _ st2 hI2).slotCapAt r]
     refine ⟨by rw [hLast, hC2]; exact hC1n, fun r hr => ?_⟩
@@ -447,7 +449,8 @@ theorem slotRetireTarget_of_final {st : SystemState} {cnode : SeLe4n.ObjId}
   | cnodeSlot cn _ => rw [ht] at ho; cases ho; simp [hK, hF]
   | auditTrail => rw [ht] at ho; cases ho
   | schedControl _ => rw [ht] at ho; cases ho
-  | irqHandler _ => rw [ht] at ho; cases ho
+  | irqControl => rw [ht] at ho; cases ho
+  | irqHandler _ => rw [ht] at ho; cases ho; simp [hK, hF]
 
 /-- An object holding a capability is of a retirable kind. -/
 theorem retirableKind_of_zombieHolds {root : SeLe4n.ObjId} {rootSlot : SeLe4n.Slot}

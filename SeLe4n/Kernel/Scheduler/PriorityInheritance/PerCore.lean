@@ -1585,7 +1585,7 @@ core's run queue (`switchToThreadOnCore` → `preemptCurrentOnCore`); the next
 scheduling point here selects it again once the other core has saved it.
 Should the switch fail (no idle thread the core admits: the boot stores every
 core's idle thread pinned to it and no capability can name one,
-`capTargetsReservedIdleObject`, but no kernel-wide invariant states it), the
+`capTargetsReservedKernelObject`, but no kernel-wide invariant states it), the
 thread is still taken off the core: re-enqueued and the slot cleared
 (`dropCurrentOnCore`), so the property never depends on the idle switch.
 

@@ -204,7 +204,7 @@ over the ring's next slot in place — or the general one
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
       else if cap.hasRight (syscallRequiredRight .declassify) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object targetId, some actorTid =>
@@ -244,7 +244,7 @@ theorem declassifyOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
   rcases operand with _ | cap
   · rfl
   · simp only [declassifyOperandArmR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     by_cases hRight : cap.hasRight (syscallRequiredRight .declassify) = true
     · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
@@ -475,7 +475,7 @@ length written in place — or the general one (`auditDrainOperandArmR_eq`). -/
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
       else if auditDrainAdmitted ctx st executingCore cap then
         .ok ((), auditDrainPerform tid (auditedArgWord regs 0).toNat st)
       else auditGeneralR ctx .auditDrain regs capAddr tid executingCore cap st
@@ -497,7 +497,7 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
       match SystemState.lookupSlotCap st ref with
       | none => .error (.invalidCapability, st)
       | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else auditGeneralR ctx decoded.syscallId regs decoded.capAddr tid executingCore cap st := by
   have hFirst : syscallChecksTargetFirst decoded.syscallId = true := by
     rcases hSid with h | h <;> rw [h] <;> rfl
@@ -508,7 +508,7 @@ theorem auditOperand_spec (ctx : LabelingContext) (decoded : SyscallDecodeResult
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only []
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · simp only [hIdle, Bool.false_eq_true, ↓reduceIte, auditGeneralR]
       rw [dispatchWithCapChecked_eq_auditedArmSpec ctx decoded regs tid executingCore _ cap hR
@@ -536,7 +536,7 @@ theorem auditDrainOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecod
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only [auditDrainOperandArmR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · simp only [hIdle, Bool.false_eq_true, ↓reduceIte]
       split
@@ -782,7 +782,7 @@ ring's live window and staged in place — or the general one
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
       else
         match cap.target, ctx.auditMonitorClearance, st.scheduler.currentOnCore executingCore with
         | .auditTrail, some m, some reader =>
@@ -812,7 +812,7 @@ theorem auditReadOperandArmR_eq (ctx : LabelingContext) (decoded : SyscallDecode
   rcases SystemState.lookupSlotCap st ref with _ | cap
   · rfl
   · simp only [auditReadOperandArmR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · simp only [hIdle, Bool.false_eq_true, ↓reduceIte]
       split
@@ -909,7 +909,7 @@ general one (`declassifySignalOperandArmR_eq`). -/
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
       else if cap.hasRight (syscallRequiredRight .declassifySignal) then
         match cap.target, st.scheduler.currentOnCore executingCore with
         | .object nid, some signaler =>
@@ -1007,7 +1007,7 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
   rcases operand with _ | cap
   · rfl
   · simp only [declassifySignalOperandArmR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     by_cases hRight : cap.hasRight (syscallRequiredRight .declassifySignal) = true
     · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]

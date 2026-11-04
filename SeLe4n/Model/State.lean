@@ -1246,15 +1246,8 @@ def adapterFlushTlbByAsid (tlb : TlbState) (asid : SeLe4n.ASID) : TlbState :=
 
 WS-ZA ZA6.32: seL4's `interrupt_irq_node line`, a CNode of one slot per
 interrupt line that the kernel owns (`SeLe4n.Kernel.Architecture`'s interrupt
-node section reads and writes it). -/
-
-/-- The first interrupt node's object id: above the idle threads' reserved
-range (`idleThreadIdBase`) and the 16-bit range platform configurations assign
-their objects from. -/
-def irqNodeIdBase : Nat := 0x2_0000
-
-/-- **Line `line`'s interrupt node**, seL4's `interrupt_irq_node line`. -/
-@[inline] def irqNodeId (line : Nat) : SeLe4n.ObjId := SeLe4n.ObjId.ofNat (irqNodeIdBase + line)
+node section reads and writes it); the reserved ids (`irqNodeId`) are with
+the object types, where the reserved-object refusal reads them. -/
 
 /-- The node's one slot. -/
 @[inline] def irqNodeSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
@@ -1262,23 +1255,6 @@ def irqNodeIdBase : Nat := 0x2_0000
 /-- The address of line `line`'s node slot. -/
 @[inline] def irqNodeAddr (line : Nat) : SlotRef := ⟨irqNodeId line, irqNodeSlot⟩
 
-/-- **Whether `oid` is an interrupt node's id**, on a board of `count` lines:
-the reserved range `[irqNodeIdBase, irqNodeIdBase + count)`. -/
-@[inline] def isIrqNodeObjId (count : Nat) (oid : SeLe4n.ObjId) : Bool :=
-  decide (irqNodeIdBase ≤ oid.toNat) && decide (oid.toNat < irqNodeIdBase + count)
-
-/-- Distinct lines have distinct nodes. -/
-theorem irqNodeId_injective {a b : Nat} (h : irqNodeId a = irqNodeId b) : a = b := by
-  have := congrArg SeLe4n.ObjId.toNat h
-  simp only [irqNodeId, SeLe4n.ObjId.toNat_ofNat] at this
-  omega
-
-/-- A line's node is in the reserved range of every board that has the line. -/
-theorem isIrqNodeObjId_irqNodeId {count line : Nat} (h : line < count) :
-    isIrqNodeObjId count (irqNodeId line) = true := by
-  simp only [isIrqNodeObjId, irqNodeId, SeLe4n.ObjId.toNat_ofNat, Bool.and_eq_true,
-    decide_eq_true_eq]
-  omega
 
 /-- R7-A.3: Per-VAddr TLB flush — invalidates entries for a specific (ASID, VAddr).
     On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`.
@@ -1337,13 +1313,6 @@ structure SystemState where
       this set is the runtime fast path. -/
   objectIndexSet : RHSet SeLe4n.ObjId := default
   scheduler : SchedulerState
-  /-- WS-ZA ZA6.32: **the lines an interrupt-handler capability has been
-      issued for**, seL4's `intStateIRQTable` entries at `IRQSignal`: a line is
-      added by `seL4_IRQControl_Get` and removed when its last handler
-      capability is finalised (`IRQInactive`).  The notification a line
-      signals is the capability in its interrupt node's slot
-      (`SeLe4n.Kernel.Architecture.irqNodeId`), not a field of this set. -/
-  irqSignalLines : InterruptLineSet := {}
   lifecycle : LifecycleMetadata
   /-- WS-G3/F-P06: ASID→ObjId resolution table for O(1) VSpace lookups.
       Maintained by `storeObject` — insertions on `.vspaceRoot` stores, erasures
@@ -1709,6 +1678,16 @@ structure SystemState where
       (`refusalLedger_records_gate_unsound`). -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger := SeLe4n.Kernel.RefusalLedger.initial
 
+/-- WS-ZA ZA6.32: **the lines an interrupt-handler capability has been issued
+for**, seL4's `intStateIRQTable` entries at `IRQSignal`: a line is added by
+`seL4_IRQControl_Get` and removed when its last handler capability is finalised
+(`IRQInactive`).  Kept with the derivation tree (`CapDerivationTree.issuedIrqLines`):
+a handler's issue is a derivation from the interrupt-control capability, and a
+step that leaves the tree leaves it.  The notification a line signals is the
+capability in its interrupt node's slot (`irqNodeAddr`), not a part of this set. -/
+abbrev SystemState.irqSignalLines (st : SystemState) : InterruptLineSet :=
+  st.cdt.issuedIrqLines
+
 /-- WS-ZA ZA5.10: **the declassification audit trail in order** — the live
 window of the ring (`AuditRing.toList`).  The specification every theorem about
 the trail cites; the writers write the ring. -/
@@ -1934,7 +1913,6 @@ instance : Inhabited SystemState where
     objectIndex := []
     objectIndexSet := default
     scheduler := default
-    irqSignalLines := {}
     lifecycle := {
       objectTypes := {}
     }

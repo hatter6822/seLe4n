@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Lifecycle.Operations.CarvedObjectErase
 import SeLe4n.Model.CapabilityFinality
 import SeLe4n.Kernel.Architecture.PageTeardownClears
+import SeLe4n.Kernel.Architecture.InterruptMask
 
 /-!
 # Retiring an object with its final capability
@@ -420,7 +421,10 @@ the capability is final (`SystemState.capIsFinal`). -/
     | .cnodeSlot cn _ => if retirableKind st cn && st.capIsFinal cnode slot then cn.val + 1 else 0
     | .auditTrail => 0
     | .schedControl _ => 0
-    | .irqHandler _ => 0
+    | .irqControl => 0
+    | .irqHandler l =>
+      if retirableKind st (irqNodeId l) && st.capIsFinal cnode slot then (irqNodeId l).val + 1
+      else 0
   | none => 0
 
 /-- The recorder word of the target word `t` (`0` for none), read from slot
@@ -446,7 +450,8 @@ nothing**: the check a delete's fast path asks of the capability it read
   | .cnodeSlot cn _ => !(retirableKind st cn && st.capIsFinal cnode slot)
   | .auditTrail => true
   | .schedControl _ => true
-  | .irqHandler _ => true
+  | .irqControl => true
+  | .irqHandler l => !(retirableKind st (irqNodeId l) && st.capIsFinal cnode slot)
 
 theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
     {slot : SeLe4n.Slot} {cap : Capability} (h : st.slotCapAt ⟨cnode, slot⟩ = some cap) :
@@ -460,7 +465,9 @@ theorem slotRetireTarget_eq_zero_iff {st : SystemState} {cnode : SeLe4n.ObjId}
   | cnodeSlot cn _ => cases retirableKind st cn <;> cases st.capIsFinal cnode slot <;> simp
   | auditTrail => simp
   | schedControl _ => simp
-  | irqHandler _ => simp
+  | irqControl => simp
+  | irqHandler l =>
+    cases retirableKind st (irqNodeId l) <;> cases st.capIsFinal cnode slot <;> simp
 
 theorem slotRetireTarget_of_empty {st : SystemState} {cnode : SeLe4n.ObjId}
     {slot : SeLe4n.Slot} (h : st.slotCapAt ⟨cnode, slot⟩ = none) :
@@ -772,6 +779,14 @@ def retireRecordedObject (executingCore : Concurrency.CoreId) (recorder : Nat) (
   | some root => asidReleaseRound executingCore root.asid (retireCarvedObject st1 x)
   | none => retireCarvedObject st1 x
 
+/-- **WS-ZA ZA6.32: the retire of interrupt node `x`**, seL4's
+`deletedIRQHandler`: its line put at `IRQInactive` and masked
+(`Architecture.setIrqLineSignal`).  The node stays in the store, its slot
+emptied by the delete that destroyed the line's last handler capability, for the
+line's next `seL4_IRQControl_Get`. -/
+@[inline] def retireIrqNode (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
+  Architecture.setIrqLineSignal st (x.toNat - irqNodeIdBase) false
+
 /-- **Retire what a final delete destroyed** (`target`, `recorder`: the words
 `slotRetireTarget` and `slotRetireRecorder` read before the slot was emptied):
 a passive kernel kind leaves the store (`eraseRetiredObject`, the identity on
@@ -780,7 +795,9 @@ leaves the store (`retireCarvedObject`, the identity on an absent key), and a
 root's ASID gets its acknowledged round.  Nothing when the target word is
 `0`, when the object table has no headroom for the erase, or when the target is
 a passive object `passiveObjectRetirable` refuses, which outlives its last
-capability (`finalRetireAdmitted`). -/
+capability (`finalRetireAdmitted`).  An interrupt node never reaches it: the
+kernel keeps its nodes (`retireFinalisedObject` retires a node's line instead,
+`retireIrqNode`). -/
 def retireFinalObject (executingCore : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) : SystemState :=
   if target = 0 then st
@@ -862,10 +879,11 @@ theorem _root_.SeLe4n.Model.SystemState.TreeShapeOver.retire
     exact h.notFullLeaf p c u U ho hc ht hU (hSz ▸ hf) r hr (hCap hru)
   · obtain ⟨U, hU, -, hS⟩ := hUt u U' hu
     obtain ⟨hne, hm⟩ := hS ch hch
-    refine hP _ ?_ hne
-    rcases hm with ⟨c, hcm, he⟩ | ⟨-, X, hX, c, hcm, he⟩
-    · exact he ▸ h.childLive u U hU c hcm
-    · exact he ▸ h.childLive x X hX c hcm
+    have hc : present ch.objId ∧ isIrqNodeObjId InterruptLineSet.capacity ch.objId = false := by
+      rcases hm with ⟨c, hcm, he⟩ | ⟨-, X, hX, c, hcm, he⟩
+      · exact he ▸ h.childLive u U hU c hcm
+      · exact he ▸ h.childLive x X hX c hcm
+    exact ⟨hP _ hc.1 hne, hc.2⟩
   · have hu' : SystemState.recordsChild ut' u ch.objId := ⟨U', hu, ch, hch, rfl⟩
     have hv' : SystemState.recordsChild ut' v ch.objId := ⟨V', hv, ch', hch', he.symm⟩
     have hun : ut' u ≠ none := by rw [hu]; exact Option.some_ne_none _

@@ -315,7 +315,7 @@ slot, or a capability naming a reserved idle object. -/
 @[inline] def capHeldNone (c : Option Capability) : Bool :=
   match c with
   | none => true
-  | some cap => SeLe4n.Kernel.capTargetsReservedIdleObject cap
+  | some cap => SeLe4n.Kernel.capTargetsReservedKernelObject cap
 
 /-- Whether a resolved slot is empty.  Out of line, with the slot borrowed, so
 the entry tests the slot's tag without projecting its capability: the arm
@@ -424,7 +424,7 @@ theorem dispatchOperandCheckedK_spec {β : Type} (capAddr : SeLe4n.CPtr)
             not_false_eq_true])]
           unfold noCapRefusal capHeldNone
           rcases hA : arm (some cap) st with ⟨e, s⟩ | v <;> (try dsimp only)
-          · by_cases hX : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true ∧
+          · by_cases hX : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true ∧
                 e = .invalidCapability
             · rw [if_pos hX]
               refine .inr ⟨e, s, rfl, rfl, ?_⟩
@@ -432,7 +432,7 @@ theorem dispatchOperandCheckedK_spec {β : Type} (capAddr : SeLe4n.CPtr)
             · rw [if_neg hX]
               refine .inl ⟨rfl, fun ke s' h e' h' => ?_⟩
               cases h
-              by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+              by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
               · simp only [syscallResolveCap, hRes, hC, hIdle, ↓reduceIte,
                   Except.error.injEq] at h'
                 subst h'

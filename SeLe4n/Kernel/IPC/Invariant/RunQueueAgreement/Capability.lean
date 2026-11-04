@@ -846,16 +846,42 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
      fun s c h => h.trans (SystemState.completeYieldFrom_runQueueStage s c).entry⟩
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
+/-- A line's state change writes the tree's issued lines and the mask alone. -/
+theorem setIrqLineSignal_runQueueStage (st : SystemState) (line : Nat) (signal : Bool) :
+    RunQueueStage st (Architecture.setIrqLineSignal st line signal) :=
+  RunQueueStage.of_frame (Architecture.setIrqLineSignal_objects st _ _)
+    (by rw [Architecture.setIrqLineSignal_scheduler])
+    (by rw [Architecture.setIrqLineSignal_scheduler])
+    (by rw [Architecture.setIrqLineSignal_scheduler])
+
+/-- A node's retire writes the tree's issued lines and the mask alone (stated
+through the line's state change: the frame tactics on the retire's own form
+recurse too deep in the kernel). -/
+theorem retireIrqNode_runQueueStage (st : SystemState) (x : SeLe4n.ObjId) :
+    RunQueueStage st (retireIrqNode st x) :=
+  setIrqLineSignal_runQueueStage st _ false
+
+/-- The retire keeps the run queues in agreement: a node's retire writes the
+tree's issued lines and the mask alone, any other target's is the release, the
+finalisation and `retireFinalObject`. -/
+theorem retireFinalisedObject_runQueueEntryStage (ec : Concurrency.CoreId)
+    (target recorder : Nat) (st : SystemState) :
+    SystemState.RunQueueEntryStage st (retireFinalisedObject ec target recorder st) := by
+  rcases retireFinalisedObject_cases ec target recorder st with ⟨-, hE⟩ | ⟨-, hE⟩
+  · exact hE ▸ (retireIrqNode_runQueueStage st _).entry
+  · rw [hE]
+    exact ((releaseFinalRegistration_runQueueStage _ st).entry.trans
+      (finaliseFinalObject_runQueueEntryStage _ _)).trans
+      (retireFinalObject_runQueueStage ec _ _ _).entry
+
 theorem cspaceDeleteSlotFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
     {addr : CSpaceAddr} {st st' : SystemState}
     (h : cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st st' h
-  exact (((((cspaceDeleteSlot_runQueueStage hD).trans
-    (finaliseDestroyedCapabilities_runQueueStage hF)).trans
-    (releaseFinalRegistration_runQueueStage _ st2)).entry.trans
-    (finaliseFinalObject_runQueueEntryStage _ _)).trans
-    (retireFinalObject_runQueueStage ec _ _ _).entry)
+  exact ((cspaceDeleteSlot_runQueueStage hD).trans
+    (finaliseDestroyedCapabilities_runQueueStage hF)).entry.trans
+    (retireFinalisedObject_runQueueEntryStage ec _ _ st2)
 
 theorem cspaceRevokeCdtFinalising_runQueueEntryStage {ec : Concurrency.CoreId}
     {addr : CSpaceAddr} {st st' : SystemState}

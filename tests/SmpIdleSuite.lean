@@ -126,7 +126,7 @@ example (ist : SeLe4n.Model.IntermediateState) (c : CoreId) :
 #check @SeLe4n.Platform.Boot.idleSlotsReserved
 #check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_references
 #check @SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
-#check @SeLe4n.Kernel.capTargetsReservedIdleObject
+#check @SeLe4n.Kernel.capTargetsReservedKernelObject
 #check @SeLe4n.Kernel.threadInactiveFlagConsistent
 #check @SeLe4n.Kernel.threadStateConsistent_implies_threadInactiveFlagConsistent
 -- WS-RR RR7.36: the preservation surface for the relation the live decisions
@@ -898,12 +898,12 @@ private def runBootValidationParityChecks : IO Unit := do
      SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots replyAliasCfg == false &&
      SeLe4n.Platform.Boot.replyIdentitiesMatchSlots replyAliasCfg == false &&
      SeLe4n.Platform.Boot.embeddedIdentitiesMatchSlots ownIdCfg == true)
-  assertBool "capTargetsReservedIdleObject decides by the capability's target"
-    (SeLe4n.Kernel.capTargetsReservedIdleObject
+  assertBool "capTargetsReservedKernelObject decides by the capability's target"
+    (SeLe4n.Kernel.capTargetsReservedKernelObject
         { target := .object idle0Obj, rights := AccessRightSet.ofList [.write] } == true &&
-     SeLe4n.Kernel.capTargetsReservedIdleObject
+     SeLe4n.Kernel.capTargetsReservedKernelObject
         { target := .cnodeSlot idle0Obj (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.write] } == true &&
-     SeLe4n.Kernel.capTargetsReservedIdleObject
+     SeLe4n.Kernel.capTargetsReservedKernelObject
         { target := .object ⟨9⟩, rights := AccessRightSet.ofList [.write] } == false)
   -- The same object one slot below the idle range is accepted: the refusal is
   -- the reservation, not the object.
@@ -1108,6 +1108,22 @@ private def runBootInterruptHandlerChecks : IO Unit := do
       SeLe4n.Platform.Boot.bootInterruptHandlerBootError)
   assertBool "the handler-issuing config is refused by the checked boot"
     ((SeLe4n.Platform.Boot.bootFromPlatformChecked onBoard).isOk == false)
+  -- WS-ZA ZA6.32: an interrupt node's id is the kernel's; a configured
+  -- object there is refused by its own conjunct.
+  let nodeTaken : SeLe4n.Platform.Boot.PlatformConfig :=
+    { machineConfig := mc,
+      initialObjects := [cnEntry [],
+        { id := SeLe4n.Model.irqNodeId 0,
+          obj := .notification { state := .idle, hasPendingBadge := false,
+                                 pendingWord := SeLe4n.Badge.zero },
+          hSlots := fun _ h => nomatch h
+          hMappings := fun _ h => nomatch h }] }
+  assertBool "NEGATIVE: a configured object at an interrupt node's id is refused"
+    (nodeTaken.wellFormed == false &&
+      SeLe4n.Platform.Boot.irqNodeIdsReserved nodeTaken == false)
+  assertBool "...and the refusal names the node-reservation conjunct"
+    (SeLe4n.Platform.Boot.wellFormedDiagnostic nodeTaken ==
+      SeLe4n.Platform.Boot.irqNodeIdReservationBootError)
 
 /-- PR #889 review round 18: a successful boot must leave the object index
     inside `maxObjects`.  Nothing bounded the count before: the checked boot
@@ -1134,12 +1150,13 @@ private def runObjectBudgetChecks : IO Unit := do
   -- One object short of the reserved headroom is still refused: the boot root
   -- and every core's idle thread must fit.
   let justOver : SeLe4n.Platform.Boot.PlatformConfig :=
-    { initialObjects := filler (cap - cores) }
+    { initialObjects := filler (cap - cores - SeLe4n.InterruptLineSet.capacity) }
   assertBool "NEGATIVE: a config leaving no room for the boot root is refused"
     (SeLe4n.Platform.Boot.objectBudgetRespected justOver == false)
-  -- The largest config that boots: the cap less the root and the idle threads.
+  -- The largest config that boots: the cap less the root, the idle threads and
+  -- the interrupt nodes (WS-ZA ZA6.32).
   let atBudget : SeLe4n.Platform.Boot.PlatformConfig :=
-    { initialObjects := filler (cap - cores - 1) }
+    { initialObjects := filler (cap - cores - 1 - SeLe4n.InterruptLineSet.capacity) }
   assertBool "the largest config that leaves room for the root and the idle threads is accepted"
     (SeLe4n.Platform.Boot.objectBudgetRespected atBudget == true)
   -- ...and the boot really lands inside the cap, idle threads included.
@@ -1148,7 +1165,7 @@ private def runObjectBudgetChecks : IO Unit := do
       assertBool "the boot state's object index is within maxObjects"
         (ist.state.objectIndex.length <= cap)
       assertBool "...and it carries the config's objects plus one idle thread per core"
-        (ist.state.objectIndex.length == cap - 1)
+        (ist.state.objectIndex.length == cap - 1 - SeLe4n.InterruptLineSet.capacity)
   | .error e =>
       assertBool s!"the budget-respecting config must boot (got: {e})" false
   -- PR #889 review round 19: the budget has its own diagnostic.  Round 18 added

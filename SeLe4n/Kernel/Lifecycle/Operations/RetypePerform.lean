@@ -97,7 +97,7 @@ def retypeFromUntypedAdmitted (st : SystemState) (authCnode : SeLe4n.ObjId)
     (ut : UntypedObject) : Bool :=
   !decide (st.objectIndex.length ≥ maxObjects) &&
   !decide (childId = untypedId) &&
-  !(st.getObject? childId).isSome &&
+  !((st.getObject? childId).isSome || isIrqNodeObjId InterruptLineSet.capacity childId) &&
   childrenNameNone childId ut.children &&
   !(ut.isDevice && !ty.deviceBackable) &&
   objectIdInAddressSpace st.machine childId &&

@@ -180,14 +180,24 @@ pub enum SyscallId {
     /// WS-ZA ZA6.32: acknowledge an interrupt line (`seL4_IRQHandler_Ack`);
     /// no message registers.
     IrqHandlerAck = 44,
+    /// WS-ZA ZA6.32: issue an interrupt-handler capability
+    /// (`seL4_IRQControl_Get`); x2 the line, x3 the destination CNode, x4 the
+    /// slot.
+    IrqControlGet = 45,
+    /// WS-ZA ZA6.32: bind a notification to an interrupt line
+    /// (`seL4_IRQHandler_SetNotification`); x2 the notification capability.
+    IrqHandlerSetNotification = 46,
+    /// WS-ZA ZA6.32: unbind an interrupt line's notification
+    /// (`seL4_IRQHandler_Clear`); no message registers.
+    IrqHandlerClear = 47,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 44;
+    pub const COUNT: u32 = 47;
 
     /// One past the largest syscall number (must match `sele4n-types`).
-    pub const ENCODING_BOUND: u32 = 45;
+    pub const ENCODING_BOUND: u32 = 48;
 
     /// Retired syscall numbers, reserved and never reassigned (must match
     /// `sele4n-types`): `8`, the in-place lifecycle retype.
@@ -241,6 +251,9 @@ impl SyscallId {
             42 => Some(Self::SchedContextConsumed),
             43 => Some(Self::SchedContextYieldTo),
             44 => Some(Self::IrqHandlerAck),
+            45 => Some(Self::IrqControlGet),
+            46 => Some(Self::IrqHandlerSetNotification),
+            47 => Some(Self::IrqHandlerClear),
             _ => None,
         }
     }
@@ -300,6 +313,12 @@ impl SyscallId {
             // WS-ZA ZA6.32: the acknowledge's only operand is the invoked
             // capability.
             Self::IrqHandlerAck => 0,
+            // WS-ZA ZA6.32: `decodeIrqControlGetArgs` reads three registers
+            // (line, destination CNode, slot), `decodeIrqHandlerSetNotificationArgs`
+            // one (the notification capability); the clear reads none.
+            Self::IrqControlGet => 3,
+            Self::IrqHandlerSetNotification => 1,
+            Self::IrqHandlerClear => 0,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
             Self::ServiceRegister => 4,
@@ -1248,7 +1267,16 @@ mod tests {
         );
         assert_eq!(SyscallId::IrqHandlerAck.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(44), Some(SyscallId::IrqHandlerAck));
-        assert_eq!(SyscallId::from_u32(45), None);
+        assert_eq!(SyscallId::IrqControlGet.min_inline_args(), 3);
+        assert_eq!(SyscallId::from_u32(45), Some(SyscallId::IrqControlGet));
+        assert_eq!(SyscallId::IrqHandlerSetNotification.min_inline_args(), 1);
+        assert_eq!(
+            SyscallId::from_u32(46),
+            Some(SyscallId::IrqHandlerSetNotification)
+        );
+        assert_eq!(SyscallId::IrqHandlerClear.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(47), Some(SyscallId::IrqHandlerClear));
+        assert_eq!(SyscallId::from_u32(48), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

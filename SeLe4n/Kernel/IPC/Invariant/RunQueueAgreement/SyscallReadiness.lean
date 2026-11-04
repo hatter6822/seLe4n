@@ -782,10 +782,16 @@ theorem cspaceDeleteSlotFinalising_readyEntry {S : SeLe4n.ThreadId → Prop} {ec
     (h : cspaceDeleteSlotFinalising ec addr s = .ok ((), s')) :
     SystemState.RunQueueEntryStage st s' ∧ readyKeptStage S st s' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr s s' h
-  exact readyEntry_stage (finaliseFinalObject_readyEntry _ (readyEntry_stage hQ
-    (((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
-      (releaseFinalRegistration_runQueueStage _ st2))))
-    (retireFinalObject_runQueueStage ec _ _ _)
+  rcases retireFinalisedObject_cases ec (slotRetireTarget s addr.cnode addr.slot)
+    (slotRetireRecorder s addr.cnode addr.slot) st2 with ⟨-, hE⟩ | ⟨-, hE⟩
+  · rw [hE]
+    exact readyEntry_stage (readyEntry_stage hQ ((cspaceDeleteSlot_runQueueStage hD).trans
+      (finaliseDestroyedCapabilities_runQueueStage hF))) (retireIrqNode_runQueueStage st2 _)
+  · rw [hE]
+    exact readyEntry_stage (finaliseFinalObject_readyEntry _ (readyEntry_stage hQ
+      (((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
+        (releaseFinalRegistration_runQueueStage _ st2))))
+      (retireFinalObject_runQueueStage ec _ _ _)
 
 /-- The start of a kernel entry: nothing yet. -/
 theorem readyEntry_refl {S : SeLe4n.ThreadId → Prop} (st : SystemState) :
@@ -809,6 +815,16 @@ theorem copyThreadSpacesZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec
     (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ)
     (fun _ _ hQ hS => readyEntry_stage hQ (copyThreadSpaces_runQueueStage hS))
     (readyEntry_refl st) h).2
+
+/-- The zombie delete as a stage pair, for a step that continues after it. -/
+theorem cspaceDeleteSlotZombie_readyEntry {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' ∧ readyKeptStage S st st' :=
+  cspaceDeleteSlotZombie_closed (fun s => SystemState.RunQueueEntryStage st s ∧
+      readyKeptStage S st s)
+    (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_readyEntry hQ hD)
+    (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ) (readyEntry_refl st) h
 
 theorem cspaceDeleteSlotZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
     {addr : CSpaceAddr} {st st' : SystemState}
@@ -834,6 +850,25 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   case irqHandlerAck =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line => exact readyKeptStage.of_stage (irqHandlerAck_runQueueStage hStep)
+    all_goals try cases hStep
+  case irqControlGet =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqControl =>
+      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ hStep
+      exact readyKeptStage.of_stage (irqControlGet_runQueueStage hG)
+    all_goals try cases hStep
+  case irqHandlerSetNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      obtain ⟨_, _, -, hN⟩ := irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ hStep
+      obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hN
+      exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
+        (cspaceCopy_runQueueStage hC)).2
+    all_goals try cases hStep
+  case irqHandlerClear =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      exact cspaceDeleteSlotZombie_readyKeptStage (irqHandlerClear_ok hStep).2
     all_goals try cases hStep
   case cspaceDelete =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

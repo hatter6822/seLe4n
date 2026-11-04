@@ -1596,6 +1596,15 @@ const SCHED_CONTEXT_YIELD_TO: u64 = 43;
 /// `IrqHandlerAck` (`SyscallId` 44, WS-ZA ZA6.32).
 #[cfg(feature = "hw_target")]
 const IRQ_HANDLER_ACK: u64 = 44;
+/// `IrqControlGet` (`SyscallId` 45, WS-ZA ZA6.32).
+#[cfg(feature = "hw_target")]
+const IRQ_CONTROL_GET: u64 = 45;
+/// `IrqHandlerSetNotification` (`SyscallId` 46, WS-ZA ZA6.32).
+#[cfg(feature = "hw_target")]
+const IRQ_HANDLER_SET_NOTIFICATION: u64 = 46;
+/// `IrqHandlerClear` (`SyscallId` 47, WS-ZA ZA6.32).
+#[cfg(feature = "hw_target")]
+const IRQ_HANDLER_CLEAR: u64 = 47;
 /// **WS-ZA ZA6.2**: the steps of a scenario that are not syscalls, by a
 /// `syscall` no `SyscallId` takes.  A timer tick is entered as
 /// `handle_irq_per_core`'s timer branch enters it and measured as the kernel
@@ -1703,9 +1712,14 @@ const SCHED_CONTROL_SLOT: u64 = 16;
 /// slot's record, so no carve meets the audit capability's fieldless target.
 #[cfg(feature = "hw_target")]
 const AUDIT_SLOT: u64 = COPY_SLOT;
-/// The slots of the exerciser image's two interrupt-handler capabilities
-/// (`qemuVirtExerciserIrqHandlerSlots`, WS-ZA ZA6.32): the bound line's and the
-/// unbound line's.
+/// The slot of the root task's interrupt-control capability
+/// (`qemuVirtIrqControlSlot`, WS-ZA ZA6.32): the authority every handler the
+/// exerciser holds is issued from (`seL4_IRQControl_Get`).
+#[cfg(feature = "hw_target")]
+const IRQ_CONTROL_SLOT: u64 = 20;
+/// The free slots the exerciser issues its two interrupt-handler capabilities
+/// into (WS-ZA ZA6.32): the bound line's and the unbound line's.  The boot
+/// issues no handler (`bootIssuesNoInterruptHandler`), as seL4's does not.
 #[cfg(feature = "hw_target")]
 const IRQ_BOUND_HANDLER_SLOT: u64 = 24;
 #[cfg(feature = "hw_target")]
@@ -1720,6 +1734,8 @@ const CNODE_CAP: u64 = cap_address(CNODE_SLOT);
 const SCHED_CONTEXT_CAP: u64 = cap_address(SCHED_CONTEXT_SLOT);
 #[cfg(feature = "hw_target")]
 const SCHED_CONTROL_CAP: u64 = cap_address(SCHED_CONTROL_SLOT);
+#[cfg(feature = "hw_target")]
+const IRQ_CONTROL_CAP: u64 = cap_address(IRQ_CONTROL_SLOT);
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_CAP: u64 = cap_address(NOTIFICATION_SLOT);
 #[cfg(feature = "hw_target")]
@@ -3268,7 +3284,10 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     crate::gic::set_interrupt_line_priority(IRQ_UNBOUND_LINE, IRQ_EXERCISER_PRIORITY);
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
-        if !interrupt_entries(which) {
+        if !interrupt_handlers_issued(which)
+            || !interrupt_entries(which)
+            || !interrupt_handlers_retired(which)
+        {
             return Some(false);
         }
     }
@@ -3518,6 +3537,66 @@ fn heap_allocations_interrupt(entry: &KernelEntry, which: &str) -> bool {
         return false;
     }
     true
+}
+
+/// **WS-ZA ZA6.32: the handlers issued and bound**, each measured: the bound
+/// line's handler issued from the interrupt control into
+/// [`IRQ_BOUND_HANDLER_SLOT`] (`seL4_IRQControl_Get`, the line put at
+/// `IRQSignal`), the unbound line's into [`IRQ_UNBOUND_HANDLER_SLOT`], and the
+/// interrupt notification bound to the first (`seL4_IRQHandler_SetNotification`).
+#[cfg(feature = "hw_target")]
+fn interrupt_handlers_issued(which: &str) -> bool {
+    let get_bound = invocation(
+        "irq-control-get",
+        IRQ_CONTROL_GET,
+        IRQ_CONTROL_CAP,
+        [u64::from(IRQ_BOUND_LINE), CNODE_CAP, IRQ_BOUND_HANDLER_SLOT, 0],
+    );
+    let get_unbound = invocation(
+        "irq-control-get-unbound",
+        IRQ_CONTROL_GET,
+        IRQ_CONTROL_CAP,
+        [u64::from(IRQ_UNBOUND_LINE), CNODE_CAP, IRQ_UNBOUND_HANDLER_SLOT, 0],
+    );
+    let bind = invocation(
+        "irq-handler-set-notification",
+        IRQ_HANDLER_SET_NOTIFICATION,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        [NOTIFICATION_CAP, 0, 0, 0],
+    );
+    heap_allocations_round_trip(&get_bound, which) == Some(true)
+        && unmeasured(&get_unbound, "the unbound line's handler was not issued")
+        && heap_allocations_round_trip(&bind, which) == Some(true)
+}
+
+/// **WS-ZA ZA6.32: the handlers cleared and deleted**, each measured: the bound
+/// handler's notification cleared (`seL4_IRQHandler_Clear`), then each
+/// handler's only capability deleted, whose finalisation retires its line to
+/// `IRQInactive` (`deletingIRQHandler`, `deletedIRQHandler`), so the next pass
+/// issues both again.
+#[cfg(feature = "hw_target")]
+fn interrupt_handlers_retired(which: &str) -> bool {
+    let clear = invocation(
+        "irq-handler-clear",
+        IRQ_HANDLER_CLEAR,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        [0; 4],
+    );
+    let delete_bound = invocation(
+        "irq-handler-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [IRQ_BOUND_HANDLER_SLOT, 0, 0, 0],
+    );
+    let delete_unbound = invocation(
+        "irq-handler-delete-unbound",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [IRQ_UNBOUND_HANDLER_SLOT, 0, 0, 0],
+    );
+    heap_allocations_round_trip(&clear, which) == Some(true)
+        && heap_allocations_round_trip(&delete_bound, which) == Some(true)
+        && unmeasured(&delete_unbound, "the unbound line's handler was not deleted")
 }
 
 /// **WS-ZA ZA6.32: the interrupt entry's branches**, each measured: the bound

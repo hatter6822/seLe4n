@@ -205,6 +205,11 @@ def schedControlBootSlots (base : Nat) : List (SeLe4n.Slot × Capability) :=
     four, above the untypeds'. -/
 def rpi5SchedControlSlotBase : Nat := 12
 
+/-- **WS-ZA ZA6.32**: the root task's interrupt-control slot, below the
+    scheduling controls — seL4's boot info `seL4_CapIRQControl`, the only
+    authority to issue an interrupt handler (`seL4_IRQControl_Get`). -/
+def rpi5IrqControlSlot : Nat := 11
+
 /-- An empty user address space on `asid` — what `bootSafeUserVSpaceRootCheck`
     admits — whose top-level table is the `page`-th page of the binding's
     table-page pool (WS-BP BP7.1, `Platform.Boot.bootRootTablesPlaced`). -/
@@ -265,9 +270,10 @@ theorem rpi5BootRamExtensions_length (v : BCM2712Config) (hv : v.Admissible) :
 
 /-- **WS-BP BP7.10**: the root task's CNode slots for `n` untypeds: its own TCB,
     CNode and VSpace, the interrupt notification, and untyped `i` at slot
-    `5 + i` (`rpi5RootTaskUntypedSlot`), and (WS-ZA ZA6.4) each core's
-    scheduling control from `rpi5SchedControlSlotBase`.  A function of the
-    count, because a capability names an object and not its extent. -/
+    `5 + i` (`rpi5RootTaskUntypedSlot`), (WS-ZA ZA6.32) the interrupt control
+    at `rpi5IrqControlSlot`, and (WS-ZA ZA6.4) each core's scheduling control
+    from `rpi5SchedControlSlotBase`.  A function of the count, because a
+    capability names an object and not its extent. -/
 def rpi5RootTaskCNodeSlotsOfCount (n : Nat) : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap rpi5RootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap rpi5RootTaskCNodeId [.read, .write, .grant, .grantReply])
@@ -275,6 +281,7 @@ def rpi5RootTaskCNodeSlotsOfCount (n : Nat) : List (SeLe4n.Slot × Capability) :
   , (SeLe4n.Slot.ofNat 4, rpi5InitialCap rpi5InterruptNotificationId [.read, .write]) ] ++
   ((List.range n).map fun i =>
     (rpi5RootTaskUntypedSlot i, rpi5InitialCap (rpi5RootTaskUntypedId i) [.read, .write, .retype])) ++
+  [(SeLe4n.Slot.ofNat rpi5IrqControlSlot, Capability.irqControl)] ++
   schedControlBootSlots rpi5SchedControlSlotBase
 
 /-- The root task's CNode slots on a board bound to `v` — one untyped
@@ -708,9 +715,11 @@ def rpi5DeploymentStartedStateAt (v : BCM2712Config) : IntermediateState :=
     `rpi5UntrustedCore`, the binding's `PlatformBinding.initialThreads`, which
     are its labeling's two separation witnesses — with the configuration's
     capabilities then linked into the derivation tree (WS-ZA ZA5.4,
-    `linkBootCapabilities`). -/
+    `linkBootCapabilities`), after the board's interrupt nodes are installed
+    (WS-ZA ZA6.32, `installIrqNodes`). -/
 def rpi5DeploymentBootStateAt (v : BCM2712Config) : IntermediateState :=
-  linkBootCapabilities (rpi5BoundPlatformConfigAt v) (rpi5DeploymentStartedStateAt v)
+  linkBootCapabilities (rpi5BoundPlatformConfigAt v)
+    (installIrqNodes (irqNodeLineCount (rpi5BoundPlatformConfigAt v)) (rpi5DeploymentStartedStateAt v))
 
 /-- **WS-BP BP3.3**: the idle-thread boot on the binding's cores succeeds on
     every variant, and this is what it returns. -/
@@ -809,6 +818,14 @@ theorem rpi5BoundPlatformConfigAt_boot (v : BCM2712Config) (hv : v.Admissible) :
     rpi5BoundPlatformConfigAt_initialThreads, rpi5Deployment_startInitialThreads v hv]
   rfl
 
+/-- **WS-ZA ZA6.32**: the started state leaves every interrupt node's id free,
+    on every variant. -/
+theorem rpi5DeploymentStartedStateAt_irqNodesFresh (v : BCM2712Config) (hv : v.Admissible) :
+    irqNodesFresh (irqNodeLineCount (rpi5BoundPlatformConfigAt v))
+      (rpi5DeploymentStartedStateAt v).state = true :=
+  bootFromPlatformCheckedStartedFor_irqNodesFresh _ _ _ _ (rpi5BoundPlatformConfigAt_idleBoot v hv)
+    (by rw [rpi5BoundPlatformConfigAt_initialThreads]; exact rpi5Deployment_startInitialThreads v hv)
+
 /-- **WS-BP BP3.4**: both threads the labeling declares separated are installed
     on the idle stage... -/
 private theorem rpi5DeploymentIdleStateAt_witnessesInstalled (v : BCM2712Config)
@@ -833,6 +850,7 @@ theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
     declaredWitnessesInstalled (rpi5DeploymentBootStateAt v).state
       (PlatformBinding.labeling (platform := RPi5Platform)) = true :=
   (linkBootCapabilities_declaredWitnessesInstalled _ _ _).trans <|
+  (installIrqNodes_declaredWitnessesInstalled (rpi5DeploymentStartedStateAt_irqNodesFresh v hv) _).trans <|
   startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     (rpi5Deployment_startInitialThreads v hv) _
     (rpi5DeploymentIdleStateAt_witnessesInstalled v hv)
@@ -955,6 +973,7 @@ theorem rpi5DeploymentBootStateAt_untypedInstalled (v : BCM2712Config)
     (hu : u ∈ rpi5RootTaskUntypeds v) :
     (rpi5DeploymentBootStateAt v).state.objects[u.1]? = some (.untyped u.2) :=
   ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
+  installIrqNodes_objects_of_some (rpi5DeploymentStartedStateAt_irqNodesFresh v hv) <|
   startInitialThreads_objects_of_nonTcb _ _ _
     (rpi5Deployment_startInitialThreads v hv) _ _ (fun _ h => by cases h)
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _

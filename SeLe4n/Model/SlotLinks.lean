@@ -1733,7 +1733,8 @@ theorem cdtAddChild_fields (st : SystemState) (p c : SlotRef) (op : DerivationOp
     (st.cdtAddChild p c op).scheduler = st.scheduler := by rw [cdtAddChild_fields]
 
 @[simp] theorem cdtAddChild_irqSignalLines (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
-    (st.cdtAddChild p c op).irqSignalLines = st.irqSignalLines := by rw [cdtAddChild_fields]
+    (st.cdtAddChild p c op).irqSignalLines = st.irqSignalLines := by
+  rw [cdtAddChild_fields]; simp [SystemState.irqSignalLines]
 
 @[simp] theorem cdtAddChild_lifecycle (st : SystemState) (p c : SlotRef) (op : DerivationOp) :
     (st.cdtAddChild p c op).lifecycle = st.lifecycle := by rw [cdtAddChild_fields]
@@ -1795,7 +1796,8 @@ theorem cdtSplice_fields (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).scheduler = st.scheduler := by rw [cdtSplice_fields]
 
 @[simp] theorem cdtSplice_irqSignalLines (st : SystemState) (n : SlotRef) :
-    (st.cdtSplice n).irqSignalLines = st.irqSignalLines := by rw [cdtSplice_fields]
+    (st.cdtSplice n).irqSignalLines = st.irqSignalLines := by
+  rw [cdtSplice_fields]; simp [SystemState.irqSignalLines]
 
 @[simp] theorem cdtSplice_lifecycle (st : SystemState) (n : SlotRef) :
     (st.cdtSplice n).lifecycle = st.lifecycle := by rw [cdtSplice_fields]
@@ -1857,7 +1859,8 @@ theorem cdtMove_fields (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).scheduler = st.scheduler := by rw [cdtMove_fields]
 
 @[simp] theorem cdtMove_irqSignalLines (st : SystemState) (old new : SlotRef) :
-    (st.cdtMove old new).irqSignalLines = st.irqSignalLines := by rw [cdtMove_fields]
+    (st.cdtMove old new).irqSignalLines = st.irqSignalLines := by
+  rw [cdtMove_fields]; simp [SystemState.irqSignalLines]
 
 @[simp] theorem cdtMove_lifecycle (st : SystemState) (old new : SlotRef) :
     (st.cdtMove old new).lifecycle = st.lifecycle := by rw [cdtMove_fields]
