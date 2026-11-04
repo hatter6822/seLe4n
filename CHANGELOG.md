@@ -1,3 +1,49 @@
+## v0.36.196 — WS-ZA: syscall entries dispatch over out-of-line arms
+
+A build-structure change: every syscall entry now compiles to a small dispatch
+over one out-of-line function per route, instead of inlining the whole kernel
+into each `@[inline]` layer between the `@[export]` and the arms.  No semantics
+change, and every allocation pin reads what it read at v0.36.195.
+
+- **The routed arms** (`SeLe4n/Kernel/RoutedArms/`).  Each route of
+  `syscallEntryCheckedK` (signal, wait, yield, send, call, reply, receive,
+  replyRecv, the capability invocations, the one-overflow invocations, the
+  audited invocations and the decoded path) is a `@[noinline]` function.  Only
+  machine words and the state, passed owned, cross into it.  It returns the
+  state alone: which continuation its result is for, and whether it committed
+  or refused with which error, is a code pushed onto the state's report word
+  (`MachineState.entryReport`), which one join point pops
+  (`entryReportOutcome`).  A push followed by its pop is the identity on every
+  state (`popEntryReport_pushEntryReport`), so no arm needs a frame property.
+  An arm that reads the caller's register file re-reads it off the state it is
+  handed: passed in, it would be held across the arm and every write to it
+  would copy it.
+- **The specification stays.**  `syscallEntryCheckedK` and
+  `syscallEntryCheckedR` are `noncomputable` specifications; the compiled form
+  is `syscallEntryRoutedK`, proven equal for every continuation
+  (`@[csimp] syscallEntryCheckedK_eq_routed`, via the naturality lemma
+  `dispatchOperandCheckedK_map`).
+- **The two FFI entries share one body.**  `syscallDispatchFromAbiImpl` is
+  the word entry `syscallDispatchFromAbiWords` with its words read back as the
+  outcome they name (`SyscallOutcome.ofWords`, `ofWords_words`); the word
+  entry is proven equal to the specification directly
+  (`syscallDispatchFromAbiWords_eq`).
+- **A new Tier 2 gate** (`scripts/check_kernel_entry_c_function_size.py`)
+  holds the C function of every `@[export]` in the package, read off the code
+  view, to 20,000 lines.  Inlining the signal arm again makes the syscall
+  entry 90,554 lines and fails it.
+- **The allocation exerciser** prints the generic-timer ticks of each measured
+  window (`entry-ticks` lines, `CNTVCT_EL0`).
+
+Generated C, before and after: `SyscallDispatchEntry.c` 898k → 35k lines (the
+exported entry 278k → 11.3k), `SyscallDispatchStep.c` 398k → 13k,
+`Platform/FFI.c` 372k → 28k, `RefusalCarryingEntry.c` 534k → 2.7k, and
+`Testing/DispatchEntryCalls.c` 383k → 11.7k.  The kernel archive is 86.8 MB →
+67.0 MB.  A cold archive build with the default four jobs took 4m21s; before,
+it ran out of memory after 30m26s (four concurrent clang processes at about
+3.7 GB each in a 15 GB container), and the one remaining file alone took
+15m46s.  An incremental archive build after changing one arm takes 49 s.
+
 ## v0.36.195 — WS-ZA ZA6.32: device interrupts enter the kernel as seL4's handleInterrupt
 
 Every shared peripheral interrupt now enters the verified kernel.

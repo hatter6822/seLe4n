@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.195` (`lakefile.toml`) |
+| **Package version** | `0.36.196` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 574,142 across 523 Lean files |
 | **Test LoC** | 88,478 across 70 Lean test suites |
@@ -5960,6 +5960,19 @@ Every kernel object has a decidable well-formedness predicate:
   enforcement, refusal, non-interference and run-queue coverage, and the
   exerciser's issue, bind, clear and delete each read 0, as does a revoke of
   the notification's slot, after which the raised line signals nothing.
+- **The syscall entry dispatches over out-of-line arms** (`v0.36.196`, a
+  build-structure change in WS-ZA).  The continued entry
+  `syscallEntryCheckedK` is a specification; it runs as `syscallEntryRoutedK`
+  (`syscallEntryCheckedK_eq_routed`), whose route calls one `@[noinline]` arm
+  per syscall route (`SeLe4n/Kernel/RoutedArms/`).  An arm takes machine words
+  and the state owned and returns the state with a report code pushed onto
+  `MachineState.entryReport`; the entry pops it at one join point and hands the
+  state to the continuation it names, and a push followed by its pop is the
+  identity (`popEntryReport_pushEntryReport`), so the committed state is the
+  arm's own.  The ABI entry `syscallDispatchFromAbiImpl` is the word entry
+  with its words decoded (`SyscallOutcome.ofWords`).  Each exported entry is
+  a dispatch of at most 20,000 C lines (Tier 2,
+  `check_kernel_entry_c_function_size.py`), not a copy of the kernel.
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged

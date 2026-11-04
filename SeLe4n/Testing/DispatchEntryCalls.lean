@@ -18,8 +18,9 @@ component of its result where it is computed and builds no result record
 (`syscallDispatchFromAbiImpl`, `syscallDispatchCrossCoreStep`,
 `syscallDispatchCrossCoreBracketedStep`, and the bracket record
 `syscallDispatchBracket` whose step is the cross-core step).  A suite that calls one of them
-therefore receives the whole kernel inlined into each calling helper: a single
-C function of 70k–190k lines, which clang compiles in tens of minutes.
+therefore receives the entry inlined into each calling helper.  The entry's
+arms are out of line (`SeLe4n/Kernel/RoutedArms/`), so that is the dispatch,
+several thousand C lines, at every call site of every suite.
 
 The suites call these copies instead.  The ABI entry and the cross-core step
 are compiled once, here; the bracketed step and the bracket record call that
