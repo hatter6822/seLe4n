@@ -411,8 +411,11 @@ def join (a b : TaintWords) : TaintWords :=
 /-- WS-ZA ZA5.12: `join` on scalars (`join_eq_impl`): words that name no taint as
 written decode to the saturated taint, so either operand failing the check, or
 a saturated source, gives the saturated words; otherwise the source's tag words
-in use are inserted one at a time (`insertWords`), building no tag list. -/
-def joinImpl (a b : TaintWords) : TaintWords :=
+in use are inserted one at a time (`insertWords`), building no tag list.
+
+A specification: `join` is compiled as `joinFlat` (`join_eq_flat`), so no
+code is generated for it. -/
+noncomputable def joinImpl (a b : TaintWords) : TaintWords :=
   if a.canonical && b.canonical then
     if b.saturated then topWords
     else

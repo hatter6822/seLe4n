@@ -1061,8 +1061,11 @@ theorem declassifySignalOperandArmR_eq (ctx : LabelingContext) (decoded : Syscal
 
 /-- `dispatchSyscallChecked` for a routed declassification or audit call, its
 operand address, syscall and arguments read from the caller's register file
-(`dispatchAuditedCheckedR_eq`). -/
-@[inline] def dispatchAuditedCheckedR (ctx : LabelingContext) (sid : SyscallId)
+(`dispatchAuditedCheckedR_eq`).
+
+A specification: the compiled entry runs the arm out of line
+(`syscallEntryRoutedK`), so no code is generated for it. -/
+noncomputable def dispatchAuditedCheckedR (ctx : LabelingContext) (sid : SyscallId)
     (capAddr : SeLe4n.CPtr) (regs : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore

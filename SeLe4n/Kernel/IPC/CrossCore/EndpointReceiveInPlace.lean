@@ -3,6 +3,7 @@ Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
+import SeLe4n.Kernel.Architecture.RoutedRegisterDecode
 
 /-!
 # A receive that takes a blocked sender's message, written in place

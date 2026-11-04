@@ -15,7 +15,7 @@ These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job
 
 - `test-fast`: `./scripts/test_fast.sh` (Tier 0 + Tier 1)
 - `test-smoke` (after test-fast): `python3 scripts/scenario_catalog.py validate` + `./scripts/test_tier2_trace.sh` + `./scripts/test_tier2_determinism.sh` + `./scripts/test_tier2_negative.sh`
-- `test-full` (after test-smoke): `./scripts/test_tier3_invariant_surface.sh`
+- `test-full` (after test-fast, beside test-smoke): `./scripts/test_tier3_invariant_surface.sh`
 - `test-rust` (`Rust ABI Tests`): `./scripts/test_rust.sh` — workspace tests (incl. `--features std`), ABI conformance suite, `cargo fmt --check`, all-targets clippy. Runs on every PR/push alongside the Lean lanes.
 
 The hardware target has two lanes of its own, also on every PR/push:
@@ -48,7 +48,7 @@ CI jobs restore shared caches for:
 - `.lake/build` (the ARM64 fast lane deliberately caches only `~/.elan` +
   `.lake/packages` under its `lean-nobuild` key)
 
-Cache keys are derived from `lean-toolchain`, `lake-manifest.json`, `lakefile.toml`, and `scripts/setup_lean_env.sh` so toolchain/dependency/setup changes invalidate stale state.  Because every pull request bumps the version in `lakefile.toml`, a pull request's first run and the push that merges it always miss their keys; the Smoke and Full lanes then restore the cache the Fast lane (and, for Full, the Smoke lane) saved earlier in the same run under the same key, before falling back to an older cache.
+The Tiered Tests and `Lean aarch64 Archive` build caches are keyed per commit: the key is a hash of `lean-toolchain`, `lake-manifest.json` and `scripts/setup_lean_env.sh` (plus the Lean runtime's `config.h` for the archive lane) followed by the commit SHA, so toolchain, dependency and setup changes invalidate stale state.  `lakefile.toml` is deliberately not hashed: every pull request bumps its version, which would make every pull request's first run miss the cache.  The restore keys fall back to the newest cache with the same hash prefix, then to any earlier one, and Lake rebuilds only what changed.  The Fast lane alone saves `.lake/build` under the run's key; the Smoke and Full lanes restore that exact entry read-only (`actions/cache/restore`) and both start as soon as the Fast lane finishes.  The nightly and platform-baseline workflows keep their own keys.
 
 ## 4. Manual branch-protection setup checklist
 
