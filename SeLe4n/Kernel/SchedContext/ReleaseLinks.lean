@@ -2578,12 +2578,64 @@ it, `none` otherwise. -/
     Option Nat :=
   if sc.boundThread.isSome then sc.releaseKey? else none
 
-/-- WS-ZA ZA6.4: **no refill is stranded** (seL4-MCS's release-queue rule): every
-bound context whose head refill is used up and pending is on some core's release
-queue, at that refill's release time.  A context left off every queue with a
-pending refill would never be released: the drain reads the queues alone. -/
+/-- WS-ZA ZA6.33: **the thread holding a context is not suspended**: the
+context is bound, and its thread has a TCB that is not `.Inactive`.  seL4-MCS's
+`suspend` takes a thread's context off the release queue (`tcbReleaseRemove`)
+and leaves it bound, so a context whose holder is suspended is on no queue
+until `restart` resumes it (`schedContext_resume`). -/
+@[inline] def holderActive (st : SystemState) (sc : SchedContext) : Bool :=
+  match sc.boundThread with
+  | some t => (st.getTcb? t).any fun x => x.threadState != .Inactive
+  | none => false
+
+/-- A context whose holder is not suspended is bound. -/
+theorem holderActive_bound {st : SystemState} {sc : SchedContext}
+    (h : st.holderActive sc = true) : sc.boundThread.isSome = true := by
+  unfold holderActive at h
+  cases e : sc.boundThread with
+  | none => rw [e] at h; cases h
+  | some _ => rfl
+
+/-- WS-ZA ZA6.33: a context's place while a thread that is not suspended holds
+it: its `releaseKey?` then, `none` otherwise. -/
+@[inline] def heldReleaseKey? (st : SystemState) (sc : SchedContext) : Option Nat :=
+  if st.holderActive sc then sc.releaseKey? else none
+
+/-- A held place is a bound place. -/
+theorem heldReleaseKey?_bound {st : SystemState} {sc : SchedContext} {t : Nat}
+    (h : st.heldReleaseKey? sc = some t) : sc.boundReleaseKey? = some t := by
+  unfold heldReleaseKey? at h
+  unfold SchedContext.boundReleaseKey?
+  split at h
+  · rw [if_pos (holderActive_bound ‹_›)]; exact h
+  · cases h
+
+/-- ...read through the store. -/
+theorem bind_heldReleaseKey?_bound {st st0 : SystemState} {s : SeLe4n.SchedContextId} {t : Nat}
+    (h : (st0.getSchedContext? s).bind st.heldReleaseKey? = some t) :
+    (st0.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t := by
+  cases e : st0.getSchedContext? s with
+  | none => rw [e] at h; cases h
+  | some sc => rw [e] at h; exact heldReleaseKey?_bound h
+
+/-- Two states with the same threads read every context's held place alike. -/
+theorem heldReleaseKey?_of_getTcb? {st st' : SystemState}
+    (h : ∀ t, st'.getTcb? t = st.getTcb? t) (sc : SchedContext) :
+    st'.heldReleaseKey? sc = st.heldReleaseKey? sc := by
+  unfold heldReleaseKey? holderActive
+  cases sc.boundThread with
+  | none => rfl
+  | some t => simp only [h t]
+
+/-- WS-ZA ZA6.4 / ZA6.33: **no refill is stranded** (seL4-MCS's release-queue
+rule): every context held by a thread that is not suspended, whose head refill
+is used up and pending, is on some core's release queue, at that refill's
+release time.  A context left off every queue with a pending refill would never
+be released: the drain reads the queues alone.  A context bound to a suspended
+thread is exempt, as seL4-MCS's invariants state it: `suspend` takes it off the
+queue and `restart` puts it back (`schedContext_resume`). -/
 def releaseNoRefillStranded (st : SystemState) : Prop :=
-  ∀ s t, (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t →
+  ∀ s t, (st.getSchedContext? s).bind st.heldReleaseKey? = some t →
     ∃ c, (s, t) ∈ (st.scheduler.replenishQueueOnCore c).entries
 
 /-- **A step that holds every context off its release fields and every queue's
@@ -2594,8 +2646,11 @@ theorem releaseNoRefillStranded_of_frame {st st' : SystemState} (h : st.releaseN
       (st.scheduler.replenishQueueOnCore c).entries) :
     st'.releaseNoRefillStranded := by
   intro s t hk
-  have hm := hA.getSchedContext?_map SchedContext.boundReleaseKey? (fun _ => rfl) s
-  have hk' : (st.getSchedContext? s).bind SchedContext.boundReleaseKey? = some t := by
+  have hm := hA.getSchedContext?_map st.heldReleaseKey? (fun _ => rfl) s
+  have hH : st'.heldReleaseKey? = st.heldReleaseKey? :=
+    funext (heldReleaseKey?_of_getTcb? hA.getTcb?)
+  rw [hH] at hk
+  have hk' : (st.getSchedContext? s).bind st.heldReleaseKey? = some t := by
     cases e : st.getSchedContext? s <;> cases e' : st'.getSchedContext? s <;>
       rw [e, e'] at hm <;> rw [e'] at hk <;> simp_all
   obtain ⟨c, hc⟩ := h s t hk'
@@ -2611,8 +2666,11 @@ theorem releasePlace_noRefillStranded {st : SystemState} (h : st.releaseNoRefill
   | true =>
     intro s' t hk
     have hm := (releasePlace_agree st c s).getSchedContext?_map
-      SchedContext.boundReleaseKey? (fun _ => rfl) s'
-    have hk' : (st.getSchedContext? s').bind SchedContext.boundReleaseKey? = some t := by
+      st.heldReleaseKey? (fun _ => rfl) s'
+    have hH : (st.releasePlace c s).heldReleaseKey? = st.heldReleaseKey? :=
+      funext (heldReleaseKey?_of_getTcb? (releasePlace_agree st c s).getTcb?)
+    rw [hH] at hk
+    have hk' : (st.getSchedContext? s').bind st.heldReleaseKey? = some t := by
       cases e : st.getSchedContext? s' <;> cases e' : (st.releasePlace c s).getSchedContext? s' <;>
         rw [e, e'] at hm <;> rw [e'] at hk <;> simp_all
     by_cases hs : s' = s
@@ -2623,7 +2681,7 @@ theorem releasePlace_noRefillStranded {st : SystemState} (h : st.releaseNoRefill
       | none => rw [e] at hk'; cases hk'
       | some sc =>
         rw [e] at hk'
-        simp only [Option.bind_some, SchedContext.boundReleaseKey?] at hk' ⊢
+        simp only [Option.bind_some, heldReleaseKey?] at hk' ⊢
         split at hk'
         · exact hk'
         · cases hk'

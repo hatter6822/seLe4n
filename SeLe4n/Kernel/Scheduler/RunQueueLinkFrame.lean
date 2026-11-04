@@ -1458,10 +1458,11 @@ theorem RefillsKeptOff.markReschedulePendingOnCore (P : SeLe4n.SchedContextId �
   .of_releaseSlots (.refl st) rfl
 
 theorem RefillsKeptOff.updateTcb (P : SeLe4n.SchedContextId → Prop) (st : SystemState)
-    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt) :
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hA : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      intro _ h; exact h) :
     RefillsKeptOff P (st.updateTcb tid f) st :=
-  .of_releaseSlots (.of_getSchedContext?_eq (updateTcb_getSchedContext? st tid f hInv))
-    (by rw [updateTcb_scheduler])
+  .of_releaseSlots (.updateTcb st tid f hInv hA) (by rw [updateTcb_scheduler])
 
 /-- A reschedule flag is not read by the agreement. -/
 theorem RunQueueStage.markReschedulePendingOnCore (st : SystemState) (c : CoreId) :
