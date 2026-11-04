@@ -5911,7 +5911,8 @@ Every kernel object has a decidable well-formedness predicate:
   (`v0.36.195`, WS-ZA ZA6.32).  The HAL enters every shared peripheral
   interrupt into `interruptEntry` (`lean_handle_interrupt`) in ZA3.1's form.
   The step (`handleInterruptOnCore`) signals the handler's notification with
-  the bound-aware signal on the executing core, badged with the line, and
+  the bound-aware signal on the executing core, with the badge of the
+  notification capability in the line's node (`Architecture.irqBinding?`), and
   masks the line until the handler acknowledges it; as seL4's `sendSignal`
   sets a woken thread's badge register, the signal (`interruptSignal`) stages
   the badge into the frame of the thread it wakes, and its `@[csimp]` form
@@ -5951,9 +5952,13 @@ Every kernel object has a decidable well-formedness predicate:
   `.irqHandlerClear` (47) empties it.  The last handler capability's delete
   runs `deletingIRQHandler` (the zombie loop empties the node's slot) and
   `deletedIRQHandler` (`retireIrqNode`, the line put at `IRQInactive` and
-  masked).  Each invocation has its decode, dispatch-arm, census, lock-set,
-  taint, enforcement, refusal, non-interference and run-queue coverage, and
-  the exerciser's issue, bind, clear and delete each read 0.
+  masked).  The issue writes in place on the slots' words, and so does the
+  bind when the node slot's delete is the plain one: the slot is emptied and
+  the copy's writes follow, which is the delete and the copy on every
+  well-formed object table (`irqHandlerSetNotification_inPlace_copy`).  Each
+  invocation has its decode, dispatch-arm, census, lock-set, taint,
+  enforcement, refusal, non-interference and run-queue coverage, and the
+  exerciser's issue, bind, clear and delete each read 0.
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged

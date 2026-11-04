@@ -10,7 +10,9 @@ and fault entries do.
 - **The step** (`handleInterruptOnCore`, `IPC/CrossCore/InterruptDelivery.lean`)
   is seL4's `handleInterrupt` on the executing core.  At a line with a bound
   handler it signals the notification with the bound-aware per-core signal,
-  badged with the line, then masks the line until the handler acknowledges it.
+  with the badge of the notification capability in the line's node
+  (`Architecture.irqBinding?`), then masks the line until the handler
+  acknowledges it.
   The signal (`interruptSignal`) is the syscall signal arm's: it clears the
   bound receiver's stash and stages the badge into the frame of the thread it
   wakes (seL4's `sendSignal` sets the woken thread's badge register).  Its
@@ -156,11 +158,27 @@ and fault entries do.
     slot through the zombie loop (`deletingIRQHandler`), then retires the
     node (`retireIrqNode`, `deletedIRQHandler`): the line goes to
     `IRQInactive` and is masked.
-  - **Coverage.**  Each invocation has its decode, its check-perform split
-    where the checks precede every write (`irqControlGetAdmitted` /
-    `irqControlGetPerform`, and the clear through `ofChecked`; the
-    notification bind's delete can be followed by a refused copy, so it stays
-    on the shared-state arm), and its dispatch-arm, census, lock-set,
+  - **In place.**  Each invocation has a check-perform split whose checks
+    precede every write.  The issue reads the slots' words
+    (`irqControlGetAdmittedAt` / `irqControlGetPerformAt`) and writes the
+    handler capability over the destination slot's own record
+    (`CNode.insertIrqHandlerCap`, `@[csimp]` `irqControlGetPerform_eq_impl`).
+    The bind's checks add the node slot's plain delete
+    (`irqHandlerSetNotificationInPlace`: an empty slot, or a capability that
+    finalises and retires nothing).  Its writes are then the slot emptied and
+    the copy's writes (`irqHandlerSetNotificationPerform`, `cspaceDeletePerform`
+    then `cspaceCopyPerform`).  On every well-formed object table these are
+    the delete and the copy (`irqHandlerSetNotification_inPlace_delete`,
+    `irqHandlerSetNotification_inPlace_copy`), and any other delete runs the
+    zombie loop and the checked copy as before.  `irqHandlerSetNotification_ok`
+    gives every consumer the delete-and-copy shape, and
+    `irqHandlerSetNotification_ok_cases` does the same for those that hold no
+    object-table invariant (`cspaceCopyPerform_runQueueStage`,
+    `cspaceCopyPerform_scheduler`, `cspaceCopyPerform_machine`).  The boot
+    gives the installed state its own issued-line set
+    (`SystemState.withFreshIrqLines`), so the first issue pays no copy of the
+    shared initial set.
+  - **Coverage.**  Each invocation has its decode and its dispatch-arm, census, lock-set,
     footprint (`irqControlGet_stepCovers`, `irqHandlerSetNotification_stepCovers`,
     `irqHandlerClear_stepCovers`), mapping-stage, run-queue, enforcement,
     refusal, taint and non-interference coverage.  The bind and the clear are
@@ -175,7 +193,9 @@ and fault entries do.
   - **The exerciser** issues, binds, clears and deletes the handlers on every
     pass (`irq-control-get`, `irq-handler-set-notification`,
     `irq-handler-clear`, `irq-handler-delete`), each pinned at 0 in
-    `scripts/qemu_exerciser_lib.sh`.
+    `scripts/qemu_exerciser_lib.sh`, first call and steady state.  The fault
+    scenarios' handler slot moves to 21 (`FAULT_HANDLER_SLOT`), since slot 20
+    holds the interrupt-control capability.
   - The registered "No IRQControl" debt row is deleted.  The reference
     dispatch's device arm stays on the existing reference-dispatch row.
 

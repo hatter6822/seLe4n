@@ -7596,6 +7596,12 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n -U '^    \(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites\.withFreshIrqLines$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshIrqLines_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_ok_cases($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n -U '^            RefusalCarrying\.ofChecked \(irqHandlerSetNotificationAdmitted st line srcCnode ncap\)\n              \(fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^              RefusalCarrying\.ofChecked \(irqControlGetAdmittedAt dstCnode dstSlot args\.line st\)\n                \(fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args\.line st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceCopyPerform_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPhysicalWrites_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPerCoreSlots_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
