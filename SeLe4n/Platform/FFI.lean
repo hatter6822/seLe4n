@@ -8,6 +8,7 @@
 -/
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.RefusalCarryingEntry
+import SeLe4n.Kernel.RoutedArms
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
@@ -3277,60 +3278,6 @@ entry's every failed-resolution site calls it with scalars, and equal to
   deliverSyscallCapFault ctx executingCore st tid (.capFault capWord inRecv e)
     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr
 
-/-- WS-ZA ZA1.3: the compiled `syscallDispatchFromAbi`.  The entry runs as
-`syscallEntryCheckedR`, whose refusal carries the state it was refused in, so
-the refusal arms read that state instead of keeping `stRegs` alive across the
-dispatch; a syscall that checks before it writes then owns the state it writes
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Equal to the specification through
-`syscallEntryCheckedR_eq`. -/
-@[inline] def syscallDispatchFromAbiImpl
-    (ctx : LabelingContext)
-    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr : UInt64)
-    (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
-  fun st =>
-    match (st.scheduler.currentOnCore executingCore) with
-    | none => .ok (.returns (Architecture.errorFrame .illegalState), st)
-    | some tid =>
-      if SeLe4n.Kernel.isIdleThreadId tid then
-        .ok (.returns (Architecture.errorFrame .illegalState), st) else
-      syscallEntryCheckedK ctx executingCore
-        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
-        (syscallRefusalOutcome tid
-          (fun s fault => .ok (.faulted, deliverSyscallCapFault ctx executingCore s tid fault
-            (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
-          (fun ke s => .ok (.returns (Architecture.errorFrame ke),
-            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
-          (fun st' => .ok (syscallReturnOutcome syscallId st' tid, st')))
-        (syscallArmOutcome
-          (fun ke s => .ok (.returns (Architecture.errorFrame ke),
-            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s))
-          (fun st' => .ok (syscallReturnOutcome syscallId st' tid, st')))
-        (syscallLookupOutcome
-          (fun s w b e => .ok (.faulted, deliverSyscallLookupFault ctx executingCore s tid w b e
-            syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr))
-          (fun ke s => .ok (.returns (Architecture.errorFrame ke),
-            recordSyscallRefusal ctx executingCore syscallId tid ke x0 s)))
-
-@[csimp] theorem syscallDispatchFromAbi_eq_impl :
-    @syscallDispatchFromAbi = @syscallDispatchFromAbiImpl := by
-  funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
-  unfold syscallDispatchFromAbiImpl syscallDispatchFromAbi
-  split
-  · rfl
-  · next tid hC =>
-    split
-    · rfl
-    rw [syscallEntryCheckedK_outcome_eq ctx executingCore
-      (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
-      (by rw [writeFfiRegistersToTcb_scheduler]; exact hC)]
-    · simp only [syscallRefusalOutcome, syscallEntryCheckedR_eq, RefusalCarrying.ofKernel]
-      rcases syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with _ | ⟨⟨⟩, st'⟩ <;> rfl
-    · intros; rfl
-
 /-- WS-ZA ZA4: a returning caller's boundary words, read off its post-state:
 `syscallReturnOutcome`'s words (`returnOutcomeWords_eq`) with a value shape's
 frame read register by register, so neither the frame nor the outcome is
@@ -3421,8 +3368,7 @@ theorem syscallDispatchFromAbiWords_eq
       elr spsr spEl0 x30 st = .ok (o, st')) :
     syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
       elr spsr spEl0 x30 st = (o.words, st') := by
-  rw [syscallDispatchFromAbi_eq_impl] at h
-  unfold syscallDispatchFromAbiImpl at h
+  unfold syscallDispatchFromAbi at h
   unfold syscallDispatchFromAbiWords
   (try dsimp only at h ⊢)
   split at h
@@ -3434,21 +3380,105 @@ theorem syscallDispatchFromAbiWords_eq
     · simp only [hI, Bool.false_eq_true, ↓reduceIte] at h ⊢
       have hCR : (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler.currentOnCore
           executingCore = some tid := by rw [writeFfiRegistersToTcb_scheduler]; exact hC
-      rw [syscallEntryCheckedK_outcome_eq ctx executingCore _ tid hCR] at h
-      rotate_left
-      · intros; rfl
       rw [syscallEntryCheckedK_outcome_eq ctx executingCore _ tid hCR]
       rotate_left
       · intros; rfl
-      simp only [syscallRefusalOutcome] at h ⊢
-      split at h
-      · next ke stRefused hE =>
-        split at h
-        · next fault hF => cases h; rfl
-        · next hF => cases h; rfl
-      · next st'' hE =>
+      simp only [syscallRefusalOutcome, syscallEntryCheckedR_eq, RefusalCarrying.ofKernel]
+      cases hE : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+      | error ke =>
+        simp only [hE] at h ⊢
+        cases hF : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+            (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke with
+        | some fault => simp only [hF] at h ⊢; cases h; rfl
+        | none => simp only [hF] at h ⊢; cases h; rfl
+      | ok r =>
+        obtain ⟨⟨⟩, st''⟩ := r
+        simp only [hE] at h ⊢
         cases h
         rw [returnOutcomeWords_eq]
+
+/-- WS-RC R2.B.5 (restated at the WS-RA type): The pure typed-ABI entry
+    point never returns `Except.error` — every kernel rejection is a
+    success-shaped `(SyscallOutcome, state)` pair whose outcome carries
+    the error on the `x1` label (`Architecture.errorFrame`).  This is the
+    structural witness that the export wrapper's `Except.error` arm is
+    vacuous.
+
+The proof unfolds `syscallDispatchFromAbi` and case-splits on the
+scheduler's `current` slot and on the `syscallEntryChecked` result;
+every branch produces an `.ok` value. -/
+theorem syscallDispatchFromAbi_total
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st : SystemState) :
+    ∃ (outcome : Architecture.SyscallOutcome) (st' : SystemState),
+      syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+        = Except.ok (outcome, st') := by
+  unfold syscallDispatchFromAbi
+  -- The function case-splits on `(st.scheduler.currentOnCore executingCore)`,
+  -- then on the `syscallEntryChecked` result.  Every branch produces `.ok`.
+  cases (st.scheduler.currentOnCore executingCore) with
+  | none =>
+      exact ⟨.returns (Architecture.errorFrame .illegalState), st, by simp⟩
+  | some tid =>
+      by_cases hI : SeLe4n.Kernel.isIdleThreadId tid = true
+      · exact ⟨.returns (Architecture.errorFrame .illegalState), st, by simp [hI]⟩
+      simp only [hI]
+      cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+              (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+      | error ke =>
+          cases hCap : syscallCapFaultOf SeLe4n.arm64DefaultLayout
+              (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke with
+          | some fault =>
+              exact ⟨.faulted,
+                     deliverSyscallCapFault ctx executingCore
+                       (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
+                       (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                       elr spsr,
+                     by simp [hCap]⟩
+          | none =>
+              exact ⟨.returns (Architecture.errorFrame ke),
+                     recordSyscallRefusal ctx executingCore syscallId tid ke x0
+                       (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5),
+                     by simp [hCap]⟩
+      | ok r =>
+          obtain ⟨_, st'⟩ := r
+          exact ⟨syscallReturnOutcome syscallId st' tid, st',
+                 by simp⟩
+
+/-- WS-ZA ZA1.3: the compiled `syscallDispatchFromAbi`: the words form
+(`syscallDispatchFromAbiWords`), its words read back as the outcome they name
+(`Architecture.SyscallOutcome.ofWords`), so the two forms of the dispatch share
+one body.  The entry runs as `syscallEntryCheckedR`, whose refusal carries the
+state it was refused in, so the refusal arms read that state instead of
+keeping `stRegs` alive across the dispatch; a syscall that checks before it
+writes then owns the state it writes (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).
+Equal to the specification through `syscallDispatchFromAbiWords_eq`. -/
+@[inline] def syscallDispatchFromAbiImpl
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr : UInt64)
+    (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
+  fun st =>
+    match syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st with
+    | (w, st') => .ok (Architecture.SyscallOutcome.ofWords w, st')
+
+@[csimp] theorem syscallDispatchFromAbi_eq_impl :
+    @syscallDispatchFromAbi = @syscallDispatchFromAbiImpl := by
+  funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  obtain ⟨o, st', h⟩ := syscallDispatchFromAbi_total ctx executingCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  rw [h]
+  unfold syscallDispatchFromAbiImpl
+  rw [syscallDispatchFromAbiWords_eq ctx executingCore syscallId x0 x1 x2 x3 x4 x5
+    ipcBufferAddr elr spsr spEl0 x30 st st' o h]
+  simp only [Architecture.SyscallOutcome.ofWords_words]
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04): the boot-pinned suspend reference path
@@ -4013,57 +4043,6 @@ opaque ffiIcIallu : BaseIO Unit
 -- ============================================================================
 -- WS-RC R2.B.5 — Correctness theorems for the syscall-dispatch bridge
 -- ============================================================================
-
-/-- WS-RC R2.B.5 (restated at the WS-RA type): The pure typed-ABI entry
-    point never returns `Except.error` — every kernel rejection is a
-    success-shaped `(SyscallOutcome, state)` pair whose outcome carries
-    the error on the `x1` label (`Architecture.errorFrame`).  This is the
-    structural witness that the export wrapper's `Except.error` arm is
-    vacuous.
-
-The proof unfolds `syscallDispatchFromAbi` and case-splits on the
-scheduler's `current` slot and on the `syscallEntryChecked` result;
-every branch produces an `.ok` value. -/
-theorem syscallDispatchFromAbi_total
-    (ctx : LabelingContext)
-    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
-    (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
-    (st : SystemState) :
-    ∃ (outcome : Architecture.SyscallOutcome) (st' : SystemState),
-      syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
-        = Except.ok (outcome, st') := by
-  unfold syscallDispatchFromAbi
-  -- The function case-splits on `(st.scheduler.currentOnCore executingCore)`,
-  -- then on the `syscallEntryChecked` result.  Every branch produces `.ok`.
-  cases (st.scheduler.currentOnCore executingCore) with
-  | none =>
-      exact ⟨.returns (Architecture.errorFrame .illegalState), st, by simp⟩
-  | some tid =>
-      by_cases hI : SeLe4n.Kernel.isIdleThreadId tid = true
-      · exact ⟨.returns (Architecture.errorFrame .illegalState), st, by simp [hI]⟩
-      simp only [hI]
-      cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-              (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
-      | error ke =>
-          cases hCap : syscallCapFaultOf SeLe4n.arm64DefaultLayout
-              (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke with
-          | some fault =>
-              exact ⟨.faulted,
-                     deliverSyscallCapFault ctx executingCore
-                       (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
-                       (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-                       elr spsr,
-                     by simp [hCap]⟩
-          | none =>
-              exact ⟨.returns (Architecture.errorFrame ke),
-                     recordSyscallRefusal ctx executingCore syscallId tid ke x0
-                       (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5),
-                     by simp [hCap]⟩
-      | ok r =>
-          obtain ⟨_, st'⟩ := r
-          exact ⟨syscallReturnOutcome syscallId st' tid, st',
-                 by simp⟩
 
 /-- The ABI dispatch never takes its `Except.error` arm (`syscallDispatchFromAbi_total`),
 so a caller may discharge that arm by `absurd` rather than keep the pre-state alive

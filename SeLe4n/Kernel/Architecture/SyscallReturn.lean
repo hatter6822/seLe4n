@@ -1706,6 +1706,19 @@ outcome nor its frame. -/
   (o.tagWord, o.mailboxFrame.x0, o.mailboxFrame.x1, o.mailboxFrame.x2, o.mailboxFrame.x3,
    o.mailboxFrame.x4, o.mailboxFrame.x5)
 
+/-- **The outcome the boundary's words name**: tag `0` the frame of the six
+words, `1` a blocked caller, any other tag a faulted one. -/
+@[inline] def ofWords :
+    UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 → SyscallOutcome
+  | (tag, w0, w1, w2, w3, w4, w5) =>
+    if tag = 0 then .returns { x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
+    else if tag = 1 then .blocks
+    else .faulted
+
+/-- An outcome's words name it: the boundary loses nothing of an outcome. -/
+theorem ofWords_words (o : SyscallOutcome) : ofWords o.words = o := by
+  cases o <;> rfl
+
 end SyscallOutcome
 
 /-- Does the caller's post-state IPC state mean the syscall **blocked**?
