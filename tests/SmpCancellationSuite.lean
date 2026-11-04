@@ -372,7 +372,7 @@ open SeLe4n.Testing
 #check @cancelledCallerDonation?_holder_holds_victim_donation
 #check @returnDonationToCancelledCaller_preserves_ipcInvariantFull
 #check @returnDonationToCancelledCaller_victim_tcb_rewrite
-#check @spliceThreadReplyFrameOut_preserves_ipcInvariantFull
+#check @cutThreadReplyFrameOut_preserves_ipcInvariantFull
 #check @restoredAndConsumed_congr
 #check @cancelIpcBlocking_reply_arm_eq
 #check @cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
@@ -699,7 +699,7 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt) :
     Lifecycle.Suspend.cancelIpcBlocking st victim tcb =
       restoredAndConsumed
-        (spliceThreadReplyFrameOut
+        (cutThreadReplyFrameOut
           (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb)
         victim tcb (some Architecture.cancelledIpcFrame) :=
   cancelIpcBlocking_reply_arm_eq st victim tcb ep rt hBlocked
@@ -2149,7 +2149,7 @@ private def runFrameHeadReclaimChecks : IO Unit := do
       ∧ cancelReclaimHead? stFrameHeadReclaim victimTid tcb = tcb.replyObject))
   assertBool "a reclaim excludes both removal members (no frame above, no frame below)"
     (decide (cancelSplicedFrameAbove? stFrameHeadReclaim tcb = none
-      ∧ cancelSplicedFrameBelow? stFrameHeadReclaim tcb = none))
+      ∧ cancelCutFrameBelow? stFrameHeadReclaim tcb = none))
   -- (iii) The reclaim runs: the reservation comes back to the victim, the server
   -- is unbound, the stack head is popped and the replenishment migrates home.
   let (st', sgi) := cancelIpcBlockingOnCore victimTid tcb bootCoreId stFrameHeadReclaim

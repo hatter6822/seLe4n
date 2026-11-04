@@ -683,19 +683,19 @@ theorem objectIndexFacts_of_writeAny {s s' : SystemState} (hW : finaliseWriteAny
 
 /-- **The splice keeps the object index well formed**: at most three reply
 stores, each at a key already indexed. -/
-theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSet_invExt (st : SystemState)
+theorem cutReplyFrameOutOrSelf_preserves_objectIndexSet_invExt (st : SystemState)
     (rid : SeLe4n.ReplyId) (hSet : st.objectIndexSet.table.invExt) :
-    (spliceReplyFrameOutOrSelf st rid).objectIndexSet.table.invExt := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    (cutReplyFrameOutOrSelf st rid).objectIndexSet.table.invExt := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hSet
-  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩ |
+  · rcases cutReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩ |
         ⟨r, below, b, _, _, _, _, _, hS⟩
     · rw [hEq]; exact hSet
     rotate_left
     · obtain ⟨s1, hS1, hS2⟩ := severReplyFrameBelowStores_cases hS
       exact SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 _ _ _
         (SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSet hS1) hS2
-    · rcases spliceReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
+    · rcases cutReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
         ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
       · exact SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 _ _ _
           (SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hSet hS1) hS2
@@ -721,16 +721,16 @@ theorem cancelIpcBlocking_replyArm_objectIndexFacts (st : SystemState) (c : SeLe
       hInv hSet hIdx
   have hS0 : s0.objectIndexSet.table.invExt :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSet_invExt st c t hSet
-  let s1 := spliceThreadReplyFrameOut s0 t
-  have hI1 : s1.objects.invExt := spliceThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
+  let s1 := cutThreadReplyFrameOut s0 t
+  have hI1 : s1.objects.invExt := cutThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
   have hC1 : SeLe4n.Model.objectIndexSetComplete s1 :=
-    spliceThreadReplyFrameOut_preserves_objectIndexSetComplete s0 t hI0 hS0 hC0
+    cutThreadReplyFrameOut_preserves_objectIndexSetComplete s0 t hI0 hS0 hC0
   have hS1 : s1.objectIndexSet.table.invExt := by
-    show (spliceThreadReplyFrameOut s0 t).objectIndexSet.table.invExt
-    unfold spliceThreadReplyFrameOut
+    show (cutThreadReplyFrameOut s0 t).objectIndexSet.table.invExt
+    unfold cutThreadReplyFrameOut
     cases t.replyObject with
     | none => exact hS0
-    | some rid => exact spliceReplyFrameOutOrSelf_preserves_objectIndexSet_invExt s0 rid hS0
+    | some rid => exact cutReplyFrameOutOrSelf_preserves_objectIndexSet_invExt s0 rid hS0
   let s2 := Lifecycle.Suspend.restoreToReadyCancelled s1 c
   have hI2 : s2.objects.invExt := restoreToReadyCancelled_preserves_objects_invExt s1 c hI1
   have hC2 : SeLe4n.Model.objectIndexSetComplete s2 :=
@@ -1025,8 +1025,8 @@ theorem finaliseReplyCallerCancel_binding {s : SystemState} {c : SeLe4n.ThreadId
   let s0 := Lifecycle.Suspend.returnDonationToCancelledCaller s c t
   have hI0 : s0.objects.invExt :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt s c t hInv
-  let s1 := spliceThreadReplyFrameOut s0 t
-  have hI1 : s1.objects.invExt := spliceThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
+  let s1 := cutThreadReplyFrameOut s0 t
+  have hI1 : s1.objects.invExt := cutThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
   let s2 := Lifecycle.Suspend.restoreToReadyCancelled s1 c
   have hI2 : s2.objects.invExt := restoreToReadyCancelled_preserves_objects_invExt s1 c hI1
   let s3 := Lifecycle.Suspend.consumeReplyLink s2 c t
@@ -1035,7 +1035,7 @@ theorem finaliseReplyCallerCancel_binding {s : SystemState} {c : SeLe4n.ThreadId
     unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
   have hSame : sameSchedContextBindings s0 (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
     rw [hArm]
-    exact ((spliceThreadReplyFrameOut_sameSchedContextBindings s0 t hI0).trans
+    exact ((cutThreadReplyFrameOut_sameSchedContextBindings s0 t hI0).trans
       (restoreToReadyStaging_sameSchedContextBindings s1 c _ hI1)).trans
       ((consumeReplyLink_sameSchedContextBindings s2 c t hI2).trans
         (sameSchedContextBindings_of_objectsAgreeOffReplyLinks
@@ -1118,8 +1118,8 @@ theorem finaliseReplyCallerCancel_otherBinding {s : SystemState} {c y : SeLe4n.T
   let s0 := Lifecycle.Suspend.returnDonationToCancelledCaller s c t
   have hI0 : s0.objects.invExt :=
     Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt s c t hInv
-  let s1 := spliceThreadReplyFrameOut s0 t
-  have hI1 : s1.objects.invExt := spliceThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
+  let s1 := cutThreadReplyFrameOut s0 t
+  have hI1 : s1.objects.invExt := cutThreadReplyFrameOut_preserves_objects_invExt s0 t hI0
   let s2 := Lifecycle.Suspend.restoreToReadyCancelled s1 c
   have hI2 : s2.objects.invExt := restoreToReadyCancelled_preserves_objects_invExt s1 c hI1
   let s3 := Lifecycle.Suspend.consumeReplyLink s2 c t
@@ -1127,7 +1127,7 @@ theorem finaliseReplyCallerCancel_otherBinding {s : SystemState} {c y : SeLe4n.T
     unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
   have hSame : sameSchedContextBindings s0 (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
     rw [hArm]
-    exact ((spliceThreadReplyFrameOut_sameSchedContextBindings s0 t hI0).trans
+    exact ((cutThreadReplyFrameOut_sameSchedContextBindings s0 t hI0).trans
       (restoreToReadyStaging_sameSchedContextBindings s1 c _ hI1)).trans
       ((consumeReplyLink_sameSchedContextBindings s2 c t hI2).trans
         (sameSchedContextBindings_of_objectsAgreeOffReplyLinks

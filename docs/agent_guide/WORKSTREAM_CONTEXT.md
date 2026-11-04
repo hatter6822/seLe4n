@@ -3151,7 +3151,7 @@ code may assume:
   last one safe rather than what the pack rules out.
 - **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
   residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
-  is `consumeReplyLink (restoreToReadyCancelled (spliceThreadReplyFrameOut
+  is `consumeReplyLink (restoreToReadyCancelled (cutThreadReplyFrameOut
   (returnDonationToCancelledCaller st tid tcb) tcb) tid) tid tcb` — seL4-MCS's
   `reply_remove` (the splice joined the chain at `v0.35.4`; this sentence
   omitted it for fifty-nine cuts).  Before it, the server
@@ -4227,7 +4227,7 @@ code may assume:
   `objectIndexSetComplete` and the reply arm's composite carries it from the
   return through the splice and the restore
   (`restoreToReadyStaging_preserves_objectIndexSetComplete`,
-  `spliceThreadReplyFrameOut_preserves_objectIndexSetComplete`).  (5) **The
+  `cutThreadReplyFrameOut_preserves_objectIndexSetComplete`).  (5) **The
   census knows both**: `consumeCallerReplyLink` is a `chainWritePrimitives`
   entry — a pure transition reaching for it bare is WS-RM's defect in the other
   calling convention — and `consumeReplyLink` is registered as a site stating its
@@ -4746,7 +4746,7 @@ code may assume:
   must respect.  **Everything but the reciprocal pair is proved once**
   (`storeObject_reply_stackLinks_preserves_nonReciprocal`) and assembled twice,
   because the two bundles differ in the pair and nowhere else.  **The splice's
-  store chain has one owner** (`spliceReplyFrameOut_transport`, over any
+  store chain has one owner** (`cutReplyFrameOut_transport`, over any
   predicate a caller-preserving Reply store carries): which stores run, in what
   order, with which lookups surviving between them is a fact about the
   *operation*, and a second copy per bundle is how the two would come to disagree

@@ -361,18 +361,18 @@ theorem cancelReplyPrefix_linkFrame (st : SystemState) (v : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyStaging
-          (spliceThreadReplyFrameOut
+          (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v frame)
         v tcbV).getTcb? x).map TCB.linkFrame
       = (st.getTcb? x).map TCB.linkFrame := by
   have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
     st v tcbV hInv
-  have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+  have hS := cutThreadReplyFrameOut_preserves_objects_invExt
     (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
   rw [consumeReplyLink_map_frame TCB.linkFrame (fun _ => rfl) _ v tcbV
       (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) x,
     restoreToReadyStaging_linkFrame_frame _ v _ hS x,
-    spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
+    cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
     returnDonationToCancelledCaller_linkFrame_frame st v tcbV hInv x]
 
 /-- **WS-RR RR8.11: the teardown moves no thread's home core.**  The composite of
@@ -473,10 +473,10 @@ theorem cancelIpcBlocking_stateMono (st : SystemState) (v : SeLe4n.ThreadId)
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     exact (((returnDonationToCancelledCaller_stateMono st v tcbV hInv).trans
-      (SystemState.StateMono.of_getTcb (spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR))).trans
+      (SystemState.StateMono.of_getTcb (cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR))).trans
       (restoreToReadyStaging_stateMono _ v _ hS)).trans
       ((SystemState.StateMono.of_stateFields fun t =>
         consumeReplyLink_map_frame (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) (fun _ => rfl) _ v tcbV

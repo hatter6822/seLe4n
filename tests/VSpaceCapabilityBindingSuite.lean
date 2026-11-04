@@ -3023,7 +3023,7 @@ private def runContextlessStackChecks : IO Unit := do
 removal splices it out (the frame above links down to the frame below, which
 links back up), so the stack stays whole and the removed reply is retired.
 With `runContextlessStackChecks` this runs both writing arms of the compiled
-splice (`spliceReplyFrameStoresInPlace`, `severReplyFrameBelowStoresInPlace`)
+splice (`cutReplyFrameStoresInPlace`, `severReplyFrameBelowStoresInPlace`)
 through the final delete's `@[csimp]` form. -/
 private def runMiddleReplyFinaliseChecks : IO Unit := do
   IO.println "-- §5o a reply stack's middle reply is spliced out and retired on its final delete (WS-ZA ZA5.4 part 25)"

@@ -2444,10 +2444,10 @@ theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
     objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
   rw [removeCallerReplyFrame_eq] at hStep
   refine consumeCallerReply_preserves_objectIndexSetComplete_and_invExt _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) ?_
-    (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) ?_
+    (cutReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
       hComplete) hStep
-  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hObjInv
+  obtain ⟨m1, m2, h1, h2, h3⟩ := cutReplyFrameOutOrSelf_store_cases st rid hObjInv
   have hM1 : m1.objectIndexSet.table.invExt := by
     rcases h1 with rfl | ⟨k, _, _, _, hS⟩
     · exact hObjSetInv

@@ -1727,7 +1727,7 @@ load-bearing all the same (it is seL4's `reply_remove`: without the cleared
 `next` it names a frame whose `prev` no longer answers it, which
 `nextLinkReciprocal` refuses), and it would become
 *observable* the moment `consumed` changed, so the half below drives
-`frozenSpliceReplyFrameOut` directly with no consume after it. -/
+`frozenCutReplyFrameOut` directly with no consume after it. -/
 private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨17⟩], badge := none }
   let bottomRid : SeLe4n.ReplyId := ⟨507⟩
@@ -1832,7 +1832,7 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   -- beside it, so the two are compared store for store rather than each against
   -- its own expectation.
   expect "FO-043: the frozen PRIMITIVE writes all three links, clearing both of the cut frame's own"
-    (match (frozenSpliceReplyFrameOut (freeze chain) midRid).toOption with
+    (match (frozenCutReplyFrameOut (freeze chain) midRid).toOption with
      | some post =>
          (match post.getReply? topRid with
           | some t => t.prev == some bottomRid
@@ -1845,7 +1845,7 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
           | none   => false)
      | none => false)
   expect "FO-043: ...exactly as the live primitive does"
-    (match (SeLe4n.Kernel.spliceReplyFrameOut chain.state midRid).toOption with
+    (match (SeLe4n.Kernel.cutReplyFrameOut chain.state midRid).toOption with
      | some post =>
          (match post.getReply? topRid with
           | some t => t.prev == some bottomRid

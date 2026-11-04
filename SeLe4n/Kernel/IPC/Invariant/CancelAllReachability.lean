@@ -1242,15 +1242,15 @@ end NtfnFrame
 
 namespace NtfnFrame
 
-/-- A thread's reply frame spliced off its stack: at most three replies
+/-- A thread's reply frame cut off its stack: at most three replies
 rewritten. -/
-theorem spliceThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
-    NtfnFrame st (SeLe4n.Kernel.spliceThreadReplyFrameOut st t) := by
-  unfold SeLe4n.Kernel.spliceThreadReplyFrameOut
+theorem cutThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
+    NtfnFrame st (SeLe4n.Kernel.cutThreadReplyFrameOut st t) := by
+  unfold SeLe4n.Kernel.cutThreadReplyFrameOut
   cases t.replyObject with
   | none => exact .refl st
   | some rid =>
-    obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hInv
+    obtain ⟨m1, m2, h1, h2, h3⟩ := cutReplyFrameOutOrSelf_store_cases st rid hInv
     have step : ∀ {a b : SystemState}, a.objects.invExt →
         (b = a ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply), a.objects[k.toObjId]? = some (.reply o) ∧
           storeObject k.toObjId (.reply o') a = .ok ((), b)) →
@@ -1833,10 +1833,10 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
   have hEq := cancelIpcBlocking_replyArm_unfold s c t hB
   generalize hR0 : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = R at *
   -- The cancel, step by step.
-  have g1 := FinaliseFrameAny.spliceThreadReplyFrameOut R t g0.invExt
-  generalize hS1 : spliceThreadReplyFrameOut R t = s1 at g1
+  have g1 := FinaliseFrameAny.cutThreadReplyFrameOut R t g0.invExt
+  generalize hS1 : cutThreadReplyFrameOut R t = s1 at g1
   have hAt1 : s1.objects[c.toObjId]? = some (.tcb tR) := by
-    rw [← hS1]; exact spliceThreadReplyFrameOut_tcb_eq R t g0.invExt c.toObjId tR hAtR
+    rw [← hS1]; exact cutThreadReplyFrameOut_tcb_eq R t g0.invExt c.toObjId tR hAtR
   have hLk1 : lookupTcb s1 c = some tR := lookupTcb_of_objects_of_not_reserved _ c tR hAt1 hNotRes
   have hR2 : FinaliseFrameAny s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
@@ -1844,7 +1844,7 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
   have g3 := FinaliseFrameAny.consumeReplyLink _ c t hR2.invExt
   have g4 := FinaliseFrameAny.unlinkReplyWaiterOpt _ c t.blockingServer? g3.invExt
   rw [hS1] at hEq
-  have n1 : NtfnFrame R s1 := hS1 ▸ NtfnFrame.spliceThreadReplyFrameOut R t g0.invExt
+  have n1 : NtfnFrame R s1 := hS1 ▸ NtfnFrame.cutThreadReplyFrameOut R t g0.invExt
   have n2 : NtfnFrame s1 (Lifecycle.Suspend.restoreToReadyCancelled s1 c) :=
     NtfnFrame.restoreToReadyStaging s1 c _ tR g1.invExt hLk1
       (fun o e => by rw [hIpcR, hB] at e; cases e)
@@ -1882,7 +1882,7 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
         (propagatePipChainCrossCore_replyViews_eq _ sv _ _ hInvM) hRWM
   -- The donation chains.
   have hC1 : donationChainWellFormed s1 := by
-    rw [← hS1]; exact spliceThreadReplyFrameOut_preserves_donationChainWellFormed R t g0.invExt hC0
+    rw [← hS1]; exact cutThreadReplyFrameOut_preserves_donationChainWellFormed R t g0.invExt hC0
   have hC2 : donationChainWellFormed (Lifecycle.Suspend.restoreToReadyCancelled s1 c) := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact donationChainWellFormed_of_frame
@@ -1903,13 +1903,13 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
       rw [hRO] at hr; cases hr
       have hq1 := hRestR _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mp hq)
       -- The spliced frame's upward link is its pre-state one, or a frame link.
-      rcases spliceThreadReplyFrameOut_cases R t with e1 | ⟨rid0, hr0, e1⟩
+      rcases cutThreadReplyFrameOut_cases R t with e1 | ⟨rid0, hr0, e1⟩
       · rw [← hS1, e1, hRid, hPreR] at hq1
         have hrq : rq = rR := by cases hq1; rfl
         exact hNotHeadPre sc (by rw [← hrq]; exact e)
       · rw [hRO] at hr0; cases hr0
         rw [← hS1] at hq1
-        rcases spliceReplyFrameOut_cases e1 with e2 | ⟨r1, above, a1, hR1, hN1, hA1, hP1, hSt⟩ |
+        rcases cutReplyFrameOut_cases e1 with e2 | ⟨r1, above, a1, hR1, hN1, hA1, hP1, hSt⟩ |
             ⟨r1, below, b1, hR1, hN1, _, hB1, hBn1, hSt⟩
         · rw [e2, hRid, hPreR] at hq1
           have hrq : rq = rR := by cases hq1; rfl
@@ -1920,7 +1920,7 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
           rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hq1] at hRv
           cases hRv
           exact absurd e (by simp [hN1])
-        · obtain ⟨rp, hrp, -, hnx⟩ := spliceReplyFrameStores_reply_caller_and_headLink g0.invExt
+        · obtain ⟨rp, hrp, -, hnx⟩ := cutReplyFrameStores_reply_caller_and_headLink g0.invExt
             hR1 hN1 hA1 hP1 hSt _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mpr hq1)
           rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPreR] at hrp
           have hrp' : rp = rR := by cases hrp; rfl
@@ -1931,12 +1931,12 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
     refine consumeReplyLink_preserves_donationChainWellFormed _ c t hR2.invExt hC2
       hNH (fun rid a ra hr ha => ?_) (fun rid rq hr hq => ?_)
     · rw [hRO] at hr; cases hr
-      exact spliceThreadReplyFrameOut_unreferenced R t _ g0.invExt hC0 hRO a ra
+      exact cutThreadReplyFrameOut_unreferenced R t _ g0.invExt hC0 hRO a ra
         (by rw [hS1]; exact hRestR _ ra ha)
     · have hq1 := hRestR _ rq ((SystemState.getReply?_eq_some_iff _ _ _).mp hq)
       have hRid' := hr
       rw [hRO] at hRid'; cases hRid'
-      exact spliceThreadReplyFrameOut_cut_prev_none R t _ g0.invExt hC0 hRO rq
+      exact cutThreadReplyFrameOut_cut_prev_none R t _ g0.invExt hC0 hRO rq
         (by rw [hS1]; exact (SystemState.getReply?_eq_some_iff _ _ _).mpr hq1)
         (fun sc => hNH _ rq sc hr hq)
   have hC4 : donationChainWellFormed (Lifecycle.Suspend.cancelIpcBlocking s c t) := by
@@ -2127,13 +2127,13 @@ theorem retireFinalisedObject_preserves_ipcReachable (ec : Concurrency.CoreId)
 
 
 /-- **The compiled splice keeps the donation chain.**  The in-place form a final
-delete runs is `spliceReplyFrameOutOrSelf` (`spliceReplyFrameOutOrSelfInPlace_eq`),
+delete runs is `cutReplyFrameOutOrSelf` (`cutReplyFrameOutOrSelfInPlace_eq`),
 so it keeps `donationChainWellFormed` for the same reason. -/
-theorem spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed (st : SystemState)
+theorem cutReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed (st : SystemState)
     (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
-    donationChainWellFormed (spliceReplyFrameOutOrSelfInPlace st rid) := by
-  rw [spliceReplyFrameOutOrSelfInPlace_eq]
-  exact spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed st rid hInv hChain
+    donationChainWellFormed (cutReplyFrameOutOrSelfInPlace st rid) := by
+  rw [cutReplyFrameOutOrSelfInPlace_eq]
+  exact cutReplyFrameOutOrSelf_preserves_donationChainWellFormed st rid hInv hChain
 
 /-- **The compiled consume keeps the donation chain** under the premises the
 link form needs: the reply heads no stack, no frame's `prev` names it, and its own `prev` is clear.  It is

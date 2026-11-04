@@ -1195,20 +1195,20 @@ removal's splice writes below the cut is the one this arm's footprint declares.
 
 The reply footprints resolve their below-frame member through
 `answeredReplyFrameBelow?`, and the operation resolves its own through
-`spliceFrameBelow?` on the answered caller's reply object; `spliceFrameBelow?`'s
+`cutFrameBelow?` on the answered caller's reply object; `cutFrameBelow?`'s
 two extra refusals make its answer strictly narrower, which is the direction a
 footprint must satisfy.  Lifted through `answeredReplyObject?` -- the one
 expression the arm's existing reply member also comes from -- so the footprint and
 the transition cannot disagree about *which* frame is answered either. -/
-theorem spliceFrameBelow?_mem_answeredReplyFrameBelow? (st : SystemState)
+theorem cutFrameBelow?_mem_answeredReplyFrameBelow? (st : SystemState)
     (target : SeLe4n.ThreadId) (rid above below : SeLe4n.ReplyId) (r b : Reply)
     (hRid : answeredReplyObject? st target = some rid)
     (hR : st.getReply? rid = some r)
     (hAbove : answeredReplyFrameAbove? st target = some above)
-    (h : spliceFrameBelow? st rid r above = some (below, b)) :
+    (h : cutFrameBelow? st rid r above = some (below, b)) :
     answeredReplyFrameBelow? st target = some below := by
   rw [answeredReplyFrameBelow?_eq st target rid hRid]
-  refine spliceFrameBelow?_mem_replyFrameBelow? hR ?_ h
+  refine cutFrameBelow?_mem_replyFrameBelow? hR ?_ h
   rw [answeredReplyFrameAbove?_eq_bind, hRid] at hAbove
   exact hAbove
 
@@ -3020,7 +3020,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove
 declared write of the resolved `.reply` footprint too — the second half of
 `reply_remove`'s write set.
 
-HP6 makes `spliceReplyFrameOutOrSelf` a splice, which patches the frame below
+HP6 makes `cutReplyFrameOutOrSelf` a splice, which patches the frame below
 the cut to point past it (`next := .frame above`).  A footprint that names only
 the frame above would then be **false** of the operation, which this project
 rates worse than a wide one — so the member is declared here, one phase before
@@ -3031,7 +3031,7 @@ The resolver is `answeredReplyFrameBelow?`: the answered frame's `prev` unless
 it heads a stack.  Since `v0.36.136` it is declared for a frame with nothing above
 it too, because the removal of a contextless stack top severs the frame below
 (`severFrameBelow_mem_answeredReplyFrameBelow?`); that arm writes the cut frame
-and the frame below and no frame above, so it is inside the mid-stack splice's
+and the frame below and no frame above, so it is inside the mid-stack cut's
 members and the *reachable* footprint does not widen.  That is why HP3.2 moved
 the unconditional `.replyRecv` bound (19 → 20) and left the two reachable ones
 at eighteen and seventeen. -/

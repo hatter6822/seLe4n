@@ -88,7 +88,7 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
 chain.
 
 Two outcomes, and the second is the whole point of the workstream.  The reply
-leg's last step is `removeCallerReplyFrame`, which splices the answered frame
+leg's last step is `removeCallerReplyFrame`, which cuts the answered frame
 out from between its neighbours and then consumes the caller link.  On a frame that heads
 no scheduling context that restores `Reply.wellFormed` outright (RM2's
 `removeCallerReplyFrame_preserves_donationChainWellFormed`).  On a frame that

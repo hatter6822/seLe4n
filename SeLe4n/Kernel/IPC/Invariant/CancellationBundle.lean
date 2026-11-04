@@ -144,12 +144,12 @@ theorem cancelIpcBlocking_victim_ready
     obtain ⟨tR, hAtR, _⟩ :=
       Lifecycle.Suspend.returnDonationToCancelledCaller_tcb_lookup st v tcbV hObjInv
         v.toObjId tcbV hAt
-    have hIX : (spliceThreadReplyFrameOut
+    have hIX : (cutThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).objects.invExt :=
-      spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hIR
-    have hAtX := spliceThreadReplyFrameOut_tcb_eq _ tcbV hIR v.toObjId tR hAtR
+      cutThreadReplyFrameOut_preserves_objects_invExt _ tcbV hIR
+    have hAtX := cutThreadReplyFrameOut_tcb_eq _ tcbV hIR v.toObjId tR hAtR
     unfold restoredAndConsumed
-    have hGetX : (spliceThreadReplyFrameOut
+    have hGetX : (cutThreadReplyFrameOut
         (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV).getTcb? v = some tR :=
       (SystemState.getTcb?_eq_some_iff _ v tR).mpr hAtX
     have hAtY := restoreToReadyStaging_objects_self _ v (some Architecture.cancelledIpcFrame) tR
@@ -175,7 +175,7 @@ theorem cancelIpcBlocking_victim_ready
       rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e]
       rw [Lifecycle.Suspend.consumeReplyLink_some _ v tcbV rid hRO] at h
       have hIY : (Lifecycle.Suspend.restoreToReadyStaging
-          (spliceThreadReplyFrameOut
+          (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v
           (some Architecture.cancelledIpcFrame)).objects.invExt :=
         Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hIX
@@ -357,14 +357,14 @@ theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
         SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId
           scId.toObjId _ (by simpa using Ne.symm hk) hInv]
 
-/-- WS-RR RR8.11: the frame splice writes Reply objects only. -/
-theorem spliceThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
+/-- WS-RR RR8.11: the frame cut writes Reply objects only. -/
+theorem cutThreadReplyFrameOut_getSchedContext?_eq (st : SystemState)
     (tcb : TCB) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (spliceThreadReplyFrameOut st tcb).getSchedContext? scId = st.getSchedContext? scId := by
-  unfold spliceThreadReplyFrameOut
+    (cutThreadReplyFrameOut st tcb).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold cutThreadReplyFrameOut
   cases tcb.replyObject with
   | none => rfl
-  | some rid => exact spliceReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv scId
+  | some rid => exact cutReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv scId
 
 /-- WS-RR RR8.11: the reply-link teardown writes a TCB and a Reply, so it writes
 no scheduling context — RR8.5's projection of the reply path's own consume, whose
@@ -449,14 +449,14 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     dsimp only
     rw [(SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).getSchedContext?,
       consumeReplyLink_getSchedContext?_eq _ v tcbV
         (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
-      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR, hReclaim]
+      cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR, hReclaim]
 
 /-- **WS-RR RR8.11: the teardown writes at most ONE scheduling context** — the one
 the reclaim hands back to the cancelled caller — so every other context reads
@@ -543,7 +543,7 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     dsimp only
     refine SystemState.ReleaseLinksAgree.trans (.of_getSchedContext? fun s => ?_)
@@ -552,7 +552,7 @@ theorem cancelIpcBlocking_releaseStateAgree (st : SystemState) (v : SeLe4n.Threa
       consumeReplyLink_getSchedContext?_eq _ v tcbV
         (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
-      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
+      cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
 
 /-- WS-ZA ZA6.4: the cancelled caller's donation return keeps every context's
 refill view (`returnDonatedSchedContext_refillViewsKept`). -/
@@ -602,7 +602,7 @@ theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadI
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     dsimp only
     refine RefillViewsKept.trans (.of_getSchedContext?_eq fun s => ?_)
@@ -611,7 +611,7 @@ theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadI
       consumeReplyLink_getSchedContext?_eq _ v tcbV
         (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
-      spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
+      cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR]
 
 /-- WS-ZA ZA6.6: the restore writes one thread's IPC fields and frame, not its
 yield code. -/
@@ -671,7 +671,7 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
       (some Architecture.cancelledIpcFrame) hS
@@ -683,8 +683,8 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
       (consumeReplyLink_map_frame TCB.yieldToCode (fun _ => rfl) _ v tcbV hU)
       (consumeReplyLink_getSchedContext?_eq _ v tcbV hU)) ?_
     refine YieldLinksKept.trans (restoreToReadyStaging_yieldLinksKept _ v _ hS) ?_
-    exact (YieldLinksKept.of_getTcb?_eq (spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR)
-      (spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)).trans
+    exact (YieldLinksKept.of_getTcb?_eq (cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR)
+      (cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)).trans
       (returnDonationToCancelledCaller_yieldLinksKept st v tcbV hInv)
 
 /-- WS-SM SM6.E (resolution frame) / **WS-RR RR8.11**: the teardown never moves
@@ -836,18 +836,18 @@ theorem consumeReplyLink_tableReferenceFrame (st : SystemState) (tid : SeLe4n.Th
   · next rid _ =>
     exact consumeCallerReply_tableReferenceFrame hInv (SystemState.consumeCallerReply_eq_link _ tid rid)
 
-/-- The cancelled caller's reply-frame splice rewrites replies only. -/
-theorem spliceThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : TCB)
+/-- The cancelled caller's reply-frame cut rewrites replies only. -/
+theorem cutThreadReplyFrameOut_tableReferenceFrame (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
-    SystemState.TableReferenceFrame st (spliceThreadReplyFrameOut st tcb) := by
-  unfold spliceThreadReplyFrameOut
+    SystemState.TableReferenceFrame st (cutThreadReplyFrameOut st tcb) := by
+  unfold cutThreadReplyFrameOut
   split
   · exact .refl _
   · next rid _ =>
-    rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    rcases cutReplyFrameOutOrSelf_cases st rid with h | h
     · rw [h]; exact .refl _
     · exact fun oid => by
-        rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+        rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
         · rw [e]
         · rw [h1, h2]; rfl
 
@@ -898,13 +898,13 @@ theorem cancelIpcBlocking_tableReferenceFrame (st : SystemState) (victim : SeLe4
   | blockedOnReply _ _ =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st victim tcb hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb hR
     have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ victim
       (some Architecture.cancelledIpcFrame) hS
     dsimp only
     have f3 := ((returnDonationToCancelledCaller_tableReferenceFrame st victim tcb hInv).trans
-      (spliceThreadReplyFrameOut_tableReferenceFrame _ tcb hR)).trans
+      (cutThreadReplyFrameOut_tableReferenceFrame _ tcb hR)).trans
       (restoreToReadyStaging_tableReferenceFrame _ victim (some Architecture.cancelledIpcFrame) hS)
     have f4 := f3.trans (consumeReplyLink_tableReferenceFrame _ victim tcb hU)
     exact f4.trans (.of_agreeOffRunLinks

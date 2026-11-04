@@ -667,21 +667,21 @@ theorem returnDonationToCancelledCaller_preserves_projection
 
 /-- `v0.35.4`, restated for the splice at **WS-HP HP6.4**: the cancelled caller's
 frame removal preserves the projection — the identity where there is nothing to
-remove, one `spliceReplyFrameOut` otherwise.
+remove, one `cutReplyFrameOut` otherwise.
 
 The splice writes the frame *below* the cut at the intermediate state, so the index
 set's well-formedness has to reach that state; `hSetInv` is what carries it, and it
 is the one hypothesis this gained when the sever became a splice. -/
-theorem spliceThreadReplyFrameOut_preserves_projection
+theorem cutThreadReplyFrameOut_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tcb : TCB)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (spliceThreadReplyFrameOut st tcb)
+    projectState ctx observer (cutThreadReplyFrameOut st tcb)
       = projectState ctx observer st := by
-  rcases spliceThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
+  rcases cutThreadReplyFrameOut_cases st tcb with h | ⟨_, _, h⟩
   · rw [h]
-  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hSetInv hObjInv h
+  · exact cutReplyFrameOut_preserves_projection ctx observer hIdxComplete hSetInv hObjInv h
 
 /-- **WS-RR RR2.18: the teardown projection, discharged on the reply arm.**
 
@@ -719,7 +719,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   -- one — the projection erases the binding fields it touches.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb).objects.invExt :=
     returnDonationToCancelledCaller_preserves_objects_invExt st victim tcb hObjInv
-  -- `v0.35.4`: the arm's fifth write is the frame splice, invisible to every
+  -- `v0.35.4`: the arm's fifth write is the frame cut, invisible to every
   -- observer for the same reason as the return — it writes Reply stack links
   -- only, which the projection strips.  It reads the index completeness the return
   -- carries forward.
@@ -727,27 +727,27 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
     st victim tcb hObjInv hObjSetInv hIdxComplete
   have hSetInvR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSet_invExt
     st victim tcb hObjSetInv
-  have hInvD : (spliceThreadReplyFrameOut
+  have hInvD : (cutThreadReplyFrameOut
       (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb).objects.invExt :=
-    spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
+    cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
   -- WS-RR RR8.5: the teardown is the reply path's consume, whose projection
   -- theorem reads the index completeness of the state it runs on — carried
   -- here through the splice and the restore, neither of which touches the index.
   have hCompD : SeLe4n.Model.objectIndexSetComplete
       (Lifecycle.Suspend.restoreToReadyCancelled
-        (spliceThreadReplyFrameOut
+        (cutThreadReplyFrameOut
           (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
     Lifecycle.Suspend.restoreToReadyCancelled_preserves_objectIndexSetComplete _ victim hInvD
-      (spliceThreadReplyFrameOut_preserves_objectIndexSetComplete _ tcb hInvR hSetInvR hCompR)
+      (cutThreadReplyFrameOut_preserves_objectIndexSetComplete _ tcb hInvR hSetInvR hCompR)
   have h1 : projectState ctx observer
       (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (spliceThreadReplyFrameOut
+          (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim)
         victim tcb)
       = projectState ctx observer
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (spliceThreadReplyFrameOut
+          (cutThreadReplyFrameOut
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
     consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh hCompD
       (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvD)
@@ -757,7 +757,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   exact h1.trans
     ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
       hInvD).trans
-      ((spliceThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hSetInvR
+      ((cutThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hSetInvR
         hInvR).trans
         (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
           hIdxComplete hObjSetInv)))

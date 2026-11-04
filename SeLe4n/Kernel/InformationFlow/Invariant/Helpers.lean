@@ -909,15 +909,15 @@ The frame below the cut is written at the *intermediate* state, so its index
 membership is read there and carried forward by the first store — the shape
 `storeDonationFramePush_preserves_projection` already uses for its own second
 write, and the reason this gained `hSetInv` when the sever became a splice. -/
-theorem spliceReplyFrameOut_preserves_projection
+theorem cutReplyFrameOut_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt)
-    (h : spliceReplyFrameOut st rid = .ok st') :
+    (h : cutReplyFrameOut st rid = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
+  rcases cutReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩ |
       ⟨r, below, b, hR, hN, _, hB, hBn, hS⟩
   · rfl
   rotate_left
@@ -943,7 +943,7 @@ theorem spliceReplyFrameOut_preserves_projection
       (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
       hInv1 hS2, hP1]
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
-    rcases spliceReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
+    rcases cutReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
       ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
     · have hP1 : projectState ctx observer s1 = projectState ctx observer st :=
         storeObject_projectionStable_preserves_projection ctx observer st s1 above.toObjId
@@ -955,7 +955,7 @@ theorem spliceReplyFrameOut_preserves_projection
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
       have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
         hSetInv hIdxComplete hS1
-      rcases spliceReplyFrameStores_sever_cut_read hObjInv hR hA hS1 with hR1 | hR1
+      rcases cutReplyFrameStores_sever_cut_read hObjInv hR hA hS1 with hR1 | hR1
       · have hRObj1 := (SystemState.getReply?_eq_some_iff _ _ _).mp hR1
         rw [storeObject_projectionStable_preserves_projection ctx observer s1 st' rid.toObjId
           _ (.reply r) hRObj1
@@ -970,14 +970,15 @@ theorem spliceReplyFrameOut_preserves_projection
                 exact (projectKernelObject_reply_stackLinks_invariant ctx observer r _ _).symm))
           (hC1 rid.toObjId (by rw [hRObj1]; intro hx; cases hx))
           hInv1 hS2, hP1]
-    · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
-      have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
-      have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
+    · obtain ⟨_, hNe, hB, _⟩ := cutFrameBelow?_eq_some hBelow
+      have hNeBR : below ≠ rid := cutFrameBelow?_ne_cut hR hN hBelow
+      have hNeAR : above ≠ rid := cutFrameBelow?_above_ne_cut hR hA hP hBelow
       have hRObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
       have hP1 : projectState ctx observer s1 = projectState ctx observer st :=
         storeObject_projectionStable_preserves_projection ctx observer st s1 above.toObjId
           _ (.reply a) hAObj
-          (projectKernelObject_reply_prev_invariant ctx observer a (some below))
+          (by rw [Reply.unlinkedFrom_eq]
+              exact projectKernelObject_reply_stackLinks_invariant ctx observer a _ _)
           (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
           hObjInv hS1
       have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
@@ -992,7 +993,7 @@ theorem spliceReplyFrameOut_preserves_projection
       have hP2 : projectState ctx observer s2 = projectState ctx observer s1 :=
         storeObject_projectionStable_preserves_projection ctx observer s1 s2 below.toObjId
           _ (.reply b) hBObj1
-          (projectKernelObject_reply_next_invariant ctx observer b (some (.frame above)))
+          (projectKernelObject_reply_next_invariant ctx observer b none)
           (hC1 below.toObjId (by rw [hBObj1]; intro hx; cases hx))
           hInv1 hS2
       have hInv2 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
@@ -1122,29 +1123,29 @@ theorem consumeCallerReply_preserves_projection
 
 /-- WS-RM (`v0.35.6`): the fold preserves the projection unconditionally — its
 writes move a Reply's stack links, which `projectKernelObject` strips. -/
-theorem spliceReplyFrameOutOrSelf_preserves_projection
+theorem cutReplyFrameOutOrSelf_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
     (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (spliceReplyFrameOutOrSelf st rid)
+    projectState ctx observer (cutReplyFrameOutOrSelf st rid)
       = projectState ctx observer st := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hSetInv hObjInv h
+  · exact cutReplyFrameOut_preserves_projection ctx observer hIdxComplete hSetInv hObjInv h
 
 /-- WS-RM (`v0.35.6`): the fold preserves index-set completeness — it stores at a
 key that already resolves, so the set it would have to name already names it. -/
-theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
+theorem cutReplyFrameOutOrSelf_preserves_objectIndexSetComplete
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
-    SeLe4n.Model.objectIndexSetComplete (spliceReplyFrameOutOrSelf st rid) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+    SeLe4n.Model.objectIndexSetComplete (cutReplyFrameOutOrSelf st rid) := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hIdxComplete
-  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩ |
+  · rcases cutReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩ |
         ⟨r, below, b, _, _, _, _, _, hS⟩
     · rw [hEq]; exact hIdxComplete
     rotate_left
@@ -1155,7 +1156,7 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
       exact storeObject_preserves_objectIndexSetComplete s1 _ rid.toObjId _ hInv1 hSetInv1
         (storeObject_preserves_objectIndexSetComplete st s1 below.toObjId _ hObjInv
           hObjSetInv hIdxComplete hS1) hS2
-    · rcases spliceReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
+    · rcases cutReplyFrameStores_cases hS with ⟨s1, _, hS1, hS2⟩ |
         ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
       · exact storeObject_preserves_objectIndexSetComplete s1 _ rid.toObjId _
           (SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1)
@@ -1177,17 +1178,17 @@ theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
 `OrSelf` lemma under the victim's own `replyObject`.  The reply arm's projection
 composite needs completeness at the state the consume runs on, now that the
 consume writes through `storeObject`. -/
-theorem spliceThreadReplyFrameOut_preserves_objectIndexSetComplete
+theorem cutThreadReplyFrameOut_preserves_objectIndexSetComplete
     (st : SystemState) (tcb : TCB)
     (hObjInv : st.objects.invExt)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
-    SeLe4n.Model.objectIndexSetComplete (spliceThreadReplyFrameOut st tcb) := by
-  unfold spliceThreadReplyFrameOut
+    SeLe4n.Model.objectIndexSetComplete (cutThreadReplyFrameOut st tcb) := by
+  unfold cutThreadReplyFrameOut
   cases tcb.replyObject with
   | none => exact hIdxComplete
   | some rid =>
-    exact spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv
+    exact cutReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv
       hObjSetInv hIdxComplete
 
 /-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
@@ -1206,10 +1207,10 @@ theorem removeCallerReplyFrame_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   rw [removeCallerReplyFrame_eq] at hStep
   rw [consumeCallerReply_preserves_projection ctx observer _ st' caller rid hCallerObjHigh
-      (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+      (cutReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
         hIdxComplete)
-      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
-  exact spliceReplyFrameOutOrSelf_preserves_projection ctx observer st rid hIdxComplete
+      (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
+  exact cutReplyFrameOutOrSelf_preserves_projection ctx observer st rid hIdxComplete
     hObjSetInv hObjInv
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer

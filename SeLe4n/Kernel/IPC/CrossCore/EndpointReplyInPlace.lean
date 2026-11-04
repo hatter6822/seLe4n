@@ -143,9 +143,9 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   have hFR2 := (hK2 _).trans hFR
   have hFC2 := (hK2 _).trans hFC
   have hRp2 : S2.getReply? rid = some rp := (SystemState.getReply?_eq_some_iff _ _ _).mpr hO2q
-  have hSp : spliceReplyFrameOutOrSelf S2 rid = S2 := by
-    unfold spliceReplyFrameOutOrSelf
-    rw [spliceReplyFrameOut_of_no_frame_above S2 rid rp hRp2 hNext hPrev]
+  have hSp : cutReplyFrameOutOrSelf S2 rid = S2 := by
+    unfold cutReplyFrameOutOrSelf
+    rw [cutReplyFrameOut_of_no_frame_above S2 rid rp hRp2 hNext hPrev]
   have hS3 : S2.modifyObject rid.toObjId replyConsumedObject =
       { S2 with objects := (S2.objects.insert rid.toObjId (.reply rp.consumed)) } := by
     unfold SystemState.modifyObject

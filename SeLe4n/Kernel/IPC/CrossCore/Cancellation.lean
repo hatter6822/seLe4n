@@ -950,7 +950,7 @@ returned context — on every reachable state it is the cancelled caller's own
 reply object and merges with `consumedReplyId` by key, but a footprint is the
 union over all argument values and the operation writes whatever `scReply`
 names), and the **frame above** the cancelled caller's own
-(`splicedFrameAboveReplyId`), which `spliceThreadReplyFrameOut` unlinks when
+(`splicedFrameAboveReplyId`), which `cutThreadReplyFrameOut` unlinks when
 the caller is not the head of its stack — seL4's `reply_remove_tcb`, non-head
 arm.  The two are mutually exclusive on every reachable state (a caller whose
 frame has something above it is not the innermost live caller, so no reclaim is
@@ -974,7 +974,7 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
     -- **WS-HP HP3.1**: and the frame **below** the cancelled caller's own, which
     -- the removal's splice re-links upward in the same step -- the cancellation
     -- twin of `lockSet_endpointReply`'s member, for the same write, since HP6
-    -- makes `spliceThreadReplyFrameOut` a splice.  No default: a call site that
+    -- makes `cutThreadReplyFrameOut` a splice.  No default: a call site that
     -- omits it must fail to elaborate.
     (splicedFrameBelowReplyId : Option SeLe4n.ReplyId) : LockSet :=
   lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
@@ -1009,7 +1009,7 @@ def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
       -- from the returned context rather than assumed to be the consumed reply.
       (reclaimHeadReplyId.map (fun r => (replyLock r, AccessMode.write))))
       -- **WS-OD (`v0.35.4`)**: the frame above the cancelled caller's own,
-      -- which `spliceThreadReplyFrameOut` unlinks (`prev := none`) when the
+      -- which `cutThreadReplyFrameOut` unlinks (`prev := none`) when the
       -- caller is a middle caller of its stack — the write that stops a dead
       -- frame from heading a stack forever.
       (splicedFrameAboveReplyId.map (fun r => (replyLock r, AccessMode.write))))
@@ -1179,7 +1179,7 @@ theorem cancelReclaimHead?_eq_replyObject (st : SystemState)
   | _ => rw [hIpc] at h; cases h
 
 /-- **WS-OD (`v0.35.4`)**: the **frame above the cancelled caller's own** — the
-Reply `spliceThreadReplyFrameOut` rewrites when the caller is a *middle* caller of
+Reply `cutThreadReplyFrameOut` rewrites when the caller is a *middle* caller of
 its stack (`prev := some below` since WS-HP HP6.3, so that the frame above links
 down past the cut; `prev := none` at a bottom frame, where nothing lies below),
 and the cancelled frame leaves the structure when its caller link is consumed.
@@ -1210,7 +1210,7 @@ once for the footprint, the splice resolver and the operation.
 popped, never spliced).  A frame with nothing above it declares its `prev` too:
 since `v0.36.136` the removal of a contextless stack top severs the frame below
 (`severReplyFrameBelowStores`), so that write is declared. -/
-def cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
+def cancelCutFrameBelow? (st : SystemState) (tcb : TCB) : Option SeLe4n.ReplyId :=
   match tcb.ipcState with
   | .blockedOnReply _ _ => tcb.replyObject.bind (replyFrameBelow? st)
   | _ => none
@@ -1255,12 +1255,12 @@ theorem cancelSplicedFrameAbove?_of_donation (st : SystemState)
 declares (`replyFrameBelow?_of_headContext`).  Stated beside its sibling
 rather than derived from it, because the two members read different fields and a
 consumer of one should not have to unfold the other. -/
-theorem cancelSplicedFrameBelow?_of_donation (st : SystemState)
+theorem cancelCutFrameBelow?_of_donation (st : SystemState)
     (victimTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (holder : SeLe4n.ThreadId)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb = some (scId, holder)) :
-    cancelSplicedFrameBelow? st tcb = none := by
-  unfold cancelSplicedFrameBelow?
+    cancelCutFrameBelow? st tcb = none := by
+  unfold cancelCutFrameBelow?
   unfold Lifecycle.Suspend.cancelledCallerDonation? at h
   cases hIpc : tcb.ipcState with
   | blockedOnReply ep rt =>
@@ -1276,19 +1276,19 @@ theorem cancelSplicedFrameBelow?_of_donation (st : SystemState)
   | _ => rfl
 
 /-- WS-HP HP3.1: the endpoint arms splice nothing. -/
-@[simp] theorem cancelSplicedFrameBelow?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
+@[simp] theorem cancelCutFrameBelow?_of_blockedEndpoint (st : SystemState) (tcb : TCB)
     (ep : SeLe4n.ObjId) (h : cancelBlockedEndpoint? tcb = some ep) :
-    cancelSplicedFrameBelow? st tcb = none := by
+    cancelCutFrameBelow? st tcb = none := by
   unfold cancelBlockedEndpoint? at h
-  unfold cancelSplicedFrameBelow?
+  unfold cancelCutFrameBelow?
   cases hIp : tcb.ipcState <;> simp_all
 
 /-- WS-HP HP3.1: nor does the notification arm. -/
-@[simp] theorem cancelSplicedFrameBelow?_of_blockedNotification (st : SystemState) (tcb : TCB)
+@[simp] theorem cancelCutFrameBelow?_of_blockedNotification (st : SystemState) (tcb : TCB)
     (n : SeLe4n.ObjId) (h : cancelBlockedNotification? tcb = some n) :
-    cancelSplicedFrameBelow? st tcb = none := by
+    cancelCutFrameBelow? st tcb = none := by
   unfold cancelBlockedNotification? at h
-  unfold cancelSplicedFrameBelow?
+  unfold cancelCutFrameBelow?
   cases hIp : tcb.ipcState <;> simp_all
 
 /-- **WS-HP HP6.6: the cancellation path's lifting of the containment** -- the
@@ -1296,34 +1296,34 @@ frame the victim's removal splices below the cut is the one this arm's footprint
 declares.
 
 Lifted through the victim's own `replyObject` under the reply-arm gate, which is
-where `cancelSplicedFrameBelow?` reads it, so the footprint and the operation
+where `cancelCutFrameBelow?` reads it, so the footprint and the operation
 cannot disagree about which frame is cut.  The `.blockedOnReply` gate is the arm
 selector every exclusivity lemma in this family reads; on any other arm the
 declared member is `none` and the removal is the identity, so there is nothing to
 contain. -/
-theorem spliceFrameBelow?_mem_cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB)
+theorem cutFrameBelow?_mem_cancelCutFrameBelow? (st : SystemState) (tcb : TCB)
     (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (rid above below : SeLe4n.ReplyId) (r b : Reply)
     (hIp : tcb.ipcState = .blockedOnReply ep rt)
     (hRO : tcb.replyObject = some rid)
     (hR : st.getReply? rid = some r)
     (hAbove : replyFrameAbove? st rid = some above)
-    (h : spliceFrameBelow? st rid r above = some (below, b)) :
-    cancelSplicedFrameBelow? st tcb = some below := by
-  unfold cancelSplicedFrameBelow?
+    (h : cutFrameBelow? st rid r above = some (below, b)) :
+    cancelCutFrameBelow? st tcb = some below := by
+  unfold cancelCutFrameBelow?
   rw [hIp, hRO]
-  exact spliceFrameBelow?_mem_replyFrameBelow? hR hAbove h
+  exact cutFrameBelow?_mem_replyFrameBelow? hR hAbove h
 
 /-- **...and the sever arm's lifting**: the frame below a victim's contextless
 stack top, which the removal cuts from it, is the member this arm's footprint
 declares. -/
-theorem severFrameBelow_mem_cancelSplicedFrameBelow? (st : SystemState) (tcb : TCB)
+theorem severFrameBelow_mem_cancelCutFrameBelow? (st : SystemState) (tcb : TCB)
     (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId) (rid below : SeLe4n.ReplyId) (r : Reply)
     (hIp : tcb.ipcState = .blockedOnReply ep rt)
     (hRO : tcb.replyObject = some rid)
     (hR : st.getReply? rid = some r) (hNext : r.next = none) (hPrev : r.prev = some below) :
-    cancelSplicedFrameBelow? st tcb = some below := by
-  unfold cancelSplicedFrameBelow?
+    cancelCutFrameBelow? st tcb = some below := by
+  unfold cancelCutFrameBelow?
   rw [hIp, hRO]
   exact severFrameBelow_mem_replyFrameBelow? hR hNext hPrev
 
@@ -1420,7 +1420,7 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
             -- **WS-HP HP3.1**: and the frame below the cut, which the splice
             -- re-links upward.  Derived from `cancelSplicedFrameAbove?`'s own
             -- resolver, so the two cannot disagree about which arm removes.
-            (cancelSplicedFrameBelow? st tcb))
+            (cancelCutFrameBelow? st tcb))
           -- WS-OD OD3.5: the *arm-selected* neighbours, not the summed pair.
           -- Only the endpoint arm splices, so on the reply, notification and
           -- `.ready` arms these two extensions are `none` and the footprint
@@ -1466,7 +1466,7 @@ theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq (st : SystemState)
             (cancelBelowHeadReads? st victimTid tcb).2
             (cancelReclaimHead? st victimTid tcb)
             (cancelSplicedFrameAbove? st tcb)
-            (cancelSplicedFrameBelow? st tcb))
+            (cancelCutFrameBelow? st tcb))
           (rt.bind fun _ => (SeLe4n.ThreadId.ofOptCode tcb.replyWaiterPrevCode).map
             fun p => (tcbLock p, AccessMode.write)))
           (rt.bind fun _ => (SeLe4n.ThreadId.ofOptCode tcb.replyWaiterNextCode).map
@@ -2082,7 +2082,7 @@ theorem lockSet_cancelIpcBlocking_reclaim_head_write_mem
   exact self_write_mem_insertOrMerge _ (replyLock r)
 
 /-- **WS-OD (`v0.35.4`)** (coverage): the **frame above the cancelled caller's
-own** — the one `spliceThreadReplyFrameOut` unlinks — is a declared write. -/
+own** — the one `cutThreadReplyFrameOut` unlinks — is a declared write. -/
 theorem lockSet_cancelIpcBlocking_spliced_frame_above_write_mem
     (victimTid : SeLe4n.ThreadId)
     (blEp : Option SeLe4n.ObjId)
@@ -2392,7 +2392,7 @@ that the object a resolver names is among them. -/
 theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow (st : SystemState)
     (victimTid : SeLe4n.ThreadId) (tcb : TCB) (below : SeLe4n.ReplyId)
     (hT : st.getTcb? victimTid = some tcb)
-    (hB : cancelSplicedFrameBelow? st tcb = some below) :
+    (hB : cancelCutFrameBelow? st tcb = some below) :
     (replyLock below, AccessMode.write)
       ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
   unfold lockSet_cancelIpcBlockingOnCore

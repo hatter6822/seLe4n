@@ -5249,10 +5249,10 @@ the stack head's upward link and the context's head are cleared, the frames
 below keep their callers).  The old head is then a *contextless stack top*: no
 `next`, while the frame below still links up to it.  Its later removal cuts it
 from that frame, as `reply_remove`'s `if (prev_ptr) prev->replyNext = 0` does
-(`severReplyFrameBelowStores`, the fourth arm of `spliceReplyFrameOut`, mirrored
+(`severReplyFrameBelowStores`, the fourth arm of `cutReplyFrameOut`, mirrored
 on the frozen surface and in the in-place splice, whose cut and frame-above
 splice write each link in its slot: `severReplyFrameBelowStoresInPlace`,
-`spliceReplyFrameStoresInPlace`), so the removed reply is named
+`cutReplyFrameStoresInPlace`), so the removed reply is named
 by no other object and is retired, and the frame below becomes the new top.  The
 footprints declare the frame below on that arm too (`replyFrameBelow?` is the
 frame's `prev` unless it heads a stack).  A thread that lent a context from the bottom of a
@@ -9340,7 +9340,7 @@ because each is false without the other.
   `cancelledMiddleCaller_splices_at_cut` binds the innermost live caller
   `.donated scId outer` — still owed outward — and leaves **every other thread's
   TCB unchanged**, which is exactly what `reclaimToCancelledThread` would not do.
-  `spliceThreadReplyFrameOut` takes the cancelled frame off the middle of the stack
+  `cutThreadReplyFrameOut` takes the cancelled frame off the middle of the stack
   in `O(1)` before its caller link is consumed, so no frame is left on a stack with
   its caller gone, and since HP6.3 it *repairs* the pair either side of the cut
   rather than breaking it: the frame above takes the cut frame's own downward link,
@@ -9398,7 +9398,7 @@ is replaced by `Reply.next : ReplyStackLink`, the policy was unchanged at this c
 (it flipped to the splice at WS-HP HP6.8, §8.12.11), and the removal is carried
 out by what is now the **splice**:
 
-- **`spliceReplyFrameOut`** — then a sever — cleared the `prev` of the frame above
+- **`cutReplyFrameOut`** — then a sever — cleared the `prev` of the frame above
   the one being removed, so that frame became the bottom of the stack it heads and
   the removed frame left the structure when its caller link was consumed
   (`Reply.consumed`); since §8.12.11 it re-points that `prev` at the frame below
@@ -9407,7 +9407,7 @@ out by what is now the **splice**:
   the frame being cut out is a stale upward link, which the downward-stated
   relation permits and which is therefore read as "nothing above me", never
   repaired.
-- **The cancellation path runs it** (`spliceThreadReplyFrameOut`), after the
+- **The cancellation path runs it** (`cutThreadReplyFrameOut`), after the
   reclaim and before `consumeReplyLink`, with both orders pinned.
 - **A validated frame below the head whose caller was consumed is now an
   `.error`**, not the bottom of the stack: with the removal in place a linked frame
@@ -9717,7 +9717,7 @@ Six properties of the surface this leaves.
    reply path stated as `replyStackHeadIsAnsweredReply`, seen from the cancellation
    end and *proved* rather than assumed, which is why HP7 could delete that
    predicate) and
-   `cancelSplicedFrameAbove?_of_donation` / `cancelSplicedFrameBelow?_of_donation`
+   `cancelSplicedFrameAbove?_of_donation` / `cancelCutFrameBelow?_of_donation`
    (a reclaim excludes both removal members).  Both were sentences about every
    reachable state in footprint docstrings, and the binding reading could not have
    stated either.  The wake and both below-head members needed **no**
@@ -9754,7 +9754,7 @@ instead of breaking the chain there, so the frames below a cut stay on the
 context's stack and the reservation goes on travelling outward to the caller that
 owns it.
 
-**The removal is three stores.**  `spliceReplyFrameStores` writes
+**The removal is three stores.**  `cutReplyFrameStores` writes
 `above.prev := some below`, `below.next := some (.frame above)`, and the cut
 frame's own links cleared (`prev := none, next := none`, seL4's `reply_remove`;
 the `next` too since `v0.36.140`).  The third is not optional: without it the cut
@@ -9764,21 +9764,21 @@ whose target no longer answers it, which falsifies `nextLinkReciprocal`, so the 
 `SeLe4n/Testing/ReplyStackWriteCensus.lean` would have had to accept a half-step
 where the sever stated its result outright.  With it the invariant is preserved
 **outright** across the removal
-(`spliceReplyFrameOut_preserves_donationChainWellFormed`,
+(`cutReplyFrameOut_preserves_donationChainWellFormed`,
 `removeCallerReplyFrame_preserves_donationChainWellFormed`), and it costs nothing:
 the cut frame's lock is already a declared write member on both removal paths, so
 `maxLockSetSize` was unmoved by it, at HP3.5's twenty-three (HP10.6 has since
 taken it to twenty-four, for a member of its own — the TCB a bottom-of-stack pop
 redirects the reservation to).
 
-**The below side degenerates rather than refusing.**  `spliceFrameBelow?` answers
+**The below side degenerates rather than refusing.**  `cutFrameBelow?` answers
 `Option`: a `prev` that does not resolve, one naming the frame above, and a frame
 below whose own `next` does not link back are all *not followed*, and the removal
 then clears the frame above's `prev` (and its `next` too where it names the cut
 frame back, `Reply.unlinkedFrom`) and the cut frame's links, which is the sever.  So this operation's refusal
 set is **exactly** the pre-WS-HP one — every refusal theorem carries verbatim,
-`spliceReplyFrameOutOrSelf`'s fold soundness included, and
-`spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
+`cutReplyFrameOutOrSelf`'s fold soundness included, and
+`cutReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
 makes every repair a case split whose `none` branch is the pre-HP proof.  A stale
 upward link is excluded on every reachable state (`nextLinkReciprocal`); the
 reciprocity checks (`donationChainFrom`, `replyFrameOnLiveStack`) stay as
@@ -9900,8 +9900,8 @@ doubly linked reply stack exactly as the live one does, and a removal that sever
 there loses the frames below a cut exactly as the live sever did.
 
 The trigger half of this mirror flipped at HP4.7 (§8.12.9); this is the removal.
-`frozenSpliceReplyFrameOut` replaces `frozenDetachReplyFrameAbove`, clause for
-clause with the live `spliceReplyFrameOut`: the same three stores, the same
+`frozenCutReplyFrameOut` replaces `frozenDetachReplyFrameAbove`, clause for
+clause with the live `cutReplyFrameOut`: the same three stores, the same
 declining below side, the same refusal set.  The sever's names are **deleted**
 rather than kept beside a spliced body — HP6.1 had kept them deliberately, because
 a `frozenDetach…` beside a live `splice…` read as the *schedule*, and this is the
@@ -9936,7 +9936,7 @@ Four things this section fixes for a reader.
 
 4. **The write census carries three frozen splice entries where the sever had
    two.**  The store step is registered on its own, as the live
-   `spliceReplyFrameStores` is, because it performs the writes with none of the
+   `cutReplyFrameStores` is, because it performs the writes with none of the
    removal's resolution or validation — so a transition reaching for it directly is
    a site.  Each is a `mirrors` entry naming the live counterpart of the *same
    shape*, which makes the store step's chain terminate in a stating entry two hops
@@ -9959,7 +9959,7 @@ the fixture chooses would measure the fixture.
 
 Two things that scenario establishes about its own reach, recorded because a reader
 would otherwise infer the wrong one.  A code mutation of the splice's *stores*
-never reaches it: `spliceReplyFrameStores_cases` states the three stores exactly,
+never reaches it: `cutReplyFrameStores_cases` states the three stores exactly,
 so the full sever and a reconnection that clobbers the frame below's own downward
 link both fail to **elaborate**.  The store shape is therefore pinned by a theorem,
 and the witness's subject is the composition, which no theorem states.  And it is
@@ -9986,7 +9986,7 @@ last step (HP10.10).
 #### 8.12.15 The depth-two payoff — WS-HP HP10.9 (`v0.35.53`)
 
 At reply-stack depth 2 the frame a removal takes off the stack **is** the stack's
-bottom, so there is nothing below it to reconnect: `spliceFrameBelow?` answers
+bottom, so there is nothing below it to reconnect: `cutFrameBelow?` answers
 `none`, the splice degenerates to the sever
 (`removeCallerReplyFrame_clears_prev_of_bottom_frame`), and
 `cancelledMiddleCallerPolicy` writes the same `none` into the frame above whichever
@@ -10153,15 +10153,15 @@ Three things that cut fixed the shape of, and each is one question given one own
 (`storeObject_reply_stackLinks_preserves_nonReciprocal`, over the six pre-state facts a
 stack-link store actually reads) and assembled twice, because the full bundle and the
 relaxed one differ in the pair and nowhere else.  **The splice's store chain has one
-owner** — `spliceReplyFrameOut_transport`, stated over *any* predicate a
+owner** — `cutReplyFrameOut_transport`, stated over *any* predicate a
 caller-preserving Reply store carries — since which stores run, in what order, with
 which lookups surviving between them, is a fact about the operation and not about a
 bundle; both carriages are one application of it, and
-`spliceReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
+`cutReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
 `P := replyLinkageFrame st`.  And **the composite states every hypothesis on the state
 the removal runs on**: the answered Reply survives the splice with its `caller`
 (`replyCallerAgree`) and the woken caller's TCB survives it verbatim
-(`spliceReplyFrameOutOrSelf_tcb_backward`), both discharged inside
+(`cutReplyFrameOutOrSelf_tcb_backward`), both discharged inside
 `removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage` rather than
 pushed onto a caller who would have to reason about a state the operation does not rest
 at.
@@ -10201,7 +10201,7 @@ steps carry the bundle for the same reason.  The reclaim
 (`returnDonationToCancelledCaller_preserves_ipcInvariantFull`) composes the holder abort
 with `returnDonatedSchedContext`'s carriage at the *relaxed* donation-owner bundle, the
 relaxation point being the victim the pop rebinds.  The splice is three `.reply`
-stack-link stores (`spliceThreadReplyFrameOut_preserves_ipcInvariantFull`).  And the
+stack-link stores (`cutThreadReplyFrameOut_preserves_ipcInvariantFull`).  And the
 restore and the teardown carry it only **as a pair**, which is §8.12.16.
 
 **Two stated coherence facts, both needed, and neither derivable.**  The keystone takes

@@ -395,10 +395,10 @@ theorem consumeReplyLink_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId) 
   | none => exact keyInputsEq_refl _
   | some rid => exact consumeCallerReply_keyInputsEq hInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
-theorem spliceThreadReplyFrameOut_keyInputsEq (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) : keyInputsEq st (spliceThreadReplyFrameOut st tcb) :=
-  keyInputsEq_of_lookups_eq (spliceThreadReplyFrameOut_getTcb?_eq st tcb hInv)
-    (spliceThreadReplyFrameOut_getSchedContext?_eq st tcb hInv)
+theorem cutThreadReplyFrameOut_keyInputsEq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : keyInputsEq st (cutThreadReplyFrameOut st tcb) :=
+  keyInputsEq_of_lookups_eq (cutThreadReplyFrameOut_getTcb?_eq st tcb hInv)
+    (cutThreadReplyFrameOut_getSchedContext?_eq st tcb hInv)
 
 theorem removeFromAllEndpointQueues_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : keyInputsEq st (removeFromAllEndpointQueues st tid) :=
@@ -430,14 +430,14 @@ theorem removeFromNotificationWaitQueue_keyInputsEq (st : SystemState) (tid : Se
 macro_rules | `(tactic| resident_frame) => `(tactic|
   (simp only [Lifecycle.Suspend.restoreToReadyCancelled_machine_eq,
     Lifecycle.Suspend.restoreToReadyStaging_machine_eq, removeFromAllEndpointQueues_machine_eq,
-    removeFromBlockingEndpoint_machine_eq, removeFromNotificationWaitQueue_machine_eq, spliceThreadReplyFrameOut_machine_eq,
+    removeFromBlockingEndpoint_machine_eq, removeFromNotificationWaitQueue_machine_eq, cutThreadReplyFrameOut_machine_eq,
     Lifecycle.Suspend.consumeReplyLink_machine_eq, SystemState.unlinkReplyWaiterOpt_machine]; done))
 
 /-- ...and they write no core's bank (`bank_frame`). -/
 macro_rules | `(tactic| bank_frame) => `(tactic|
   (simp only [Lifecycle.Suspend.restoreToReadyCancelled_machine_eq,
     Lifecycle.Suspend.restoreToReadyStaging_machine_eq, removeFromAllEndpointQueues_machine_eq,
-    removeFromBlockingEndpoint_machine_eq, removeFromNotificationWaitQueue_machine_eq, spliceThreadReplyFrameOut_machine_eq,
+    removeFromBlockingEndpoint_machine_eq, removeFromNotificationWaitQueue_machine_eq, cutThreadReplyFrameOut_machine_eq,
     Lifecycle.Suspend.consumeReplyLink_machine_eq, SystemState.unlinkReplyWaiterOpt_machine]; done))
 
 /-- An object-only step that moves no key input covers. -/
@@ -492,11 +492,11 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
   | blockedOnReply _ _ =>
     have h1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st tid tcb hInv
-    have h2 := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb h1
+    have h2 := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb h1
     have h3 := Lifecycle.Suspend.restoreToReadyStaging_invExt _ tid (some Architecture.cancelledIpcFrame) h2
     refine stepCovers_trans (returnDonationToCancelledCaller_stepCovers e st tid tcb hInv)
-      (stepCovers_trans (stepCovers_of_keys_sched (spliceThreadReplyFrameOut_keyInputsEq _ tcb h1)
-        (spliceThreadReplyFrameOut_scheduler_eq _ tcb))
+      (stepCovers_trans (stepCovers_of_keys_sched (cutThreadReplyFrameOut_keyInputsEq _ tcb h1)
+        (cutThreadReplyFrameOut_scheduler_eq _ tcb))
       (stepCovers_trans (hRestore _ h2)
         (stepCovers_trans
           (stepCovers_of_keys_sched (consumeReplyLink_keyInputsEq _ tid tcb h3)

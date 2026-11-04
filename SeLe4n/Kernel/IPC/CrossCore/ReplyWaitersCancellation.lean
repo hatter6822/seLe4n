@@ -17,7 +17,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 A cancelled thread blocked on a reply leaves its server's queue as its block
 ends (`unlinkReplyWaiterOpt`, an `UnlinkStep`); a thread blocked on anything
 else waited on no server, and readying it moves no view.  Every other write of
-the teardown (the queue sweeps, the donation return, the reply-frame splice and
+the teardown (the queue sweeps, the donation return, the reply-frame cut and
 consume, the deschedules) keeps the views.
 -/
 
@@ -112,12 +112,12 @@ theorem consumeReplyLink_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId
   · rename_i rid _
     exact consumeCallerReply_replyViews_eq hInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
-theorem spliceThreadReplyFrameOut_replyViews_eq (st : SystemState) (tcb : TCB)
-    (hInv : st.objects.invExt) : (spliceThreadReplyFrameOut st tcb).replyViews = st.replyViews := by
-  unfold spliceThreadReplyFrameOut
+theorem cutThreadReplyFrameOut_replyViews_eq (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : (cutThreadReplyFrameOut st tcb).replyViews = st.replyViews := by
+  unfold cutThreadReplyFrameOut
   split
   · rfl
-  · exact spliceReplyFrameOutOrSelf_replyViews_eq _ _ hInv
+  · exact cutReplyFrameOutOrSelf_replyViews_eq _ _ hInv
 
 theorem returnDonationToCancelledCaller_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hInv : st.objects.invExt) :
@@ -169,12 +169,12 @@ theorem cancelIpcBlocking_preserves_replyWaitersConsistent (st : SystemState)
     | skip
   -- The reply arm.
   have hI1 := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
-  have hI2 := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hI1
+  have hI2 := cutThreadReplyFrameOut_preserves_objects_invExt _ tcb hI1
   have hI3 := restoreToReadyCancelled_invExt _ tid hI2
-  have hV3 : (restoreToReadyCancelled (spliceThreadReplyFrameOut
+  have hV3 : (restoreToReadyCancelled (cutThreadReplyFrameOut
       (returnDonationToCancelledCaller st tid tcb) tcb) tid).replyViews =
       ReplyViews.setServer st.replyViews tid none := by
-    rw [restoreToReadyCancelled_replyViews _ _ hI2, spliceThreadReplyFrameOut_replyViews_eq _ _ hI1,
+    rw [restoreToReadyCancelled_replyViews _ _ hI2, cutThreadReplyFrameOut_replyViews_eq _ _ hI1,
       returnDonationToCancelledCaller_replyViews_eq _ _ _ hInv]
   show ReplyViews.consistent _
   rw [replyViews_unlinkReplyWaiterOpt, consumeReplyLink_replyViews_eq _ _ _ hI3, hV3]

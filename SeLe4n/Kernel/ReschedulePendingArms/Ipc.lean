@@ -970,14 +970,14 @@ theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB �
   ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
    SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
 
-theorem spliceReplyFrameOutOrSelf_keyFrame (st : SystemState) (rid : SeLe4n.ReplyId)
-    (hInv : st.objects.invExt) : capabilityKeyFrame st (spliceReplyFrameOutOrSelf st rid) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+theorem cutReplyFrameOutOrSelf_keyFrame (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hInv : st.objects.invExt) : capabilityKeyFrame st (cutReplyFrameOutOrSelf st rid) := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
-  · exact ⟨keyInputsEq_of_lookups_eq (spliceReplyFrameOut_getTcb?_eq hInv h)
-      (spliceReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv),
-      spliceReplyFrameOutOrSelf_scheduler_eq st rid,
-      spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hInv⟩
+  · exact ⟨keyInputsEq_of_lookups_eq (cutReplyFrameOut_getTcb?_eq hInv h)
+      (cutReplyFrameOutOrSelf_getSchedContext?_eq st rid hInv),
+      cutReplyFrameOutOrSelf_scheduler_eq st rid,
+      cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hInv⟩
 
 theorem consumeCallerReply_keyFrame {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     {st st' : SystemState} (hInv : st.objects.invExt)
@@ -990,7 +990,7 @@ theorem removeCallerReplyFrame_keyFrame {caller : SeLe4n.ThreadId} {rid : SeLe4n
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : removeCallerReplyFrame caller rid st = .ok ((), st')) : capabilityKeyFrame st st' := by
   unfold removeCallerReplyFrame at h
-  have h1 := spliceReplyFrameOutOrSelf_keyFrame st rid hInv
+  have h1 := cutReplyFrameOutOrSelf_keyFrame st rid hInv
   exact h1.trans (consumeCallerReply_keyFrame h1.2.2 h)
 
 /-- The per-core reply covers on every outcome: the caller's TCB store keeps its

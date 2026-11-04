@@ -1199,12 +1199,12 @@ most three `.reply` stores, each at a key that already holds a Reply, which is
 exactly the shape `storeObject_reply_preserves_dualQueueSystemInvariant` frames.
 Restated for the splice (WS-HP HP6.4) by **iterating** that frame over the two
 intermediate states rather than by a fresh argument about three writes. -/
-theorem spliceReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant
+theorem cutReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st) :
-    dualQueueSystemInvariant (spliceReplyFrameOutOrSelf st rid) := by
+    dualQueueSystemInvariant (cutReplyFrameOutOrSelf st rid) := by
   obtain ⟨m1, m2, hStep1, hStep2, hStep3⟩ :=
-    spliceReplyFrameOutOrSelf_store_cases st rid hObjInv
+    cutReplyFrameOutOrSelf_store_cases st rid hObjInv
   have hM1 : dualQueueSystemInvariant m1 ∧ m1.objects.invExt := by
     rcases hStep1 with rfl | ⟨k, o, o', hO, hS⟩
     · exact ⟨hInv, hObjInv⟩
@@ -1231,8 +1231,8 @@ theorem removeCallerReplyFrame_preserves_dualQueueSystemInvariant
     dualQueueSystemInvariant st' := by
   rw [removeCallerReplyFrame_eq] at hStep
   exact consumeCallerReply_preserves_dualQueueSystemInvariant _ st' caller rid
-    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
-    (spliceReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant st rid hObjInv hInv) hStep
+    (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
+    (cutReplyFrameOutOrSelf_preserves_dualQueueSystemInvariant st rid hObjInv hInv) hStep
 
 /-- WS-H5: endpointReply preserves dualQueueSystemInvariant.
 endpointReply performs storeTcbIpcStateAndMessage + ensureRunnable —

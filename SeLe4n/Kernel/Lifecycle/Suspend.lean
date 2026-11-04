@@ -758,7 +758,7 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     --
     -- WS-OD (`v0.35.4`): and a frame that is **not** the head — the caller's
     -- callee donated onward — is detached from its stack in `O(1)` before the
-    -- caller link is consumed (`spliceThreadReplyFrameOut`, the first write of
+    -- caller link is consumed (`cutThreadReplyFrameOut`, the first write of
     -- seL4's `reply_remove_tcb` non-head branch; upstream also clears the frame
     -- below's upward link and the removed frame's own links, which this tree
     -- validates reciprocity for instead -- see `CLAUDE.md`'s WS-RM section), so no
@@ -771,7 +771,7 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     SystemState.unlinkReplyWaiterOpt
       (consumeReplyLink
         (restoreToReadyCancelled
-          (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+          (cutThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
         tid tcb)
       tid tcb.blockingServer?
   | .blockedOnNotification _ =>

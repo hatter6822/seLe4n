@@ -195,7 +195,7 @@ theorem recordSendCap_replyViews_eq (st : SystemState) (tid : ThreadId)
   split <;> simp
 
 /-! Reply-object stores and the TCB writes beside them (the reply-object link,
-the stash, the frame splice) touch no reply view. -/
+the stash, the frame cut) touch no reply view. -/
 
 theorem replyViews_of_getReply {st : SystemState} {rid : ReplyId} {r : Reply}
     (h : st.getReply? rid = some r) : st.replyViews rid.toObjId = none := by
@@ -299,14 +299,14 @@ theorem consumeCallerReply_replyViews_eq {st st' : SystemState} {c : ThreadId} {
     · rename_i tcb hT
       exact (replyViews_storeTcb_eq hI1 hT h rfl).trans hV1
 
-theorem spliceReplyFrameStores_replyViews_eq {st st' : SystemState} {rid above : ReplyId}
+theorem cutReplyFrameStores_replyViews_eq {st st' : SystemState} {rid above : ReplyId}
     {r a : Reply} (hInv : st.objects.invExt) (hR : st.getReply? rid = some r)
-    (hA : st.getReply? above = some a) (h : spliceReplyFrameStores st rid above r a = .ok st') :
+    (hA : st.getReply? above = some a) (h : cutReplyFrameStores st rid above r a = .ok st') :
     st'.replyViews = st.replyViews := by
-  rcases spliceReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, hB, hS1, hS2, hS3⟩
+  rcases cutReplyFrameStores_cases h with ⟨t1, _, hT1, hT2⟩ | ⟨_, _, s1, s2, hB, hS1, hS2, hS3⟩
   · have hV1 := replyViews_storeReply_eq hInv hA hT1
     have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hT1
-    rcases spliceReplyFrameStores_sever_cut_read hInv hR hA hT1 with hR1 | hR1
+    rcases cutReplyFrameStores_sever_cut_read hInv hR hA hT1 with hR1 | hR1
     · exact (replyViews_storeReply_eq hI1 hR1 hT2).trans hV1
     · exact (replyViews_storeReply_eq hI1 hR1 hT2).trans hV1
   · have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
@@ -314,31 +314,31 @@ theorem spliceReplyFrameStores_replyViews_eq {st st' : SystemState} {rid above :
     have hV1 := replyViews_storeReply_eq hInv hA hS1
     have hV2 : s2.replyViews = st.replyViews :=
       (replyViews_storeObject_eq hI1 hS2
-        (by rw [hV1]; exact replyViews_of_getReply (spliceFrameBelow?_eq_some hB).2.2.1) rfl).trans hV1
+        (by rw [hV1]; exact replyViews_of_getReply (cutFrameBelow?_eq_some hB).2.2.1) rfl).trans hV1
     exact (replyViews_storeObject_eq hI2 hS3 (by rw [hV2]; exact replyViews_of_getReply hR) rfl).trans
       hV2
 
-theorem spliceReplyFrameOut_replyViews_eq {st st' : SystemState} {rid : ReplyId}
-    (hInv : st.objects.invExt) (h : spliceReplyFrameOut st rid = .ok st') :
+theorem cutReplyFrameOut_replyViews_eq {st st' : SystemState} {rid : ReplyId}
+    (hInv : st.objects.invExt) (h : cutReplyFrameOut st rid = .ok st') :
     st'.replyViews = st.replyViews := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨_, _, _, hR, _, hA, _, hS⟩ |
+  rcases cutReplyFrameOut_cases h with rfl | ⟨_, _, _, hR, _, hA, _, hS⟩ |
       ⟨_, _, _, hR, hN, _, hB, hBn, hS⟩
   · rfl
-  · exact spliceReplyFrameStores_replyViews_eq hInv hR hA hS
+  · exact cutReplyFrameStores_replyViews_eq hInv hR hA hS
   · exact severReplyFrameBelowStores_transport (P := fun s => s.replyViews = st.replyViews)
       (fun hOI hP hA _ _ hS => (replyViews_storeReply_eq hOI hA hS).trans hP) hInv rfl hR hN hB hBn hS
 
-theorem spliceReplyFrameOutOrSelf_replyViews_eq (st : SystemState) (rid : ReplyId)
-    (hInv : st.objects.invExt) : (spliceReplyFrameOutOrSelf st rid).replyViews = st.replyViews := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+theorem cutReplyFrameOutOrSelf_replyViews_eq (st : SystemState) (rid : ReplyId)
+    (hInv : st.objects.invExt) : (cutReplyFrameOutOrSelf st rid).replyViews = st.replyViews := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact spliceReplyFrameOut_replyViews_eq hInv h
+  · exact cutReplyFrameOut_replyViews_eq hInv h
 
 theorem removeCallerReplyFrame_replyViews_eq {st st' : SystemState} {c : ThreadId} {rid : ReplyId}
     (hInv : st.objects.invExt) (h : removeCallerReplyFrame c rid st = .ok ((), st')) :
     st'.replyViews = st.replyViews :=
-  (consumeCallerReply_replyViews_eq (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hInv)
-    h).trans (spliceReplyFrameOutOrSelf_replyViews_eq st rid hInv)
+  (consumeCallerReply_replyViews_eq (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hInv)
+    h).trans (cutReplyFrameOutOrSelf_replyViews_eq st rid hInv)
 
 theorem replyViews_of_endpoint {st : SystemState} {k : ObjId} {ep : Endpoint}
     (h : st.objects[k]? = some (.endpoint ep)) : st.replyViews k = none := by

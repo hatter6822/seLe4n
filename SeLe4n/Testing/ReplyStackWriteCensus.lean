@@ -128,25 +128,25 @@ def chainWritePrimitives : List Name :=
     -- `prev`, the frame below's `next`, and the cut frame's own unlink), the
     -- validated operation over it, and its total fold.  The store step is a
     -- primitive for the same reason the pop's two component stores are: it
-    -- performs the writes with none of `spliceReplyFrameOut`'s resolution or
+    -- performs the writes with none of `cutReplyFrameOut`'s resolution or
     -- validation, so a transition reaching for it directly is a site.
-  , `SeLe4n.Kernel.spliceReplyFrameStores
+  , `SeLe4n.Kernel.cutReplyFrameStores
     -- The cut of a contextless stack top from the frame below (`v0.36.136`,
     -- seL4's `reply_remove` `prev->replyNext = 0`): that frame's `next` and the
     -- cut frame's `prev`, a primitive for the store step's reason.
   , `SeLe4n.Kernel.severReplyFrameBelowStores
-  , `SeLe4n.Kernel.spliceReplyFrameOut
-  , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
+  , `SeLe4n.Kernel.cutReplyFrameOut
+  , `SeLe4n.Kernel.cutReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
     -- the same `SeLe4n.Kernel.Reply` record in `FrozenSystemState.objects`.
     -- **WS-HP HP8.1** renamed these for the operation they became: the frozen
-    -- removal splices rather than severing, so the store step is a third entry
-    -- beside the two it composes, exactly as the live `spliceReplyFrameStores`
+    -- removal cuts the frame out in three stores, so the store step is a third entry
+    -- beside the two it composes, exactly as the live `cutReplyFrameStores`
     -- is.
-  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores
+  , `SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameStores
   , `SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores
-  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut
-  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf
+  , `SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOut
+  , `SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOutOrSelf
     -- The push: the new head's two links, and the old head's `next`.
   , `SeLe4n.Kernel.storeDonationFramePush
     -- The pop: the head's two links, the frame below re-headed, and the pair.
@@ -766,7 +766,7 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Model.SystemState.consumeCallerReplyLink,
       .states [`SeLe4n.Kernel.consumeCallerReplyLink_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept])
-    -- seL4's `reply_remove`: the splice, then the unlink.  This is the step both
+    -- seL4's `reply_remove`: the cut, then the unlink.  This is the step both
     -- reply spines run, and the one a new reply path must call rather than
     -- reaching for the consume.
   , (`SeLe4n.Kernel.removeCallerReplyFrame,
@@ -794,23 +794,23 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
     -- is WS-RM's own defect, surviving on the surface nothing was looking at.
     --
-    -- **WS-HP HP8**: the three splice entries below are the two the sever had
+    -- **WS-HP HP8**: the three cut entries below are the two the sever had
     -- plus its store step, and each `mirrors` the live counterpart of the same
     -- shape.  The store step is registered rather than folded into the removal
     -- for the reason the live one is: it performs the writes with none of the
     -- removal's resolution or validation, so a transition reaching for it
-    -- directly is a site.  It mirrors `spliceReplyFrameStores`, which is itself
+    -- directly is a site.  It mirrors `cutReplyFrameStores`, which is itself
     -- a `.halfStep` of the live removal — so the chain from here terminates in a
     -- stating entry two hops out rather than one, which the registry's own
     -- closure check follows.
-  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameStores,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.FrozenOps.frozenSeverReplyFrameBelowStores,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
-  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
-  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameOutOrSelf)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOut,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameOut)
+  , (`SeLe4n.Kernel.FrozenOps.frozenCutReplyFrameOutOrSelf,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameOutOrSelf)
     -- The frozen reply, which runs the removal before the consume in the order
     -- the live one does.  `FO-031` is the differential scenario that exercises
     -- the agreement.
@@ -827,42 +827,42 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
-    -- The splice itself, its total fold, and the thread-keyed wrapper the
+    -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
     -- that validates it.  It cannot state a chain result of its own: given only
     -- `above` and the two records, nothing says the frame above the cut is the
     -- one whose `prev` names `rid`, and the three reciprocal links it writes are
-    -- coherent only under the resolution `spliceReplyFrameOut` performs.  That
+    -- coherent only under the resolution `cutReplyFrameOut` performs.  That
     -- resolution is exactly what the operation adds, and it is where the chain
     -- result is stated.
-  , (`SeLe4n.Kernel.spliceReplyFrameStores,
-      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
+  , (`SeLe4n.Kernel.cutReplyFrameStores,
+      .halfStep `SeLe4n.Kernel.cutReplyFrameOut)
     -- The cut from below is a half-step for the same reason: given only the two
     -- records, nothing says the frame below links up to the cut frame or that
     -- the cut frame heads nothing, which is the resolution the operation adds.
   , (`SeLe4n.Kernel.severReplyFrameBelowStores,
-      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
-  , (`SeLe4n.Kernel.spliceReplyFrameOut,
-      .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,
-      .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+      .halfStep `SeLe4n.Kernel.cutReplyFrameOut)
+  , (`SeLe4n.Kernel.cutReplyFrameOut,
+      .states [`SeLe4n.Kernel.cutReplyFrameOut_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.cutReplyFrameOutOrSelf,
+      .states [`SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_donationChainWellFormed])
     -- The compiled forms a final delete runs (`@[csimp]` through
     -- `finaliseReply_eq_impl`): each equals its spec form, and states the
     -- chain through that equality.
-    -- The compiled splice writes through its two compiled store steps, each
-    -- proven equal to the specification's (`spliceReplyFrameStoresInPlace_eq`,
+    -- The compiled cut writes through its two compiled store steps, each
+    -- proven equal to the specification's (`cutReplyFrameStoresInPlace_eq`,
     -- `severReplyFrameBelowStoresInPlace_eq`), so each mirrors that step; the
-    -- fold over them states the chain through `spliceReplyFrameOutOrSelfInPlace_eq`
-    -- (`spliceReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
-  , (`SeLe4n.Kernel.spliceReplyFrameStoresInPlace,
-      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+    -- fold over them states the chain through `cutReplyFrameOutOrSelfInPlace_eq`
+    -- (`cutReplyFrameOutOrSelfInPlace_preserves_donationChainWellFormed`).
+  , (`SeLe4n.Kernel.cutReplyFrameStoresInPlace,
+      .mirrors `SeLe4n.Kernel.cutReplyFrameStores)
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
       .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
-      .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.cutThreadReplyFrameOut,
+      .states [`SeLe4n.Kernel.cutThreadReplyFrameOut_preserves_donationChainWellFormed])
     -- The cancellation path's teardown: the projection above under the victim's
     -- own `replyObject`.  Until WS-RR RR8.5 this was a raw-insert twin of the
     -- pair (`clearTcbReplyObject` then `clearReplyObjectCaller`) with its own
@@ -1004,7 +1004,7 @@ entries are.  The derived half is exercised in place — unlike the export censu
 planting a write site here costs nothing, since a `def` emits no symbol. -/
 
 /-- **The bare consume the plan asks this gate to catch**: a transition that
-clears a caller's Reply link with no splice anywhere in it.  This is WS-RM's own
+clears a caller's Reply link with no frame cut anywhere in it.  This is WS-RM's own
 defect, in miniature. -/
 private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     SeLe4n.Model.Kernel Unit :=

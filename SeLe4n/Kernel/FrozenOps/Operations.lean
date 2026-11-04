@@ -1053,10 +1053,10 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                             -- .endpointReplyToBlockedCaller = true` forbids.
                             -- Where the cut frame is the *bottom* of its stack
                             -- the two write the same value at the frame above
-                            -- (`frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below`),
+                            -- (`frozenCutReplyFrameStores_eq_sever_of_no_frame_below`),
                             -- which is why every scenario this surface carried
                             -- before HP8 answers as it did.
-                            let st' := frozenSpliceReplyFrameOutOrSelf st'' replyId
+                            let st' := frozenCutReplyFrameOutOrSelf st'' replyId
                             -- ...and the record stored is **`Reply.consumed`**, the
                             -- live function, not an inline caller clear.  It is a
                             -- pure function on a `Reply`, and this surface stores

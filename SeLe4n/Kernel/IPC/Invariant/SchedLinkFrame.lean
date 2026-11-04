@@ -1059,10 +1059,10 @@ theorem storeReplyOver {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : Reply}
   storeObject hInv hS (by rw [hPre]; rfl) (by rw [hPre]; rfl) (by rw [hPre]; rfl)
 
 /-- The splice of a reply off its stack: at most three replies rewritten. -/
-theorem spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
+theorem cutReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
     (hInv : st.objects.invExt) :
-    SchedLinkFrame st (SeLe4n.Kernel.spliceReplyFrameOutOrSelf st rid) := by
-  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hInv
+    SchedLinkFrame st (SeLe4n.Kernel.cutReplyFrameOutOrSelf st rid) := by
+  obtain ⟨m1, m2, h1, h2, h3⟩ := cutReplyFrameOutOrSelf_store_cases st rid hInv
   have step : ∀ {a b : SystemState}, a.objects.invExt →
       (b = a ∨ ∃ (k : SeLe4n.ReplyId) (o o' : Reply), a.objects[k.toObjId]? = some (.reply o) ∧
         SeLe4n.Model.storeObject k.toObjId (.reply o') a = .ok ((), b)) →
@@ -1075,12 +1075,12 @@ theorem spliceReplyFrameOutOrSelf (st : SystemState) (rid : SeLe4n.ReplyId)
   have f2 := step f1.1 h2
   exact f1.2.trans (f2.2.trans (step f2.1 h3).2)
 
-theorem spliceThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
-    SchedLinkFrame st (SeLe4n.Kernel.spliceThreadReplyFrameOut st t) := by
-  unfold SeLe4n.Kernel.spliceThreadReplyFrameOut
+theorem cutThreadReplyFrameOut (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
+    SchedLinkFrame st (SeLe4n.Kernel.cutThreadReplyFrameOut st t) := by
+  unfold SeLe4n.Kernel.cutThreadReplyFrameOut
   cases t.replyObject with
   | none => exact .refl st
-  | some rid => exact spliceReplyFrameOutOrSelf st rid hInv
+  | some rid => exact cutReplyFrameOutOrSelf st rid hInv
 
 /-- The consume of a caller's reply link: the reply consumed, the caller's link
 cleared. -/
@@ -1126,17 +1126,17 @@ theorem replyCancelTail (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : st.objects.invExt) :
     SchedLinkFrame st (SystemState.unlinkReplyWaiterOpt
         (Lifecycle.Suspend.consumeReplyLink
-          (Lifecycle.Suspend.restoreToReadyCancelled (SeLe4n.Kernel.spliceThreadReplyFrameOut st t)
+          (Lifecycle.Suspend.restoreToReadyCancelled (SeLe4n.Kernel.cutThreadReplyFrameOut st t)
             c) c t)
         c t.blockingServer?) := by
-  have g1 := FinaliseFrameAny.spliceThreadReplyFrameOut st t hInv
-  have f1 := spliceThreadReplyFrameOut st t hInv
+  have g1 := FinaliseFrameAny.cutThreadReplyFrameOut st t hInv
+  have f1 := cutThreadReplyFrameOut st t hInv
   have f2 : SchedLinkFrame st (Lifecycle.Suspend.restoreToReadyCancelled
-      (SeLe4n.Kernel.spliceThreadReplyFrameOut st t) c) := by
+      (SeLe4n.Kernel.cutThreadReplyFrameOut st t) c) := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact f1.trans (updateTcb _ c _ g1.invExt)
   have g2 : (Lifecycle.Suspend.restoreToReadyCancelled
-      (SeLe4n.Kernel.spliceThreadReplyFrameOut st t) c).objects.invExt := by
+      (SeLe4n.Kernel.cutThreadReplyFrameOut st t) c).objects.invExt := by
     unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
     exact SystemState.updateTcb_preserves_objects_invExt _ _ _ g1.invExt
   have f3 := f2.trans (consumeReplyLink _ c t g2)

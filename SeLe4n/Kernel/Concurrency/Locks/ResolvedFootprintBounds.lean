@@ -521,7 +521,7 @@ re-running the arithmetic.  The reachable figure is **seven** (ten until
 consumed reply on every reachable state, and the reclaim resolves only for a
 victim whose own frame heads a stack — so on a reply arm that reclaims, the
 detached frame *and* the frame below it are both `none`, which is the exclusion
-`cancelSplicedFrameAbove?_of_donation` and `cancelSplicedFrameBelow?_of_donation`
+`cancelSplicedFrameAbove?_of_donation` and `cancelCutFrameBelow?_of_donation`
 state at the resolver. -/
 theorem lockSet_cancelIpcBlocking_reply_size_le (victimTid : SeLe4n.ThreadId)
     (consumedReplyId : Option SeLe4n.ReplyId)
@@ -590,7 +590,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation (st : SystemState
   exact Nat.add_le_add_right
     (lockSet_cancelIpcBlocking_noDonation_size_le victimTid (cancelBlockedEndpoint? tcb)
       (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
-      (cancelSplicedFrameAbove? st tcb) (cancelSplicedFrameBelow? st tcb)) 3
+      (cancelSplicedFrameAbove? st tcb) (cancelCutFrameBelow? st tcb)) 3
 
 /-- WS-OD (`v0.35.4`), WS-HP HP3.1: **…and on a victim owed a donation, at most
 thirteen** (sixteen before `v0.36.136`) — the reply arm, whose own endpoint and
@@ -639,7 +639,7 @@ derived from it; `cancelBlockedEndpoint?` / `cancelBlockedNotification?` answer
 the victim's own queue links on the arm that unlinks it (endpoint, notification,
 or a reply arm with a recorded server) and `(none, none)` otherwise;
 `tcb.blockingServer?` answers `some` only on the reply arm; and
-`cancelSplicedFrameAbove?` and `cancelSplicedFrameBelow?` are both reply-arm
+`cancelSplicedFrameAbove?` and `cancelCutFrameBelow?` are both reply-arm
 members, read off the victim's own reply frame.
 
 Arm by arm: the reply arm is `1 + 9 + 3 = 13`, the endpoint arm `1 + 3 = 4`, the

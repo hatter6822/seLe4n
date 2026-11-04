@@ -161,36 +161,36 @@ theorem notificationSignalBoundOnCore_runQueueStage (notificationId : SeLe4n.Obj
          (boundTarget_blockedAt (by assumption))
        run_queue_current_nowhere; done)
 
-/-- The reply-frame splice rewrites Reply objects only. -/
-theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n.ReplyId) :
-    RunQueueStage st (spliceReplyFrameOutOrSelf st rid) := by
-  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+/-- The reply-frame cut rewrites Reply objects only. -/
+theorem cutReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n.ReplyId) :
+    RunQueueStage st (cutReplyFrameOutOrSelf st rid) := by
+  rcases cutReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact RunQueueStage.refl _
   · refine RunQueueStage.of_slots (fun hInv =>
-      ⟨spliceReplyFrameOut_preserves_objects_invExt hInv h, fun oid c => ?_, fun oid => ?_,
-       spliceReplyFrameOut_scheduler_eq h⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
-      (by rw [spliceReplyFrameOut_machine_eq h])
-    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+      ⟨cutReplyFrameOut_preserves_objects_invExt hInv h, fun oid c => ?_, fun oid => ?_,
+       cutReplyFrameOut_scheduler_eq h⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
+      (by rw [cutReplyFrameOut_machine_eq h])
+    · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
-    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+    · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · exact SystemState.slotStateMono.of_eq e
       · exact SystemState.slotStateMono.of_obj h2
           (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl)
-    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+    · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
-    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+    · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
-    · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+    · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
 
 theorem removeCallerReplyFrame_runQueueStage {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     {st st' : SystemState} (h : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     RunQueueStage st st' :=
-  (spliceReplyFrameOutOrSelf_runQueueStage st rid).trans (consumeCallerReply_runQueueStage h)
+  (cutReplyFrameOutOrSelf_runQueueStage st rid).trans (consumeCallerReply_runQueueStage h)
 
 /-- A state write from a TCB record read from the same state. -/
 theorem storeTcbIpcStateAndMessage_fromTcb_runQueueStage {st st' : SystemState}

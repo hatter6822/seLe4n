@@ -575,35 +575,35 @@ below's `next` (when there is one) and the cut frame's two links, each written i
 its slot (`storeReplyWith`).  Each later write reads its key where the earlier ones left
 it, which is its pre-state record when the earlier keys are found in place;
 otherwise the specification's stores run. -/
-@[inline] def spliceReplyFrameStoresInPlace (st : SystemState) (rid above : SeLe4n.ReplyId)
+@[inline] def cutReplyFrameStoresInPlace (st : SystemState) (rid above : SeLe4n.ReplyId)
     (r a : Reply) : SystemState :=
-  match spliceFrameBelow? st rid r above with
+  match cutFrameBelow? st rid r above with
   | none =>
     if st.objects.findsInPlace above.toObjId then
       (st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
         rid.toObjId fun r => { r with prev := none, next := none }
     else
-      match spliceReplyFrameStores st rid above r a with
+      match cutReplyFrameStores st rid above r a with
       | .ok st' => st'
       | .error _ => st
   | some (below, _) =>
     if st.objects.findsInPlace above.toObjId && st.objects.findsInPlace below.toObjId then
-      ((st.storeReplyWith above.toObjId fun a => { a with prev := some below }).storeReplyWith
-        below.toObjId fun b => { b with next := some (.frame above) }).storeReplyWith
+      ((st.storeReplyWith above.toObjId fun a => a.unlinkedFrom rid).storeReplyWith
+        below.toObjId fun b => { b with next := none }).storeReplyWith
         rid.toObjId fun r => { r with prev := none, next := none }
     else
-      match spliceReplyFrameStores st rid above r a with
+      match cutReplyFrameStores st rid above r a with
       | .ok st' => st'
       | .error _ => st
 
-theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.ReplyId}
+theorem cutReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.ReplyId}
     {r a : Reply} (hR : st.getReply? rid = some r) (hN : r.next = some (.frame above))
     (hA : st.getReply? above = some a) (hP : a.prev = some rid) :
-    spliceReplyFrameStores st rid above r a = .ok (spliceReplyFrameStoresInPlace st rid above r a) := by
+    cutReplyFrameStores st rid above r a = .ok (cutReplyFrameStoresInPlace st rid above r a) := by
   have hAo := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
   have hRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
-  unfold spliceReplyFrameStoresInPlace
-  cases hBelow : spliceFrameBelow? st rid r above with
+  unfold cutReplyFrameStoresInPlace
+  cases hBelow : cutFrameBelow? st rid r above with
   | none =>
     dsimp only
     split
@@ -620,7 +620,7 @@ theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.
           subst hra
           exact Or.inl (by rw [← hAR]; exact storeObject_objects_self_of_findsInPlace hFA h1)
         · exact Or.inr (by rw [storeObject_objects_ne_of_findsInPlace hFA hAR h1]; exact hRo)
-      unfold spliceReplyFrameStores
+      unfold cutReplyFrameStores
       rw [hBelow]; dsimp only
       rw [h1]; dsimp only
       rcases hR1 with hR1 | hR1
@@ -628,7 +628,7 @@ theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.
           (fun r => { r with prev := none, next := none })]
       · rw [SystemState.storeObject_reply_eq_storeReplyWith hR1
           (fun r => { r with prev := none, next := none })]
-    · obtain ⟨s, hs⟩ := spliceReplyFrameStores_isOk st rid above r a
+    · obtain ⟨s, hs⟩ := cutReplyFrameStores_isOk st rid above r a
       rw [hs]
   | some p =>
     obtain ⟨below, b⟩ := p
@@ -637,15 +637,15 @@ theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.
     · next hF =>
       rw [Bool.and_eq_true] at hF
       obtain ⟨hFA, hFB⟩ := hF
-      obtain ⟨_, hNeBA, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
+      obtain ⟨_, hNeBA, hB, _⟩ := cutFrameBelow?_eq_some hBelow
       have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hB
-      have hNeBR := spliceFrameBelow?_ne_cut hR hN hBelow
-      have hNeAR := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
+      have hNeBR := cutFrameBelow?_ne_cut hR hN hBelow
+      have hNeAR := cutFrameBelow?_above_ne_cut hR hA hP hBelow
       have hk : ∀ {x y : SeLe4n.ReplyId}, x ≠ y → x.toObjId ≠ y.toObjId :=
         fun h e => h (SeLe4n.ReplyId.toObjId_injective _ _ e)
       have h1 := SystemState.storeObject_reply_eq_storeReplyWith hAo
-        (fun a => { a with prev := some below })
-      generalize hS1 : st.storeReplyWith above.toObjId (fun a => { a with prev := some below }) = s1
+        (fun a => a.unlinkedFrom rid)
+      generalize hS1 : st.storeReplyWith above.toObjId (fun a => a.unlinkedFrom rid) = s1
         at h1
       have hB1 : s1.objects[below.toObjId]? = some (.reply b) := by
         rw [storeObject_objects_ne_of_findsInPlace hFA (hk (Ne.symm hNeBA)) h1]; exact hBo
@@ -654,26 +654,26 @@ theorem spliceReplyFrameStoresInPlace_eq {st : SystemState} {rid above : SeLe4n.
       have hFB1 : s1.objects.findsInPlace below.toObjId = true := by
         rw [storeObject_findsInPlace_of_findsInPlace hFA h1]; exact hFB
       have h2 := SystemState.storeObject_reply_eq_storeReplyWith hB1
-        (fun b => { b with next := some (.frame above) })
+        (fun b => { b with next := none })
       generalize hS2 : s1.storeReplyWith below.toObjId
-        (fun b => { b with next := some (.frame above) }) = s2 at h2
+        (fun b => { b with next := none }) = s2 at h2
       have hR2 : s2.objects[rid.toObjId]? = some (.reply r) := by
         rw [storeObject_objects_ne_of_findsInPlace hFB1 (hk hNeBR) h2]; exact hR1
       have h3 := SystemState.storeObject_reply_eq_storeReplyWith hR2
         (fun r => { r with prev := none, next := none })
-      unfold spliceReplyFrameStores
+      unfold cutReplyFrameStores
       rw [hBelow]; dsimp only
       rw [h1]; dsimp only; rw [h2]; dsimp only; rw [h3]
-    · obtain ⟨s, hs⟩ := spliceReplyFrameStores_isOk st rid above r a
+    · obtain ⟨s, hs⟩ := cutReplyFrameStores_isOk st rid above r a
       rw [hs]
 
 /-- **The splice of a reply heading no stack, as compiled**: the same reads and
-the same stores as `spliceReplyFrameOutOrSelf`, with no `Except` cell on the
+the same stores as `cutReplyFrameOutOrSelf`, with no `Except` cell on the
 arms that write nothing (a reply linked to no frame either way, the busy reply's
 case), and the frame-above splice and the cut from the frame below each writing
-their links in their slots (`spliceReplyFrameStoresInPlace`,
+their links in their slots (`cutReplyFrameStoresInPlace`,
 `severReplyFrameBelowStoresInPlace`). -/
-@[inline] def spliceReplyFrameOutOrSelfInPlace (st : SystemState) (rid : SeLe4n.ReplyId) :
+@[inline] def cutReplyFrameOutOrSelfInPlace (st : SystemState) (rid : SeLe4n.ReplyId) :
     SystemState :=
   match st.getReply? rid with
   | none => st
@@ -684,7 +684,7 @@ their links in their slots (`spliceReplyFrameStoresInPlace`,
       | none => st
       | some a =>
         if a.prev != some rid then st
-        else spliceReplyFrameStoresInPlace st rid above r a
+        else cutReplyFrameStoresInPlace st rid above r a
     | some (.head _) => st
     | none =>
       match r.prev with
@@ -696,9 +696,9 @@ their links in their slots (`spliceReplyFrameStoresInPlace`,
           if b.next != some (.frame rid) then st
           else severReplyFrameBelowStoresInPlace st rid below r b
 
-theorem spliceReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
-    spliceReplyFrameOutOrSelfInPlace st rid = spliceReplyFrameOutOrSelf st rid := by
-  unfold spliceReplyFrameOutOrSelfInPlace spliceReplyFrameOutOrSelf spliceReplyFrameOut
+theorem cutReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    cutReplyFrameOutOrSelfInPlace st rid = cutReplyFrameOutOrSelf st rid := by
+  unfold cutReplyFrameOutOrSelfInPlace cutReplyFrameOutOrSelf cutReplyFrameOut
   cases hR : st.getReply? rid with
   | none => rfl
   | some r =>
@@ -734,7 +734,7 @@ theorem spliceReplyFrameOutOrSelfInPlace_eq (st : SystemState) (rid : SeLe4n.Rep
           · simp only [hP, ↓reduceIte]
           · simp only [hP, Bool.false_eq_true, ↓reduceIte]
             have hP' : a.prev = some rid := by simpa using hP
-            rw [spliceReplyFrameStoresInPlace_eq hR hN hA hP']
+            rw [cutReplyFrameStoresInPlace_eq hR hN hA hP']
 
 /-- **A caller's reply link consumed, as compiled**: the reply's consumed record
 and the caller's cleared link, each written in its slot (`storeReplyWith`,
@@ -794,7 +794,7 @@ server's code, each object written in its slot. -/
     (serverCode : Nat) : SystemState :=
   let st1 := match code with
     | 0 => st
-    | k + 1 => spliceReplyFrameOutOrSelfInPlace st ⟨k⟩
+    | k + 1 => cutReplyFrameOutOrSelfInPlace st ⟨k⟩
   let st2 := Lifecycle.Suspend.restoreToReadyCancelled st1 c
   let st3 := match code with
     | 0 => st2
@@ -805,15 +805,15 @@ theorem cancelReplyArmInPlace_eq (st : SystemState) (c : SeLe4n.ThreadId) (t : T
     cancelReplyArmInPlace st c t.replyObjectCode (replyCallerServerCode t) =
       SystemState.unlinkReplyWaiterOpt
         (Lifecycle.Suspend.consumeReplyLink
-          (Lifecycle.Suspend.restoreToReadyCancelled (spliceThreadReplyFrameOut st t) c) c t)
+          (Lifecycle.Suspend.restoreToReadyCancelled (cutThreadReplyFrameOut st t) c) c t)
         c t.blockingServer? := by
-  unfold cancelReplyArmInPlace spliceThreadReplyFrameOut Lifecycle.Suspend.consumeReplyLink
+  unfold cancelReplyArmInPlace cutThreadReplyFrameOut Lifecycle.Suspend.consumeReplyLink
   rw [ofOptCode_replyCallerServerCode]
   unfold TCB.replyObject
   cases t.replyObjectCode with
   | zero => rfl
   | succ k =>
-    simp only [SeLe4n.ReplyId.ofOptCode, spliceReplyFrameOutOrSelfInPlace_eq,
+    simp only [SeLe4n.ReplyId.ofOptCode, cutReplyFrameOutOrSelfInPlace_eq,
       consumeCallerReplyInPlace_eq]
 
 /-- **The cancel of a reply heading no stack, as compiled**: on a caller blocked on
