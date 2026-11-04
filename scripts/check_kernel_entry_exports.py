@@ -105,8 +105,12 @@ ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
 # `scripts/build_lean_aarch64_archive.py`.  It is what the image links, so the
 # reconciliation below is decided on it as well as on the host archive: a
 # requirement is resolved only when BOTH define it, and an expected-unresolved
-# entry either one defines is stale.  Reading the pair that way is fail-closed
-# for a stale cross archive -- an out-of-date one can only add failures.
+# entry either one defines is stale.  The cross pair is read only when its
+# build record names this tree (`archive_staleness`): a pair restored from an
+# earlier tree's build cache lacks this tree's new exports and reports them
+# unresolved for the wrong reason, so it is read as absent -- a narrower check
+# here, and a failure under `--require-cross`, which the archive lane passes
+# after building the pair from this tree.
 CROSS_ARCHIVE = REPO / ".lake" / "build" / "aarch64-unknown-none-softfloat" / "libsele4n.a"
 # WS-ZA ZA5.13: the allocation exerciser's library (`SeLe4nQemuVirtExerciser`,
 # outside `SeLe4n.lean`'s import closure), host and cross.  Its boot entry and
@@ -2267,6 +2271,15 @@ def combine_archive_definitions(
     return set.intersection(*tables), set.union(*tables)
 
 
+def cross_archive_staleness() -> str | None:
+    """The archive builder's answer to whether the cross pair is this tree's
+    build (`build_lean_aarch64_archive.archive_staleness`).  Imported here,
+    not at module load: the builder imports this gate."""
+    import build_lean_aarch64_archive as archive_builder  # noqa: PLC0415
+
+    return archive_builder.archive_staleness()
+
+
 def checked_archives(require_cross: bool) -> list[tuple[str, tuple[Path, ...]]]:
     """The archives the reconciliation is decided on, per side: the host pair
     always, the cross pair when present -- and when `--require-cross` is
@@ -2277,12 +2290,22 @@ def checked_archives(require_cross: bool) -> list[tuple[str, tuple[Path, ...]]]:
     cross pair together, so a cross side holding only one of them was left by
     an earlier tree (a restored build cache): it is not what this tree links,
     and it is read as an absent cross pair -- a narrower check, and a failure
-    under `--require-cross`."""
+    under `--require-cross`.  So is a whole pair whose build record does not
+    name this tree (`cross_archive_staleness`): a build cache restored across
+    trees leaves both archives, without this tree's new exports."""
     archives = [("host", (ARCHIVE, EXERCISER_ARCHIVE))]
     cross = (CROSS_ARCHIVE, CROSS_EXERCISER_ARCHIVE)
     present = [path for path in cross if path.exists()]
-    if len(present) == len(cross):
+    stale = cross_archive_staleness() if len(present) == len(cross) else None
+    if len(present) == len(cross) and stale is None:
         archives.append(("aarch64", cross))
+    elif stale is not None:
+        if require_cross:
+            sys.exit(f"[FAIL] {stale}, and {REQUIRE_CROSS_FLAG} was passed. "
+                     "Build it first: `python3 scripts/build_lean_aarch64_archive.py`")
+        print(f"[SKIP] aarch64 side: {stale}, so it is not what this tree links; "
+              "build it with `python3 scripts/build_lean_aarch64_archive.py` "
+              "to check that side")
     elif require_cross:
         missing = next(path for path in cross if not path.exists())
         sys.exit(
