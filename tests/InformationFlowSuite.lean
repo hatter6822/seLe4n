@@ -1523,7 +1523,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- V6-L: Extended boundary matches canonical
   expect "enforcementBoundaryExtended has 53 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 53)
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 56)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

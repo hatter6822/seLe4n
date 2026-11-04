@@ -218,6 +218,7 @@ theorem bootFromPlatformCheckedStartedFor_irqNodesFresh
   intro l hl
   have hl' : l < InterruptLineSet.capacity := by
     have := List.mem_range.mp hl; unfold irqNodeLineCount at this; omega
+  show (started.state.objects[irqNodeId l]?).isNone = true
   rw [startInitialThreads_objects_none _ _ _ hStart _
     (bootFromPlatformCheckedWithIdleThreadsFor_irqNode_none cores config base hBase hl')]
   rfl

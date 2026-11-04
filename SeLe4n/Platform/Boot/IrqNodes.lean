@@ -57,7 +57,7 @@ def installIrqNodes (n : Nat) (ist : IntermediateState) : IntermediateState :=
 /-- **No object holds one of the first `n` lines' node ids**: what the install
 needs to only add (`installIrqNodes_objects_cases`). -/
 def irqNodesFresh (n : Nat) (st : SystemState) : Bool :=
-  (List.range n).all fun l => (st.objects[irqNodeId l]?).isNone
+  (List.range n).all fun l => (st.getObject? (irqNodeId l)).isNone
 
 -- ============================================================================
 -- The install's objects
@@ -106,7 +106,7 @@ theorem installIrqNodes_objects (n : Nat) (ist : IntermediateState) (k : SeLe4n.
 theorem irqNodesFresh_spec {n : Nat} {st : SystemState} (h : irqNodesFresh n st = true)
     {l : Nat} (hl : l < n) : st.objects[irqNodeId l]? = none := by
   have := List.all_eq_true.mp h l (List.mem_range.mpr hl)
-  exact Option.isNone_iff_eq_none.mp this
+  exact Option.isNone_iff_eq_none.mp (by simpa [SystemState.getObject?] using this)
 
 /-- **Over a fresh state the install only adds**: each id holds the state's own
 object, or held nothing and holds an empty node. -/

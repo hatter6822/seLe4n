@@ -109,11 +109,13 @@ and fault entries do.
   retype's first call, so `untyped-retype-page-table-1` moves from (15, 13) to
   (13, 13).  The 2 cells were the ledger copy, not the destination slot's
   capability record the old pin comment named.
-- **Fixtures.**  `main_trace_smoke.expected` reads "all 44 variants" and
-  `syscall_return_shape.expected` counts 44 syscalls (44 unit-returning
-  shapes), because `.irqHandlerAck` is syscall 44.  `smp_information_flow.expected`
-  is regenerated from its producer for the 67-entry boundary (53 canonical) and
-  the count of 44.  Each `.sha256` is refreshed.
+- **Fixtures.**  `main_trace_smoke.expected` reads "all 47 variants" and
+  `syscall_return_shape.expected` counts 47 syscalls, the four interrupt
+  syscalls (44 to 47) all unit-returning.  `smp_information_flow.expected` is
+  regenerated from its producer for the 70-entry boundary (56 canonical), the
+  count of 47, the two interrupt nodes in its fixture (12 objects, 7/8/12
+  visible at low/mid/high) and the 38-entry cross-core inventory.  Each
+  `.sha256` is refreshed.
 - **The interrupt nodes and IRQControl, as seL4's.**  The line-to-notification
   table (`SystemState.irqHandlers`, `Notification.irqBound`, the boot's IRQ
   table and its reciprocity check, the projection's handler view) is retired.
@@ -158,7 +160,12 @@ and fault entries do.
     on the shared-state arm), and its dispatch-arm, census, lock-set,
     footprint (`irqControlGet_stepCovers`, `irqHandlerSetNotification_stepCovers`,
     `irqHandlerClear_stepCovers`), mapping-stage, run-queue, enforcement,
-    refusal, taint and non-interference coverage.  On the Rust side the three
+    refusal, taint and non-interference coverage.  The bind and the clear are
+    cross-core inventory entries (`irqHandlerSetNotificationDispatch`,
+    `irqHandlerClearDispatch`, delegation-backed), invisible on every core
+    outside the node slot delete's `cspaceDeleteSlotFinalisingCores`
+    (`irqHandlerSetNotificationFromCap_crossCoreNonInterference`,
+    `irqHandlerClear_crossCoreNonInterference`).  On the Rust side the three
     ids are in `sele4n-types` and the HAL, `sele4n_sys::irq` gains
     `irq_control_get`, `irq_handler_set_notification` and `irq_handler_clear`,
     and the ABI conformance suite covers them.

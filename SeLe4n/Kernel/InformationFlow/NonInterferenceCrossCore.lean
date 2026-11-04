@@ -457,6 +457,54 @@ theorem copyThreadSpacesZombie_crossCoreNonInterference
   crossCoreNonInterference_ofCores ctx observer hne
     (copyThreadSpacesZombie_confinedToCores executingCore st st' vtid cnSrc vrSrc hInv hStep) hShared
 
+/-- WS-ZA ZA6.32: **the bind's copy writes no core** — the node slot's capability
+and its derivation edge are the object store and the CDT. -/
+theorem cspaceCopy_confinedToCores {src dst : CSpaceAddr} {st st' : SystemState}
+    (hStep : cspaceCopy src dst st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨cap, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hStep
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (by rw [untypedSourceSetFull_scheduler, SystemState.cdtAddChild_scheduler,
+      cspaceInsertSlot_preserves_scheduler st st2 dst _ hIns])
+    (by rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine,
+      cspaceInsertSlot_preserves_machine st st2 dst _ hIns])
+
+/-- WS-ZA ZA6.32 (**the live `.irqHandlerClear` arm, cross-core**): the clear is
+the node slot's zombie delete, so it is invisible on every core outside
+`cspaceDeleteSlotFinalisingCores` of that slot — every core when the slot holds
+the last capability to a notification whose finalisation wakes waiters. -/
+theorem irqHandlerClear_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
+    (line : Nat) (st st' : SystemState) (c : CoreId)
+    (hStep : irqHandlerClear executingCore line st = .ok ((), st'))
+    (hne : c ∉ cspaceDeleteSlotFinalisingCores st (irqNodeAddr line))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  cspaceDeleteSlotZombie_crossCoreNonInterference ctx observer executingCore _ st st' c
+    (irqHandlerClear_ok hStep).2 hne hShared
+
+/-- WS-ZA ZA6.32 (**the live `.irqHandlerSetNotification` arm, cross-core**): the
+bind is the node slot's zombie delete then the copy into it, and the copy writes
+no core (`cspaceCopy_confinedToCores`), so the bind is invisible on every core
+outside the delete's `cspaceDeleteSlotFinalisingCores`. -/
+theorem irqHandlerSetNotificationFromCap_crossCoreNonInterference
+    (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (line : Nat)
+    (args? : Except KernelError Architecture.SyscallArgDecode.IrqHandlerSetNotificationArgs)
+    (st st' : SystemState)
+    (c : CoreId)
+    (hStep : irqHandlerSetNotificationFromCap tid executingCore line args? st = .ok ((), st'))
+    (hne : c ∉ cspaceDeleteSlotFinalisingCores st (irqNodeAddr line))
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  obtain ⟨_, _, -, hB⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line args? st st' hStep
+  obtain ⟨_, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hB
+  exact crossCoreNonInterference_ofCores ctx observer
+    (by simpa using hne)
+    (observableSlotsConfinedToCores_trans
+      (cspaceDeleteSlotZombie_confinedToCores executingCore _ st st1 hZ)
+      (cspaceCopy_confinedToCores hC)) hShared
+
 -- ============================================================================
 -- §6 The non-interference instantiations
 -- ============================================================================
@@ -1328,6 +1376,14 @@ inductive CrossCoreTransition where
   placement and the head requeue there, or the linked branch's dequeue, head
   enqueues and scheduling point on the executing core. -/
   | schedContextYieldToDispatch
+  /-- WS-ZA ZA6.32 — the **live** `.irqHandlerSetNotification` arm.  Takes the
+  executing core for the zombie delete that empties the line's node slot before
+  the copy, and writes the cores that delete names: every core when the slot held
+  the last capability to a notification whose finalisation wakes waiters. -/
+  | irqHandlerSetNotificationDispatch
+  /-- WS-ZA ZA6.32 — the **live** `.irqHandlerClear` arm: the node slot's zombie
+  delete alone, with the same write set. -/
+  | irqHandlerClearDispatch
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
@@ -1344,7 +1400,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .cspaceDeleteDispatch, .cspaceRevokeDispatch, .untypedRetypeDispatch, .tcbSetSpaceDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch, .yieldDispatch, .schedContextConsumedDispatch,
-   .schedContextYieldToDispatch]
+   .schedContextYieldToDispatch, .irqHandlerSetNotificationDispatch, .irqHandlerClearDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -1430,8 +1486,11 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! schedContextConsumedOnCore_crossCoreNonInterference
   | .schedContextYieldToDispatch =>
       niName! schedContextYieldToOnCore_crossCoreNonInterference
+  | .irqHandlerSetNotificationDispatch =>
+      niName! irqHandlerSetNotificationFromCap_crossCoreNonInterference
+  | .irqHandlerClearDispatch => niName! irqHandlerClear_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 36 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 38 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1509,9 +1568,11 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .yieldDispatch => true
   | .schedContextConsumedDispatch => true
   | .schedContextYieldToDispatch => true
+  | .irqHandlerSetNotificationDispatch => true
+  | .irqHandlerClearDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 29 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 31 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1612,6 +1673,8 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .yieldDispatch => some .yield
   | .schedContextConsumedDispatch => some .schedContextConsumed
   | .schedContextYieldToDispatch => some .schedContextYieldTo
+  | .irqHandlerSetNotificationDispatch => some .irqHandlerSetNotification
+  | .irqHandlerClearDispatch => some .irqHandlerClear
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
 def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
@@ -1667,6 +1730,10 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .schedContextConsumed syscallDelegates_schedContextConsumed
   | .schedContextYieldToDispatch =>
       .delegationProof .schedContextYieldTo syscallDelegates_schedContextYieldTo
+  | .irqHandlerSetNotificationDispatch =>
+      .delegationProof .irqHandlerSetNotification syscallDelegates_irqHandlerSetNotification
+  | .irqHandlerClearDispatch =>
+      .delegationProof .irqHandlerClear syscallDelegates_irqHandlerClear
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
 names the syscall its own transition belongs to. Round 11's example — the
@@ -1703,7 +1770,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 21 := by decide
+    crossCoreLiveArmDelegationBacked.length = 23 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -1774,8 +1841,12 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .schedContextConsumedDispatch => false
   -- WS-ZA ZA6.29: the yieldTo invocation writes the bound thread's home core
   | .schedContextYieldToDispatch => true
+  -- WS-ZA ZA6.32: the two interrupt-handler arms empty the line's node slot by
+  -- the zombie delete, whose finalisations wake waiters on their own cores
+  | .irqHandlerSetNotificationDispatch => true
+  | .irqHandlerClearDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 26 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 28 := by decide
 
 end SeLe4n.Kernel
