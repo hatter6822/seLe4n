@@ -5958,7 +5958,8 @@ Every kernel object has a decidable well-formedness predicate:
   well-formed object table (`irqHandlerSetNotification_inPlace_copy`).  Each
   invocation has its decode, dispatch-arm, census, lock-set, taint,
   enforcement, refusal, non-interference and run-queue coverage, and the
-  exerciser's issue, bind, clear and delete each read 0.
+  exerciser's issue, bind, clear and delete each read 0, as does a revoke of
+  the notification's slot, after which the raised line signals nothing.
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged

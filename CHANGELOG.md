@@ -193,7 +193,12 @@ and fault entries do.
   - **The exerciser** issues, binds, clears and deletes the handlers on every
     pass (`irq-control-get`, `irq-handler-set-notification`,
     `irq-handler-clear`, `irq-handler-delete`), each pinned at 0 in
-    `scripts/qemu_exerciser_lib.sh`, first call and steady state.  The fault
+    `scripts/qemu_exerciser_lib.sh`, first call and steady state.  Each pass
+    also revokes the notification's slot (`irq-notification-revoke`), which
+    deletes the copy in the bound line's node, then raises the line
+    (`irq-revoked-line`): the entry takes it as unbound and masks it, and a
+    wait on the notification then blocks, so the line signalled nothing.
+    Both read 0.  The fault
     scenarios' handler slot moves to 21 (`FAULT_HANDLER_SLOT`), since slot 20
     holds the interrupt-control capability.
   - The registered "No IRQControl" debt row is deleted.  The reference

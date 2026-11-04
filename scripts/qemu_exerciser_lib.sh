@@ -251,6 +251,9 @@ for driver in drivers:
             # finalisation leaves the line inactive).
             "irq-control-get", "irq-handler-set-notification",
             "irq-handler-clear", "irq-handler-delete",
+            # a revoke of the notification's slot deletes the copy in the
+            # line's node, after which the line, raised, signals nothing.
+            "irq-notification-revoke", "irq-revoked-line",
             # WS-ZA ZA5.3: the same through a badged endpoint capability.
             "receive-for-badged-send", "badged-send-to-receiver",
             "badged-send-blocks", "receive-from-badged-sender",

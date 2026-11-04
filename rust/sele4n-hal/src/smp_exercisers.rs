@@ -3286,6 +3286,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         let which = if first { " (first call)" } else { "" };
         if !interrupt_handlers_issued(which)
             || !interrupt_entries(which)
+            || !interrupt_binding_revoked(which)
             || !interrupt_handlers_retired(which)
         {
             return Some(false);
@@ -3577,6 +3578,60 @@ fn interrupt_handlers_issued(which: &str) -> bool {
     heap_allocations_round_trip(&get_bound, which) == Some(true)
         && unmeasured(&get_unbound, "the unbound line's handler was not issued")
         && heap_allocations_round_trip(&bind, which) == Some(true)
+}
+
+/// **WS-ZA ZA6.32: a revoke ends the binding**, each step measured: the
+/// interrupt notification's slot revoked (`seL4_CNode_Revoke`), which deletes
+/// its derivation children, the copy in the bound line's node among them, so
+/// the line is bound to nothing; then the bound line raised, which the entry
+/// now takes as an unbound line and masks.  That the line signalled nothing is
+/// checked unmeasured: its acknowledge, then a wait on the notification that
+/// must block (no badge is pending) and the signal that wakes it.  The
+/// notification is bound to the line again, unmeasured, so the clear after
+/// empties a bound node slot as on the first pass.
+#[cfg(feature = "hw_target")]
+fn interrupt_binding_revoked(which: &str) -> bool {
+    let revoke = invocation(
+        "irq-notification-revoke",
+        CSPACE_REVOKE,
+        CNODE_CAP,
+        [NOTIFICATION_SLOT, 0, 0, 0],
+    );
+    let revoked_line = KernelEntry {
+        name: "irq-revoked-line",
+        enter: irq_bound_line_entry,
+    };
+    let block = partner_step(
+        "irq-revoked-wait-blocks",
+        WAIT,
+        NOTIFICATION_CAP,
+        0,
+        [0, 0],
+        true,
+    );
+    let wake = partner_step(
+        "irq-revoked-signal",
+        SIGNAL,
+        NOTIFICATION_CAP,
+        1,
+        [1, 0],
+        false,
+    );
+    let rebind = invocation(
+        "irq-handler-set-notification-again",
+        IRQ_HANDLER_SET_NOTIFICATION,
+        cap_address(IRQ_BOUND_HANDLER_SLOT),
+        [NOTIFICATION_CAP, 0, 0, 0],
+    );
+    heap_allocations_round_trip(&revoke, which) == Some(true)
+        && heap_allocations_interrupt(&revoked_line, which)
+        && unmeasured(
+            &irq_handler_ack("irq-revoked-ack", IRQ_BOUND_HANDLER_SLOT),
+            "the revoked line was not acknowledged",
+        )
+        && unmeasured(&block, "the revoked line signalled the notification")
+        && unmeasured(&wake, "the waiter on the notification was not woken")
+        && unmeasured(&rebind, "the notification was not bound again")
 }
 
 /// **WS-ZA ZA6.32: the handlers cleared and deleted**, each measured: the bound
