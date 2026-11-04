@@ -38,8 +38,12 @@ itself (`registerRoutedSyscall`),
 before any decode record exists: the decode writes nothing and such a call
 fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
 the entry's own state and refuses in it.  Every other call keeps the
-specification's form. -/
-@[inline] def syscallEntryCheckedR (ctx : LabelingContext)
+specification's form.
+
+A specification: the compiled entry runs the continued form
+(`syscallEntryCheckedK`, compiled as `syscallEntryRoutedK`), so no code is
+generated for it. -/
+noncomputable def syscallEntryCheckedR (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if isInsecureDefaultContext ctx then .error (.policyDenied, st)
@@ -464,8 +468,13 @@ with the syscall, the operand's address and the error, and the arm's result
 on a resolved operand to `kRes`; every other result -- a refusal before the
 resolution, and every call not routed to an operand dispatch -- is handed to
 `kGen` as `syscallEntryCheckedR` returns it.  The routing, the arms and the
-resolution are `syscallEntryCheckedR`'s own. -/
-@[inline] def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
+resolution are `syscallEntryCheckedR`'s own.
+
+A specification too: compiled, it is the dispatch over the out-of-line arms
+(`syscallEntryRoutedK`, through `syscallEntryCheckedK_eq_routed`), so an entry
+that inlines it holds one dispatch rather than every arm, and no code is
+generated for this form. -/
+noncomputable def syscallEntryCheckedK {β : Type} (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (st : SystemState)
     (kGen kRes : Except (KernelError × SystemState) (Unit × SystemState) → β)
     (kLook : SyscallId → SeLe4n.CPtr → KernelError → SystemState → β) : β :=

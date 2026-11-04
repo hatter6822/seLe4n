@@ -162,11 +162,14 @@ front rather than waiting for the build to break.
 The syscall entries are `@[inline]` so the exported kernel builds no result
 record (`syscallDispatchFromAbiImpl`, `syscallDispatchCrossCoreStep`,
 `syscallDispatchCrossCoreBracketedStep`, `syscallDispatchBracket`).  A suite
-helper that calls one directly receives the whole kernel inlined into that
-helper, which Lean emits as one C function of 70k–190k lines, and clang -O3
-time grows faster than linearly in function size.  Before v0.36.99 four suites
-called them this way and each took 30–100 minutes of clang time; the link
-step took under a second.
+helper that calls one directly receives the entry inlined into that helper,
+and clang -O3 time grows faster than linearly in function size.  Before
+v0.36.99 four suites called them this way and each took 30–100 minutes of
+clang time; the link step took under a second.  Then the entry inlined the
+whole kernel (one C function of 70k–190k lines per call site).  Since
+v0.36.196 each syscall route's arm is its own out-of-line function
+(`SeLe4n/Kernel/RoutedArms/`), so a call site inlines only the dispatch, about
+7,000 lines; the rule stands because a suite has many call sites.
 
 **Rule**: suites call the out-of-line copies in
 `SeLe4n/Testing/DispatchEntryCalls.lean` (`dispatchFromAbi`,

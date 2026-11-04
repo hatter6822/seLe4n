@@ -7,11 +7,14 @@
 """No test-suite C function is large enough to stall clang.
 
 The kernel's syscall entries are `@[inline]`, so a suite that calls one
-directly receives the whole kernel inlined into the calling helper.  Lean emits
-that helper as one C function of 70k-190k lines, and clang -O3 is superlinear
-in function size: four suites built that way took 30-100 minutes each to
-compile.  The suites call the out-of-line copies in
-`SeLe4n/Testing/DispatchEntryCalls.lean` instead, which are compiled once.
+directly receives the entry inlined into the calling helper, and clang -O3 is
+superlinear in function size: when the entry still inlined the whole kernel
+(one C function of 70k-190k lines), four suites built that way took 30-100
+minutes each to compile.  The arms are now out of line
+(`check_kernel_entry_c_function_size.py` holds the exported entries to a
+budget), but a suite has many call sites, so the suites call the out-of-line
+copies in `SeLe4n/Testing/DispatchEntryCalls.lean` instead, which are compiled
+once.
 
 This gate generates the C for each named executable's root module (Lake's
 `:c` facet, which elaborates the module but compiles nothing) and fails if any

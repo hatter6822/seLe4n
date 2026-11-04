@@ -5481,7 +5481,28 @@ run_check "INVARIANT" rg -n -U '^          let c := SystemState\.lookupSlotCap s
 run_check "INVARIANT" rg -n '^@\[noinline\] def slotEmpty \(c : @& Option Capability\) : Bool := c\.isNone$' SeLe4n/Kernel/RefusalCarryingEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryCheckedK_outcome_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def deliverSyscallLookupFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^        \(syscallLookupOutcome\n          \(fun s w b e => \.ok \(\.faulted, deliverSyscallLookupFault ctx executingCore s tid w b e$' SeLe4n/Platform/FFI.lean
+# The ABI entry is the word entry's body, its words read back as the outcome
+# they name, so the two FFI entries share that lookup continuation.
+run_check "INVARIANT" rg -n -U '^  fun st =>\n    match syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5\n        ipcBufferAddr elr spsr spEl0 x30 st with\n    \| \(w, st.\) => \.ok \(Architecture\.SyscallOutcome\.ofWords w, st.\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbiWords_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+# The routed entry: `syscallEntryCheckedK` (a specification, no compiled code)
+# runs as `syscallEntryRoutedK`, each route's arm an out-of-line function over
+# words and the owned state whose result is the state with its report pushed.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem syscallEntryCheckedK_eq_routed($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Dispatch.lean
+run_check "INVARIANT" rg -n '^noncomputable def syscallEntryCheckedK($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEntry.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.popEntryReport_pushEntryReport($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Report.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def signalRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Signal.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def waitRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Wait.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def yieldRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Yield.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def sendRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Send.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def callRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Call.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def replyRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Reply.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def receiveRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Receive.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/ReplyRecv.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def invocationRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Invocation.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def overflowOneRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/OverflowOne.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def auditedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Audited.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def decodedRoutedArm($|[ ({:\[\]])' SeLe4n/Kernel/RoutedArms/Decoded.lean
 run_check "INVARIANT" rg -n -U '^        \(syscallLookupOutcome\n          \(fun s w b e => \(Architecture\.SyscallOutcome\.faulted\.words,\n            deliverSyscallLookupFault ctx executingCore s tid w b e$' SeLe4n/Platform/FFI.lean
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty

@@ -1057,6 +1057,18 @@ structure MachineState where
   entryWordBytes : ByteArray := ByteArray.empty
   /-- **WS-ZA ZA5.2**: how many pairs of `entryWordBytes` this entry read. -/
   entryWordCount : Nat := 0
+  /-- **The routed syscall entry's report word**: how an out-of-line syscall
+      arm hands its caller what the arm decided, beside the state it returns.
+      Each arm of the routed entry is its own function, called with machine
+      words and the state passed owned, and returns the state alone, so it
+      pushes its result's code onto this word
+      (`SystemState.pushEntryReport`) and the entry pops it
+      (`SystemState.popEntryReport`).  A push followed by its pop is the
+      identity on every state (`SystemState.popEntryReport_pushEntryReport`),
+      whatever the word held, so the state the entry continues with is the
+      arm's own and no specification reads the word.  Every committed state
+      holds what the entry was handed: `0` from boot. -/
+  entryReport : Nat := 0
   /-- **WS-ZA ZA6.32: the interrupt lines masked at the interrupt
       controller**, seL4's `irq_masks`: bit `n % 64` of word `n / 64` is set
       while line `n` is disabled at the distributor (`irqLineMasked`).  The

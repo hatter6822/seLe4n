@@ -7858,6 +7858,29 @@ code may assume:
   fails elaboration; adding an inventory no phase claims fails Tier 0
   (`scripts/generate_smp_theorem_manifest.py --check`).  New code must not
   reintroduce a hand-written per-phase figure.
+- **Kernel entries dispatch out of line, over words and the owned state**
+  (`v0.36.196`).  Each syscall route's arm is a `@[noinline]` function in
+  `SeLe4n/Kernel/RoutedArms/`, and the `@[inline]` layers above it (the
+  routed entry `syscallEntryRoutedK`, the FFI word entry, the cross-core
+  step, the bracket and the `@[export]`) inline only the dispatch.  New code
+  keeps this shape:
+  - Only machine words (`UInt64` fields, the syscall id, cap address words,
+    codes) and the `SystemState`, passed owned, cross a non-inlined boundary on
+    the entry path.  A record, `Option`, pair or `Except` returned from an
+    out-of-line function is built on every call.
+  - An arm returns the state alone and reports its outcome as a code pushed
+    onto `MachineState.entryReport`, which the entry pops
+    (`entryReportOutcome`).
+  - An arm re-reads what it needs from the state (the caller's TCB and register
+    file) rather than taking it as a parameter, which Lean would infer
+    borrowed and hold at a second reference across the arm.
+  - The spec (`syscallEntryCheckedK`, `syscallEntryCheckedR`) stays,
+    `noncomputable`, with its compiled form behind a `@[csimp]` equality
+    (`syscallEntryCheckedK_eq_routed`).
+  - Tier 2's `check_kernel_entry_c_function_size.py` holds every `@[export]`'s
+    C function to 20,000 lines.  Before this change the syscall entry was one
+    function of 278k lines, and the cold archive build ran out of memory at
+    the default four jobs.
 
 ### Closed workstreams
 
