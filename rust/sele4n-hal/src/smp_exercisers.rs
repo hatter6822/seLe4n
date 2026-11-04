@@ -3196,10 +3196,49 @@ const ROUND_TRIP_ESR: u64 = 0x15 << 26;
 const ROUND_TRIP_SPSR: u64 = 0;
 
 /// The executing core's heap-allocation counter (`lean_heap`'s
-/// `allocations_by_core`), or `None` if the heap cannot be read.
+/// `allocations_by_core`), or `None` if the heap cannot be read.  Each read
+/// also samples the virtual count (`CNTVCT_EL0`, behind an `isb` so the read
+/// is not taken early), so the pair of reads around a measured entry also
+/// gives the counter ticks between them ([`window_ticks`]).
 #[cfg(feature = "hw_target")]
 fn own_heap_allocations(core: usize) -> Option<u64> {
-    crate::lean_heap::kernel_allocations_on(core).ok()
+    let count = crate::lean_heap::kernel_allocations_on(core).ok();
+    crate::barriers::isb();
+    let now = crate::read_sysreg!("cntvct_el0");
+    WINDOW_TICKS[0].store(WINDOW_TICKS[1].load(Ordering::Relaxed), Ordering::Relaxed);
+    WINDOW_TICKS[1].store(now, Ordering::Relaxed);
+    count
+}
+
+/// The virtual count at the last two heap-counter reads, older first.
+#[cfg(feature = "hw_target")]
+static WINDOW_TICKS: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+
+/// The counter ticks between the last two heap-counter reads: the measured
+/// window of the entry just read.  Printed beside each reading, never
+/// gated: under QEMU the count follows the host's clock, not the emulated
+/// cycles, so it compares two builds only as an indication.
+#[cfg(feature = "hw_target")]
+fn window_ticks() -> u64 {
+    WINDOW_TICKS[1]
+        .load(Ordering::Relaxed)
+        .wrapping_sub(WINDOW_TICKS[0].load(Ordering::Relaxed))
+}
+
+/// The reading of one measured entry, and the ticks of its window on a line
+/// of its own (`entry-ticks`, which the host-side gate does not read).
+#[cfg(feature = "hw_target")]
+fn print_reading(name: &str, core: impl core::fmt::Display, which: &str, before: u64, after: u64) {
+    let ticks = window_ticks();
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
+         delta={}",
+        after - before
+    );
+    crate::kprintln!(
+        "[smp-test] entry-ticks: {name}: core {core}{which}: ticks={ticks} frequency={}",
+        crate::timer::read_frequency()
+    );
 }
 
 /// What one dispatched round trip did.
@@ -3797,11 +3836,7 @@ fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<boo
         );
         return Some(false);
     }
-    crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
-         delta={}",
-        after - before
-    );
+    print_reading(name, core, which, before, after);
     Some(true)
 }
 
@@ -4042,11 +4077,7 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
         );
         return Some(false);
     }
-    crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
-         delta={}",
-        after - before
-    );
+    print_reading(name, core, which, before, after);
     Some(true)
 }
 
@@ -4430,11 +4461,7 @@ fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
         );
         return Some(false);
     }
-    crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
-         delta={}",
-        after - before
-    );
+    print_reading(name, core, which, before, after);
     Some(true)
 }
 
@@ -4486,11 +4513,7 @@ fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
         );
         return Some(false);
     }
-    crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
-         delta={}",
-        after - before
-    );
+    print_reading(name, core, which, before, after);
     Some(true)
 }
 
