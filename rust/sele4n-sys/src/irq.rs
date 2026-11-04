@@ -65,10 +65,7 @@ pub fn irq_control_get(
 /// capability must carry the `Write` (send) right.  A copy of it replaces the
 /// one bound before, so the line's next delivery signals it with its badge.
 #[inline]
-pub fn irq_handler_set_notification(
-    handler_cap: CPtr,
-    notification_cap: CPtr,
-) -> KernelResult<()> {
+pub fn irq_handler_set_notification(handler_cap: CPtr, notification_cap: CPtr) -> KernelResult<()> {
     invoke_syscall(SyscallRequest {
         cap_addr: handler_cap,
         msg_info: MessageInfo::new_const(1, 0, 0),

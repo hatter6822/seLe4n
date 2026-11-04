@@ -3798,7 +3798,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    bootIssuesNoInterruptHandler config && irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # The boot keeps every untyped clear of the devices the kernel drives, as seL4
@@ -5072,7 +5072,7 @@ run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTa
 run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.4 part 13 (v0.36.124): no boot untyped is named by two capabilities,
 # the ninth conjunct of `wellFormed`, with its own diagnostic row.
-run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^   \(untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_untypedCapabilitiesUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'runBootUntypedCapabilityChecks$' tests/SmpIdleSuite.lean
@@ -23021,8 +23021,8 @@ run_check "INVARIANT" rg -n '^   \(bootNotificationBindingsReciprocal config, bo
 # WS-ZA ZA5.5: the boot installs the configured service interfaces (the only
 # writer of the interface registry), the binding supplies them, and the twelfth
 # conjunct refuses a duplicate or sentinel id with its own diagnostic row.
-run_check "INVARIANT" rg -n '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U '^   \(bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^   \(bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError\),\n   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootInterfacesWellFormed \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  let withInterfaces := foldInterfaces config\.initialInterfaces withObjects$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  applyMachineConfig withInterfaces config\.machineConfig$' SeLe4n/Platform/Boot.lean
@@ -23124,7 +23124,7 @@ run_negative_check "INVARIANT" rg -n '\b(irqHandlers|irqBound|irqTable|registerI
 run_check "INVARIANT" rg -n -U '^  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config \(installIrqNodes \(irqNodeLineCount config\) started\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_irqNodesFresh($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 # The node ids are the kernel's: a wellFormed conjunct, and the budget counts them.
-run_check "INVARIANT" rg -n '^    bootIssuesNoInterruptHandler config && irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U '^def objectBudgetRespected \(config : PlatformConfig\) : Bool :=\n  config\.initialObjects\.length \+ 1 \+ SeLe4n\.Kernel\.Concurrency\.numCores \+\n    InterruptLineSet\.capacity ≤ maxObjects$' SeLe4n/Platform/Boot.lean
 # No resolved capability reaches a node.
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_irqNode($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -23257,7 +23257,7 @@ run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_checked_interrup
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5_bound_config_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem qemuVirtExerciser_bound_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Exerciser.lean
 run_check "INVARIANT" rg -n '^def bootIssuesNoInterruptHandler \(' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^    bootIssuesNoInterruptHandler config && irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootIssuesNoInterruptHandler($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]' tests/
 run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]' tests/

@@ -3550,13 +3550,23 @@ fn interrupt_handlers_issued(which: &str) -> bool {
         "irq-control-get",
         IRQ_CONTROL_GET,
         IRQ_CONTROL_CAP,
-        [u64::from(IRQ_BOUND_LINE), CNODE_CAP, IRQ_BOUND_HANDLER_SLOT, 0],
+        [
+            u64::from(IRQ_BOUND_LINE),
+            CNODE_CAP,
+            IRQ_BOUND_HANDLER_SLOT,
+            0,
+        ],
     );
     let get_unbound = invocation(
         "irq-control-get-unbound",
         IRQ_CONTROL_GET,
         IRQ_CONTROL_CAP,
-        [u64::from(IRQ_UNBOUND_LINE), CNODE_CAP, IRQ_UNBOUND_HANDLER_SLOT, 0],
+        [
+            u64::from(IRQ_UNBOUND_LINE),
+            CNODE_CAP,
+            IRQ_UNBOUND_HANDLER_SLOT,
+            0,
+        ],
     );
     let bind = invocation(
         "irq-handler-set-notification",
@@ -3596,7 +3606,10 @@ fn interrupt_handlers_retired(which: &str) -> bool {
     );
     heap_allocations_round_trip(&clear, which) == Some(true)
         && heap_allocations_round_trip(&delete_bound, which) == Some(true)
-        && unmeasured(&delete_unbound, "the unbound line's handler was not deleted")
+        && unmeasured(
+            &delete_unbound,
+            "the unbound line's handler was not deleted",
+        )
 }
 
 /// **WS-ZA ZA6.32: the interrupt entry's branches**, each measured: the bound

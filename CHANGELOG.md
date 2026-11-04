@@ -91,8 +91,11 @@ and fault entries do.
     on both the specification path and the refusal-carrying arm;
   - `.irqControlGet` refuses it with `.invalidIrq` (`irqControlLineRefusal`,
     seL4's `Arch_checkIRQ` in `seL4_IRQControl_Get`), and the boot issues no
-    handler capability at all (`bootIssuesNoInterruptHandler`, a `wellFormed`
-    conjunct), so every handler capability names a line the board has.
+    handler capability at all (`bootIssuesNoInterruptHandler`, the ninth
+    `wellFormed` conjunct, checked ahead of the dangling-capability conjunct
+    because a handler capability names its line's interrupt node, which the
+    configuration does not install, so the refusal carries its own
+    diagnostic), so every handler capability names a line the board has.
 
   The live count is the bound configuration's
   (`bootAndInitialisePlatform_checked_interruptLineCount`), and the boot-map

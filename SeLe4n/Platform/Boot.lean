@@ -1568,7 +1568,33 @@ def untypedCapabilityDuplicateBootError : String :=
   "boot: two capabilities name one boot untyped, or one names it other than as " ++
     "the untyped itself, so two could carve its memory (WS-ZA ZA5.4 parts 13, 20)"
 
-/-- **WS-ZA ZA5.4 part 18**: the ninth `wellFormed` conjunct — **every boot
+/-- **WS-ZA ZA6.32**: the ninth `wellFormed` conjunct — **the boot issues no
+    interrupt-handler capability.**
+
+    As in seL4, every interrupt line starts inactive (masked, no handler), and
+    the one interrupt authority the boot hands out is the IRQControl
+    capability: a handler capability is issued only by `seL4_IRQControl_Get`,
+    which checks the line against the board (`interruptLineCount`, seL4's
+    `Arch_checkIRQ`), refuses a line already active (`isIRQActive`) and puts
+    the line at IRQSignal.  A configured handler capability would name a line
+    no Get activated — one the board may not have, at IRQInactive — so the
+    boot refuses it.  It precedes the dangling-capability conjunct because a
+    handler capability names its line's interrupt node (`Capability.namedObject`),
+    which the boot installs and the configuration does not, so the refusal is
+    reported in its own words rather than as a dangling capability.  Not
+    attacker-reachable — the configuration is the integrator's. -/
+def bootIssuesNoInterruptHandler (config : PlatformConfig) : Bool :=
+  (config.initialObjects.flatMap bootEntryCapabilities).all fun c =>
+    match c.target with
+    | .irqHandler _ => false
+    | _ => true
+
+/-- The ninth conjunct's diagnostic. -/
+def bootInterruptHandlerBootError : String :=
+  "boot: a configured capability is an interrupt handler; handlers are issued by " ++
+    "seL4_IRQControl_Get (WS-ZA ZA6.32)"
+
+/-- **WS-ZA ZA5.4 part 18**: the tenth `wellFormed` conjunct — **every boot
     capability names an object the boot installs.**
 
     The capability invariant holds every capability to a live object
@@ -1587,7 +1613,7 @@ def bootCapabilitiesNameInstalledObjects (config : PlatformConfig) : Bool :=
     | some o => config.initialObjects.any (fun e => decide (e.id = o)) ||
         config.bootVSpaceRoot.any (fun v => decide (v.id = o))
 
-/-- The ninth conjunct's diagnostic. -/
+/-- The tenth conjunct's diagnostic. -/
 def bootCapabilityDanglingBootError : String :=
   "boot: a capability names an object the configuration does not install " ++
     "(WS-ZA ZA5.4 part 18)"
@@ -1599,7 +1625,7 @@ def bootCapabilityDanglingBootError : String :=
     (opposite : KernelObject → Nat) : Bool :=
   code == 0 || objs.any fun e' => e'.id.val + 1 == code && opposite e'.obj == back
 
-/-- **WS-ZA ZA5.4 part 27**: the tenth `wellFormed` conjunct — **every boot
+/-- **WS-ZA ZA5.4 part 27**: the eleventh `wellFormed` conjunct — **every boot
     notification binding is reciprocal.**
 
     The IPC invariant holds a thread's bound notification and a notification's
@@ -1619,12 +1645,12 @@ def bootNotificationBindingsReciprocal (config : PlatformConfig) : Bool :=
       bootBindingNamedBack config.initialObjects e.obj.bindingCodes.2 (e.id.val + 1)
         (fun o => o.bindingCodes.1)
 
-/-- The tenth conjunct's diagnostic. -/
+/-- The eleventh conjunct's diagnostic. -/
 def bootNotificationBindingBootError : String :=
   "boot: a thread and a notification the configuration binds do not name each " ++
     "other (WS-ZA ZA5.4 part 27)"
 
-/-- **WS-ZA ZA5.5**: the eleventh `wellFormed` conjunct — **the configured
+/-- **WS-ZA ZA5.5**: the twelfth `wellFormed` conjunct — **the configured
     service interfaces have distinct ids, none the reserved sentinel.**  The
     fold inserts each under its id (`foldInterfaces`), so a duplicate would be
     lost silently, the second specification replacing the first; a refusal
@@ -1634,33 +1660,10 @@ def bootInterfacesWellFormed (config : PlatformConfig) : Bool :=
   listAllDistinct (config.initialInterfaces.map (·.ifaceId.val)) &&
     config.initialInterfaces.all (fun spec => !spec.ifaceId.isReserved)
 
-/-- The eleventh conjunct's diagnostic. -/
+/-- The twelfth conjunct's diagnostic. -/
 def bootInterfaceBootError : String :=
   "boot: two configured service interfaces share an id, or one uses the reserved " ++
     "sentinel id 0 (WS-ZA ZA5.5)"
-
-/-- **WS-ZA ZA6.32**: the twelfth `wellFormed` conjunct — **the boot issues no
-    interrupt-handler capability.**
-
-    As in seL4, every interrupt line starts inactive (masked, no handler), and
-    the one interrupt authority the boot hands out is the IRQControl
-    capability: a handler capability is issued only by `seL4_IRQControl_Get`,
-    which checks the line against the board (`interruptLineCount`, seL4's
-    `Arch_checkIRQ`), refuses a line already active (`isIRQActive`) and puts
-    the line at IRQSignal.  A configured handler capability would name a line
-    no Get activated — one the board may not have, at IRQInactive — so the
-    boot refuses it.  Not attacker-reachable — the configuration is the
-    integrator's. -/
-def bootIssuesNoInterruptHandler (config : PlatformConfig) : Bool :=
-  (config.initialObjects.flatMap bootEntryCapabilities).all fun c =>
-    match c.target with
-    | .irqHandler _ => false
-    | _ => true
-
-/-- The twelfth conjunct's diagnostic. -/
-def bootInterruptHandlerBootError : String :=
-  "boot: a configured capability is an interrupt handler; handlers are issued by " ++
-    "seL4_IRQControl_Get (WS-ZA ZA6.32)"
 
 /-- **WS-ZA ZA6.32: the thirteenth `wellFormed` conjunct — the interrupt nodes'
     ids are the kernel's.**  The boot installs one interrupt node per line of
@@ -1697,9 +1700,10 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
     objectBudgetRespected config && declaredCoreCountInRange config &&
     untypedPlacementRespected config && bootRootTablesPlaced config &&
-    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&
+    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&
+    bootCapabilitiesNameInstalledObjects config &&
     bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&
-    bootIssuesNoInterruptHandler config && irqNodeIdsReserved config
+    irqNodeIdsReserved config
 
 /-- **WS-ZA ZA5.5**: a well-formed config installs service interfaces with
     distinct, non-sentinel ids. -/
@@ -1803,10 +1807,10 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (untypedPlacementRespected config, untypedPlacementBootError),
    (bootRootTablesPlaced config, bootRootTablesBootError),
    (untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError),
+   (bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError),
    (bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError),
    (bootNotificationBindingsReciprocal config, bootNotificationBindingBootError),
    (bootInterfacesWellFormed config, bootInterfaceBootError),
-   (bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError),
    (irqNodeIdsReserved config, irqNodeIdReservationBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
@@ -4402,10 +4406,10 @@ theorem PlatformConfig.wellFormed_of_withoutExtents (c c' : PlatformConfig)
   rw [hEq, bootIssuesNoInterruptHandler_withoutExtents] at hLines
   have hNodes := irqNodeIdsReserved_withoutExtents c
   rw [hEq, irqNodeIdsReserved_withoutExtents] at hNodes
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, w9⟩, wRecip⟩, wIf⟩, wLines⟩, wNodes⟩ :=
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨w2, w3⟩, w4⟩, w5⟩, w6⟩, _⟩, w7⟩, w8⟩, wLines⟩, w9⟩, wRecip⟩, wIf⟩, wNodes⟩ :=
     hWf
   exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h2 ▸ w2, h3 ▸ w3⟩, h4 ▸ w4⟩, h5 ▸ w5⟩, h6 ▸ w6⟩, hPlace⟩, h7 ▸ w7⟩,
-    h8 ▸ w8⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩, hLines ▸ wLines⟩, hNodes ▸ wNodes⟩
+    h8 ▸ w8⟩, hLines ▸ wLines⟩, h9 ▸ w9⟩, hRecip ▸ wRecip⟩, hIfaces ▸ wIf⟩, hNodes ▸ wNodes⟩
 
 /-- PR #889 review round 3: the idle store over a **declared** core list — the
     cores a platform binding says exist (`PlatformBinding.declaredCores`), rather than
