@@ -72,24 +72,11 @@ slot's zombie delete, then the copy of a notification capability. -/
 theorem irqHandlerSetNotification_mappingStage {ec : Concurrency.CoreId} {line : Nat}
     {src : CSpaceAddr} {st st' : SystemState} (P : MappingArmPremises st)
     (h : irqHandlerSetNotification ec line src st = .ok ((), st')) : MappingStage st st' := by
-  unfold irqHandlerSetNotification at h
-  cases hL : st.lookupSlotCap src with
-  | none => rw [hL] at h; cases h
-  | some cap =>
-    rw [hL] at h
-    simp only at h
-    split at h
-    · cases h
-    split at h
-    · cases h
-    cases hZ : cspaceDeleteSlotZombie ec (irqNodeAddr line) st with
-    | error e => rw [hZ] at h; cases h
-    | ok pr =>
-      obtain ⟨⟨⟩, st1⟩ := pr
-      rw [hZ] at h
-      exact (cspaceDeleteSlotZombie_mappingStage P hZ).trans
-        (cspaceCopy_mappingStage
-          (cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle ec _ st st1 P.caps hZ) h)
+  obtain ⟨-, st1, -, -, -, hZ, hC⟩ :=
+    irqHandlerSetNotification_ok (objects_invExt_of_capabilityInvariantBundle _ P.caps) h
+  exact (cspaceDeleteSlotZombie_mappingStage P hZ).trans
+    (cspaceCopy_mappingStage
+      (cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle ec _ st st1 P.caps hZ) hC)
 
 /-- WS-ZA ZA6.32: **the handler clear keeps the mappings recorded**: the node
 slot's zombie delete. -/

@@ -861,9 +861,11 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       obtain ⟨_, _, -, hN⟩ := irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ hStep
-      obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hN
-      exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
-        (cspaceCopy_runQueueStage hC)).2
+      obtain ⟨-, st1, -, -, -, hZ, hC | ⟨-, -, rfl⟩⟩ := irqHandlerSetNotification_ok_cases hN
+      · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
+          (cspaceCopy_runQueueStage hC)).2
+      · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
+          (cspaceCopyPerform_runQueueStage _ _ _)).2
     all_goals try cases hStep
   case irqHandlerClear =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

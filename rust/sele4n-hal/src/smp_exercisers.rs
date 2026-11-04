@@ -3871,9 +3871,10 @@ const fn fp_access(name: &'static str) -> TrapTrip {
 
 /// The slot the two threads' fault handler names: empty while the
 /// fail-closed scenarios run, a copy of the exerciser endpoint's capability
-/// while the delivered ones do.
+/// while the delivered ones do.  Slot 20 holds the interrupt-control
+/// capability (`IRQ_CONTROL_SLOT`), so the handler takes the next free slot.
 #[cfg(feature = "hw_target")]
-const FAULT_HANDLER_SLOT: u64 = 20;
+const FAULT_HANDLER_SLOT: u64 = 21;
 #[cfg(feature = "hw_target")]
 const FAULT_HANDLER_CAP: u64 = cap_address(FAULT_HANDLER_SLOT);
 /// `x1` of the frame a VM fault reaches its handler with: the VM-fault tag

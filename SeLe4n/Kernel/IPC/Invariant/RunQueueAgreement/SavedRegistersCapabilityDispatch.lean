@@ -1361,7 +1361,7 @@ theorem irqHandlerSetNotification_savedRegsKeptOffCore {e ec : CoreId} {line : N
     (hRK : residentKeptOffCore e st st')
     (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
     savedRegsKeptOffCore e st st' := by
-  obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok h
+  obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hB.1.2.1 h
   have Q := cspaceDeleteSlotZombie_closed (finaliseCensusChain e st)
     (fun _ _ _ hQ hD => hQ.delete B hD) (fun d _ hQ => hQ.finalise B d) (.start hB) hZ
   have hInv1 : st1.objects.invExt := (cspaceDeleteSlotZombie_stepCovers e ec _ st st1 hB hZ).2

@@ -2339,6 +2339,24 @@ capability first (WS-ZA ZA5.3 part 6). -/
   unfold cspaceCopyPerform cspaceCopyPerformImpl cspaceInstallPerform
   simp only [CNode.insertFields_eq_insert]; rfl
 
+/-- The copy's writes keep the scheduler. -/
+theorem cspaceCopyPerform_scheduler (src dst : CSpaceAddr) (st : SystemState) :
+    (cspaceCopyPerform src dst st).scheduler = st.scheduler := by
+  unfold cspaceCopyPerform cspaceInstallPerform
+  split
+  · rw [untypedSourceSetFull_scheduler, SystemState.cdtAddChild_scheduler,
+      SystemState.storeCNodeWith_scheduler]
+  · rfl
+
+/-- The copy's writes keep the machine. -/
+theorem cspaceCopyPerform_machine (src dst : CSpaceAddr) (st : SystemState) :
+    (cspaceCopyPerform src dst st).machine = st.machine := by
+  unfold cspaceCopyPerform cspaceInstallPerform
+  split
+  · rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine,
+      SystemState.storeCNodeWith_machine]
+  · rfl
+
 /-- WS-ZA ZA5.3: an admitted copy is its writes. -/
 theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {st : SystemState}
     (h : cspaceCopyAdmitted src dst st = true) :

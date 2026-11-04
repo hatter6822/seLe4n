@@ -1085,10 +1085,13 @@ the shared initial ring, and per-core slots of its own
 each core writes its register bank and scheduler slots in place, and a
 physical-write ledger of its own (`SystemState.withFreshPhysicalWrites`, the
 state itself), so the first physical write recorded after boot is stored in
-place instead of copying the shared initial buffer. -/
+place instead of copying the shared initial buffer, and an issued-line set of
+its own (`SystemState.withFreshIrqLines`, the state itself), so the first
+interrupt line issued after boot is recorded in place. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
   kernelStateRef.set
-    (Architecture.withShootdownSparesSeeded st).withFreshAuditRing.withFreshPerCoreSlots.withFreshPhysicalWrites
+    (Architecture.withShootdownSparesSeeded
+      st).withFreshAuditRing.withFreshPerCoreSlots.withFreshPhysicalWrites.withFreshIrqLines
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 

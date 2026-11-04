@@ -1308,6 +1308,50 @@ theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
   dsimp only
   rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
 
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, built fresh,
+out of line. -/
+@[noinline] def CapTarget.ofIrqHandler (line : Nat) : CapTarget := .irqHandler line
+
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, written over
+`t` when `t` is a constructor of one field (an object, a reply or a handler: the
+same cell size, so the compiler reuses `t`'s cell), as `objectOver` writes an
+object's.  Out of line, with a distinct fallback arm. -/
+@[noinline] def CapTarget.irqHandlerOver (t : CapTarget) (line : Nat) : CapTarget :=
+  match t with
+  | .object _ => .irqHandler line
+  | .replyCap _ => .irqHandler line
+  | .irqHandler _ => .irqHandler line
+  | _ => CapTarget.ofIrqHandler line
+
+theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
+    t.irqHandlerOver line = .irqHandler line := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.32: the handler capability of line `line` with `rights` and nothing
+else, written over the record `r` (a slot's spare) and its target
+(`CapTarget.irqHandlerOver`), as `overwriteObject` writes an object's, so
+`seL4_IRQControl_Get` builds neither (`overwriteIrqHandler_eq`). -/
+@[noinline] def Capability.overwriteIrqHandler (r : Capability) (line : Nat)
+    (rights : AccessRightSet) : Capability :=
+  match r with
+  | ⟨t, rr, _, _, _, _, _, _, _⟩ =>
+    ⟨t.irqHandlerOver line, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0,
+      false, 0⟩
+
+/-- WS-ZA ZA6.32: the handler capability of line `line` with `rights`, built fresh
+out of line. -/
+@[noinline] def Capability.ofIrqHandler (line : Nat) (rights : AccessRightSet) : Capability :=
+  ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
+
+theorem Capability.overwriteIrqHandler_eq (r : Capability) (line : Nat)
+    (rights : AccessRightSet) :
+    r.overwriteIrqHandler line rights =
+      ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  obtain ⟨t, rr, _, _, _, _, _, _, _⟩ := r
+  unfold overwriteIrqHandler
+  dsimp only
+  rw [CapTarget.irqHandlerOver_eq, AccessRightSet.keepOr_eq]
+
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
 slot with no record of its own).  Out of line, so a caller's literal of the same
 fields is not shared with it and stays unbuilt. -/

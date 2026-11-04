@@ -190,6 +190,24 @@ theorem cspaceCopy_runQueueStage {st st' : SystemState} {src dst : CSpaceAddr}
   exact ((cspaceInsertSlot_runQueueStage hIns).trans (cdtRecord_runQueueStage st2 src dst .copy)).trans
     (untypedSourceSetFull_runQueueStage _ _ _)
 
+/-- A store of `f` of the CNode at `id` is a store of a CNode over a CNode, or
+nothing. -/
+theorem storeCNodeWith_runQueueStage (st : SystemState) (id : SeLe4n.ObjId)
+    (f : CNode → CNode) : RunQueueStage st (st.storeCNodeWith id f) := by
+  rcases SystemState.storeCNodeWith_cases st id f with ⟨_, hPre, hS⟩ | e
+  · exact RunQueueStage.storeObject_nonTcb hS hPre (fun _ e => by cases e) (fun _ e => by cases e)
+  · rw [e]; exact RunQueueStage.refl _
+
+/-- The copy's writes: the slot's store, the edge, and the untyped source set
+full. -/
+theorem cspaceCopyPerform_runQueueStage (src dst : CSpaceAddr) (st : SystemState) :
+    RunQueueStage st (cspaceCopyPerform src dst st) := by
+  unfold cspaceCopyPerform cspaceInstallPerform
+  split
+  · exact ((storeCNodeWith_runQueueStage _ _ _).trans (cdtRecord_runQueueStage _ src dst .copy)).trans
+      (untypedSourceSetFull_runQueueStage _ _ _)
+  · exact RunQueueStage.refl _
+
 theorem cspaceDeleteSlotCore_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     (h : cspaceDeleteSlotCore addr st = .ok ((), st')) : RunQueueStage st st' := by
   rcases cspaceDeleteSlotCore_ok_cases h with ⟨cn, hPre, hS⟩ | ⟨t, hPre, hS⟩

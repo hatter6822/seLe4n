@@ -1600,6 +1600,33 @@ theorem insertObjectCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (id : SeLe
     | h a => exact insertCellWith_eq _ _ _ _ _ _ _ h a
   · next h => unfold insert unchanged; simp only [h, dite_false]
 
+/-- WS-ZA ZA6.32: `insert` of line `line`'s handler capability with `rights` alone
+(the capability `seL4_IRQControl_Get` issues), written over the slot's own record
+and its target (`Capability.overwriteIrqHandler`), so neither is allocated when
+the slot kept one. -/
+@[inline] def insertIrqHandlerCap (node : CNode) (slot : SeLe4n.Slot) (line : Nat)
+    (rights : AccessRightSet) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    Quot.lift (fun a => node.insertCellWith slot
+        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
+        (fun r => r.overwriteIrqHandler line rights)
+        (fun r => Capability.overwriteIrqHandler_eq r line rights)
+        (fun _ => Capability.ofIrqHandler line rights) rfl h a)
+      (fun a b _ => by dsimp only; rw [insertCellWith_eq, insertCellWith_eq]) node.spare
+  else node.unchanged
+
+theorem insertIrqHandlerCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (line : Nat)
+    (rights : AccessRightSet) :
+    node.insertIrqHandlerCap slot line rights =
+      node.insert slot
+        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  unfold insertIrqHandlerCap
+  split
+  · next h =>
+    induction node.spare using Squash.ind with
+    | h a => exact insertCellWith_eq _ _ _ _ _ _ _ h a
+  · next h => unfold insert unchanged; simp only [h, dite_false]
+
 /-- `insert` as compiled (`insertCell`, out of line). -/
 def insertImpl (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
   node.insertCell slot cap
@@ -2684,6 +2711,16 @@ def withIrqLineIssued (cdt : CapDerivationTree) (line : Nat) (issued : Bool) :
 @[simp] theorem withIrqLineIssued_issuedIrqLines (cdt : CapDerivationTree) (line : Nat)
     (b : Bool) :
     (cdt.withIrqLineIssued line b).issuedIrqLines = cdt.issuedIrqLines.set line b := rfl
+
+/-- WS-ZA ZA6.32: the tree with its issued-line set in a cell of its own
+(`InterruptLineSet.fresh`), so the first issue after boot writes it in place.
+The tree itself (`withFreshIrqLines_eq`). -/
+def withFreshIrqLines (cdt : CapDerivationTree) : CapDerivationTree :=
+  CapDerivationTree.mk cdt.edgesGhost cdt.rootChainsGhost cdt.edgeBound cdt.edges_le
+    cdt.issuedIrqLines.fresh
+
+theorem withFreshIrqLines_eq (cdt : CapDerivationTree) : cdt.withFreshIrqLines = cdt := by
+  cases cdt; simp only [withFreshIrqLines, InterruptLineSet.fresh_eq]
 
 @[simp] theorem empty_rootChains : CapDerivationTree.empty.rootChains = [] := by
   simp [empty, rootChains]

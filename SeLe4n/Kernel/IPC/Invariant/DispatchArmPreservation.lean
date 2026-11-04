@@ -6181,35 +6181,6 @@ theorem irqControlGet_preserves_ipcInvariantFull {control dst : CSpaceAddr} {lin
     (cspaceInsertSlot_preserves_ipcInvariantFull _ stI dst _ hObjInv1 hInv1
       (by intro b hb; simp [Capability.irqHandlerOf] at hb) hI)
 
-/-- **What a successful `seL4_IRQHandler_SetNotification` is**: the source
-admitted, the node slot's delete, then the copy into it. -/
-theorem irqHandlerSetNotification_ok {ec : Concurrency.CoreId} {line : Nat}
-    {src : CSpaceAddr} {st st' : SystemState}
-    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
-    ∃ cap st1, st.lookupSlotCap src = some cap ∧ irqNotificationCapAdmitted st cap = true ∧
-      cnodeInvoked (irqNodeId line) st = true ∧
-      cspaceDeleteSlotZombie ec (irqNodeAddr line) st = .ok ((), st1) ∧
-      cspaceCopy src (irqNodeAddr line) st1 = .ok ((), st') := by
-  unfold irqHandlerSetNotification at h
-  cases hL : st.lookupSlotCap src with
-  | none => rw [hL] at h; cases h
-  | some cap =>
-    rw [hL] at h
-    simp only at h
-    by_cases hA : irqNotificationCapAdmitted st cap = true
-    · by_cases hC : cnodeInvoked (irqNodeId line) st = true
-      · simp only [hA, hC, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
-        cases hD : cspaceDeleteSlotZombie ec (irqNodeAddr line) st with
-        | error e => rw [hD] at h; cases h
-        | ok r =>
-          obtain ⟨⟨⟩, st1⟩ := r
-          rw [hD] at h
-          exact ⟨cap, st1, rfl, hA, hC, rfl, h⟩
-      · simp only [Bool.not_eq_true] at hC
-        simp [hA, hC] at h
-    · simp only [Bool.not_eq_true] at hA
-      simp [hA] at h
-
 /-- **What a successful `seL4_IRQHandler_Clear` is**: the node slot's delete. -/
 theorem irqHandlerClear_ok {ec : Concurrency.CoreId} {line : Nat} {st st' : SystemState}
     (h : irqHandlerClear ec line st = .ok ((), st')) :

@@ -498,12 +498,16 @@ theorem irqHandlerSetNotificationFromCap_crossCoreNonInterference
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
   obtain ⟨_, _, -, hB⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line args? st st' hStep
-  obtain ⟨_, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hB
+  obtain ⟨_, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok_cases hB
+  have hK : observableSlotsConfinedToCores st1 st' [] := by
+    rcases hC with hC | ⟨-, -, rfl⟩
+    · exact cspaceCopy_confinedToCores hC
+    · exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (cspaceCopyPerform_scheduler _ _ _) (cspaceCopyPerform_machine _ _ _)
   exact crossCoreNonInterference_ofCores ctx observer
     (by simpa using hne)
     (observableSlotsConfinedToCores_trans
-      (cspaceDeleteSlotZombie_confinedToCores executingCore _ st st1 hZ)
-      (cspaceCopy_confinedToCores hC)) hShared
+      (cspaceDeleteSlotZombie_confinedToCores executingCore _ st st1 hZ) hK) hShared
 
 -- ============================================================================
 -- §6 The non-interference instantiations

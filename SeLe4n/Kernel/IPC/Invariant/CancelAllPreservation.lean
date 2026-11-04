@@ -982,7 +982,7 @@ theorem irqHandlerSetNotification_preserves_ipcInvariantFull {ec : Concurrency.C
     (hW : lentContextHeadsLenderFrame st) (hL : schedContextLinkInvariant st)
     (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok h
+  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok hObjInv h
   have hB := cspaceDeleteSlotZombie_preserves_finalisingDeleteBundle ec _ st st1
     ⟨⟨hInv, hObjInv, hW⟩, hL⟩ hD
   exact cspaceCopy_preserves_ipcInvariantFull st1 st' src _ hB.1.2.1 hB.1.1 hC

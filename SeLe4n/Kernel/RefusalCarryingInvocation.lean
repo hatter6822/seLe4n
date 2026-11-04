@@ -705,7 +705,8 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the issue reads the decode, the line checks and the two
   -- slots, then the destination's emptiness, before it writes the line and
-  -- the handler capability in place (`irqControlGetPerform`).
+  -- the handler capability in place (`irqControlGetPerformAt`, on the slots'
+  -- words).
   | .irqControlGet =>
     match cap.target with
     | .irqControl =>
@@ -717,10 +718,25 @@ the write alone.  An arm whose checks refuse, and every arm not yet split, is
         | none =>
           resolveIssuingSlotsK tid capAddr args.dstCNode args.dstSlot st (fun e => .error (e, st))
             (fun srcCnode srcSlot dstCnode dstSlot =>
-              RefusalCarrying.ofChecked (irqControlGetAdmitted st ⟨dstCnode, dstSlot⟩ args.line)
-                (fun st => irqControlGetPerform ⟨srcCnode, srcSlot⟩ ⟨dstCnode, dstSlot⟩
-                  args.line st)
+              RefusalCarrying.ofChecked (irqControlGetAdmittedAt dstCnode dstSlot args.line st)
+                (fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args.line st)
                 (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+    | _ => .error (.invalidCapability, st)
+  -- WS-ZA ZA6.32: the bind reads the decode, the named capability's slot, its
+  -- notification and send right, the line's node and the node slot's plain
+  -- delete before any write, then empties the node slot and copies the
+  -- capability into it in place (`irqHandlerSetNotificationPerform`).
+  | .irqHandlerSetNotification =>
+    match cap.target with
+    | .irqHandler line =>
+      match decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        resolveCallerCapSlotK tid args.notificationCPtr .write st (fun e => .error (e, st))
+          (fun srcCnode srcSlot ncap _ =>
+            RefusalCarrying.ofChecked (irqHandlerSetNotificationAdmitted st line srcCnode ncap)
+              (fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st)
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
     | _ => .error (.invalidCapability, st)
   -- WS-ZA ZA6.32: the clear reads the line's node, then empties its slot by
   -- the zombie delete every slot delete is (`zombieDeleteAt`).
@@ -1253,6 +1269,32 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
             intro hA
             simp only [dispatchInvocationBy, irqControlGetFromCap, hD, hL, hR,
               irqControlGet_of_admitted hA]
+            all_goals rfl
+    all_goals rfl
+  case irqHandlerSetNotification =>
+    cases target
+    case irqHandler line =>
+      dsimp only
+      cases hD : decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) with
+      | error e =>
+        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap, hD]
+      | ok args =>
+        dsimp only
+        rw [resolveCallerCapSlotK_eq]
+        cases hR : resolveCallerCapSlot tid args.notificationCPtr .write st with
+        | error e =>
+          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, irqHandlerSetNotificationFromCap,
+            hD, hR]
+        | ok r =>
+          obtain ⟨src, ncap, oid⟩ := r
+          obtain ⟨_, _, _, _, _, hLk, _, _⟩ :=
+            resolveCallerCapSlot_ok tid args.notificationCPtr .write st src ncap oid hR
+          dsimp only
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [dispatchInvocationBy, irqHandlerSetNotificationFromCap, hD, hR,
+            irqHandlerSetNotification_of_admitted hLk hA]
+          all_goals rfl
     all_goals rfl
   case irqHandlerClear =>
     cases target

@@ -1287,6 +1287,15 @@ theorem mem_set_ne (s : InterruptLineSet) {n m : Nat} (b : Bool) (h : n ≠ m) :
       | omega
       | simp [setWord, word, e, f]
 
+/-- WS-ZA ZA6.32: the set rebuilt in a cell of its own.  The boot's sets are the
+shared initial constant, so the first line a `seL4_IRQControl_Get` issued after
+boot copied the set (one cell); `w0 ||| 0`, which the compiled kernel computes,
+makes the record built here the state's own (`fresh_eq`). -/
+@[noinline] def fresh (s : InterruptLineSet) : InterruptLineSet := { s with w0 := s.w0 ||| 0 }
+
+theorem fresh_eq (s : InterruptLineSet) : s.fresh = s := by
+  cases s; simp [fresh]
+
 end InterruptLineSet
 
 -- ============================================================================

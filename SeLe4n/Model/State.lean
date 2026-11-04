@@ -1816,6 +1816,17 @@ theorem SystemState.withFreshPhysicalWrites_eq (st : SystemState) :
   simp only [SystemState.withFreshPhysicalWrites,
     SeLe4n.Kernel.Architecture.PhysicalWriteLedger.fresh_eq]
 
+/-- WS-ZA ZA6.32: **the issued-line set prepared at boot** — the installed
+state's derivation tree gets an issued-line set of its own
+(`CapDerivationTree.withFreshIrqLines`), so the first `seL4_IRQControl_Get`
+after boot writes it in place.  The state itself (`withFreshIrqLines_eq`). -/
+def SystemState.withFreshIrqLines (st : SystemState) : SystemState :=
+  { st with cdt := st.cdt.withFreshIrqLines }
+
+theorem SystemState.withFreshIrqLines_eq (st : SystemState) :
+    st.withFreshIrqLines = st := by
+  simp only [SystemState.withFreshIrqLines, CapDerivationTree.withFreshIrqLines_eq]
+
 /-- **WS-BP BP7.2: the physical writes a committed transition owes**, in record
 order — the list the ledger's buffer encodes (`SystemState.physicalWrites`). -/
 noncomputable def SystemState.pendingPhysicalWrites (st : SystemState) :
@@ -6763,6 +6774,30 @@ theorem storeCNodeWith_objects {st : SystemState} {id : SeLe4n.ObjId} {cn : CNod
   unfold storeObject at hS
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hS
   rw [← hS]
+
+/-- `storeCNodeWith` is a store of a CNode over the CNode at `id`, or nothing. -/
+theorem storeCNodeWith_cases (st : SystemState) (id : SeLe4n.ObjId) (f : CNode → CNode) :
+    (∃ cn, st.objects[id]? = some (.cnode cn) ∧
+      storeObject id (.cnode (f cn)) st = .ok ((), st.storeCNodeWith id f)) ∨
+    st.storeCNodeWith id f = st := by
+  cases h : st.objects[id]? with
+  | none => exact .inr (by unfold storeCNodeWith; rw [h])
+  | some o =>
+    cases o
+    case cnode cn => exact .inl ⟨cn, rfl, storeObject_cnode_eq_storeCNodeWith h f⟩
+    all_goals exact .inr (by unfold storeCNodeWith; rw [h])
+
+theorem storeCNodeWith_scheduler (st : SystemState) (id : SeLe4n.ObjId) (f : CNode → CNode) :
+    (st.storeCNodeWith id f).scheduler = st.scheduler := by
+  rcases storeCNodeWith_cases st id f with ⟨_, _, hS⟩ | e
+  · exact storeObject_scheduler_eq st _ id _ hS
+  · rw [e]
+
+theorem storeCNodeWith_machine (st : SystemState) (id : SeLe4n.ObjId) (f : CNode → CNode) :
+    (st.storeCNodeWith id f).machine = st.machine := by
+  rcases storeCNodeWith_cases st id f with ⟨_, _, hS⟩ | e
+  · exact storeObject_machine_eq st _ id _ hS
+  · rw [e]
 
 /-- **The store of `f` of the TCB at `id`, written in its slot**: the TCB form
 of `storeCNodeWith` (`storeObject_tcb_eq_storeTcbWith`).  The identity when `id`

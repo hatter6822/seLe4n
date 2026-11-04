@@ -1263,7 +1263,7 @@ theorem irqHandlerSetNotification_stepCovers {e ec : CoreId} {line : Nat} {src :
     {st st' : SystemState} (hB : finalisingDeleteBundle st)
     (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
-  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok h
+  obtain ⟨-, st1, -, -, -, hD, hC⟩ := irqHandlerSetNotification_ok hB.1.2.1 h
   have h1 := cspaceDeleteSlotZombie_stepCovers e ec _ st st1 hB hD
   exact stepCoversInv_trans h1.1 ((cspaceCopy_keyFrame _ _ _ _ h1.2 hC).stepCoversInv
     (hRes := by rw [cspaceCopy_machine_eq hC])

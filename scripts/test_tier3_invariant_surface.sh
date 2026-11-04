@@ -7594,7 +7594,8 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem toList_dropFront($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem bounded \(r : AuditRing\) : auditLogBounded r\.toList' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^    \(Architecture\.withShootdownSparesSeeded st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites\.withFreshIrqLines$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshIrqLines_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPhysicalWrites_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPerCoreSlots_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
