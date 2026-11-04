@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.VSpacePerform
+import SeLe4n.Kernel.IPC.CrossCore.SuspendAdmission
 
 /-!
 # Capability invocations on the register file

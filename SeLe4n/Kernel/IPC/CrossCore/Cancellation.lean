@@ -4348,19 +4348,6 @@ theorem currentDeboostedFrom_eq_code (st post : SystemState) (ec : CoreId) :
       rw [currentOnCore_beq_some]
       rfl
 
-/-- WS-ZA ZA5.2: the checks `.tcbSuspend` makes on its arm without a teardown,
-asked before any write: the victim is a TCB, not already `.Inactive`, blocked on
-no IPC (so no teardown, reclaim or priority-inheritance revert runs) and holding
-no donated scheduling context (whose return can refuse).  A context bound to it
-is released, which never refuses.  When they pass the operation's state is
-`suspendPerform` (`suspendThreadOnCore_of_admitted`). -/
-@[inline] def suspendAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
-  match st.getTcb? tid with
-  | some tcb =>
-    !(tcb.threadState == .Inactive) && tcb.ipcObjectCode == 0 && tcb.ipcStateCode == 0
-      && (match tcb.schedContextBinding with | .donated _ _ => false | _ => true)
-  | none => false
-
 /-- WS-ZA ZA5.2: the suspend's release of a context bound to the victim
 (`cancelBoundDonationOnCore`), the victim's entry-time scheduling key and budget
 eligibility read before anything is written; the identity on a victim holding no
@@ -4397,57 +4384,6 @@ theorem cancelBoundDonationOnCore_eq_release {st : SystemState} {tid : SeLe4n.Th
   unfold markKeyChangeFrom
   simp only [hT]
   rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
-
-/-- WS-ZA ZA5.2: the quiescent suspend once admitted.  The placement, the core
-running the victim and the executing core's current priority are read before
-anything is written, so the state is handed to the writes alone. -/
-def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) :
-    SystemState :=
-  let tid := vtid.val
-  let placed := placedCoreOf? st tid
-  let runningCore? := runningCoreOf? st tid
-  let curCode := st.scheduler.currentCode.get executingCore
-  let prioCode := currentEffectivePrioCode st executingCore
-  let st0 := suspendReleasePerform st tid
-  let st1 := descheduleAt st0 tid placed
-  let st2 := clearPendingStateValid st1 vtid
-  let st3 := st2.updateTcb tid fun t => { t with threadState := .Inactive }
-  let st4 := cancelYieldTo st3 tid
-  suspendRescheduleState st4 (runningCore?.getD executingCore) executingCore
-    runningCore?.isSome (currentDeboostedFromCode st4 executingCore curCode prioCode)
-
-theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) (h : suspendAdmitted st vtid.val = true) :
-    ∃ sgi, suspendThreadOnCore st vtid executingCore =
-      .ok (suspendPerform st vtid executingCore, sgi) := by
-  unfold suspendAdmitted at h
-  cases hT : st.getTcb? vtid.val with
-  | none => simp [hT] at h
-  | some tcb =>
-    simp only [hT, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
-    obtain ⟨⟨⟨hI, hO⟩, hS⟩, hB⟩ := h
-    have hReady : tcb.ipcState = .ready := by
-      simp only [TCB.ipcState, hO, hS]; rfl
-    have hC : cancelIpcBlockingReclaimed vtid.val tcb st = st := by
-      rw [cancelIpcBlockingReclaimed_of_no_donation _ _ _
-        (by unfold cancelledCallerDonation?; rw [hReady])]
-      unfold cancelIpcBlocking; rw [hReady]
-    have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
-      unfold PriorityInheritance.blockingServer
-      rw [hT]; simp [TCB.blockingServer?, hReady]
-    unfold suspendThreadOnCore suspendPerform
-    simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hC, hBS, Option.getD_some,
-      currentDeboostedFrom_eq_code st]
-    cases hb : tcb.schedContextBinding with
-    | unbound =>
-      have hR : suspendReleasePerform st vtid.val = st := by
-        simp only [suspendReleasePerform, hT, hb]
-      simp only [hR]
-      exact suspendRescheduleOnCore_eq_state _ _ _ _ _
-    | bound scId =>
-      simp only [cancelBoundDonationOnCore_eq_release hT hb]
-      exact suspendRescheduleOnCore_eq_state _ _ _ _ _
-    | donated scId owner => rw [hb] at hB; cases hB
 
 -- ============================================================================
 -- §14  WS-RR RR2.17 — the `.tcbSuspend` operation preserves `ipcInvariant`
