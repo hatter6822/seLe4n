@@ -791,7 +791,7 @@ theorem configureResumeBound_replenishQueueOnCore (st : SystemState)
 AK2-G (S-M05): Any pending replenishment entries previously enqueued for this
 SchedContext reference the PRIOR budget/period and therefore become stale the
 moment the configure operation rewrites those fields. Without explicit removal,
-`processReplenishmentsDue` could re-enqueue the bound thread at the old
+the replenishment step (`processReplenishmentsDueOnCore`) could re-enqueue the bound thread at the old
 replenishment window, violating CBS isolation. The `replenishQueue.remove`
 call is idempotent and preserves sort order.
 

@@ -54,32 +54,6 @@ predicates (defined below at `machineWordMax := 2^64`) must be enforced at every
 ABI entry point. The `CPtr.isWord64Bounded` and `Slot.isWord64Bounded` methods
 provide this check for capability pointers and slot indices. -/
 
-/-! ## AN4-F.1 (CAP-M01): documented caller obligations
-
-A caller obligation that has no `Prop` content — a contract on how a
-result must be used, which no theorem can state of the function itself —
-is recorded as a declaration of type `DocumentedObligation`.  The type is
-the marker: the environment answers "which declarations are documented
-obligations" by type, and a text search for `: DocumentedObligation`
-enumerates them.
-
-**WS-BP BP1.1.**  This was an `initialize`-registered tag attribute
-(`@[documented_obligation]`), which put `import Lean.Attributes` in the
-kernel's production closure.  That import is Lean's elaborator: its module
-initialisers would run in the kernel image before the first kernel
-instruction, and its object code would be linked into a freestanding
-`aarch64-unknown-none` binary for a no-op marker.  A type carries the same
-information with no import and no initialiser. -/
-
-/-- The type of a documented caller obligation: a declaration of this type
-records, in its docstring, a contract its callers must discharge.  It has
-exactly one value, so the declaration carries no content beyond its name,
-its docstring and its type. -/
-structure DocumentedObligation where
-  /-- The one value. -/
-  recorded ::
-deriving Inhabited
-
 /-- Identifier for objects in the global kernel object store.
     Value 0 is reserved as sentinel (H-06/WS-E3). -/
 structure ObjId where
@@ -579,11 +553,7 @@ theorem ofObjIdChecked_sentinel :
 instance : ToString SchedContextId where
   toString id := toString id.toNat
 
-@[inline] def isReserved (id : SchedContextId) : Bool := id.val = 0
 @[inline] def sentinel : SchedContextId := ⟨0⟩
-
-/-- A SchedContextId is valid (non-sentinel). -/
-@[inline] def valid (id : SchedContextId) : Bool := !id.isReserved
 
 /-- Round-trip: ofNat then toNat is identity. -/
 theorem toNat_ofNat (n : Nat) : (SchedContextId.ofNat n).toNat = n := rfl
@@ -713,11 +683,7 @@ theorem ofObjIdChecked_sentinel :
 instance : ToString ReplyId where
   toString id := toString id.toNat
 
-@[inline] def isReserved (id : ReplyId) : Bool := id.val = 0
 @[inline] def sentinel : ReplyId := ⟨0⟩
-
-/-- A ReplyId is valid (non-sentinel). -/
-@[inline] def valid (id : ReplyId) : Bool := !id.isReserved
 
 /-- Round-trip: ofNat then toNat is identity. -/
 theorem toNat_ofNat (n : Nat) : (ReplyId.ofNat n).toNat = n := rfl
@@ -1084,9 +1050,6 @@ namespace ASID
     ARM64 uses 16-bit ASIDs (maxASID = 65536). -/
 @[inline] def isValidForConfig (asid : ASID) (maxASID : Nat) : Bool := asid.val < maxASID
 
-/-- U2-G/U-H08: Propositional version of ASID config validation. -/
-@[inline] def validForConfig (asid : ASID) (maxASID : Nat) : Prop := asid.val < maxASID
-
 instance : ToString ASID where
   toString asid := toString asid.toNat
 
@@ -1120,12 +1083,6 @@ namespace VAddr
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (addr : VAddr) : Nat := addr.val
 
-/-- R7-C/L-03: A virtual address is valid if it fits in one machine word. -/
-@[inline] def valid (addr : VAddr) : Prop := isWord64 addr.val
-
-/-- R7-C/L-03: Decidable validity check for runtime use. -/
-@[inline] def isValid (addr : VAddr) : Bool := isWord64Dec addr.val
-
 /-- U2-A/U-H06: ARM64 canonical address bound — 48-bit virtual address space.
     ARMv8-A with 4-level page tables supports [0, 2^48) for user-space addresses. -/
 def canonicalBound : Nat := 2^48
@@ -1133,9 +1090,6 @@ def canonicalBound : Nat := 2^48
 /-- U2-A/U-H06: A virtual address is canonical if it lies within [0, 2^48).
     Non-canonical addresses would fault on ARM64 hardware. -/
 @[inline] def isCanonical (addr : VAddr) : Bool := addr.val < canonicalBound
-
-/-- U2-A/U-H06: Propositional version of canonical address check. -/
-@[inline] def canonical (addr : VAddr) : Prop := addr.val < canonicalBound
 
 /-- **WS-BP BP7.2**: the lowest virtual address a thread's address space may
     map.  A thread's translation root is installed in `TTBR0_EL1` beside the
@@ -1257,12 +1211,6 @@ namespace PAddr
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (addr : PAddr) : Nat := addr.val
 
-/-- R7-C/L-03: A physical address is valid if it fits in one machine word. -/
-@[inline] def valid (addr : PAddr) : Prop := isWord64 addr.val
-
-/-- R7-C/L-03: Decidable validity check for runtime use. -/
-@[inline] def isValid (addr : PAddr) : Bool := isWord64Dec addr.val
-
 instance : ToString PAddr where
   toString addr := toString addr.toNat
 
@@ -1293,29 +1241,6 @@ end KernelM
 -- ============================================================================
 
 namespace KernelM
-
-/-- L-03/WS-E6: Read the current state. -/
-def get {σ ε : Type} : KernelM σ ε σ :=
-  fun s => .ok (s, s)
-
-/-- L-03/WS-E6: Replace the entire state. -/
-def set {σ ε : Type} (s : σ) : KernelM σ ε Unit :=
-  fun _ => .ok ((), s)
-
-/-- L-03/WS-E6: Modify the state with a pure function. -/
-def modify {σ ε : Type} (f : σ → σ) : KernelM σ ε Unit :=
-  fun s => .ok ((), f s)
-
-/-- L-03/WS-E6: Lift an `Except` into the monad (fail on error). -/
-def liftExcept {σ ε α : Type} (e : Except ε α) : KernelM σ ε α :=
-  fun s =>
-    match e with
-    | .ok a => .ok (a, s)
-    | .error err => .error err
-
-/-- L-03/WS-E6: Fail with an error. -/
-def throw {σ ε α : Type} (err : ε) : KernelM σ ε α :=
-  fun _ => .error err
 
 -- WS-H14b: LawfulMonad instance for KernelM
 
@@ -2120,13 +2045,6 @@ abbrev ValidCPtr := { c : CPtr // c ≠ CPtr.sentinel }
 
 namespace ObjId
 
-/-- AK7-E.1 (F-M03): Promote an `ObjId` with an explicit non-sentinel proof
-to a `ValidObjId`. -/
-@[inline] def toValid (o : ObjId) (h : o ≠ sentinel) : ValidObjId := ⟨o, h⟩
-
-/-- AK7-E.1 (F-M03): Forget the non-sentinel proof on a `ValidObjId`. -/
-@[inline] def ofValid (v : ValidObjId) : ObjId := v.val
-
 /-- AK7-E.1 (F-M03): Try to promote an `ObjId` to a `ValidObjId` by
 performing a runtime sentinel check. Returns `none` for the sentinel. -/
 @[inline] def toValid? (o : ObjId) : Option ValidObjId :=
@@ -2183,12 +2101,6 @@ end ThreadId
 
 namespace SchedContextId
 
-/-- AK7-E.1 (F-M03): Promote a `SchedContextId` with a non-sentinel proof. -/
-@[inline] def toValid (s : SchedContextId) (h : s ≠ sentinel) : ValidSchedContextId := ⟨s, h⟩
-
-/-- AK7-E.1 (F-M03): Forget the non-sentinel proof. -/
-@[inline] def ofValid (v : ValidSchedContextId) : SchedContextId := v.val
-
 /-- AK7-E.1 (F-M03): Runtime-checked promotion. -/
 @[inline] def toValid? (s : SchedContextId) : Option ValidSchedContextId :=
   if h : s = sentinel then none else some ⟨s, h⟩
@@ -2196,12 +2108,6 @@ namespace SchedContextId
 end SchedContextId
 
 namespace CPtr
-
-/-- AK7-E.1 (F-M03): Promote a `CPtr` with a non-null proof. -/
-@[inline] def toValid (c : CPtr) (h : c ≠ sentinel) : ValidCPtr := ⟨c, h⟩
-
-/-- AK7-E.1 (F-M03): Forget the non-null proof. -/
-@[inline] def ofValid (v : ValidCPtr) : CPtr := v.val
 
 /-- AK7-E.1 (F-M03): Runtime-checked promotion. -/
 @[inline] def toValid? (c : CPtr) : Option ValidCPtr :=
@@ -2266,9 +2172,6 @@ structure KindedObjId where
   deriving Repr, DecidableEq, Inhabited
 
 namespace KindedObjId
-
-/-- AK7-F.1 (F-M04): Project a `KindedObjId` to its untagged `ObjId`. -/
-@[inline] def toObjId (k : KindedObjId) : ObjId := ObjId.ofNat k.val
 
 /-- AK7-F.4 (F-M04): Legacy-compatible constructor — forget the kind. -/
 @[inline] def ofNatUnknown (n : Nat) : KindedObjId :=

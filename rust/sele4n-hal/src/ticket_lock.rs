@@ -132,7 +132,7 @@ impl TicketLock {
     ///
     /// 1. `fetch_add(1, Acquire)` on `next_ticket` to atomically
     ///    capture this caller's ticket and increment the counter.
-    ///    Refines the abstract `captureTicket` step.
+    ///    Refines the ticket capture in the abstract `applyOp .tryAcquire`.
     /// 2. Spin until `serving.load(Acquire) == my_ticket`.  Each
     ///    iteration calls `wfe_bounded` to park the PE in a
     ///    low-power state until either a `sev` arrives (typically

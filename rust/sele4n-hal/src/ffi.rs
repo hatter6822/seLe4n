@@ -182,30 +182,11 @@ pub extern "C" fn ffi_gic_is_spurious(intid: u32) -> bool {
 // AG7-A-ii: TLB + MMIO + UART + Interrupts FFI exports
 // ============================================================================
 
-/// Flush all TLB entries at EL1 (TLBI VMALLE1 + DSB ISH + ISB).
-///
-/// **Local (non-broadcast) variant**.  Two legitimate callers:
-/// the boot-time MMU-init path BEFORE secondaries have started, and
-/// — WS-SM SM7.B.7 — the shootdown round-lock's cooperative
-/// self-service arm (`Concurrency.tlbiLocalFullFlush`), where a
-/// lock-waiter discharges its OWN pending shootdown obligation by
-/// cleaning exactly its own view before release-acknowledging
-/// (mirroring the `.tlbShootdownReq` handler's local
-/// `tlbi vmalle1`).  All other production kernel code under SMP
-/// must use [`ffi_tlbi_for_sharing`] to route through the IS or OS
-/// variant per the platform's `SharingDomain`.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiAll`
-#[no_mangle]
-pub extern "C" fn ffi_tlbi_all() -> crate::lean_runtime::Obj {
-    crate::tlb::tlbi_vmalle1();
-    crate::lean_runtime::base_io_unit()
-}
-
 /// Flush TLB entries by ASID at EL1 (TLBI ASIDE1 + DSB ISH + ISB).
 ///
-/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_all`] for
-/// SMP usage notes.
+/// **Local (non-broadcast) variant**.  Production kernel code under SMP
+/// must use [`ffi_tlbi_for_sharing`] to route through the IS or OS
+/// variant per the platform's `SharingDomain`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByAsid`
 #[no_mangle]
@@ -216,7 +197,7 @@ pub extern "C" fn ffi_tlbi_by_asid(asid: u16) -> crate::lean_runtime::Obj {
 
 /// Flush TLB entries by virtual address + ASID at EL1 (TLBI VAE1 + DSB ISH + ISB).
 ///
-/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_all`] for
+/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_by_asid`] for
 /// SMP usage notes.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByVaddr`
@@ -499,7 +480,6 @@ pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) -> crate::lean_runtime
 // SM7.B protocol calls these
 // through the typed `CoreId` wrappers in
 // `SeLe4n/Kernel/Concurrency/Runtime.lean` (`shootdownAckRound` /
-// `shootdownAckedGeneration` / `shootdownAllAckedForRound` /
 // `shootdownSelfServiceRound`), whose `Fin numCores` argument typing
 // makes the panic arms below structurally unreachable from well-typed
 // kernel code (`shootdownAck_ffi_core_in_range` on the Lean side).
@@ -545,32 +525,6 @@ pub extern "C" fn ffi_shootdown_ack_round(core_id: u64, gen: u64) -> crate::lean
         gen,
     );
     crate::lean_runtime::base_io_unit()
-}
-
-/// **WS-SM SM7.F.3**: Acquire-load the highest round generation the
-/// given core has acknowledged.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckedGeneration`
-#[no_mangle]
-pub extern "C" fn ffi_shootdown_acked_generation(core_id: u64) -> u64 {
-    crate::shootdown::acked_gen(shootdown_core_id_checked(
-        core_id,
-        "ffi_shootdown_acked_generation",
-    ))
-}
-
-/// **WS-SM SM7.F.3**: Acquire-poll the acknowledgment slots for round
-/// generation `gen` — the initiator wait-loop's exit condition
-/// (plan §3.2 step 5).  Returns `1` when every IRQ-serviceable
-/// non-initiator core has acknowledged `gen`, `0` otherwise.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAllAckedForRound`
-#[no_mangle]
-pub extern "C" fn ffi_shootdown_all_acked_for_round(gen: u64, initiator: u64) -> u64 {
-    crate::shootdown::all_acked_for_round(
-        gen,
-        shootdown_core_id_checked(initiator, "ffi_shootdown_all_acked_for_round"),
-    ) as u64
 }
 
 /// **WS-SM SM7.B.7 + SM7.F.3**: The cooperative round-lock acquire's
@@ -639,23 +593,6 @@ pub extern "C" fn ffi_shootdown_allocate_round_generation() -> u64 {
 pub extern "C" fn ffi_shootdown_round_lock_release() -> crate::lean_runtime::Obj {
     crate::shootdown::round_lock_release();
     crate::lean_runtime::base_io_unit()
-}
-
-/// **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
-/// fail-closed barrier's actual stop.  **Never returns.**
-///
-/// Called by the Lean seam after its `panic!` has reported the
-/// violation.  The two are separate because Lean's `panic!` prints and
-/// then returns the `Inhabited` default (PR #854 review): it is the
-/// diagnostic, this is the halt.  Crossing either shootdown barrier —
-/// an unacknowledged round or a wedged round holder — means committing
-/// state whose soundness depends on an invalidation that never
-/// happened, which is the SMP-C4 stale-TLB hazard.
-///
-/// Lean binding: `SeLe4n.Platform.FFI.ffiFatalHalt`
-#[no_mangle]
-pub extern "C" fn ffi_fatal_halt() -> ! {
-    crate::cpu::fatal_halt()
 }
 
 /// **WS-SM SM0.H + SM7.B.6/B.7 (PR #854 review)**: broadcast `haltAll`
@@ -1426,7 +1363,7 @@ pub(crate) fn clean_pagetable_range_within_identity_map(addr: u64, len: u64) {
 /// variants `IC IALLUIS` / `IC IVAU`); leaving a remote core's instruction
 /// cache un-invalidated after retiring an executable mapping is the
 /// instruction-side twin of the SMP-C4 stale-TLB hazard.  This export is kept
-/// for the single-PE boot path, symmetric with [`ffi_tlbi_all`].
+/// for the single-PE boot path, symmetric with [`ffi_tlbi_by_asid`].
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcIallu`
 #[no_mangle]
@@ -2600,11 +2537,6 @@ mod tests {
     }
 
     #[test]
-    fn ffi_tlbi_all_no_panic() {
-        ffi_tlbi_all();
-    }
-
-    #[test]
     fn ffi_tlbi_by_asid_no_panic() {
         ffi_tlbi_by_asid(42);
     }
@@ -3363,11 +3295,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "ffi_shootdown_acked_generation: core_id 18446744073709551615 out of range"
-    )]
+    #[should_panic(expected = "ffi_shootdown_ack_round: core_id 18446744073709551615 out of range")]
     fn shootdown_core_id_checked_panics_at_u64_max() {
-        let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_acked_generation");
+        let _ = shootdown_core_id_checked(u64::MAX, "ffi_shootdown_ack_round");
     }
 
     #[test]
@@ -3391,31 +3321,10 @@ mod tests {
     }
 
     #[test]
-    fn ffi_shootdown_boot_state_reads_quiescent() {
-        // Read-only on the global (no ffi test mutates SHOOTDOWN_ACK,
-        // so the boot values are stable under parallel execution).
-        assert_eq!(
-            ffi_shootdown_all_acked_for_round(0, 0),
-            1,
-            "generation 0 is vacuously satisfied at boot"
-        );
-        for core in 0..4u64 {
-            assert_eq!(
-                ffi_shootdown_acked_generation(core),
-                0,
-                "core {} boots at generation 0",
-                core
-            );
-        }
-    }
-
-    #[test]
     fn ffi_shootdown_signatures_pinned() {
         // Pin every shootdown FFI export signature; an ABI change
         // that broke the Lean @[extern] bindings would surface here.
         let _: extern "C" fn(u64, u64) -> crate::lean_runtime::Obj = ffi_shootdown_ack_round;
-        let _: extern "C" fn(u64) -> u64 = ffi_shootdown_acked_generation;
-        let _: extern "C" fn(u64, u64) -> u64 = ffi_shootdown_all_acked_for_round;
         let _: extern "C" fn(u64) -> u64 = ffi_shootdown_self_service_round;
         // PR #854 review: the wait carries the round's own online mask
         // (gen, initiator, online_mask, timeout_ticks) rather than
@@ -3424,13 +3333,12 @@ mod tests {
         let _: extern "C" fn(u64, u64) -> crate::lean_runtime::Obj = ffi_shootdown_publish_commit;
     }
 
-    /// **PR #854 review**: the fail-closed halt seams are non-returning
+    /// **PR #854 review**: the fail-closed halt seam is non-returning
     /// at the ABI, not merely by convention — `-> !` cannot be satisfied
     /// by a function that falls through, so this fails to compile if
-    /// either is ever softened.
+    /// it is ever softened.
     #[test]
     fn ffi_fatal_halt_signatures_are_never_returning() {
-        let _: extern "C" fn() -> ! = ffi_fatal_halt;
         let _: extern "C" fn() -> ! = ffi_fatal_halt_all;
     }
 

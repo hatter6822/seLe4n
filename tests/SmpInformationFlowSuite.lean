@@ -1209,7 +1209,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @queueOwnershipRespectedBy
 #check @SeLe4n.Kernel.Concurrency.QueueOwner.lock_kind
 #check @SeLe4n.Kernel.Concurrency.queueOwnerOf?
-#check @SeLe4n.Kernel.Concurrency.queueOwnerAt
 #check @queueOwner_mem_write_of_extendOpt
 #check @queueOwnership_respected_by_tcbSetPriority
 #check @queueOwnership_respected_by_tcbSetMCPriority
@@ -1307,7 +1306,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @auditFieldBound_unreachable_in_kernel
 #check @auditBasisBytes
 #check @maxAuditDesignationBytes
-#check @auditDesignationBytesPerChunk
 #check @auditBasisChunkValue
 #check @auditBasisByteOfChunk
 #check @auditBasisChunkCount
@@ -5377,8 +5375,8 @@ private def runPerCoreCoverageChecks : IO Unit := do
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
   assertBool "67 entries: 53 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation, the yieldTo invocation and the interrupt acknowledge) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 70) &&
-     decide (enforcementBoundaryExtended.length = 56) &&
+    (decide (enforcementBoundaryPerCore.length = 69) &&
+     decide (enforcementBoundaryExtended.length = 55) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)

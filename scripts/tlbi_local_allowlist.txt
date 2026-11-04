@@ -41,14 +41,8 @@ rust/sele4n-hal/src/shootdown.rs::self_service_round_in
 # outstanding shootdown obligation before release-acknowledging.
 
 # --- FFI exports of the two uses above ------------------------------------
-rust/sele4n-hal/src/ffi.rs::ffi_tlbi_all
 rust/sele4n-hal/src/ffi.rs::ffi_tlbi_by_asid
 rust/sele4n-hal/src/ffi.rs::ffi_tlbi_by_vaddr
-# The Lean bindings `ffiTlbiAll` / `ffiTlbiByAsid` / `ffiTlbiByVaddr`.
-# Reserved for boot-time init and `Concurrency.tlbiLocalFullFlush`; all
-# other Lean kernel code routes through `ffiTlbiForSharing`.
-
-# --- Lean production callers of the local FFI bindings --------------------
-SeLe4n/Kernel/Concurrency/Runtime.lean::tlbiLocalFullFlush
-# SM7.B.7's self-service arm, the Lean half of
-# `shootdown.rs::self_service_round_in`.
+# The Lean bindings `ffiTlbiByAsid` / `ffiTlbiByVaddr`, reserved for
+# boot-time init; all other Lean kernel code routes through
+# `ffiTlbiForSharing`.

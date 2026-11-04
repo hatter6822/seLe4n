@@ -1313,11 +1313,6 @@ def decodeTcbBindNotificationArgs (decoded : SyscallDecodeResult)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
 
-/-- WS-SM SM6.B: decode `tcbUnbindNotification` arguments (none). -/
-def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
-    : Except KernelError TcbUnbindNotificationArgs :=
-  pure {}
-
 /-- WS-ZA ZA6.32: arguments for `irqControlGet` (seL4's
     `seL4_IRQControl_Get`): `msgRegs[0]` the interrupt line, `msgRegs[1]` the
     capability address of the CNode the handler capability is issued into, and

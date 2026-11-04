@@ -115,10 +115,6 @@ def endAddr (r : MmioRegionDesc) : Nat := r.base.toNat + r.size
 def contains (r : MmioRegionDesc) (addr : PAddr) : Bool :=
   r.base.toNat ≤ addr.toNat && addr.toNat < r.endAddr
 
-/-- Well-formedness: region has positive size and does not wrap around. -/
-def wellFormed (r : MmioRegionDesc) : Prop :=
-  r.size > 0 ∧ r.endAddr > r.base.toNat
-
 instance : DecidableEq MmioRegionDesc := inferInstance
 
 end MmioRegionDesc
@@ -127,10 +123,6 @@ end MmioRegionDesc
     `MmioRegionDesc`. This is the formal MMIO boundary check. -/
 def inMmioRegion (regions : List MmioRegionDesc) (addr : PAddr) : Bool :=
   regions.any fun r => r.contains addr
-
-/-- U6-A: Look up the MMIO region descriptor for a given address. -/
-def findMmioRegion (regions : List MmioRegionDesc) (addr : PAddr) : Option MmioRegionDesc :=
-  regions.find? fun r => r.contains addr
 
 /-- U6-A: Declared MMIO region descriptors for RPi5 peripherals.
     Each region specifies its read/write semantics to prevent unsound proofs. -/
@@ -210,42 +202,6 @@ private theorem gicDistRegion_mem : gicDistRegion ∈ rpi5MmioRegionDescs := by
   unfold rpi5MmioRegionDescs gicDistRegion; exact List.Mem.tail _ (List.Mem.head _)
 private theorem gicCpuRegion_mem : gicCpuRegion ∈ rpi5MmioRegionDescs := by
   unfold rpi5MmioRegionDescs gicCpuRegion; exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _))
-
-/-- X1-E: Construct an `MmioSafe` witness for UART PL011 (volatile reads).
-    The UART data/status registers are volatile — each read may return a
-    different value. The witness uses `MmioReadOutcome.volatileAny`. -/
-def mkMmioSafe_uart (addr : PAddr) (outcome memoryAt : Nat)
-    (hInRegion : inMmioRegion rpi5MmioRegionDescs addr = true)
-    (hContains : uartRegion.contains addr = true) :
-    MmioSafe rpi5MmioRegionDescs addr outcome memoryAt :=
-  { hInRegion := hInRegion
-    readKind := .volatile
-    hReadKind := ⟨uartRegion, uartRegion_mem, hContains, rfl⟩
-    hOutcome := .volatileAny }
-
-/-- X1-E: Construct an `MmioSafe` witness for GIC-400 distributor (volatile reads).
-    The GIC distributor status registers are volatile — interrupt state changes
-    between reads. The witness uses `MmioReadOutcome.volatileAny`. -/
-def mkMmioSafe_gicDist (addr : PAddr) (outcome memoryAt : Nat)
-    (hInRegion : inMmioRegion rpi5MmioRegionDescs addr = true)
-    (hContains : gicDistRegion.contains addr = true) :
-    MmioSafe rpi5MmioRegionDescs addr outcome memoryAt :=
-  { hInRegion := hInRegion
-    readKind := .volatile
-    hReadKind := ⟨gicDistRegion, gicDistRegion_mem, hContains, rfl⟩
-    hOutcome := .volatileAny }
-
-/-- X1-E: Construct an `MmioSafe` witness for GIC-400 CPU interface (volatile reads).
-    The GIC CPU interface registers (interrupt acknowledge, priority, etc.) are
-    volatile. The witness uses `MmioReadOutcome.volatileAny`. -/
-def mkMmioSafe_gicCpu (addr : PAddr) (outcome memoryAt : Nat)
-    (hInRegion : inMmioRegion rpi5MmioRegionDescs addr = true)
-    (hContains : gicCpuRegion.contains addr = true) :
-    MmioSafe rpi5MmioRegionDescs addr outcome memoryAt :=
-  { hInRegion := hInRegion
-    readKind := .volatile
-    hReadKind := ⟨gicCpuRegion, gicCpuRegion_mem, hContains, rfl⟩
-    hOutcome := .volatileAny }
 
 -- ============================================================================
 -- W4-F (L-16): MMIO Formalization Boundary Documentation
@@ -1073,10 +1029,11 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
   harnesses prefer `buildValidated` directly. Recorded here; a structured
   error return is the post-1.0 hardening direction (P-L6).
 
-- **P-L2** `readCString` fuel 256: the 256-byte cap reflects FDT string-
+- **P-L2** DTB string fuel 256: the 256-byte cap reflects FDT string-
   table entries which are always short property names (spec-mandated
-  sub-32-char names). A fuel-exhaustion return type upgrade is tracked
-  as a post-1.0 hardening candidate; registered in
+  sub-32-char names). The parser's `readCStringWithin` still folds fuel
+  exhaustion into `none`; the return-type upgrade `readCStringChecked`
+  already makes is a post-1.0 hardening candidate, registered in
   `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).
 
 - **P-L3** `physicalAddressWidth` bounds: **RESOLVED** via AK9-F —

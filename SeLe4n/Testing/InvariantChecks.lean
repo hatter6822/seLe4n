@@ -260,12 +260,6 @@ def replyNextLinkReciprocalChecks (objectIds : List SeLe4n.ObjId) (st : SystemSt
         | _ => acc
     | none => acc) []
 
-/-- **WS-ZA ZA5.4 part 27**: the same relation as a single boolean, for the
-witness that shows a frame naming a frame above that no longer names it back
-fails it. -/
-def replyNextLinkReciprocalBool (st : SystemState) : Bool :=
-  (replyNextLinkReciprocalChecks st.objectIndex st).all (·.2)
-
 /-- **WS-ZA ZA6.4**: `SystemState.releaseNoRefillStranded` as a runtime check:
 a bound context whose head refill is used up and pending is on some core's
 release queue at that refill's time, read off the links themselves: the
@@ -853,9 +847,6 @@ def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (s
     pure ()
   else
     throw <| IO.userError s!"{label}: invariant checks failed: {reprStr failures}"
-
-def assertStateInvariants (label : String) (st : SystemState) : IO Unit :=
-  assertStateInvariantsFor label st.objectIndex st
 
 /-- Like `assertStateInvariantsFor` but skips the `syncThreadStates` step,
 enabling detection of operational drift between `threadState` fields and

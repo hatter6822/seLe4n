@@ -188,7 +188,7 @@ pub fn tcb_bind_notification(
 ///
 /// Lean: the `.tcbUnbindNotification` arm (API.lean, WS-SM SM6.B) —
 /// requires `.write` on the target TCB capability; no message registers
-/// (`decodeTcbUnbindNotificationArgs` reads none).
+/// (the arm decodes no arguments).
 #[inline]
 pub fn tcb_unbind_notification(tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {

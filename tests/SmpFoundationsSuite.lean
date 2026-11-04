@@ -118,7 +118,6 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Architecture.architecture_assumptions_index_total_6
 
 /-! ## SM0.C/SM0.D — AN12-B inventory hardening -/
-#check @SeLe4n.Kernel.Concurrency.smpAnchorVerified
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_count
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_sourceTheorems_nodup

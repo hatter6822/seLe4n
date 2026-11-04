@@ -3708,15 +3708,13 @@ equals `now`.
 The predicate is PIPELINE-relative, not a free-standing state
 invariant — see the scope note in `Scheduler/Invariant.lean` at
 `replenishmentPipelineOrder` for details. A bare `tick` of the timer
-does NOT preserve the invariant; re-entry into `processReplenishmentsDue`
-re-establishes it. The composed `timerTickWithBudget` preserves the
+does NOT preserve the invariant; a fresh pop of the due replenishments
+(`popDueReplenishments`) re-establishes it. A tick that pops before it charges keeps the
 invariant in the idiomatic "pop then tick" ordering because the
 post-pop pair-level witness is stronger than the post-tick requirement
 (remaining `eligibleAt > now → eligibleAt ≥ now + 1 = post-tick timer`
 only when the entry's `eligibleAt > now` strictly; if `eligibleAt = now`
-it was already popped). The full `timerTickWithBudget` composition
-theorem is tracked for the Theme 4.7 file split (AN5-A) when per-op
-preservation moves into child modules. -/
+it was already popped). -/
 
 /-- AN5-B (SCH-M03): Under `pairwiseSortedBy`, every element of a list
 has `.2` ≥ the head's `.2`. Technical helper for the popDue-remaining

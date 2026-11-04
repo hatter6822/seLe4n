@@ -2522,7 +2522,7 @@ This replaces `queueOwnership_violated_by_tcbSetPriority`, which stated the gap
 as a `¬` precisely so that closing it would delete the theorem rather than leave
 prose that had become false.  What closed it: each of these eleven footprints
 now carries the queue owner's write lock as a declared member, resolved from the
-pre-state by `queueOwnerAt`.  A suspend splicing a victim out of `ep`'s queue
+pre-state's TCB by `queueOwnerOf?`.  A suspend splicing a victim out of `ep`'s queue
 holds `endpointLock ep .write`; any of these targeting one of that victim's
 queued neighbours now holds the same lock, so the two are mutually excluded on
 the TCBs the splice writes rather than merely authorized.

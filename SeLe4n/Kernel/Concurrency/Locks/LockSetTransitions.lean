@@ -343,11 +343,6 @@ theorem QueueOwner.lock_kind (q : QueueOwner) :
   | .blockedOnNotification n => some (.notification n)
   | .ready => none
 
-/-- **WS-RR RR7.38**: `queueOwnerOf?` resolved through the object store.  A
-thread that resolves to no TCB owns no queue membership, so `none`. -/
-@[inline] def queueOwnerAt (st : SystemState) (tid : ThreadId) : Option QueueOwner :=
-  (st.getTcb? tid).bind queueOwnerOf?
-
 /-- **WS-RR RR7.38**: the optional footprint member a queue owner contributes —
 its lock, in **write** mode, because the splice it protects writes the neighbour
 TCBs rather than reading them. -/

@@ -41,7 +41,6 @@ open SeLe4n.Model
 
 #check @selectedAt
 #check @runnableAt
-#check @budgetAvailableAt
 #check @traceStateAt
 
 -- ============================================================================
@@ -381,7 +380,7 @@ def main : IO Unit := do
   IO.println s!"AN11-F live assertion: a whole-head charge is released at {period}"
   IO.println "=== Liveness Suite ==="
   IO.println "  ✓ TraceModel types: SchedulerStep, SchedulerTrace, ValidTrace"
-  IO.println "  ✓ Query predicates: selectedAt, runnableAt, budgetAvailableAt"
+  IO.println "  ✓ Query predicates: selectedAt, runnableAt"
   IO.println "  ✓ Counting: countHigherOrEqual, maxBudgetInBand, maxPeriodInBand"
   IO.println "  ✓ TimerTick: F1/F2/F3 theorems, chargeBudget_tick_refillTotal"
   IO.println "  ✓ Replenishment: schedule_used, budget_ge, insert_sorted"

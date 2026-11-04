@@ -123,7 +123,7 @@ def lifecyclePreRetypeCleanup_smpLatent : SmpLatentAssumption :=
 
 /-- AK2-K / AN5-D: timer-tick + replenishment-pipeline atomicity. -/
 def timerTickReplenishmentPipeline_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Kernel.timerTickWithBudget
+  { identifier        := `SeLe4n.Kernel.timerTickOnCore
     singleCoreWitness :=
       "Single-core: timer ISR runs to completion before any other kernel \
        transition — pop-due / refill / process pipeline is atomic."
@@ -352,7 +352,7 @@ def lifecyclePreRetypeCleanup_smpRetired : SmpRetiredAssumption :=
 
 /-- AK2-K / AN5-D: timer-tick + replenishment-pipeline atomicity. -/
 def timerTickReplenishmentPipeline_smpRetired : SmpRetiredAssumption :=
-  { identifier     := `SeLe4n.Kernel.timerTickWithBudget
+  { identifier     := `SeLe4n.Kernel.timerTickOnCore
     status         := .perCoreBracketGated
     retirement     :=
       "Per-core: each core runs its own timer tick; the GIC EOI precedes the \

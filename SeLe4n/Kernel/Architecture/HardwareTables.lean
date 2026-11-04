@@ -274,16 +274,6 @@ theorem recordPhysicalWrites_append (st : SystemState) (a b : List PhysicalWrite
 @[simp] theorem clearPhysicalWrites_pending (st : SystemState) :
     (clearPhysicalWrites st).pendingPhysicalWrites = [] := rfl
 
-/-- The mapping store for the address space `asid` names, if any. -/
-def asidMappingStores (st : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) :
-    List PhysicalWrite :=
-  match st.asidTable[asid]? with
-  | some oid =>
-    match st.getVSpaceRoot? oid with
-    | some root => if root.asid = asid then (mappingStore? st root vaddr).toList else []
-    | none => []
-  | none => []
-
 /-- **WS-BP BP7.2: what `TTBR0_EL1` takes for a thread** — its address space's
 top-level table page and ASID, or `(0, 0)` for the kernel's own translation.
 

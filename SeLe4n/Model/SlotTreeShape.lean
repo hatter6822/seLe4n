@@ -16,7 +16,7 @@ seL4 keeps every non-null capability in its mapping database, one list in
 derivation order.  This module states the two facts the seLe4n tree owes that
 list (WS-ZA ZA5.4 part 16), over the state's slots and its tree:
 
-* **every slot holding a capability is in the tree** (`slotsInTree`), the
+* **every slot holding a capability is in the tree** (`TreeShapeOver.inTree`), the
   converse of `cdtCompleteness`, so an insert's source is always a slot the tree
   names and the new child lands right after it in the preorder;
 * **the tree has a preorder** (`CapDerivationTree.TreeOrder`), seL4's list.
@@ -179,11 +179,6 @@ abbrev irqNodeIssued (st : SystemState) (o : SeLe4n.ObjId) : Prop :=
 is active (`irqNodeIssued`): what a capability naming `o` needs of the state. -/
 abbrev objectPresent (st : SystemState) (o : SeLe4n.ObjId) : Prop :=
   st.objects[o]? ≠ none ∧ st.irqNodeIssued o
-
-/-- **Every slot holding a capability is in the derivation tree**, as every
-non-null capability is in seL4's mapping database. -/
-def slotsInTree (st : SystemState) : Prop :=
-  ∀ r, st.slotCapAt r ≠ none → st.cdt.mentions r
 
 /-- **What a step keeps of the tree's shape**: the tree and every slot's
 capability. -/
@@ -630,7 +625,7 @@ structure TreeShapeOver (cdt : CapDerivationTree) (cap : SlotRef → Option Capa
   sameObjectContiguous : ∀ P, cdt.TreeOrder P → ∀ o, SlotList.Chunked (namesAt cap · o) P
 
 /-- **The shape of the derivation tree over the slots and the store**: every slot
-holding a capability is in the tree (`slotsInTree`), the tree has a preorder,
+holding a capability is in the tree (`TreeShapeOver.inTree`), the tree has a preorder,
 every capability names an object in the store, the slots naming an object a
 derivation changed lie below the slot it was derived from, and the untyped
 facts hold everywhere. -/

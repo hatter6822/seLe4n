@@ -66,14 +66,6 @@ boot for every line the board has; no capability names one
 the state (`SeLe4n.Model.irqNodeId`), so the information-flow projection reads
 them. -/
 
-/-- **Whether a capability names an interrupt node** (an object or slot capability
-whose object is one). -/
-@[inline] def capTargetsIrqNode (count : Nat) (cap : Capability) : Bool :=
-  match cap.target with
-  | .object oid => isIrqNodeObjId count oid
-  | .cnodeSlot cnode _ => isIrqNodeObjId count cnode
-  | _ => false
-
 /-- **The binding line `line` signals**, seL4's `handleInterrupt` on a line at
 `IRQSignal`: the notification its node slot's capability names and that
 capability's badge, when the capability is a notification capability with the

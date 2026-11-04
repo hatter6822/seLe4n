@@ -948,12 +948,11 @@ was Z7-E's alias for `returnDonatedSchedContext` whose scenario the live
 `cleanupPreReceiveDonation{,Checked,Migrated}` family implements, the second Z7's
 single-core donation-aware Call that `endpointCallCrossCoreDispatch` superseded,
 tied to it by no equivalence theorem.  `timerTickChecked` and
-`switchDomainChecked` are **kept**, because they are two of the four X2-I
-API-boundary wrappers and deleting half of a symmetric family is the asymmetry
-this project's implement-the-improvement rule forbids — so they gained the
-witnesses their two driven siblings have (`tests/NegativeStateSuite.lean`), which
-closes *"no suite drives them"* while leaving *"outside the live closure"* true
-and recorded **here**, where it belongs.
+`switchDomainChecked` were kept then as half of the four X2-I API-boundary
+wrappers; at `v0.36.197` all four were deleted together, because no code, proof
+or suite called any of them.  The `withOutgoingContextChecked` guard they wrapped
+stays, driven over the boot core's live ops (`SeLe4n.Testing.BootCoreOps`,
+`tests/NegativeStateSuite.lean`).
 
 **The revocation family's residue is gone since `v0.36.111` (WS-ZA ZA5.3 part 8).**
 `.cspaceRevoke` dispatches `cspaceRevokeCdtFinalising`, seL4's `cteRevoke`: a
@@ -1123,7 +1122,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.chooseThreadEffective
   , `SeLe4n.Kernel.chooseThreadInDomain
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
-  , `SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
   , `SeLe4n.Kernel.commitKernelAction
   , `SeLe4n.Kernel.cspaceLookupMultiLevel
   , `SeLe4n.Kernel.cspaceLookupPath
@@ -1220,7 +1218,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `fpAccessEntryCommitted_eq`).
   , `SeLe4n.Kernel.fpAccessEntryStep
   , `SeLe4n.Kernel.handleYield
-  , `SeLe4n.Kernel.handleYieldChecked
   , `SeLe4n.Kernel.handleYieldWithBudget
   -- WS-ZA ZA6.32: the interrupt entry's committed state, named for its
   -- non-interference theorem; `interruptEntry_commits` restates the entry,
@@ -1255,7 +1252,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- step's flag word is read against; the step and its compiled form build the
   -- same state inline.
   , `SeLe4n.Kernel.perCoreTimerTickPost
-  , `SeLe4n.Kernel.processReplenishmentsDue
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
   , `SeLe4n.Kernel.removeRunnable
@@ -1269,7 +1265,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.saveOutgoingContext
   , `SeLe4n.Kernel.saveOutgoingContextChecked
   , `SeLe4n.Kernel.schedule
-  , `SeLe4n.Kernel.scheduleChecked
   , `SeLe4n.Kernel.scheduleDomain
   -- WS-ZA ZA6.2: the domain accounting's `Except` statement, proven equal to the
   -- form the timer step runs (`scheduleDomainOnCore_eq_state`); the step runs
@@ -1283,7 +1278,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.storeTcbPendingMessage
   , `SeLe4n.Kernel.sweptAndRestored
   , `SeLe4n.Kernel.switchDomain
-  , `SeLe4n.Kernel.switchDomainChecked
   -- WS-ZA ZA6.2: the rotation's `Except` statement, proven equal to the form the
   -- domain accounting runs (`switchDomainOnCore_eq_state`).
   , `SeLe4n.Kernel.switchDomainOnCore
@@ -1295,9 +1289,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.timeoutAwareReceive
   , `SeLe4n.Kernel.timerTick
   , `SeLe4n.Kernel.timerTickBudget
-  , `SeLe4n.Kernel.timerTickChecked
   , `SeLe4n.Kernel.timerTickOnCorePrepared
-  , `SeLe4n.Kernel.timerTickWithBudget
   -- WS-ZA ZA6.31: a specification the fault, unknown-syscall and FP/SIMD
   -- access entries no longer run: each entry runs the state-only or tagged
   -- form proven equal to it (`faultEntryStep_eq_state`,
@@ -1308,12 +1300,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.unknownSyscallEntryStep
   , `SeLe4n.Kernel.withOutgoingContextChecked
   , `SeLe4n.Kernel.withObjects
-  , `SeLe4n.Model.Builder.insertCap
-  , `SeLe4n.Model.Builder.mapPage
   , `SeLe4n.Model.Builder.markRunnable
   , `SeLe4n.Model.Builder.withTaint
-  , `SeLe4n.Model.lookupObject
-  , `SeLe4n.Model.lookupVSpaceRoot
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked

@@ -308,7 +308,7 @@ where
       | .extended newPath => walkAndAcquireAux s newPath n
 
 -- ============================================================================
--- §4 — SM3.C.11.c — `dynamicChainHeld` predicate
+-- §4 — SM3.C.11.c — the blocking-chain predicate
 -- ============================================================================
 
 /-- WS-SM SM3.C.11.c: the adjacent-chain predicate — every
@@ -351,47 +351,6 @@ instance chainFollowsBlockingServer_decidable (s : SystemState) :
 the blocking graph. -/
 @[simp] theorem chainFollowsBlockingServer_singleton (s : SystemState)
     (tid : ThreadId) : chainFollowsBlockingServer s [tid] := trivial
-
-/-- WS-SM SM3.C.11.c: predicate witnessing that core `c` holds the
-write locks on every TCB in `path` on the kernel state `s`.
-
-The four conjuncts:
-
-* `pathHeld`: every TCB in `path` has its lock held by `c` in
-  write mode.
-* `pathOrdered`: the path is `Pairwise (·.toNat < ·.toNat)` —
-  the SM0.I ascending-ObjId discipline.
-* `pathStarts`: `path.head? = some startTid` — the path begins
-  at the declared start (structurally guaranteed by
-  `PipChainPath.wf_head`, restated here so the predicate is
-  self-contained).
-* `pathChain`: `chainFollowsBlockingServer s path.path` — every
-  adjacent pair follows the actual blocking graph.
-
-This is the dynamic counterpart to `LockState.heldAll`: the static
-lock-set discipline plus this predicate together discharge the
-SMP-migration precondition for the 3 PIP-invoking transitions.
-Since WS-LS LS3.1 the held conjunct reads the ghost lock table `L`
-(`Concurrency/Locks/LockState.lean`), and the path-structure conjuncts
-read the kernel state `s`; the two halves of a `LockedSystemState`.
-
-**Audit-pass-2**: conjunct 4 reformulated from the indexed
-`∀ i, path.path[i] → path.path[i+1]` form to the recursive
-`chainFollowsBlockingServer` predicate, which the walker can
-establish (see `walkAndAcquire_terminated_satisfies_path_structure`).
-The indexed form was a defined-but-unestablished spec; the recursive
-form is provably produced by `walkAndAcquire`, wiring this predicate
-to its producer. -/
-def dynamicChainHeld (c : CoreId) (path : PipChainPath)
-    (L : LockState) (s : SystemState) : Prop :=
-  -- 1. Every TCB in path has its write lock held by c in the ghost table.
-  (∀ tid ∈ path.path, L.held c (tcbLock tid) .write) ∧
-  -- 2. ObjId-ascending discipline (SM0.I).
-  path.path.Pairwise (fun a b => a.toNat < b.toNat) ∧
-  -- 3. Path starts at the declared start.
-  path.path.head? = some path.startTid ∧
-  -- 4. Path follows the blocking graph (substantive correctness).
-  chainFollowsBlockingServer s path.path
 
 
 -- ============================================================================
@@ -744,22 +703,19 @@ theorem walkAndAcquire_total (s : SystemState) (startTid : ThreadId)
   ⟨_, rfl⟩
 
 -- ============================================================================
--- §8 — SM3.C.11.c — Walker establishes the dynamicChainHeld path structure
+-- §8 — SM3.C.11.c — Walker establishes the held chain's path structure
 -- ============================================================================
 --
--- These theorems WIRE the `dynamicChainHeld` predicate to its producer
--- (`walkAndAcquire`).  Without them `dynamicChainHeld` would be an
--- orphan spec — defined but never shown to be establishable.  They
--- prove the walker's terminated path satisfies conjuncts 2, 3, and 4 of
--- `dynamicChainHeld` (ascending ObjIds, starts-at-start, follows-blocking-
--- graph) on the pre-acquire state.  Conjunct 1 (every TCB write-locked) is the
--- separate job of the `acquireAll` over the chain locks — it is a property of
--- the lock-acquired state, established in §9
--- (`chainLockSeq_acquire_establishes_pathHeld`).  §10 transports conjunct 4 to
--- the acquired state.  (The capstone that assembled all four over the
--- runtime combinator, `withDynamicChainExtension_establishes_dynamicChainHeld`,
--- is deleted with the combinator at WS-LS LS2.4; the chain's locks are
--- declared statically and covered at the seam since WS-RR RR7.40.)
+-- A held chain has four properties: (1) every TCB on the path write-locked by
+-- the caller, (2) ascending ObjIds (SM0.I), (3) the path starts at the declared
+-- start, (4) the path follows the blocking graph.  These theorems prove the
+-- walker's terminated path has properties 2, 3 and 4 on the pre-acquire state.
+-- Property 1 is a property of the lock-acquired state, established in §9
+-- (`chainLockSeq_acquire_establishes_pathHeld`).  (The capstone that assembled
+-- all four over the runtime combinator was deleted with the combinator at
+-- WS-LS LS2.4, and the predicate that named the four with it at v0.36.197; the
+-- chain's locks are declared statically and covered at the seam since WS-RR
+-- RR7.40.)
 
 /-- WS-SM SM3.C.11.c helper: `walkStep` on an `.extended` outcome
 exposes the blocking-graph edge it traversed: the tail `lastTid`,
@@ -879,19 +835,19 @@ theorem walkAndAcquire_terminated_followsChain
   · exact h
 
 /-- WS-SM SM3.C.11.c (plan §5.3): the walker establishes the
-**path-structure** conjuncts of `dynamicChainHeld`.
+**path-structure** properties of a held chain (§8 header).
 
 Bundles the three structural properties a terminating
 `walkAndAcquire` produces:
-* conjunct 2 — `ObjId.val`-ascending
+* property 2 — `ObjId.val`-ascending
   (`walkAndAcquire_path_ascending_in_ObjId_if_terminated`),
-* conjunct 3 — starts at `startTid` (`PipChainPath.wf_head`),
-* conjunct 4 — follows the blocking graph
+* property 3 — starts at `startTid` (`PipChainPath.wf_head`),
+* property 4 — follows the blocking graph
   (`walkAndAcquire_terminated_followsChain`).
 
-This is the producer-side connection that wires `dynamicChainHeld`
-to `walkAndAcquire`: the walker's output IS a valid ascending
-blocking-chain rooted at `startTid`.  Conjunct 1 (every TCB
+This is the producer-side connection from a held chain to
+`walkAndAcquire`: the walker's output IS a valid ascending
+blocking-chain rooted at `startTid`.  Property 1 (every TCB
 write-locked) is established separately by §9's
 `chainLockSeq_acquire_establishes_pathHeld` over the acquired
 state. -/
@@ -908,7 +864,7 @@ theorem walkAndAcquire_terminated_satisfies_path_structure
    walkAndAcquire_terminated_followsChain s startTid fuel path h⟩
 
 -- ============================================================================
--- §9 — SM3.C.11.c — Walker's acquireAll establishes `dynamicChainHeld` conjunct 1
+-- §9 — SM3.C.11.c — Walker's acquireAll establishes held-chain property 1
 -- ============================================================================
 --
 -- The §8 theorems establish the three *path-structure* conjuncts (ascending,
@@ -923,7 +879,7 @@ theorem walkAndAcquire_terminated_satisfies_path_structure
 
 /-- WS-SM SM3.C.11.c (substantive — closes the conjunct-1 gap): after acquiring
 the chain's write locks, the caller holds the write lock on **every** TCB in the
-path.  This is `dynamicChainHeld`'s conjunct 1, established on the post-acquire
+path.  This is the held chain's property 1, established on the post-acquire
 table.
 
 The chain locks are the path TCBs' `tcbLock` keys in write mode.  The path is

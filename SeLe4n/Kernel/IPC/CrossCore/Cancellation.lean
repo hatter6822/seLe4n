@@ -3787,16 +3787,6 @@ theorem cancelDonatedDonationOnCoreLockSet_pairwise_le
     ((cancelDonatedDonationOnCoreLockSet victimHome ownerHome).map (·.1)).Pairwise (· ≤ ·) :=
   schedFootprintOfCores_pairwise_le _ _
 
-/-- WS-SM SM6.E: the scheduler-domain footprint of the donation-cancellation
-**dispatcher** `cancelDonationOnCore` — the union over its arms: the
-`.unbound` arm touches no scheduler slot, the `.bound` arm purges the
-victim's home-core replenish queue (the `victimHome` member), and the
-`.donated` arm additionally writes the owner's home-core queue (the
-migration destination).  The donated-arm footprint is exactly that union. -/
-def cancelDonationOnCoreLockSet (victimHome ownerHome : CoreId) :
-    List (LockKey × Concurrency.AccessMode) :=
-  cancelDonatedDonationOnCoreLockSet victimHome ownerHome
-
 /-- **WS-RR RR8.12**: the suspend pipeline's G3 **is** this dispatcher.
 
 G3 spells the three-way binding match out again rather than calling

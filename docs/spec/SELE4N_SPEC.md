@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.197` (`lakefile.toml`) |
+| **Package version** | `0.36.198` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 575,089 across 539 Lean files |
-| **Test LoC** | 88,478 across 70 Lean test suites |
+| **Production LoC** | 574,013 across 539 Lean files |
+| **Test LoC** | 88,448 across 70 Lean test suites |
 | **Proved declarations** | 22,015 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -1442,7 +1442,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `pending`, `held`) with `Repr`, `Inhabited`, `DecidableEq`
    derived.  `unheld` canonical seed.  `TicketLockOp`
    3-constructor inductive (`tryAcquire`, `release`,
-   `observeServing`).  Operational semantics: `captureTicket`,
+   `observeServing`).  Operational semantics:
    `observeServing`, `applyOp` (with fast-path immediate-promote),
    `promotePending`, `releaseAndPromote`.
 
@@ -2563,7 +2563,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `withDynamicChainExtension` combinator (optimistic walk +
      verify, `ObjId.val` ascending discipline, bounded
      retries; deleted at WS-LS LS2.4, the chain being declared
-     statically since RR7.40), `dynamicChainHeld` predicate,
+     statically since RR7.40), the held-chain properties,
      `dynamic_chain_deadlock_free` theorem, the termination
      result — **three theorems**, not the one `walkAndAcquire_terminates`
      this paragraph used to name, which was never authored under that
@@ -2880,9 +2880,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    strictly ascending — the SM0.I total-order discipline that closes
    any potential wait-cycle (two cores walking different chains
    cannot deadlock because each only ever holds locks at strictly
-   ascending `ObjId.val`).  `dynamicChainHeld` is the 4-conjunct
-   chain-held predicate (write-locks held + ObjId-ascending +
-   path-starts-at-start + path-follows-blockingServer).
+   ascending `ObjId.val`).  A held chain has four properties
+   (write-locks held + ObjId-ascending + path-starts-at-start +
+   path-follows-blockingServer), proven separately by the walker and
+   the chain's lock acquisition.
 
    *Since WS-LS LS3.1 (`v0.36.70`) `WithLockSet.lean`, `LockSetHeld.lean`,
    `WithLockSetInventory.lean` and `tests/WithLockSetSuite.lean` are deleted:
@@ -3925,7 +3926,7 @@ machine-checked size witness). Each entry carries five fields
 | 1 | `cspaceLookupMultiLevel` resolved-CNode validity | H-05 / AN4-D |
 | 2 | `cspaceCopy/Move/Mutate` CDT post-state composition | AK7-F.cascade / AN10-B |
 | 3 | `lifecyclePreRetypeCleanup` sequential cleanup ordering | C-M04 / AN9-D |
-| 4 | `timerTickWithBudget` replenishment pipeline | AK2-K / AN5-D |
+| 4 | `timerTickOnCore` replenishment pipeline | AK2-K / AN5-D |
 | 5 | `typedIdDisjointness` invariant | H-10 / AN2-D |
 | 6 | `Architecture/Assumptions.lean` single-core kernel model | AG-* baseline |
 | 7 | `bootFromPlatform` boot-core / current-core | CX-M03 / AN6-F |
@@ -7289,7 +7290,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   (`fpAccessOnCore_load_eq_own_context`); a thread whose live values are on
   another core retries (`fpAccessOnCore_retry_of_owned_elsewhere`).  Every
   restoring entry releases a switched-out owner between its commit and its
-  restore (`fpReleaseOnCore`, `Concurrency.releaseSwitchedFpOwner`), and the
+  restore (`fpReleaseOnCore`, `Concurrency.releaseSwitchedFpOwnerOnCore`), and the
   restore lifts the trap exactly while a core resumes its owner
   (`RestoreTarget.user`'s `fpLive`, restore kind `2`).  The release moves to the
   switch-out, where seL4's `CONFIG_HAVE_FPU` waits for the next trap, because
@@ -7981,8 +7982,7 @@ The CBS budget engine (`Kernel/SchedContext/Budget.lean`) provides pure-function
 budget management operations with machine-checked invariants:
 
 - **Budget consumption**: `consumeBudget` decrements `budgetRemaining` with
-  saturating arithmetic (cannot go negative). `isBudgetExhausted` detects
-  zero remaining budget.
+  saturating arithmetic (cannot go negative).
 - **Replenishment scheduling**: `scheduleReplenishment` creates a
   `ReplenishmentEntry` eligible one period in the future and truncates the
   replenishment list to `maxReplenishments` (= 8).
@@ -10228,8 +10228,8 @@ highest-priority client transitively waiting on it.
 **TCB field**: `pipBoost : Option Priority := none`. When `some p`, the
 thread's effective priority is `max(SchedContext.priority, p)`.
 
-**Blocking graph**: `blockedOnThread` (direct blocking via `blockedOnReply`),
-`waitersOf` (all direct waiters), `blockingChain` (transitive upward walk).
+**Blocking graph**: `waitersOf` (all direct waiters, read from the
+reply-waiter queue), `blockingChain` (transitive upward walk).
 Acyclicity is a system-level invariant (`blockingAcyclic`); chain depth is
 bounded by `objectIndex.length`.
 
@@ -10354,7 +10354,7 @@ proof-only phase with zero kernel code changes.
 inductive (9 constructors covering all scheduler transitions), `SchedulerTrace`
 (list of step-state pairs), `validTrace` predicate (each step's precondition
 holds and postcondition feeds into the next step). Query predicates:
-`selectedAt`, `runnableAt`, `budgetAvailableAt`. Counting functions:
+`selectedAt`, `runnableAt`. Counting functions:
 `countHigherOrEqualEffectivePriority`, `maxBudgetInBand`, `maxPeriodInBand`.
 
 **Per-mechanism bounds**:
@@ -10613,7 +10613,7 @@ since been integrated:
 1. `ExceptionModel.lean` — ARM64 exception classification and dispatch.
    **Partially integrated at WS-RR RR4 (v0.34.44)**: the syndrome layer this
    module owned — `SynchronousExceptionClass`, `ExceptionContext`,
-   `extractExceptionClass`, `extractInstructionSyndrome`,
+   `extractExceptionClass`,
    `classifySynchronousException` — moved *down* into the production
    `Architecture/Fault.lean`, which does not import `Kernel/API.lean` and so
    is not in the cycle.  The live hardware path is now
@@ -10674,28 +10674,13 @@ construction, fault delivery) can be — and now is — production code below
 #### 8.15.2 Budget-Aware Scheduler Activation
 The CBS budget engine (`SchedContext/Budget.lean`), replenishment queue
 (`SchedContext/ReplenishQueue.lean`), and budget-aware scheduler operations
-(`scheduleEffective`, `handleYieldWithBudget`, `timerTickWithBudget`) are
-implemented with invariants but not yet wired into the checked API dispatch
-path: the single-core checked wrappers still call the non-budget-aware
-variants. **Superseded in practice by WS-SM SM5**: the live hardware tick
-seam is now `@[export lean_per_core_timer_tick]` → `perCoreTimerTickStep` →
+are active on the path hardware calls: the live tick seam is
+`@[export lean_per_core_timer_tick]` → `perCoreTimerTickStep` →
 `timerTickOnCore` (`Kernel/PerCoreTimerEntry.lean`,
 `Scheduler/Operations/PerCoreTimerTick.lean`), which composes the per-core
-CBS budget tick `timerTickBudgetOnCore` — so budget-aware scheduling *is*
-active on the path hardware actually calls; only the legacy single-core
-checked wrappers retain the plain variants.
-
-**Activation steps:**
-1. Update `API.lean` checked wrappers: `scheduleChecked` calls
-   `scheduleEffective`, `handleYieldChecked` calls `handleYieldWithBudget`,
-   `timerTickChecked` calls `timerTickWithBudget`.
-2. Add preservation theorems for all three budget-aware operations in
-   `Scheduler/Operations/Preservation.lean`.
-3. Update NI proofs for the new operation semantics.
-4. Add `SchedulerBudgetSuite.lean` test suite exercising CBS enforcement,
-   budget consumption, replenishment queue, and timeout-on-budget-expiry.
-
-**Dependency:** Preservation proofs must be complete before activation.
+CBS budget tick `timerTickBudgetOnCore`.  The single-core checked wrappers
+that still called the plain variants were deleted at v0.36.197, as was the
+single-core `timerTickWithBudget`: nothing called them.
 
 #### 8.15.3 FFI Bridge Wiring
 At audit time `FFI.lean` declared 17 `@[extern]` Lean functions mapping to
@@ -10730,7 +10715,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 3. domain-aware scheduling semantics (`schedule` is active-domain-only; no cross-domain fallback),
 4. local + composed invariant layering (including `currentThreadInActiveDomain` in the canonical scheduler bundle),
 5. theorem discoverability through stable naming,
-   - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`, `lifecycleCompositionInvariantBundle`,
+   - canonical IPC/lifecycle composition surfaces: `coreIpcInvariantBundle`, `ipcSchedulerCouplingInvariantBundle`,
    - canonical trace helper surfaces: `runCapabilityIpcTrace`, `runSchedulerTimingDomainTrace`,
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),

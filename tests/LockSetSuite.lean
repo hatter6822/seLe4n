@@ -23,7 +23,7 @@ The suite exercises four families of checks:
   elaboration time.
 
 * **Decidable defaults** (§2).  `LockSet.empty`, `singleton`,
-  `insert?`, `insertOrMerge`, `union`, `containsKey`, and the
+  `insertOrMerge`, `union`, `containsKey`, and the
   per-transition `lockSet_<τ>` declarations are checked at
   elaboration time via `decide`.
 
@@ -51,7 +51,6 @@ open SeLe4n.Kernel.Concurrency
 #check @LockSet
 #check @LockSet.empty
 #check @LockSet.singleton
-#check @LockSet.insert?
 #check @LockSet.insertOrMerge
 #check @LockSet.union
 #check @LockSet.containsKey
@@ -192,18 +191,6 @@ example : (LockSet.singleton (.object ⟨.endpoint, ObjId.ofNat 5⟩) .read).siz
 
 example : (LockSet.singleton (.object ⟨.cnode, ObjId.ofNat 7⟩) .read).containsKey
     (.object ⟨.cnode, ObjId.ofNat 7⟩) = true := by decide
-
-/-! ### Insert?  -/
-
-example : (LockSet.empty.insert? (.object ⟨.tcb, ObjId.ofNat 1⟩) .write).isSome := by decide
-
-example :
-    let S := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
-    (S.insert? (.object ⟨.tcb, ObjId.ofNat 1⟩) .read) = none := by decide
-
-example :
-    let S := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
-    (S.insert? (.object ⟨.endpoint, ObjId.ofNat 5⟩) .write).isSome := by decide
 
 /-! ### InsertOrMerge merges via lub (write dominates read) -/
 

@@ -15,8 +15,7 @@ AN4-F.3 (CAP-M03) child module extracted from
 composition stratum: `endpointReply` capability preservation, the
 `coreIpcInvariantBundle` definition + its projection theorems (now 15
 after WS-RC R4.C.7 `uniqueWaiters` retirement), the M3.5
-IPC-scheduler coherence components, the `lifecycleCompositionInvariantBundle`
-definition.  The in-place retype's preservation family
+IPC-scheduler coherence components.  The in-place retype's preservation family
 (`lifecycleRetypeObject_preserves_*`) left with the in-place retype itself:
 every object is now carved from an untyped.  The historical
 `cspaceSlotUnique` transfer-theorem cluster that previously closed the
@@ -367,11 +366,6 @@ coherence predicates are part of the cross-subsystem proof surface. -/
 def ipcSchedulerCouplingInvariantBundle (st : SystemState) : Prop :=
   coreIpcInvariantBundle st ∧ ipcSchedulerCoherenceComponent st ∧
   contextMatchesCurrent st ∧ currentThreadDequeueCoherent st
-
-/-- M4-A composed bundle entrypoint:
-M3.5 IPC+scheduler composition plus lifecycle metadata/invariant obligations. -/
-def lifecycleCompositionInvariantBundle (st : SystemState) : Prop :=
-  ipcSchedulerCouplingInvariantBundle st ∧ lifecycleInvariantBundle st
 
 
 -- WS-RC R4 close-out: the historical transfer theorems

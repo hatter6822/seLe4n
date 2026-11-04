@@ -285,9 +285,4 @@ theorem handleTimerInterrupt_preservesInterval (binding : TimerInterruptBinding)
 
 end TimerInterruptBinding
 
-/-- AG5-E: Default RPi5 timer interrupt binding (starts at tick 0). -/
-def rpi5TimerBinding : TimerInterruptBinding where
-  config := rpi5TimerConfig
-  tickCount := 0
-
 end SeLe4n.Kernel.Architecture
