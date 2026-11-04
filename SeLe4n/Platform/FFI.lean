@@ -1082,9 +1082,16 @@ unmap after boot allocates nothing, and an audit ring with its own slot array
 declassification record after boot writes its slot in place instead of copying
 the shared initial ring, and per-core slots of its own
 (`SystemState.withFreshPerCoreSlots`, the state itself), so the first entry on
-each core writes its register bank and scheduler slots in place. -/
+each core writes its register bank and scheduler slots in place, and a
+physical-write ledger of its own (`SystemState.withFreshPhysicalWrites`, the
+state itself), so the first physical write recorded after boot is stored in
+place instead of copying the shared initial buffer, and an issued-line set of
+its own (`SystemState.withFreshIrqLines`, the state itself), so the first
+interrupt line issued after boot is recorded in place. -/
 def initialiseKernelState (st : SystemState) : BaseIO Unit :=
-  kernelStateRef.set (Architecture.withShootdownSparesSeeded st).withFreshAuditRing.withFreshPerCoreSlots
+  kernelStateRef.set
+    (Architecture.withShootdownSparesSeeded
+      st).withFreshAuditRing.withFreshPerCoreSlots.withFreshPhysicalWrites.withFreshIrqLines
 
 /-- WS-RC R2.A.2: Read the current kernel state.
 
@@ -1324,12 +1331,12 @@ def bootAndInitialiseFromPlatform
   bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx
 
 /-- PR #889 review round 7: the binding's own boot configuration — the caller's
-IRQ table and initial objects under the **binding's** machine configuration and
+initial objects under the **binding's** machine configuration and
 boot VSpace root.
 
-A `PlatformConfig` carries four fields.  Two of them describe what the boot
-image creates and only the caller can know (`irqTable`, `initialObjects`); the
-other two describe the hardware (`machineConfig`) and the platform-reserved
+A `PlatformConfig`'s fields split in two.  The initial objects describe what
+the boot image creates and only the caller can know (`initialObjects`); the
+machine configuration and the boot VSpace root describe the hardware (`machineConfig`) and the platform-reserved
 boot VSpace root (`bootVSpaceRoot`), which the binding already states
 (`PlatformBinding.bindMachineConfig`, `PlatformBinding.bootVSpaceRoot`).  The
 platform entry used to take the caller's word for the latter two, so a caller
@@ -1338,7 +1345,7 @@ machine's address widths.  Applying the binding's values is the fail-safe
 direction — a caller cannot make the hardware boot describe hardware it is not
 running on — and it is what makes the checked boot's canonical-root theorems
 theorems of the hardware boot rather than of a config a caller happened to
-pass.  The four projections below are definitional.
+pass.  The projections below are definitional.
 
 **PR #892 review round 2**: the machine configuration is the binding's, *bound
 for the caller's account*: `bindMachineConfig config.machineConfig`.  The
@@ -1393,9 +1400,24 @@ theorem bootAndInitialisePlatform_checked_declaredCoreCount (platform : Type)
         (bindPlatformConfig platform config) = .ok ist) :
     ist.state.machine.declaredCoreCount = PlatformBinding.coreCount (platform := platform) := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
-  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart,
+  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
     bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount _ _ _ hBase]
   exact bindPlatformConfig_declaredCoreCount platform config
+
+/-- WS-ZA ZA6.32: **the live interrupt-line count of a state the platform boot
+produces is the bound configuration's**, so the interrupt entry and the
+acknowledge refuse exactly the lines the board's configuration does not
+have. -/
+theorem bootAndInitialisePlatform_checked_interruptLineCount (platform : Type)
+    [PlatformBinding platform] (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor
+        (PlatformBinding.declaredCores (platform := platform))
+        (bindPlatformConfig platform config) = .ok ist) :
+    ist.state.machine.interruptLineCount =
+      (bindPlatformConfig platform config).machineConfig.interruptLineCount := by
+  obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ _ ist h
+  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart,
+    bootFromPlatformCheckedWithIdleThreadsFor_interruptLineCount _ _ _ hBase]
 
 /-- **WS-ZA ZA5.5**: the bound configuration installs the binding's service
     interfaces. -/
@@ -1419,10 +1441,6 @@ theorem bindPlatformConfig_bootVSpaceRoot (platform : Type) [PlatformBinding pla
 theorem bindPlatformConfig_initialObjects (platform : Type) [PlatformBinding platform]
     (config : PlatformConfig) :
     (bindPlatformConfig platform config).initialObjects = config.initialObjects := rfl
-
-theorem bindPlatformConfig_irqTable (platform : Type) [PlatformBinding platform]
-    (config : PlatformConfig) :
-    (bindPlatformConfig platform config).irqTable = config.irqTable := rfl
 
 /-- WS-RR RR5.2: boot under the **platform binding's own** labeling.
 
@@ -1578,7 +1596,6 @@ every board — leaving the rest mapped and unowned — or describes RAM a small
 board lacks.  A caller whose objects do not depend on the board passes a
 constant function. -/
 def rpi5PlatformConfigFromDtb (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) :
@@ -1591,7 +1608,7 @@ def rpi5PlatformConfigFromDtb (blob : ByteArray)
             (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig)
           && SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
             SeLe4n.Platform.RPi5.requiredMmioWindows then
-        .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable
+        .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt
           (initialObjectsFor (SeLe4n.Platform.RPi5.rpi5VariantFor dt.machineConfig))
           bootVSpaceRoot)
       else
@@ -1637,11 +1654,10 @@ same variant.
 (`rpi5PlatformConfigFromDtb`'s `initialObjectsFor`), so the RAM the HAL maps
 and the untypeds that describe it are read off one configuration. -/
 def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry) : BaseIO Unit :=
-  match rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot with
+  match rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot with
   | .error _ => ffiFatalHaltAll
   | .ok config => do
       extendBootRamMap (SeLe4n.Platform.RPi5.rpi5BootRamExtensionsFor config.machineConfig)
@@ -1650,13 +1666,12 @@ def bootAndInitialiseRPi5FromDtbOrHalt (blob : ByteArray)
 /-- **WS-RR RR7.27**: an unparseable blob boots nothing — it parks the PE
 rather than falling through to a boot on a default configuration. -/
 theorem bootAndInitialiseRPi5FromDtbOrHalt_unparseable (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
     (e : DeviceTreeBootRefusal)
-    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot = .error e) :
-    bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjectsFor bootVSpaceRoot
+    (h : rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot = .error e) :
+    bootAndInitialiseRPi5FromDtbOrHalt blob initialObjectsFor bootVSpaceRoot
       = ffiFatalHaltAll := by
   unfold bootAndInitialiseRPi5FromDtbOrHalt
   rw [h]
@@ -1666,13 +1681,12 @@ nothing else — the property that makes this wrapper safe to name from the boot
 entry contract.  **WS-BP BP4.6**: preceded by mapping that board's RAM outside
 the kernel's reserved extent (WS-BP BP7.10), and by nothing else. -/
 theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
     (config : SeLe4n.Platform.Boot.PlatformConfig)
-    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot = .ok config) :
-    bootAndInitialiseRPi5FromDtbOrHalt blob irqTable initialObjectsFor bootVSpaceRoot
+    (h : rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot = .ok config) :
+    bootAndInitialiseRPi5FromDtbOrHalt blob initialObjectsFor bootVSpaceRoot
       = (do
           extendBootRamMap (SeLe4n.Platform.RPi5.rpi5BootRamExtensionsFor config.machineConfig)
           bootAndInitialiseRPi5OrHalt config) := by
@@ -1682,7 +1696,6 @@ theorem bootAndInitialiseRPi5FromDtbOrHalt_accepted (blob : ByteArray)
 /-- **WS-RR RR7.27**: a board the device tree does not describe as covering the
 binding's declared RAM and MMIO is refused, whatever else the blob says. -/
 theorem rpi5PlatformConfigFromDtb_refuses_foreign_board (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
@@ -1691,7 +1704,7 @@ theorem rpi5PlatformConfigFromDtb_refuses_foreign_board (blob : ByteArray)
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hCover : SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig dt
       (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = false) :
-    rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot
+    rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
   unfold rpi5PlatformConfigFromDtb
   rw [hParse]
@@ -1704,7 +1717,6 @@ not cover (`rpi5BoundMachineConfig_covered_iff`), and the check is that
 member's.  This is the form the finding's negative takes now that a 1 GiB board
 is accepted: what a short board is short *of* is the smallest variant. -/
 theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
@@ -1715,9 +1727,9 @@ theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
       SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
         (SeLe4n.Platform.RPi5.rpi5MachineConfigForVariant
           { v with lowRamTop := SeLe4n.Platform.RPi5.rpi5LowRamTopFor dt.machineConfig }) = false) :
-    rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot
+    rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
-  apply rpi5PlatformConfigFromDtb_refuses_foreign_board blob irqTable initialObjectsFor
+  apply rpi5PlatformConfigFromDtb_refuses_foreign_board blob initialObjectsFor
     bootVSpaceRoot dt hParse
   rw [SeLe4n.Platform.Boot.deviceTreeCoversMachineConfig_eq]
   cases hCov : SeLe4n.Platform.Boot.machineConfigCovers dt.machineConfig
@@ -1732,7 +1744,6 @@ theorem rpi5PlatformConfigFromDtb_refuses_uncovered_family (blob : ByteArray)
 /-- **WS-RR RR7.27**: and a board whose device tree discovered none of the MMIO
 the binding programs is refused too — the half a RAM-only check would miss. -/
 theorem rpi5PlatformConfigFromDtb_refuses_missing_mmio (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
@@ -1741,7 +1752,7 @@ theorem rpi5PlatformConfigFromDtb_refuses_missing_mmio (blob : ByteArray)
       SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt)
     (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
       SeLe4n.Platform.RPi5.requiredMmioWindows = false) :
-    rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot
+    rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot
       = .error .boardDoesNotMatchBinding := by
   unfold rpi5PlatformConfigFromDtb
   rw [hParse]
@@ -1755,15 +1766,14 @@ an accepted blob produces, this one says an accepted result was produced that
 way, which is what lets a theorem about the hardware entry name the
 configuration it boots without re-running the parse. -/
 theorem rpi5PlatformConfigFromDtb_ok_eq_fromDeviceTree (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
     (config : SeLe4n.Platform.Boot.PlatformConfig)
-    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot = .ok config) :
+    (h : rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot = .ok config) :
     ∃ dt, SeLe4n.Platform.DeviceTree.fromDtbFull blob
         SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth = .ok dt ∧
-      config = SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable
+      config = SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt
           (initialObjectsFor (SeLe4n.Platform.RPi5.rpi5VariantFor dt.machineConfig))
         bootVSpaceRoot := by
   unfold rpi5PlatformConfigFromDtb at h
@@ -1785,7 +1795,6 @@ configuration into the config — which `bindPlatformConfig` then replaces with
 the binding's, so the board's account is a *check* and never the hardware
 description the kernel programs. -/
 theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
@@ -1796,8 +1805,8 @@ theorem rpi5PlatformConfigFromDtb_ok_machineConfig (blob : ByteArray)
       (SeLe4n.Platform.RPi5.rpi5BoundMachineConfig dt.machineConfig) = true)
     (hMmio : SeLe4n.Platform.Boot.deviceTreeCoversMmioRegions dt
       SeLe4n.Platform.RPi5.requiredMmioWindows = true) :
-    rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot
-      = .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt irqTable
+    rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot
+      = .ok (SeLe4n.Platform.Boot.PlatformConfig.fromDeviceTree dt
           (initialObjectsFor (SeLe4n.Platform.RPi5.rpi5VariantFor dt.machineConfig))
           bootVSpaceRoot) := by
   unfold rpi5PlatformConfigFromDtb
@@ -1813,12 +1822,11 @@ unchanged); the second is the check the bridge just passed, stated on the same
 function.  Validation and installation cannot name different variants, because
 there is one function and it is named twice. -/
 theorem rpi5PlatformConfigFromDtb_ok_binds_detected_variant (blob : ByteArray)
-    (irqTable : List SeLe4n.Platform.Boot.IrqEntry)
     (initialObjectsFor : SeLe4n.Platform.RPi5.BCM2712Config →
       List SeLe4n.Platform.Boot.ObjectEntry)
     (bootVSpaceRoot : Option SeLe4n.Platform.Boot.BootVSpaceRootEntry)
     (config : SeLe4n.Platform.Boot.PlatformConfig)
-    (h : rpi5PlatformConfigFromDtb blob irqTable initialObjectsFor bootVSpaceRoot = .ok config) :
+    (h : rpi5PlatformConfigFromDtb blob initialObjectsFor bootVSpaceRoot = .ok config) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig =
         SeLe4n.Platform.RPi5.rpi5BoundMachineConfig config.machineConfig ∧
     SeLe4n.Platform.Boot.machineConfigCovers config.machineConfig
@@ -1925,6 +1933,12 @@ right number on every RPi5 variant. -/
 theorem bootAndInitialiseRPi5_bound_config_declaredCoreCount (config : PlatformConfig) :
     (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig.declaredCoreCount
       = 4 := rfl
+
+/-- WS-ZA ZA6.32: the bound configuration's interrupt-line count is the
+GIC-400's, `gicSpiCount + 32`, on every account and every RPi5 variant. -/
+theorem bootAndInitialiseRPi5_bound_config_interruptLineCount (config : PlatformConfig) :
+    (bindPlatformConfig SeLe4n.Platform.RPi5.RPi5Platform config).machineConfig.interruptLineCount
+      = SeLe4n.Platform.RPi5.gicSpiCount + 32 := rfl
 
 /-- WS-RC R2.B.1 helper: Write the FFI-passed register values into the
     given thread's TCB register file.
@@ -2896,6 +2910,10 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .pageTableUnmap         => some false
   | .schedContextConsumed   => some false
   | .schedContextYieldTo    => some false
+  | .irqHandlerAck          => some false
+  | .irqControlGet          => some false
+  | .irqHandlerSetNotification => some false
+  | .irqHandlerClear        => some false
   -- WS-ZA ZA4.3: a yield looks up no capability, so it has no lookup failure
   -- to deliver in either phase.
   | .yield                  => none

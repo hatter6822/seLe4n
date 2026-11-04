@@ -2266,7 +2266,7 @@ theorem schedContextUnbind_runQueueLinkStage (vScId : SeLe4n.ValidObjId) (st st'
           refine (?_ : SystemState.RunQueueFrameStage _ _ _).1
           exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
             (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
             (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
             (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
       · dsimp only [] at hStep
@@ -2280,7 +2280,7 @@ theorem schedContextUnbind_runQueueLinkStage (vScId : SeLe4n.ValidObjId) (st st'
           rfl)
         exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
           (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-          (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+          (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
               (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
   · contradiction
@@ -2351,7 +2351,7 @@ theorem schedContextUnbind_runQueueStage_of_dequeued (vScId : SeLe4n.ValidObjId)
             (SystemState.RunQueueStage.toFrame hVac _) ?_
           · exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
               (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
               (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
           case hRun =>
@@ -2379,7 +2379,7 @@ theorem schedContextUnbind_runQueueStage_of_dequeued (vScId : SeLe4n.ValidObjId)
           rfl)
         exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
           (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-          (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl) (hB := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+          (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
               (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
               (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
   · contradiction

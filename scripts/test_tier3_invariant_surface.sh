@@ -611,7 +611,7 @@ run_check "INVARIANT" rg -n 'F2.*retype' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -n '^def projectKernelObject($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def capTargetObservable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def projectActiveDomain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def projectIrqHandlers($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectIrqSignalLines($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def projectObjectIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Projection.lean
 # CNode slot filtering safety theorems (F-22):
@@ -633,7 +633,7 @@ run_check "INVARIANT" rg -n '^inductive NonInterferenceStep($|[ ({:\[\]])' SeLe4
 run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # Information-flow test suite coverage anchors.
 run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'IRQ line projection' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'CNode slot filtering' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'six-field low-equivalence' tests/InformationFlowSuite.lean
 
@@ -3798,7 +3798,7 @@ run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpa
 run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
 # BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
-run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config && bootRootTablesPlaced config &&\n    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&\n    bootCapabilitiesNameInstalledObjects config &&\n    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&\n    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
 # The boot keeps every untyped clear of the devices the kernel drives, as seL4
@@ -3960,8 +3960,8 @@ run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_ok_cnode($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem untypedRetypeObject_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveIssuingSlots[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId\n                \(req\.object untypedId childId ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match cspaceDstRefusal dst st with(\n([ \t][^\n]*)?)*            match retypeFromUntyped src untypedId childId' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*              \.ok \(\(\), \(\(req\.scrub st1 ut \(req\.carveIndex ut \(retypeFreeIndex st src utCap\)\)\)\.storeCNodeWith dst\.cnode\n                \(·\.insert dst\.slot \(req\.capability childId\)\)\)\.cdtAddChild src dst \.retype\)' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -4151,7 +4151,7 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]
 run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| some \.tcb => finaliseThread x st\n      \| some \.schedContext => finaliseSchedContext x st\n      \| some \.reply => finaliseReply x st\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # Since v0.36.155 the final delete first drops an endpoint's service
 # registration (releaseFinalRegistration), then finalises, then retires.
-run_check "INVARIANT" rg -n -U 'def retireFinalisedObject [^\n]*\n[^\n]*\n  retireFinalObject executingCore target recorder\n    \(finaliseFinalObject target \(releaseFinalRegistration target st\)\)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def retireFinalisedObject [^\n]*\n[^\n]*\n  if retireTargetsIrqNode target then retireIrqNode st \(SeLe4n\.ObjId\.ofNat \(target - 1\)\)\n  else\n    retireFinalObject executingCore target recorder\n      \(finaliseFinalObject target \(releaseFinalRegistration target st\)\)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n '[^d]Object executingCore target recorder' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # The IPC bundle, the reachability bundle and the projection are each proven
 # preserved by the finalised retire, and the delete/revoke closures consume them.
@@ -4650,7 +4650,7 @@ run_check "INVARIANT" rg -n '^theorem retireFinalisedObject_preserves_projection
 # is woken on its own core; set-space deletes its old roots through the zombie
 # loop), so all three DECLARE a scheduler footprint, and the seam proves it
 # covers their writes.
-run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke \| \.tcbSetSpace =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n -U '  \| \.cspaceDelete \| \.cspaceRevoke \| \.tcbSetSpace\n  \| \.irqHandlerSetNotification \| \.irqHandlerClear =>\n      LockSet\.ofList\? schedLockSet_capabilityDestroyOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceDeleteSlotZombie_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_cspaceRevokeCdtFinalising_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # The notification step is compiled as its in-place writes, and the walk that
@@ -4718,12 +4718,11 @@ run_check "INVARIANT" rg -n -U '  \| some \(\.reply r\) =>\n    r\.callerCode ==
 run_check "INVARIANT" rg -n -U '    t\.tid\.val == x\.val && !isIdleThreadId t\.tid && threadQuiescent t &&\n      !threadHeldOnSomeCore st t\.tid$' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_check "INVARIANT" rg -n -U 'def finaliseFinalObject[^\n]*\n  if target = 0 then st\n  else\n    let x := SeLe4n\.ObjId\.ofNat \(target - 1\)\n    if st\.tableBackLinksClear x then' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_negative_check "INVARIANT" rg -n 'registryNamesNone|servicesNameNone|irqHandlersNameNone' SeLe4n
-# v0.36.144 (part 31): the table references are established at boot, carried by
-# every entry's link stage and along the delete chain, and the service lookup
-# reads its endpoint's registration flag.
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem RunQueueEntryStage\.tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean
-run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s ∧ s\.tableReferencesRecorded$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
+# v0.36.144 (part 31): the service lookup reads its endpoint's registration
+# flag.  Since WS-ZA ZA6.32 no table names an object outside a slot, so the
+# table-reference invariant the boot and the delete chain carried is retired.
+run_negative_check "INVARIANT" rg -n '\btableReferencesRecorded\b' SeLe4n tests
+run_check "INVARIANT" rg -n -U 'def reachableDeleteBundle[^\n]*\n  ipcReachable s ∧ finalisingDeleteBundle s$' SeLe4n/Kernel/IPC/Invariant/DeleteReachability.lean
 run_check "INVARIANT" rg -n '^theorem lookupServiceByRecordedRegistration_eq_lookupServiceByCap($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    some <\| match cap\.target with\n    \| \.object epId =>\n      fun st =>\n        match lookupServiceByRecordedRegistration epId st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '  \| \.serviceQuery =>\n    match cap\.target with\n    \| \.object epId => serviceQueryStaged ctx tid epId st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
@@ -5073,7 +5072,7 @@ run_check "INVARIANT" rg -n '^    untypedPlacementRespected config && bootRootTa
 run_check "INVARIANT" rg -n '^   \(bootRootTablesPlaced config, bootRootTablesBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.4 part 13 (v0.36.124): no boot untyped is named by two capabilities,
 # the ninth conjunct of `wellFormed`, with its own diagnostic row.
-run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootCapabilitiesNameInstalledObjects config &&$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    untypedCapabilitiesUnique config && bootIssuesNoInterruptHandler config &&$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^   \(untypedCapabilitiesUnique config, untypedCapabilityDuplicateBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_untypedCapabilitiesUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'runBootUntypedCapabilityChecks$' tests/SmpIdleSuite.lean
@@ -5239,7 +5238,7 @@ run_negative_check "INVARIANT" rg -n 'def frameOfContext' tests/SmpCancellationS
 # expected-unresolved symbol left.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.KernelMain$' SeLe4n.lean
 # WS-BP BP4.4: the entry is the device-tree boot on the blob it receives.
-run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(dtb : ByteArray\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5IrqTable rpi5InitialObjectsFor none$' SeLe4n/Platform/RPi5/KernelMain.lean
+run_check "INVARIANT" rg -U -n '^@\[export lean_kernel_main\]\ndef kernelMain \(dtb : ByteArray\) : BaseIO Unit :=\n  Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt dtb rpi5InitialObjectsFor none$' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_installs($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^theorem kernelMain_refuses($|[ ({:\[\]])' SeLe4n/Platform/RPi5/KernelMain.lean
 run_check "INVARIANT" rg -n '^def approvedBootCall : Name := `SeLe4n\.Platform\.FFI\.bootAndInitialiseRPi5FromDtbOrHalt$' SeLe4n/Testing/BootEntryContract.lean
@@ -6368,10 +6367,10 @@ run_check "INVARIANT" rg -U -n '^variant 0x200000000 lowRamTop 0x3fc00000\n(regi
 # applies it to the variant its parse selected, the RAM untypeds are DERIVED
 # from the same extensions BP4.6 maps, and the coverage and installation
 # theorems exist.  The retired variant-independent object list must not return.
-run_check "INVARIANT" rg -U -n '^        \.ok \(SeLe4n\.Platform\.Boot\.PlatformConfig\.fromDeviceTree dt irqTable\n          \(initialObjectsFor \(SeLe4n\.Platform\.RPi5\.rpi5VariantFor dt\.machineConfig\)\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -U -n '^        \.ok \(SeLe4n\.Platform\.Boot\.PlatformConfig\.fromDeviceTree dt\n          \(initialObjectsFor \(SeLe4n\.Platform\.RPi5\.rpi5VariantFor dt\.machineConfig\)\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -U -n '^def rpi5RootTaskUntypeds \(v : BCM2712Config\) : List \(SeLe4n\.ObjId × UntypedObject\) :=\n  \(rpi5BootRamExtensions v\)\.mapIdx fun i e =>$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -U -n '^def rpi5InitialObjectsFor \(v : BCM2712Config\) : List ObjectEntry :=[^\n]*(\n([ \t][^\n]*)?)*?  \(rpi5RootTaskUntypeds v\)\.map fun u => untypedEntry u\.1 u\.2$' SeLe4n/Platform/RPi5/Deployment.lean
-run_check "INVARIANT" rg -U -n '^def rpi5PlatformConfigFor \(board : SeLe4n\.MachineConfig\) : PlatformConfig :=\n  \{ irqTable := rpi5IrqTable\n    initialObjects := rpi5InitialObjectsFor \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -U -n '^def rpi5PlatformConfigFor \(board : SeLe4n\.MachineConfig\) : PlatformConfig :=\n  \{ initialObjects := rpi5InitialObjectsFor \(rpi5VariantFor board\)$' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5RootTaskUntypeds_regions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5InitialObjectsFor_covers_ram($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_untypedInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
@@ -6679,7 +6678,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_current' SeLe4n/Kernel/In
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_domainSchedule' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_domainScheduleIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_domainTimeRemaining' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_irqHandlers' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_irqSignalLines' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_machineRegs' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_memory' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_objectIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -6916,7 +6915,7 @@ run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleInterrupt($|
 run_check "INVARIANT" rg -n '^def kernelOperationPerCoreNiTheorem($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
-run_check "INVARIANT" rg -n '^    \(PerCoreOperation\.all\.map perCoreOperationNiTheorem\)\.eraseDups\.length = 50 := by$' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^    \(PerCoreOperation\.all\.map perCoreOperationNiTheorem\)\.eraseDups\.length = 51 := by$' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 # WS-ZA ZA6.30: the per-core scheduler steps inside the NI step relation — the
 # tick, the drain, the charges, yieldOnCore, the activation (one-sided for a
 # hidden yielder, two-sided for an observable one), YieldTo, the reschedule SGI,
@@ -6975,7 +6974,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 66' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 70' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -7099,7 +7098,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 36' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -7390,7 +7389,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 36' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
 # so it is a cross-core inventory entry, delegation-backed; part 26: through the
 # zombie delete, which may write every core.
@@ -7595,7 +7594,15 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem toList_dropFront($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem bounded \(r : AuditRing\) : auditLogBounded r\.toList' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem recordedSince_eq_ring($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshAuditRing_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^  kernelStateRef\.set \(Architecture\.withShootdownSparesSeeded st\)\.withFreshAuditRing\.withFreshPerCoreSlots$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    \(Architecture\.withShootdownSparesSeeded\n      st\)\.withFreshAuditRing\.withFreshPerCoreSlots\.withFreshPhysicalWrites\.withFreshIrqLines$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshIrqLines_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_copy($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_inPlace_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerSetNotification_ok_cases($|[ ({:\[\]])' SeLe4n/Kernel/Capability/IrqControl.lean
+run_check "INVARIANT" rg -n -U '^            RefusalCarrying\.ofChecked \(irqHandlerSetNotificationAdmitted st line srcCnode ncap\)\n              \(fun st => irqHandlerSetNotificationPerformAt line srcCnode srcSlot st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n -U '^              RefusalCarrying\.ofChecked \(irqControlGetAdmittedAt dstCnode dstSlot args\.line st\)\n                \(fun st => irqControlGetPerformAt srcCnode srcSlot dstCnode dstSlot args\.line st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceCopyPerform_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPhysicalWrites_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.withFreshPerCoreSlots_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
 # recorder that truncates instead of failing closed, and it can only live in
@@ -7716,7 +7723,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 52' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 56' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -8209,7 +8216,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 52' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 56' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -8390,11 +8397,11 @@ run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.
 # The count anchors pin HEAD's value, not the value the cut above produced:
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36;
 # WS-ZA ZA5.4 part 14 retired number 8, leaving 41 variants under a bound of 42.
-run_check "INVARIANT" rg -n '^def count : Nat := 43' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 47' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 43;' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 44;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 47;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 48;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 1\] = \[8\];' rust/sele4n-types/src/syscall.rs
 
 # WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
@@ -8498,7 +8505,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 66' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 70' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -8580,7 +8587,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=43' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=47' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -8730,7 +8737,7 @@ run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_threadS
 run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_runQueueBootSound($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem initialThreadStartable_of_start_ne($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^  initialThreads : List SeLe4n\.ThreadId := \[\]$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map \(linkBootCapabilities config\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -U -n '^    Except String IntermediateState :=\n  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config \(installIrqNodes \(irqNodeLineCount config\) started\)$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -U -n '^      if initialThreadStartable ist\.state tid then\n        startInitialThreads rest \(startInitialThread ist tid\)\n      else\n        \.error unstartableInitialThreadBootError$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^  state := startInitialThreadOnCore ist\.state tid$' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThread_preserves_bootStartShape($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
@@ -8808,7 +8815,7 @@ run_check "INVARIANT" rg -n -F -- '--features "${IMAGE_FEATURES},${VIRT_FEATURE}
 # and compared against a live dump in the QEMU lane; and the Lean suite drives the
 # board check on QEMU's own device tree.
 run_check "INVARIANT" rg -n '^@\[export lean_kernel_main_qemu_virt\]$' SeLe4n/Platform/QemuVirt/KernelMain.lean
-run_check "INVARIANT" rg -n '^  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuVirtIrqTable qemuVirtInitialObjects none$' SeLe4n/Platform/QemuVirt/KernelMain.lean
+run_check "INVARIANT" rg -n '^  bootAndInitialiseQemuVirtFromDtbOrHalt dtb qemuVirtInitialObjects none$' SeLe4n/Platform/QemuVirt/KernelMain.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.QemuVirt\.KernelMain$' SeLe4n.lean
 run_check "INVARIANT" rg -n '^instance qemuVirtPlatformBinding\b' SeLe4n/Platform/QemuVirt/Contract.lean
 run_check "INVARIANT" rg -n '^def qemuVirtBootRamExtensions[ :]' SeLe4n/Platform/QemuVirt/Board.lean
@@ -9552,7 +9559,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=43 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=47 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -9658,7 +9665,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 43' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 47' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -10732,7 +10739,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
-run_check "INVARIANT" rg -n 'StateField enum has 19 variants' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'StateField enum has 18 variants' tests/InformationFlowSuite.lean
 # The medium-severity sweep's plan names these eight artefacts by name and the
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
@@ -11319,7 +11326,6 @@ run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_objectsAgreeO
 run_check "INVARIANT" rg -n '^theorem getElem\?_eq($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TaintWordFrame.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_size($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem applySyscallTaint_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem applyTaintStep_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem applyTaintStep_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem liveTaintEdges_mem_or_no_content($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem projectState_of_objectsAgreeOffTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
@@ -11702,8 +11708,8 @@ run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot(
 # refused with its own diagnostic; the deployment source carries the policy
 # fields; the inactive-flag relation the live decisions read is stated and
 # holds of the boot state.
-run_check "INVARIANT" rg -n '^def capTargetsReservedIdleObject($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/IdleThread.lean
-run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def capTargetsReservedKernelObject($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/IdleThread.lean
+run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error .invalidCapability' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
@@ -13705,7 +13711,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.PlatformBinding.labeling
 #check @SeLe4n.Platform.PlatformBinding.labeling_admitted
 #check @SeLe4n.Platform.PlatformBinding.labeling_valid
-#check @SeLe4n.Kernel.capTargetsReservedIdleObject
+#check @SeLe4n.Kernel.capTargetsReservedKernelObject
 #check @SeLe4n.Kernel.syscallResolveCap_ok_not_reserved
 #check @SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
 #check @SeLe4n.Platform.Boot.idleSlotsReserved_no_idle_references
@@ -13772,7 +13778,6 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.FFI.bindPlatformConfig_machineConfig
 #check @SeLe4n.Platform.FFI.bindPlatformConfig_bootVSpaceRoot
 #check @SeLe4n.Platform.FFI.bindPlatformConfig_initialObjects
-#check @SeLe4n.Platform.FFI.bindPlatformConfig_irqTable
 #check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5
 #check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_eq
 #check @SeLe4n.Platform.FFI.bootAndInitialiseRPi5_bound_config
@@ -23004,8 +23009,8 @@ run_check "INVARIANT" rg -n '^theorem BootLinks\.Sound\.foldl_done($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_bootSlotsListed($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_negative_check "INVARIANT" rg -n '\b(bootFromPlatformUnchecked|proofLayerInvariantBundle_of_bootStartShape|bootFromPlatform_proofLayerInvariantBundle_general|bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle|bootToRuntime_invariantBridge_checked)\b' SeLe4n/ tests/
-run_check "INVARIANT" rg -n '^  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState$' SeLe4n/Platform/QemuVirt/Deployment.lean
-run_check "INVARIANT" rg -n '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\) \(rpi5DeploymentStartedStateAt v\)$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n -U '^  linkBootCapabilities qemuVirtBoundPlatformConfig\n    \(installIrqNodes \(irqNodeLineCount qemuVirtBoundPlatformConfig\) qemuVirtDeploymentStartedState\)$' SeLe4n/Platform/QemuVirt/Deployment.lean
+run_check "INVARIANT" rg -n -U '^  linkBootCapabilities \(rpi5BoundPlatformConfigAt v\)\n    \(installIrqNodes \(irqNodeLineCount \(rpi5BoundPlatformConfigAt v\)\) \(rpi5DeploymentStartedStateAt v\)\)$' SeLe4n/Platform/RPi5/Deployment.lean
 # WS-ZA ZA5.4 part 18 (v0.36.129): the tree shape holds every capability to a
 # live object and every capability naming another object than its parent below
 # that parent; boot refuses a configured capability naming an object it does
@@ -23018,12 +23023,13 @@ run_check "INVARIANT" rg -n '^def bootCapabilitiesNameInstalledObjects \(config 
 run_check "INVARIANT" rg -n '^   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.4 part 27: the eleventh conjunct, reciprocal notification bindings,
 # with its own diagnostic row.
-run_check "INVARIANT" rg -n '^    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    bootNotificationBindingsReciprocal config && bootInterfacesWellFormed config &&$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^   \(bootNotificationBindingsReciprocal config, bootNotificationBindingBootError\),$' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA5.5: the boot installs the configured service interfaces (the only
 # writer of the interface registry), the binding supplies them, and the twelfth
 # conjunct refuses a duplicate or sentinel id with its own diagnostic row.
-run_check "INVARIANT" rg -n '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^   \(bootInterfacesWellFormed config, bootInterfaceBootError\),\n   \(irqNodeIdsReserved config, irqNodeIdReservationBootError\)\]$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^   \(bootIssuesNoInterruptHandler config, bootInterruptHandlerBootError\),\n   \(bootCapabilitiesNameInstalledObjects config, bootCapabilityDanglingBootError\),$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def bootInterfacesWellFormed \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  let withInterfaces := foldInterfaces config\.initialInterfaces withObjects$' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  applyMachineConfig withInterfaces config\.machineConfig$' SeLe4n/Platform/Boot.lean
@@ -23064,7 +23070,7 @@ run_check "INVARIANT" rg -n -U '^@\[inline\] def revokeServiceByRecordedRegistra
 run_negative_check "INVARIANT" rg -n '\bdecodeSyscallArgsFromState_of_routedConfigure\b' SeLe4n/
 # WS-ZA ZA5.5 (fix): an endpoint's final delete drops its service registration
 # before the finalisation, so the endpoint retires and its untyped resets.
-run_check "INVARIANT" rg -n '^    \(finaliseFinalObject target \(releaseFinalRegistration target st\)\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^      \(finaliseFinalObject target \(releaseFinalRegistration target st\)\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n 'deleting a registered endpoint.s last capability drops its registration' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootCapabilitiesNameInstalledObjects($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_capabilitiesLive($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
@@ -23087,7 +23093,7 @@ run_check "INVARIANT" rg -n -U '^  chainLinear : ∀ u p r, untypedCapAt cap ut 
 run_check "INVARIANT" rg -n -U '^  chainFirst : ∀ u p r, untypedCapAt cap ut p u → untypedCapAt cap ut r u →\n    CapDerivationTree\.CdtChildReachable cdt p r →\n    ∃ c, \(cdt\.childrenOf p\)\.head\? = some c ∧ untypedCapAt cap ut c u ∧' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n -U '^  notFullLeaf : ∀ p c u U, ¬ off p → cap p = some c → c\.target = \.object u → ut u = some U →\n    c\.freeIndex < U\.regionSize →\n    ∀ r, CapDerivationTree\.CdtChildReachable cdt p r → ¬ untypedCapAt cap ut r u$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n -U '^  carvedBelow : ∀ u x, CarvedFrom ut u x → ∀ p r, untypedCapAt cap ut p u → namesAt cap r x →\n    CapDerivationTree\.CdtChildReachable cdt p r$' SeLe4n/Model/SlotTreeShape.lean
-run_check "INVARIANT" rg -n '^  childLive : ∀ u U, ut u = some U → ∀ ch ∈ U\.children, present ch\.objId$' SeLe4n/Model/SlotTreeShape.lean
+run_check "INVARIANT" rg -n -U '^  childLive : ∀ u U, ut u = some U → ∀ ch ∈ U\.children,\n    present ch\.objId ∧ isIrqNodeObjId InterruptLineSet\.capacity ch\.objId = false$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n -U '^  childUnique : ∀ u v U V, ut u = some U → ut v = some V → ∀ ch ∈ U\.children,\n    ∀ ch. ∈ V\.children, ch\.objId = ch.\.objId → u = v$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n -U '^abbrev CapTreeShapeOff \(st : SystemState\) \(a : SlotRef\) : Prop :=\n  TreeShapeOver st\.cdt st\.slotCapAt st\.objectPresent st\.getUntyped\? \(· = a\)$' SeLe4n/Model/SlotTreeShape.lean
 run_check "INVARIANT" rg -n -U '^theorem addChild \(h : TreeShapeOver cdt cap present ut \(fun _ => False\)\) \{src dst : SlotRef\}(\n([ \t][^\n]*)?)*    TreeShapeOver cdt. cap. present. ut \(· = src\) := by$' SeLe4n/Model/SlotTreeShape.lean
@@ -23105,27 +23111,39 @@ run_check "INVARIANT" rg -n -U '^theorem threadSlotFilled_preserves_capabilityIn
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreads_untypedsSole($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSole _ _ _ hStart\n    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,\n      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩\n  exact linkBootCapabilities_bootLinkedShape config started' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n -U '^  have hSole := startInitialThreads_untypedsSole _ _ _ hStart\n    ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,\n      bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩\n  obtain ⟨hListed, hLive, hUnique, hUncarved, hNamedU⟩ := installIrqNodes_linkInputs hFresh _' SeLe4n/Platform/Boot/InitialThreads.lean
 run_negative_check "INVARIANT" rg -n '\bstoreObject_absent_preserves_capabilityInvariantBundle\b' SeLe4n
 
-# --- The tables that name objects by id, and the objects' back-links to them ---
+# --- The tables that named objects by id, and the objects' back-links to them ---
 # Two tables named kernel objects outside every slot (the service registry and
 # the interrupt-handler table).  Since WS-ZA ZA5.9 the service registry is no
 # table: a registration is its endpoint's record, and the registry is read off
 # the endpoint at the service's own id -- one read, never a scan, no second
-# copy.  The interrupt table's two directions stay an invariant, in one
-# structure, which ends there.
+# copy.  Since WS-ZA ZA6.32 the interrupt table is gone too: a line's handler
+# is the capability in its IRQ node's slot, as in seL4, so nothing is left to
+# keep reciprocal.
 run_check "INVARIANT" rg -n -U '^@\[inline\] def SystemState\.serviceRegistry \(st : SystemState\) : ServiceRegistryView where\n  read sid :=\n    match st\.getEndpoint\? \(SeLe4n\.ObjId\.ofNat sid\.toNat\) with\n    \| some ep =>\n      if ep\.serviceRegistered then' SeLe4n/Model/State.lean
 run_negative_check "INVARIANT" rg -n '^  serviceRegistry :' SeLe4n/Model/State.lean SeLe4n/Model/FrozenState.lean SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded \(st : SystemState\) : Prop where(\n([ \t][^\n]*)?)*\n  irqBound : ∀ n : SeLe4n\.ObjId, [^\n]*\n    ∃ irq : SeLe4n\.Irq, st\.irqHandlers\[irq\]\? = some n$' SeLe4n/Model/TableReferences.lean
-run_negative_check "INVARIANT" rg -n -U '^structure SystemState\.tableReferencesRecorded[^\n]*(\n([ \t][^\n]*)?)*\n  registry :' SeLe4n/Model/TableReferences.lean
+run_negative_check "INVARIANT" rg -n '\b(irqHandlers|irqBound|irqTable|registerIrq|irqHandlersAndNotificationsReciprocal|irqBackLinks)\b' SeLe4n tests Main.lean
+# --- The interrupt nodes (WS-ZA ZA6.32, seL4's interrupt_irq_node) ---
+# The started stage installs one node per board line before it links the boot
+# capabilities, so a node exists at every boot that comes up.
+run_check "INVARIANT" rg -n -U '^  \(bootFromPlatformCheckedWithIdleThreadsFor cores config\)\.bind fun base =>\n    \(startInitialThreads config\.initialThreads base\)\.map fun started =>\n      linkBootCapabilities config \(installIrqNodes \(irqNodeLineCount config\) started\)$' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_irqNodesFresh($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+# The node ids are the kernel's: a wellFormed conjunct, and the budget counts them.
+run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -U '^def objectBudgetRespected \(config : PlatformConfig\) : Bool :=\n  config\.initialObjects\.length \+ 1 \+ SeLe4n\.Kernel\.Concurrency\.numCores \+\n    InterruptLineSet\.capacity ≤ maxObjects$' SeLe4n/Platform/Boot.lean
+# No resolved capability reaches a node.
+run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_irqNode($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# The projection labels a line by its node.
+run_check "INVARIANT" rg -n '^  fun irq => objectObservable ctx observer \(irqNodeId irq\.toNat\) && st\.irqSignalLines\.mem irq\.toNat$' SeLe4n/Kernel/InformationFlow/Projection.lean
+# The last handler's delete retires the node (deletedIRQHandler), not an object.
+run_check "INVARIANT" rg -n '^  if retireTargetsIrqNode target then retireIrqNode st \(SeLe4n\.ObjId\.ofNat \(target - 1\)\)$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The issue records the derivation edge from the control capability (cteInsert).
+run_check "INVARIANT" rg -n '^      \| \.ok \(\(\), st.\) => \.ok \(\(\), st.\.cdtAddChild control dst \.mint\)$' SeLe4n/Kernel/Capability/IrqControl.lean
 # The consumer: clear back-links mean no table names the object.  Without this
 # the fields would be recorded and never read.
 run_check "INVARIANT" rg -n '^theorem SystemState\.tableBackLinksClear\.namedByNone($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
-# The two writers of a registration flag keep the invariant.  A writer that
-# stopped preserving it would leave the back-link and the table disagreeing.
-run_check "INVARIANT" rg -n '^theorem registerService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem revokeService_preserves_tableReferencesRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry/Invariant.lean
 # The registration's validity and uniqueness hold of every state, the registry
 # being read off the endpoints: one question, one answer.
 run_check "INVARIANT" rg -n '^theorem registryEndpointValid_holds \(st : SystemState\) : registryEndpointValid st :=$' SeLe4n/Kernel/Service/Registry/Invariant.lean
@@ -23139,16 +23157,12 @@ run_negative_check "INVARIANT" rg -n '\bhasEndpointRegistered\b' SeLe4n tests
 # a conjunct and an endpoint write could silently forget the registration
 # recorded on it, or a root write a translation no capability records.
 run_check "INVARIANT" rg -n -U '^def kindPreservingWrite \(st st. : SystemState\) : Prop :=(\n([ \t][^\n]*)?)*\n      post\.bindingCodes = pre\.bindingCodes ∧ post\.tableBackLinks = pre\.tableBackLinks ∧\n      post\.mappingView = pre\.mappingView$' SeLe4n/Model/State.lean
-# The boot refuses what would come up violating the invariant: an endpoint
-# already carrying a registration, and an interrupt table that is not
-# reciprocal with the notifications' flags -- BOTH directions, since a handler
-# whose notification does not record it and a notification recording an
-# interrupt no IRQ names each break a different conjunct.
+# The boot refuses an endpoint already carrying a registration.
 # The endpoint records only THAT a service is registered on it: a presence
 # flag, since the registration's id is the endpoint's own.  A number stored here
 # would be a second answer to "which service is this" that the id already gives.
 run_check "INVARIANT" rg -n -U '^structure Endpoint where(\n([ \t][^\n]*)?)*\n  serviceRegistered : Bool := false$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def objTableBackLinks :\n    Option KernelObject → EndpointService × Bool × SeLe4n\.Kernel\.TaintWords$' SeLe4n/Model/TableReferences.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def objTableBackLinks :\n    Option KernelObject → EndpointService × SeLe4n\.Kernel\.TaintWords$' SeLe4n/Model/TableReferences.lean
 run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
 # The endpoint holds the registration's words beside its flag, and since the
 # table retired (WS-ZA ZA5.9) the registry reads them at the endpoint.  The
@@ -23156,7 +23170,7 @@ run_negative_check "INVARIANT" rg -n '\bserviceCode\b' SeLe4n tests Main.lean
 # so a clear flag is a clear back-link whatever words an endpoint carries.
 run_check "INVARIANT" rg -n '^structure EndpointService where$' SeLe4n/Model/Object/Types.lean
 # Since WS-ZA ZA5.11 the third component is the taint words; an endpoint holds none.
-run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, false, \{\}\)$' SeLe4n/Model/ObjectSlots.lean
+run_check "INVARIANT" rg -n '^  \| \.endpoint ep => \(if ep\.serviceRegistered then ep\.service else \{\}, \{\}\)$' SeLe4n/Model/ObjectSlots.lean
 run_check "INVARIANT" rg -n '^theorem registrationAt_ofRegistration($|[ ({:\[\]])' SeLe4n/Kernel/Service/Interface.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.serviceRegistry_of_endpoint($|[ ({:\[\]])' SeLe4n/Model/TableReferences.lean
 # The register's one write: its endpoint's slot, and nothing beside it.
@@ -23166,7 +23180,6 @@ run_check "INVARIANT" rg -n -U '^            \.ok \(\(\), st\.rewriteObject epId
 run_check "INVARIANT" rg -n -U '^def lookupServiceByRecordedRegistration[^\n]*(\n([ \t][^\n]*)?)*\n      \| true => \.ok \(ep\.service\.registrationAt epId, st\)$' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n -U '^def frozenLookupServiceByCap[^\n]*(\n([ \t][^\n]*)?)*\n      \| true => \.ok \(ep\.service\.registrationAt epId, st\)$' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n -U '^def bootSafeEndpointCheck[^\n]*(\n([ \t][^\n]*)?)*&& !ep\.serviceRegistered$' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n -U '^def irqHandlersAndNotificationsReciprocal \(config : PlatformConfig\) : Bool :=\n  config\.irqTable\.all \(fun irq =>(\n([ \t][^\n]*)?)*\n      \| \.notification n => n\.irqBound(\n([ \t][^\n]*)?)*\n  config\.initialObjects\.all fun e =>(\n([ \t][^\n]*)?)*\n      !n\.irqBound \|\| config\.irqTable\.any fun irq => irq\.handler == e\.id' SeLe4n/Platform/Boot.lean
 # seL4_SchedContext_Consumed: checked before it writes (the caller and the SC
 # both resolved), then setConsumed into the caller's registers.
 run_check "INVARIANT" rg -n '^def schedContextConsumedOnCore \(' SeLe4n/Kernel/SchedContext/YieldLink.lean
@@ -23229,4 +23242,77 @@ run_check "INVARIANT" rg -n '^theorem settleThenActivateOnCore_linkedOnUnlinked(
 # The dispatch arm: the capability-only route to the operation.
 run_check "INVARIANT" rg -n '^  \| \.schedContextYieldTo =>$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^          match SchedContextOps\.schedContextYieldToOnCore$' SeLe4n/Kernel/API.lean
+# WS-ZA ZA6.32: seL4's handleInterrupt — a bound line's notification signalled
+# and the line masked until the handler's acknowledge, an unbound line masked —
+# entered from the HAL in ZA3.1's form, with its entry-level carries.
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def deviceInterruptLine \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def setInterruptLineMask \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def irqHandlerAck \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerAck_unmasks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptMask.lean
+# The device-line range is the board's: one owner, the board's line count,
+# carried by the machine configuration into the live state and read by the
+# entry and the acknowledge before any write (seL4's Arch_checkIRQ / maxIRQ).
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def deviceInterruptLineUnder \(' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^  deviceInterruptLineUnder st\.machine\.interruptLineCount line$' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^  if deviceInterruptLine st line then \.ok \(\(\), setInterruptLineMask st line false\)$' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerAck_refuses_off_board($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_off_board($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^    interruptLineCount := gicSpiCount \+ 32$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^    interruptLineCount := qemuVirtGicSpiCount \+ 32 \}$' SeLe4n/Platform/QemuVirt/Board.lean
+run_check "INVARIANT" rg -n '^      interruptLineCount := config\.interruptLineCount \} \}$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_checked_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5_bound_config_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem qemuVirtExerciser_bound_interruptLineCount($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Exerciser.lean
+run_check "INVARIANT" rg -n '^def bootIssuesNoInterruptHandler \(' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    irqNodeIdsReserved config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig\.wellFormed_bootIssuesNoInterruptHandler($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]' tests/
+run_check "INVARIANT" rg -n -F -- '++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]' tests/
+run_check "INVARIANT" rg -n '^  SeLe4n\.Testing\.runOffBoardInterruptLineChecks$' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n '^  runBootInterruptHandlerChecks$' tests/SmpIdleSuite.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerAck_ok($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptMask.lean
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def handleInterruptOnCore \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptEntryStep \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^theorem handleInterruptOnCore_masks($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+# The signal stages the badge into the woken thread's frame, as the syscall's
+# signal arm does, and runs in place through its `@[csimp]` fast form.
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptSignal \(' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem interruptSignal_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^theorem interruptSignal_of($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/InterruptDelivery.lean
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def interruptRunCores \(' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n '^(@\[inline\] )?def declaredLockSetForInterrupt \(' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n '^theorem interruptBracket_run($|[ ({:\[\]])' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntry_def($|[ ({:\[\]])' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryCommitted_eq($|[ ({:\[\]])' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_refillsSound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_blockedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/BlockedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_currentNotResidentElsewhere($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/CurrentNotResidentElsewhere.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_yieldLinkedNotResident($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/YieldLinkedNotResident.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_residentsHaveTcbs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/ResidentsHaveTcbs.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_holdsOnlyCurrentOn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/RemoteSave.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryStep_savedRegsWrittenFree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^theorem currentSavedRegsKeptOffCore_of_writtenFree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_contextMatchesCurrentOffCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_contextMatchesCurrentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/OffCoreContextMatches.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryTail_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem clearWokenReceiverStash_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntry_commits($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_irqHandlerAck($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_irqHandlerAck_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+# The entry is exported and the HAL's device seam calls it inside the bracket.
+run_check "INVARIANT" rg -n '^@\[export lean_handle_interrupt\]$' SeLe4n/Kernel/InterruptEntry.lean
+run_check "INVARIANT" rg -n 'unsafe \{ crate::lean_runtime::discharge_base_io\(res, "lean_handle_interrupt"\) \};' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^  \| \.irqHandlerAck =>$' SeLe4n/Kernel/API.lean
+# The acknowledge's refusal-carrying arm writes the mask in place.
+run_check "INVARIANT" rg -n '^  \| \.irqHandlerAck =>$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^        RefusalCarrying\.ofChecked \(Architecture\.deviceInterruptLine st line\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 finalize_report

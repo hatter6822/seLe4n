@@ -124,7 +124,7 @@ Machine-readable mirror: [`docs/codebase_map.json`](../../docs/codebase_map.json
     `bibaSecurityFlowsTo`), `DeclassificationPolicy` with enforcement operation.
 - `SeLe4n/Kernel/InformationFlow/Projection.lean`
   - observer projection helpers, `ObservableState` (11 fields: objects, runnable, current,
-    activeDomain, irqHandlers, objectIndex, domainSchedule, machineRegs,
+    activeDomain, irqSignalLines, objectIndex, domainSchedule, machineRegs,
     domainTimeRemaining, domainScheduleIndex, memory),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)

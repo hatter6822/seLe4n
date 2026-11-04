@@ -208,6 +208,12 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
     (bankFrame.of_kept hne hC.1 k).bankAgree hA
   have hP : ∀ {s' : SystemState}, (∃ s, SchedPointPrefix ec st st s s') → bankAgree ec tid s' :=
     fun ⟨_, Q⟩ => Q.bankAgree (.refl _) hA
+  have hSN : ∀ {line : Nat} {src : CSpaceAddr},
+      irqHandlerSetNotification ec line src st = .ok ((), st') → bankAgree ec tid st' :=
+    fun hN =>
+      have hC := (irqHandlerSetNotification_stepCovers (e := e') hB hN).1
+      hO hC (irqHandlerSetNotification_savedRegsKeptOffCore B hB P.dequeued hRT
+        hC.currentKept hC.residentKept hN)
   unfold dispatchCapabilityOnly at hK
   cases hId : decoded.syscallId <;> rw [hId] at hK <;> simp only [Option.some.injEq,
     reduceCtorEq] at hK
@@ -248,6 +254,14 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         ((pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e'))
     | exact hF (pageTableUnmap_savedRegsKept hInv h)
         ((pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv (e := e'))
+    | exact hF (irqHandlerAck_savedRegsKept h) (irqHandlerAck_stepCovers (e := e') hInv h)
+    | exact hO (cspaceDeleteSlotZombie_stepCovers _ _ _ _ _ hB (irqHandlerClear_ok h).2).1
+        (cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB (irqHandlerClear_ok h).2)
+    | exact hF (irqControlGet_savedRegsKept hInv
+          (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+        (irqControlGet_stepCovers (e := e') hInv
+          (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+    | exact hSN (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
         (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact hX (schedContextBind_savedRegsKeptExcept hInv h)

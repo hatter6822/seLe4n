@@ -99,7 +99,7 @@ private def tph001a_emptyBuilder : IO Unit := do
   expect "TPH-001a empty builder valid" true
   -- Empty state has no objects
   expect "TPH-001b empty objects" (ist.state.objects.size == 0)
-  expect "TPH-001c empty IRQs" (ist.state.irqHandlers.size == 0)
+  expect "TPH-001c every IRQ line inactive" (!ist.state.irqSignalLines.mem 3)
 
 /-- TPH-001b: Builder.createObject inserts and preserves invariants. -/
 private def tph001b_builderPipeline : IO Unit := do
@@ -118,13 +118,6 @@ private def tph001b_builderPipeline : IO Unit := do
   expect "TPH-001g both findable" ((ist2.state.objects[(⟨1⟩ : ObjId)]?).isSome &&
     (ist2.state.objects[(⟨2⟩ : ObjId)]?).isSome)
 
-/-- TPH-001c: Builder.registerIrq preserves invariants. -/
-private def tph001c_builderIrq : IO Unit := do
-  let ist := mkEmptyIntermediateState
-  let ist' := Builder.registerIrq ist (SeLe4n.Irq.ofNat 3) ⟨100⟩
-  expect "TPH-001h IRQ registered" (Option.isSome (ist'.state.irqHandlers[(SeLe4n.Irq.ofNat 3)]?))
-  expect "TPH-001i IRQ table size 1" (ist'.state.irqHandlers.size == 1)
-
 -- ============================================================================
 -- TPH-003: Freeze Populated State — Full Pipeline Lookup Equivalence
 -- ============================================================================
@@ -139,18 +132,15 @@ private def tph003_freezePopulated : IO Unit := do
   let ep := KernelObject.endpoint (Endpoint.ofQueues {} {})
   let ist2 := Builder.createObject ist1 ⟨2⟩ ep
     (fun _ h => nomatch h) (fun _ h => nomatch h)
-  -- Add IRQ handler
-  let ist3 := Builder.registerIrq ist2 (SeLe4n.Irq.ofNat 7) ⟨2⟩
   -- Freeze
-  let fss := freeze ist3
+  let fss := freeze ist2
   -- Verify objects lookup equivalence
   expect "TPH-003a frozen objects size 2" (fss.objects.data.size == 2)
   expect "TPH-003b frozen obj 1 exists" (Option.isSome (fss.objects.get? ⟨1⟩))
   expect "TPH-003c frozen obj 2 exists" (Option.isSome (fss.objects.get? ⟨2⟩))
   expect "TPH-003d frozen obj 99 none" (Option.isNone (fss.objects.get? ⟨99⟩))
-  -- Verify IRQ handler lookup equivalence
-  expect "TPH-003e frozen IRQ 7 exists" (Option.isSome (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 7)))
-  expect "TPH-003f frozen IRQ 99 none" (Option.isNone (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 99)))
+  -- Verify the interrupt-line states carry over (WS-ZA ZA6.32)
+  expect "TPH-003e frozen IRQ lines" (fss.irqSignalLines == ist2.state.irqSignalLines)
   -- Verify object types
   match fss.objects.get? ⟨1⟩ with
   | some obj => expect "TPH-003g obj 1 is TCB" (FrozenKernelObject.objectType obj == .tcb)
@@ -474,12 +464,11 @@ private def tph014c_scheduleNoEligible : IO Unit := do
 -- ============================================================================
 
 /-- WS-RC R3 baseline: build a minimal `PlatformConfig` carrying the
-    canonical RPi5 boot VSpaceRoot.  Empty `irqTable` and
+    canonical RPi5 boot VSpaceRoot.  Empty
     `initialObjects` keep the test scope narrow — we are exclusively
     exercising the new `installBootVSpaceRoot` step. -/
 private def tph015BootConfig : PlatformConfig :=
-  { irqTable := []
-    initialObjects := []
+  { initialObjects := []
     machineConfig := SeLe4n.defaultMachineConfig
     bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
 
@@ -561,7 +550,7 @@ private def tph015d_asidTableHasBootRoot : IO Unit := do
     the equality-theorem regression for `bootFromPlatformChecked_eq_bootFromPlatform`. -/
 private def tph015e_noBootVSpaceCompat : IO Unit := do
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [], machineConfig := SeLe4n.defaultMachineConfig
+    { initialObjects := [], machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := none }
   match bootFromPlatformChecked cfg with
   | .ok ist =>
@@ -598,7 +587,7 @@ private def tph015f_objIdCollisionRejected : IO Unit := do
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [entry],
+    { initialObjects := [entry],
       machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
   match bootFromPlatformChecked cfg with
@@ -627,7 +616,7 @@ private def tph015i_vspaceRootInInitialObjectsRejected : IO Unit := do
       cases h
       exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt }
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [entry],
+    { initialObjects := [entry],
       machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := none }
   match bootFromPlatformChecked cfg with
@@ -647,7 +636,7 @@ private def tph015j_sentinelBootVSpaceObjIdRejected : IO Unit := do
     root := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
     hMappings := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt }
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [],
+    { initialObjects := [],
       machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := some entry }
   match bootFromPlatformChecked cfg with
@@ -670,7 +659,7 @@ private def tph015k_unsafeBootVSpaceRejected : IO Unit := do
     root := unsafeRoot
     hMappings := SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [],
+    { initialObjects := [],
       machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := some entry }
   match bootFromPlatformChecked cfg with
@@ -705,7 +694,7 @@ private def tph015l_nonCanonicalVAddrRejected : IO Unit := do
       SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _
         (SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega)) }
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [],
+    { initialObjects := [],
       machineConfig := SeLe4n.defaultMachineConfig
       bootVSpaceRoot := some entry }
   match bootFromPlatformChecked cfg with
@@ -772,7 +761,7 @@ private def userRootEntry (id asid : Nat) : ObjectEntry :=
 
 /-- WS-BP BP3.2: a config carrying the RPi5 binding root and `objs`. -/
 private def withRpi5Root (objs : List ObjectEntry) : PlatformConfig :=
-  { irqTable := [], initialObjects := objs,
+  { initialObjects := objs,
     machineConfig := { SeLe4n.defaultMachineConfig with
       kernelReserved := [{ base := SeLe4n.PAddr.ofNat 0, size := 0x1000_0000, kind := .reserved }]
       bootTablePool := (List.range 16).map fun i => SeLe4n.PAddr.ofNat (0x0FFF_0000 + i * 4096) }
@@ -880,7 +869,6 @@ def main : IO Unit := do
   IO.println "--- TPH-001: Builder Pipeline ---"
   tph001a_emptyBuilder
   tph001b_builderPipeline
-  tph001c_builderIrq
 
   IO.println "--- TPH-003: Freeze Populated + Lookup Equiv ---"
   tph003_freezePopulated

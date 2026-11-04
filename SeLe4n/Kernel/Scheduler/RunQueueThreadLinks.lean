@@ -239,12 +239,11 @@ theorem mapTcbInPlace_getTcb?_ne (st : SystemState) (t : SeLe4n.ThreadId) (g : T
     (st.mapTcbInPlace t g).scheduler = st.scheduler := rfl
 
 /-- **The in-place thread write primitive keeps the table references**: a
-thread's only back-link is its taint words, which the write keeps, and the
-tables are untouched. -/
+thread's only back-link is its taint words, which the write keeps. -/
 theorem TableReferenceFrame.mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId)
     (g : TCB → TCB) (hW : ∀ x, (g x).taintWords = x.taintWords := by taint_words_kept) :
     TableReferenceFrame st (st.mapTcbInPlace t g) :=
-  ⟨rfl, fun x => by
+  fun x => by
     rw [objects_mapTcbInPlace]
     split
     · cases st.objects[x]? with
@@ -253,7 +252,7 @@ theorem TableReferenceFrame.mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadI
         cases o <;> try rfl
         simp only [Option.map_some, objTableBackLinks_some, KernelObject.mapTcb,
           KernelObject.tableBackLinks, hW]
-    · rfl⟩
+    · rfl
 
 /-- **The in-place thread write primitive holds the release queues**: it writes
 a thread, which holds no release link, and no scheduler slot. -/
@@ -2049,14 +2048,6 @@ macro "current_frame" : tactic =>
     | exact congrArg SchedulerState.currentCode (by assumption)
     | (rw [‹SystemState.scheduler _ = _›]))
 
-/-- Closes `st'.referenceTables = st.referenceTables` for a step that writes none
-of the three tables that name objects by id: by definition, or by rewriting
-with the hypotheses that describe the step. -/
-macro "table_frame" : tactic =>
-  `(tactic| first
-    | rfl
-    | (simp_all only [SystemState.referenceTables]; done))
-
 /-- Closes `st'.scheduler.releaseSlots = st.scheduler.releaseSlots` for a step
 that writes no release-queue slot: by definition, or from a hypothesis that
 equates the whole scheduler with the old one. -/
@@ -2081,24 +2072,6 @@ macro "resident_frame" : tactic =>
         SystemState.updateSchedContext_machine]; done)
     | (simp; done)
     | (simp_all only [SystemState.machine]; done))
-
-/-- Closes `obj.tableBackLinks = objTableBackLinks st.objects[k]?` for a store
-that keeps the slot's table back-links: an object holding none over an object
-holding none, or an object over the one it was updated from. -/
-macro "table_backlinks" : tactic =>
-  `(tactic| first
-    | rfl
-    | (simp only [objTableBackLinks_some, KernelObject.tableBackLinks]; done)
-    | (rw [(getTcb?_eq_some_iff _ _ _).mp ‹SystemState.getTcb? _ _ = some _›]; rfl)
-    | (rw [(getSchedContext?_eq_some_iff _ _ _).mp
-        ‹SystemState.getSchedContext? _ _ = some _›]; rfl)
-    | (rw [(getReply?_eq_some_iff _ _ _).mp ‹SystemState.getReply? _ _ = some _›]; rfl)
-    | (rw [(getCNode?_eq_some_iff _ _ _).mp ‹SystemState.getCNode? _ _ = some _›]; rfl)
-    | (rw [(getUntyped?_eq_some_iff _ _ _).mp ‹SystemState.getUntyped? _ _ = some _›]; rfl)
-    | (simp_all only [objTableBackLinks_some, objTableBackLinks_none,
-        KernelObject.tableBackLinks]; done)
-    | (simp_all only [objTableBackLinks_some, objTableBackLinks_none,
-        KernelObject.tableBackLinks, TCB.setSpaceLinkWords_taintWords]; done))
 
 /-- Closes `∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c`
 for a store that keeps the slot's release links: an object no context is over
@@ -2892,15 +2865,9 @@ theorem currentDequeuedUniqueExcept_of_offWrite {st st' : SystemState} {e : Opti
 /-- WS-ZA ZA4.5: **a step that keeps the run queues in agreement with the
 threads' links** — from a state whose object store keeps its table invariant
 and whose queues agree with the links, it reaches such a state (`links`, the
-stage read as a function) — **and keeps the table references recorded**
-(`tables`, `SystemState.tableReferencesRecorded`): every write primitive a stage
-is built from proves both (its table half a `TableReferenceFrame`, or a
-registry writer's preservation theorem), so every kernel entry's stage proof is
-also its proof that the references stay recorded. -/
+stage read as a function). -/
 structure RunQueueLinkStage (st st' : SystemState) : Prop where
   links : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
-  tables : st.objects.invExt → st.runQueueRefined → st.tableReferencesRecorded →
-    st'.tableReferencesRecorded
   release : st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
     st'.releaseQueueRefined
   /-- WS-ZA ZA6.4: the refill state stays sound off every set of contexts
@@ -2927,8 +2894,6 @@ a stage only with the step after it: frames compose
 structure RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : SystemState) :
     Prop where
   links : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
-  tables : st.objects.invExt → st.runQueueRefined → st.tableReferencesRecorded →
-    st'.tableReferencesRecorded
   release : st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
     st'.releaseQueueRefined
   refills : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.runQueueRefined →
@@ -2941,7 +2906,7 @@ structure RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : Syste
 /-- A link stage is a frame off any contexts. -/
 theorem RunQueueLinkStage.toFrame {st st' : SystemState} (h : RunQueueLinkStage st st')
     (P : SeLe4n.SchedContextId → Prop) : RunQueueLinkFrame P st st' :=
-  ⟨h.links, h.tables, h.release, fun S _ => h.refills S, h.yield, h.live⟩
+  ⟨h.links, h.release, fun S _ => h.refills S, h.yield, h.live⟩
 
 /-- **Closing a frame off `s`**: a frame off `s` whose end is sound off `S`
 whenever it is sound off `S` and `s` (the written context placed) is a link
@@ -2952,7 +2917,7 @@ theorem RunQueueLinkFrame.withRefills {s : SeLe4n.SchedContextId} {st st' : Syst
       st'.objects.invExt → st'.releaseQueueRefined →
       st.refillsSoundExcept S → st'.refillsSoundExcept (fun x => S x ∨ x = s) →
       st'.refillsSoundExcept S) : RunQueueLinkStage st st' :=
-  ⟨h.links, h.tables, h.release, fun S hI hR hQ hS => by
+  ⟨h.links, h.release, fun S hI hR hQ hS => by
     by_cases hs : S s
     · exact h.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
     · exact hF S hs hI hR hQ (h.links hI hR).1 (h.release hI hR hQ) hS
@@ -2960,18 +2925,17 @@ theorem RunQueueLinkFrame.withRefills {s : SeLe4n.SchedContextId} {st st' : Syst
 
 theorem RunQueueLinkFrame.mono {P P' : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
     (hP : ∀ x, P x → P' x) (h : RunQueueLinkFrame P st st') : RunQueueLinkFrame P' st st' :=
-  ⟨h.links, h.tables, h.release, fun S hS => h.refills S (fun x hx => hS x (hP x hx)), h.yield, h.live⟩
+  ⟨h.links, h.release, fun S hS => h.refills S (fun x hx => hS x (hP x hx)), h.yield, h.live⟩
 
 theorem RunQueueLinkFrame.refl (P : SeLe4n.SchedContextId → Prop) (st : SystemState) :
     RunQueueLinkFrame P st st :=
-  ⟨fun h r => ⟨h, r⟩, fun _ _ t => t, fun _ _ r => r, fun _ _ _ _ _ s => s, fun _ _ y => y,
+  ⟨fun h r => ⟨h, r⟩, fun _ _ r => r, fun _ _ _ _ _ s => s, fun _ _ y => y,
     fun _ _ => .refl st⟩
 
 theorem RunQueueLinkFrame.trans {P : SeLe4n.SchedContextId → Prop} {st st' st'' : SystemState}
     (h1 : RunQueueLinkFrame P st st') (h2 : RunQueueLinkFrame P st' st'') :
     RunQueueLinkFrame P st st'' :=
   ⟨fun h r => (h1.links h r).elim h2.links,
-    fun h r t => let ⟨h', r'⟩ := h1.links h r; h2.tables h' r' (h1.tables h r t),
     fun h r q => let ⟨h', r'⟩ := h1.links h r; h2.release h' r' (h1.release h r q),
     fun S hS h r q x => let ⟨h', r'⟩ := h1.links h r
       h2.refills S hS h' r' (h1.release h r q) (h1.refills S hS h r q x),
@@ -3041,7 +3005,7 @@ theorem RunQueueFrameStage.withRefills {s : SeLe4n.SchedContextId} {st st' : Sys
 invariant. -/
 theorem RunQueueFrameStage.of_invExt {P : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
     (H : st.objects.invExt → RunQueueFrameStage P st st') : RunQueueFrameStage P st st' :=
-  ⟨⟨fun h r => (H h).1 h r, fun h r t => (H h).1.tables h r t, fun h r q => (H h).1.release h r q,
+  ⟨⟨fun h r => (H h).1 h r, fun h r q => (H h).1.release h r q,
       fun S hS h r q x => (H h).1.refills S hS h r q x, fun h r y => (H h).1.yield h r y,
       fun h r => (H h).1.live h r⟩,
     fun e h r r' d => (H h).2.1 e h r r' d,
@@ -3074,55 +3038,44 @@ def RunQueueEntryStage (st st' : SystemState) : Prop :=
   (st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
     st.currentDequeuedUnique → st'.currentDequeuedUnique)
 
-/-- **A kernel entry keeps the table references recorded**: its link half
-carries them (`RunQueueLinkStage.tables`). -/
-theorem RunQueueEntryStage.tableReferencesRecorded {st st' : SystemState}
-    (h : RunQueueEntryStage st st') (hInv : st.objects.invExt) (hR : st.runQueueRefined)
-    (hT : st.tableReferencesRecorded) : st'.tableReferencesRecorded :=
-  h.1.tables hInv hR hT
-
-/-- A link half, a table frame, a release frame and a refill frame make a
-link stage: the release frame holds every context's release link and every
+/-- A link half, a release frame and a refill frame make a link stage: the release frame holds every context's release link and every
 release-queue slot (`releaseStateAgree`), so the release queues stay refined;
 the refill frame holds every context's refill view (`RefillViewsKept`), so with
 the queues' entries the refill state stays sound; the yield frame holds every
 slot's yield codes (`YieldLinksKept`), so the yield link stays in agreement. -/
-theorem RunQueueLinkStage.of_tableFrame {st st' : SystemState}
+theorem RunQueueLinkStage.of_frames {st st' : SystemState}
     (hL : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined)
-    (hF : st.objects.invExt → TableReferenceFrame st st')
     (hRel : st.objects.invExt → releaseStateAgree st' st)
     (hV : st.objects.invExt → RefillViewsKept st' st)
     (hY : st.objects.invExt → YieldLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
-  ⟨hL, fun h _ t => (hF h).preserves t, fun h _ r => (hRel h).refined r,
+  ⟨hL, fun h _ r => (hRel h).refined r,
     fun _ h _ q s => refillsSoundExcept_of_kept (hV h)
       (fun c => by rw [(hRel h).replenishQueueOnCore c]) ((hRel h).refined q) s,
     fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩
 
-/-- A link half and a table frame, with the release queues carried by `hRel`
-and the refill state by `hRef`: a step that edits a release queue. -/
-theorem RunQueueLinkStage.of_tableFrameWith {st st' : SystemState}
+/-- A link half, with the release queues carried by `hRel` and the refill
+state by `hRef`: a step that edits a release queue. -/
+theorem RunQueueLinkStage.of_framesWith {st st' : SystemState}
     (hL : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined)
-    (hF : st.objects.invExt → TableReferenceFrame st st')
     (hRel : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
     (hRef : ∀ S, st.objects.invExt → st.releaseQueueRefined → st.refillsSoundExcept S →
       st'.refillsSoundExcept S)
     (hY : st.objects.invExt → YieldLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
-  ⟨hL, fun h _ t => (hF h).preserves t, fun h _ r => hRel h r, fun S h _ q s => hRef S h q s,
+  ⟨hL, fun h _ r => hRel h r, fun S h _ q s => hRef S h q s,
     fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩
 
 theorem RunQueueLinkStage.refl (st : SystemState) : RunQueueLinkStage st st :=
-  ⟨fun h r => ⟨h, r⟩, fun _ _ t => t, fun _ _ r => r, fun _ _ _ _ s => s, fun _ _ y => y,
+  ⟨fun h r => ⟨h, r⟩, fun _ _ r => r, fun _ _ _ _ s => s, fun _ _ y => y,
     fun _ _ => .refl st⟩
 
 theorem RunQueueLinkStage.trans {st st' st'' : SystemState}
     (h1 : RunQueueLinkStage st st') (h2 : RunQueueLinkStage st' st'') :
     RunQueueLinkStage st st'' :=
   ⟨fun h r => (h1 h r).elim h2.links,
-    fun h r t => let ⟨h', r'⟩ := h1 h r; h2.tables h' r' (h1.tables h r t),
     fun h r q => let ⟨h', r'⟩ := h1 h r; h2.release h' r' (h1.release h r q),
     fun S h r q s => let ⟨h', r'⟩ := h1 h r
       h2.refills S h' r' (h1.release h r q) (h1.refills S h r q s),
@@ -3142,13 +3095,12 @@ keeps the link agreement, whatever it does to the current slots. -/
 theorem RunQueueLinkStage.of_frame {st st' : SystemState} (hO : st'.objects = st.objects)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
-  .of_tableFrame
+  .of_frames
     (fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩)
-    (fun _ => .of_objects_eq hO hT) (fun _ => .of_objects_eq hO hS)
+    (fun _ => .of_objects_eq hO hS)
     (fun _ => .of_objects_eq hO) (fun _ => .of_objects_eq hO) hRes
 
 /-- A stage's link half. -/
@@ -3185,7 +3137,7 @@ theorem RunQueueWindowStage.trans {p : SchedPoint} {st st' st'' : SystemState}
 invariant. -/
 theorem RunQueueWindowStage.of_invExt {p : SchedPoint} {st st' : SystemState}
     (H : st.objects.invExt → RunQueueWindowStage p st st') : RunQueueWindowStage p st st' :=
-  ⟨⟨fun h r => (H h).1 h r, fun h r t => (H h).1.tables h r t, fun h r q => (H h).1.release h r q,
+  ⟨⟨fun h r => (H h).1 h r, fun h r q => (H h).1.release h r q,
       fun S h r q s => (H h).1.refills S h r q s, fun h r y => (H h).1.yield h r y,
       fun h r => (H h).1.live h r⟩,
     fun h r r' d => (H h).2.1 h r r' d, fun c hp h r => (H h).2.2 c hp h r⟩
@@ -3204,8 +3156,6 @@ executing core's current thread, which the yieldTo invocation links; every
 link stage is one for any `L` (`RunQueueLinkStage.toOn`). -/
 structure RunQueueLinkStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState) : Prop where
   links : st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
-  tables : st.objects.invExt → st.runQueueRefined → st.tableReferencesRecorded →
-    st'.tableReferencesRecorded
   release : st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
     st'.releaseQueueRefined
   refills : ∀ S, st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
@@ -3215,13 +3165,12 @@ structure RunQueueLinkStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState)
 
 theorem RunQueueLinkStage.toOn {st st' : SystemState} (h : RunQueueLinkStage st st')
     (L : SeLe4n.ObjId → Prop) : RunQueueLinkStageOn L st st' :=
-  ⟨h.links, h.tables, h.release, h.refills, h.yield, fun h' r => (h.live h' r).toOn L⟩
+  ⟨h.links, h.release, h.refills, h.yield, fun h' r => (h.live h' r).toOn L⟩
 
 theorem RunQueueLinkStageOn.trans {L : SeLe4n.ObjId → Prop} {st st' st'' : SystemState}
     (h1 : RunQueueLinkStageOn L st st') (h2 : RunQueueLinkStageOn L st' st'') :
     RunQueueLinkStageOn L st st'' :=
   ⟨fun h r => (h1.links h r).elim h2.links,
-    fun h r t => let ⟨h', r'⟩ := h1.links h r; h2.tables h' r' (h1.tables h r t),
     fun h r q => let ⟨h', r'⟩ := h1.links h r; h2.release h' r' (h1.release h r q),
     fun S h r q s => let ⟨h', r'⟩ := h1.links h r
       h2.refills S h' r' (h1.release h r q) (h1.refills S h r q s),
@@ -3230,7 +3179,7 @@ theorem RunQueueLinkStageOn.trans {L : SeLe4n.ObjId → Prop} {st st' st'' : Sys
 
 theorem RunQueueLinkStageOn.mono {L L' : SeLe4n.ObjId → Prop} {st st' : SystemState}
     (hL : ∀ k, L k → L' k) (h : RunQueueLinkStageOn L st st') : RunQueueLinkStageOn L' st st' :=
-  ⟨h.links, h.tables, h.release, h.refills, h.yield, fun h' r => (h.live h' r).mono hL⟩
+  ⟨h.links, h.release, h.refills, h.yield, fun h' r => (h.live h' r).mono hL⟩
 
 /-- WS-ZA ZA6.29: **a whole kernel entry that links only threads of `L`**. -/
 def RunQueueEntryStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState) : Prop :=
@@ -3266,17 +3215,10 @@ theorem RunQueueEntryStageOn.of_inv {L : SeLe4n.ObjId → Prop} {st st' : System
 keeps its invariant. -/
 theorem RunQueueEntryStageOn.of_invExt {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
     (H : st.objects.invExt → RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L st st' :=
-  ⟨⟨fun h r => (H h).1.links h r, fun h r t => (H h).1.tables h r t,
+  ⟨⟨fun h r => (H h).1.links h r,
       fun h r q => (H h).1.release h r q, fun S h r q s => (H h).1.refills S h r q s,
       fun h r y => (H h).1.yield h r y, fun h r => (H h).1.live h r⟩,
     fun h r r' d => (H h).2 h r r' d⟩
-
-/-- An entry that links only threads of `L` keeps the table references
-recorded. -/
-theorem RunQueueEntryStageOn.tableReferencesRecorded {L : SeLe4n.ObjId → Prop}
-    {st st' : SystemState} (h : RunQueueEntryStageOn L st st') (hInv : st.objects.invExt)
-    (hR : st.runQueueRefined) (hT : st.tableReferencesRecorded) : st'.tableReferencesRecorded :=
-  h.1.tables hInv hR hT
 
 /-- WS-ZA ZA6.29: core `e`'s current thread at `st`, as an object slot: the
 thread the yieldTo invocation on `e` links. -/
@@ -3409,7 +3351,7 @@ theorem RunQueueEntryStage.of_inv {st st' : SystemState} (hL : RunQueueLinkStage
 /-- A stage that holds from a state whose object store keeps its invariant. -/
 theorem RunQueueStage.of_invExt {st st' : SystemState}
     (H : st.objects.invExt → RunQueueStage st st') : RunQueueStage st st' :=
-  ⟨⟨fun h r => (H h).1 h r, fun h r t => (H h).1.tables h r t, fun h r q => (H h).1.release h r q,
+  ⟨⟨fun h r => (H h).1 h r, fun h r q => (H h).1.release h r q,
       fun S h r q s => (H h).1.refills S h r q s, fun h r y => (H h).1.yield h r y,
       fun h r => (H h).1.live h r⟩,
     fun e h r r' d => (H h).2.1 e h r r' d,
@@ -3460,11 +3402,10 @@ theorem RunQueueStage.of_frame {st st' : SystemState} (hO : st'.objects = st.obj
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
-  ⟨RunQueueLinkStage.of_frame hO hQ hE hT hS hRes,
+  ⟨RunQueueLinkStage.of_frame hO hQ hE hS hRes,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
       (StateMono.of_objects hO) d, fun _ _ => StateMono.of_objects hO⟩
 
@@ -3476,11 +3417,9 @@ theorem RunQueueStage.of_frameLive {st st' : SystemState} (hO : st'.objects = st
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hLive : Kernel.ResidentsRecordUnlinked st' st)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame) :
     RunQueueStage st st' :=
   ⟨⟨fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩,
-    fun _ _ t => (TableReferenceFrame.of_objects_eq hO hT).preserves t,
     fun _ _ q => (releaseStateAgree.of_objects_eq hO hS).refined q,
     fun _ _ _ q s => refillsSoundExcept_of_kept (.of_objects_eq hO)
       (fun c => by rw [(releaseStateAgree.of_objects_eq hO hS).replenishQueueOnCore c])
@@ -3499,7 +3438,6 @@ theorem RunQueueEntryStage.of_frameThen {st m st' : SystemState} (hO : m.objects
     (hQ : m.scheduler.runQueue = st.scheduler.runQueue)
     (hE : m.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hC : m.scheduler.currentCode = st.scheduler.currentCode)
-    (hT : m.referenceTables = st.referenceTables)
     (hS : m.scheduler.releaseSlots = st.scheduler.releaseSlots)
     (h2 : RunQueueEntryStage m st')
     (hLive : st.objects.invExt → st.runQueueRefined → Kernel.YieldLinkLiveFrame st' st) :
@@ -3508,8 +3446,6 @@ theorem RunQueueEntryStage.of_frameThen {st m st' : SystemState} (hO : m.objects
     fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩
   have hRel := releaseStateAgree.of_objects_eq (st := st) hO hS
   ⟨⟨fun h r => let ⟨h', r'⟩ := P h r; h2.1.links h' r',
-    fun h r t => let ⟨h', r'⟩ := P h r
-      h2.1.tables h' r' ((TableReferenceFrame.of_objects_eq hO hT).preserves t),
     fun h r q => let ⟨h', r'⟩ := P h r; h2.1.release h' r' (hRel.refined q),
     fun S h r q x => let ⟨h', r'⟩ := P h r
       h2.1.refills S h' r' (hRel.refined q) (refillsSoundExcept_of_kept (.of_objects_eq hO)
@@ -3520,34 +3456,12 @@ theorem RunQueueEntryStage.of_frameThen {st m st' : SystemState} (hO : m.objects
       h2.2 h' r' r'' (currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
         (StateMono.of_objects hO) d)⟩
 
-/-- A step that writes neither the objects, the run queues and their ends, nor
-any core's current slot, with the table references carried by `hTab`: a
-registry writer that writes no object. -/
-theorem RunQueueStage.of_frameWith {st st' : SystemState} (hO : st'.objects = st.objects)
-    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
-    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
-    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
-    (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
-    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
-    RunQueueStage st st' :=
-  ⟨⟨fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩,
-    fun h _ t => hTab h t, fun _ _ q => (releaseStateAgree.of_objects_eq hO hS).refined q,
-    fun _ _ _ q s => refillsSoundExcept_of_kept (.of_objects_eq hO)
-      (fun c => by rw [(releaseStateAgree.of_objects_eq hO hS).replenishQueueOnCore c])
-      ((releaseStateAgree.of_objects_eq hO hS).refined q) s,
-    fun _ _ y => yieldLinksAgree_of_kept (.of_objects_eq hO) y,
-    fun _ _ => .of_kept (.of_objects_eq hO) hRes⟩,
-    fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
-      (StateMono.of_objects hO) d, fun _ _ => StateMono.of_objects hO⟩
-
 /-- WS-ZA ZA5.11: **a word write is a stage** — a step whose store agrees with
 the pre-state's off the taint words, keeping the run queues, their ends and every
 core's current slot: no thread's links or state fields are taint words. -/
 theorem RunQueueStage.of_objectsAgreeOffTaint {st st' : SystemState}
     (hA : st.objectsAgreeOffTaint st')
     (hI : st.objects.invExt → st'.objects.invExt)
-    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
@@ -3567,7 +3481,7 @@ theorem RunQueueStage.of_objectsAgreeOffTaint {st st' : SystemState}
     .of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA
   have hY : YieldLinksKept st' st :=
     .of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA
-  exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL hQ hE r⟩, fun h _ t => hTab h t,
+  exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL hQ hE r⟩,
       fun _ _ q => hRel.refined q,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV (fun c => by rw [hRel.replenishQueueOnCore c])
         (hRel.refined q) s, fun _ _ y => yieldLinksAgree_of_kept hY y, fun _ _ => .of_kept hY hRes⟩,
@@ -3579,13 +3493,10 @@ keeping every slot's back-links, the run queues, their ends and every core's
 current slot. -/
 theorem RunQueueFrameStage.of_tcbFrame {st st' : SystemState}
     (hG : ∀ t, st'.getTcb? t = st.getTcb? t)
-    (hB : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map KernelObject.tableBackLinks =
-      (st.objects[k]?).map KernelObject.tableBackLinks)
     (hI : st.objects.invExt → st'.objects.invExt)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
-    (hT : st'.referenceTables = st.referenceTables)
     (hRel : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
     {P : SeLe4n.SchedContextId → Prop}
     (hRef : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.releaseQueueRefined →
@@ -3596,7 +3507,6 @@ theorem RunQueueFrameStage.of_tcbFrame {st st' : SystemState}
   have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun c t => runLinkOn_of_getTcb? (hG t) c
   have hM : StateMono st st' := StateMono.of_getTcb hG
   exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL hQ hE r⟩,
-      fun h _ t => (TableReferenceFrame.of_map_tableBackLinks hT hB).preserves t,
       fun h _ q => hRel h q, fun S hS h _ q x => hRef S hS h q x,
       fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC hL hM d, fun _ _ => hM⟩
@@ -3604,22 +3514,19 @@ theorem RunQueueFrameStage.of_tcbFrame {st st' : SystemState}
 /-- ...with the refill state carried by `hRef`. -/
 theorem RunQueueStage.of_tcbFrame {st st' : SystemState}
     (hG : ∀ t, st'.getTcb? t = st.getTcb? t)
-    (hB : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map KernelObject.tableBackLinks =
-      (st.objects[k]?).map KernelObject.tableBackLinks)
     (hI : st.objects.invExt → st'.objects.invExt)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
-    (hT : st'.referenceTables = st.referenceTables)
     (hRel : st.objects.invExt → st.releaseQueueRefined → st'.releaseQueueRefined)
     (hRef : ∀ S, st.objects.invExt → st.releaseQueueRefined → st.refillsSoundExcept S →
       st'.refillsSoundExcept S)
     (hY : st.objects.invExt → YieldLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
-  let h := RunQueueFrameStage.of_tcbFrame (P := fun _ => False) hG hB hI hQ hE hC hT hRel
+  let h := RunQueueFrameStage.of_tcbFrame (P := fun _ => False) hG hI hQ hE hC hRel
     (fun S _ => hRef S) hY hRes
-  ⟨⟨h.1.links, h.1.tables, h.1.release, fun S => h.1.refills S (fun _ h => h.elim), h.1.yield,
+  ⟨⟨h.1.links, h.1.release, fun S => h.1.refills S (fun _ h => h.elim), h.1.yield,
       h.1.live⟩,
     h.2⟩
 
@@ -3630,11 +3537,10 @@ theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects =
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hC : ∀ c t, st'.scheduler.currentOnCore c = some t →
       st.scheduler.currentOnCore c = some t)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
-  RunQueueStage.of_link (RunQueueLinkStage.of_frame hO hQ hE hT hS hRes)
+  RunQueueStage.of_link (RunQueueLinkStage.of_frame hO hQ hE hS hRes)
     hC (fun c t h' => by
       rw [queuedOn_eq_runLinkOn, runLinkOn_of_objects hO, ← queuedOn_eq_runLinkOn] at h'
       exact h') (StateMono.of_objects hO)
@@ -3642,12 +3548,10 @@ theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects =
 /-- A TCB write that keeps the run-queue fields keeps the link agreement. -/
 theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     RunQueueLinkStage st (st.updateTcb tid f) :=
-  .of_tableFrame
+  .of_frames
     (fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩)
-    (fun h => TableReferenceFrame.updateTcb st tid f h hW)
     (fun h => .of_getSchedContext? (updateTcb_getSchedContext? st tid f h)
       (by rw [updateTcb_scheduler]))
     (fun h => .of_getSchedContext?_eq (updateTcb_getSchedContext? st tid f h))
@@ -3656,10 +3560,9 @@ theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {
 theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) :
     RunQueueStage st (st.updateTcb tid f) :=
-  ⟨RunQueueLinkStage.updateTcb st tid hf hW hY,
+  ⟨RunQueueLinkStage.updateTcb st tid hf hY,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
       unfold SystemState.updateTcb; split
       · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x
@@ -3796,16 +3699,14 @@ theorem runLinkOn_insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Kernel
     rw [RHTable.getElem?_insert_ne st.objects _ _ obj (fun hb => hk (eq_of_beq hb)) hInv]
 
 /-- The link half of a one-object write giving the same run-queue entries, and
-no run queue or end, with the table references carried by `hTab` — whatever the
-object's state fields, so it holds of a write that moves a thread's home too
-(the affinity change). -/
-theorem RunQueueLinkStage.insertWith {st st' : SystemState} {k : SeLe4n.ObjId}
+no run queue or end — whatever the object's state fields, so it holds of a
+write that moves a thread's home too (the affinity change). -/
+theorem RunQueueLinkStage.insert {st st' : SystemState} {k : SeLe4n.ObjId}
     {obj : KernelObject}
     (hO : st'.objects = st.objects.insert k obj)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
-    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
@@ -3813,7 +3714,7 @@ theorem RunQueueLinkStage.insertWith {st st' : SystemState} {k : SeLe4n.ObjId}
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
   ⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
-    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩, fun hInv _ t => hTab hInv t,
+    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩,
     fun hInv _ q => (show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q,
     fun _ hInv _ q s => refillsSoundExcept_of_kept (.insert hInv hO hV)
       (fun c => by rw [(show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).replenishQueueOnCore c])
@@ -3821,47 +3722,8 @@ theorem RunQueueLinkStage.insertWith {st st' : SystemState} {k : SeLe4n.ObjId}
     fun hInv _ y => yieldLinksAgree_of_kept (.insert hInv hO hY) y,
     fun hInv _ => .of_kept (.insert hInv hO hY) hRes⟩
 
-/-- ...holding the slot's table back-links and every reference table. -/
-theorem RunQueueLinkStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
-    (hO : st'.objects = st.objects.insert k obj)
-    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
-    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
-    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
-    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
-    (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
-    (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
-    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
-    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
-    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
-    RunQueueLinkStage st st' :=
-  .insertWith hO hQ hE h (fun hInv t => (TableReferenceFrame.insert hInv hO hT hB).preserves t)
-    hR hV hY hS hRes
-
-/-- A step that writes one object giving the same run-queue entries, and no
-run queue or end, with the table references carried by `hTab`: the store
-primitive both the frame (`RunQueueStage.insert`) and a registry writer, which
-writes an endpoint's back-link, are built on. -/
-theorem RunQueueStage.insertWith {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
-    (hO : st'.objects = st.objects.insert k obj)
-    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
-    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
-    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
-    (hm : objStateMono st.objects[k]? obj)
-    (hTab : st.objects.invExt → st.tableReferencesRecorded → st'.tableReferencesRecorded)
-    (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
-    (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
-    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
-    (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
-    (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
-    RunQueueStage st st' :=
-  ⟨RunQueueLinkStage.insertWith hO hQ hE h hTab hR hV hY hS hRes,
-    fun _ hInv _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_insert hInv hO h)
-      (StateMono.insert hInv hO hm) d, fun hInv _ => StateMono.insert hInv hO hm⟩
-
-/-- A step that writes one object giving the same run-queue entries and holding
-the slot's table back-links, and no run queue, end or reference table. -/
+/-- A step that writes one object giving the same run-queue entries, and no run
+queue or end: the store primitive every object write's stage is built on. -/
 theorem RunQueueStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
     (hO : st'.objects = st.objects.insert k obj)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
@@ -3869,16 +3731,15 @@ theorem RunQueueStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Ke
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hm : objStateMono st.objects[k]? obj)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
-    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
-  .insertWith hO hQ hE h hm (fun hInv t => (TableReferenceFrame.insert hInv hO hT hB).preserves t) hC
-    hR hV hY hS hRes
+  ⟨RunQueueLinkStage.insert hO hQ hE h hR hV hY hS hRes,
+    fun _ hInv _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_insert hInv hO h)
+      (StateMono.insert hInv hO hm) d, fun hInv _ => StateMono.insert hInv hO hm⟩
 
 /-- WS-ZA ZA6.4: **a one-object write that may change a context's refills is
 a frame stage** — the store of `RunQueueStage.insert` with no claim on the refill
@@ -3891,8 +3752,6 @@ theorem RunQueueFrameStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hm : objStateMono st.objects[k]? obj)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
-    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
@@ -3900,7 +3759,6 @@ theorem RunQueueFrameStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj
     RunQueueFrameStage (· = SeLe4n.SchedContextId.ofObjId k) st st' :=
   ⟨⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
       runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩,
-    fun hInv _ t => (TableReferenceFrame.insert hInv hO hT hB).preserves t,
     fun hInv _ q => (show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q,
     fun S hP hInv _ q x => refillsSoundExcept_of_keptOff
       (RefillsKeptOff.of_insert (s := SeLe4n.SchedContextId.ofObjId k) hInv
@@ -3918,12 +3776,11 @@ theorem RunQueueFrameStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hm : objStateMono st.objects[k]? obj)
-    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes) :
     RunQueueFrameStage (· = SeLe4n.SchedContextId.ofObjId k) st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact RunQueueFrameStage.insert rfl rfl rfl h hm rfl rfl hB hR hY
+  exact RunQueueFrameStage.insert rfl rfl rfl h hm rfl hR hY
 
 /-- WS-ZA ZA6.4: **a context created in an empty slot** — unbound and well
 formed — is a stage: no entry names the slot (its pre-state holds no context),
@@ -3935,9 +3792,6 @@ theorem RunQueueStage.insert_freshContext {st st' : SystemState} {k : SeLe4n.Obj
     (hNone : st.objects[k]? = none)
     (hU : u.boundThread.isSome = false) (hWF : schedContextWellFormed u)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
-    (hT : st'.referenceTables = st.referenceTables := by table_frame)
-    (hB : (KernelObject.schedContext u).tableBackLinks = objTableBackLinks st.objects[k]? := by
-      table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some (.schedContext u)) c = objReleaseLinkOn st.objects[k]? c := by
       release_links)
     (hY : u.yieldFromCode = 0 := by first | rfl | assumption)
@@ -3945,7 +3799,7 @@ theorem RunQueueStage.insert_freshContext {st st' : SystemState} {k : SeLe4n.Obj
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
   (RunQueueFrameStage.insert hO hQ hE (fun c => by rw [hNone]; rfl)
-    (by rw [hNone]; exact objStateMono_nonTcb rfl rfl) hC hT hB hR
+    (by rw [hNone]; exact objStateMono_nonTcb rfl rfl) hC hR
     (by rw [hNone]; simp only [objYieldCodes, hY]) hS hRes).withRefills
     fun _ _ hI _ hRel _ _ _ h4 => refillsSoundExcept_close_unbound h4
       (fun a ha => by
@@ -3990,15 +3844,14 @@ theorem RunQueueStage.of_placement {st st' : SystemState}
     (hP : st.objects.invExt → ∀ x,
       (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement)
     (hM : st.objects.invExt → StateMono st st')
-    (hF : st.objects.invExt → TableReferenceFrame st st')
     (hRel : st.objects.invExt → releaseStateAgree st' st)
     (hV : st.objects.invExt → RefillViewsKept st' st)
     (hY : st.objects.invExt → YieldLinksKept st' st)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
-  ⟨.of_tableFrame
-    (fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩) hF hRel
+  ⟨.of_frames
+    (fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩) hRel
     hV hY hRes,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_of_placement (hP h)) (hM h) d,
     fun h _ => hM h⟩
@@ -4012,7 +3865,6 @@ theorem RunQueueFrameStage.of_placement {P : SeLe4n.SchedContextId → Prop} {st
     (hP : st.objects.invExt → ∀ x,
       (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement)
     (hM : st.objects.invExt → StateMono st st')
-    (hF : st.objects.invExt → TableReferenceFrame st st')
     (hRel : st.objects.invExt → releaseStateAgree st' st)
     (hK : st.objects.invExt → RefillsKeptOff P st' st)
     (hY : st.objects.invExt → YieldLinksKept st' st)
@@ -4020,7 +3872,7 @@ theorem RunQueueFrameStage.of_placement {P : SeLe4n.SchedContextId → Prop} {st
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueFrameStage P st st' :=
   ⟨⟨fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩,
-    fun h _ t => (hF h).preserves t, fun h _ r => (hRel h).refined r,
+    fun h _ r => (hRel h).refined r,
     fun _ hS h _ q x => refillsSoundExcept_of_keptOff (hK h) hS ((hRel h).refined q) x,
     fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_of_placement (hP h)) (hM h) d,
@@ -4033,27 +3885,25 @@ theorem RunQueueStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hm : objStateMono st.objects[k]? obj)
-    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes) :
     RunQueueStage st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact RunQueueStage.insert rfl rfl rfl h hm rfl rfl hB hR hV hY
+  exact RunQueueStage.insert rfl rfl rfl h hm rfl hR hV hY
 
 /-- A store keeping the run-queue entry its slot gives keeps the link agreement. -/
 theorem RunQueueLinkStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
-    (hB : obj.tableBackLinks = objTableBackLinks st.objects[k]? := by table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes) :
     RunQueueLinkStage st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact .of_tableFrame (fun hInv r => ⟨RHTable_insert_preserves_invExt st.objects k obj hInv,
+  exact .of_frames (fun hInv r => ⟨RHTable_insert_preserves_invExt st.objects k obj hInv,
     runQueueRefined_of_frame (runLinkOn_insert hInv rfl h) rfl rfl r⟩)
-    (fun hInv => .insert hInv rfl rfl hB) (fun hInv => ⟨.insert hInv rfl hR, rfl⟩)
+    (fun hInv => ⟨.insert hInv rfl hR, rfl⟩)
     (fun hInv => .insert hInv rfl hV) fun hInv => .insert hInv rfl hY
 
 /-- The store of an object other than a TCB over an object other than a TCB. -/
@@ -4061,12 +3911,11 @@ theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjI
     {obj old : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
     (hOld : st.objects[k]? = some old)
     (hObj : ∀ t, obj ≠ .tcb t) (hOldT : ∀ t, old ≠ .tcb t)
-    (hB : obj.tableBackLinks = old.tableBackLinks := by table_backlinks)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn (some old) c := by release_links)
     (hV : objRefillView (some obj) = objRefillView (some old) := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes (some old) := by yield_codes) :
     RunQueueStage st st' :=
-  RunQueueStage.storeObject (hB := by rw [hOld]; exact hB) (hR := by rw [hOld]; exact hR)
+  RunQueueStage.storeObject (hR := by rw [hOld]; exact hR)
     (hV := by rw [hOld]; exact hV) (hY := by rw [hOld]; exact hY) hS (fun c => by
     rw [hOld]
     cases obj <;> cases old <;> first | rfl | exact absurd rfl (hObj _) | exact absurd rfl (hOldT _))
@@ -4078,11 +3927,9 @@ theorem RunQueueStage.storeObject_tcb {st st' : SystemState} {k : SeLe4n.ObjId}
     {t old : TCB} (hS : SeLe4n.Model.storeObject k (.tcb t) st = .ok ((), st'))
     (hOld : st.objects[k]? = some (.tcb old)) (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
     (hm : objStateMono (some (.tcb old)) (.tcb t) := by obj_state_mono)
-    (hW : t.taintWords = old.taintWords := by taint_words_kept)
     (hYc : t.yieldToCode = old.yieldToCode := by first | rfl | simp_all) :
     RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c) (by rw [hOld]; exact hm)
-    (by rw [hOld]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW])
     (fun _ => by rw [hOld]; rfl) (by rw [hOld]; rfl) (by rw [hOld]; simp only [objYieldCodes, hYc])
 
 
@@ -4095,7 +3942,6 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
     (hOld : st.getTcb? t = some old) (h : ∀ c, new.runLinkOn c = old.runLinkOn c)
     (hT : new.threadState = old.threadState)
     (hCur : st.scheduler.currentOnCore c = some t) (hNI : Kernel.isIdleThreadId t = false)
-    (hW : new.taintWords = old.taintWords := by taint_words_kept)
     (hAff : new.cpuAffinity = old.cpuAffinity := by first | rfl | simp_all)
     (hYc : new.yieldToCode = old.yieldToCode := by first | rfl | simp_all) :
     RunQueueWindowStage (.block c) st st' := by
@@ -4106,12 +3952,8 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
   have hRaw : st.objects[t.toObjId]? = some (.tcb old) := (getTcb?_eq_some_iff st t old).mp hOld
   have hLk : ∀ c, objRunLinkOn (some (KernelObject.tcb new)) c =
       objRunLinkOn st.objects[t.toObjId]? c := fun c => by rw [hRaw]; exact h c
-  have hTb : st'.referenceTables = st.referenceTables := by
-    unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
-  refine ⟨.of_tableFrame (fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects _ _ hInv,
+  refine ⟨.of_frames (fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects _ _ hInv,
     runQueueRefined_of_frame (runLinkOn_insert hInv hO hLk) (by rw [hSc]) (by rw [hSc]) r⟩)
-    (fun hInv => .insert hInv hO hTb (by
-      rw [hRaw]; simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hW]))
     (fun hInv => ⟨.insert hInv hO (fun _ => by rw [hRaw]; rfl), by rw [hSc]⟩)
     (fun hInv => .insert hInv hO (by rw [hRaw]; rfl))
     (fun hInv => .insert hInv hO (by rw [hRaw]; simp only [objYieldCodes, hYc]))

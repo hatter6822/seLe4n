@@ -299,8 +299,12 @@ def retypeFromUntyped
         -- WS-H2/H-06: childId must not equal untypedId (self-overwrite guard)
         else if childId = untypedId then
           .error .childIdSelfOverwrite
-        -- WS-H2/A-26: childId must not collide with an existing object
-        else if (st.getObject? childId).isSome then
+        -- WS-H2/A-26: childId must not collide with an existing object, nor
+        -- (WS-ZA ZA6.32) with an interrupt node's reserved id, which only the
+        -- boot installs (`isIrqNodeObjId`): a carved object there would be
+        -- named as the node of a line no Get activated.
+        else if (st.getObject? childId).isSome ||
+            isIrqNodeObjId InterruptLineSet.capacity childId then
           .error .childIdCollision
         -- WS-H2/A-27: childId must not collide with an existing untyped child
         else if ut.children.any (fun c => c.objId == childId) then
@@ -424,6 +428,34 @@ theorem retypeFromUntyped_childId_fresh
           cases hColl : st.objects[childId]?.isSome
           · rfl
           · simp [hColl] at hOk
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+      simp at hOk
+
+/-- WS-ZA ZA6.32: **a successful retype's child is no interrupt node**: the
+collision guard refuses the nodes' reserved ids. -/
+theorem retypeFromUntyped_childId_notIrqNode
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (st st' : SystemState)
+    (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    isIrqNodeObjId InterruptLineSet.capacity childId = false := by
+  unfold retypeFromUntyped SystemState.getObject? at hOk
+  cases h1 : st.objects[untypedId]? with
+  | none => simp [h1] at hOk
+  | some obj =>
+    simp [h1] at hOk
+    cases obj with
+    | untyped ut =>
+      simp at hOk
+      split at hOk
+      · simp at hOk
+      · split at hOk
+        · simp at hOk
+        · cases hN : isIrqNodeObjId InterruptLineSet.capacity childId
+          · rfl
+          · simp [hN] at hOk
     | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp at hOk
 
@@ -620,6 +652,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (hCapOk : st.objectIndex.length < maxObjects)
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
+    (hNotNode : isIrqNodeObjId InterruptLineSet.capacity childId = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType.deviceBackable = true)
     (hExt : objectIdInAddressSpace st.machine childId = true)
@@ -628,7 +661,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
       .error .untypedAllocSizeTooSmall := by
   unfold retypeFromUntyped SystemState.getObject?
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
-  simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
+  simp [hObj, hCapF, hNeSelf, hNoCollision, hNotNode, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hExt, hSmall]
   | inr hMB =>
@@ -646,6 +679,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hCapOk : st.objectIndex.length < maxObjects)
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
+    (hNotNode : isIrqNodeObjId InterruptLineSet.capacity childId = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType.deviceBackable = true)
     (hExt : objectIdInAddressSpace st.machine childId = true)
@@ -659,7 +693,8 @@ theorem retypeFromUntyped_error_regionExhausted
       .error .untypedRegionExhausted := by
   unfold retypeFromUntyped SystemState.getObject?
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
-  simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hFreshChildren]
+  simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hNotNode, Bool.or_false,
+    hFreshChildren]
   cases hNotDev with
   | inl hFalse =>
       simp only [hFalse, Bool.false_and, Bool.false_eq_true, ↓reduceIte, hExt, Bool.not_true,

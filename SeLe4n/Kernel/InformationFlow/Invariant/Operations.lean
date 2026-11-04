@@ -461,8 +461,8 @@ private theorem saveOutgoingContext_machine (st : SystemState) :
   · rfl
   · exact SystemState.updateTcb_machine _ _ _
 
-private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
-    (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
+private theorem saveOutgoingContext_irqSignalLines (st : SystemState) :
+    (saveOutgoingContext st).irqSignalLines = st.irqSignalLines := by
   unfold saveOutgoingContext
   split
   · rfl
@@ -915,7 +915,7 @@ theorem switchDomain_preserves_lowEquivalent
         simp only [projectState, projectRunnable, SchedulerState.runnable] at hBase
         exact h₁.trans (hBase.trans h₂.symm)
       all_goals first
-        | exact congrArg ObservableState.irqHandlers hLow
+        | exact congrArg ObservableState.irqSignalLines hLow
         | exact congrArg ObservableState.objectIndex hLow
         | exact congrArg ObservableState.memory hLow
         | exact congrArg ObservableState.serviceRegistry hLow
@@ -1133,6 +1133,7 @@ theorem cspaceDeleteSlot_preserves_projection
     projectState_of_agreeOffDerivationLinks ctx observer
       (spliceDeletedCdtNode_agree (cspaceDeleteSlotCore_invExt _ _ _ hObjInv hCore) addr).1
       (by rw [spliceDeletedCdtNode_cdt]; exact spliceDeletedCdtNode_fields stC addr)
+      (by rw [spliceDeletedCdtNode, SystemState.cdtSplice_irqSignalLines])
   rw [hLeaf]
   exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st stC hAddrHigh hObjInv hCore
 
@@ -1199,8 +1200,8 @@ private theorem cspaceInsertSlot_preserves_projection
   · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
-  · funext irq; simp only [projectIrqHandlers,
-      cspaceInsertSlot_preserves_irqHandlers st st' dst cap hStep]
+  · funext irq; simp only [projectIrqSignalLines,
+      cspaceInsertSlot_preserves_irqSignalLines st st' dst cap hStep]
   · exact cspaceInsertSlot_preserves_projectObjectIndex st st' dst cap hDstHigh hStep
   · simp [projectDomainTimeRemaining, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectDomainSchedule, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
@@ -3187,9 +3188,9 @@ private theorem updatePipBoost_preserves_projection
   · -- projectActiveDomain
     simp only [projectActiveDomain,
       PriorityInheritance.updatePipBoost_preserves_activeDomain]
-  · -- projectIrqHandlers
-    funext irq; simp only [projectIrqHandlers,
-      PriorityInheritance.updatePipBoost_preserves_irqHandlers]
+  · -- projectIrqSignalLines
+    funext irq; simp only [projectIrqSignalLines,
+      PriorityInheritance.updatePipBoost_preserves_irqSignalLines]
   · -- projectObjectIndex
     simp only [projectObjectIndex,
       PriorityInheritance.updatePipBoost_preserves_objectIndex]
@@ -5759,8 +5760,8 @@ theorem retireFinalObject_preserves_projection (ctx : LabelingContext) (observer
     cases hob : objectObservable ctx observer o with
     | false => rfl
     | true => simp only [↓reduceIte, SystemState.getObject?, hO o hob]
-  have hPI : projectIrqHandlers ctx observer s = projectIrqHandlers ctx observer st := by
-    unfold projectIrqHandlers; rw [hIrq]
+  have hPI : projectIrqSignalLines ctx observer s = projectIrqSignalLines ctx observer st := by
+    unfold projectIrqSignalLines; rw [hIrq]
   have hPM : projectMemory ctx observer s = projectMemory ctx observer st := by
     unfold projectMemory; rw [hM]
   unfold projectState

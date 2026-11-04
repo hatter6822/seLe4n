@@ -23,7 +23,7 @@ the root task holding one untyped over all the RAM outside the kernel's extent.
 | root task TCB (the lower separation witness) | `2` | boot |
 | root task CNode | `3` | boot |
 | root task VSpace (ASID 1, pool page 0) | `4` | boot |
-| interrupt notification (every SPI signals it) | `5` | boot |
+| interrupt notification (the root task binds handlers to it) | `5` | boot |
 | untyped over `[0x5000_0000, 0x8000_0000)` | `6` | boot |
 | exerciser partner TCB (`.Inactive` until resumed) | `7` | boot |
 | exerciser endpoint | `8` | boot |
@@ -57,7 +57,7 @@ def qemuVirtRootTaskTcbId : SeLe4n.ObjId := ⟨qemuVirtLowerWitnessIndex⟩
 def qemuVirtRootTaskCNodeId : SeLe4n.ObjId := ⟨3⟩
 /-- The root task's VSpace. -/
 def qemuVirtRootTaskVSpaceId : SeLe4n.ObjId := ⟨4⟩
-/-- The notification every delegated SPI signals. -/
+/-- The notification the root task binds its interrupt handlers to. -/
 def qemuVirtInterruptNotificationId : SeLe4n.ObjId := ⟨5⟩
 /-- The root task's untyped over the RAM outside the kernel's extent. -/
 def qemuVirtRootTaskUntypedId : SeLe4n.ObjId := ⟨6⟩
@@ -127,13 +127,18 @@ def qemuVirtRootCNodeOf (slots : List (SeLe4n.Slot × Capability)) : CNode :=
     `c`'s at `16 + c`. -/
 def qemuVirtSchedControlSlotBase : Nat := 16
 
+/-- **WS-ZA ZA6.32**: the root task's interrupt-control slot, above the
+    scheduling controls — seL4's boot info `seL4_CapIRQControl`. -/
+def qemuVirtIrqControlSlot : Nat := 20
+
 /-- The root task's boot capabilities, by slot: its own TCB, CNode and VSpace,
     the interrupt notification, the untyped, and the allocation exerciser's
     partner thread, endpoint and reply object, and in slot 0 the exerciser's
     scheduling context (slot 9 is left free for the reply capability the
     exerciser mints from slot 8, and slots 10 to 15 for the objects it copies
-    and carves), and (WS-ZA ZA6.4) each core's scheduling control from
-    `qemuVirtSchedControlSlotBase`. -/
+    and carves), (WS-ZA ZA6.4) each core's scheduling control from
+    `qemuVirtSchedControlSlotBase`, and (WS-ZA ZA6.32) the interrupt control
+    at `qemuVirtIrqControlSlot`. -/
 def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
@@ -143,7 +148,8 @@ def qemuVirtRootTaskCNodeSlots : List (SeLe4n.Slot × Capability) :=
   , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
   , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
-  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ] ++
+  , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write])
+  , (SeLe4n.Slot.ofNat qemuVirtIrqControlSlot, Capability.irqControl) ] ++
   SeLe4n.Platform.RPi5.schedControlBootSlots qemuVirtSchedControlSlotBase
 
 /-- The root task's CNode: its boot capabilities (`qemuVirtRootTaskCNodeSlots`)
@@ -183,10 +189,7 @@ private def untypedEntry (id : SeLe4n.ObjId) (ut : UntypedObject) : ObjectEntry 
 private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
   { id := id
     obj := .notification
-      -- The interrupt table names this notification, so it records the
-      -- interrupt back (`SystemState.tableReferencesRecorded`).
-      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-        irqBound := true }
+      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
@@ -224,24 +227,16 @@ def qemuVirtInitialObjects : List ObjectEntry :=
   , cnodeEntry qemuVirtUntrustedCNodeId qemuVirtUntrustedCNode
   , vspaceEntry qemuVirtUntrustedVSpaceId (SeLe4n.ASID.ofNat 2) 1 ]
 
-/-- The IRQ table: every SPI the `virt` GICv2 carries signals the boot domain's
-    notification.  SGIs and PPIs are the kernel's and are not delegated. -/
-def qemuVirtIrqTable : List IrqEntry :=
-  (List.range qemuVirtGicSpiCount).map fun i =>
-    { irq := ⟨32 + i⟩, handler := qemuVirtInterruptNotificationId }
-
 /-- The deployment's configuration on a board account — the caller's half.
     `bindPlatformConfig` supplies the binding's machine configuration and boot
     root. -/
 def qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) : PlatformConfig :=
-  { irqTable := qemuVirtIrqTable
-    initialObjects := qemuVirtInitialObjects
+  { initialObjects := qemuVirtInitialObjects
     machineConfig := board }
 
 /-- The configuration the `virt` boot checks, whatever the account. -/
 def qemuVirtBoundPlatformConfig : PlatformConfig :=
-  { irqTable := qemuVirtIrqTable
-    initialObjects := qemuVirtInitialObjects
+  { initialObjects := qemuVirtInitialObjects
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtPlatform)
@@ -256,14 +251,11 @@ theorem bindPlatformConfig_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConf
 -- Every gate of the checked boot, decided
 -- ============================================================================
 
--- `virt`'s GICv2 carries 256 SPIs, so the IRQ table the duplicate and handler
--- checks walk is long enough that the default recursion budget
--- runs out before `decide` finishes; the budget is raised for those two only.
 set_option maxRecDepth 8192 in
 theorem qemuVirtBoundPlatformConfig_wellFormed :
     qemuVirtBoundPlatformConfig.wellFormed = true := by
   unfold PlatformConfig.wellFormed
-  rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
+  rw [objectIdsUnique_eq_transparent]
   decide
 
 -- WS-ZA ZA6.4: the root CNode's 32 cells (each core's scheduling control above
@@ -276,11 +268,6 @@ theorem qemuVirtBoundPlatformConfig_bootSafe :
 
 theorem qemuVirtBoundPlatformConfig_asidsDistinct :
     bootVSpaceAsidsDistinct qemuVirtBoundPlatformConfig = true := by
-  decide
-
-set_option maxRecDepth 8192 in
-theorem qemuVirtBoundPlatformConfig_irqHandlers :
-    irqHandlersAndNotificationsReciprocal qemuVirtBoundPlatformConfig = true := by
   decide
 
 theorem qemuVirtBoundPlatformConfig_rootDistinct :
@@ -315,7 +302,7 @@ theorem qemuVirtBoundPlatformConfig_checked :
           qemuVirtBootVSpaceRootEntry.hMappings)) :=
   bootFromPlatformChecked_admits_bootVSpace _ qemuVirtBoundPlatformConfig_wellFormed
     qemuVirtBoundPlatformConfig_bootSafe qemuVirtBoundPlatformConfig_asidsDistinct
-    qemuVirtBoundPlatformConfig_irqHandlers qemuVirtMachineConfig_wellFormed
+    qemuVirtMachineConfig_wellFormed
     qemuVirtBoundPlatformConfig_physicalAddressWidth
     qemuVirtBoundPlatformConfig_rootDistinct qemuVirtBoundPlatformConfig_rootNonSentinel
     qemuVirtBoundPlatformConfig_rootSafe qemuVirtBootVSpaceRootEntry rfl
@@ -340,7 +327,8 @@ def qemuVirtDeploymentStartedState : IntermediateState :=
 /-- The state the `virt` boot installs: the started stage with its capabilities
     linked into the derivation tree. -/
 def qemuVirtDeploymentBootState : IntermediateState :=
-  linkBootCapabilities qemuVirtBoundPlatformConfig qemuVirtDeploymentStartedState
+  linkBootCapabilities qemuVirtBoundPlatformConfig
+    (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) qemuVirtDeploymentStartedState)
 
 theorem qemuVirtBoundPlatformConfig_idleBoot :
     bootFromPlatformCheckedWithIdleThreadsFor
@@ -408,7 +396,15 @@ theorem qemuVirtBoundPlatformConfig_boot :
         qemuVirtBoundPlatformConfig =
       .ok qemuVirtDeploymentBootState := by
   rw [bootFromPlatformCheckedStartedFor_of_idle _ _ _ qemuVirtBoundPlatformConfig_idleBoot]
-  exact congrArg (Except.map (linkBootCapabilities qemuVirtBoundPlatformConfig))
+  exact congrArg (Except.map fun started => linkBootCapabilities qemuVirtBoundPlatformConfig
+      (installIrqNodes (irqNodeLineCount qemuVirtBoundPlatformConfig) started))
+    qemuVirtDeployment_startInitialThreads
+
+/-- The started state leaves every interrupt node's id free. -/
+theorem qemuVirtDeploymentStartedState_irqNodesFresh :
+    irqNodesFresh (irqNodeLineCount qemuVirtBoundPlatformConfig)
+      qemuVirtDeploymentStartedState.state = true :=
+  bootFromPlatformCheckedStartedFor_irqNodesFresh _ _ _ _ qemuVirtBoundPlatformConfig_idleBoot
     qemuVirtDeployment_startInitialThreads
 
 /-- Both witnesses are installed on the state the boot installs, so its last
@@ -416,7 +412,8 @@ theorem qemuVirtBoundPlatformConfig_boot :
 theorem qemuVirtDeploymentBootState_witnessesInstalled :
     declaredWitnessesInstalled qemuVirtDeploymentBootState.state
       (PlatformBinding.labeling (platform := QemuVirtPlatform)) = true := by
-  rw [qemuVirtDeploymentBootState, linkBootCapabilities_declaredWitnessesInstalled]
+  rw [qemuVirtDeploymentBootState, linkBootCapabilities_declaredWitnessesInstalled,
+    installIrqNodes_declaredWitnessesInstalled qemuVirtDeploymentStartedState_irqNodesFresh]
   refine startInitialThreads_preserves_declaredWitnessesInstalled _ _ _
     qemuVirtDeployment_startInitialThreads _ ?_
   unfold declaredWitnessesInstalled
@@ -475,10 +472,10 @@ theorem qemuVirtDeploymentBootState_invariantBridge :
 /-- The device-tree bridge, given this deployment's half, yields
     `qemuVirtPlatformConfigFor` of the board's own account. -/
 theorem qemuVirtPlatformConfigFromDtb_deployment_ok (blob : ByteArray) (config : PlatformConfig)
-    (h : qemuVirtPlatformConfigFromDtb blob qemuVirtIrqTable qemuVirtInitialObjects none =
+    (h : qemuVirtPlatformConfigFromDtb blob qemuVirtInitialObjects none =
       .ok config) :
     config = qemuVirtPlatformConfigFor config.machineConfig := by
-  obtain ⟨dt, -, rfl⟩ := qemuVirtPlatformConfigFromDtb_ok_eq_fromDeviceTree _ _ _ _ _ h
+  obtain ⟨dt, -, rfl⟩ := qemuVirtPlatformConfigFromDtb_ok_eq_fromDeviceTree _ _ _ _ h
   rfl
 
 /-- The root task's untyped is an object of the installed state — so the RAM
@@ -487,6 +484,7 @@ theorem qemuVirtDeploymentBootState_untypedInstalled :
     qemuVirtDeploymentBootState.state.objects[qemuVirtRootTaskUntypedId]? =
       some (.untyped qemuVirtRootTaskUntyped) :=
   ((linkBootCapabilities_agree _ _).obj_iff (fun _ e => by cases e)).mpr <|
+  installIrqNodes_objects_of_some qemuVirtDeploymentStartedState_irqNodesFresh <|
   startInitialThreads_objects_of_nonTcb _ _ _
     qemuVirtDeployment_startInitialThreads _ _ (fun _ h => by cases h)
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem _ _ _

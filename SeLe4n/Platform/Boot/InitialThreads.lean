@@ -9,6 +9,7 @@
 
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.Boot.CapabilityLinks
+import SeLe4n.Platform.Boot.IrqNodes
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement
 
 /-!
@@ -96,12 +97,16 @@ def startInitialThreads : List SeLe4n.ThreadId → IntermediateState →
 /-- **WS-BP BP7.11**: the boot's started stage over a declared core list — the
 idle-storing boot, then the configuration's named threads started, then
 (WS-ZA ZA5.4) the configuration's capabilities linked into the derivation tree
-(`linkBootCapabilities`). -/
+(`linkBootCapabilities`), with (WS-ZA ZA6.32) the board's interrupt nodes
+installed before the linking (`installIrqNodes`, seL4's `init_irqs` creating
+`intStateIRQNode`), at ids no configured object holds (`irqNodeIdsReserved`, a
+`wellFormed` conjunct; `bootFromPlatformCheckedStartedFor_irqNodesFresh`). -/
 def bootFromPlatformCheckedStartedFor
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) :
     Except String IntermediateState :=
   (bootFromPlatformCheckedWithIdleThreadsFor cores config).bind fun base =>
-    (startInitialThreads config.initialThreads base).map (linkBootCapabilities config)
+    (startInitialThreads config.initialThreads base).map fun started =>
+      linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) started)
 
 -- ============================================================================
 -- §2  The stage's shape
@@ -123,13 +128,14 @@ theorem startInitialThreads_induct (P : IntermediateState → Prop)
     · exact ih _ _ h (hStep ist tid (by assumption) hP)
     · cases h
 
-/-- **WS-BP BP7.11**: with no named thread the stage is the idle boot with its
-capabilities linked. -/
+/-- **WS-BP BP7.11**: with no named thread the stage is the idle boot with the
+interrupt nodes installed and its capabilities linked. -/
 theorem bootFromPlatformCheckedStartedFor_of_nil
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (h : config.initialThreads = []) :
     bootFromPlatformCheckedStartedFor cores config =
-      (bootFromPlatformCheckedWithIdleThreadsFor cores config).map (linkBootCapabilities config) := by
+      (bootFromPlatformCheckedWithIdleThreadsFor cores config).map fun base =>
+        linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) base) := by
   unfold bootFromPlatformCheckedStartedFor
   rw [h]
   cases bootFromPlatformCheckedWithIdleThreadsFor cores config <;> rfl
@@ -143,28 +149,31 @@ theorem bootFromPlatformCheckedStartedFor_rejects_invalid
   rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e h]
   rfl
 
-/-- **WS-BP BP7.11**: after a successful idle boot, the stage is the starts and
-the linking — stated over variables, so a concrete configuration rewrites with
-it instead of unfolding the bind against its own boot state. -/
+/-- **WS-BP BP7.11**: after a successful idle boot, the stage is the starts, the
+node install and the linking — stated over variables, so a concrete
+configuration rewrites with it instead of unfolding the bind against its own
+boot state. -/
 theorem bootFromPlatformCheckedStartedFor_of_idle
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (base : IntermediateState)
     (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok base) :
     bootFromPlatformCheckedStartedFor cores config =
-      (startInitialThreads config.initialThreads base).map (linkBootCapabilities config) := by
+      (startInitialThreads config.initialThreads base).map fun started =>
+        linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) started) := by
   unfold bootFromPlatformCheckedStartedFor
   rw [h]
   rfl
 
 /-- **WS-BP BP7.11**: a successful stage is a successful idle boot followed by a
-successful start of every named thread, its capabilities then linked. -/
+successful start of every named thread, the interrupt nodes then installed and
+its capabilities linked. -/
 theorem bootFromPlatformCheckedStartedFor_ok
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     ∃ base started, bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok base ∧
       startInitialThreads config.initialThreads base = .ok started ∧
-      ist = linkBootCapabilities config started := by
+      ist = linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) started) := by
   unfold bootFromPlatformCheckedStartedFor at h
   cases hB : bootFromPlatformCheckedWithIdleThreadsFor cores config with
   | error e => rw [hB] at h; cases h
@@ -177,6 +186,42 @@ theorem bootFromPlatformCheckedStartedFor_ok
       rw [hS] at h
       cases h
       exact ⟨base, started, rfl, hS, rfl⟩
+
+/-- **The starts store no object where the idle boot stored none**: each
+writes only at a key that held a thread. -/
+theorem startInitialThreads_objects_none (L : List SeLe4n.ThreadId)
+    (ist ist' : IntermediateState) (h : startInitialThreads L ist = .ok ist')
+    (k : SeLe4n.ObjId) (hk : ist.state.objects[k]? = none) : ist'.state.objects[k]? = none :=
+  startInitialThreads_induct (fun i => i.state.objects[k]? = none)
+    (fun i tid _ hP => by
+      cases hO : (startInitialThreadOnCore i.state tid).objects[k]? with
+      | none => exact hO
+      | some obj =>
+        exfalso
+        rcases startInitialThreadOnCore_objects_cases i.state tid i.hAllTables.objects.1 k obj hO
+          with e | ⟨t, -, e, -⟩
+        · rw [hP] at e; cases e
+        · rw [hP] at e; cases e)
+    L ist ist' h hk
+
+/-- **WS-ZA ZA6.32: the started state leaves every interrupt node's id free**:
+the configuration places no object there (`irqNodeIdsReserved`, a `wellFormed`
+conjunct), no idle thread's slot is one, and the starts store only at a thread. -/
+theorem bootFromPlatformCheckedStartedFor_irqNodesFresh
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (base started : IntermediateState)
+    (hBase : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok base)
+    (hStart : startInitialThreads config.initialThreads base = .ok started) :
+    irqNodesFresh (irqNodeLineCount config) started.state = true := by
+  unfold irqNodesFresh
+  rw [List.all_eq_true]
+  intro l hl
+  have hl' : l < InterruptLineSet.capacity := by
+    have := List.mem_range.mp hl; unfold irqNodeLineCount at this; omega
+  show (started.state.objects[irqNodeId l]?).isNone = true
+  rw [startInitialThreads_objects_none _ _ _ hStart _
+    (bootFromPlatformCheckedWithIdleThreadsFor_irqNode_none cores config base hBase hl')]
+  rfl
 
 -- ============================================================================
 -- §3  The bundle
@@ -273,18 +318,6 @@ theorem startInitialThreadOnCore_sameNotificationBindings (st : SystemState)
         (.of_objectsAgreeOffRunLinks (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _)))
   · exact hU
 
-/-- The start keeps the table references: it writes the thread's state and
-its run-queue links. -/
-theorem startInitialThreadOnCore_tableReferenceFrame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    SystemState.TableReferenceFrame st (startInitialThreadOnCore st tid) := by
-  have hInv1 := SystemState.updateTcb_preserves_objects_invExt st tid
-    (fun t => { t with threadState := .Ready }) hInv
-  unfold startInitialThreadOnCore
-  exact (SystemState.TableReferenceFrame.updateTcb st tid _ hInv).trans
-    (.of_kindPreservingWrite (enqueueRunnableOnCore_kindPreservingWrite _ _ tid hInv1)
-      (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer _ _ tid).referenceTables)
-
 /-- **WS-BP BP7.11**: **a start keeps the boot shape.**  The written TCB was
 boot-shaped and the start moves only its flag and its IPC state to `.ready`;
 nothing else in the object store moves, so the ASID table, the untypeds and
@@ -295,12 +328,11 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
   have hInv := ist.hAllTables.objects.1
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue, hBindings, hTab⟩ :=
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue, hBindings⟩ :=
     h
   have hFrame := startInitialThreadOnCore_frame ist.state tid
   refine ⟨?_, ?_, ?_, ?_, ?_, startInitialThreadOnCore_runQueueRefined ist.state tid hInv hRun, ?_,
-    .of_codes (startInitialThreadOnCore_sameNotificationBindings ist.state tid hInv) hBindings,
-    (startInitialThreadOnCore_tableReferenceFrame ist.state tid hInv).preserves hTab⟩
+    .of_codes (startInitialThreadOnCore_sameNotificationBindings ist.state tid hInv) hBindings⟩
   · intro oid obj hObj
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid obj hObj with
       hB | ⟨t, t', hT, rfl, he⟩
@@ -399,10 +431,16 @@ theorem startInitialThreadOnCore_slotCapAt_ne_none (st : SystemState) (tid : SeL
     (h : (startInitialThreadOnCore st tid).slotCapAt r ≠ none) : st.slotCapAt r ≠ none := by
   rw [← startInitialThreadOnCore_slotCapAt_of_ne_none st tid hInv r h]; exact h
 
-/-- **WS-ZA ZA5.4 part 18**: a start removes no object. -/
-theorem startInitialThreadOnCore_objectPresent (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (h : st.objectPresent k) :
-    (startInitialThreadOnCore st tid).objectPresent k := by
+/-- A start keeps the capability tree: it writes a thread and a run queue. -/
+theorem startInitialThreadOnCore_cdt (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (startInitialThreadOnCore st tid).cdt = st.cdt := by
+  unfold startInitialThreadOnCore
+  rw [enqueueRunnableOnCore_cdt, SystemState.updateTcb_cdt]
+
+/-- A start removes no stored object. -/
+theorem startInitialThreadOnCore_objects_ne_none (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (h : st.objects[k]? ≠ none) :
+    (startInitialThreadOnCore st tid).objects[k]? ≠ none := by
   obtain ⟨obj, hO⟩ := Option.ne_none_iff_exists'.mp h
   by_cases hT : ∃ t, obj = .tcb t
   · obtain ⟨t, rfl⟩ := hT
@@ -419,6 +457,15 @@ theorem startInitialThreadOnCore_objectPresent (st : SystemState) (tid : SeLe4n.
     rw [startInitialThreadOnCore_objects_of_nonTcb st tid hInv k obj
       (fun t e => hT ⟨t, e⟩) hO]
     exact Option.some_ne_none _
+
+/-- **WS-ZA ZA5.4 part 18**: a start removes no object. -/
+theorem startInitialThreadOnCore_objectPresent (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (h : st.objectPresent k) :
+    (startInitialThreadOnCore st tid).objectPresent k :=
+  ⟨startInitialThreadOnCore_objects_ne_none st tid hInv k h.1,
+    SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt
+      (startInitialThreadOnCore_cdt st tid)) k h.2⟩
+
 
 /-- **WS-ZA ZA5.4 part 18**: the starts keep every capability naming a live
 object: they write no capability slot and remove no object. -/
@@ -448,7 +495,7 @@ theorem startInitialThreadOnCore_getUntyped? (st : SystemState) (tid : SeLe4n.Th
     cases hP : st.objects[k]? with
     | none => rfl
     | some o =>
-      exact absurd hO (startInitialThreadOnCore_objectPresent st tid hInv k
+      exact absurd hO (startInitialThreadOnCore_objects_ne_none st tid hInv k
         (show st.objects[k]? ≠ none by rw [hP]; simp))
   | some o =>
     rcases startInitialThreadOnCore_objects_cases st tid hInv k o hO with hB | ⟨_, _, hT, rfl, _⟩
@@ -547,14 +594,11 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     bootLinkedShape ist := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  have hFresh := bootFromPlatformCheckedStartedFor_irqNodesFresh cores config base started hBase hStart
   have hSole := startInitialThreads_untypedsSole _ _ _ hStart
     ⟨bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedCapUnique cores config base hBase,
       bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedsUncarved cores config base hBase⟩
-  exact linkBootCapabilities_bootLinkedShape config started
-    (startInitialThreads_induct bootStartShape
-      (fun ist tid hs hP => startInitialThread_preserves_bootStartShape ist tid hs hP)
-      _ _ _ hStart
-      (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config base hBase))
+  obtain ⟨hListed, hLive, hUnique, hUncarved, hNamedU⟩ := installIrqNodes_linkInputs hFresh _
     (startInitialThreads_bootSlotsListed _ _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_bootSlotsListed cores config base hBase))
     (startInitialThreads_capabilitiesLive _ _ _ hStart
@@ -562,6 +606,12 @@ theorem bootFromPlatformCheckedStartedFor_bootLinkedShape
     hSole.1 hSole.2
     (startInitialThreads_untypedNamed _ _ _ hStart
       (bootFromPlatformCheckedWithIdleThreadsFor_ok_untypedNamed cores config base hBase))
+  exact linkBootCapabilities_bootLinkedShape config _
+    (installIrqNodes_bootStartShape hFresh (startInitialThreads_induct bootStartShape
+      (fun ist tid hs hP => startInitialThread_preserves_bootStartShape ist tid hs hP)
+      _ _ _ hStart
+      (bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores hNodup config base hBase)))
+    hListed hLive hUnique hUncarved hNamedU
 
 /-- **WS-BP BP7.11**: **the state the started boot installs satisfies the
 proof-layer invariant bundle** — the idle boot's argument, applied to the state
@@ -608,15 +658,23 @@ theorem bootFromPlatformCheckedStartedFor_untypedMemoryInvariant
         exact hP r c ((startInitialThreadOnCore_slotCapAt_of_ne_none i.state tid i.hAllTables.objects.1 r
           (by rw [hc']; exact Option.some_ne_none _)).symm.trans hc'))
       _ _ _ hStart (bootFromPlatformCheckedWithIdleThreadsFor_ok_freeIndexZero cores config base hBase)
-  have hA := linkBootCapabilities_agree config started
-  have hUt : (linkBootCapabilities config started).state.getUntyped? = started.state.getUntyped? :=
-    hA.getUntyped?
-  have hBack : ∀ {r u}, SystemState.untypedCapAt (linkBootCapabilities config started).state.slotCapAt
-      (linkBootCapabilities config started).state.getUntyped? r u →
+  have hFresh := bootFromPlatformCheckedStartedFor_irqNodesFresh cores config base started hBase hStart
+  have hA := linkBootCapabilities_agree config (installIrqNodes (irqNodeLineCount config) started)
+  have hC : ∀ r, (linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) started)).state.slotCapAt r =
+      started.state.slotCapAt r := fun r =>
+    (hA.slotCapAt r).trans (congrFun (installIrqNodes_slotCapAt hFresh) r)
+  have hUt : (linkBootCapabilities config
+      (installIrqNodes (irqNodeLineCount config) started)).state.getUntyped? =
+      started.state.getUntyped? :=
+    hA.getUntyped?.trans (installIrqNodes_getUntyped? hFresh)
+  have hBack : ∀ {r u}, SystemState.untypedCapAt
+      (linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) started)).state.slotCapAt
+      (linkBootCapabilities config (installIrqNodes (irqNodeLineCount config) started)).state.getUntyped?
+        r u →
       SystemState.untypedCapAt started.state.slotCapAt started.state.getUntyped? r u :=
-    fun {r _} ⟨c, hc, ht, hu⟩ => ⟨c, (hA.slotCapAt r).symm.trans hc, ht, hUt ▸ hu⟩
+    fun {r _} ⟨c, hc, ht, hu⟩ => ⟨c, (hC r).symm.trans hc, ht, hUt ▸ hu⟩
   exact untypedMemoryInvariant_of_pristine
-    (fun r c hc => hIdx r c ((hA.slotCapAt r).symm.trans hc))
+    (fun r c hc => hIdx r c ((hC r).symm.trans hc))
     (fun u U hU => hSole.2 u U (hUt ▸ hU))
     (fun u r r' hr hr' => hSole.1 u r r' (hBack hr) (hBack hr'))
 
@@ -683,8 +741,9 @@ theorem bootFromPlatformCheckedStartedFor_started
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
   obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config base hBase) config base hBase
-  exact fun tid hT => threadStarted_of_agree (linkBootCapabilities_agree config started)
-    (startInitialThreads_ok_started _ _ _ hRun hStart tid hT)
+  have hFresh := bootFromPlatformCheckedStartedFor_irqNodesFresh cores config base started hBase hStart
+  exact fun tid hT => threadStarted_of_agree (linkBootCapabilities_agree config _)
+    (installIrqNodes_threadStarted hFresh (startInitialThreads_ok_started _ _ _ hRun hStart tid hT))
 
 /-- **WS-BP BP7.11**: **the started boot keeps the full thread-state
 classification** — the idle boot's (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`)
@@ -697,9 +756,10 @@ theorem bootFromPlatformCheckedStartedFor_allCores_threadStateConsistent
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
   obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape _
     SeLe4n.Kernel.Concurrency.allCores_nodup config base hBase
+  have hFresh := bootFromPlatformCheckedStartedFor_irqNodesFresh _ config base started hBase hStart
   rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores] at hBase
-  refine threadStateConsistent_of_agree (linkBootCapabilities_agree config started)
-    (linkBootCapabilities_scheduler config started) ?_
+  refine threadStateConsistent_of_agree (linkBootCapabilities_agree config _)
+    (linkBootCapabilities_scheduler config _) (installIrqNodes_threadStateConsistent hFresh ?_)
   exact (startInitialThreads_induct (fun i => i.state.runQueueRefined ∧ threadStateConsistent i.state)
     (fun i t hs hP => ⟨startInitialThreadOnCore_runQueueRefined _ _ i.hAllTables.objects.1 hP.1,
       startInitialThreadOnCore_preserves_threadStateConsistent hs i.hAllTables.objects.1 hP.1 hP.2⟩)
@@ -748,14 +808,21 @@ theorem bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
   obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape _
     SeLe4n.Kernel.Concurrency.allCores_nodup config base hBase
+  have hFresh := bootFromPlatformCheckedStartedFor_irqNodesFresh _ config base started hBase hStart
   rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores] at hBase
-  have hA := linkBootCapabilities_agree config started
-  have hSch := linkBootCapabilities_scheduler config started
+  have hA := linkBootCapabilities_agree config (installIrqNodes (irqNodeLineCount config) started)
+  have hSch : (linkBootCapabilities config
+      (installIrqNodes (irqNodeLineCount config) started)).state.scheduler = started.state.scheduler :=
+    (linkBootCapabilities_scheduler config _).trans (installIrqNodes_scheduler _ _)
+  have hTcb := installIrqNodes_getTcb? hFresh
+  have hRL : ∀ c t, (linkBootCapabilities config
+      (installIrqNodes (irqNodeLineCount config) started)).state.runLinkOn c t =
+      started.state.runLinkOn c t := fun c t =>
+    (runLinkOn_of_agree hA c t).trans (SystemState.runLinkOn_of_getTcb? (hTcb t) c)
   suffices hP : started.state.runQueueRefined ∧ started.state.currentDequeuedUnique from
-    ⟨SystemState.runQueueRefined_of_frame (runLinkOn_of_agree hA) (by rw [hSch])
-      (by rw [hSch]) hP.1,
-     SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hSch]) (runLinkOn_of_agree hA)
-      (stateMono_of_agree hA) hP.2⟩
+    ⟨SystemState.runQueueRefined_of_frame hRL (by rw [hSch]) (by rw [hSch]) hP.1,
+     SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hSch]) hRL
+      ((SystemState.StateMono.of_getTcb hTcb).trans (stateMono_of_agree hA)) hP.2⟩
   exact startInitialThreads_induct
     (fun i => i.state.runQueueRefined ∧ i.state.currentDequeuedUnique)
     (fun i t hs hP => by

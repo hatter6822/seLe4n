@@ -1585,7 +1585,7 @@ core's run queue (`switchToThreadOnCore` → `preemptCurrentOnCore`); the next
 scheduling point here selects it again once the other core has saved it.
 Should the switch fail (no idle thread the core admits: the boot stores every
 core's idle thread pinned to it and no capability can name one,
-`capTargetsReservedIdleObject`, but no kernel-wide invariant states it), the
+`capTargetsReservedKernelObject`, but no kernel-wide invariant states it), the
 thread is still taken off the core: re-enqueued and the slot cleared
 (`dropCurrentOnCore`), so the property never depends on the idle switch.
 
@@ -1817,20 +1817,19 @@ theorem settleResidencyOnCore_pokes (st : SystemState) (c q : CoreId) (t : SeLe4
     (fun h => hNew (SeLe4n.ThreadId.optCode_injective (by rw [h]; rfl))) hT hq hqc
 
 /-- The settle's record and poke write the machine's residency slot and one
-reschedule flag: the store, the run queues, the current slots, the reference
-tables and the release slots are the deferral's. -/
+reschedule flag: the store, the run queues, the current slots and the release
+slots are the deferral's. -/
 theorem settleResidencyOnCore_frame (st : SystemState) (c : CoreId) :
     let y := deferResidentElsewhere (dispatchVacatedCore st c) c
     let m := settleResidencyOnCore st c
     m.objects = y.objects ∧ m.scheduler.runQueue = y.scheduler.runQueue ∧
       m.scheduler.runQueueEnds = y.scheduler.runQueueEnds ∧
       m.scheduler.currentCode = y.scheduler.currentCode ∧
-      m.referenceTables = y.referenceTables ∧
       m.scheduler.releaseSlots = y.scheduler.releaseSlots := by
   intro y m
   simp only [m, settleResidencyOnCore, pokeReleasedResident]
   repeat' split
-  all_goals exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  all_goals exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **No thread runs on two cores**: a non-idle thread the core is left running
 after the deferral is resident on no other core. -/

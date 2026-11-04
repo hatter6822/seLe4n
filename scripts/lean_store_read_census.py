@@ -1687,6 +1687,8 @@ OBJECTS_FIELD_OWNERS = {
     "yieldHidden": ("st.objects.invExt", False),
     "yieldToHidden": ("st.objects.invExt", False),
     "rescheduleEntryHidden": ("st.objects.invExt", False),
+    # WS-ZA ZA6.32: the interrupt entry's bundle, the same shape.
+    "interruptEntryHidden": ("st.objects.invExt", False),
     # **A live ambiguity, not a hypothetical one.**  `List` has a `GetElem?`
     # instance, so `builder.objects[0]?` in the test state builder would be
     # counted as a kernel-state read and refused by the enforced zero.  There

@@ -321,6 +321,9 @@ private def slotTargetBacked (st : SystemState) (cap : Capability) : Bool :=
   | .auditTrail => true
   -- WS-ZA ZA6.4: a scheduling-control capability names a core, not an object.
   | .schedControl _ => true
+  -- WS-ZA ZA6.32: the interrupt authorities name no object.
+  | .irqControl => true
+  | .irqHandler _ => true
 
 /-- One check per occupied capability slot of every listed object: a CNode's
 slots and a thread's two space slots, read as `KernelObject.slotCap` reads them. -/

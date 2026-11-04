@@ -302,7 +302,7 @@ refusal carrying the state it was handed (`signalOperandArmThenTaintR_eq`). -/
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (taintCode : Nat) (sink : SeLe4n.ObjId) (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
-    if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+    if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
     else if cap.hasRight requiredRight then
       withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
       withTaintWordsAt st sink fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
@@ -351,7 +351,7 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
   · rfl
   · simp only [signalResolvedArmThenTaintR, signalTaintCaseOf, operandObjectId,
       SignalTaintCase.ofCode_code]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,
@@ -549,7 +549,7 @@ operand resolved to, every refusal carrying the state it was handed
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           withTaintWordsAt st (capObjectId cap) fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
           match notificationWaitCheckedArmR ctx tid executingCore cap st with
@@ -579,7 +579,7 @@ theorem waitOperandArmThenTaintR_eq (ctx : LabelingContext)
   rcases operand with _ | cap
   · rfl
   · simp only [waitOperandArmThenTaintR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,

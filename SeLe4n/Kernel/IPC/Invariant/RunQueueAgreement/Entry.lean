@@ -7,6 +7,7 @@ import SeLe4n.Kernel.ReschedulePendingArms.Entry
 import SeLe4n.Kernel.PerCoreTimerEntry
 import SeLe4n.Kernel.PerCoreRescheduleEntry
 import SeLe4n.Kernel.ReschedulePendingArms.Tick
+import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 
 /-!
 # Every committing entry keeps the run-queue link agreement
@@ -245,9 +246,9 @@ theorem recordResidentThenActivate_runQueueEntryStage (st : SystemState) (c : Co
       (PriorityInheritance.deferResidentElsewhere (PriorityInheritance.dispatchVacatedCore st c) c)
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore st c) c) := by
   have A := (activateThreadOnCore_runQueueStage (PriorityInheritance.settleResidencyOnCore st c) c).entry
-  obtain ⟨hO, hQ, hE, hC, hT, hS⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
+  obtain ⟨hO, hQ, hE, hC, hS⟩ := PriorityInheritance.settleResidencyOnCore_frame st c
   refine SystemState.RunQueueEntryStage.of_frameThen
-    (m := PriorityInheritance.settleResidencyOnCore st c) hO hQ hE hC hT hS A fun h r =>
+    (m := PriorityInheritance.settleResidencyOnCore st c) hO hQ hE hC hS A fun h r =>
     ⟨fun k hk => by
       rw [← hO]
       exact (A.1.live (hO ▸ h) (SystemState.runQueueRefined_of_frame
@@ -517,7 +518,6 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
         (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl))).entry.toOn _
   · rename_i hE
@@ -583,7 +583,6 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl))
   have hF := (saveCapturedSyscallFrame_ipcFrame st e frame).trans
@@ -602,21 +601,6 @@ theorem syscallDispatchEntryState_runQueueEntryStage (ctx : LabelingContext) (e 
       rw [Architecture.IpcBufferRead.syncUserWords_scheduler, saveCapturedSyscallFrame_scheduler])
   ((hS.entry.toOn _).trans (hL ▸ syscallDispatchCrossCoreStep_runQueueEntryStage
     (E.of_ipcFrame hS hF))).trans (hC.entry.toOn _)
-
-/-- **The syscall entry keeps the table references recorded**, so the retire's
-read of an object's own back-links (`SystemState.tableBackLinksClear`) answers
-what a walk of the registry and the interrupt table would. -/
-theorem syscallDispatchEntryState_preserves_tableReferencesRecorded (ctx : LabelingContext)
-    (e : CoreId) (trapped : Architecture.InFlightContext)
-    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
-    (st : SystemState) (E : EntryPremises st) (hInv : st.objects.invExt)
-    (hR : st.runQueueRefined) (hT : st.tableReferencesRecorded) :
-    (Architecture.IpcBufferRead.clearUserWords
-      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
-        (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2).tableReferencesRecorded :=
-  (syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E).tableReferencesRecorded
-    hInv hR hT
 
 /-! ### The timer, reschedule, fault and FP/SIMD entries -/
 
@@ -966,5 +950,69 @@ theorem fpAccessEntryState_preserves_yieldLinksAgree (coreId : UInt64)
     (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId).yieldLinksAgree :=
   (fpAccessEntryState_runQueueEntryStage coreId frame live st).yieldLinksAgree hInv hR hY
+
+/-! ### The interrupt entry (WS-ZA ZA6.32) -/
+
+/-- The mask writes the machine's mask and the physical-write ledger alone. -/
+theorem setInterruptLineMask_runQueueStage (st : SystemState) (line : Nat) (masked : Bool) :
+    RunQueueStage st (Architecture.setInterruptLineMask st line masked) :=
+  RunQueueStage.of_frame rfl rfl rfl
+
+/-- **seL4's `handleInterrupt` on a core keeps the run queues in agreement**:
+the bound-aware signal's stage, the stash clear and the stagings, then the
+mask. -/
+theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (line : Nat)
+    (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st (handleInterruptOnCore st c line) := by
+  unfold handleInterruptOnCore
+  split
+  · rename_i ntfn badge _
+    have hB := notificationSignalBoundOnCore_runQueueStage ntfn badge c st hHeads hBlk
+    exact (interruptSignal_of (P := RunQueueStage st) ntfn badge c st hB
+      (fun _ _ _ hC => ((hB.trans (clearWokenReceiverStash_runQueueStage _ hC)).trans
+        (stageWokenDelivery_runQueueStage _ _ 0)).trans
+        (stageWokenDelivery_runQueueStage _ _ 0))).trans
+      (setInterruptLineMask_runQueueStage _ _ _)
+  · exact setInterruptLineMask_runQueueStage _ _ _
+
+theorem interruptEntryStep_runQueueStage (st : SystemState) (coreId intId : UInt64)
+    (E : EntryPremises st) : RunQueueStage st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := RunQueueStage st) st coreId intId (RunQueueStage.refl _)
+    (fun c _ _ => handleInterruptOnCore_runQueueStage st c _ E.ntfnHeads E.blocked)
+
+/-- **The interrupt entry's committed state keeps the agreement**: the save,
+the step, the settle and activation, and the ledger drains. -/
+theorem interruptEntryState_runQueueEntryStage (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st) :
+    SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))) :=
+  have hS := saveCapturedTrapFrameAt_runQueueStage st coreId frame
+  ((hS.entry.trans (interruptEntryStep_runQueueStage _ coreId intId
+    (E.of_ipcFrame hS (saveCapturedTrapFrameAt_ipcFrame st coreId _))).entry).trans
+    ((settleThenActivateAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
+
+/-- **The interrupt entry keeps the refill state sound.** -/
+theorem interruptEntryState_preserves_refillsSound (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).refillsSound :=
+  (interruptEntryState_runQueueEntryStage coreId intId frame st E).refillsSound
+    E.objInv E.refined hRel hS
+
+/-- **The interrupt entry keeps the yield link in agreement.** -/
+theorem interruptEntryState_preserves_yieldLinksAgree (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hY : st.yieldLinksAgree) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).yieldLinksAgree :=
+  (interruptEntryState_runQueueEntryStage coreId intId frame st E).yieldLinksAgree
+    E.objInv E.refined hY
 
 end SeLe4n.Kernel

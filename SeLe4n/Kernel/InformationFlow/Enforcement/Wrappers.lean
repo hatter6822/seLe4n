@@ -294,6 +294,16 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "schedContextConsumedOnCore"
   -- WS-ZA ZA6.29: the yieldTo invocation, a SchedContext capability's.
   , .capabilityOnly "schedContextYieldToOnCore"
+  -- WS-ZA ZA6.32: the acknowledge, an interrupt-handler capability's.
+  , .capabilityOnly "irqHandlerAck"
+  -- WS-ZA ZA6.32: the handler issue, the interrupt-control capability's, and
+  -- the bind and unbind, the handler capability's.  Each is authorised by the
+  -- capability alone, as seL4's are: the issue installs into a CNode the caller
+  -- can write, the bind copies a notification capability the caller holds into
+  -- the line's own node, and the unbind empties that node's slot.
+  , .capabilityOnly "irqControlGetFromCap"
+  , .capabilityOnly "irqHandlerSetNotificationFromCap"
+  , .capabilityOnly "irqHandlerClear"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -428,6 +438,10 @@ def syscallIdToEnforcementName : SyscallId → String
   | .yield => "yieldOnCore"
   | .schedContextConsumed => "schedContextConsumedOnCore"
   | .schedContextYieldTo => "schedContextYieldToOnCore"
+  | .irqHandlerAck => "irqHandlerAck"
+  | .irqControlGet => "irqControlGetFromCap"
+  | .irqHandlerSetNotification => "irqHandlerSetNotificationFromCap"
+  | .irqHandlerClear => "irqHandlerClear"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"

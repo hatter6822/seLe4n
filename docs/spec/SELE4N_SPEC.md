@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.194` (`lakefile.toml`) |
+| **Package version** | `0.36.195` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 570,839 across 518 Lean files |
-| **Test LoC** | 88,450 across 70 Lean test suites |
-| **Proved declarations** | 21,874 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 574,142 across 523 Lean files |
+| **Test LoC** | 88,478 across 70 Lean test suites |
+| **Proved declarations** | 22,003 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5430,7 +5430,9 @@ gone since `v0.36.145`, plan row 32, and the registry table since `v0.36.159`,
 WS-ZA ZA5.9, so the invariant states the interrupt table's references and the
 registry's hold by construction) and refused at boot when a configuration
 would come up violating it (`bootSafeEndpointCheck`,
-`irqHandlersAndNotificationsReciprocal`).  **The table back-references read**
+`irqHandlersAndNotificationsReciprocal`; the interrupt half went with the table at
+`v0.36.195`, WS-ZA ZA6.32, whose interrupt nodes are capability slots the
+retire reads like any other).  **The table back-references read**
 (`v0.36.144`, plan row 31): the boot establishes the invariant
 (`bootFromPlatformChecked_ok_tableReferencesRecorded`, carried in the boot
 shapes) and every syscall and kernel entry keeps it — the run-queue link stage
@@ -5905,6 +5907,59 @@ Every kernel object has a decidable well-formedness predicate:
   and the FP/SIMD release captures into the owner's own context, which the
   thread's retype makes with its TCB, as seL4 allocates FPU state.  Every
   fault scenario reads 0, and a thread's retype 25.
+- **A device interrupt enters the kernel as seL4's `handleInterrupt`**
+  (`v0.36.195`, WS-ZA ZA6.32).  The HAL enters every shared peripheral
+  interrupt into `interruptEntry` (`lean_handle_interrupt`) in ZA3.1's form.
+  The step (`handleInterruptOnCore`) signals the handler's notification with
+  the bound-aware signal on the executing core, with the badge of the
+  notification capability in the line's node (`Architecture.irqBinding?`), and
+  masks the line until the handler acknowledges it; as seL4's `sendSignal`
+  sets a woken thread's badge register, the signal (`interruptSignal`) stages
+  the badge into the frame of the thread it wakes, and its `@[csimp]` form
+  wakes a waiter in place; an unbound line is masked;
+  a spurious or non-device INTID, or a line at or past the board's line
+  count (`MachineState.interruptLineCount`, the board's own count, as seL4's
+  `Arch_checkIRQ` bounds lines by `maxIRQ`), enters nothing, the acknowledge
+  refuses it before any write, and the boot issues no handler capability
+  for it.  The acknowledge is the
+  `.irqHandlerAck` syscall (44) on an interrupt-handler capability
+  (`CapTarget.irqHandler`, write right), which unmasks the line in place
+  through its refusal-carrying arm.  The mask is
+  machine state and reaches the distributor as physical write tag 5.  PPIs
+  other than the timer's are banked per core and masked by the HAL.  The entry
+  carries the run-queue, bank-match, census, blocked-not-resident, footprint,
+  mapping and per-core non-interference obligations every entry carries, and
+  every branch reads 0 in the exerciser.  **The interrupt nodes and
+  IRQControl** (same release): the line-to-notification table is gone.  As in
+  seL4's abstract specification (`interrupt_irq_node`), each line has a
+  one-slot CNode the boot creates (`installIrqNodes`, one per line below the
+  board's `interruptLineCount`, at the reserved ids `irqNodeId line`, kept
+  free by the `wellFormed` conjunct `irqNodeIdsReserved` and counted in the
+  object budget), and the line's state (`IRQInactive` / `IRQSignal`) is the
+  capability tree's issued-line set (`SystemState.irqSignalLines`).  Delivery
+  reads the node's slot: a notification capability with the send right is
+  signalled with that capability's badge.  No capability names a node's slot
+  (`syscallResolveCap_ok_not_irqNode`: `capTargetsReservedKernelObject`
+  refuses it at the resolution every invoked capability passes through), and the
+  per-core non-interference projection labels a line by its node
+  (`projectIrqSignalLines`), as seL4 labels `irq_node` slots.  The boot hands
+  the root task the IRQControl capability (`CapTarget.irqControl`), which
+  invokes `.irqControlGet` (45, `seL4_IRQControl_Get`: a device line of the
+  board no handler holds is put at `IRQSignal` and its handler capability is
+  inserted as a derivation child of the control capability);
+  `.irqHandlerSetNotification` (46) empties the node's slot by the finalising
+  delete and copies a send-right notification capability there, and
+  `.irqHandlerClear` (47) empties it.  The last handler capability's delete
+  runs `deletingIRQHandler` (the zombie loop empties the node's slot) and
+  `deletedIRQHandler` (`retireIrqNode`, the line put at `IRQInactive` and
+  masked).  The issue writes in place on the slots' words, and so does the
+  bind when the node slot's delete is the plain one: the slot is emptied and
+  the copy's writes follow, which is the delete and the copy on every
+  well-formed object table (`irqHandlerSetNotification_inPlace_copy`).  Each
+  invocation has its decode, dispatch-arm, census, lock-set, taint,
+  enforcement, refusal, non-interference and run-queue coverage, and the
+  exerciser's issue, bind, clear and delete each read 0, as does a revoke of
+  the notification's slot, after which the raised line signals nothing.
 - **The tick is total and reports through the reschedule flags**
   (`v0.36.165`, WS-ZA ZA6.2).  As seL4's `timerTick`, the tick never refuses:
   a current thread or bound context the store does not hold is charged
@@ -10810,7 +10865,7 @@ qualified `Lean.Name` of its consuming theorem. The mapping is:
 | `.deterministicRegisterContext`   | `deterministicRegisterContext_consumed_by_writeRegister` |
 | `.memoryAccessSafety`             | `memoryAccessSafety_consumed_by_readMemory` |
 | `.bootObjectTyping`               | `default_system_state_proofLayerInvariantBundle` |
-| `.irqRoutingTotality`             | `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid` |
+| `.irqRoutingTotality`             | `SeLe4n.Kernel.Architecture.irqBinding?_notification` |
 | `.singleCoreOperation`            | `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness` |
 
 Three complementary guards enforce the index cannot silently drift:
@@ -10874,7 +10929,7 @@ is the boot-core member of the per-core family.
 Three properties bound what the per-core observer can learn.
 
 1. **The observable state's components partition into shared and
-   per-core.** Five components (`objects`, `irqHandlers`,
+   per-core.** Five components (`objects`, `irqSignalLines`,
    `objectIndex`, `domainSchedule`, `memory`) are
    filtered by the observer's *label* only and are identical from every
    core; six (`runnable`, `current`, `activeDomain`,

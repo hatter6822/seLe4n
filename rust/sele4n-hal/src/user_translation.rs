@@ -51,6 +51,9 @@ pub const PHYSICAL_WRITE_STORE_USER_WORD: u64 = 3;
 /// Tag of a table-descriptor store (`PhysicalWrite.storeTableDescriptor`,
 /// PR #904 `v0.36.41`): an entry of a level 0–2 table page.
 pub const PHYSICAL_WRITE_STORE_TABLE_DESCRIPTOR: u64 = 4;
+/// Tag of an interrupt line's mask (`PhysicalWrite.setInterruptMask`, WS-ZA
+/// ZA6.32): the address operand is the INTID, the value `1` (masked) or `0`.
+pub const PHYSICAL_WRITE_SET_INTERRUPT_MASK: u64 = 5;
 
 /// Bits `[1:0]` of a valid page (level 3) or table (levels 0–2) descriptor.
 const DESC_PAGE_OR_TABLE: u64 = 0b11;
@@ -114,6 +117,9 @@ pub enum PhysicalWrite {
     InvalidateAsid(u16),
     /// Store this word at this address of a thread's RAM page (WS-BP BP7.8).
     StoreUserWord { addr: u64, value: u64 },
+    /// Mask (`masked`) or unmask this shared peripheral interrupt at the
+    /// distributor (WS-ZA ZA6.32).
+    SetInterruptMask { intid: u32, masked: bool },
 }
 
 /// Why a physical write was refused.
@@ -131,6 +137,10 @@ pub enum PhysicalWriteRefusal {
     /// no thread may map, or with attributes a thread's page never carries; a
     /// table naming a page that is not a thread's table page (PR #904).
     DescriptorRefused(u64),
+    /// The interrupt line is not a shared peripheral interrupt this board's
+    /// distributor implements, or the mask value is neither `0` nor `1`
+    /// (WS-ZA ZA6.32).
+    InterruptLineRefused(u64),
 }
 
 /// **Is the page at `page` one the kernel may write for a thread?**  A pool
@@ -274,6 +284,24 @@ pub fn decode_physical_write(
                 Ok(PhysicalWrite::StoreUserWord { addr, value })
             }
         }
+        PHYSICAL_WRITE_SET_INTERRUPT_MASK => {
+            // A backstop the kernel never reaches: the Lean side records a mask
+            // only for a line inside the board's count
+            // (`Architecture.deviceInterruptLine`, read from the machine
+            // configuration's `interruptLineCount`, which the boot-map fixture
+            // holds equal to `BOARD.gic_intid_count`), refusing any other line
+            // at the entry and the acknowledge before it writes.
+            if !(32..u64::from(crate::gic::MAX_INTID)).contains(&addr) {
+                Err(PhysicalWriteRefusal::InterruptLineRefused(addr))
+            } else if value > 1 {
+                Err(PhysicalWriteRefusal::InterruptLineRefused(value))
+            } else {
+                Ok(PhysicalWrite::SetInterruptMask {
+                    intid: addr as u32,
+                    masked: value == 1,
+                })
+            }
+        }
         other => Err(PhysicalWriteRefusal::UnknownTag(other)),
     }
 }
@@ -292,7 +320,8 @@ pub fn decode_physical_write(
 /// `CleanRangeIallu`, the operand `zeroPage_discharges_obligation` proves
 /// discharges the `.carveScrub` obligation.  Every other write owes nothing:
 /// a descriptor and a user word land in pages no thread fetches from without a
-/// later carve's own zeroing, and an ASID invalidation writes no memory.
+/// later carve's own zeroing, and an ASID invalidation and an interrupt mask
+/// write no memory.
 #[must_use]
 pub const fn icache_maintenance(write: PhysicalWrite) -> Option<crate::cache::ICacheInvalidation> {
     match write {
@@ -302,7 +331,8 @@ pub const fn icache_maintenance(write: PhysicalWrite) -> Option<crate::cache::IC
         PhysicalWrite::StoreDescriptor { .. }
         | PhysicalWrite::StoreTableDescriptor { .. }
         | PhysicalWrite::InvalidateAsid(_)
-        | PhysicalWrite::StoreUserWord { .. } => None,
+        | PhysicalWrite::StoreUserWord { .. }
+        | PhysicalWrite::SetInterruptMask { .. } => None,
     }
 }
 
@@ -366,6 +396,9 @@ pub fn apply_physical_write(write: PhysicalWrite) {
             #[cfg(not(target_arch = "aarch64"))]
             let _ = (addr, value);
             crate::barriers::dsb_ish();
+        }
+        PhysicalWrite::SetInterruptMask { intid, masked } => {
+            crate::gic::set_interrupt_line_masked(intid, masked);
         }
     }
     // The maintenance follows the store and its `DSB ISH`, so the clean reads
@@ -747,9 +780,39 @@ mod tests {
                 value: 0
             })
         );
+        // WS-ZA ZA6.32: an interrupt line's mask, on a shared peripheral
+        // interrupt the distributor implements, masked or unmasked; any other
+        // line, or a value that is neither, is refused.
         assert_eq!(
-            decode_physical_write(5, RAM_PAGE, 0, covered),
-            Err(PhysicalWriteRefusal::UnknownTag(5))
+            decode_physical_write(5, 33, 1, covered),
+            Ok(PhysicalWrite::SetInterruptMask {
+                intid: 33,
+                masked: true
+            })
+        );
+        assert_eq!(
+            decode_physical_write(5, 33, 0, covered),
+            Ok(PhysicalWrite::SetInterruptMask {
+                intid: 33,
+                masked: false
+            })
+        );
+        assert_eq!(
+            decode_physical_write(5, 30, 1, covered),
+            Err(PhysicalWriteRefusal::InterruptLineRefused(30))
+        );
+        let past = u64::from(crate::gic::MAX_INTID);
+        assert_eq!(
+            decode_physical_write(5, past, 1, covered),
+            Err(PhysicalWriteRefusal::InterruptLineRefused(past))
+        );
+        assert_eq!(
+            decode_physical_write(5, 33, 2, covered),
+            Err(PhysicalWriteRefusal::InterruptLineRefused(2))
+        );
+        assert_eq!(
+            decode_physical_write(6, RAM_PAGE, 0, covered),
+            Err(PhysicalWriteRefusal::UnknownTag(6))
         );
     }
 

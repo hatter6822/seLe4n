@@ -103,7 +103,9 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 44 (WS-ZA ZA6.29 added schedContextYieldTo at 43, ZA6.9
+  -- First invalid: 48 (WS-ZA ZA6.32 added irqHandlerAck at 44 and
+  -- irqControlGet, irqHandlerSetNotification and irqHandlerClear at 45 to 47, ZA6.29
+  -- schedContextYieldTo at 43, ZA6.9
   -- schedContextConsumed at 42, ZA4.3 yield at 41, WS-BP BP7.1 added
   -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38, untypedReset at 37
   -- and untypedRetype at 36, on top of
@@ -112,14 +114,14 @@ private def rd002_decodeSyscallIdInvalid : IO Unit := do
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
-  let r44 := decodeSyscallId ⟨44⟩
-  expect "invalid=44" (isErrEq r44 .invalidSyscallNumber)
+  let r48 := decodeSyscallId ⟨48⟩
+  expect "invalid=48" (isErrEq r48 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 43/44 (WS-ZA ZA6.29:
-schedContextYieldTo=43 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 47/48 (WS-ZA ZA6.32:
+irqHandlerClear=47 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
   let r38 := decodeSyscallId ⟨38⟩
   let r39 := decodeSyscallId ⟨39⟩
@@ -128,13 +130,21 @@ private def rd003_decodeSyscallIdBoundary : IO Unit := do
   let r42 := decodeSyscallId ⟨42⟩
   let r43 := decodeSyscallId ⟨43⟩
   let r44 := decodeSyscallId ⟨44⟩
+  let r45 := decodeSyscallId ⟨45⟩
+  let r46 := decodeSyscallId ⟨46⟩
+  let r47 := decodeSyscallId ⟨47⟩
+  let r48 := decodeSyscallId ⟨48⟩
   expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
   expect "pageTableMap=39" (isOkEq r39 .pageTableMap)
   expect "pageTableUnmap=40" (isOkEq r40 .pageTableUnmap)
   expect "boundary=41 ok (yield)" (isOkEq r41 .yield)
   expect "boundary=42 ok (schedContextConsumed)" (isOkEq r42 .schedContextConsumed)
   expect "boundary=43 ok (schedContextYieldTo)" (isOkEq r43 .schedContextYieldTo)
-  expect "boundary=44 err" (!r44.isOk)
+  expect "boundary=44 ok (irqHandlerAck)" (isOkEq r44 .irqHandlerAck)
+  expect "irqControlGet=45" (isOkEq r45 .irqControlGet)
+  expect "irqHandlerSetNotification=46" (isOkEq r46 .irqHandlerSetNotification)
+  expect "boundary=47 ok (irqHandlerClear)" (isOkEq r47 .irqHandlerClear)
+  expect "boundary=48 err" (!r48.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

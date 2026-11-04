@@ -500,10 +500,10 @@ theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : Se
   markKeyChangeFor_extract_frame (fun s => s.cdt) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFor_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId)
+@[simp] theorem markKeyChangeFor_irqSignalLines (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).irqHandlers = st.irqHandlers :=
-  markKeyChangeFor_extract_frame (fun s => s.irqHandlers) st tid k
+    (markKeyChangeFor st tid k).irqSignalLines = st.irqSignalLines :=
+  markKeyChangeFor_extract_frame (fun s => s.irqSignalLines) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markKeyChangeFor_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -718,9 +718,9 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
   markKeyChangeFrom_extract_frame (fun s => s.cdt) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFrom_irqHandlers (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).irqHandlers = st.irqHandlers :=
-  markKeyChangeFrom_extract_frame (fun s => s.irqHandlers) pre st tid
+@[simp] theorem markKeyChangeFrom_irqSignalLines (pre st : SystemState) (tid : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).irqSignalLines = st.irqSignalLines :=
+  markKeyChangeFrom_extract_frame (fun s => s.irqSignalLines) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markKeyChangeFrom_tlbShootdown (pre st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -897,9 +897,9 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
   markCandidacyGainFor_extract_frame (fun s => s.cdt) st tid b
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markCandidacyGainFor_irqHandlers (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
-    (markCandidacyGainFor st tid b).irqHandlers = st.irqHandlers :=
-  markCandidacyGainFor_extract_frame (fun s => s.irqHandlers) st tid b
+@[simp] theorem markCandidacyGainFor_irqSignalLines (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
+    (markCandidacyGainFor st tid b).irqSignalLines = st.irqSignalLines :=
+  markCandidacyGainFor_extract_frame (fun s => s.irqSignalLines) st tid b
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markCandidacyGainFor_tlbShootdown (st : SystemState) (tid : SeLe4n.ThreadId) (b : Bool) :
@@ -1084,13 +1084,12 @@ reads (the object store, the queues, their ends). -/
 /-- The state a run-queue agreement reads. -/
 private def runQueueReading (s : SystemState) :=
   (s.objects, s.scheduler.runQueue, s.scheduler.runQueueEnds, s.scheduler.currentCode,
-    s.referenceTables, s.scheduler.releaseSlots, s.machine.residentCode)
+    s.scheduler.releaseSlots, s.machine.residentCode)
 
 private theorem RunQueueStage_of_reading {st st' : SystemState}
     (h : runQueueReading st' = runQueueReading st) : SystemState.RunQueueStage st st' := by
   simp only [runQueueReading, Prod.mk.injEq] at h
-  exact SystemState.RunQueueStage.of_frame h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.1
-    h.2.2.2.2.2.2
+  exact SystemState.RunQueueStage.of_frame h.1 h.2.1 h.2.2.1 h.2.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2
 
 theorem markReschedulePendingWhere_runQueueStage (st : SystemState) (p : CoreId → Bool)
     (cs : List CoreId) : SystemState.RunQueueStage st (markReschedulePendingWhere st p cs) :=

@@ -1318,6 +1318,37 @@ def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
     : Except KernelError TcbUnbindNotificationArgs :=
   pure {}
 
+/-- WS-ZA ZA6.32: arguments for `irqControlGet` (seL4's
+    `seL4_IRQControl_Get`): `msgRegs[0]` the interrupt line, `msgRegs[1]` the
+    capability address of the CNode the handler capability is issued into, and
+    `msgRegs[2]` the slot in it. -/
+structure IrqControlGetArgs where
+  line     : Nat
+  dstCNode : CPtr
+  dstSlot  : Slot
+  deriving Repr, DecidableEq
+
+/-- WS-ZA ZA6.32: decode `irqControlGet` arguments (3 registers). -/
+def decodeIrqControlGetArgs (decoded : SyscallDecodeResult)
+    : Except KernelError IrqControlGetArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  pure { line := r0.val, dstCNode := CPtr.ofNat r1.val, dstSlot := Slot.ofNat r2.val }
+
+/-- WS-ZA ZA6.32: arguments for `irqHandlerSetNotification` (seL4's
+    `seL4_IRQHandler_SetNotification`): `msgRegs[0]` the capability address of
+    the notification the line is to signal. -/
+structure IrqHandlerSetNotificationArgs where
+  notificationCPtr : SeLe4n.CPtr
+  deriving Repr, DecidableEq
+
+/-- WS-ZA ZA6.32: decode `irqHandlerSetNotification` arguments (1 register). -/
+def decodeIrqHandlerSetNotificationArgs (decoded : SyscallDecodeResult)
+    : Except KernelError IrqHandlerSetNotificationArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
+
 -- ============================================================================
 -- Z5-A/B/C: SchedContext encode functions
 -- ============================================================================
@@ -2241,6 +2272,43 @@ theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (re
     (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
     decodeTcbBindNotificationArgs decoded = decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) := by
   unfold decodeTcbBindNotificationArgs decodeTcbBindNotificationArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeIrqControlGetArgsBy (get : MsgRegReader)
+    : Except KernelError IrqControlGetArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  pure { line := r0.toNat, dstCNode := CPtr.ofWord r1, dstSlot := Slot.ofNat r2.toNat }
+
+theorem decodeIrqControlGetArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeIrqControlGetArgs decoded = decodeIrqControlGetArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeIrqControlGetArgs decodeIrqControlGetArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeIrqHandlerSetNotificationArgsBy (get : MsgRegReader)
+    : Except KernelError IrqHandlerSetNotificationArgs := do
+  let r0 ← get 0
+  pure { notificationCPtr := SeLe4n.CPtr.ofWord r0 }
+
+theorem decodeIrqHandlerSetNotificationArgs_eq_by (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeIrqHandlerSetNotificationArgs decoded =
+      decodeIrqHandlerSetNotificationArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeIrqHandlerSetNotificationArgs decodeIrqHandlerSetNotificationArgsBy
   rw [h]
   simp only [requireMsgReg_map_readReg]
   generalize msgRegOfFile layout regs = g

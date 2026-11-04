@@ -98,7 +98,7 @@ which is exactly the situation every non-interference hypothesis sets up.
 structure sharedViewUnchanged (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) : Prop where
   objects : projectObjects ctx observer st' = projectObjects ctx observer st
-  irqHandlers : projectIrqHandlers ctx observer st' = projectIrqHandlers ctx observer st
+  irqSignalLines : projectIrqSignalLines ctx observer st' = projectIrqSignalLines ctx observer st
   objectIndex : projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st
   domainSchedule : projectDomainSchedule ctx observer st' = projectDomainSchedule ctx observer st
   memory : projectMemory ctx observer st' = projectMemory ctx observer st
@@ -113,7 +113,7 @@ theorem sharedViewUnchanged_trans {ctx : LabelingContext} {observer : IfObserver
     (h₂ : sharedViewUnchanged ctx observer stMid st') :
     sharedViewUnchanged ctx observer st st' :=
   ⟨h₂.objects.trans h₁.objects,
-   h₂.irqHandlers.trans h₁.irqHandlers, h₂.objectIndex.trans h₁.objectIndex,
+   h₂.irqSignalLines.trans h₁.irqSignalLines, h₂.objectIndex.trans h₁.objectIndex,
    h₂.domainSchedule.trans h₁.domainSchedule, h₂.memory.trans h₁.memory⟩
 
 /-- SM8.B.2 (the constructor the single-core NI surface supplies): preserving
@@ -127,7 +127,7 @@ theorem sharedViewUnchanged_of_globalProjection (ctx : LabelingContext)
     (h : projectState ctx observer st' = projectState ctx observer st) :
     sharedViewUnchanged ctx observer st st' :=
   ⟨congrArg ObservableState.objects h,
-   congrArg ObservableState.irqHandlers h, congrArg ObservableState.objectIndex h,
+   congrArg ObservableState.irqSignalLines h, congrArg ObservableState.objectIndex h,
    congrArg ObservableState.domainSchedule h, congrArg ObservableState.memory h⟩
 
 /-- SM8.B.2 (the constructor a *state-level* frame supplies): a transition that
@@ -143,7 +143,7 @@ theorem sharedViewUnchanged_of_state_frames (ctx : LabelingContext) (observer : 
     (hObjects : ∀ oid, objectObservable ctx observer oid = true →
       st'.objects[oid]? = st.objects[oid]?)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hIrq : st'.irqHandlers = st.irqHandlers)
+    (hIrq : st'.irqSignalLines = st.irqSignalLines)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     sharedViewUnchanged ctx observer st st' := by
@@ -154,7 +154,7 @@ theorem sharedViewUnchanged_of_state_frames (ctx : LabelingContext) (observer : 
     · rw [if_pos hObs, if_pos hObs, hObjects oid hObs]
     · simp only [Bool.not_eq_true] at hObs
       rw [if_neg (by simp [hObs]), if_neg (by simp [hObs])]
-  · funext irq; simp only [projectIrqHandlers]; rw [hIrq]
+  · funext irq; simp only [projectIrqSignalLines]; rw [hIrq]
   · simp only [projectObjectIndex]; rw [hIndex]
   · simp only [projectDomainSchedule]; rw [hDomSched]
   · exact projectMemory_eq_of_memory_eq _ _ _ _ hMemory
@@ -170,7 +170,7 @@ Stated for a general `IfObserver` (SM8.A's `onCore_sharedFragment` is the
     (observer : IfObserver) (st : SystemState) (c : CoreId) :
     (projectStateOnCore ctx observer st c).sharedFragment =
       { objects := projectObjects ctx observer st
-        irqHandlers := projectIrqHandlers ctx observer st
+        irqSignalLines := projectIrqSignalLines ctx observer st
         objectIndex := projectObjectIndex ctx observer st
         domainSchedule := projectDomainSchedule ctx observer st
         memory := projectMemory ctx observer st } := rfl
@@ -220,7 +220,7 @@ theorem crossCoreNonInterference_of_agreeOn (ctx : LabelingContext) (observer : 
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
   refine ObservableState.ext_fragments ?_ ?_
   · simp only [projectStateOnCore_sharedFragment, SharedObservableFragment.mk.injEq]
-    exact ⟨hShared.objects, hShared.irqHandlers, hShared.objectIndex,
+    exact ⟨hShared.objects, hShared.irqSignalLines, hShared.objectIndex,
       hShared.domainSchedule, hShared.memory⟩
   · simp only [projectStateOnCore_perCoreFragment, PerCoreObservableFragment.mk.injEq]
     exact ⟨projectRunnableOnCore_frame _ _ hAgree.runQueue,
@@ -293,7 +293,7 @@ theorem crossCoreNonInterference_of_state_frames (ctx : LabelingContext)
     (hObjects : ∀ oid, objectObservable ctx observer oid = true →
       st'.objects[oid]? = st.objects[oid]?)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hIrq : st'.irqHandlers = st.irqHandlers)
+    (hIrq : st'.irqSignalLines = st.irqSignalLines)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
@@ -2332,7 +2332,7 @@ theorem projectState_eq_of_objects_projection_eq (ctx : LabelingContext) (observ
     (st st' : SystemState)
     (hObjects : projectObjects ctx observer st' = projectObjects ctx observer st)
     (hSched : st'.scheduler = st.scheduler)
-    (hIrq : st'.irqHandlers = st.irqHandlers)
+    (hIrq : st'.irqSignalLines = st.irqSignalLines)
     (hIndex : st'.objectIndex = st.objectIndex)
     (hMachine : st'.machine = st.machine) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -2344,7 +2344,7 @@ theorem projectState_eq_of_objects_projection_eq (ctx : LabelingContext) (observ
       | simp [projectRunnable, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
               projectDomainSchedule, projectDomainScheduleIndex, projectMachineRegs, hSched,
               hMachine]
-      | (funext irq; simp only [projectIrqHandlers, hIrq])
+      | (funext irq; simp only [projectIrqSignalLines, hIrq])
       | exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
 
 /-- SM8.B.4: the whole 2PL bracket is invisible to the projection whenever the
@@ -2411,7 +2411,7 @@ theorem crossCoreNonInterference_of_disjoint_lockSet (ctx : LabelingContext)
     (hDisjoint : ∀ oid, oid ∈ writeSet → objectObservable ctx observer oid = false)
     (hWrites : ∀ oid, oid ∉ writeSet → st'.objects[oid]? = st.objects[oid]?)
     (hIndex : st'.objectIndex = st.objectIndex)
-    (hIrq : st'.irqHandlers = st.irqHandlers)
+    (hIrq : st'.irqSignalLines = st.irqSignalLines)
     (hMemory : st'.machine.memory = st.machine.memory)
     (hDomSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by

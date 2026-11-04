@@ -2512,8 +2512,12 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨42⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (43 = schedContextYieldTo)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨43⟩)
-  expectErr "J1 decodeSyscallId invalid (44)"
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (44 = irqHandlerAck)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨44⟩)
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (47 = irqHandlerClear)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨47⟩)
+  expectErr "J1 decodeSyscallId invalid (48)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨48⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
@@ -3860,7 +3864,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
 
   -- X2-D: applyMachineConfig propagates physicalAddressWidth
   let bootedState : IntermediateState :=
-    SeLe4n.Platform.Boot.bootFromPlatform { irqTable := [], initialObjects := [] }
+    SeLe4n.Platform.Boot.bootFromPlatform { initialObjects := [] }
   let rpi5Config := SeLe4n.Platform.RPi5.rpi5MachineConfig
   let withPA : IntermediateState := SeLe4n.Platform.Boot.applyMachineConfig bootedState rpi5Config
   -- The v0.36.2 audit: the RPi5 width is the Cortex-A76's 40 bits (it read 44
@@ -4618,6 +4622,36 @@ private def runZombieDeleteCompletesChecks : IO Unit := do
     IO.println "positive check passed [a space change deletes its old root through the zombie loop]"
   IO.println "all zombie delete checks passed"
 
+/-- WS-ZA ZA6.32: **a line the board does not have is refused before any
+write**, as seL4's `Arch_checkIRQ` refuses an IRQ above `maxIRQ`.  On a board
+of 288 lines (QEMU `virt`), the acknowledge of line 300 is `.invalidIrq` and
+the interrupt entry at INTID 300 commits nothing — no mask written, no physical
+write recorded — while line 250, inside the board, is acknowledged and masked.
+Line 300 is inside the model's 320 lines, so the board's count is what refuses
+it. -/
+private def runOffBoardInterruptLineChecks : IO Unit := do
+  let st0 : SystemState := default
+  let st : SystemState := { st0 with machine := { st0.machine with interruptLineCount := 288 } }
+  expectErr "an acknowledge of a line past the board's count is refused"
+    (SeLe4n.Kernel.Architecture.irqHandlerAck 300 st) .invalidIrq
+  let (_, stAck) ← expectOkVal "an acknowledge of a line on the board is admitted"
+    (SeLe4n.Kernel.Architecture.irqHandlerAck 250 st)
+  expectCond "irq-board" "the admitted acknowledge unmasks its line"
+    (stAck.machine.irqLineMasked 250 == false)
+  let stOff := SeLe4n.Kernel.interruptEntryStep st 0 300
+  expectCond "irq-board" "an interrupt past the board's count masks nothing"
+    (stOff.machine.irqLineMasked 300 == false)
+  expectCond "irq-board" "an interrupt past the board's count records no physical write"
+    (stOff.physicalWrites.count == st.physicalWrites.count)
+  let stOn := SeLe4n.Kernel.interruptEntryStep st 0 250
+  expectCond "irq-board" "an interrupt on the board masks its line"
+    (stOn.machine.irqLineMasked 250 == true)
+  expectCond "irq-board" "the same line past a smaller board is no device line"
+    (SeLe4n.Kernel.Architecture.deviceInterruptLine
+      { st0 with machine := { st0.machine with interruptLineCount := 256 } } 300 == false &&
+      SeLe4n.Kernel.Architecture.deviceInterruptLine st 287 == true &&
+      SeLe4n.Kernel.Architecture.deviceInterruptLine st 288 == false)
+
 /-- **A final delete of an untyped with children splices it out**, as seL4's
 derivation tree does: untyped 30 records untyped 31 at offset 0x1000, and 31
 records endpoint 32 at 0 and untyped 33 at 0x200.  Deleting the last capability
@@ -4699,3 +4733,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSRR8CSpaceSlotRangeChecks
   SeLe4n.Testing.runZombieDeleteCompletesChecks
   SeLe4n.Testing.runUntypedRetireSpliceChecks
+  SeLe4n.Testing.runOffBoardInterruptLineChecks

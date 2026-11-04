@@ -947,6 +947,15 @@ structure MachineState where
       `MachineConfig.declaredCoreCount`; defaults to the model width, so the
       affinity refusal that reads it is inert on a full-width machine. -/
   declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
+  /-- **WS-ZA ZA6.32: the interrupt lines the board's distributor serves**,
+      INTIDs `[0, interruptLineCount)` (seL4's `maxIRQ + 1`), carried in
+      machine state so the interrupt entry and the handler's acknowledge
+      refuse a line the board does not have before any write
+      (`Architecture.deviceInterruptLine`, seL4's `Arch_checkIRQ`).  Set at
+      boot by `applyMachineConfig` from `MachineConfig.interruptLineCount`,
+      whose owner is the board's line count; defaults to the model's 320
+      lines. -/
+  interruptLineCount : Nat := 320
   /-- AG3-G: ARM64 system registers (exception, MMU configuration). -/
   systemRegisters : SystemRegisterFile := default
   /-- AG5-G/AJ3-E (L-04): Interrupt state — models PSTATE.I (IRQ mask bit).
@@ -1048,9 +1057,246 @@ structure MachineState where
   entryWordBytes : ByteArray := ByteArray.empty
   /-- **WS-ZA ZA5.2**: how many pairs of `entryWordBytes` this entry read. -/
   entryWordCount : Nat := 0
+  /-- **WS-ZA ZA6.32: the interrupt lines masked at the interrupt
+      controller**, seL4's `irq_masks`: bit `n % 64` of word `n / 64` is set
+      while line `n` is disabled at the distributor (`irqLineMasked`).  The
+      interrupt entry masks a line it delivers (seL4's `handleInterrupt`, which
+      masks an `IRQSignal` line until the handler acknowledges it) and a line
+      no handler is bound to (seL4's `IRQInactive` arm); the acknowledge
+      (`seL4_IRQHandler_Ack`) clears it.  Five words, as scalars in the state
+      itself, cover the model's 320 lines (`Architecture.InterruptId`), so a
+      mask is written in place and boxes nothing.  Every change is mirrored at
+      the controller by the physical write the step records
+      (`Architecture.PhysicalWrite.setInterruptMask`).  The boot masks nothing:
+      the HAL enables every line at initialisation. -/
+  irqMaskWord0 : UInt64 := 0
+  irqMaskWord1 : UInt64 := 0
+  irqMaskWord2 : UInt64 := 0
+  irqMaskWord3 : UInt64 := 0
+  irqMaskWord4 : UInt64 := 0
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
+
+-- ============================================================================
+-- WS-ZA ZA6.32 — the interrupt-line masks
+-- ============================================================================
+
+/-- The bit of line `n` within its mask word. -/
+@[inline] def irqMaskBit (n : Nat) : UInt64 := (1 : UInt64) <<< (n % 64).toUInt64
+
+/-- The mask word holding line `n`'s bit (`n / 64`; lines past the fifth word
+read the fifth, which no line the model names reaches). -/
+@[inline] def MachineState.irqMaskWord (ms : MachineState) (n : Nat) : UInt64 :=
+  match n / 64 with
+  | 0 => ms.irqMaskWord0
+  | 1 => ms.irqMaskWord1
+  | 2 => ms.irqMaskWord2
+  | 3 => ms.irqMaskWord3
+  | _ => ms.irqMaskWord4
+
+/-- **Whether line `n` is masked at the interrupt controller.** -/
+@[inline] def MachineState.irqLineMasked (ms : MachineState) (n : Nat) : Bool :=
+  ms.irqMaskWord n &&& irqMaskBit n != 0
+
+/-- A mask word with line `n`'s bit set (`masked`) or cleared. -/
+@[inline] def irqMaskWordWith (w : UInt64) (n : Nat) (masked : Bool) : UInt64 :=
+  if masked then w ||| irqMaskBit n else w &&& ~~~(irqMaskBit n)
+
+/-- **Line `n` masked (`masked = true`) or unmasked at the interrupt
+controller**: its word rewritten, every other word and every other field kept
+(each by `rfl`).  Written as one update of all five words, so the state is
+rewritten in place and no field but the masks is touched. -/
+@[inline] def MachineState.setIrqLineMask (ms : MachineState) (n : Nat) (masked : Bool) :
+    MachineState :=
+  let k := n / 64
+  { ms with
+    irqMaskWord0 := if k = 0 then irqMaskWordWith ms.irqMaskWord0 n masked else ms.irqMaskWord0
+    irqMaskWord1 := if k = 1 then irqMaskWordWith ms.irqMaskWord1 n masked else ms.irqMaskWord1
+    irqMaskWord2 := if k = 2 then irqMaskWordWith ms.irqMaskWord2 n masked else ms.irqMaskWord2
+    irqMaskWord3 := if k = 3 then irqMaskWordWith ms.irqMaskWord3 n masked else ms.irqMaskWord3
+    irqMaskWord4 := if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then ms.irqMaskWord4
+      else irqMaskWordWith ms.irqMaskWord4 n masked }
+
+/-- Every line's bit is a set bit. -/
+theorem irqMaskBit_ne_zero_fin : ∀ k : Fin 64, (1 : UInt64) <<< k.val.toUInt64 ≠ 0 := by decide
+
+theorem irqMaskBit_ne_zero (n : Nat) : irqMaskBit n ≠ 0 :=
+  irqMaskBit_ne_zero_fin ⟨n % 64, Nat.mod_lt _ (by decide)⟩
+
+/-- A word with line `n`'s bit set reads that bit as set, and cleared as clear. -/
+theorem irqMaskWordWith_bit (w : UInt64) (n : Nat) (masked : Bool) :
+    (irqMaskWordWith w n masked &&& irqMaskBit n != 0) = masked := by
+  have hb := irqMaskBit_ne_zero n
+  unfold irqMaskWordWith
+  generalize irqMaskBit n = b at hb
+  cases masked
+  · have : w &&& ~~~b &&& b = 0 := by
+      apply UInt64.toBitVec_inj.mp
+      simp [BitVec.and_assoc]
+    simp [this]
+  · have : (w ||| b) &&& b = b := by
+      apply UInt64.toBitVec_inj.mp
+      apply BitVec.eq_of_getLsbD_eq; intro i _
+      simp only [UInt64.toBitVec_and, UInt64.toBitVec_or, BitVec.getLsbD_and, BitVec.getLsbD_or]
+      cases b.toBitVec.getLsbD i <;> simp
+    simp [this, hb]
+
+/-- **The mask reads back what was written**: after `setIrqLineMask n masked`,
+line `n` reads `masked`. -/
+@[simp] theorem MachineState.irqLineMasked_setIrqLineMask_self (ms : MachineState) (n : Nat)
+    (masked : Bool) : (ms.setIrqLineMask n masked).irqLineMasked n = masked := by
+  have : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ ∃ k, n / 64 = k + 4 := by
+    rcases Nat.lt_or_ge (n / 64) 4 with h | h
+    · omega
+    · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨n / 64 - 4, by omega⟩)))
+  rcases this with h | h | h | h | ⟨k, h⟩ <;>
+    simp only [MachineState.setIrqLineMask, MachineState.irqLineMasked, MachineState.irqMaskWord,
+      h] <;> simp [irqMaskWordWith_bit]
+
+/-- **A set of interrupt lines**, one bit per line in five words (the 320
+lines the model names), so a line is added or removed in place. -/
+structure InterruptLineSet where
+  w0 : UInt64 := 0
+  w1 : UInt64 := 0
+  w2 : UInt64 := 0
+  w3 : UInt64 := 0
+  w4 : UInt64 := 0
+  deriving Repr, DecidableEq, Inhabited
+
+namespace InterruptLineSet
+
+/-- The word holding line `n`'s bit (lines past the fifth word read the fifth). -/
+@[inline] def word (s : InterruptLineSet) (n : Nat) : UInt64 :=
+  match n / 64 with
+  | 0 => s.w0
+  | 1 => s.w1
+  | 2 => s.w2
+  | 3 => s.w3
+  | _ => s.w4
+
+/-- The lines the set can hold: the 320 the model names. -/
+def capacity : Nat := 320
+
+/-- **Whether line `n` is in the set** (a line past `capacity` never is). -/
+@[inline] def mem (s : InterruptLineSet) (n : Nat) : Bool :=
+  decide (n < capacity) && (s.word n &&& irqMaskBit n != 0)
+
+/-- Line `n`'s word rewritten, every other word kept. -/
+@[inline] def setWord (s : InterruptLineSet) (n : Nat) (b : Bool) : InterruptLineSet :=
+  let k := n / 64
+  { w0 := if k = 0 then irqMaskWordWith s.w0 n b else s.w0
+    w1 := if k = 1 then irqMaskWordWith s.w1 n b else s.w1
+    w2 := if k = 2 then irqMaskWordWith s.w2 n b else s.w2
+    w3 := if k = 3 then irqMaskWordWith s.w3 n b else s.w3
+    w4 := if k = 0 ∨ k = 1 ∨ k = 2 ∨ k = 3 then s.w4 else irqMaskWordWith s.w4 n b }
+
+/-- **Line `n` added (`b = true`) or removed**, in place; a line past
+`capacity` leaves the set as it is. -/
+@[inline] def set (s : InterruptLineSet) (n : Nat) (b : Bool) : InterruptLineSet :=
+  if n < capacity then s.setWord n b else s
+
+/-- The empty set holds no line. -/
+@[simp] theorem mem_default (n : Nat) : (default : InterruptLineSet).mem n = false := by
+  have h0 : ∀ x : UInt64, (0 : UInt64) &&& x = 0 := fun x => by
+    apply UInt64.toBitVec_inj.mp; simp
+  unfold mem word
+  split <;> simp [h0, show (default : InterruptLineSet).w0 = 0 from rfl,
+    show (default : InterruptLineSet).w1 = 0 from rfl,
+    show (default : InterruptLineSet).w2 = 0 from rfl,
+    show (default : InterruptLineSet).w3 = 0 from rfl,
+    show (default : InterruptLineSet).w4 = 0 from rfl]
+
+/-- A word with line `m`'s bit rewritten keeps line `n`'s bit when the two bits
+differ (`n % 64 ≠ m % 64`). -/
+theorem irqMaskWordWith_bit_ne (w : UInt64) (n m : Nat) (b : Bool) (h : n % 64 ≠ m % 64) :
+    (irqMaskWordWith w m b &&& irqMaskBit n != 0) = (w &&& irqMaskBit n != 0) := by
+  have hb : ∀ k : Nat, irqMaskBit k = (1 : UInt64) <<< (k % 64).toUInt64 := fun _ => rfl
+  have key : ∀ (i j : Fin 64), i ≠ j →
+      ((1 : UInt64) <<< i.val.toUInt64) &&& ((1 : UInt64) <<< j.val.toUInt64) = 0 := by decide
+  have hn := Nat.mod_lt n (show 64 > 0 by decide)
+  have hm := Nat.mod_lt m (show 64 > 0 by decide)
+  have hK := key ⟨n % 64, hn⟩ ⟨m % 64, hm⟩ (fun e => h (congrArg Fin.val e))
+  simp only at hK
+  unfold irqMaskWordWith
+  rw [hb n, hb m]
+  generalize (1 : UInt64) <<< (n % 64).toUInt64 = bn at hK ⊢
+  generalize (1 : UInt64) <<< (m % 64).toUInt64 = bm at hK ⊢
+  cases b
+  · have : w &&& ~~~bm &&& bn = w &&& bn := by
+      have hK' : bm &&& bn = 0 := by
+        rw [show bm &&& bn = bn &&& bm from UInt64.and_comm _ _]; exact hK
+      apply UInt64.toBitVec_inj.mp
+      have := congrArg UInt64.toBitVec hK'
+      apply BitVec.eq_of_getLsbD_eq; intro i hi
+      have hi' := congrArg (fun v => BitVec.getLsbD v i) this
+      simp only [UInt64.toBitVec_and, BitVec.getLsbD_and, UInt64.toBitVec_zero,
+        BitVec.getLsbD_zero] at hi'
+      simp only [UInt64.toBitVec_and, UInt64.toBitVec_not, BitVec.getLsbD_and,
+        BitVec.getLsbD_not, hi, decide_true, Bool.true_and]
+      cases hw : w.toBitVec.getLsbD i <;> cases hbm : bm.toBitVec.getLsbD i <;>
+        cases hbn : bn.toBitVec.getLsbD i <;> simp_all
+    simp [this]
+  · have : (w ||| bm) &&& bn = w &&& bn := by
+      apply UInt64.toBitVec_inj.mp
+      have := congrArg UInt64.toBitVec hK
+      apply BitVec.eq_of_getLsbD_eq; intro i _
+      have hi' := congrArg (fun v => BitVec.getLsbD v i) this
+      simp only [UInt64.toBitVec_and, BitVec.getLsbD_and, UInt64.toBitVec_zero,
+        BitVec.getLsbD_zero] at hi'
+      simp only [UInt64.toBitVec_and, UInt64.toBitVec_or, BitVec.getLsbD_and, BitVec.getLsbD_or]
+      cases hw : w.toBitVec.getLsbD i <;> cases hbm : bm.toBitVec.getLsbD i <;>
+        cases hbn : bn.toBitVec.getLsbD i <;> simp_all
+    simp [this]
+
+/-- **The set reads back what was written** at the line written. -/
+@[simp] theorem mem_set_self (s : InterruptLineSet) {n : Nat} (b : Bool) (hn : n < capacity) :
+    (s.set n b).mem n = b := by
+  simp only [set, hn, if_true, mem, decide_true, Bool.true_and]
+  have : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ ∃ k, n / 64 = k + 4 := by
+    rcases Nat.lt_or_ge (n / 64) 4 with h | h
+    · omega
+    · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨n / 64 - 4, by omega⟩)))
+  rcases this with h | h | h | h | ⟨k, h⟩ <;>
+    simp only [setWord, word, h] <;> simp [irqMaskWordWith_bit]
+
+/-- **…and every other line as it was.** -/
+theorem mem_set_ne (s : InterruptLineSet) {n m : Nat} (b : Bool) (h : n ≠ m) :
+    (s.set m b).mem n = s.mem n := by
+  unfold set
+  split
+  case isFalse => rfl
+  rename_i hmC
+  unfold mem
+  by_cases hnC : n < capacity
+  case neg => simp [hnC]
+  simp only [hnC, decide_true, Bool.true_and]
+  unfold capacity at hmC hnC
+  by_cases hw : n / 64 = m / 64
+  · have hb : n % 64 ≠ m % 64 := fun e => h (by omega)
+    have : m / 64 = 0 ∨ m / 64 = 1 ∨ m / 64 = 2 ∨ m / 64 = 3 ∨ ∃ k, m / 64 = k + 4 := by
+      rcases Nat.lt_or_ge (m / 64) 4 with h | h
+      · omega
+      · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨m / 64 - 4, by omega⟩)))
+    rcases this with h' | h' | h' | h' | ⟨k, h'⟩ <;>
+      simp only [setWord, word, hw, h'] <;> simp [irqMaskWordWith_bit_ne _ _ _ _ hb]
+  · have hn' : n / 64 = 0 ∨ n / 64 = 1 ∨ n / 64 = 2 ∨ n / 64 = 3 ∨ n / 64 = 4 := by omega
+    have hm' : m / 64 = 0 ∨ m / 64 = 1 ∨ m / 64 = 2 ∨ m / 64 = 3 ∨ m / 64 = 4 := by omega
+    rcases hn' with e | e | e | e | e <;> rcases hm' with f | f | f | f | f <;>
+      first
+      | omega
+      | simp [setWord, word, e, f]
+
+/-- WS-ZA ZA6.32: the set rebuilt in a cell of its own.  The boot's sets are the
+shared initial constant, so the first line a `seL4_IRQControl_Get` issued after
+boot copied the set (one cell); `w0 ||| 0`, which the compiled kernel computes,
+makes the record built here the state's own (`fresh_eq`). -/
+@[noinline] def fresh (s : InterruptLineSet) : InterruptLineSet := { s with w0 := s.w0 ||| 0 }
+
+theorem fresh_eq (s : InterruptLineSet) : s.fresh = s := by
+  cases s; simp [fresh]
+
+end InterruptLineSet
 
 -- ============================================================================
 -- WS-SM SM5.I — per-core register-bank accessors + store/load algebra
@@ -2172,6 +2418,13 @@ structure MachineConfig where
       keeps the full-width model and the affinity refusal below is inert on
       them; only a binding that declares fewer narrows it. -/
   declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
+  /-- **WS-ZA ZA6.32**: the interrupt lines the board's distributor serves,
+      INTIDs `[0, interruptLineCount)` — the board's line count (on the RPi5
+      `gicSpiCount + 32`, on QEMU `virt` `qemuVirtGicSpiCount + 32`, the
+      numbers the HAL's `BoardMap.gic_intid_count` states).  It reaches the
+      live state through `applyMachineConfig`, where the interrupt entry and
+      the acknowledge read it.  The default is the model's 320 lines. -/
+  interruptLineCount : Nat := 320
   /-- **WS-BP BP3.2**: the physical ranges the kernel keeps for itself — the
       firmware's stub below the image, the image, its stacks, the Lean heap
       arena, and the window the boot places the device tree in.

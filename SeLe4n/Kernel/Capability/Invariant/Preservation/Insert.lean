@@ -281,6 +281,8 @@ theorem mintReplyCap_preserves_capabilityBundleOffCoverage
       | replyCap rid => simp [hSrc, hTgt] at hStep
       | auditTrail => simp [hSrc, hTgt] at hStep
       | schedControl _ => simp [hSrc, hTgt] at hStep
+      | irqControl => simp [hSrc, hTgt] at hStep
+      | irqHandler _ => simp [hSrc, hTgt] at hStep
 
 /-- A slot `lookupSlotCap` reads a capability from is occupied in a live CNode. -/
 theorem slotOccupied_of_lookupSlotCap (st : SystemState) (ref : SlotRef)

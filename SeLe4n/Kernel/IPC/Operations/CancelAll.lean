@@ -1784,20 +1784,100 @@ theorem releaseFinalRegistration_closed (P : SystemState → Prop)
   · rw [hE]; exact h
   · exact hRev _ _ _ h hR
 
+/-- **WS-ZA ZA6.32: whether the word `target` names an interrupt node**
+(`target = x + 1`, `x` in the nodes' range), the object a line's last handler
+capability takes with it. -/
+@[inline] def retireTargetsIrqNode (target : Nat) : Bool :=
+  target != 0 && isIrqNodeObjId InterruptLineSet.capacity (SeLe4n.ObjId.ofNat (target - 1))
+
 /-- **The retire of what a final delete destroyed, after its finalisation**:
 the registration an endpoint records dropped (`releaseFinalRegistration`), then
-`finaliseFinalObject`, then `retireFinalObject`. -/
+`finaliseFinalObject`, then `retireFinalObject`.
+
+WS-ZA ZA6.32: the target of a line's last handler capability is the line's
+interrupt node, which the kernel keeps.  Its slot has been emptied by the delete
+(the zombie loop, seL4's `deletingIRQHandler`, which `cteDeleteOne`s the slot),
+so what is left of seL4's `finaliseCap` on an `IRQHandlerCap` is
+`deletedIRQHandler`: the line put at `IRQInactive` (`retireIrqNode`). -/
 @[inline] def retireFinalisedObject (executingCore : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) : SystemState :=
-  retireFinalObject executingCore target recorder
-    (finaliseFinalObject target (releaseFinalRegistration target st))
+  if retireTargetsIrqNode target then retireIrqNode st (SeLe4n.ObjId.ofNat (target - 1))
+  else
+    retireFinalObject executingCore target recorder
+      (finaliseFinalObject target (releaseFinalRegistration target st))
 
 theorem finaliseFinalObject_zero (st : SystemState) : finaliseFinalObject 0 st = st := by
   simp [finaliseFinalObject]
 
 theorem retireFinalisedObject_zero (ec : Concurrency.CoreId) (recorder : Nat)
     (st : SystemState) : retireFinalisedObject ec 0 recorder st = st := by
-  simp [retireFinalisedObject, releaseFinalRegistration, finaliseFinalObject_zero,
-    retireFinalObject_zero]
+  simp [retireFinalisedObject, retireTargetsIrqNode, releaseFinalRegistration,
+    finaliseFinalObject_zero, retireFinalObject_zero]
+
+/-- **WS-ZA ZA6.32: the retire's two shapes**: a node's line retired, or the
+finalisation and the object retire. -/
+theorem retireFinalisedObject_cases (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) :
+    (retireTargetsIrqNode target = true ∧
+      retireFinalisedObject ec target recorder st =
+        retireIrqNode st (SeLe4n.ObjId.ofNat (target - 1))) ∨
+    (retireTargetsIrqNode target = false ∧
+      retireFinalisedObject ec target recorder st =
+        retireFinalObject ec target recorder
+          (finaliseFinalObject target (releaseFinalRegistration target st))) := by
+  unfold retireFinalisedObject
+  cases h : retireTargetsIrqNode target
+  · exact .inr ⟨rfl, by simp⟩
+  · exact .inl ⟨rfl, by simp⟩
+
+/-- **A retire word naming a node names it by its line**: the node the word
+names is the node of the line its id is offset to. -/
+theorem retireTargetsIrqNode_irqNodeId {target : Nat} (hNode : retireTargetsIrqNode target = true) :
+    irqNodeId ((SeLe4n.ObjId.ofNat (target - 1)).toNat - irqNodeIdBase) =
+      SeLe4n.ObjId.ofNat (target - 1) := by
+  simp only [retireTargetsIrqNode, isIrqNodeObjId, Bool.and_eq_true, decide_eq_true_eq] at hNode
+  apply SeLe4n.ObjId.ext
+  simp only [irqNodeId, SeLe4n.ObjId.ofNat, SeLe4n.ObjId.toNat] at hNode ⊢
+  omega
+
+/-- …and is a nonzero word. -/
+theorem retireTargetsIrqNode_ne_zero {target : Nat} (hNode : retireTargetsIrqNode target = true) :
+    target ≠ 0 := by
+  rintro rfl; simp [retireTargetsIrqNode] at hNode
+
+/-- **WS-ZA ZA6.32: a node's line retire writes no object, no scheduler field and
+no derivation edge.** -/
+@[simp] theorem retireIrqNode_objects (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).objects = st.objects :=
+  Architecture.setIrqLineSignal_objects st _ false
+
+@[simp] theorem retireIrqNode_scheduler (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).scheduler = st.scheduler :=
+  Architecture.setIrqLineSignal_scheduler st _ false
+
+@[simp] theorem retireIrqNode_cdt (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).cdt =
+      st.cdt.withIrqLineIssued (x.toNat - irqNodeIdBase) false :=
+  Architecture.setIrqLineSignal_cdt st _ false
+
+@[simp] theorem retireIrqNode_asidTable (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).asidTable = st.asidTable :=
+  Architecture.setIrqLineSignal_asidTable st _ false
+
+@[simp] theorem retireIrqNode_objectIndex (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).objectIndex = st.objectIndex :=
+  Architecture.setIrqLineSignal_objectIndex st _ false
+
+@[simp] theorem retireIrqNode_lifecycle (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).lifecycle = st.lifecycle :=
+  Architecture.setIrqLineSignal_lifecycle st _ false
+
+@[simp] theorem retireIrqNode_getObject? (st : SystemState) (x o : SeLe4n.ObjId) :
+    (retireIrqNode st x).getObject? o = st.getObject? o := by
+  simp [SystemState.getObject?]
+
+@[simp] theorem retireIrqNode_slotCapAt (st : SystemState) (x : SeLe4n.ObjId) :
+    (retireIrqNode st x).slotCapAt = st.slotCapAt := by
+  funext r; simp [SystemState.slotCapAt]
 
 end SeLe4n.Kernel

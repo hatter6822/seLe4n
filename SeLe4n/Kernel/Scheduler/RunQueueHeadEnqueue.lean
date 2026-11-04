@@ -255,11 +255,6 @@ theorem runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : 
   · exact runEnqueueHeadAdmitted_onlyObjectsSchedulerDiffer st c t p
   · exact .refl _
 
-@[simp] theorem runEnqueueHeadOnCore_referenceTables (st : SystemState) (c : CoreId)
-    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
-    (st.runEnqueueHeadOnCore c t p).referenceTables = st.referenceTables :=
-  (runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables
-
 @[simp] theorem runEnqueueHeadOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runEnqueueHeadOnCore c t p).machine = st.machine := by
   have h := runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer st c t p
@@ -600,10 +595,8 @@ theorem runEnqueueHeadOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId
 theorem RunQueueLinkStage.runEnqueueHeadOnCore (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
     RunQueueLinkStage st (st.runEnqueueHeadOnCore c t p) :=
-  .of_tableFrame (fun h r =>
+  .of_frames (fun h r =>
       ⟨runEnqueueHeadOnCore_objects_invExt st c t p h, runEnqueueHeadOnCore_refined r⟩)
-    (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
-      (runEnqueueHeadOnCore_onlyObjectsSchedulerDiffer st c t p).referenceTables)
     (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runEnqueueHeadOnCore_scheduler]; split <;> rfl))
     (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p))

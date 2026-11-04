@@ -12,6 +12,7 @@ import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Kernel.FaultEntry
 import SeLe4n.Kernel.PerCoreTimerEntry
 import SeLe4n.Kernel.PerCoreRescheduleEntry
+import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 
 /-! # Every committing entry keeps the mappings recorded
 
@@ -99,6 +100,20 @@ theorem perCoreRescheduleStep_mappingStage (st : SystemState) (coreId : UInt64) 
     · rename_i hR; exact handleRescheduleSgiOnCore_mappingStage hR
     · exact MappingStage.refl _
   · exact MappingStage.refl _
+
+/-- WS-ZA ZA6.32: the interrupt step: the bound signal, the stash clear and the
+woken thread's staging, then the mask, which writes no object. -/
+theorem interruptEntryStep_mappingStage (st : SystemState) (coreId intId : UInt64) :
+    MappingStage st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := MappingStage st) st coreId intId (.refl st) fun c _ _ =>
+    handleInterruptOnCore_of (P := MappingStage st) st c _
+      (fun _ h => h.trans (.of_objects_eq rfl)) (.refl st)
+      (fun ntfn _ _ => interruptSignal_of (P := MappingStage st) ntfn _ c st
+        notificationSignalBoundOnCore_mappingStage
+        (fun _ _ _ hC => ((notificationSignalBoundOnCore_mappingStage.trans
+          (clearWokenReceiverStash_mappingStage _ hC)).trans
+          (stageWokenDelivery_mappingStage _ _ 0)).trans (stageWokenDelivery_mappingStage _ _ 0)))
+
 
 theorem dispatchVacatedCore_mappingStage (st : SystemState) (c : CoreId) :
     MappingStage st (PriorityInheritance.dispatchVacatedCore st c) := by
@@ -447,6 +462,20 @@ theorem perCoreRescheduleEntryState_mappingStage (coreId : UInt64)
     (perCoreRescheduleStep_mappingStage _ coreId)).trans
     (settleResidencyAt_mappingStage _ coreId)).trans (activateThreadAt_mappingStage _ coreId)).trans
     (clearLedgers_mappingStage _)
+
+/-- WS-ZA ZA6.32: **the interrupt entry's committed state keeps the mappings
+recorded**. -/
+theorem interruptEntryState_mappingStage (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) :
+    MappingStage st (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))) :=
+  ((((saveCapturedTrapFrameAt_mappingStage st coreId frame).trans
+    (interruptEntryStep_mappingStage _ coreId intId)).trans
+    (settleResidencyAt_mappingStage _ coreId)).trans (activateThreadAt_mappingStage _ coreId)).trans
+    (clearLedgers_mappingStage _)
+
 
 /-- The register spill, then the flow-checked delivery. -/
 theorem faultDeliveredState_mappingStage (lctx : LabelingContext) (st : SystemState)

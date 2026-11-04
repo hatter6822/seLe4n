@@ -929,7 +929,7 @@ theorem crossSubsystemInvariant_composition_gap_documented
     structure's declaration order, so a reader can diff the two by eye. -/
 inductive StateField where
   | machine | objects | objectIndex | objectIndexSet
-  | scheduler | irqHandlers | lifecycle
+  | scheduler | lifecycle
   | asidTable | interfaceRegistry
   | cdt
   | tlb | tlbShootdown
@@ -1255,7 +1255,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .objectIndex,                st, st' => st'.objectIndex = st.objectIndex
   | .objectIndexSet,             st, st' => st'.objectIndexSet = st.objectIndexSet
   | .scheduler,                  st, st' => st'.scheduler = st.scheduler
-  | .irqHandlers,                st, st' => st'.irqHandlers = st.irqHandlers
   | .lifecycle,                  st, st' => st'.lifecycle = st.lifecycle
   | .asidTable,                  st, st' => st'.asidTable = st.asidTable
   | .interfaceRegistry,          st, st' => st'.interfaceRegistry = st.interfaceRegistry
@@ -1286,7 +1285,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
   cases st; cases st'
   simp only [SystemState.mk.injEq]
   exact ⟨h .machine, h .objects, h .objectIndex, h .objectIndexSet,
-    h .scheduler, h .irqHandlers, h .lifecycle,
+    h .scheduler, h .lifecycle,
     h .asidTable, h .interfaceRegistry,
     h .cdt,
     h .tlb, h .tlbShootdown, Subsingleton.elim _ _, Subsingleton.elim _ _,

@@ -1662,8 +1662,13 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 ///     [`reschedule_sgi_handler`], `.tlbShootdownReq` 1, `.haltAll` 4)
 ///     run their handlers; unregistered INTIDs dispatch to the table's
 ///     no-op log arm.
-///   * Other INTIDs → log a diagnostic with the per-core `[core N]`
-///     prefix so the boot trace is unambiguously per-core attributable.
+///   * `DEVICE_INTID_BASE (32) <= INTID < MAX_INTID` → [`device_interrupt`]:
+///     the verified Lean interrupt entry (`lean_handle_interrupt`, WS-ZA
+///     ZA6.32), seL4's `handleInterrupt`, inside
+///     `kernel_entry::with_kernel_entry`.
+///   * Other INTIDs (a PPI other than the timer's) → masked on this core,
+///     as seL4 masks a line no handler is bound to, with a diagnostic
+///     carrying the per-core `[core N]` prefix.
 ///
 /// # Cost
 ///
@@ -1748,20 +1753,88 @@ pub extern "C" fn handle_irq_per_core(frame: &mut TrapFrame) {
             let _ = crate::per_cpu_stats::record_sgi_dispatch();
             #[allow(clippy::cast_possible_truncation)]
             crate::gic::dispatch_sgi(intid as u8, source_cpu);
-        } else {
-            // Non-timer, non-SGI INTID: log with per-core attribution.
-            //
-            // No device interrupt has a Lean entry yet: wiring one to its
-            // handler's notification, as seL4's `handleInterrupt` does, is
-            // `docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` WS-ZA ZA6.32.
+        } else if (DEVICE_INTID_BASE..crate::gic::MAX_INTID).contains(&intid) {
+            // WS-ZA ZA6.32: a shared peripheral interrupt enters the verified
+            // Lean interrupt entry, seL4's `handleInterrupt`: the bound
+            // handler's notification signalled and the line masked until the
+            // handler acknowledges it, or an unbound line masked.
+            device_interrupt(intid);
+        } else if intid < DEVICE_INTID_BASE {
+            // A PPI other than the timer's: banked per core, so no handler
+            // capability names it and the Lean kernel never delivers it.  It
+            // is masked on this core, as seL4 masks a line no handler is bound
+            // to (`IRQInactive`), so it cannot interrupt again.
             //
             // Audit-pass-4: per-line atomicity via `kprintln_core!`
             // (see SGI branch above for rationale).
+            crate::gic::set_interrupt_line_masked(intid, true);
+            crate::kprintln_core!("IRQ: PPI {} masked (no handler)", intid);
+        } else {
+            // Past the lines this board's distributor implements: never
+            // enabled, so never raised; logged if a distributor erratum
+            // delivers one.
             crate::kprintln_core!("IRQ: unhandled INTID {}", intid);
         }
     });
     // WS-BP BP8.1: the dispatch's kernel-entry bracket is released here.
     report_first_idle_dispatch();
+}
+
+/// **WS-ZA ZA6.32**: the first shared peripheral interrupt's INTID — the first
+/// line a device raises and a handler capability names
+/// (`Architecture.deviceInterruptLine` on the Lean side, which also bounds the
+/// lines by the board's count, `MAX_INTID` here).
+pub const DEVICE_INTID_BASE: u32 = 32;
+
+/// **WS-ZA ZA6.32: a device interrupt enters the verified Lean kernel** —
+/// `Kernel.interruptEntry` through the `lean_handle_interrupt` export, seL4's
+/// `handleInterrupt` on this core.  The line was acknowledged and its end of
+/// interrupt written before this runs (`dispatch_irq_with_iar`); the Lean
+/// kernel masks the line itself, as a physical write performed after its
+/// commit, so a level-triggered line stays quiet until the handler's
+/// acknowledge (`seL4_IRQHandler_Ack`) unmasks it.
+///
+/// The entry commits kernel state, so it runs inside the kernel-entry lock
+/// ([`crate::kernel_entry::with_kernel_entry`]) and behind the per-core
+/// `lean_ready` gate, exactly like the timer and reschedule entries.  A core
+/// whose Lean runtime is not ready masks the line and logs it: the
+/// distributor routes every SPI to the boot core, which is ready before it
+/// unmasks interrupts, so the branch is a diagnostic, not a path.
+///
+/// Gated on `feature = "hw_target"`: on the host no kernel image is linked.
+pub(crate) fn device_interrupt(intid: u32) {
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    #[cfg(feature = "hw_target")]
+    {
+        if crate::lean_ready::lean_ready(core_id as usize) {
+            extern "C" {
+                /// # Safety
+                ///
+                /// Sound from EL1 IRQ context on a core whose Lean runtime is
+                /// initialised — `lean_ready` checked on *this* PE — inside the
+                /// kernel-entry bracket.  `core_id` must be the executing PE's
+                /// own id; `int_id` is the acknowledged INTID.
+                fn lean_handle_interrupt(
+                    core_id: u64,
+                    int_id: u64,
+                ) -> crate::lean_runtime::LeanBaseIoUnit;
+            }
+            // SAFETY: `lean_handle_interrupt` is the Lean-emitted `extern "C"`
+            // entry declared just above (`@[export lean_handle_interrupt]` on
+            // `Kernel.interruptEntry`); calling it is sound from EL1 IRQ
+            // context on this ready core, inside the kernel-entry bracket,
+            // which serialises its `IO.Ref` commit against every other entry.
+            let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
+                lean_handle_interrupt(core_id, u64::from(intid))
+            });
+            // SAFETY: `res` is the value the export just returned; if it is a
+            // heap object this caller owns its one reference.
+            unsafe { crate::lean_runtime::discharge_base_io(res, "lean_handle_interrupt") };
+            return;
+        }
+    }
+    crate::gic::set_interrupt_line_masked(intid, true);
+    crate::kprintln_core!("IRQ: INTID {} masked (core {} not ready)", intid, core_id);
 }
 
 /// **WS-SM SM0.H / SM5.C.5**: the `.reschedule` SGI INTID, matching

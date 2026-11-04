@@ -33,9 +33,9 @@ audit findings of WS-AN (see the *Workstream registry* of
   alignment AND region-local bounds.
 - **AK9-B (P-H02)** — `BootBoundaryContract.objectStoreEmptyAtBoot`
   renamed field asserts empty object store at boot.
-- **AK9-C (P-M01)** — `irqHandlersAndNotificationsReciprocal` validates
-  that each IRQ handler ObjId refers to a notification object that records
-  the interrupt, and that no notification records one no IRQ names.
+- **AK9-C (P-M01)**, restated by WS-ZA ZA6.32 — the boot binds no interrupt
+  line, so a configured interrupt-handler capability is refused
+  (`bootIssuesNoInterruptHandler`); handlers come from `seL4_IRQControl_Get`.
 - **AK9-D (P-M02)** — `isDeviceRangeWithinRegion` tightens multi-byte
   write range to a single declared device region.
 - **AK9-E (P-M03)** — `budgetSufficientCheck` fails closed on
@@ -141,88 +141,43 @@ def ak9b_02_rpi5_objectStoreEmptyAtBoot : IO Unit := do
   expect "AK9-B-02 rpi5 objectStoreEmptyAtBoot" true
 
 -- ============================================================================
--- AK9-C: irqHandlersAndNotificationsReciprocal
+-- AK9-C / WS-ZA ZA6.32: the boot issues no interrupt handler
 -- ============================================================================
-
-/-- AK9-C: Empty IRQ table trivially passes handler-reference check. -/
-def ak9c_01_empty_irqs_accepted : IO Unit := do
-  let cfg : PlatformConfig := { irqTable := [], initialObjects := [] }
-  expect "AK9-C-01 empty irqTable passes"
-    (irqHandlersAndNotificationsReciprocal cfg = true)
-
-/-- AK9-C: IRQ with missing handler ObjId rejected. -/
-def ak9c_02_missing_handler_rejected : IO Unit := do
-  -- IRQ pointing to ObjId 42 which does not exist in initialObjects.
-  let cfg : PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := ObjId.ofNat 42 }],
-      initialObjects := [] }
-  expect "AK9-C-02 missing handler rejected"
-    (irqHandlersAndNotificationsReciprocal cfg = false)
 
 private def minimalNotif : Notification :=
   { state := .idle }
 
-/-- A notification that records an interrupt handler of its own. -/
-private def irqBoundNotif : Notification :=
-  { state := .idle, irqBound := true }
-
-private def minimalTcb (tid : ThreadId) : TCB :=
-  { tid := tid
-    priority := ⟨0⟩
-    domain := ⟨0⟩
-    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩
-    ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
-
-private def mkNotifObjectEntry (oid : ObjId) (notif : Notification := irqBoundNotif) :
-    ObjectEntry :=
+private def mkNotifObjectEntry (oid : ObjId) : ObjectEntry :=
   { id := oid
-    obj := .notification notif
+    obj := .notification minimalNotif
     hSlots := fun cn h => by cases h
     hMappings := fun vs h => by cases h }
 
-private def mkTcbObjectEntry (oid : ObjId) : ObjectEntry :=
+/-- A CNode holding an interrupt-handler capability for line 40. -/
+private def mkHandlerCNodeEntry (oid : ObjId) : ObjectEntry :=
   { id := oid
-    obj := .tcb (minimalTcb ⟨oid.toNat⟩)
-    hSlots := fun cn h => by cases h
-    hMappings := fun vs h => by cases h }
+    obj := .cnode (CNode.ofList 0 0 0 1
+      [(Slot.ofNat 0, { target := .irqHandler 40, rights := AccessRightSet.ofList [.write] })])
+    hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
+    hMappings := fun _ h => nomatch h }
 
-/-- AK9-C: IRQ handler pointing to a non-notification object is rejected. -/
-def ak9c_03_non_notification_rejected : IO Unit := do
-  let oid : ObjId := ObjId.ofNat 10
-  let cfg : PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := oid }],
-      initialObjects := [mkTcbObjectEntry oid] }
-  expect "AK9-C-03 TCB handler rejected"
-    (irqHandlersAndNotificationsReciprocal cfg = false)
+/-- An empty configuration issues no handler. -/
+def bootHandlerCheckAcceptsEmptyConfig : IO Unit := do
+  let cfg : PlatformConfig := { initialObjects := [] }
+  expect "AK9-C-01 empty config issues no handler"
+    (bootIssuesNoInterruptHandler cfg = true)
 
-/-- AK9-C: IRQ handler pointing to a notification that records the interrupt
-    is accepted. -/
-def ak9c_04_notification_accepted : IO Unit := do
-  let oid : ObjId := ObjId.ofNat 10
-  let cfg : PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := oid }],
-      initialObjects := [mkNotifObjectEntry oid] }
-  expect "AK9-C-04 notification handler accepted"
-    (irqHandlersAndNotificationsReciprocal cfg = true)
+/-- A notification is not a handler: the configuration is accepted. -/
+def bootHandlerCheckAcceptsNotification : IO Unit := do
+  let cfg : PlatformConfig := { initialObjects := [mkNotifObjectEntry (ObjId.ofNat 10)] }
+  expect "AK9-C-02 a notification is accepted"
+    (bootIssuesNoInterruptHandler cfg = true)
 
-/-- AK9-C: a handler whose notification does not record the interrupt is
-    rejected — the table would name an object that does not name it back. -/
-def handlerWithoutNotificationRecordRejected : IO Unit := do
-  let oid : ObjId := ObjId.ofNat 10
-  let cfg : PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := oid }],
-      initialObjects := [mkNotifObjectEntry oid minimalNotif] }
-  expect "a handler whose notification does not record the interrupt is rejected"
-    (irqHandlersAndNotificationsReciprocal cfg = false)
-
-/-- AK9-C: a notification that records an interrupt no IRQ names is rejected —
-    the other half of the reciprocity. -/
-def notificationRecordNoIrqNamesRejected : IO Unit := do
-  let oid : ObjId := ObjId.ofNat 10
-  let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [mkNotifObjectEntry oid] }
-  expect "a notification recording an interrupt no IRQ names is rejected"
-    (irqHandlersAndNotificationsReciprocal cfg = false)
+/-- A configured interrupt-handler capability is refused. -/
+def bootHandlerCheckRefusesHandlerCapability : IO Unit := do
+  let cfg : PlatformConfig := { initialObjects := [mkHandlerCNodeEntry (ObjId.ofNat 10)] }
+  expect "AK9-C-03 a configured handler capability is refused"
+    (bootIssuesNoInterruptHandler cfg = false)
 
 -- ============================================================================
 -- AK9-F: classifyMemoryRegionChecked + applyMachineConfigChecked
@@ -281,20 +236,20 @@ def ak9f_06_applyMachineConfigChecked_accepts_default : IO Unit := do
 
 /-- AK9-G: `bootEnableInterruptsOp` sets interruptsEnabled = true. -/
 def ak9g_01_enables_interrupts : IO Unit := do
-  let ist := bootFromPlatform { irqTable := [], initialObjects := [] }
+  let ist := bootFromPlatform { initialObjects := [] }
   let after := bootEnableInterruptsOp ist
   expect "AK9-G-01 bootEnableInterruptsOp enables IRQs"
     (after.state.machine.interruptsEnabled = true)
 
 /-- AK9-G: Default `bootFromPlatform` leaves interrupts disabled. -/
 def ak9g_02_default_disabled : IO Unit := do
-  let ist := bootFromPlatform { irqTable := [], initialObjects := [] }
+  let ist := bootFromPlatform { initialObjects := [] }
   expect "AK9-G-02 bootFromPlatform default disabled"
     (ist.state.machine.interruptsEnabled = false)
 
 /-- AK9-G: Full HAL-parity boot yields interrupts enabled. -/
 def ak9g_03_withInterrupts_enables : IO Unit := do
-  let ist := bootFromPlatformWithInterrupts { irqTable := [], initialObjects := [] }
+  let ist := bootFromPlatformWithInterrupts { initialObjects := [] }
   expect "AK9-G-03 bootFromPlatformWithInterrupts enables IRQs"
     (ist.state.machine.interruptsEnabled = true)
 
@@ -302,35 +257,22 @@ def ak9g_03_withInterrupts_enables : IO Unit := do
 -- End-to-end: bootFromPlatformChecked wires AK9-C, AK9-F, AK9-G together
 -- ============================================================================
 
-/-- AK9-C (end-to-end): `bootFromPlatformChecked` REJECTS a config whose IRQ
-    handler references a non-existent ObjId. This exercises the full
-    production check chain, not just the predicate. -/
-def ak9ce_01_checked_boot_rejects_bad_irq : IO Unit := do
-  let cfg : PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := ObjId.ofNat 99 }],
-      initialObjects := [] }
-  expect "AK9-CE-01 checked boot rejects bad IRQ"
+/-- AK9-C (end-to-end, WS-ZA ZA6.32): `bootFromPlatformChecked` REJECTS a
+    config that issues an interrupt-handler capability, with that conjunct's
+    diagnostic. This exercises the full production check chain, not just the
+    predicate. -/
+def checkedBootRefusesHandlerCapability : IO Unit := do
+  let cfg : PlatformConfig := { initialObjects := [mkHandlerCNodeEntry (ObjId.ofNat 10)] }
+  expect "AK9-CE-01 checked boot rejects a configured handler capability"
     (match bootFromPlatformChecked cfg with
-     | .error _ => true
-     | .ok _ => false)
-
-/-- AK9-C (end-to-end): `bootFromPlatformChecked` REJECTS when handler
-    ObjId resolves to a non-notification variant (TCB). -/
-def ak9ce_02_checked_boot_rejects_tcb_handler : IO Unit := do
-  let oid : ObjId := ObjId.ofNat 5
-  let cfg : PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := oid }],
-      initialObjects := [mkTcbObjectEntry oid] }
-  expect "AK9-CE-02 checked boot rejects TCB handler"
-    (match bootFromPlatformChecked cfg with
-     | .error _ => true
+     | .error e => e == bootInterruptHandlerBootError
      | .ok _ => false)
 
 /-- AK9-F (end-to-end): `bootFromPlatformChecked` REJECTS a config whose
     `machineConfig.physicalAddressWidth` exceeds 52. -/
 def ak9fe_01_checked_boot_rejects_pa_over_52 : IO Unit := do
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [],
+    { initialObjects := [],
       machineConfig := { defaultMachineConfig with physicalAddressWidth := 64 } }
   expect "AK9-FE-01 checked boot rejects PA width > 52"
     (match bootFromPlatformChecked cfg with
@@ -341,7 +283,7 @@ def ak9fe_01_checked_boot_rejects_pa_over_52 : IO Unit := do
     malformed MachineConfig (page size 0 fails `wellFormed`). -/
 def ak9fe_02_checked_boot_rejects_malformed_machine_config : IO Unit := do
   let cfg : PlatformConfig :=
-    { irqTable := [], initialObjects := [],
+    { initialObjects := [],
       machineConfig := { defaultMachineConfig with pageSize := 0 } }
   expect "AK9-FE-02 checked boot rejects malformed MachineConfig"
     (match bootFromPlatformChecked cfg with
@@ -351,7 +293,7 @@ def ak9fe_02_checked_boot_rejects_malformed_machine_config : IO Unit := do
 /-- AK9-G (end-to-end): `bootFromPlatformChecked` emits a state with
     interrupts enabled on successful boot. -/
 def ak9ge_01_checked_boot_enables_interrupts : IO Unit := do
-  let cfg : PlatformConfig := { irqTable := [], initialObjects := [] }
+  let cfg : PlatformConfig := { initialObjects := [] }
   let ok : Bool :=
     match bootFromPlatformChecked cfg with
     | .ok ist => ist.state.machine.interruptsEnabled
@@ -1383,7 +1325,7 @@ private def variantMap (gib : Nat) : List MemoryRegion :=
 (`RPi5.kernelMain`), so this is its pure half: the bridge, then the checked
 idle-thread boot on the binding's cores.  `none` is the halt. -/
 private def kernelEntryBoot? (blob : ByteArray) : Option (PlatformConfig × IntermediateState) :=
-  match rpi5PlatformConfigFromDtb blob rpi5IrqTable rpi5InitialObjectsFor none with
+  match rpi5PlatformConfigFromDtb blob rpi5InitialObjectsFor none with
   | .error _ => none
   | .ok config =>
       match bootFromPlatformCheckedWithIdleThreadsFor
@@ -1409,14 +1351,14 @@ def deviceTreeBridge_01_fixture_blob_parses : IO Unit := do
 configuration carries the device tree's machine map plus the caller's
 deployment half. -/
 def deviceTreeBridge_02_matching_board_accepted : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000) (fun _ => []) none with
   | .error _ => expect "RR7.27-02 matching board accepted" false
   | .ok config =>
       expect "RR7.27-02 matching board accepted" true
       expect "RR7.27-02 config carries the device tree's map"
         (decide (config.machineConfig.memoryMap.length = 1))
       expect "RR7.27-02 config carries the caller's deployment half"
-        (config.irqTable.isEmpty && config.initialObjects.isEmpty
+        (config.initialObjects.isEmpty
           && config.bootVSpaceRoot.isNone)
 
 /-- WS-RR RR7.27: a board with less RAM than the deployment stands on is
@@ -1430,11 +1372,11 @@ account rather than assumed.  A board reporting exactly the kernel's extent
 (256 MiB) is refused; one reporting 512 MiB is bound the smallest member cut to
 the 512 MiB it reported, so it declares nothing it was not told is RAM. -/
 def deviceTreeBridge_03_short_ram_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x10000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x10000000) (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-03 a board short of the first-gigabyte floor is refused" true
   | _ => expect "RR7.27-03 a board short of the first-gigabyte floor is refused" false
-  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x20000000) (fun _ => []) none with
   | .ok config =>
       expect "RR7.27-03 a 512 MiB board declares exactly the RAM it reported"
         (decide (boundMapOf config =
@@ -1445,7 +1387,7 @@ def deviceTreeBridge_03_short_ram_refused : IO Unit := do
 binding programs is refused — the half a RAM-only check would miss.  Same RAM,
 same header; only the peripheral nodes are gone. -/
 def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (withMmio := false)) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (withMmio := false)) (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "RR7.27-04 board without the binding's MMIO refused" true
   | _ => expect "RR7.27-04 board without the binding's MMIO refused" false
@@ -1453,7 +1395,7 @@ def deviceTreeBridge_04_missing_mmio_refused : IO Unit := do
 /-- WS-RR RR7.27: an unparseable blob is refused as such, not as a mismatched
 board — the two refusals mean different things to an operator. -/
 def deviceTreeBridge_05_unparseable_blob_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (ByteArray.mk #[0x00, 0x01, 0x02, 0x03]) (fun _ => []) none with
   | .error (.unparseableBlob _) =>
       expect "RR7.27-05 unparseable blob refused as unparseable" true
   | _ => expect "RR7.27-05 unparseable blob refused as unparseable" false
@@ -1477,13 +1419,13 @@ def deviceTreeBridge_06_coverage_is_refusable : IO Unit := do
 Raspberry Pi 5 are accepted, and the hardware boot binds each board's **own**
 variant, not the 4 GiB map the bridge used to demand of every board. -/
 def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x40000000) (fun _ => []) none with
   | .error _ => expect "PR892-07 1 GiB board accepted" false
   | .ok config =>
       expect "PR892-07 1 GiB board accepted" true
       expect "PR892-07 1 GiB board binds the 1 GiB variant"
         (decide (boundMapOf config = variantMap 1))
-  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x80000000) (fun _ => []) none with
   | .error _ => expect "PR892-07 2 GiB board accepted" false
   | .ok config =>
       expect "PR892-07 2 GiB board accepted" true
@@ -1496,7 +1438,7 @@ def deviceTreeBridge_07_small_variants_bind_their_own_map : IO Unit := do
 configuration — the selection is the largest covered variant, and the 8 GiB
 member needs RAM above 4 GiB this board does not report. -/
 def deviceTreeBridge_08_canonical_board_binds_canonical_map : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0x100000000) (fun _ => []) none with
   | .error _ => expect "PR892-08 4 GiB board accepted" false
   | .ok config =>
       expect "PR892-08 4 GiB board binds the canonical map"
@@ -1509,7 +1451,7 @@ shape — a low aperture ending at `0xFC00_0000` and 64 MiB relocated above 4 Gi
 — which the BCM2712 does not have.) -/
 def deviceTreeBridge_09_eight_gib_two_banks : IO Unit := do
   let blob := boardDtbRegions [(0, 0x100000000), (0x100000000, 0x100000000)]
-  match rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb blob (fun _ => []) none with
   | .error _ => expect "PR892-09 8 GiB board accepted" false
   | .ok config =>
       expect "PR892-09 config carries both reported regions"
@@ -1521,7 +1463,7 @@ def deviceTreeBridge_09_eight_gib_two_banks : IO Unit := do
 covers — 3 GiB is accepted and runs on the 2 GiB map.  The lost-resource
 direction: the boot declares less RAM than the board has and never more. -/
 def deviceTreeBridge_10_between_variants_binds_largest_covered : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtb 0xC0000000) (fun _ => []) none with
   | .error _ => expect "PR892-10 3 GiB board accepted" false
   | .ok config =>
       expect "PR892-10 3 GiB board binds the 2 GiB variant"
@@ -1532,7 +1474,7 @@ of RAM at a foreign base covers no variant — the binding checks *where* the
 RAM is, not how much — so the board is refused, not bound the 4 GiB map over
 memory the BCM2712 does not put there. -/
 def deviceTreeBridge_11_foreign_base_refused : IO Unit := do
-  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb (boardDtbRegions [(0x40000000, 0x100000000)]) (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "PR892-11 RAM at a foreign base refused" true
   | _ => expect "PR892-11 RAM at a foreign base refused" false
@@ -1542,7 +1484,7 @@ a 4 GiB board reported as two adjacent halves binds the canonical map, where
 the single-entry reading refused it. -/
 def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
   let blob := boardDtbRegions [(0, 0x80000000), (0x80000000, 0x80000000)]
-  match rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb blob (fun _ => []) none with
   | .error _ => expect "PR892-12 split-aperture board accepted" false
   | .ok config =>
       expect "PR892-12 split-aperture board binds the canonical map"
@@ -1553,7 +1495,7 @@ def deviceTreeBridge_12_split_aperture_binds_canonical_map : IO Unit := do
   -- The walk stops at the gap (`memoryRegionCovered_gap_refused`); what the
   -- boot does with that is the lost-resource direction, never a false claim.
   let gapped := boardDtbRegions [(0, 0x80000000), (0x80200000, 0x7FE00000)]
-  match rpi5PlatformConfigFromDtb gapped [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb gapped (fun _ => []) none with
   | .error _ => expect "PR892-12 NEGATIVE: a gapped board still boots on what it covers" false
   | .ok config =>
       expect "PR892-12 NEGATIVE: a gap between the halves refuses the 4 GiB member"
@@ -1566,7 +1508,7 @@ memory at all (the model default) is bound the **smallest** variant, never the
 4 GiB default: a configuration that claims no RAM a Raspberry Pi 5 lacks. -/
 def deviceTreeBridge_13_direct_path_fallback_is_smallest : IO Unit := do
   let bare : PlatformConfig :=
-    { irqTable := [], initialObjects := [],
+    { initialObjects := [],
       machineConfig := defaultMachineConfig, bootVSpaceRoot := none }
   -- WS-BP BP7.10: an account reporting no RAM from `0` binds the smallest
   -- variant at the admissible floor — the least first-gigabyte RAM the
@@ -1596,7 +1538,7 @@ def deviceTreeBridge_22_every_register_block_is_a_window : IO Unit := do
       (dt.peripherals.any (fun d => d.base.toNat == 0x107FFF9000))
     expect "RR892-22 the CPU-interface window is present too"
       (dt.peripherals.any (fun d => d.base.toNat == 0x107FFFA000 && d.size == 0x2000))
-  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb singleGicNodeBoardDtb (fun _ => []) none with
   | .ok _ => expect "RR892-22 the board is accepted" true
   | .error _ => expect "RR892-22 the board is accepted" false
 
@@ -1647,7 +1589,7 @@ def deviceTreeBridge_18_every_memory_node_contributes : IO Unit := do
       (ram.any (fun r => r.base.toNat == 0x100000000))
   -- And the bridge binds the variant the two nodes together cover, not the one
   -- the first node alone would: 8 GiB, whose map the binding installs.
-  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb twoMemoryNodeDtb (fun _ => []) none with
   | .error _ => expect "RR892-18 the two-node board is accepted" false
   | .ok config =>
     expect "RR892-18 the bound map is the 8 GiB variant's"
@@ -1694,7 +1636,7 @@ def deviceTreeBridge_14_unterminated_blob_refused : IO Unit := do
   match DeviceTree.fromDtbFull unterminatedBoardDtb rpi5MachineConfig.physicalAddressWidth with
   | .ok _ => expect "RR892-14 an unterminated structure block is refused" false
   | .error _ => expect "RR892-14 an unterminated structure block is refused" true
-  match rpi5PlatformConfigFromDtb unterminatedBoardDtb [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb unterminatedBoardDtb (fun _ => []) none with
   | .ok _ => expect "RR892-14 the bridge refuses it too" false
   | .error _ => expect "RR892-14 the bridge refuses it too" true
 
@@ -1716,7 +1658,7 @@ def deviceTreeBridge_16_disabled_memory_refused : IO Unit := do
     | .ok _ => expect "RR892-16 a withheld memory node is refused" false
     | .error _ => expect "RR892-16 a withheld memory node is refused" true
   for status in ["okay", "ok"] do
-    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) [] (fun _ => []) none with
+    match rpi5PlatformConfigFromDtb (boardDtbWithMemoryStatus status) (fun _ => []) none with
     | .ok _ => expect "RR892-16 an operational memory node is accepted" true
     | .error _ => expect "RR892-16 an operational memory node is accepted" false
 
@@ -1759,7 +1701,7 @@ def review8_mmio_windows_require_the_right_devices : IO Unit := do
     expect "NEGATIVE review8 the wrong devices do not satisfy the binding"
       (!deviceTreeCoversMmioRegions dt requiredMmioWindows)
   -- And the bridge refuses the board rather than binding it.
-  match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb [] (fun _ => []) none with
+  match rpi5PlatformConfigFromDtb wrongDevicesAtRightWindowsDtb (fun _ => []) none with
   | .ok _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" false
   | .error _ => expect "NEGATIVE review8 the bridge refuses the wrong-device board" true
 
@@ -1779,7 +1721,7 @@ def uartWindowIsTheDeviceTreesRegisterBlock : IO Unit := do
     (decide (requiredMmioWindows.head?.map (·.region.size) = some 0x200))
   let verdict (uartSize : Nat) : Bool :=
     match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (uartSize := uartSize))
-        [] (fun _ => []) none with
+        (fun _ => []) none with
     | .ok _ => true
     | .error _ => false
   expect "audit the board's own 0x200 UART block is accepted" (verdict 0x200)
@@ -1787,7 +1729,7 @@ def uartWindowIsTheDeviceTreesRegisterBlock : IO Unit := do
   expect "NEGATIVE audit a UART block narrower than the window (0x100) is refused"
     (!verdict 0x100)
   match rpi5PlatformConfigFromDtb (boardDtb 0x100000000 (uartSize := 0x100))
-      [] (fun _ => []) none with
+      (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       expect "NEGATIVE audit the narrow block is refused as a board mismatch" true
   | _ => expect "NEGATIVE audit the narrow block is refused as a board mismatch" false
@@ -1857,7 +1799,7 @@ def bootRefusesUntypedOverKernelDevice : IO Unit := do
       hSlots := fun _ h => nomatch h
       hMappings := fun _ h => nomatch h }
   let config (base : PAddr) : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], machineConfig := rpi5MachineConfig, initialObjects := [entry base] }
+    { machineConfig := rpi5MachineConfig, initialObjects := [entry base] }
   expect "the RPi5 configuration names its MMIO windows as the kernel's devices"
     (decide (rpi5MachineConfig.kernelDevices = mmioRegions))
   expect "CONTROL a device untyped in the SoC window clear of the kernel's devices is well-formed"
@@ -2546,8 +2488,11 @@ private def bootMapTableLines : List String :=
     -- `gicSpiCount` SPIs), as `gicIntIds <n>` — read back by `gic.rs`'s
     -- `the_board_interrupt_lines_are_the_lean_ones`, so the lines the HAL
     -- programs, and requires `GICD_TYPER.ITLinesNumber` to cover at boot, are
-    -- the ones the interrupt contract and the IRQ table name.
-    ++ [s!"gicIntIds {bootMapHex (gicSpiCount + 32)}"]
+    -- the ones the interrupt contract and the IRQ table name.  WS-ZA ZA6.32:
+    -- printed from the machine configuration's `interruptLineCount`, the
+    -- count the interrupt entry and the acknowledge read, so the HAL's board
+    -- is held to the number the kernel refuses lines by.
+    ++ [s!"gicIntIds {bootMapHex rpi5MachineConfig.interruptLineCount}"]
     -- The BCM2712 address-map correction (v0.36.2): the MMIO windows the
     -- binding programs, as `mmio <name> <base> <size>`, taken from
     -- `mmioRegions` in order — read back by the HAL's UART and GIC tests, so
@@ -2698,7 +2643,7 @@ private def qemuVirtBootMapTableLines : List String :=
     ++ [s!"asidSpace {bootMapHex qemuVirtMachineConfig.maxASID}"]
     ++ [s!"tablePool {bootMapHex qemuVirtBootTablePoolBase} {bootMapHex qemuVirtBootTablePoolPages}"]
     ++ [s!"declaredCores {bootMapHex (SeLe4n.Platform.PlatformBinding.coreCount (platform := QemuVirtPlatform))}"]
-    ++ [s!"gicIntIds {bootMapHex (qemuVirtGicSpiCount + 32)}"]
+    ++ [s!"gicIntIds {bootMapHex qemuVirtMachineConfig.interruptLineCount}"]
     ++ (["uart", "gicd", "gicc"].zip qemuVirtMmioRegions).map (fun (name, r) =>
         s!"mmio {name} {bootMapHex r.base.toNat} {bootMapHex r.size}")
     ++ map.map (fun r =>
@@ -2727,28 +2672,27 @@ def qemuVirt_board_check_on_qemus_own_device_tree : IO Unit := do
   let blob ← match parseCorpusHex text with
     | .ok b => pure b
     | .error e => throw <| IO.userError s!"qemu_virt_dtb.hex: {e}"
-  match qemuVirtPlatformConfigFromDtb blob qemuVirtIrqTable qemuVirtInitialObjects none with
+  match qemuVirtPlatformConfigFromDtb blob qemuVirtInitialObjects none with
   | .ok config =>
       unless SeLe4n.Platform.Boot.machineConfigCovers config.machineConfig
           qemuVirtMachineConfig do
         throw <| IO.userError "the accepted account does not cover the binding's RAM"
-      unless config.initialObjects.length == qemuVirtInitialObjects.length
-          && config.irqTable.length == qemuVirtGicSpiCount do
+      unless config.initialObjects.length == qemuVirtInitialObjects.length do
         throw <| IO.userError "the accepted configuration is not this deployment's"
       IO.println "  PASS: the virt bridge accepts QEMU's own device tree"
   | .error e => throw <| IO.userError s!"the virt bridge refused QEMU's device tree: {repr e}"
-  match SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb blob [] (fun _ => []) none with
+  match SeLe4n.Platform.FFI.rpi5PlatformConfigFromDtb blob (fun _ => []) none with
   | .error .boardDoesNotMatchBinding =>
       IO.println "  PASS: the RPi5 bridge refuses QEMU's tree as a foreign board"
-  | other => throw <| IO.userError s!"the RPi5 bridge on QEMU's tree: {reprStr (other.map (·.irqTable.length))}"
-  match qemuVirtPlatformConfigFromDtb (boardDtb 0x100000000) [] [] none with
+  | other => throw <| IO.userError s!"the RPi5 bridge on QEMU's tree: {reprStr (other.map (·.initialObjects.length))}"
+  match qemuVirtPlatformConfigFromDtb (boardDtb 0x100000000) [] none with
   | .error .boardDoesNotMatchBinding =>
       IO.println "  PASS: the virt bridge refuses an RPi5 board's tree as a foreign board"
-  | other => throw <| IO.userError s!"the virt bridge on an RPi5 tree: {reprStr (other.map (·.irqTable.length))}"
-  match qemuVirtPlatformConfigFromDtb ByteArray.empty [] [] none with
+  | other => throw <| IO.userError s!"the virt bridge on an RPi5 tree: {reprStr (other.map (·.initialObjects.length))}"
+  match qemuVirtPlatformConfigFromDtb ByteArray.empty [] none with
   | .error (.unparseableBlob _) =>
       IO.println "  PASS: the virt bridge refuses an empty blob as unparseable"
-  | other => throw <| IO.userError s!"the virt bridge on an empty blob: {reprStr (other.map (·.irqTable.length))}"
+  | other => throw <| IO.userError s!"the virt bridge on an empty blob: {reprStr (other.map (·.initialObjects.length))}"
 
 open SeLe4n.Platform.QemuVirt in
 /-- **WS-BP BP8.1**: the `virt` deployment boots — its two address spaces own
@@ -2802,12 +2746,9 @@ def main : IO Unit := do
   ak9d_02_range_crosses_boundary
   ak9b_01_sim_objectStoreEmptyAtBoot
   ak9b_02_rpi5_objectStoreEmptyAtBoot
-  ak9c_01_empty_irqs_accepted
-  ak9c_02_missing_handler_rejected
-  ak9c_03_non_notification_rejected
-  ak9c_04_notification_accepted
-  handlerWithoutNotificationRecordRejected
-  notificationRecordNoIrqNamesRejected
+  bootHandlerCheckAcceptsEmptyConfig
+  bootHandlerCheckAcceptsNotification
+  bootHandlerCheckRefusesHandlerCapability
   ak9f_01_classify_empty_map
   ak9f_02_classify_unmapped
   ak9f_03_classify_mapped
@@ -2818,8 +2759,7 @@ def main : IO Unit := do
   ak9g_02_default_disabled
   ak9g_03_withInterrupts_enables
   -- End-to-end bootFromPlatformChecked chain
-  ak9ce_01_checked_boot_rejects_bad_irq
-  ak9ce_02_checked_boot_rejects_tcb_handler
+  checkedBootRefusesHandlerCapability
   ak9fe_01_checked_boot_rejects_pa_over_52
   ak9fe_02_checked_boot_rejects_malformed_machine_config
   ak9ge_01_checked_boot_enables_interrupts

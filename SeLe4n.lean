@@ -242,6 +242,10 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 -- `lean_classify_synchronous_exception`).  One import: the entry's transitive
 -- closure is the whole production fault surface.
 import SeLe4n.Kernel.FaultEntry
+-- **WS-ZA ZA6.32**: the device-interrupt entry (`lean_handle_interrupt`), the
+-- seam `trap.rs::handle_irq_per_core` resolves against for a shared peripheral
+-- interrupt: seL4's `handleInterrupt` on the executing core, in ZA3.1's form.
+import SeLe4n.Kernel.InterruptEntry
 -- **WS-RR RR8.16** (`v0.35.200`): the fault path's *cross-subsystem* bundles —
 -- `faultDeliverOnCore` and `faultReplyOnCore` preserve the base SMP scheduler
 -- invariant and the capability invariant bundle, composed from the live `.call`

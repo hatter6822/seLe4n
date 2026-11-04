@@ -2139,6 +2139,36 @@ private theorem finaliseThenRetire_preserves_projection (ctx : LabelingContext)
     finaliseFinalObject_preserves_projection ctx observer target h hLc hx hW hBd hTF hSF hRF hFlow
       hValid hIdx hSet hBlockingChainHigh]
 
+/-- WS-ZA ZA6.32: **a line's state write is invisible to an observer its
+interrupt node is hidden from**: the projection shows a line's state through
+the line's node (`projectIrqSignalLines`, seL4 labelling the line by its
+`irq_node` slot), reads no other line, and shows no controller mask. -/
+theorem setIrqLineSignal_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (line : Nat) (signal : Bool)
+    (hx : objectObservable ctx observer (irqNodeId line) = false) :
+    projectState ctx observer (Architecture.setIrqLineSignal st line signal) =
+      projectState ctx observer st := by
+  have hI : projectIrqSignalLines ctx observer (Architecture.setIrqLineSignal st line signal) =
+      projectIrqSignalLines ctx observer st := by
+    funext irq
+    simp only [projectIrqSignalLines, SystemState.irqSignalLines, Architecture.setIrqLineSignal_cdt,
+      CapDerivationTree.withIrqLineIssued_issuedIrqLines]
+    by_cases hq : irq.toNat = line
+    · rw [hq, hx]; rfl
+    · rw [InterruptLineSet.mem_set_ne _ _ hq]
+  simp only [projectState]
+  rw [hI]
+  rfl
+
+/-- …so the retire of a hidden node is. -/
+theorem retireIrqNode_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) {target : Nat} (hN : retireTargetsIrqNode target = true)
+    (hx : objectObservable ctx observer (SeLe4n.ObjId.ofNat (target - 1)) = false) :
+    projectState ctx observer (retireIrqNode st (SeLe4n.ObjId.ofNat (target - 1))) =
+      projectState ctx observer st :=
+  setIrqLineSignal_preserves_projection ctx observer st _ false
+    (by rw [retireTargetsIrqNode_irqNodeId hN]; exact hx)
+
 theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
     (observer : IfObserver) (ec : CoreId) (target recorder : Nat) {st : SystemState}
     (h : ipcReachable st) (hLc : lentContextHeadsLenderFrame st)
@@ -2166,7 +2196,10 @@ theorem retireFinalisedObject_preserves_projection (ctx : LabelingContext)
       objectObservable ctx observer (SeLe4n.ObjId.ofNat (recorder - 1)) = false) :
     projectState ctx observer (retireFinalisedObject ec target recorder st) =
       projectState ctx observer st := by
-  unfold retireFinalisedObject
+  rcases retireFinalisedObject_cases ec target recorder st with ⟨hN, hE⟩ | ⟨-, hE⟩
+  · rw [hE]
+    exact retireIrqNode_preserves_projection ctx observer st hN (hx (retireTargetsIrqNode_ne_zero hN))
+  rw [hE]
   rcases releaseFinalRegistration_cases target st with hE | ⟨ep, h0, hEp, hC, hRev⟩
   · rw [hE]
     exact finaliseThenRetire_preserves_projection ctx observer ec target recorder h hLc hx hW hBd

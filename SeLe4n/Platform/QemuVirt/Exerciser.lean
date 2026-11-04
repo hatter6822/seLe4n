@@ -24,7 +24,8 @@ the shipped labeling before they do anything: its declassification policy
 denies every downgrade and it configures no audit monitor
 (`qemuVirt_shippedLabeling_denies`).  A refusal measures nothing, so the test
 image boots this deployment instead: the shipped one with three differences,
-each the least the four calls need, and nothing else.
+each the least the four calls need, and a fourth for the interrupt entry's
+scenarios (WS-ZA ZA6.32), and nothing else.
 
 * **The labeling** (`qemuVirtExerciserDeploymentLabeling`): the same partition
   at the same boundary with the same witnesses, its lower half labeled
@@ -42,6 +43,14 @@ each the least the four calls need, and nothing else.
   qualify, and the root task holds the boot audit capability in slot 10
   (`qemuVirtExerciserAuditSlot`, the exerciser's copy slot), which the
   exerciser deletes before the invocation scenarios copy into it.
+* **Interrupt handlers at run time** (WS-ZA ZA6.32): the boot binds no line,
+  as seL4's does not.  The exerciser issues the handler capabilities of two
+  shared peripheral interrupts the `virt` board wires to nothing
+  (`qemuVirtExerciserBoundLine`, `qemuVirtExerciserUnboundLine`) from the root
+  task's IRQControl capability (`seL4_IRQControl_Get`) into slots 24 and 25,
+  and binds the first to the interrupt notification
+  (`seL4_IRQHandler_SetNotification`), so the interrupt entry's bound and
+  unbound branches each have a line the exerciser raises at the distributor.
 
 The shipped `virt` entry (`QemuVirt.kernelMain`, `lean_kernel_main_qemu_virt`)
 is untouched: it boots `QemuVirtPlatform`, whose labeling is the confined
@@ -98,6 +107,14 @@ instance qemuVirtExerciserPlatformBinding : PlatformBinding QemuVirtExerciserPla
     scenarios end, and whose next use is a copy rather than a carve. -/
 def qemuVirtExerciserAuditSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 10
 
+/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises after
+    issuing its handler and binding it to the interrupt notification. -/
+def qemuVirtExerciserBoundLine : Nat := 250
+
+/-- WS-ZA ZA6.32: the shared peripheral interrupt the exerciser raises after
+    issuing its handler and binding no notification to it. -/
+def qemuVirtExerciserUnboundLine : Nat := 251
+
 /-- The exerciser's root CNode: the shipped root CNode's capabilities and the
     audit trail's, with read and write (`Capability.auditTrailManage`), in
     `qemuVirtExerciserAuditSlot`. -/
@@ -115,8 +132,7 @@ def qemuVirtExerciserInitialObjects : List ObjectEntry :=
 
 /-- The configuration the exerciser's boot checks, whatever the account. -/
 def qemuVirtExerciserBoundPlatformConfig : PlatformConfig :=
-  { irqTable := qemuVirtIrqTable
-    initialObjects := qemuVirtExerciserInitialObjects
+  { initialObjects := qemuVirtExerciserInitialObjects
     machineConfig := qemuVirtMachineConfig
     bootVSpaceRoot := PlatformBinding.bootVSpaceRoot (platform := QemuVirtExerciserPlatform)
     initialThreads := PlatformBinding.initialThreads (platform := QemuVirtExerciserPlatform)
@@ -144,9 +160,9 @@ def bootAndInitialiseQemuVirtExerciserOrHalt (config : PlatformConfig) : BaseIO 
     `lean_kernel_main_qemu_virt_exerciser` is, and what
     `SeLe4n/Testing/BootEntryContract.lean` holds that entry to. -/
 def bootAndInitialiseQemuVirtExerciserFromDtbOrHalt (blob : ByteArray)
-    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (initialObjects : List ObjectEntry)
     (bootVSpaceRoot : Option BootVSpaceRootEntry) : BaseIO Unit :=
-  match qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot with
+  match qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot with
   | .error _ => ffiFatalHaltAll
   | .ok config => do
       extendBootRamMap qemuVirtBootRamExtensions
@@ -157,8 +173,7 @@ def bootAndInitialiseQemuVirtExerciserFromDtbOrHalt (blob : ByteArray)
     `lean_kernel_main_qemu_virt` on an image built with `smp_exercisers`. -/
 @[export lean_kernel_main_qemu_virt_exerciser]
 def exerciserKernelMain (dtb : ByteArray) : BaseIO Unit :=
-  bootAndInitialiseQemuVirtExerciserFromDtbOrHalt dtb qemuVirtIrqTable
-    qemuVirtExerciserInitialObjects none
+  bootAndInitialiseQemuVirtExerciserFromDtbOrHalt dtb qemuVirtExerciserInitialObjects none
 
 -- ============================================================================
 -- What differs, and what does not
@@ -208,6 +223,13 @@ theorem qemuVirtExerciser_bindMachineConfig (board : SeLe4n.MachineConfig) :
     PlatformBinding.bindMachineConfig (platform := QemuVirtExerciserPlatform) board =
       qemuVirtMachineConfig := rfl
 
+/-- WS-ZA ZA6.32: the exerciser's bound configuration serves `virt`'s lines,
+    `qemuVirtGicSpiCount + 32`, the count the interrupt entry and the
+    acknowledge refuse a line outside of. -/
+theorem qemuVirtExerciser_bound_interruptLineCount (board : SeLe4n.MachineConfig) :
+    (PlatformBinding.bindMachineConfig (platform := QemuVirtExerciserPlatform)
+      board).interruptLineCount = qemuVirtGicSpiCount + 32 := rfl
+
 -- ============================================================================
 -- Every gate of the exerciser's checked boot, decided
 -- ============================================================================
@@ -216,7 +238,7 @@ set_option maxRecDepth 8192 in
 theorem qemuVirtExerciserBoundPlatformConfig_wellFormed :
     qemuVirtExerciserBoundPlatformConfig.wellFormed = true := by
   unfold PlatformConfig.wellFormed
-  rw [irqsUnique_eq_transparent, objectIdsUnique_eq_transparent]
+  rw [objectIdsUnique_eq_transparent]
   decide
 
 -- WS-ZA ZA6.4: the root CNode's 32 cells, as the shipped deployment's.
@@ -228,11 +250,6 @@ theorem qemuVirtExerciserBoundPlatformConfig_bootSafe :
 
 theorem qemuVirtExerciserBoundPlatformConfig_asidsDistinct :
     bootVSpaceAsidsDistinct qemuVirtExerciserBoundPlatformConfig = true := by
-  decide
-
-set_option maxRecDepth 8192 in
-theorem qemuVirtExerciserBoundPlatformConfig_irqHandlers :
-    irqHandlersAndNotificationsReciprocal qemuVirtExerciserBoundPlatformConfig = true := by
   decide
 
 theorem qemuVirtExerciserBoundPlatformConfig_rootDistinct :
@@ -259,7 +276,7 @@ theorem qemuVirtExerciserBoundPlatformConfig_checked :
   bootFromPlatformChecked_admits_bootVSpace _ qemuVirtExerciserBoundPlatformConfig_wellFormed
     qemuVirtExerciserBoundPlatformConfig_bootSafe
     qemuVirtExerciserBoundPlatformConfig_asidsDistinct
-    qemuVirtExerciserBoundPlatformConfig_irqHandlers qemuVirtMachineConfig_wellFormed
+    qemuVirtMachineConfig_wellFormed
     (by decide)
     qemuVirtExerciserBoundPlatformConfig_rootDistinct
     qemuVirtExerciserBoundPlatformConfig_rootNonSentinel

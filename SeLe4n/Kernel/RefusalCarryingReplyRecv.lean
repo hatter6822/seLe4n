@@ -144,7 +144,7 @@ a refusal to `onErr`, so no `Except` or tuple cell is built. -/
   match cap? with
   | none => onErr .invalidCapability
   | some cap =>
-      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+      if SeLe4n.Kernel.capTargetsReservedKernelObject cap then onErr .invalidCapability
       else if !cap.hasRight .write then onErr .illegalAuthority
       else
         match cap.target with
@@ -197,7 +197,7 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       | none => rfl
       | some cap =>
         simp only []
-        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
         · simp only [hIdle, ↓reduceIte]
         · by_cases hRight : cap.hasRight .write = true
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
@@ -622,7 +622,7 @@ handed (`replyRecvOperandArmThenTaintR_eq`). -/
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
+        if SeLe4n.Kernel.capTargetsReservedKernelObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let sourceCode := receiveTaintSourceCode st cap
           let callerCode := replyRecvTaintCallerCodeOf st tid cap layout rf len
@@ -668,7 +668,7 @@ theorem replyRecvOperandArmThenTaintR_eq (ctx : LabelingContext)
   rcases operand with _ | cap
   · rfl
   · simp only [replyRecvOperandArmThenTaintR]
-    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+    by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject cap = true
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight (syscallRequiredRight .replyRecv) = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, withTaintWordsAt_eq,

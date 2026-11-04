@@ -349,6 +349,33 @@ theorem linkBootSlots_reach (st : SystemState) (rs : List SlotRef) :
     linkReach { st with cdt := (linkBootSlots st rs).cdt } (linkBootSlots st rs) :=
   bootLinkSlots_reach (st₀ := st) rs (a := ⟨st, none, [], []⟩) (linkReach.refl _)
 
+/-- **WS-ZA ZA6.32: the linking issues no interrupt line**: each step adds a
+derivation edge or root, which writes the tree's edges and the slots' links
+alone. -/
+theorem linkBootSlots_irqSignalLines (st : SystemState) (rs : List SlotRef) :
+    (linkBootSlots st rs).irqSignalLines = st.irqSignalLines := by
+  unfold linkBootSlots
+  suffices h : ∀ (rs : List SlotRef) (a : BootLinks), a.st.irqSignalLines = st.irqSignalLines →
+      (rs.foldl bootLinkSlot a).st.irqSignalLines = st.irqSignalLines from h rs _ rfl
+  intro rs
+  induction rs with
+  | nil => intro a h; exact h
+  | cons r rest ih =>
+    intro a h
+    apply ih
+    unfold bootLinkSlot
+    split
+    · exact h
+    · split
+      · exact h
+      · split
+        · show (a.st.cdtAddChild _ r .copy).irqSignalLines = _
+          rw [SystemState.cdtAddChild_irqSignalLines]; exact h
+        · show (a.st.cdtAppendRoot a.last r).irqSignalLines = _
+          rw [← h]
+          simp only [SystemState.irqSignalLines, (SystemState.cdtAppendRoot_reach a.st a.last r).cdt,
+            CapDerivationTree.appendRoot_issuedIrqLines]
+
 /-- **WS-ZA ZA5.4**: the boot stage that links the configuration's
 capabilities (`bootCapabilitySlots`) into the derivation tree, its four
 structural witnesses carried through the link writes. -/
@@ -399,15 +426,6 @@ theorem linkBootCapabilities_agree (config : PlatformConfig) (ist : Intermediate
     SystemState.objectsAgreeOffDerivationLinks (linkBootCapabilities config ist).state ist.state :=
   (linkBootSlots_reach _ _).agree ist.hAllTables.objects.1
 
-/-- The linking keeps every object's table back-links and writes no reference
-table: it writes derivation links and the tree. -/
-theorem linkBootCapabilities_tableReferenceFrame (config : PlatformConfig)
-    (ist : IntermediateState) :
-    SystemState.TableReferenceFrame ist.state (linkBootCapabilities config ist).state :=
-  .of_map (g := KernelObject.withoutLinks) KernelObject.tableBackLinks_withoutLinks
-    (by rw [linkBootCapabilities_fields]; rfl)
-    (fun k => ((linkBootCapabilities_agree config ist) k).map_withoutLinks)
-
 theorem linkBootCapabilities_scheduler (config : PlatformConfig) (ist : IntermediateState) :
     (linkBootCapabilities config ist).state.scheduler = ist.state.scheduler := by
   rw [linkBootCapabilities_fields]
@@ -435,7 +453,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
       SystemState.untypedCapAt ist.state.slotCapAt ist.state.getUntyped? r u) :
     bootLinkedShape (linkBootCapabilities config ist) := by
   obtain ⟨hShape, ⟨hCdt, hF⟩, ⟨hA1, hA2⟩, hUnt, ⟨rq, re, rp, hSch⟩, hRun, ⟨hNodup, hQ⟩,
-    hBindings, hTab⟩ := h
+    hBindings⟩ := h
   have hInv₀ := ist.hAllTables.objects.1
   have hE : ist.state.cdt = CapDerivationTree.empty := hCdt
   have hL₀ := cdtLinksAgree_of_bootEmpty hCdt fun oid obj hO => (hShape oid obj hO).2
@@ -477,8 +495,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
     fun u U h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun u _ U _ h => by rw [hUncarved u U (hUt ▸ h)]; simp,
     fun r u hr hu => ?_, fun Q hQ o => ?_⟩,
-    .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings,
-    (linkBootCapabilities_tableReferenceFrame config ist).preserves hTab⟩
+    .of_codes (.of_objectsAgreeOffDerivationLinks hA) hBindings⟩
   · have e := (hA oid).map_withoutLinks
     rw [hO] at e
     cases h0 : ist.state.objects[oid]? with
@@ -506,7 +523,7 @@ theorem linkBootCapabilities_bootLinkedShape (config : PlatformConfig) (ist : In
   · rw [hA.slotCapAt r] at hr
     exact (hM r).mpr (hDone r (hListed r hr) hr)
   · rw [SystemState.namesAt_of_eq (hA.slotCapAt r)] at hN
-    exact hA.present o (hLive r o hN)
+    exact hA.present (linkBootSlots_irqSignalLines _ _) o (hLive r o hN)
   · -- every child is a copy of its parent's capability, so names what it names
     obtain ⟨cp, cc, hp, hcc, hT⟩ := hEd p c hc
     obtain ⟨c', hc', hco⟩ := hcN

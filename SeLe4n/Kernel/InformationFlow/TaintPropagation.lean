@@ -219,6 +219,15 @@ def contentFlowClass : SyscallId → ContentFlowClass
   -- and returns the context's own counter, read under its capability; no
   -- message, badge or capability moves.
   | .schedContextYieldTo => .inert
+  -- WS-ZA ZA6.32: the acknowledge unmasks the line its capability names; no
+  -- message, badge or capability moves.
+  | .irqHandlerAck => .inert
+  -- WS-ZA ZA6.32: the interrupt-control and handler invocations issue, copy or
+  -- delete a capability between slots, as the CSpace arms do; no message or
+  -- badge moves.
+  | .irqControlGet => .inert
+  | .irqHandlerSetNotification => .inert
+  | .irqHandlerClear => .inert
   | .schedContextConfigure => .inert
   -- Services: a registration is a name, not content.
   | .serviceRegister => .inert
@@ -278,7 +287,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
   | .schedContextBind | .schedContextUnbind | .schedContextConfigure | .schedContextConsumed
-  | .schedContextYieldTo => false
+  | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear => false
   | .serviceRegister | .serviceRevoke | .serviceQuery => false
 
 /-- WS-SM SM9.D.13a: **the two arms that record, named.**
@@ -781,7 +790,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -963,7 +972,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -1000,7 +1009,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -1074,7 +1083,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
   | .untypedRetype | .untypedReset
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
-    | .schedContextYieldTo
+    | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
@@ -2032,49 +2041,6 @@ theorem applyTaintStep_size (plan : TaintPlan) (origins : List (SeLe4n.ObjId × 
   exact (R _ (fun s p => hJ s _ _) _ _).trans
     ((R _ (fun s k => hC s k) _ _).trans (R _ (fun s e => hJ s _ _) _ _))
 
-/-- A slot write keeping every interrupt back-link keeps the references
-recorded. -/
-theorem tableReferencesRecorded_mapObjectAt {s : SystemState} (hR : s.tableReferencesRecorded)
-    (k : SeLe4n.ObjId) {f : KernelObject → KernelObject}
-    (hf : ∀ o, (f o).tableBackLinks.2.1 = o.tableBackLinks.2.1) :
-    (s.mapObjectAt k f).tableReferencesRecorded :=
-  SystemState.tableReferencesRecorded.of_irqBackLinks (st := s) (st' := s.mapObjectAt k f) rfl
-    (fun j => by
-    rw [SystemState.mapObjectAt_objects]
-    by_cases hkj : k = j
-    · rw [if_pos hkj]
-      cases s.objects[j]? with
-      | none => rfl
-      | some o => exact hf o
-    · rw [if_neg hkj]) hR
-
-/-- WS-ZA ZA5.11 (**the step keeps the references recorded**): every join and
-every clear writes words alone, so the interrupt table and every interrupt flag
-are as committed. -/
-theorem applyTaintStep_preserves_tableReferencesRecorded (plan : TaintPlan)
-    (origins : List (SeLe4n.ObjId × Nat)) (preTaint : TaintMap) {post : SystemState}
-    (hR : post.tableReferencesRecorded) :
-    (applyTaintStep plan origins preTaint post).tableReferencesRecorded := by
-  have R := foldl_taintStep_rel
-    (fun s s' => s.tableReferencesRecorded → s'.tableReferencesRecorded)
-    (fun _ h => h) (fun _ _ _ h1 h2 h => h2 (h1 h))
-  have hJ : ∀ s k w, s.tableReferencesRecorded → (joinTaintAt s k w).tableReferencesRecorded :=
-    fun s k w h => by
-      rw [joinTaintAt_eq]
-      split
-      · exact h
-      · exact tableReferencesRecorded_mapObjectAt h _
-          (fun o => KernelObject.tableBackLinks_withTaintWords_irq o _)
-  have hC : ∀ s k, s.tableReferencesRecorded → (clearTaintAt s k).tableReferencesRecorded :=
-    fun s k h => by
-      unfold clearTaintAt
-      split
-      · exact h
-      · exact tableReferencesRecorded_mapObjectAt h _
-          (fun o => KernelObject.tableBackLinks_withTaintWords_irq o _)
-  unfold applyTaintStep; dsimp only
-  exact R _ (fun s p => hJ s _ _) _ _ (R _ (fun s k => hC s k) _ _ (R _ (fun s e => hJ s _ _) _ _ hR))
-
 /-- Two folds whose steps agree on every element of the list agree. -/
 theorem foldl_congr_of_mem {α β : Type _} {f g : α → β → α} :
     ∀ (l : List β) (a : α), (∀ b ∈ l, ∀ x, f x b = g x b) → l.foldl f a = l.foldl g a
@@ -2403,12 +2369,6 @@ theorem applySyscallTaint_invExt {plan : TaintPlan} {pre post : SystemState}
 theorem applySyscallTaint_size (plan : TaintPlan) (pre post : SystemState) :
     (applySyscallTaint plan pre post).objects.size = post.objects.size :=
   applyTaintStep_size _ _ _ _
-
-/-- The syscall's taint step keeps the table references recorded. -/
-theorem applySyscallTaint_preserves_tableReferencesRecorded {plan : TaintPlan}
-    {pre post : SystemState} (h : post.tableReferencesRecorded) :
-    (applySyscallTaint plan pre post).tableReferencesRecorded :=
-  applyTaintStep_preserves_tableReferencesRecorded _ _ _ h
 
 -- ============================================================================
 -- §3b  WS-SM SM9.D.8-.D.12 — what propagation establishes

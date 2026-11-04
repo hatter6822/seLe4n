@@ -33,6 +33,61 @@ open SeLe4n.Model.SystemState (MappingStage)
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- WS-ZA ZA6.32: **the handler issue keeps the mappings recorded**: it writes
+the line's state, which no object holds, then installs a handler capability,
+which records no mapping, and its derivation edge. -/
+theorem irqControlGet_mappingStage {control dst : CSpaceAddr} {line : Nat}
+    {st st' : SystemState} (h : irqControlGet control dst line st = .ok ((), st')) :
+    MappingStage st st' := by
+  unfold irqControlGet at h
+  cases hR : irqControlLineRefusal st line with
+  | some e => rw [hR] at h; cases h
+  | none =>
+    rw [hR] at h
+    simp only at h
+    cases hI : cspaceInsertSlot dst (Capability.irqHandlerOf line)
+        (Architecture.setIrqLineSignal st line true) with
+    | error e => rw [hI] at h; cases h
+    | ok pr =>
+      obtain ⟨⟨⟩, st1⟩ := pr
+      rw [hI] at h
+      injection h with h
+      injection h with hu h
+      subst h
+      refine (MappingStage.of_objects_eq (Architecture.setIrqLineSignal_objects st line true)).trans
+        (MappingStage.of_preserves (fun hI0 => ?_) fun hI0 hL => ?_)
+      · have h1 : st1.objects.invExt := cspaceInsertSlot_objects_invExt hI0 hI
+        exact (SystemState.cdtAddChild_reach st1 control dst .mint).invExt h1
+      · exact cdtAddChild_preserves_liveMappingsRecorded (cspaceInsertSlot_objects_invExt hI0 hI)
+          (cspaceInsertSlot_preserves_liveMappingsRecorded hI0 hI hL)
+
+theorem irqControlGetFromCap_mappingStage {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
+    {args? : Except KernelError IrqControlGetArgs} {st st' : SystemState}
+    (h : irqControlGetFromCap tid srcAddr args? st = .ok ((), st')) : MappingStage st st' := by
+  obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid srcAddr args? st st' h
+  exact irqControlGet_mappingStage hG
+
+/-- WS-ZA ZA6.32: **the handler bind keeps the mappings recorded**: the node
+slot's zombie delete, then the copy of a notification capability. -/
+theorem irqHandlerSetNotification_mappingStage {ec : Concurrency.CoreId} {line : Nat}
+    {src : CSpaceAddr} {st st' : SystemState} (P : MappingArmPremises st)
+    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) : MappingStage st st' := by
+  obtain ⟨-, st1, -, -, -, hZ, hC⟩ :=
+    irqHandlerSetNotification_ok (objects_invExt_of_capabilityInvariantBundle _ P.caps) h
+  exact (cspaceDeleteSlotZombie_mappingStage P hZ).trans
+    (cspaceCopy_mappingStage
+      (cspaceDeleteSlotZombie_preserves_capabilityInvariantBundle ec _ st st1 P.caps hZ) hC)
+
+/-- WS-ZA ZA6.32: **the handler clear keeps the mappings recorded**: the node
+slot's zombie delete. -/
+theorem irqHandlerClear_mappingStage {ec : Concurrency.CoreId} {line : Nat}
+    {st st' : SystemState} (P : MappingArmPremises st)
+    (h : irqHandlerClear ec line st = .ok ((), st')) : MappingStage st st' := by
+  unfold irqHandlerClear at h
+  split at h
+  · cases h
+  exact cspaceDeleteSlotZombie_mappingStage P h
+
 /-- **The capability-only dispatch keeps the mappings recorded on every arm**:
 the map, unmap, deletes and space set from the premises they read, every
 other arm from the store's table invariant alone. -/
@@ -230,6 +285,26 @@ theorem dispatchCapabilityOnly_mappingStage
               simp only [hC] at hStep
               cases hStep
               exact schedContextYieldToOnCore_mappingStage hC
+    all_goals try cases hStep
+  case irqHandlerAck =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      rw [Architecture.irqHandlerAck_ok hStep]
+      exact MappingStage.of_objects_eq rfl
+    all_goals try cases hStep
+  case irqControlGet =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqControl => exact irqControlGetFromCap_mappingStage hStep
+    all_goals try cases hStep
+  case irqHandlerSetNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      obtain ⟨_, _, _, hS⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line _ st st' hStep
+      exact irqHandlerSetNotification_mappingStage P hS
+    all_goals try cases hStep
+  case irqHandlerClear =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line => exact irqHandlerClear_mappingStage P hStep
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

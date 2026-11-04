@@ -476,7 +476,7 @@ theorem notificationSignal_badge_stored_fresh
   unfold notificationSignal SystemState.getObject? at hSignal
   simp [hObj, hNoWaiters, hNoPending] at hSignal
   exact ⟨{ state := .active, 
-           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated },
+           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated },
     by rw [← storeObject_objects_eq st st' notifId _ hObjInv hSignal], rfl⟩
 
 /-- (H-03) When `notificationWait` returns `some badge`, that badge was the pending
@@ -797,7 +797,8 @@ theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
     (fun _ => by rw [hObjs])
     (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
     (by rw [hObjs]; exact h.2.2.2.2.1)
-    (fun o hp => by unfold SystemState.objectPresent at hp ⊢; rw [hObjs]; exact hp)
+    (fun o hp => ⟨by rw [hObjs]; exact hp.1,
+      SystemState.irqNodeIssued_of_lines (SystemState.irqSignalLines_of_cdt hCdt) o hp.2⟩)
     (funext fun o => by rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind, hObjs])
 
 /-- WS-RR RR8.16 (`v0.35.197`): the **pointwise** instance, which is the one the
@@ -824,7 +825,8 @@ theorem capabilityInvariantBundle_of_kindPreservingUpToBindings {st st' : System
     (hAt : kindPreservingWriteUpToBindings st st') :
     capabilityInvariantBundle st' := by
   refine capabilityInvariantBundle_of_frame h hCdt ?_ ?_ ?_ ?_ hObjInv
-    (SystemState.kindPreservingWriteUpToBindings.present hAt)
+    (SystemState.kindPreservingWriteUpToBindings.present hAt
+      (SystemState.irqSignalLines_of_cdt hCdt))
     (funext fun o => by
       rw [SystemState.getUntyped?_eq_bind, SystemState.getUntyped?_eq_bind]; exact hAt.untyped o)
   · intro oid cn hCn

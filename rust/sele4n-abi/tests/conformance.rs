@@ -1172,13 +1172,14 @@ fn kernel_error_variant_count() {
 /// 36, UntypedReset at 37, TcbSetSpace at 38, and PageTableMap / PageTableUnmap
 /// at 39 and 40; WS-ZA ZA4.3 added Yield at 41; WS-ZA ZA5.4 part 14 retired
 /// LifecycleRetype at 8; WS-ZA ZA6.9 added SchedContextConsumed at 42; WS-ZA
-/// ZA6.29 added SchedContextYieldTo at 43, leaving 43 variants under an
-/// encoding bound of 44).
+/// ZA6.29 added SchedContextYieldTo at 43; WS-ZA ZA6.32 added IrqHandlerAck at
+/// 44 and IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to
+/// 47, leaving 47 variants under an encoding bound of 48).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 43;
+    const SYSCALL_COUNT: u64 = 47;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
-    assert_eq!(SyscallId::ENCODING_BOUND, 44);
+    assert_eq!(SyscallId::ENCODING_BOUND, 48);
     for i in live_syscall_numbers() {
         assert!(
             SyscallId::from_u64(i).is_some(),
@@ -1323,7 +1324,9 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is 43 (WS-ZA ZA6.29 added SchedContextYieldTo at 43, after
+/// AA1-B-5: COUNT is 47 (WS-ZA ZA6.32 added IrqHandlerAck at 44 and
+/// IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to 47, after
+/// WS-ZA ZA6.29 added SchedContextYieldTo at 43, after
 /// WS-ZA ZA6.9 added SchedContextConsumed at 42, after
 /// WS-ZA ZA5.4 part 14 retired LifecycleRetype at 8,
 /// after WS-ZA ZA4.3 added Yield, on top of
@@ -1336,7 +1339,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 43);
+    assert_eq!(SyscallId::COUNT, 47);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1769,17 +1772,19 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 44 is out of range for SyscallId
+/// D6-D5: Boundary — discriminant 48 is out of range for SyscallId
 /// (WS-BP BP7.1 added PageTableMap and PageTableUnmap, moving the boundary
 /// from 39 to 41; WS-ZA ZA4.3 added Yield, moving it to 42; WS-ZA ZA6.9 added
 /// SchedContextConsumed, moving it to 43; WS-ZA ZA6.29 added
-/// SchedContextYieldTo, moving it to 44).
+/// SchedContextYieldTo, moving it to 44; WS-ZA ZA6.32 added IrqHandlerAck,
+/// IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear, moving it to
+/// 48).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(43).is_some()); // Last valid
-    assert!(SyscallId::from_u64(44).is_none()); // First invalid
+    assert!(SyscallId::from_u64(47).is_some()); // Last valid
+    assert!(SyscallId::from_u64(48).is_none()); // First invalid
     assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
-    assert_eq!(SyscallId::COUNT, 43);
+    assert_eq!(SyscallId::COUNT, 47);
 }
 
 /// WS-ZA ZA6.9: SchedContextConsumed roundtrip (discriminant 42).
@@ -1802,6 +1807,36 @@ fn sched_context_yield_to_roundtrip() {
     assert_eq!(sid, SyscallId::SchedContextYieldTo);
     assert_eq!(sid.to_u64(), 43);
     assert_eq!(sid.required_right(), AccessRight::Write);
+}
+
+/// WS-ZA ZA6.32: IrqHandlerAck roundtrip (discriminant 44).
+/// `seL4_IRQHandler_Ack`: the interrupt-handler capability with the write
+/// right, no message registers; returns nothing.
+#[test]
+fn irq_handler_ack_roundtrip() {
+    let sid = SyscallId::from_u64(44).expect("IrqHandlerAck must exist");
+    assert_eq!(sid, SyscallId::IrqHandlerAck);
+    assert_eq!(sid.to_u64(), 44);
+    assert_eq!(sid.required_right(), AccessRight::Write);
+}
+
+/// WS-ZA ZA6.32: the interrupt-control and interrupt-handler invocations'
+/// roundtrips (discriminants 45 to 47): `seL4_IRQControl_Get` on the
+/// interrupt-control capability, `seL4_IRQHandler_SetNotification` and
+/// `seL4_IRQHandler_Clear` on the handler capability, each with the write
+/// right; none returns a value.
+#[test]
+fn irq_control_and_handler_roundtrips() {
+    for (n, expected) in [
+        (45, SyscallId::IrqControlGet),
+        (46, SyscallId::IrqHandlerSetNotification),
+        (47, SyscallId::IrqHandlerClear),
+    ] {
+        let sid = SyscallId::from_u64(n).expect("interrupt invocation must exist");
+        assert_eq!(sid, expected);
+        assert_eq!(sid.to_u64(), n);
+        assert_eq!(sid.required_right(), AccessRight::Write);
+    }
 }
 
 /// WS-ZA ZA4.3: Yield roundtrip (discriminant 41).  `seL4_Yield` under MCS:
@@ -2165,7 +2200,13 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         // WS-SM SM9.C.8: a declassifying signal returns nothing, exactly like
         // the ordinary signal it wraps — the badge it moves goes to the
         // *receiver*, not back to the signaller.
-        | SyscallId::DeclassifySignal => ReturnShape::Unit,
+        | SyscallId::DeclassifySignal
+        // WS-ZA ZA6.32: the acknowledge unmasks a line and returns nothing.
+        | SyscallId::IrqHandlerAck
+        // WS-ZA ZA6.32: the handler issue, bind and unbind return nothing.
+        | SyscallId::IrqControlGet
+        | SyscallId::IrqHandlerSetNotification
+        | SyscallId::IrqHandlerClear => ReturnShape::Unit,
     }
 }
 
@@ -2680,6 +2721,17 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("sched_context_consumed", SyscallId::SchedContextConsumed);
     let _ = sele4n_sys::sched_context::sched_context_yield_to(cap);
     assert_clears("sched_context_yield_to", SyscallId::SchedContextYieldTo);
+    let _ = sele4n_sys::irq::irq_handler_ack(cap);
+    assert_clears("irq_handler_ack", SyscallId::IrqHandlerAck);
+    let _ = sele4n_sys::irq::irq_control_get(cap, 33, cap, Slot::from(0u64));
+    assert_clears("irq_control_get", SyscallId::IrqControlGet);
+    let _ = sele4n_sys::irq::irq_handler_set_notification(cap, cap);
+    assert_clears(
+        "irq_handler_set_notification",
+        SyscallId::IrqHandlerSetNotification,
+    );
+    let _ = sele4n_sys::irq::irq_handler_clear(cap);
+    assert_clears("irq_handler_clear", SyscallId::IrqHandlerClear);
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,

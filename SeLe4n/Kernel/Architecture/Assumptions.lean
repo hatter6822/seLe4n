@@ -165,9 +165,10 @@ in `Invariant.lean`; the index is pointers only so this file has no
 2. `deterministicRegisterContext_consumed_by_writeRegister`
 3. `memoryAccessSafety_consumed_by_readMemory`
 4. `default_system_state_proofLayerInvariantBundle` (boot-state typing witness)
-5. `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid`
-   (IRQ routing totality witness; structural across every registered IRQ
-   handler, introduced by AK9-C). -/
+5. `SeLe4n.Kernel.Architecture.irqBinding?_notification`
+   (IRQ routing totality witness: every line the interrupt entry delivers on
+   resolves to a notification through its interrupt node, WS-ZA ZA6.32; it
+   replaced AK9-C's boot-table witness when the boot table was retired). -/
 
 /-- AN6-B: Canonical mapping from `ArchAssumption` to the fully-qualified
     `Lean.Name` of the theorem that consumes it. See the docstring for the
@@ -190,7 +191,7 @@ def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .bootObjectTyping =>
       `SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
   | .irqRoutingTotality =>
-      `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
+      `SeLe4n.Kernel.Architecture.irqBinding?_notification
   | .singleCoreOperation =>
       `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
 

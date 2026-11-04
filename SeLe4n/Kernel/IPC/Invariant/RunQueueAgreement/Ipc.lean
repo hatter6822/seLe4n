@@ -24,12 +24,11 @@ theorem modifyTcbOpt_runQueueStage {st st' : SystemState} {t? : Option SeLe4n.Th
     {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st')
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
     (hm : TCB.StateMono f := by tcb_state_mono)
-    (hW : ∀ x, (f x).taintWords = x.taintWords := by taint_words_kept)
     (hY : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept) : RunQueueStage st st' := by
   unfold modifyTcbOpt at h
   split at h
   · cases h; exact RunQueueStage.refl _
-  · exact modifyTcb_runQueueStage h hf hm hW hY
+  · exact modifyTcb_runQueueStage h hf hm hY
 
 theorem linkNtfnWaiter_runQueueStage {st st' : SystemState} {w : SeLe4n.ThreadId}
     {tail : Option SeLe4n.ThreadId} (h : linkNtfnWaiter st w tail = .ok st') :
@@ -55,14 +54,11 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {n n' : Notification} (hOld : st.getNotification? k = some n)
     (hS : storeObject k (.notification n') st = .ok ((), st'))
-    (hI : n'.irqBound = n.irqBound := by first | rfl | (simp_all; done))
-    (hNW : n'.taintWords = n.taintWords := by taint_words_kept) : RunQueueStage st st' :=
+ : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by
     rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (SystemState.objStateMono_nonTcb
       (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl) rfl)
-    (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]
-        simp only [objTableBackLinks_some, KernelObject.tableBackLinks, hI, hNW])
     (fun c => by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
@@ -88,13 +84,9 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
       rcases hD.2.2 oid with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
       · exact SystemState.slotStateMono.of_eq e
       · rw [h0]; exact SystemState.slotStateMono.of_obj h1 (SystemState.objStateMono_tcb ⟨id, id, rfl⟩)
-    have hF : SystemState.TableReferenceFrame st s := ⟨by rw [hD.1]; rfl, fun k => by
-      rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
-      · rw [e]
-      · rw [h0, h1]; rfl⟩
-    exact ⟨.of_tableFrame (fun _ hR => ⟨hD.2.1, SystemState.runQueueRefined_of_frame
+    exact ⟨.of_frames (fun _ hR => ⟨hD.2.1, SystemState.runQueueRefined_of_frame
         (fun c t => hL c t) (by rw [hD.scheduler_eq]) (by rw [hD.scheduler_eq]) hR⟩)
-        (fun _ => hF) (fun _ => ⟨.of_objReleaseLinkOn fun k c => by
+        (fun _ => ⟨.of_objReleaseLinkOn fun k c => by
           rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
           · rw [e]
           · rw [h0, h1]; rfl, by rw [hD.scheduler_eq]⟩)
@@ -176,11 +168,7 @@ theorem spliceReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n
   · rw [h]; exact RunQueueStage.refl _
   · refine RunQueueStage.of_slots (fun hInv =>
       ⟨spliceReplyFrameOut_preserves_objects_invExt hInv h, fun oid c => ?_, fun oid => ?_,
-       spliceReplyFrameOut_scheduler_eq h⟩) (fun hInv =>
-      ⟨spliceReplyFrameOut_referenceTables h, fun oid => by
-        rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
-        · rw [e]
-        · rw [h1, h2]; rfl⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
+       spliceReplyFrameOut_scheduler_eq h⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
       (by rw [spliceReplyFrameOut_machine_eq h])
     · rcases spliceReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
@@ -239,9 +227,7 @@ theorem notificationWait_block_runQueueEntryStage {st st1 st2 st3 : SystemState}
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
-    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false)
-    (hI : n'.irqBound = ntfn.irqBound := by first | rfl | (simp_all; done))
-    (hNW : n'.taintWords = ntfn.taintWords := by taint_words_kept) :
+    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
     SystemState.RunQueueEntryStage st (removeRunnableOnCore st3 waiter c) := by
   have hC1 : st1.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (storeObject_scheduler_eq _ _ _ _ hS1) hCur
@@ -260,7 +246,7 @@ theorem notificationWait_block_runQueueEntryStage {st st1 st2 st3 : SystemState}
       split at hS2
       · cases hS2
       · rename_i hS; cases hS2
-        exact ((storeObject_notificationOver_runQueueStage hN hS1 hI hNW).window _).trans
+        exact ((storeObject_notificationOver_runQueueStage hN hS1).window _).trans
           (SystemState.RunQueueWindowStage.storeObject_block hS
             ((SystemState.getTcb?_eq_some_iff st1 waiter tcb).mpr hT1) (fun _ => rfl) rfl hC1 hNI)
   exact (w.trans ((linkNtfnWaiter_runQueueStage hL).window _)).dispatch

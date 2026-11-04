@@ -43,6 +43,8 @@ The tag/operand encoding **must** stay in lockstep with
   tag 3 = store the user word `value` at `addr`, in a thread's RAM page (WS-BP BP7.8)
   tag 4 = store the **table** descriptor `value` at `addr`, an entry of a level
           0–2 table page (PR #904, `v0.36.41`)
+  tag 5 = mask interrupt line `addr` at the interrupt controller when `value`
+          is `1`, unmask it when `value` is `0` (WS-ZA ZA6.32)
 
 The two descriptor tags are distinct because the walker reads a descriptor by
 the **level** of the table it sits in, and bits `[1:0] = 0b11` mean a page at
@@ -90,6 +92,13 @@ inductive PhysicalWrite where
       and as a page at level 3, and the HAL validates the output address
       against the reading the walker will apply. -/
   | storeTableDescriptor (entry : SeLe4n.PAddr) (value : UInt64)
+  /-- **WS-ZA ZA6.32**: disable (`masked`) or enable interrupt line `line` at
+      the interrupt controller — the distributor's clear-enable or set-enable
+      register, an MMIO store, as seL4's `maskInterrupt` performs it.  Recorded
+      by the interrupt entry when it delivers a line or meets one no handler is
+      bound to, and by the acknowledge (`seL4_IRQHandler_Ack`); the model
+      performs the same write on `MachineState.setIrqLineMask`. -/
+  | setInterruptMask (line : Nat) (masked : Bool)
   deriving Repr, DecidableEq
 
 namespace PhysicalWrite
@@ -101,6 +110,7 @@ namespace PhysicalWrite
   | .invalidateAsid _ => 2
   | .storeUserWord _ _ => 3
   | .storeTableDescriptor _ _ => 4
+  | .setInterruptMask _ _ => 5
 
 /-- The FFI address operand. -/
 @[inline] def addr : PhysicalWrite → UInt64
@@ -109,6 +119,7 @@ namespace PhysicalWrite
   | .invalidateAsid asid => asid.toNat.toUInt64
   | .storeUserWord a _ => a.toNat.toUInt64
   | .storeTableDescriptor entry _ => entry.toNat.toUInt64
+  | .setInterruptMask line _ => line.toUInt64
 
 /-- The FFI value operand. -/
 @[inline] def value : PhysicalWrite → UInt64
@@ -117,9 +128,10 @@ namespace PhysicalWrite
   | .invalidateAsid _ => 0
   | .storeUserWord _ v => v
   | .storeTableDescriptor _ v => v
+  | .setInterruptMask _ masked => if masked then 1 else 0
 
-/-- Every tag is one of the five the HAL decodes. -/
-theorem tag_le_four (w : PhysicalWrite) : w.tag ≤ 4 := by
+/-- Every tag is one of the six the HAL decodes. -/
+theorem tag_le_five (w : PhysicalWrite) : w.tag ≤ 5 := by
   cases w <;> simp [tag]
 
 /-- **WS-BP post-landing audit (`v0.36.32`): the instruction-cache maintenance a
@@ -152,6 +164,7 @@ def icacheMaintenance : PhysicalWrite → Option ICacheInvalidation
   | .invalidateAsid _ => none
   | .storeUserWord _ _ => none
   | .storeTableDescriptor _ _ => none
+  | .setInterruptMask _ _ => none
 
 /-- **WS-BP post-landing audit (`v0.36.32`)**: a zeroing owes the clean of exactly
 the page it zeroes, then the domain-wide invalidate. -/

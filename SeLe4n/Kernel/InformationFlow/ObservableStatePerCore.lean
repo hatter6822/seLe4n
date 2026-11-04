@@ -51,7 +51,7 @@ the missing structure around it:
   for full equality.
 * **Per-core independence** (§5).  The read set of the per-core observable
   state is characterised exactly: the five shared state components
-  (`objects`, `irqHandlers`, `objectIndex`,
+  (`objects`, `irqSignalLines`, `objectIndex`,
   `scheduler.domainSchedule`, `machine.memory`) plus core `c`'s five
   scheduler slots and core `c`'s register bank — and *nothing else*, in
   particular no other core's slots.  Note this does not follow from
@@ -104,7 +104,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 
 /-- SM8.A.1: the `IfObserver` carrying clearance `L`.
 
-The label-filtered projections (`projectObjects`, `projectIrqHandlers`, …)
+The label-filtered projections (`projectObjects`, `projectIrqSignalLines`, …)
 are indexed by an `IfObserver`; naming the injection keeps every SM8 site
 from re-spelling the anonymous-constructor literal, so the observer's
 clearance is threaded through one function rather than by convention. -/
@@ -152,7 +152,7 @@ def PerCoreObserver.onBootCore (L : SecurityLabel) : PerCoreObserver :=
 The per-core components (`runnable`, `current`, `activeDomain`,
 `domainTimeRemaining`, `domainScheduleIndex`, `machineRegs`) are read off
 core `c`'s scheduler slots and register bank; the shared components
-(`objects`, `irqHandlers`, `objectIndex`, `domainSchedule`, `memory`) are
+(`objects`, `irqSignalLines`, `objectIndex`, `domainSchedule`, `memory`) are
 label-filtered only.
 
 Defined as the SM4.D `projectStateOnCore` at the observer `⟨L⟩` rather than
@@ -231,7 +231,7 @@ theorem lowEquivalent_smp_iff_forall_observer (ctx : LabelingContext) (L : Secur
 -- `ObservableState` has twelve components.  Under the per-core observer
 -- they split into two groups:
 --
---   * SHARED (5)   — objects, irqHandlers, objectIndex, domainSchedule,
+--   * SHARED (5)   — objects, irqSignalLines, objectIndex, domainSchedule,
 --                    memory.  Filtered by
 --                    the observer's label; read no per-core scheduler slot
 --                    and no per-core register bank, hence identical from
@@ -251,7 +251,7 @@ theorem lowEquivalent_smp_iff_forall_observer (ctx : LabelingContext) (L : Secur
 every core (they are filtered by the observer's *label* only). -/
 structure SharedObservableFragment where
   objects : SeLe4n.ObjId → Option KernelObject
-  irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
+  irqSignalLines : SeLe4n.Irq → Bool
   objectIndex : List SeLe4n.ObjId
   domainSchedule : List DomainScheduleEntry
   memory : SeLe4n.PAddr → Option UInt8
@@ -269,7 +269,7 @@ structure PerCoreObservableFragment where
 /-- The shared half of an observable state. -/
 def ObservableState.sharedFragment (v : ObservableState) : SharedObservableFragment :=
   { objects := v.objects
-    irqHandlers := v.irqHandlers
+    irqSignalLines := v.irqSignalLines
     objectIndex := v.objectIndex
     domainSchedule := v.domainSchedule
     memory := v.memory }
@@ -316,7 +316,7 @@ def ObservableState.ofFragments (sh : SharedObservableFragment)
     runnable := pc.runnable
     current := pc.current
     activeDomain := pc.activeDomain
-    irqHandlers := sh.irqHandlers
+    irqSignalLines := sh.irqSignalLines
     objectIndex := sh.objectIndex
     domainTimeRemaining := pc.domainTimeRemaining
     domainSchedule := sh.domainSchedule
@@ -358,7 +358,7 @@ core-independent below. -/
     (L : SecurityLabel) (s : SystemState) :
     (ObservableState.onCore ctx c L s).sharedFragment =
       { objects := projectObjects ctx (IfObserver.ofLabel L) s
-        irqHandlers := projectIrqHandlers ctx (IfObserver.ofLabel L) s
+        irqSignalLines := projectIrqSignalLines ctx (IfObserver.ofLabel L) s
         objectIndex := projectObjectIndex ctx (IfObserver.ofLabel L) s
         domainSchedule := projectDomainSchedule ctx (IfObserver.ofLabel L) s
         memory := projectMemory ctx (IfObserver.ofLabel L) s } := rfl
@@ -388,10 +388,10 @@ projection breaks the corresponding `rfl`. -/
     (s : SystemState) :
     (ObservableState.onCore ctx c L s).objects = projectObjects ctx (IfObserver.ofLabel L) s := rfl
 
-@[simp] theorem onCore_irqHandlers (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+@[simp] theorem onCore_irqSignalLines (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) :
-    (ObservableState.onCore ctx c L s).irqHandlers =
-      projectIrqHandlers ctx (IfObserver.ofLabel L) s := rfl
+    (ObservableState.onCore ctx c L s).irqSignalLines =
+      projectIrqSignalLines ctx (IfObserver.ofLabel L) s := rfl
 
 @[simp] theorem onCore_objectIndex (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) :
@@ -545,7 +545,7 @@ theorem onCore_congr_of_globalProjection
 -- instance can claim otherwise:
 --
 --   * three components are functions over unbounded domains — `objects`
---     (`ObjId → …`), `irqHandlers` (`Irq → …`) and `memory` (`PAddr → …`);
+--     (`ObjId → …`), `irqSignalLines` (`Irq → …`) and `memory` (`PAddr → …`);
 --   * `machineRegs` carries a `RegisterFile`, which is decidable (thirty-five
 --     machine words), so the register bank is the one component the finer
 --     check below compares exactly.
@@ -620,13 +620,13 @@ theorem perCoreSlice_erases_register_content :
     ∃ v₁ v₂ : ObservableState,
       v₁.perCoreSlice = v₂.perCoreSlice ∧ v₁.machineRegs ≠ v₂.machineRegs := by
   refine ⟨{ objects := fun _ => none, runnable := [], current := none,
-            activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
+            activeDomain := ⟨0⟩, irqSignalLines := fun _ => false,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0,
             machineRegs := some { pc := 0, sp := 0 },
             memory := fun _ => none },
           { objects := fun _ => none, runnable := [], current := none,
-            activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
+            activeDomain := ⟨0⟩, irqSignalLines := fun _ => false,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0,
             machineRegs := some { pc := 1, sp := 0 },
@@ -646,12 +646,12 @@ the decidable fragment as a **strict** sub-observation on both halves of the
 theorem perCoreSlice_erases_shared_content :
     ∃ v₁ v₂ : ObservableState, v₁.perCoreSlice = v₂.perCoreSlice ∧ v₁ ≠ v₂ := by
   refine ⟨{ objects := fun _ => none, runnable := [], current := none,
-            activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
+            activeDomain := ⟨0⟩, irqSignalLines := fun _ => false,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0, machineRegs := none,
             memory := fun _ => none },
           { objects := fun _ => none, runnable := [], current := none,
-            activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
+            activeDomain := ⟨0⟩, irqSignalLines := fun _ => false,
             objectIndex := [SeLe4n.ObjId.ofNat 0], domainTimeRemaining := 0,
             domainSchedule := [], domainScheduleIndex := 0, machineRegs := none,
             memory := fun _ => none },
@@ -783,7 +783,7 @@ theorem lowEquivalentSliceOnCoreCheckWithRegsByLinks_eq (ctx : LabelingContext)
 -- `onCore_perCore_independence` states the **read set** of the per-core
 -- observable state at `(c, L)`:
 --
---   shared   : objects, irqHandlers, objectIndex,
+--   shared   : objects, irqSignalLines, objectIndex,
 --              scheduler.domainSchedule, machine.memory
 --   core `c` : scheduler.{runQueue, current, activeDomain,
 --              domainTimeRemaining, domainScheduleIndex}OnCore c,
@@ -809,7 +809,7 @@ SM4.B per-core store/load algebra, giving the cross-core frames directly. -/
 theorem onCore_perCore_independence
     (ctx : LabelingContext) (L : SecurityLabel) {s₁ s₂ : SystemState} {c : CoreId}
     (hObjects : s₁.objects = s₂.objects)
-    (hIrq : s₁.irqHandlers = s₂.irqHandlers)
+    (hIrq : s₁.irqSignalLines = s₂.irqSignalLines)
     (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
@@ -824,7 +824,7 @@ theorem onCore_perCore_independence
   · simp only [onCore_sharedFragment, SharedObservableFragment.mk.injEq]
     refine ⟨?_, ?_, ?_, ?_, ?_⟩
     · funext oid; simp only [projectObjects, SystemState.getObject?]; rw [hObjects]
-    · funext irq; simp only [projectIrqHandlers]; rw [hIrq]
+    · funext irq; simp only [projectIrqSignalLines]; rw [hIrq]
     · simp only [projectObjectIndex]; rw [hIndex]
     · simp only [projectDomainSchedule]; rw [hDomSched]
     · exact projectMemory_eq_of_memory_eq _ _ _ _ hMem
@@ -1001,6 +1001,10 @@ theorem capTargetObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
   | auditTrail => exact h
   -- WS-ZA ZA6.4: a scheduling-control capability names a core, constant `true`.
   | schedControl _ => exact h
+  -- WS-ZA ZA6.32: an interrupt-control capability names no object, constant
+  -- `true`; a handler capability names its line's interrupt node.
+  | irqControl => exact h
+  | irqHandler l => exact objectObservable_monotone ctx hFlow (irqNodeId l) h
 
 /-- SM8.A.4: the SM7.D per-core instruction-cache view is invisible to every
 per-core observer — the structural sibling of `perCoreTlb` above, and a timing
@@ -1380,7 +1384,7 @@ structure ObservableState.visibilityLe (v₁ v₂ : ObservableState) : Prop wher
   runnable : v₁.runnable.Sublist v₂.runnable
   current : ∀ t, v₁.current = some t → v₂.current = some t
   activeDomain : v₁.activeDomain = v₂.activeDomain
-  irqHandlers : ∀ irq oid, v₁.irqHandlers irq = some oid → v₂.irqHandlers irq = some oid
+  irqSignalLines : ∀ irq, v₁.irqSignalLines irq = true → v₂.irqSignalLines irq = true
   objectIndex : v₁.objectIndex.Sublist v₂.objectIndex
   domainTimeRemaining : v₁.domainTimeRemaining = v₂.domainTimeRemaining
   domainSchedule : v₁.domainSchedule = v₂.domainSchedule
@@ -1393,7 +1397,7 @@ theorem ObservableState.visibilityLe_refl (v : ObservableState) : v.visibilityLe
   runnable := List.Sublist.refl _
   current := fun _ h => h
   activeDomain := rfl
-  irqHandlers := fun _ _ h => h
+  irqSignalLines := fun _ h => h
   objectIndex := List.Sublist.refl _
   domainTimeRemaining := rfl
   domainSchedule := rfl
@@ -1411,7 +1415,7 @@ theorem ObservableState.visibilityLe_trans {v₁ v₂ v₃ : ObservableState}
   runnable := h₁.runnable.trans h₂.runnable
   current := fun t h => h₂.current t (h₁.current t h)
   activeDomain := h₁.activeDomain.trans h₂.activeDomain
-  irqHandlers := fun irq oid h => h₂.irqHandlers irq oid (h₁.irqHandlers irq oid h)
+  irqSignalLines := fun irq h => h₂.irqSignalLines irq (h₁.irqSignalLines irq h)
   objectIndex := h₁.objectIndex.trans h₂.objectIndex
   domainTimeRemaining := h₁.domainTimeRemaining.trans h₂.domainTimeRemaining
   domainSchedule := h₁.domainSchedule.trans h₂.domainSchedule
@@ -1489,8 +1493,8 @@ theorem ObservableState.eq_of_visibilityLe_antisymm {v₁ v₂ : ObservableState
     h₁.objectIndex.eq_of_length
       (Nat.le_antisymm h₁.objectIndex.length_le h₂.objectIndex.length_le)
   have hCurrent : v₁.current = v₂.current := eq_of_option_imp h₁.current h₂.current
-  have hIrq : v₁.irqHandlers = v₂.irqHandlers :=
-    funext fun irq => eq_of_option_imp (h₁.irqHandlers irq) (h₂.irqHandlers irq)
+  have hIrq : v₁.irqSignalLines = v₂.irqSignalLines :=
+    funext fun irq => Bool.eq_iff_iff.mpr ⟨h₁.irqSignalLines irq, h₂.irqSignalLines irq⟩
   have hRegs : v₁.machineRegs = v₂.machineRegs := eq_of_option_imp h₁.machineRegs h₂.machineRegs
   have hMemory : v₁.memory = v₂.memory :=
     funext fun pa => eq_of_option_imp (h₁.memory pa) (h₂.memory pa)
@@ -1549,18 +1553,10 @@ theorem onCore_label_monotone (ctx : LabelingContext) (c : CoreId) {L₁ L₂ : 
       · simp [hObs] at ht
   · -- activeDomain: unfiltered (CC-1), so equal rather than merely visible
     rfl
-  · -- irqHandlers
-    intro irq oid hIrq
-    simp only [onCore_irqHandlers, projectIrqHandlers] at hIrq ⊢
-    cases hLook : s.irqHandlers[irq]? with
-    | none => rw [hLook] at hIrq; simp at hIrq
-    | some oid' =>
-      rw [hLook] at hIrq
-      by_cases hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid' = true
-      · have hEq : oid' = oid := by simpa [hObs] using hIrq
-        subst hEq
-        simp [objectObservable_monotone ctx hFlow _ hObs]
-      · simp [hObs] at hIrq
+  · -- irqSignalLines
+    intro irq hIrq
+    simp only [onCore_irqSignalLines, projectIrqSignalLines, Bool.and_eq_true] at hIrq ⊢
+    exact ⟨objectObservable_monotone ctx hFlow _ hIrq.1, hIrq.2⟩
   · -- objectIndex: likewise a sublist of the same underlying index
     simp only [onCore_objectIndex, projectObjectIndex]
     exact filter_sublist_filter_of_imp _ _ _

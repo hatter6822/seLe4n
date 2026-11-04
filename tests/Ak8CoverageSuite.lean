@@ -167,7 +167,6 @@ private `emptyFrozenState`).  `FrozenSystemState` does not derive `Inhabited`,
 so each field is initialised explicitly. -/
 private def emptyFrozenState : FrozenSystemState :=
   { objects := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    irqHandlers := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     asidTable := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     interfaceRegistry := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     cdt := .empty

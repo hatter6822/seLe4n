@@ -346,6 +346,19 @@ inductive CapTarget where
       boot and held by the root task; a scheduling-context capability binds,
       unbinds and names the context to configure, and configures nothing. -/
   | schedControl (core : Nat)
+  /-- WS-ZA ZA6.32: seL4's `IRQControl` capability: the one authority to issue
+      an interrupt handler capability (`seL4_IRQControl_Get`).  Fieldless, as
+      seL4's is: one is created at boot and held by the root task. -/
+  | irqControl
+  /-- WS-ZA ZA6.32: the handler capability of interrupt line `irq`, seL4's
+      `IRQHandler` capability: the authority to acknowledge the line
+      (`seL4_IRQHandler_Ack`), which re-enables it at the interrupt controller
+      after the kernel masked it to deliver its interrupt, and to set or clear
+      the notification it signals (`seL4_IRQHandler_SetNotification` /
+      `seL4_IRQHandler_Clear`).  Fieldless beyond the line, as seL4's is: it
+      names no object.  The notification the line signals is the capability in
+      the line's IRQ node slot (`SystemState.irqNodeAddr`), seL4's `irq_node`. -/
+  | irqHandler (irq : Nat)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -749,6 +762,26 @@ def schedControlOf (core : Nat) : Capability :=
 /-- WS-ZA ZA6.4: a scheduling-control capability is non-null, so it survives the
 null-capability gate at every entry point that runs it. -/
 theorem schedControlOf_not_null (core : Nat) : (Capability.schedControlOf core).isNull = false := by
+  rfl
+
+/-- WS-ZA ZA6.32: **the interrupt-control capability**, as the boot hands it to
+the root task: the `.write` right `seL4_IRQControl_Get` requires
+(`syscallRequiredRight .irqControlGet`) and nothing else. -/
+def irqControl : Capability :=
+  { target := .irqControl, rights := AccessRightSet.ofList [.write] }
+
+/-- WS-ZA ZA6.32: the interrupt-control capability is non-null. -/
+theorem irqControl_not_null : Capability.irqControl.isNull = false := by
+  rfl
+
+/-- WS-ZA ZA6.32: **interrupt line `irq`'s handler capability**, as
+`seL4_IRQControl_Get` issues it: the `.write` right the handler invocations
+require (`syscallRequiredRight .irqHandlerAck`) and nothing else. -/
+def irqHandlerOf (irq : Nat) : Capability :=
+  { target := .irqHandler irq, rights := AccessRightSet.ofList [.write] }
+
+/-- WS-ZA ZA6.32: an interrupt-handler capability is non-null. -/
+theorem irqHandlerOf_not_null (irq : Nat) : (Capability.irqHandlerOf irq).isNull = false := by
   rfl
 
 /-- AK7-I (F-M07 / MEDIUM): Fail-closed gate helper for capability-using
@@ -1274,6 +1307,50 @@ theorem Capability.overwriteObject_eq (r : Capability) (id : SeLe4n.ObjId)
   unfold overwriteObject
   dsimp only
   rw [CapTarget.objectOver_eq, AccessRightSet.keepOr_eq]
+
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, built fresh,
+out of line. -/
+@[noinline] def CapTarget.ofIrqHandler (line : Nat) : CapTarget := .irqHandler line
+
+/-- WS-ZA ZA6.32: the target naming line `line`'s interrupt handler, written over
+`t` when `t` is a constructor of one field (an object, a reply or a handler: the
+same cell size, so the compiler reuses `t`'s cell), as `objectOver` writes an
+object's.  Out of line, with a distinct fallback arm. -/
+@[noinline] def CapTarget.irqHandlerOver (t : CapTarget) (line : Nat) : CapTarget :=
+  match t with
+  | .object _ => .irqHandler line
+  | .replyCap _ => .irqHandler line
+  | .irqHandler _ => .irqHandler line
+  | _ => CapTarget.ofIrqHandler line
+
+theorem CapTarget.irqHandlerOver_eq (t : CapTarget) (line : Nat) :
+    t.irqHandlerOver line = .irqHandler line := by
+  cases t <;> rfl
+
+/-- WS-ZA ZA6.32: the handler capability of line `line` with `rights` and nothing
+else, written over the record `r` (a slot's spare) and its target
+(`CapTarget.irqHandlerOver`), as `overwriteObject` writes an object's, so
+`seL4_IRQControl_Get` builds neither (`overwriteIrqHandler_eq`). -/
+@[noinline] def Capability.overwriteIrqHandler (r : Capability) (line : Nat)
+    (rights : AccessRightSet) : Capability :=
+  match r with
+  | ⟨t, rr, _, _, _, _, _, _, _⟩ =>
+    ⟨t.irqHandlerOver line, rr.keepOr rights, SeLe4n.Badge.zero, false, default, default, 0,
+      false, 0⟩
+
+/-- WS-ZA ZA6.32: the handler capability of line `line` with `rights`, built fresh
+out of line. -/
+@[noinline] def Capability.ofIrqHandler (line : Nat) (rights : AccessRightSet) : Capability :=
+  ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
+
+theorem Capability.overwriteIrqHandler_eq (r : Capability) (line : Nat)
+    (rights : AccessRightSet) :
+    r.overwriteIrqHandler line rights =
+      ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  obtain ⟨t, rr, _, _, _, _, _, _, _⟩ := r
+  unfold overwriteIrqHandler
+  dsimp only
+  rw [CapTarget.irqHandlerOver_eq, AccessRightSet.keepOr_eq]
 
 /-- WS-ZA ZA5.3 part 6: the capability with the given fields, built fresh (a
 slot with no record of its own).  Out of line, so a caller's literal of the same
@@ -3250,7 +3327,7 @@ structure Endpoint where
       registration keeps its endpoint capability outside every slot, so the
       finality the tree answers does not see it; this back-reference is what a
       final delete reads instead of walking the registry
-      (`SystemState.tableReferencesRecorded`).  A carved endpoint starts clear. -/
+      (`SystemState.tableBackLinksClear`).  A carved endpoint starts clear. -/
   serviceRegistered : Bool := false
   /-- **The registration's words** (WS-ZA ZA5.8), meaningful only while
       `serviceRegistered` is set: the interface the service implements, and the
@@ -3516,13 +3593,6 @@ structure Notification where
       stored as its scalar code (`SeLe4n.ThreadId.optCode`) and read through
       the view `Notification.boundTCB`, so a bind writes no `some` cell. -/
   boundTCBCode : Nat := 0
-  /-- **Whether an interrupt is handled through this notification**: the
-      interrupt table (`SystemState.irqHandlers`, written at boot only) names it
-      by id, where seL4 keeps a capability to it in the interrupt's slot.  Set
-      by the boot for every notification the table names
-      (`SystemState.tableReferencesRecorded`), so a final delete reads this flag
-      instead of walking the table.  A carved notification starts `false`. -/
-  irqBound : Bool := false
   /-- WS-ZA ZA5.11: **the notification's declassification provenance**, as plain
       words: eight tag words, the count of those in use and the saturated bit,
       read through `TCB.taintWords` (`SeLe4n.Kernel.TaintWords`) and written in
@@ -3574,14 +3644,14 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl true p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl true p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl false p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl false p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -3591,11 +3661,11 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b i w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
@@ -3632,7 +3702,7 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
@@ -3643,7 +3713,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, irqBound := n.irqBound, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by
@@ -4316,6 +4386,18 @@ inductive SyscallId where
   | schedContextYieldTo    -- WS-ZA ZA6.29: yield to the thread bound to a scheduling
                            -- context (seL4_SchedContext_YieldTo), through
                            -- `schedContextYieldToOnCore`
+  | irqHandlerAck          -- WS-ZA ZA6.32: re-enable an interrupt line the kernel
+                           -- masked when it delivered the line's interrupt
+                           -- (seL4_IRQHandler_Ack), through `irqHandlerAck`
+  | irqControlGet          -- WS-ZA ZA6.32: issue an interrupt line's handler
+                           -- capability (seL4_IRQControl_Get), through
+                           -- `irqControlGet`
+  | irqHandlerSetNotification -- WS-ZA ZA6.32: bind an interrupt line to a
+                           -- notification (seL4_IRQHandler_SetNotification),
+                           -- through `irqHandlerSetNotification`
+  | irqHandlerClear        -- WS-ZA ZA6.32: unbind an interrupt line's
+                           -- notification (seL4_IRQHandler_Clear), through
+                           -- `irqHandlerClear`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -4366,13 +4448,17 @@ namespace SyscallId
   | .yield                 => 41
   | .schedContextConsumed  => 42
   | .schedContextYieldTo   => 43
+  | .irqHandlerAck         => 44
+  | .irqControlGet         => 45
+  | .irqHandlerSetNotification => 46
+  | .irqHandlerClear       => 47
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 43
+def count : Nat := 47
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
-def encodingBound : Nat := 44
+def encodingBound : Nat := 48
 
 /-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
     lifecycle retype (WS-ZA ZA5.4 part 14). -/
@@ -4424,6 +4510,10 @@ def retiredNumbers : List Nat := [8]
   | 41 => some .yield
   | 42 => some .schedContextConsumed
   | 43 => some .schedContextYieldTo
+  | 44 => some .irqHandlerAck
+  | 45 => some .irqControlGet
+  | 46 => some .irqHandlerSetNotification
+  | 47 => some .irqHandlerClear
   | _  => none
 
 instance : ToString SyscallId where
@@ -4471,6 +4561,10 @@ instance : ToString SyscallId where
     | .yield                 => "yield"
     | .schedContextConsumed  => "schedContextConsumed"
     | .schedContextYieldTo   => "schedContextYieldTo"
+    | .irqHandlerAck         => "irqHandlerAck"
+    | .irqControlGet         => "irqControlGet"
+    | .irqHandlerSetNotification => "irqHandlerSetNotification"
+    | .irqHandlerClear       => "irqHandlerClear"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -4490,7 +4584,8 @@ def all : List SyscallId :=
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
   , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
-  , .schedContextYieldTo ]
+  , .schedContextYieldTo, .irqHandlerAck, .irqControlGet
+  , .irqHandlerSetNotification, .irqHandlerClear ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -4522,9 +4617,10 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 =>
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44
+  | 45 | 46 | 47 =>
     intro s h; simp [ofNat?] at h <;> (subst h; rfl)
-  | n + 44 => intro s h; simp [ofNat?] at h
+  | n + 48 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
@@ -4544,8 +4640,9 @@ theorem ofNat?_isSome_iff (n : Nat) :
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 => rfl
-  | n + 44 => simp [ofNat?, encodingBound, retiredNumbers]
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44
+  | 45 | 46 | 47 => rfl
+  | n + 48 => simp [ofNat?, encodingBound, retiredNumbers]
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl
@@ -4824,3 +4921,35 @@ structure SyscallDecodeResult where
       5-arg syscalls `serviceRegister` and `schedContextConfigure`). -/
   overflowCount : Nat := 0
   deriving Repr, DecidableEq
+
+/-! ### The interrupt nodes' reserved ids
+
+WS-ZA ZA6.32: seL4's `interrupt_irq_node line`, a CNode of one slot per
+interrupt line that the kernel owns; no user capability names one
+(`SeLe4n.Kernel.capTargetsReservedKernelObject`). -/
+
+/-- The first interrupt node's object id: above the idle threads' reserved
+range (`idleThreadIdBase`) and the 16-bit range platform configurations assign
+their objects from. -/
+def irqNodeIdBase : Nat := 0x2_0000
+
+/-- **Line `line`'s interrupt node**, seL4's `interrupt_irq_node line`. -/
+@[inline] def irqNodeId (line : Nat) : SeLe4n.ObjId := SeLe4n.ObjId.ofNat (irqNodeIdBase + line)
+
+/-- **Whether `oid` is an interrupt node's id**, on a board of `count` lines:
+the reserved range `[irqNodeIdBase, irqNodeIdBase + count)`. -/
+@[inline] def isIrqNodeObjId (count : Nat) (oid : SeLe4n.ObjId) : Bool :=
+  decide (irqNodeIdBase ≤ oid.toNat) && decide (oid.toNat < irqNodeIdBase + count)
+
+/-- Distinct lines have distinct nodes. -/
+theorem irqNodeId_injective {a b : Nat} (h : irqNodeId a = irqNodeId b) : a = b := by
+  have := congrArg SeLe4n.ObjId.toNat h
+  simp only [irqNodeId, SeLe4n.ObjId.toNat_ofNat] at this
+  omega
+
+/-- A line's node is in the reserved range of every board that has the line. -/
+theorem isIrqNodeObjId_irqNodeId {count line : Nat} (h : line < count) :
+    isIrqNodeObjId count (irqNodeId line) = true := by
+  simp only [isIrqNodeObjId, irqNodeId, SeLe4n.ObjId.toNat_ofNat, Bool.and_eq_true,
+    decide_eq_true_eq]
+  omega

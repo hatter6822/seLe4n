@@ -656,9 +656,8 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                     exact SystemState.slotCapAt_storeObject_ne hObjInv hPre hStore
                       (fun s' hs => CNode.lookup_insert_ne preCn addr.slot s' _ (Ne.symm hs)
                         (CNode.slotsUnique_holds _)) r hr)
-                  (fun o hp => by
-                    show st'.objects[o]? ≠ none
-                    rw [hRefObj]; exact SystemState.objectPresent_storeObject hObjInv hStore o hp)
+                  (fun o hp => SystemState.objectPresent_of_objects_cdt hRefObj hRefCdt o
+                    (SystemState.objectPresent_storeObject hObjInv hStore o hp))
                   (funext fun o => by
                     rw [SystemState.getUntyped?_eq_bind, hRefObj, ← SystemState.getUntyped?_eq_bind,
                       SystemState.getUntyped?_storeObject_cnode hObjInv hPre hStore])⟩

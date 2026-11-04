@@ -462,7 +462,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active, 
-              hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+              hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok stored =>
                 -- Stored on the notification: it now holds the badge, so it
@@ -488,7 +488,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, irqBound := ntfn.irqBound, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
                 -- **No enqueue here** (PR #873 round 17).  The waiter on this
@@ -2200,6 +2200,10 @@ def frozenOpCoverage : SyscallId → Bool
                                      -- caller, replenish and run queues), like `.tcbSetAffinity`
   | .schedContextConsumed => false   -- WS-ZA ZA6.9: writes the executing core's caller's registers; no frozen-phase variant defined
   | .schedContextYieldTo => false    -- WS-ZA ZA6.29: per-core scheduler op (the executing core's caller and run queue); no frozen-phase variant defined
+  | .irqHandlerAck => false          -- WS-ZA ZA6.32: writes the interrupt controller's mask (a machine write); no frozen-phase variant defined
+  | .irqControlGet => false          -- WS-ZA ZA6.32: writes the line's state and mask (machine writes); no frozen-phase variant defined
+  | .irqHandlerSetNotification => false -- WS-ZA ZA6.32: a finalising delete and a copy into the line's node; no frozen-phase variant defined
+  | .irqHandlerClear => false        -- WS-ZA ZA6.32: a finalising delete of the line's node slot; no frozen-phase variant defined
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant

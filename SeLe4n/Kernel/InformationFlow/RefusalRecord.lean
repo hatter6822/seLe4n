@@ -686,6 +686,7 @@ def refusalSeamClass : SeLe4n.Model.SyscallId → RefusalSeamClass
   | .notificationSignal | .notificationWait | .replyRecv => .exempt
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo => .exempt
+  | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear => .exempt
   | .tcbSuspend | .tcbResume => .exempt
   | .tcbSetPriority | .tcbSetMCPriority => .exempt
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => .exempt

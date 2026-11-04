@@ -302,6 +302,29 @@ def mmioRegions : List SeLe4n.MemoryRegion :=
   , { base := gicCpuInterfaceBase,  size := 0x2000, kind := .device }  -- GIC-400 CPU interface
   ]
 
+/-- Number of shared peripheral interrupts (SPIs) on BCM2712 GIC-400.
+
+    The GIC-400 architecture supports up to 480 SPIs (INTIDs 32–511); the
+    BCM2712's distributor is configured with 288 (INTIDs 32–319,
+    `GICD_TYPER.ITLinesNumber = 9`).  Linux's `bcm2712.dtsi` wires devices to
+    SPIs up to 276 — PCIe0/1/2 INTx and MSI (`GIC_SPI 209`–`234`), the
+    brcmstb level-2 controllers behind every SoC GPIO interrupt (`238`–`247`),
+    V3D (`249`/`250`), MIP1 (`247`–`262`), both SD hosts (`273`/`274`) and
+    UARTA, the Bluetooth UART (`276`, INTID 308) — and the `rpi5_machine`
+    QEMU model gives its GIC-400 `num-irq = 320` from the same tree.  The
+    highest wired SPI rounded up to whole 32-line banks is 288.
+
+    The HAL refuses a distributor that implements fewer lines: `init_gic`
+    reads `GICD_TYPER.ITLinesNumber` before programming anything and halts
+    the boot with a diagnostic when `32 × (ITLinesNumber + 1)` is below
+    `gicSpiCount + 32`.  The interrupt contract's `irqLineSupported`, the
+    model's `InterruptId` bound, the machine configuration's `interruptLineCount` (which the
+    interrupt entry and the acknowledge read) and the HAL's
+    `RPI5.gic_intid_count` all follow this constant
+    (`tests/fixtures/boot_map.expected`'s `gicIntIds` line holds the HAL to
+    it). -/
+def gicSpiCount : Nat := 288
+
 /-- ARMv8-A machine configuration for Raspberry Pi 5. -/
 def rpi5MachineConfig : SeLe4n.MachineConfig :=
   {
@@ -335,33 +358,16 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     kernelDevices := mmioRegions
     -- WS-BP BP7.1: the table-page pool, identical on every variant.
     bootTablePool := rpi5BootTablePool
+    -- WS-ZA ZA6.32: the GIC-400's lines, the 32 private ones and the SPIs
+    -- (`gicSpiCount`), identical on every variant: the bound the interrupt
+    -- entry and the acknowledge refuse a line outside of.
+    interruptLineCount := gicSpiCount + 32
   }
 
 -- ============================================================================
 -- GIC-400 IRQ constants
 -- ============================================================================
 
-/-- Number of shared peripheral interrupts (SPIs) on BCM2712 GIC-400.
-
-    The GIC-400 architecture supports up to 480 SPIs (INTIDs 32–511); the
-    BCM2712's distributor is configured with 288 (INTIDs 32–319,
-    `GICD_TYPER.ITLinesNumber = 9`).  Linux's `bcm2712.dtsi` wires devices to
-    SPIs up to 276 — PCIe0/1/2 INTx and MSI (`GIC_SPI 209`–`234`), the
-    brcmstb level-2 controllers behind every SoC GPIO interrupt (`238`–`247`),
-    V3D (`249`/`250`), MIP1 (`247`–`262`), both SD hosts (`273`/`274`) and
-    UARTA, the Bluetooth UART (`276`, INTID 308) — and the `rpi5_machine`
-    QEMU model gives its GIC-400 `num-irq = 320` from the same tree.  The
-    highest wired SPI rounded up to whole 32-line banks is 288.
-
-    The HAL refuses a distributor that implements fewer lines: `init_gic`
-    reads `GICD_TYPER.ITLinesNumber` before programming anything and halts
-    the boot with a diagnostic when `32 × (ITLinesNumber + 1)` is below
-    `gicSpiCount + 32`.  The interrupt contract's `irqLineSupported`, the
-    deployment's IRQ table (`rpi5IrqTable`), the model's `InterruptId`
-    bound and the HAL's `RPI5.gic_intid_count` all follow this constant
-    (`tests/fixtures/boot_map.expected`'s `gicIntIds` line holds the HAL to
-    it). -/
-def gicSpiCount : Nat := 288
 
 /-- ARM Generic Timer PPI (Private Peripheral Interrupt) ID.
     Non-secure physical timer: INTID 30. -/

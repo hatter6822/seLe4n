@@ -790,13 +790,13 @@ theorem cspaceInsertSlot_cdt_eq
   exact storeObject_cdt_eq _ _ _ _ hStore
 
 /-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
-theorem cspaceInsertSlot_preserves_irqHandlers
+theorem cspaceInsertSlot_preserves_irqSignalLines
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    st'.irqHandlers = st.irqHandlers := by
+    st'.irqSignalLines = st.irqSignalLines := by
   obtain ⟨cn, _, _, _, hStore⟩ :=
     cspaceInsertSlot_ok_decompose st st' addr cap hStep
-  exact storeObject_irqHandlers_eq _ _ _ _ hStore
+  exact storeObject_irqSignalLines_eq _ _ _ _ hStore
 
 /-- WS-E4/H-02: `cspaceInsertSlot` rejects occupied slots. -/
 theorem cspaceInsertSlot_rejects_occupied_slot
@@ -1699,10 +1699,15 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
     (detachRevokedSlots st cnodeId cn sourceSlot target).objectIndexSet = st.objectIndexSet := by
   obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
 
-@[simp] theorem detachRevokedSlots_irqHandlers (st : SystemState) (cnodeId : SeLe4n.ObjId)
+@[simp] theorem detachRevokedSlots_irqSignalLines (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
-    (detachRevokedSlots st cnodeId cn sourceSlot target).irqHandlers = st.irqHandlers := by
-  obtain ⟨_, h⟩ := detachRevokedSlots_shape st cnodeId cn sourceSlot target; rw [h.fields]
+    (detachRevokedSlots st cnodeId cn sourceSlot target).irqSignalLines = st.irqSignalLines := by
+  unfold detachRevokedSlots
+  refine SeLe4n.Model.CNode.foldCells_preserves cn st _
+    (fun acc => acc.irqSignalLines = st.irqSignalLines) rfl (fun acc slot cap _ hAcc => ?_)
+  split
+  · exact hAcc
+  · rw [spliceDeletedCdtNode, SystemState.cdtSplice_irqSignalLines]; exact hAcc
 
 @[simp] theorem detachRevokedSlots_asidTable (st : SystemState) (cnodeId : SeLe4n.ObjId)
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
@@ -2333,6 +2338,24 @@ capability first (WS-ZA ZA5.3 part 6). -/
   funext src dst st
   unfold cspaceCopyPerform cspaceCopyPerformImpl cspaceInstallPerform
   simp only [CNode.insertFields_eq_insert]; rfl
+
+/-- The copy's writes keep the scheduler. -/
+theorem cspaceCopyPerform_scheduler (src dst : CSpaceAddr) (st : SystemState) :
+    (cspaceCopyPerform src dst st).scheduler = st.scheduler := by
+  unfold cspaceCopyPerform cspaceInstallPerform
+  split
+  · rw [untypedSourceSetFull_scheduler, SystemState.cdtAddChild_scheduler,
+      SystemState.storeCNodeWith_scheduler]
+  · rfl
+
+/-- The copy's writes keep the machine. -/
+theorem cspaceCopyPerform_machine (src dst : CSpaceAddr) (st : SystemState) :
+    (cspaceCopyPerform src dst st).machine = st.machine := by
+  unfold cspaceCopyPerform cspaceInstallPerform
+  split
+  · rw [untypedSourceSetFull_machine, SystemState.cdtAddChild_machine,
+      SystemState.storeCNodeWith_machine]
+  · rfl
 
 /-- WS-ZA ZA5.3: an admitted copy is its writes. -/
 theorem cspaceCopy_of_admitted {src dst : CSpaceAddr} {st : SystemState}

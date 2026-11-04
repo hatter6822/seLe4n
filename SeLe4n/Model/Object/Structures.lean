@@ -1600,6 +1600,33 @@ theorem insertObjectCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (id : SeLe
     | h a => exact insertCellWith_eq _ _ _ _ _ _ _ h a
   · next h => unfold insert unchanged; simp only [h, dite_false]
 
+/-- WS-ZA ZA6.32: `insert` of line `line`'s handler capability with `rights` alone
+(the capability `seL4_IRQControl_Get` issues), written over the slot's own record
+and its target (`Capability.overwriteIrqHandler`), so neither is allocated when
+the slot kept one. -/
+@[inline] def insertIrqHandlerCap (node : CNode) (slot : SeLe4n.Slot) (line : Nat)
+    (rights : AccessRightSet) : CNode :=
+  if h : slot.toNat < node.cells.size then
+    Quot.lift (fun a => node.insertCellWith slot
+        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩
+        (fun r => r.overwriteIrqHandler line rights)
+        (fun r => Capability.overwriteIrqHandler_eq r line rights)
+        (fun _ => Capability.ofIrqHandler line rights) rfl h a)
+      (fun a b _ => by dsimp only; rw [insertCellWith_eq, insertCellWith_eq]) node.spare
+  else node.unchanged
+
+theorem insertIrqHandlerCap_eq_insert (node : CNode) (slot : SeLe4n.Slot) (line : Nat)
+    (rights : AccessRightSet) :
+    node.insertIrqHandlerCap slot line rights =
+      node.insert slot
+        ⟨.irqHandler line, rights, SeLe4n.Badge.zero, false, default, default, 0, false, 0⟩ := by
+  unfold insertIrqHandlerCap
+  split
+  · next h =>
+    induction node.spare using Squash.ind with
+    | h a => exact insertCellWith_eq _ _ _ _ _ _ _ h a
+  · next h => unfold insert unchanged; simp only [h, dite_false]
+
 /-- `insert` as compiled (`insertCell`, out of line). -/
 def insertImpl (node : CNode) (slot : SeLe4n.Slot) (cap : Capability) : CNode :=
   node.insertCell slot cap
@@ -2619,6 +2646,14 @@ structure CapDerivationTree where
   Each added edge raises it by one and no other change lowers it. -/
   edgeBound : Nat
   edges_le : edgesGhost.out.length ≤ edgeBound
+  /-- WS-ZA ZA6.32: **the interrupt lines an interrupt-control capability has
+  issued a handler for**, seL4's `isIRQActive` (`IRQSignal` in
+  `intStateIRQTable`): a line is added by `seL4_IRQControl_Get`, which derives
+  its handler capability from the interrupt-control capability, and removed
+  when the line's last handler capability is finalised (`IRQInactive`).  It is
+  derivation state, so it is kept with the tree: every edge write leaves it, and
+  a step that leaves the tree leaves it. -/
+  issuedIrqLines : InterruptLineSet
   deriving Repr
 
 namespace CapDerivationTree
@@ -2637,11 +2672,11 @@ the chains through the `next` and `prev` links that agree with them. -/
 noncomputable def rootChains (cdt : CapDerivationTree) : List (List SlotRef) :=
   cdt.rootChainsGhost.out
 
-/-- Two trees with the same edges, root chains and bound are equal. -/
+/-- Two trees with the same edges, root chains, bound and issued lines are equal. -/
 theorem ext {a b : CapDerivationTree} (hE : a.edges = b.edges) (hR : a.rootChains = b.rootChains)
-    (hB : a.edgeBound = b.edgeBound) : a = b := by
+    (hB : a.edgeBound = b.edgeBound) (hI : a.issuedIrqLines = b.issuedIrqLines) : a = b := by
   cases a; cases b
-  simp only at hB; subst hB
+  simp only at hB hI; subst hB; subst hI
   have : _ = _ := SeLe4n.Erased.ext hE
   subst this
   have : _ = _ := SeLe4n.Erased.ext hR
@@ -2649,10 +2684,43 @@ theorem ext {a b : CapDerivationTree} (hE : a.edges = b.edges) (hR : a.rootChain
 
 /-- T2-C (H-2): The canonical empty CDT with no edges. -/
 def empty : CapDerivationTree :=
-  CapDerivationTree.mk (SeLe4n.Erased.mk []) (SeLe4n.Erased.mk []) 0 (by simp)
+  CapDerivationTree.mk (SeLe4n.Erased.mk []) (SeLe4n.Erased.mk []) 0 (by simp) {}
 
 @[simp] theorem empty_edges : CapDerivationTree.empty.edges = [] := by
   simp [empty, edges]
+
+/-- WS-ZA ZA6.32: the tree with line `line` recorded as issued (`issued`) or
+not; its edges and chains as they were. -/
+def withIrqLineIssued (cdt : CapDerivationTree) (line : Nat) (issued : Bool) :
+    CapDerivationTree :=
+  CapDerivationTree.mk cdt.edgesGhost cdt.rootChainsGhost cdt.edgeBound cdt.edges_le
+    (cdt.issuedIrqLines.set line issued)
+
+@[simp] theorem withIrqLineIssued_edges (cdt : CapDerivationTree) (line : Nat) (b : Bool) :
+    (cdt.withIrqLineIssued line b).edges = cdt.edges := rfl
+
+@[simp] theorem withIrqLineIssued_edgesGhost (cdt : CapDerivationTree) (line : Nat) (b : Bool) :
+    (cdt.withIrqLineIssued line b).edgesGhost = cdt.edgesGhost := rfl
+
+@[simp] theorem withIrqLineIssued_rootChainsGhost (cdt : CapDerivationTree) (line : Nat)
+    (b : Bool) : (cdt.withIrqLineIssued line b).rootChainsGhost = cdt.rootChainsGhost := rfl
+
+@[simp] theorem withIrqLineIssued_edgeBound (cdt : CapDerivationTree) (line : Nat) (b : Bool) :
+    (cdt.withIrqLineIssued line b).edgeBound = cdt.edgeBound := rfl
+
+@[simp] theorem withIrqLineIssued_issuedIrqLines (cdt : CapDerivationTree) (line : Nat)
+    (b : Bool) :
+    (cdt.withIrqLineIssued line b).issuedIrqLines = cdt.issuedIrqLines.set line b := rfl
+
+/-- WS-ZA ZA6.32: the tree with its issued-line set in a cell of its own
+(`InterruptLineSet.fresh`), so the first issue after boot writes it in place.
+The tree itself (`withFreshIrqLines_eq`). -/
+def withFreshIrqLines (cdt : CapDerivationTree) : CapDerivationTree :=
+  CapDerivationTree.mk cdt.edgesGhost cdt.rootChainsGhost cdt.edgeBound cdt.edges_le
+    cdt.issuedIrqLines.fresh
+
+theorem withFreshIrqLines_eq (cdt : CapDerivationTree) : cdt.withFreshIrqLines = cdt := by
+  cases cdt; simp only [withFreshIrqLines, InterruptLineSet.fresh_eq]
 
 @[simp] theorem empty_rootChains : CapDerivationTree.empty.rootChains = [] := by
   simp [empty, rootChains]
@@ -2665,7 +2733,7 @@ def addEdge (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) : CapDerivationTree :=
   CapDerivationTree.mk (cdt.edgesGhost.map ({ parent, child, op } :: ·)) cdt.rootChainsGhost
     (cdt.edgeBound + 1)
-    (by simpa [SeLe4n.Erased.out_map] using cdt.edges_le)
+    (by simpa [SeLe4n.Erased.out_map] using cdt.edges_le) cdt.issuedIrqLines
 
 @[simp] theorem addEdge_edges (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) :
@@ -2678,6 +2746,10 @@ def addEdge (cdt : CapDerivationTree) (parent child : SlotRef)
 @[simp] theorem addEdge_edgeBound (cdt : CapDerivationTree) (parent child : SlotRef)
     (op : DerivationOp) : (cdt.addEdge parent child op).edgeBound = cdt.edgeBound + 1 := rfl
 
+@[simp] theorem addEdge_issuedIrqLines (cdt : CapDerivationTree) (parent child : SlotRef)
+    (op : DerivationOp) :
+    (cdt.addEdge parent child op).issuedIrqLines = cdt.issuedIrqLines := rfl
+
 /-- **Append a root** `r` to the end of the first root chain (a new chain when
 there is none): how boot lays its capabilities in one chain, each linked after
 the one before (`LinkView.appendRoot`). -/
@@ -2686,10 +2758,13 @@ def appendRoot (cdt : CapDerivationTree) (r : SlotRef) : CapDerivationTree :=
     (cdt.rootChainsGhost.map fun cs => match cs with
       | [] => [[r]]
       | c :: rest => (c ++ [r]) :: rest)
-    cdt.edgeBound cdt.edges_le
+    cdt.edgeBound cdt.edges_le cdt.issuedIrqLines
 
 @[simp] theorem appendRoot_edges (cdt : CapDerivationTree) (r : SlotRef) :
     (cdt.appendRoot r).edges = cdt.edges := rfl
+
+@[simp] theorem appendRoot_issuedIrqLines (cdt : CapDerivationTree) (r : SlotRef) :
+    (cdt.appendRoot r).issuedIrqLines = cdt.issuedIrqLines := rfl
 
 @[simp] theorem appendRoot_edgeBound (cdt : CapDerivationTree) (r : SlotRef) :
     (cdt.appendRoot r).edgeBound = cdt.edgeBound := rfl
@@ -3368,7 +3443,10 @@ def spliceNode (cdt : CapDerivationTree) (node : SlotRef) : CapDerivationTree :=
       else spliceRootChains cdt.rootChains node (cdt.childrenOf node)))
     cdt.edgeBound
     (by simpa [SeLe4n.Erased.out_map] using
-      Nat.le_trans (spliceEdges_length_le _ node) cdt.edges_le)
+      Nat.le_trans (spliceEdges_length_le _ node) cdt.edges_le) cdt.issuedIrqLines
+
+@[simp] theorem spliceNode_issuedIrqLines (cdt : CapDerivationTree) (node : SlotRef) :
+    (cdt.spliceNode node).issuedIrqLines = cdt.issuedIrqLines := rfl
 
 @[simp] theorem spliceNode_edges_eq (cdt : CapDerivationTree) (node : SlotRef) :
     (cdt.spliceNode node).edges = spliceEdges cdt.edges node := by
@@ -3406,7 +3484,10 @@ tree: every delete splices its slot out of it (`spliceNode`). -/
 def moveNode (cdt : CapDerivationTree) (old new : SlotRef) : CapDerivationTree :=
   CapDerivationTree.mk (cdt.edgesGhost.map (moveEdges · old new))
     (cdt.rootChainsGhost.map (·.map (·.map (renameSlot old new)))) cdt.edgeBound
-    (by simpa [SeLe4n.Erased.out_map, moveEdges] using cdt.edges_le)
+    (by simpa [SeLe4n.Erased.out_map, moveEdges] using cdt.edges_le) cdt.issuedIrqLines
+
+@[simp] theorem moveNode_issuedIrqLines (cdt : CapDerivationTree) (old new : SlotRef) :
+    (cdt.moveNode old new).issuedIrqLines = cdt.issuedIrqLines := rfl
 
 @[simp] theorem moveNode_edges_eq (cdt : CapDerivationTree) (old new : SlotRef) :
     (cdt.moveNode old new).edges = moveEdges cdt.edges old new := by

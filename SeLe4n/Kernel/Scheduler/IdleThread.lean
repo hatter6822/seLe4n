@@ -34,7 +34,7 @@ remain in `Platform.Boot`, where the `IntermediateState` / `Builder` machinery
 they carry witnesses through is; the SM5.E theorems
 (`Scheduler/Operations/PerCoreIdle.lean`) consume all of it.
 
-The capability predicate `capTargetsReservedIdleObject` (PR #889 review round
+The capability predicate `capTargetsReservedKernelObject` (PR #889 review round
 2) lives here too, because both consumers of the reservation — the syscall
 resolution in `Kernel/API.lean` and the boot validation in `Platform.Boot` —
 sit downstream of this module and must decide the same question.
@@ -146,8 +146,17 @@ theorem isIdleObjId_idleThreadId_toObjId (c : CoreId) :
     isIdleObjId (idleThreadId c).toObjId = true :=
   isIdleThreadId_idleThreadId c
 
-/-- PR #889 review round 2: does `cap` name a **kernel-reserved idle object** —
-    a per-core idle TCB, as the object itself or as a CNode to index into?
+/-- WS-ZA ZA6.32: **an object the kernel keeps for itself** — a per-core idle
+    TCB, or an interrupt node (seL4's `irq_node` slots, which no capability in
+    user space names: a line's binding is reached only through its handler
+    capability, `seL4_IRQHandler_SetNotification`). -/
+@[inline] def isReservedKernelObjId (oid : SeLe4n.ObjId) : Bool :=
+  isIdleObjId oid || SeLe4n.Model.isIrqNodeObjId SeLe4n.InterruptLineSet.capacity oid
+
+/-- PR #889 review round 2: does `cap` name a **kernel-reserved object** —
+    a per-core idle TCB or (WS-ZA ZA6.32) an interrupt node
+    (`isReservedKernelObjId`), as the object itself or as a CNode to index
+    into?
     seL4 has no capability to its idle thread at all; here the idle threads are
     ordinary objects in the store, so the reservation has to be decided
     wherever user authority names an object.  `syscallResolveCap` refuses such
@@ -157,20 +166,37 @@ theorem isIdleObjId_idleThreadId_toObjId (c : CoreId) :
     runnable thread — and `PlatformConfig.wellFormed` refuses a config that
     references one (`idleSlotsReserved`).  Total over `CapTarget`, so a new
     target kind must say where it stands. -/
-def capTargetsReservedIdleObject (cap : SeLe4n.Model.Capability) : Bool :=
+def capTargetsReservedKernelObject (cap : SeLe4n.Model.Capability) : Bool :=
   match cap.target with
-  | .object oid => isIdleObjId oid
-  | .cnodeSlot cnode _ => isIdleObjId cnode
+  | .object oid => isReservedKernelObjId oid
+  | .cnodeSlot cnode _ => isReservedKernelObjId cnode
   | .replyCap _ => false
   | .auditTrail => false
   | .schedControl _ => false
+  | .irqControl => false
+  | .irqHandler _ => false
 
 /-- PR #889 review round 2: on an object capability the predicate is the idle
     test of its target. -/
-theorem capTargetsReservedIdleObject_object (oid : SeLe4n.ObjId)
+theorem capTargetsReservedKernelObject_object (oid : SeLe4n.ObjId)
     (rights : SeLe4n.Model.AccessRightSet) (badge : Option SeLe4n.Badge) :
-    capTargetsReservedIdleObject (SeLe4n.Model.Capability.ofParts (.object oid) rights badge) =
-      isIdleObjId oid := rfl
+    capTargetsReservedKernelObject (SeLe4n.Model.Capability.ofParts (.object oid) rights badge) =
+      isReservedKernelObjId oid := rfl
+
+/-- WS-ZA ZA6.32: **no capability reaches an interrupt node** — a capability
+    naming line `line`'s node, as the object or as a CNode to index into, is a
+    reserved one, which the one resolution every invoked capability passes
+    through refuses (`syscallResolveCap_ok_not_reserved`), the boot refuses in a
+    configuration (`cnodeReferencesReservedIdleSlot`), and retype never creates
+    (`retypeFromUntyped`'s node-id refusal). -/
+theorem capTargetsReservedKernelObject_irqNode (cap : SeLe4n.Model.Capability) {line : Nat}
+    (hLine : line < SeLe4n.InterruptLineSet.capacity)
+    (hNames : cap.target = .object (SeLe4n.Model.irqNodeId line) ∨
+      ∃ s, cap.target = .cnodeSlot (SeLe4n.Model.irqNodeId line) s) :
+    capTargetsReservedKernelObject cap = true := by
+  have hN := SeLe4n.Model.isIrqNodeObjId_irqNodeId (count := SeLe4n.InterruptLineSet.capacity) hLine
+  rcases hNames with h | ⟨s, h⟩ <;>
+    simp [capTargetsReservedKernelObject, h, isReservedKernelObjId, hN]
 
 /-- **WS-RR RR5.13**: a slot the recogniser rejects is no core's idle slot. -/
 theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)

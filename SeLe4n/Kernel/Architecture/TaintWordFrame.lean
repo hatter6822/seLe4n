@@ -501,7 +501,7 @@ theorem capTreeShape_of_objectsAgreeOffTaint
   have e1 : SystemState.slotCapAt { st with objects := O } = st.slotCapAt :=
     funext (objectsAgreeOffTaint.slotCapAt_eq hA)
   have e2 : SystemState.objectPresent { st with objects := O } = st.objectPresent :=
-    funext fun k => propext (objectsAgreeOffTaint.present_iff hA k)
+    funext fun k => propext (and_congr (objectsAgreeOffTaint.present_iff hA k) Iff.rfl)
   have e3 : SystemState.getUntyped? { st with objects := O } = st.getUntyped? :=
     funext (objectsAgreeOffTaint.getUntyped?_eq hA)
   unfold SystemState.CapTreeShape

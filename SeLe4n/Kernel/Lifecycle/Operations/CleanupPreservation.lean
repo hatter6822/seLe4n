@@ -355,11 +355,11 @@ theorem notificationQueueWellFormed_unlink (notif : Notification)
           waitTailCode := SeLe4n.ThreadId.optCode tail'
           state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state } := by
   have hPB : ∀ st hc tc, (Notification.mk st hc tc notif.hasPendingBadge notif.pendingWord
-      notif.pendingWord_cleared notif.boundTCBCode notif.irqBound
+      notif.pendingWord_cleared notif.boundTCBCode
       notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
   have hWH : ∀ st tc, (Notification.mk st (SeLe4n.ThreadId.optCode head') tc
       notif.hasPendingBadge notif.pendingWord notif.pendingWord_cleared
-      notif.boundTCBCode notif.irqBound notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).waitHead = head' :=
+      notif.boundTCBCode notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).waitHead = head' :=
     fun _ _ => SeLe4n.ThreadId.ofOptCode_optCode head'
   unfold notificationQueueWellFormed at hWF ⊢
   rw [hPB, hWH]
@@ -1827,7 +1827,7 @@ theorem detachTcbSlots_tlbShootdown_eq (st : SystemState) (tcbId : SeLe4n.ObjId)
       since `v0.35.164`), then clean up scheduler + IPC references and splice
       its two space slots out of the derivation tree (`detachTcbSlots`).
     - An endpoint is not swept: no registration names one whose back-links
-      the retire found clear (`SystemState.tableReferencesRecorded.notTargeted`).
+      the retire found clear (`SystemState.tableBackLinksClear.namedByNone`).
     - If the current object is a CNode: refuse when a slot still records a
       frame mapping or names an installed page table, and otherwise take every
       slot out of the derivation tree as a delete does.  Retype destroys every
@@ -1891,9 +1891,9 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
         (cleanupTcbReferences (completeHeldYield st tcb.scBindingScCode) tcb.tid) tcb.tid) target
     | _ => st
   -- An endpoint needs no registry sweep: the retire admits only an endpoint
-  -- recording no registration (`SystemState.tableBackLinksClear`), and on a
-  -- state that records its table references no registration then names it
-  -- (`SystemState.tableReferencesRecorded.notTargeted`, WS-ZA ZA5.4 part 31).
+  -- recording no registration (`SystemState.tableBackLinksClear`), and no
+  -- registration then names it (`SystemState.tableBackLinksClear.namedByNone`,
+  -- WS-ZA ZA5.4 part 31).
   match currentObj with
   | .cnode cn =>
     -- **Retype destroys every slot this CNode holds, so it owes what
@@ -3328,7 +3328,6 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
     (fun hInv => SystemState.StateMono.of_stateFields
       (returnDonatedSchedContext_getTcb?_stateFields_eq st st' serverTid scId originalOwner
         hInv newOwner? h))
-    (fun hInv => returnDonatedSchedContext_tableReferenceFrame hInv h)
     (fun hInv => returnDonatedSchedContext_releaseStateAgree hInv h)
     (fun hInv => returnDonatedSchedContext_refillViewsKept hInv h)
     (fun hInv => returnDonatedSchedContext_yieldLinksKept hInv h)
@@ -3403,7 +3402,6 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
             (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
         · exact fun hInv => SystemState.StateMono.of_getTcb
             (SystemState.updateSchedContext_getTcb? st scId _ hInv)
-        · exact SystemState.TableReferenceFrame.updateSchedContext st scId _
         · exact fun hInv => .updateSchedContext st scId _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
         · exact fun hInv => .updateSchedContext st scId _ hInv
         · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId _ hInv (fun _ => rfl)

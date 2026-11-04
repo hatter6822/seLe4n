@@ -737,7 +737,6 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
         · cases hU
         · exact Or.inl hU)
       (by rw [finaliseThreadReleaseCores_scheduler])
-      (by unfold finaliseThreadReleaseCores SystemState.referenceTables; dsimp only)
       (by rw [finaliseThreadReleaseCores_scheduler])))
       (L.of_frame (finaliseReleaseStep_keepsIpcInvariantFull s t ⟨L.1, L.2.1⟩).1
         (FinaliseFrame.releaseCores s t L.2.1))
@@ -915,7 +914,7 @@ theorem cspaceDeleteSlotFinalising_savedRegsWritten {e ec : CoreId} {addr : CSpa
     ∀ t, s'.savedRegs t = s.savedRegs t ∨ offCoreFree e st t ∨ offCoreFree e s' t := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr s s' h
   have hI1 := cspaceDeleteSlot_preserves_objects_invExt s st1 addr hB.1.2.1 hD
-  obtain ⟨hI2, hV, -, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2 hI1 hF
+  obtain ⟨hI2, hV, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2 hI1 hF
   have hB3 := releaseFinalRegistration_closed finalisingDeleteBundle
     (fun _ _ _ hs hR => revokeService_preserves_finalisingDeleteBundle hs hR)
     (slotRetireTarget s addr.cnode addr.slot) st2
@@ -933,7 +932,16 @@ theorem cspaceDeleteSlotFinalising_savedRegsWritten {e ec : CoreId} {addr : CSpa
   have hI4 := (finaliseFinalObject_preserves_finalisingDeleteBundle
     (slotRetireTarget s addr.cnode addr.slot) _ hB3).1.2.1
   intro t
-  unfold retireFinalisedObject
+  rcases retireFinalisedObject_cases ec (slotRetireTarget s addr.cnode addr.slot)
+      (slotRetireRecorder s addr.cnode addr.slot) st2 with ⟨-, hE⟩ | ⟨-, hE⟩
+  · rw [hE]
+    left
+    have k2 : savedRegsKeptExcept (fun _ => False) s st2 :=
+      (savedRegsKeptExcept.of_cspaceDeleteSlot hB.1.2.1 hD).trans
+        (savedRegsKeptExcept.of_vspaceRootOnlyWrite hV)
+    refine Eq.trans ?_ (k2 t id)
+    simp only [SystemState.savedRegs, SystemState.getTcb?, retireIrqNode_objects]
+  rw [hE]
   have hFr := retireFinalObject_fields ec (slotRetireTarget s addr.cnode addr.slot)
     (slotRetireRecorder s addr.cnode addr.slot)
     (finaliseFinalObject (slotRetireTarget s addr.cnode addr.slot)

@@ -142,7 +142,11 @@ def qemuVirtMachineConfig : SeLe4n.MachineConfig :=
     declaredCoreCount := 4
     kernelReserved := qemuVirtKernelReserved
     kernelDevices := qemuVirtMmioRegions
-    bootTablePool := qemuVirtBootTablePool }
+    bootTablePool := qemuVirtBootTablePool
+    -- WS-ZA ZA6.32: the distributor's lines, the 32 private ones and
+    -- `virt`'s SPIs (`qemuVirtGicSpiCount`): the bound the interrupt entry
+    -- and the acknowledge refuse a line outside of.
+    interruptLineCount := qemuVirtGicSpiCount + 32 }
 
 /-- The machine configuration is well-formed. -/
 theorem qemuVirtMachineConfig_wellFormed : qemuVirtMachineConfig.wellFormed = true := by

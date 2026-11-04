@@ -132,14 +132,13 @@ mod gicd {
     pub const IGROUPR_BASE: usize = 0x080;
     /// Interrupt Set-Enable Registers.
     pub const ISENABLER_BASE: usize = 0x100;
-    /// Interrupt Clear-Enable Registers — written by future selective-disable
-    /// paths (per-IRQ mask/unmask wired by AN9-F SVC FFI handlers); currently
-    /// declared for forward reference and to keep the GIC distributor map
-    /// complete in this module. AN8-E (R-HAL-L1) retains the constant
-    /// alongside `ISENABLER_BASE` so the GIC register set is documented as
-    /// a coherent unit.
-    #[allow(dead_code)]
+    /// Interrupt Clear-Enable Registers — written by
+    /// [`super::set_interrupt_line_masked`] to mask a line (WS-ZA ZA6.32).
     pub const ICENABLER_BASE: usize = 0x180;
+    /// Interrupt Set-Pending Registers — written by
+    /// [`super::set_interrupt_line_pending`], the Tier-4 exercisers' way of
+    /// raising a device line no device drives (WS-ZA ZA6.32).
+    pub const ISPENDR_BASE: usize = 0x200;
     /// Interrupt Clear-Pending Registers.
     pub const ICPENDR_BASE: usize = 0x280;
     /// Interrupt Priority Registers (8-bit per INTID, 4 per word).
@@ -673,6 +672,58 @@ pub fn acknowledge_irq_classified(base: usize) -> AckResult {
     } else {
         AckResult::Handled(intid)
     }
+}
+
+/// **WS-ZA ZA6.32: mask (`masked`) or unmask a device interrupt line at the
+/// distributor** — seL4's `maskInterrupt` on the GICv2 build.  The write the
+/// Lean kernel records as `PhysicalWrite.setInterruptMask` and the HAL performs
+/// after the commit: the interrupt entry masks a line it delivers until the
+/// handler acknowledges it, and the acknowledge unmasks it.
+///
+/// `GICD_ICENABLERn` / `GICD_ISENABLERn` are write-1-to-act: the one bit
+/// written names the line and no other line's enable changes (GIC-400 TRM
+/// §4.3.5–4.3.6).  The caller passes a shared peripheral interrupt below
+/// [`MAX_INTID`] (`decode_physical_write` refuses any other line); the
+/// distributor's enables of SGIs and PPIs are banked per core, so a line one
+/// handler capability names for the whole machine is always an SPI.
+pub fn set_interrupt_line_masked(intid: u32, masked: bool) {
+    let bank = (intid / 32) as usize;
+    let bit = 1u32 << (intid % 32);
+    let reg = if masked {
+        gicd::ICENABLER_BASE
+    } else {
+        gicd::ISENABLER_BASE
+    };
+    mmio_write32(GICD_BASE + reg + bank * 4, bit);
+    crate::barriers::dsb_sy();
+}
+
+/// **WS-ZA ZA6.32: set a device interrupt line's priority** (`GICD_IPRIORITYRn`,
+/// one byte per INTID, written here as its 32-bit word).  The Tier-4
+/// exercisers raise their lines above the timer's and the SGIs' priority, so
+/// the acknowledge that follows the set-pending names the line they raised.
+pub fn set_interrupt_line_priority(intid: u32, priority: u8) {
+    let word = GICD_BASE + gicd::IPRIORITYR_BASE + (intid / 4) as usize * 4;
+    let shift = (intid % 4) * 8;
+    let old = mmio_read32(word);
+    mmio_write32(
+        word,
+        (old & !(0xFF << shift)) | (u32::from(priority) << shift),
+    );
+    crate::barriers::dsb_sy();
+}
+
+/// **WS-ZA ZA6.32: set a device interrupt line pending at the distributor**
+/// (`GICD_ISPENDRn`, write-1-to-set, GIC-400 TRM §4.3.7).  The Tier-4
+/// exercisers raise an SPI no device drives this way, so the interrupt entry
+/// runs on a line a handler capability names.
+pub fn set_interrupt_line_pending(intid: u32) {
+    let bank = (intid / 32) as usize;
+    mmio_write32(
+        GICD_BASE + gicd::ISPENDR_BASE + bank * 4,
+        1u32 << (intid % 32),
+    );
+    crate::barriers::dsb_sy();
 }
 
 // ============================================================================
@@ -1477,6 +1528,7 @@ mod tests {
         assert_eq!(gicd::IGROUPR_BASE, 0x080);
         assert_eq!(gicd::ISENABLER_BASE, 0x100);
         assert_eq!(gicd::ICENABLER_BASE, 0x180);
+        assert_eq!(gicd::ISPENDR_BASE, 0x200);
         assert_eq!(gicd::ICPENDR_BASE, 0x280);
         assert_eq!(gicd::IPRIORITYR_BASE, 0x400);
         assert_eq!(gicd::ITARGETSR_BASE, 0x800);

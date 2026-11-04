@@ -241,6 +241,19 @@ for driver in drivers:
             "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
             "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
             "send-blocks", "receive-from-sender",
+            # WS-ZA ZA6.32: the interrupt entry's branches — the bound line's
+            # signal with no waiter and to a waiting thread, the handler's
+            # acknowledge, the unbound line and the spurious INTID.
+            "irq-signal-no-waiter", "irq-handler-ack", "irq-signal-waiter",
+            "irq-unbound", "irq-spurious",
+            # the handler capability issued from IRQControl and bound to a
+            # notification, then cleared and deleted (the last handler's
+            # finalisation leaves the line inactive).
+            "irq-control-get", "irq-handler-set-notification",
+            "irq-handler-clear", "irq-handler-delete",
+            # a revoke of the notification's slot deletes the copy in the
+            # line's node, after which the line, raised, signals nothing.
+            "irq-notification-revoke", "irq-revoked-line",
             # WS-ZA ZA5.3: the same through a badged endpoint capability.
             "receive-for-badged-send", "badged-send-to-receiver",
             "badged-send-blocks", "receive-from-badged-sender",
@@ -362,12 +375,15 @@ for driver in drivers:
         pinned.update({
             # WS-ZA ZA5.4: a retype reads its new object's own cells in
             # steady state (a table 13, a frame 11: the object, its store,
-            # index and type entries, the untyped's child record); the first
-            # call of the first table also builds the destination slot's
-            # capability record.  Since part 26 a boot CNode's spare records
-            # own their object targets (`unshareSpareCell`), so neither first
-            # call builds the record's target (`CapTarget.objectOver`).
-            "untyped-retype-page-table-1": (15, 13),
+            # index and type entries, the untyped's child record).  Since part
+            # 26 a boot CNode's spare records own their object targets
+            # (`unshareSpareCell`), so neither first call builds the record's
+            # target (`CapTarget.objectOver`).  ZA6.32: the first table's
+            # first call read 2 more, the copy of the boot's shared
+            # physical-write ledger (its buffer and record) that the first
+            # write recorded after boot made; the installed state now owns
+            # its ledger (`SystemState.withFreshPhysicalWrites`).
+            "untyped-retype-page-table-1": (13, 13),
             "untyped-retype-page-table-2": (13, 13),
             "untyped-retype-page-table-3": (14, 13),
             # The first carve after boot takes one cell more than its steady

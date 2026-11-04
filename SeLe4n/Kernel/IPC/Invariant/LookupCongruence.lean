@@ -163,7 +163,7 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
   machine : s2.machine = s1.machine
   objectIndex : s2.objectIndex = s1.objectIndex
   objectIndexSet : s2.objectIndexSet = s1.objectIndexSet
-  irqHandlers : s2.irqHandlers = s1.irqHandlers
+  irqSignalLines : s2.irqSignalLines = s1.irqSignalLines
   lifecycle : s2.lifecycle = s1.lifecycle
   asidTable : s2.asidTable = s1.asidTable
   interfaceRegistry : s2.interfaceRegistry = s1.interfaceRegistry
@@ -206,7 +206,7 @@ theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
     OffSchedulerAgrees s2 s1 :=
   ⟨h.objects.symm, h.machine.symm, h.objectIndex.symm,
-   h.objectIndexSet.symm, h.irqHandlers.symm, h.lifecycle.symm,
+   h.objectIndexSet.symm, h.irqSignalLines.symm, h.lifecycle.symm,
    h.asidTable.symm, h.interfaceRegistry.symm, h.cdt.symm,
    h.tlb.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
    h.pendingIcacheMaintenance.symm, h.pendingPhysicalWrites.symm, h.declassificationAuditLog.symm,
@@ -218,7 +218,7 @@ theorem trans {s1 s2 s3 : SystemState}
     OffSchedulerAgrees s1 s3 :=
   ⟨hSecond.objects.trans hFirst.objects, hSecond.machine.trans hFirst.machine,
    hSecond.objectIndex.trans hFirst.objectIndex, hSecond.objectIndexSet.trans hFirst.objectIndexSet,
-   hSecond.irqHandlers.trans hFirst.irqHandlers,
+   hSecond.irqSignalLines.trans hFirst.irqSignalLines,
    hSecond.lifecycle.trans hFirst.lifecycle, hSecond.asidTable.trans hFirst.asidTable,
    hSecond.interfaceRegistry.trans hFirst.interfaceRegistry,
    hSecond.cdt.trans hFirst.cdt,
@@ -379,7 +379,7 @@ theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
     unfold storeObject at h1 h2
     cases h1
     cases h2
-    refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.irqHandlers, ?_, ?_,
+    refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.irqSignalLines, ?_, ?_,
       hRel.interfaceRegistry, hRel.cdt, hRel.tlb,
       hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
       hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
@@ -961,7 +961,7 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
     ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧ t.ipcReadView = t₀.ipcReadView
   /-- The endpoint clauses are agreement **off the service record**: no conjunct
   reads `Endpoint.service` (the registration flag and words), the service registry's back-link
-  (`SystemState.tableReferencesRecorded`), so a registration or a revocation,
+  (`SystemState.tableBackLinksClear`), so a registration or a revocation,
   which writes it on its endpoint, stays inside the frame. -/
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s2.objects[oid]? = some (.endpoint ep) →

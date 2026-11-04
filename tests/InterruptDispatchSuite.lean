@@ -95,7 +95,7 @@ example : SeLe4n.Platform.QemuVirt.qemuVirtGicSpiCount + 32 ≤ 320 := by decide
     main level-2 controller behind every SoC GPIO interrupt), 273/274 (the
     SD hosts) and 276 (UARTA), INTIDs 241, 276, 305, 306 and 308 in Linux's
     `bcm2712.dtsi` — are acknowledged and dispatched to the notification
-    registered for them, badged by INTID.  Under the former 192-SPI cap
+    bound to them, with the bound capability's badge (here the INTID).  Under the former 192-SPI cap
     every one of them was `outOfRange`. -/
 def test_t05b_high_spis_dispatch : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨300⟩
@@ -110,7 +110,7 @@ def test_t05b_high_spis_dispatch : IO Unit := do
       (BootstrapBuilder.empty
         |>.withObject ntfnId (.notification
             { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-        |>.withIrqHandler ⟨intid⟩ ntfnId
+        |>.withIrqHandler ⟨intid⟩ ntfnId (some (SeLe4n.Badge.ofNatMasked intid))
         |>.withLifecycleObjectType ntfnId .notification
         |>.buildChecked)
     match bootInterruptDispatchSequence st0 intid with
@@ -119,7 +119,7 @@ def test_t05b_high_spis_dispatch : IO Unit := do
       | some (.notification ntfn) =>
         expectCond "interrupt-dispatch" s!"SPI {spi}: notification signalled"
           (ntfn.state == .active)
-        expectCond "interrupt-dispatch" s!"SPI {spi}: badge is the INTID"
+        expectCond "interrupt-dispatch" s!"SPI {spi}: badge is the bound capability's"
           (ntfn.pendingBadge == some (SeLe4n.Badge.ofNatMasked intid))
         expectCond "interrupt-dispatch" s!"SPI {spi}: EOI drained the audit trail"
           (intid ∉ st1.machine.eoiPending)

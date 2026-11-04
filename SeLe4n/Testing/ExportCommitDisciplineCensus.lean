@@ -214,8 +214,9 @@ addition to the unbracketed majority. -/
 
 /-- Every state-committing `@[export]` of this kernel, with how it commits.
 
-**Four of ten bracket** since WS-ZA ZA6.10 retired the raw suspend seam (five
-of eleven before it): the syscall seam and the three per-core scheduler entries.
+**Five of eleven bracket** since WS-ZA ZA6.32 added the interrupt entry (four of
+ten from WS-ZA ZA6.10's retirement of the raw suspend seam until then): the
+syscall seam, the three per-core scheduler entries and the interrupt entry.
 The six that do not are the two fault-delivery seams, the FP/SIMD access and
 the three boot installs, and each names why, so this list is the project's honest
 statement of how much of the kernel the fine-lock discipline actually covers —
@@ -236,6 +237,11 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
     -- by `rfl`), so it acquires the same footprint by construction rather than by
     -- a second declaration.
   , (`SeLe4n.Kernel.secondaryKernelMain, .bracketed)
+    -- WS-ZA ZA6.32: the device-interrupt entry, seL4's `handleInterrupt`.  Its
+    -- `BracketSpec` (`interruptBracket`) declares the bound-aware signal's
+    -- footprint and the executing core's run queue, and the entry runs
+    -- `BracketSpec.run`.
+  , (`SeLe4n.Kernel.interruptEntry, .bracketed)
     -- The two fault-delivery entries.  A fault is not a syscall, so
     -- `lockSetForSyscall` has no arm for it; its footprint is the `.call`
     -- chain's plus the faulting thread's TCB, and declaring that is WS-RR RR4's

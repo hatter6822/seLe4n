@@ -42,15 +42,15 @@ open SeLe4n.Platform.FFI
     produce the configuration the checked boot runs on.  The device tree does
     not describe the hardware the kernel programs: `bindPlatformConfig` binds
     the binding's own machine configuration. -/
-def qemuVirtPlatformConfigFromDtb (blob : ByteArray) (irqTable : List IrqEntry)
-    (initialObjects : List ObjectEntry) (bootVSpaceRoot : Option BootVSpaceRootEntry) :
+def qemuVirtPlatformConfigFromDtb (blob : ByteArray) (initialObjects : List ObjectEntry)
+    (bootVSpaceRoot : Option BootVSpaceRootEntry) :
     Except DeviceTreeBootRefusal PlatformConfig :=
   match SeLe4n.Platform.DeviceTree.fromDtbFull blob qemuVirtMachineConfig.physicalAddressWidth with
   | .error e => .error (.unparseableBlob e)
   | .ok dt =>
       if deviceTreeCoversMachineConfig dt qemuVirtMachineConfig
           && deviceTreeCoversMmioRegions dt qemuVirtRequiredMmioWindows then
-        .ok (PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot)
+        .ok (PlatformConfig.fromDeviceTree dt initialObjects bootVSpaceRoot)
       else
         .error .boardDoesNotMatchBinding
 
@@ -75,10 +75,9 @@ def bootAndInitialiseQemuVirtOrHalt (config : PlatformConfig) : BaseIO Unit := d
     board's RAM outside the kernel's extent is mapped first, while every
     secondary is still parked, then the deployment is installed; a refused
     blob halts every PE. -/
-def bootAndInitialiseQemuVirtFromDtbOrHalt (blob : ByteArray) (irqTable : List IrqEntry)
-    (initialObjects : List ObjectEntry) (bootVSpaceRoot : Option BootVSpaceRootEntry) :
+def bootAndInitialiseQemuVirtFromDtbOrHalt (blob : ByteArray) (initialObjects : List ObjectEntry) (bootVSpaceRoot : Option BootVSpaceRootEntry) :
     BaseIO Unit :=
-  match qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot with
+  match qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot with
   | .error _ => ffiFatalHaltAll
   | .ok config => do
       extendBootRamMap qemuVirtBootRamExtensions
@@ -86,10 +85,10 @@ def bootAndInitialiseQemuVirtFromDtbOrHalt (blob : ByteArray) (irqTable : List I
 
 /-- A refused blob boots nothing — every PE halts. -/
 theorem bootAndInitialiseQemuVirtFromDtbOrHalt_refused (blob : ByteArray)
-    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (initialObjects : List ObjectEntry)
     (bootVSpaceRoot : Option BootVSpaceRootEntry) (e : DeviceTreeBootRefusal)
-    (h : qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .error e) :
-    bootAndInitialiseQemuVirtFromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot =
+    (h : qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot = .error e) :
+    bootAndInitialiseQemuVirtFromDtbOrHalt blob initialObjects bootVSpaceRoot =
       ffiFatalHaltAll := by
   unfold bootAndInitialiseQemuVirtFromDtbOrHalt
   rw [h]
@@ -97,10 +96,10 @@ theorem bootAndInitialiseQemuVirtFromDtbOrHalt_refused (blob : ByteArray)
 /-- An accepted board maps its RAM and boots through the checked entry, and
     nothing else. -/
 theorem bootAndInitialiseQemuVirtFromDtbOrHalt_accepted (blob : ByteArray)
-    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (initialObjects : List ObjectEntry)
     (bootVSpaceRoot : Option BootVSpaceRootEntry) (config : PlatformConfig)
-    (h : qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
-    bootAndInitialiseQemuVirtFromDtbOrHalt blob irqTable initialObjects bootVSpaceRoot =
+    (h : qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot = .ok config) :
+    bootAndInitialiseQemuVirtFromDtbOrHalt blob initialObjects bootVSpaceRoot =
       (do
         extendBootRamMap qemuVirtBootRamExtensions
         bootAndInitialiseQemuVirtOrHalt config) := by
@@ -110,12 +109,12 @@ theorem bootAndInitialiseQemuVirtFromDtbOrHalt_accepted (blob : ByteArray)
 /-- An accepted configuration is the device tree's account around the caller's
     half — and the account covered this binding's RAM and devices. -/
 theorem qemuVirtPlatformConfigFromDtb_ok_eq_fromDeviceTree (blob : ByteArray)
-    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (initialObjects : List ObjectEntry)
     (bootVSpaceRoot : Option BootVSpaceRootEntry) (config : PlatformConfig)
-    (h : qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot = .ok config) :
+    (h : qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot = .ok config) :
     ∃ dt, (deviceTreeCoversMachineConfig dt qemuVirtMachineConfig
         && deviceTreeCoversMmioRegions dt qemuVirtRequiredMmioWindows) = true ∧
-      config = PlatformConfig.fromDeviceTree dt irqTable initialObjects bootVSpaceRoot := by
+      config = PlatformConfig.fromDeviceTree dt initialObjects bootVSpaceRoot := by
   unfold qemuVirtPlatformConfigFromDtb at h
   split at h
   · cases h
@@ -129,13 +128,13 @@ theorem qemuVirtPlatformConfigFromDtb_ok_eq_fromDeviceTree (blob : ByteArray)
 /-- A board whose device tree does not cover the binding's RAM and devices is
     refused, whatever else the blob says. -/
 theorem qemuVirtPlatformConfigFromDtb_refuses_foreign_board (blob : ByteArray)
-    (irqTable : List IrqEntry) (initialObjects : List ObjectEntry)
+    (initialObjects : List ObjectEntry)
     (bootVSpaceRoot : Option BootVSpaceRootEntry) (dt : SeLe4n.Platform.DeviceTree)
     (hParse : SeLe4n.Platform.DeviceTree.fromDtbFull blob
       qemuVirtMachineConfig.physicalAddressWidth = .ok dt)
     (hCov : (deviceTreeCoversMachineConfig dt qemuVirtMachineConfig
         && deviceTreeCoversMmioRegions dt qemuVirtRequiredMmioWindows) = false) :
-    qemuVirtPlatformConfigFromDtb blob irqTable initialObjects bootVSpaceRoot =
+    qemuVirtPlatformConfigFromDtb blob initialObjects bootVSpaceRoot =
       .error .boardDoesNotMatchBinding := by
   unfold qemuVirtPlatformConfigFromDtb
   rw [hParse]

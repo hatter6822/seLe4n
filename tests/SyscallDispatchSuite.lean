@@ -655,7 +655,7 @@ boundary `b` with witness `w` has (`w`, `upperWitnessIndex b`).  Round 5: the
 lower witness is a parameter of the family, not thread `1` — `1` is the boot
 VSpace root's object id on every binding (SD-056). -/
 private def witnessedCfgFor (lower upper : Nat) : SeLe4n.Platform.Boot.PlatformConfig :=
-  { irqTable := [], initialObjects := [witnessEntry lower, witnessEntry upper] }
+  { initialObjects := [witnessEntry lower, witnessEntry upper] }
 
 private def witnessedCfg : SeLe4n.Platform.Boot.PlatformConfig :=
   witnessedCfgFor SeLe4n.Kernel.harnessLowerWitnessIndex harnessUpperWitness
@@ -716,27 +716,25 @@ private def sd041_bootInitialise_withLabelingContext : IO Unit := do
 /-- SD-042: `bootAndInitialiseFromPlatform` on a malformed config
     returns `.error` and does NOT mutate `kernelStateRef`.
 
-The malformed config has duplicate IRQ entries, which fails
-`PlatformConfig.wellFormed`'s `irqsUnique` check.  The boot wrapper
+The malformed config has duplicate object ids, which fails
+`PlatformConfig.wellFormed`'s `objectIdsUnique` check.  The boot wrapper
 must surface the error string and leave the IO.Ref unchanged. -/
 private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
   -- Seed the IO.Ref with a sentinel state so we can detect mutation.
   let sentinelTid : SeLe4n.ThreadId := ⟨321⟩
   let sentinelSt := mkState [(⟨321⟩, .tcb (mkTcb 321 .Ready))] (some sentinelTid)
   initialiseKernelState sentinelSt
-  -- Construct a malformed config: two IrqEntries with the same IRQ id.
-  -- This trips the `irqsUnique` check inside `PlatformConfig.wellFormed`,
+  -- Construct a malformed config: two entries with the same object id.
+  -- This trips the `objectIdsUnique` check inside `PlatformConfig.wellFormed`,
   -- so `bootFromPlatformChecked` returns `.error`.
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable :=
-        [ { irq := ⟨1⟩, handler := ⟨42⟩ }
-        , { irq := ⟨1⟩, handler := ⟨43⟩ }  -- duplicate IRQ id
-        ]
-      initialObjects := [] }
+    { initialObjects :=
+        [ witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex
+        , witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex ] }  -- duplicate object id
   match ← bootAndInitialiseFromPlatform cfg SeLe4n.Kernel.harnessLabelingContext with
   | Except.ok _ =>
       failLine "sd042_unexpected_success"
-        "malformed config (duplicate IRQ) must fail bootFromPlatformChecked"
+        "malformed config (duplicate object id) must fail bootFromPlatformChecked"
   | Except.error _ =>
       passLine "sd042_malformed_config_rejected"
       -- Verify the IO.Ref was NOT mutated on the failure path.
@@ -1025,8 +1023,8 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
      | _ => false)
     "the ordinary capability beside it must still resolve"
   expect "sd054_idle_cap_is_the_reserved_kind"
-    (SeLe4n.Kernel.capTargetsReservedIdleObject idleCap &&
-     !SeLe4n.Kernel.capTargetsReservedIdleObject tcbCap)
+    (SeLe4n.Kernel.capTargetsReservedKernelObject idleCap &&
+     !SeLe4n.Kernel.capTargetsReservedKernelObject tcbCap)
     "the capability predicate must decide by target"
   let decoded : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
@@ -1102,7 +1100,7 @@ committed.  And `bootAndInitialisePlatform` folds the idle enqueue over the
 binding's declared cores: the single-core simulation binding comes up with idle
 0 only, the four-core one with all four. -/
 private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
-  let empty : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  let empty : SeLe4n.Platform.Boot.PlatformConfig := { initialObjects := [] }
   match ← bootAndInitialiseFromPlatform empty SeLe4n.Kernel.harnessLabelingContext with
   | Except.error e =>
       expect "sd055_empty_config_refused_for_uninstalled_witnesses"
@@ -1112,7 +1110,7 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
       failLine "sd055_empty_config_unexpected_success"
         "a boot installing neither declared witness must be refused"
   let lowerOnly : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [], initialObjects := [witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex] }
+    { initialObjects := [witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex] }
   match ← bootAndInitialiseFromPlatform lowerOnly SeLe4n.Kernel.harnessLabelingContext with
   | Except.error e =>
       expect "sd055_one_witness_refused"
@@ -1187,8 +1185,7 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
   let rpi5Upper : Nat :=
     SeLe4n.Kernel.upperWitnessIndex SeLe4n.Platform.RPi5.rpi5UpperDomainBase
   let rpi5Cfg : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [],
-      initialObjects :=
+    { initialObjects :=
         [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
       bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
   match ← bootAndInitialisePlatform SeLe4n.Platform.RPi5.RPi5Platform rpi5Cfg with
@@ -1279,8 +1276,7 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
   -- machine configuration, still boots with the canonical root at its reserved
   -- id and the BCM2712's address width.
   let bare : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [],
-      initialObjects :=
+    { initialObjects :=
         [witnessEntry SeLe4n.Platform.RPi5.rpi5LowerWitnessIndex, witnessEntry rpi5Upper],
       machineConfig := SeLe4n.defaultMachineConfig, bootVSpaceRoot := none }
   match ← bootAndInitialiseRPi5 bare with
@@ -1301,7 +1297,7 @@ private def sd056_witnesses_off_boot_root_and_structural_cores : IO Unit := do
     (bound.bootVSpaceRoot.isSome &&
      bound.machineConfig.physicalAddressWidth ==
        SeLe4n.Platform.RPi5.rpi5MachineConfig.physicalAddressWidth &&
-     bound.initialObjects.length == 2 && bound.irqTable.isEmpty)
+     bound.initialObjects.length == 2)
     "bindPlatformConfig must keep the caller's objects and apply the binding's hardware fields"
   -- PR #892 review round 2: the caller's account selects among the binding's
   -- RAM variants and never becomes the machine configuration.  A bare account

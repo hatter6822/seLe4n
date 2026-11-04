@@ -31,7 +31,7 @@ structure IfObserver where
 
 /-- Projection result used by IF-M1 low-equivalence statements.
 
-WS-F3/CRIT-02: Extended with `activeDomain`, `irqHandlers`, and `objectIndex`
+WS-F3/CRIT-02: Extended with `activeDomain`, `irqSignalLines`, and `objectIndex`
 to cover all security-relevant scheduler, interrupt, and identity fields.
 
 WS-H8/A-36/H-11: Extended with `domainTimeRemaining`, `domainSchedule`, and
@@ -54,9 +54,12 @@ structure ObservableState where
       deterministic scheduling behavior. This matches seL4's domain scheduler
       design where domain identity is not a secret. -/
   activeDomain : SeLe4n.DomainId
-  /-- WS-F3: IRQ handler mappings filtered to only those targeting observable
-      notification objects. Prevents leaking high-domain IRQ routing. -/
-  irqHandlers : SeLe4n.Irq → Option SeLe4n.ObjId
+  /-- WS-ZA ZA6.32: each interrupt line's state (IRQSignal or IRQInactive),
+      visible exactly where the line's interrupt node (`irqNodeId`) is: seL4's
+      information-flow proofs label a line's state and its node slot with the
+      line's label (`pasIRQAbs`).  The binding itself is the node slot's
+      capability, projected with the object store. -/
+  irqSignalLines : SeLe4n.Irq → Bool
   /-- WS-F3: Object index filtered to observable IDs. Prevents leaking the
       existence of high-domain objects through the identity registry. -/
   objectIndex : List SeLe4n.ObjId
@@ -122,6 +125,11 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   -- observer knows; the authority it carries is the configure's, whose writes
   -- are the context's.
   | .schedControl _ => true
+  -- WS-ZA ZA6.32: the interrupt-control capability names no object; a handler
+  -- capability is observable where its line's interrupt node is, seL4's IRQ
+  -- label (`pasIRQAbs`), as the line's state is (`projectIrqSignalLines`).
+  | .irqControl => true
+  | .irqHandler l => objectObservable ctx observer (irqNodeId l)
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable
@@ -345,10 +353,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- registration's words) is the service registered on it (seL4 has no such
   -- registry); since WS-ZA ZA5.9 it is the registry itself.  It is kept: a
   -- registration is labelled with the endpoint it names (`serviceObservable`),
-  -- so an observer sees exactly the registrations of visible endpoints.  A
-  -- notification's `irqBound` is kept for the same reason: it is true exactly
-  -- when an IRQ names the notification, which `projectIrqHandlers` already
-  -- shows for every visible notification.
+  -- so an observer sees exactly the registrations of visible endpoints.
   | .endpoint e => .endpoint e
   -- WS-ZA ZA5.11: a notification's taint words are erased as a thread's are.
   | .notification n => .notification (n.withTaintWords {})
@@ -699,14 +704,12 @@ def projectActiveDomain (_ctx : LabelingContext) (_observer : IfObserver) (st : 
     SeLe4n.DomainId :=
   (st.scheduler.activeDomainOnCore bootCoreId)
 
-/-- WS-F3: Project IRQ handler mappings, filtering to only those whose target
-notification object is observable by the observer. -/
-def projectIrqHandlers (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
-    SeLe4n.Irq → Option SeLe4n.ObjId :=
-  fun irq =>
-    match st.irqHandlers[irq]? with
-    | some oid => if objectObservable ctx observer oid then some oid else none
-    | none => none
+/-- WS-ZA ZA6.32: Project each interrupt line's state through the label of the
+line's interrupt node: an observer that cannot see the node sees every line it
+names inactive. -/
+def projectIrqSignalLines (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    SeLe4n.Irq → Bool :=
+  fun irq => objectObservable ctx observer (irqNodeId irq.toNat) && st.irqSignalLines.mem irq.toNat
 
 /-- WS-F3: Project object index, filtering to only observable object IDs. -/
 def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
@@ -983,7 +986,7 @@ theorem schedulingCovertChannel_bounded_width
 
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 
-WS-F3/CRIT-02: Extended with activeDomain, irqHandlers, and objectIndex
+WS-F3/CRIT-02: Extended with activeDomain, irqSignalLines, and objectIndex
 projections for complete security-relevant state coverage.
 
 WS-H8/A-36/H-11: Extended with domainTimeRemaining, domainSchedule, and
@@ -1001,7 +1004,7 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
     runnable := projectRunnable ctx observer st
     current := projectCurrent ctx observer st
     activeDomain := projectActiveDomain ctx observer st
-    irqHandlers := projectIrqHandlers ctx observer st
+    irqSignalLines := projectIrqSignalLines ctx observer st
     objectIndex := projectObjectIndex ctx observer st
     domainTimeRemaining := projectDomainTimeRemaining ctx observer st
     domainSchedule := projectDomainSchedule ctx observer st

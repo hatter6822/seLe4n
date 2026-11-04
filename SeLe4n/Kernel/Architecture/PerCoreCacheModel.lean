@@ -1439,7 +1439,7 @@ theorem withIcacheBroadcast_frame
     st'.scheduler = stB.scheduler ∧ st'.machine = stB.machine ∧
     st'.tlb = stB.tlb ∧ st'.tlbShootdown = stB.tlbShootdown ∧
     st'.perCoreTlb = stB.perCoreTlb ∧
-    st'.irqHandlers = stB.irqHandlers := by
+    st'.irqSignalLines = stB.irqSignalLines := by
   unfold withIcacheBroadcast at hStep
   rw [hk] at hStep
   cases hOp : mkOp st with
@@ -1937,7 +1937,7 @@ theorem vspaceUnifyInstructionPage_frame {st st' : SystemState}
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine ∧
     st'.tlb = st.tlb ∧ st'.tlbShootdown = st.tlbShootdown ∧
     st'.perCoreTlb = st.perCoreTlb ∧
-    st'.irqHandlers = st.irqHandlers := by
+    st'.irqSignalLines = st.irqSignalLines := by
   cases hres : resolveAsidRoot st asid with
   | none => rw [vspaceUnifyInstructionPage_asid_unbound st vaddr hres] at h; cases h
   | some rr =>

@@ -650,4 +650,87 @@ theorem notificationSignalBoundOnCore_bound_path_NI_smp
       endpointQueueRemoveDual_preserves_projectionOnCore ctx observer st st1 epId true t c
         hSplice hObjInv hRemove]
 
+-- ============================================================================
+-- §5  WS-ZA ZA6.32 — the bound-aware signal on every path, hidden
+-- ============================================================================
+
+/-- WS-ZA ZA6.32: **what the bound-aware signal writes, hidden**: the
+notification; on the bound-delivery path the bound thread and the endpoint
+splice; on the waiter path the woken waiter and its successor. -/
+structure boundSignalHidden (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (notificationId : SeLe4n.ObjId) : Prop where
+  notification : objectObservable ctx observer notificationId = false
+  bound : ∀ t epId, boundDeliveryTarget? st notificationId = some (t, epId) →
+    endpointSpliceHigh ctx observer st epId t ∧ threadObservable ctx observer t = false ∧
+      objectObservable ctx observer t.toObjId = false
+  waiter : ∀ ntfn w, st.getNotification? notificationId = some ntfn → ntfn.waitHead = some w →
+    threadObservable ctx observer w = false ∧ objectObservable ctx observer w.toObjId = false ∧
+      ∀ n, ntfnSuccessor? st w = some n → objectObservable ctx observer n.toObjId = false
+
+/-- WS-ZA ZA6.32: **the bound-aware signal is invisible on every core** when
+what it writes is hidden: the bound delivery
+(`notificationSignalBoundOnCore_bound_path_NI_smp`), the waiter's wake
+(`notificationSignalOnCore_signal_path_NI_smp`), the badge accumulated into a
+notification with no waiter (a store at a hidden object), and every refused
+path, which returns the state it was given. -/
+theorem notificationSignalBoundOnCore_lowEquivalent (ctx : LabelingContext)
+    (observer : IfObserver) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
+    (h : boundSignalHidden ctx observer st notificationId) :
+    lowEquivalent_smp ctx observer
+      (notificationSignalBoundOnCore notificationId badge executingCore st).1 st := by
+  cases hT : boundDeliveryTarget? st notificationId with
+  | some p =>
+    obtain ⟨t, epId⟩ := p
+    obtain ⟨hSp, hTh, hTo⟩ := h.bound t epId hT
+    cases hR : endpointQueueRemoveDual epId true t st with
+    | error e =>
+      have hE : (notificationSignalBoundOnCore notificationId badge executingCore st).1 = st := by
+        simp [notificationSignalBoundOnCore, hT, hR]
+      rw [hE]; exact fun _ => rfl
+    | ok u =>
+      obtain ⟨⟨⟩, st1⟩ := u
+      cases hRc : storeTcbReceiveComplete st1 t
+          (some { IpcMessage.empty with badge := some badge }) with
+      | error e =>
+        have hE : (notificationSignalBoundOnCore notificationId badge executingCore st).1 = st := by
+          simp [notificationSignalBoundOnCore, hT, hR, hRc]
+        rw [hE]; exact fun _ => rfl
+      | ok st2 =>
+        exact notificationSignalBoundOnCore_bound_path_NI_smp ctx observer notificationId badge
+          executingCore st st1 st2 t epId hT hR hRc hSp hObjInv hTh hTo
+  | none =>
+    rw [notificationSignalBoundOnCore_fallthrough_eq _ _ _ _ hT]
+    unfold notificationSignalOnCore
+    cases hN : st.getNotification? notificationId with
+    | none => simp only []; split <;> exact fun _ => rfl
+    | some ntfn =>
+      have hObj := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
+      simp only []
+      cases hW : ntfn.waitHead with
+      | some w =>
+        obtain ⟨hWt, hWo, hSucc⟩ := h.waiter ntfn w hN hW
+        simp only []
+        cases hS : storeObject notificationId
+            (.notification (ntfn.withHeadPopped (ntfnSuccessor? st w))) st with
+        | error e => simp only []; exact fun _ => rfl
+        | ok u =>
+          obtain ⟨⟨⟩, st'⟩ := u
+          simp only []
+          cases hM : storeTcbIpcStateAndMessage st' w .ready
+              (some { IpcMessage.empty with badge := some badge }) with
+          | error e => simp only []; exact fun _ => rfl
+          | ok st'' =>
+            have := notificationSignalOnCore_signal_path_NI_smp ctx observer notificationId badge
+              executingCore st ntfn w st' st'' hObj hW hS hM hObjInv h.notification hWt hWo hSucc
+            unfold notificationSignalOnCore at this
+            simpa [hN, hW, hS, hM] using this
+      | none =>
+        simp only []
+        split
+        · exact fun _ => rfl
+        · rename_i st' hS
+          exact fun c => storeObject_preserves_projectionOnCore ctx observer st st' notificationId
+            _ c h.notification hObjInv hS
+
 end SeLe4n.Kernel

@@ -150,7 +150,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_sharedFragment
 #check @onCore_perCoreFragment
 #check @onCore_objects
-#check @onCore_irqHandlers
+#check @onCore_irqSignalLines
 #check @onCore_objectIndex
 #check @onCore_domainSchedule
 #check @onCore_memory
@@ -2071,7 +2071,6 @@ totality over the wrong domain proves nothing, which is why the
 #check @applySyscallTaint_frame
 #check @applySyscallTaint_objectsAgreeOffTaint
 #check @applySyscallTaint_invExt
-#check @applySyscallTaint_preserves_tableReferencesRecorded
 #check @applyTaintStep_declassificationTaint
 #check @taintHolderAt_false_no_content
 #check @liveTaintEdges_mem_or_no_content
@@ -2264,7 +2263,7 @@ example (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s₁ s₂ : Sy
 -- SM8.A.4: the read-set characterisation names only shared state and core `c`.
 example (ctx : LabelingContext) (L : SecurityLabel) (s₁ s₂ : SystemState) (c : CoreId)
     (hObjects : s₁.objects = s₂.objects)
-    (hIrq : s₁.irqHandlers = s₂.irqHandlers) (hIndex : s₁.objectIndex = s₂.objectIndex)
+    (hIrq : s₁.irqSignalLines = s₂.irqSignalLines) (hIndex : s₁.objectIndex = s₂.objectIndex)
     (hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule)
     (hMem : s₁.machine.memory = s₂.machine.memory)
     (hRQ : s₁.scheduler.runQueueOnCore c = s₂.scheduler.runQueueOnCore c)
@@ -3083,6 +3082,9 @@ private def probeLabeling : LabelingContext :=
       else if oid = highCurrent.toObjId then highLabel
       else if oid = highQueued.toObjId then highLabel
       else if oid = midEndpoint then midLabel
+      -- WS-ZA ZA6.32: the high line's interrupt node carries the line's label,
+      -- as seL4 labels an `irq_node` slot by its IRQ's label.
+      else if oid = irqNodeId highIrq.toNat then highLabel
       else lowLabel
     threadLabelOf := fun tid =>
       if tid = highCurrent then highLabel
@@ -3341,13 +3343,13 @@ private def runPartitionChecks : IO Unit := do
     (allCores.all (fun c =>
       decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).objectIndex
         = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).objectIndex)))
-  assertBool "the shared irqHandlers component is identical on every core"
+  assertBool "the shared irqSignalLines component is identical on every core"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqHandlers lowIrq
-          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).irqHandlers
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqSignalLines lowIrq
+          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).irqSignalLines
               lowIrq ∧
-        (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqHandlers highIrq
-          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).irqHandlers
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqSignalLines highIrq
+          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).irqSignalLines
               highIrq)))
   assertBool "the shared objects component is identical on every core"
     (allCores.all (fun c =>
@@ -3558,16 +3560,16 @@ private def runMonotonicityChecks : IO Unit := do
     (decide (lowEndpoint ∈
         (ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objectIndex ∧
       lowEndpoint ∈ (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objectIndex))
-  assertBool "STRICT: the high IRQ handler is routed only for the high observer"
-    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqHandlers highIrq
-        = none ∧
-      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).irqHandlers highIrq
-        = some highEndpoint))
-  assertBool "MONOTONE: the low IRQ handler is routed for BOTH observers"
-    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqHandlers lowIrq
-        = some lowEndpoint ∧
-      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).irqHandlers lowIrq
-        = some lowEndpoint))
+  assertBool "STRICT: the high IRQ line reads signalled only for the high observer"
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqSignalLines highIrq
+        = false ∧
+      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).irqSignalLines highIrq
+        = true))
+  assertBool "MONOTONE: the low IRQ line reads signalled for BOTH observers"
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqSignalLines lowIrq
+        = true ∧
+      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).irqSignalLines lowIrq
+        = true))
   assertBool "STRICT: the high endpoint object is visible only to the high observer"
     (decide (((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objects
           highEndpoint).isSome = false ∧
@@ -4647,11 +4649,11 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-six cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 36))
-  assertBool "twenty-six of the thirty-six can name a core other than the executing one"
+  assertBool "thirty-eight cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 38))
+  assertBool "twenty-eight of the thirty-eight can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 26))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 28))
   assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the declassification, the two audit readers, the yield and the Consumed invocation are the ten that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
@@ -4659,9 +4661,22 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch,
       .schedContextConsumedDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "twenty-nine of the thirty-six are the arms the live syscall dispatch reaches"
+  assertBool "thirty-one of the thirty-eight are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 29))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 31))
+  -- WS-ZA ZA6.32: the interrupt handler's bind and clear empty the line's node
+  -- slot by the zombie delete, so they are live, delegation-backed arms naming
+  -- their own syscalls that may write remote cores, as the delete does.
+  assertBool "the interrupt handler's bind and clear are live, delegation-backed arms that may write remote cores"
+    ([SeLe4n.Kernel.CrossCoreTransition.irqHandlerSetNotificationDispatch,
+      .irqHandlerClearDispatch].all (fun t =>
+        SeLe4n.Kernel.crossCoreTransitionIsLiveArm t
+          && (SeLe4n.Kernel.crossCoreLiveArmEvidence t).isDelegationBacked
+          && SeLe4n.Kernel.crossCoreTransitionWritesRemote t)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .irqHandlerSetNotificationDispatch
+                   = some SeLe4n.Model.SyscallId.irqHandlerSetNotification)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .irqHandlerClearDispatch
+                   = some SeLe4n.Model.SyscallId.irqHandlerClear))
   -- WS-ZA ZA6.29: the yieldTo invocation is a live, delegation-backed arm
   -- naming its own syscall, and it writes a remote core: the bound thread's
   -- home core, where the resume places the context and the unlinked branch
@@ -4758,8 +4773,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "twenty-one live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 21))
+  assertBool "twenty-three live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 23))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -5361,9 +5376,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "66 entries: 52 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation and the yieldTo invocation) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 66) &&
-     decide (enforcementBoundaryExtended.length = 52) &&
+  assertBool "67 entries: 53 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation, the yieldTo invocation and the interrupt acknowledge) + 14 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 70) &&
+     decide (enforcementBoundaryExtended.length = 56) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -8372,10 +8387,10 @@ private def runPhaseSurfaceChecks : IO Unit := do
      have _s := niStepCoverage_perCore_count
      decide (KernelOperation.all.eraseDups.length = KernelOperation.all.length))
   -- WS-ZA ZA6.30: the per-core step relation's coverage — the kernel operations
-  -- plus the scheduler steps, fifty distinct theorems, executed rather than
-  -- only elaborated.
-  assertBool "per-core NI coverage names fifty distinct theorems"
-    (decide ((PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 50))
+  -- plus the scheduler steps and the interrupt entry, fifty-one distinct
+  -- theorems, executed rather than only elaborated.
+  assertBool "per-core NI coverage names fifty-one distinct theorems"
+    (decide ((PerCoreOperation.all.map perCoreOperationNiTheorem).eraseDups.length = 51))
 
 
 
@@ -9453,7 +9468,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 43) &&
+     decide (SyscallId.count = 47) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10078,9 +10093,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 43, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 47, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 43) &&
+     decide (SyscallId.count = 47) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit

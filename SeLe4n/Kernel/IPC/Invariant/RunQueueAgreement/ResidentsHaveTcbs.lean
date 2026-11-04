@@ -283,6 +283,34 @@ theorem perCoreRescheduleEntryState_preserves_residentsHaveTcbs (coreId : UInt64
     rw [perCoreRescheduleStep_invalid_core _ coreId (not_lt_of_coreIdOfUInt64?_none hc)]
     exact ⟨saveCapturedTrapFrameAt_residentCode st coreId frame, hSv⟩
 
+/-- WS-ZA ZA6.32: **the interrupt entry keeps every resident a thread**: its
+step moves no residency and removes no thread. -/
+theorem interruptEntryState_preserves_residentsHaveTcbs (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
+    (hT : st.residentsHaveTcbs) :
+    (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))).residentsHaveTcbs := by
+  have S := interruptEntryState_runQueueEntryStage coreId intId frame st E
+  have hDf := S.2 hInv0 hR0 (S.1.links hInv0 hR0).2 hD0
+  have hSt := saveCapturedTrapFrameAt_runQueueStage st coreId frame
+  obtain ⟨hInvS, hRS⟩ := hSt.1.links hInv0 hR0
+  have ES := E.of_ipcFrame hSt (saveCapturedTrapFrameAt_ipcFrame st coreId frame)
+  have hInvM := ((interruptEntryStep_runQueueStage _ coreId intId ES).1.links hInvS hRS).1
+  have hSv := tcbsKept_saveCapturedTrapFrameAt st coreId frame hInv0
+  refine ResidentsHaveTcbs.clearLedgers
+    (settleThenActivateAt_residentsHaveTcbs hT hInvM ?_ ?_
+      (currentDequeuedUnique_of_clearLedgers hDf))
+  · intro c hc
+    exact residentTcbKeptOffCore_of_save_stepCovers
+      (saveCapturedTrapFrameAt_residentCode st coreId frame) hSv
+      (interruptEntryStep_stepCovers c _ coreId intId hInvS)
+  · intro hc
+    rw [interruptEntryStep_invalid_core _ coreId intId hc]
+    exact ⟨saveCapturedTrapFrameAt_residentCode st coreId frame, hSv⟩
+
 /-- **The fault entry gives every core's resident a TCB.** -/
 theorem faultEntryState_preserves_residentsHaveTcbs (lctx : LabelingContext)
     (coreId : UInt64) (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
@@ -428,7 +456,6 @@ theorem syscallDispatchEntryState_preserves_residentsHaveTcbs (ctx : LabelingCon
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (st' := Architecture.IpcBufferRead.syncUserWords
@@ -491,7 +518,7 @@ theorem bootFromPlatformCheckedStartedFor_residentsHaveTcbs
     ist.state.residentsHaveTcbs := by
   obtain ⟨base, started, hBase, hStart, rfl⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
   refine ResidentsHaveTcbs.of_defaultCodes ?_
-  rw [linkBootCapabilities_machine, startInitialThreads_machine _ _ _ hStart]
+  rw [linkBootCapabilities_machine, installIrqNodes_machine, startInitialThreads_machine _ _ _ hStart]
   exact bootFromPlatformCheckedWithIdleThreadsFor_ok_residentCode cores config base hBase
 
 end SeLe4n.Platform.Boot

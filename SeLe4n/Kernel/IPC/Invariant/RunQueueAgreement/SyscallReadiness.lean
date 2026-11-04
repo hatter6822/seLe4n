@@ -271,16 +271,14 @@ theorem notificationWait_block_readyKeptStage {st st1 st2 st3 : SystemState}
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
-    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false)
-    (hI : n'.irqBound = ntfn.irqBound := by first | rfl | (simp_all; done))
-    (hNW : n'.taintWords = ntfn.taintWords := by taint_words_kept) :
+    (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
     readyKeptStage (· = waiter) st (removeRunnableOnCore st3 waiter c) := by
   have hC1 : st1.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (storeObject_scheduler_eq _ _ _ _ hS1) hCur
   have hC3 : st3.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (linkNtfnWaiter_scheduler_eq hL)
       (currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hS2) hC1)
-  have hNs := storeObject_notificationOver_runQueueStage hN hS1 hI hNW
+  have hNs := storeObject_notificationOver_runQueueStage hN hS1
   have w : SystemState.RunQueueWindowStage (.block c) st st2 :=
     SystemState.RunQueueWindowStage.of_invExt fun hInv => by
       have hNo := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
@@ -766,7 +764,6 @@ theorem finaliseFinalObject_readyEntry {S : SeLe4n.ThreadId → Prop} (target : 
         · cases hU
         · exact Or.inl hU)
       (by rw [finaliseThreadReleaseCores_scheduler])
-      (by unfold finaliseThreadReleaseCores SystemState.referenceTables; dsimp only)
       (by rw [finaliseThreadReleaseCores_scheduler])))
     (fun _ s1 x _ _ _ h _ _ hR _ hS _ _ _ _ =>
       readyEntry_stage h ((storeObject_replyOver_runQueueStage hR hS).trans
@@ -785,10 +782,16 @@ theorem cspaceDeleteSlotFinalising_readyEntry {S : SeLe4n.ThreadId → Prop} {ec
     (h : cspaceDeleteSlotFinalising ec addr s = .ok ((), s')) :
     SystemState.RunQueueEntryStage st s' ∧ readyKeptStage S st s' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr s s' h
-  exact readyEntry_stage (finaliseFinalObject_readyEntry _ (readyEntry_stage hQ
-    (((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
-      (releaseFinalRegistration_runQueueStage _ st2))))
-    (retireFinalObject_runQueueStage ec _ _ _)
+  rcases retireFinalisedObject_cases ec (slotRetireTarget s addr.cnode addr.slot)
+    (slotRetireRecorder s addr.cnode addr.slot) st2 with ⟨-, hE⟩ | ⟨-, hE⟩
+  · rw [hE]
+    exact readyEntry_stage (readyEntry_stage hQ ((cspaceDeleteSlot_runQueueStage hD).trans
+      (finaliseDestroyedCapabilities_runQueueStage hF))) (retireIrqNode_runQueueStage st2 _)
+  · rw [hE]
+    exact readyEntry_stage (finaliseFinalObject_readyEntry _ (readyEntry_stage hQ
+      (((cspaceDeleteSlot_runQueueStage hD).trans (finaliseDestroyedCapabilities_runQueueStage hF)).trans
+        (releaseFinalRegistration_runQueueStage _ st2))))
+      (retireFinalObject_runQueueStage ec _ _ _)
 
 /-- The start of a kernel entry: nothing yet. -/
 theorem readyEntry_refl {S : SeLe4n.ThreadId → Prop} (st : SystemState) :
@@ -813,6 +816,16 @@ theorem copyThreadSpacesZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec
     (fun _ _ hQ hS => readyEntry_stage hQ (copyThreadSpaces_runQueueStage hS))
     (readyEntry_refl st) h).2
 
+/-- The zombie delete as a stage pair, for a step that continues after it. -/
+theorem cspaceDeleteSlotZombie_readyEntry {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
+    {addr : CSpaceAddr} {st st' : SystemState}
+    (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' ∧ readyKeptStage S st st' :=
+  cspaceDeleteSlotZombie_closed (fun s => SystemState.RunQueueEntryStage st s ∧
+      readyKeptStage S st s)
+    (fun _ _ _ hQ hD => cspaceDeleteSlotFinalising_readyEntry hQ hD)
+    (fun _ _ hQ => finaliseFinalObject_readyEntry _ hQ) (readyEntry_refl st) h
+
 theorem cspaceDeleteSlotZombie_readyKeptStage {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
     {addr : CSpaceAddr} {st st' : SystemState}
     (h : cspaceDeleteSlotZombie ec addr st = .ok ((), st')) : readyKeptStage S st st' :=
@@ -834,6 +847,31 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     readyKeptStage S st st' := by
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
+  case irqHandlerAck =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line => exact readyKeptStage.of_stage (irqHandlerAck_runQueueStage hStep)
+    all_goals try cases hStep
+  case irqControlGet =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqControl =>
+      obtain ⟨_, _, _, -, -, -, hG⟩ := irqControlGetFromCap_ok _ _ _ _ _ hStep
+      exact readyKeptStage.of_stage (irqControlGet_runQueueStage hG)
+    all_goals try cases hStep
+  case irqHandlerSetNotification =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      obtain ⟨_, _, -, hN⟩ := irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ hStep
+      obtain ⟨-, st1, -, -, -, hZ, hC | ⟨-, -, rfl⟩⟩ := irqHandlerSetNotification_ok_cases hN
+      · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
+          (cspaceCopy_runQueueStage hC)).2
+      · exact (readyEntry_stage (cspaceDeleteSlotZombie_readyEntry hZ)
+          (cspaceCopyPerform_runQueueStage _ _ _)).2
+    all_goals try cases hStep
+  case irqHandlerClear =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case irqHandler line =>
+      exact cspaceDeleteSlotZombie_readyKeptStage (irqHandlerClear_ok hStep).2
+    all_goals try cases hStep
   case cspaceDelete =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object cnodeId =>
@@ -1547,7 +1585,6 @@ theorem dispatchSyscallChecked_readyKeptStage (ctx : LabelingContext)
       readyKeptStage.trans_links hP.1.1.links hP.2 (readyKeptStage.of_stage
         (SystemState.RunQueueStage.of_objectsAgreeOffTaint
           (applySyscallTaint_objectsAgreeOffTaint _ _ _) applySyscallTaint_invExt
-          (fun _ => applySyscallTaint_preserves_tableReferencesRecorded)
           (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])
           (by rw [applySyscallTaint_scheduler]) (by rw [applySyscallTaint_scheduler])))
   · unfold syscallInvoke at hD
@@ -1656,7 +1693,6 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
-        (hT := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)
         (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
         (hRes := by unfold Platform.FFI.recordSyscallRefusal; split <;> (try split) <;> rfl)))
   · rename_i hE
@@ -1718,7 +1754,6 @@ theorem syscallDispatchEntryState_preserves_blockedNotResident (ctx : LabelingCo
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (st' := Architecture.IpcBufferRead.syncUserWords

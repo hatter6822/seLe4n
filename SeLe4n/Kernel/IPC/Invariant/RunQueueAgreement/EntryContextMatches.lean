@@ -80,7 +80,7 @@ theorem settleResidencyOnCore_preserves_contextMatchesCurrentOnCore (st : System
   have hY := deferResidentElsewhere_preserves_contextMatchesCurrentOnCore _ c
     (dispatchVacatedCore_preserves_objects_invExt c st hInv)
     (dispatchVacatedCore_preserves_contextMatchesCurrentOnCore st c hInv h)
-  obtain ⟨hO, -, -, hCC, -, -⟩ := settleResidencyOnCore_frame st c
+  obtain ⟨hO, -, -, hCC, -⟩ := settleResidencyOnCore_frame st c
   refine (contextMatchesCurrentOnCore_frame ?_ ?_ hO).mpr hY
   · simp only [SchedulerState.currentOnCore, hCC]
   · simp only [settleResidencyOnCore, pokeReleasedResident_machine]; rfl

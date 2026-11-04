@@ -2092,6 +2092,20 @@ theorem revokeService_preserves_ipcReachable {sid : ServiceId} {st st' : SystemS
     ((revokeService_runQueueStage hR).entry.1 hObjInv h.runQueueRefined).2,
     SystemState.replyWaitersConsistent.of_views hViews h.replyWaitersConsistent⟩
 
+/-- WS-ZA ZA6.32: **a line's state change keeps the reachable state**: it writes
+the tree's issued lines and the mask, no object and no scheduler state. -/
+theorem setIrqLineSignal_preserves_ipcReachable (st : SystemState) (line : Nat)
+    (signal : Bool) (h : ipcReachable st) :
+    ipcReachable (Architecture.setIrqLineSignal st line signal) := by
+  have hO : (Architecture.setIrqLineSignal st line signal).objects = st.objects :=
+    Architecture.setIrqLineSignal_objects st _ _
+  exact ⟨ipcInvariantFull_of_getElem_eq (fun o => by rw [hO]) h.ipcInvariantFull,
+    by rw [hO]; exact h.objects_invExt, h.allTimeoutBudgetsNone,
+    notificationWaiterConsistent_of_objects_eq hO h.notificationWaiterConsistent,
+    donationChainWellFormed_of_frame ⟨fun o => by rw [hO], fun o => by rw [hO],
+      fun o r' hr hc => ⟨r', by rw [← hO]; exact hr, hc⟩⟩ h.donationChainWellFormed,
+    h.runQueueRefined, h.replyWaitersConsistent⟩
+
 /-- **The retire after the finalisation keeps the reachable state**: the
 release's (`revokeService_preserves_ipcReachable`), the finalisation's
 (`finaliseFinalObject_preserves_ipcReachable`), then the retire's
@@ -2100,6 +2114,9 @@ theorem retireFinalisedObject_preserves_ipcReachable (ec : Concurrency.CoreId)
     (target recorder : Nat) {st : SystemState} (h : ipcReachable st)
     (hW : lentContextHeadsLenderFrame st) :
     ipcReachable (retireFinalisedObject ec target recorder st) := by
+  rcases retireFinalisedObject_cases ec target recorder st with ⟨-, hE⟩ | ⟨-, hE⟩
+  · exact hE ▸ setIrqLineSignal_preserves_ipcReachable st _ false h
+  rw [hE]
   have h0 := releaseFinalRegistration_closed
     (fun s => ipcReachable s ∧ lentContextHeadsLenderFrame s)
     (fun _ _ _ hs hR => ⟨revokeService_preserves_ipcReachable hs.1 hR,

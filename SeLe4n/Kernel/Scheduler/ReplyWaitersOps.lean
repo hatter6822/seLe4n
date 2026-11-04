@@ -877,7 +877,6 @@ run-queue stage: every run link, current slot and thread state reads as before. 
 theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
     (hA : objectsAgreeOffReplyLinks st' st) (hS : st'.scheduler = st.scheduler)
     (hI : st.objects.invExt → st'.objects.invExt)
-    (hT : st'.referenceTables = st.referenceTables)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' := by
   have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := by
@@ -888,8 +887,7 @@ theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
       first | rfl | cases e | exact Option.some.inj e
   have hM : StateMono st st' :=
     StateMono.of_stateFields (fun t => hA.getTcb?_map _ (t := t))
-  exact ⟨.of_tableFrame (fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩)
-      (fun _ => .of_map (g := KernelObject.withoutReplyLinks) (fun o => by cases o <;> rfl) hT hA)
+  exact ⟨.of_frames (fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩)
       (fun _ => ⟨.of_map KernelObject.withoutReplyLinks (fun o _ => by cases o <;> rfl) hA,
         by rw [hS]⟩)
       (fun _ => Kernel.RefillViewsKept.of_map KernelObject.withoutReplyLinks
@@ -902,13 +900,11 @@ theorem linkReplyWaiter_runQueueStage (st : SystemState) (w s : ThreadId) :
     RunQueueStage st (st.linkReplyWaiter w s) :=
   .of_objectsAgreeOffReplyLinks (linkReplyWaiter_objectsAgreeOffReplyLinks st w s)
     (linkReplyWaiter_scheduler st w s) (linkReplyWaiter_objects_invExt st w s)
-    ((congrArg SystemState.referenceTables (linkReplyWaiter_eq_objects st w s)).trans rfl)
 
 theorem unlinkReplyWaiter_runQueueStage (st : SystemState) (w s : ThreadId) :
     RunQueueStage st (st.unlinkReplyWaiter w s) :=
   .of_objectsAgreeOffReplyLinks (unlinkReplyWaiter_objectsAgreeOffReplyLinks st w s)
     (unlinkReplyWaiter_scheduler st w s) (unlinkReplyWaiter_objects_invExt st w s)
-    ((congrArg SystemState.referenceTables (unlinkReplyWaiter_eq_objects st w s)).trans rfl)
 
 theorem unlinkReplyWaiterOpt_runQueueStage (st : SystemState) (w : ThreadId)
     (s? : Option ThreadId) : RunQueueStage st (st.unlinkReplyWaiterOpt w s?) := by

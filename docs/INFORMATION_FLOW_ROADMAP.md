@@ -206,7 +206,8 @@ Delivered (WS-F3 closeout):
 **CRIT-02 — ObservableState extension** (`Projection.lean`):
 
 - `activeDomain` — scheduling transparency, always visible to all observers,
-- `irqHandlers` — filtered by target notification object observability,
+- `irqSignalLines` (until `v0.36.195` the `irqHandlers` table) — a line's state
+  shown only where its interrupt node is observable,
 - `objectIndex` — filtered by object observability,
 - all NI theorems extended to preserve the full 7-field projection.
 

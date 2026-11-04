@@ -995,23 +995,31 @@ def stale_entries(recorded: dict, current: dict) -> list[str]:
     return differs + stale_files(recorded.get("outputs"), current.get("outputs"), "outputs")
 
 
-def check_fresh() -> int:
-    """Refuse an archive whose recorded inputs or outputs have changed."""
+def archive_staleness() -> str | None:
+    """Why the archive pair is not this tree's build, or `None` when its
+    record names the current tree and outputs.  The one answer to "was this
+    archive built from this tree?": `check_fresh` reports it, and the entry
+    export gate decides its cross side on it."""
     if not PROVENANCE.is_file():
-        print(f"FAIL: {PROVENANCE.relative_to(REPO)} is absent: the archive predates "
-              "provenance or its build failed; run scripts/test_lean_aarch64_archive.sh")
-        return 1
+        return (f"{PROVENANCE.relative_to(REPO)} is absent: the archive predates "
+                "provenance or its build failed")
     try:
         recorded = json.loads(PROVENANCE.read_text())
     except json.JSONDecodeError as exc:
-        print(f"FAIL: {PROVENANCE.relative_to(REPO)} is unreadable ({exc})")
-        return 1
+        return f"{PROVENANCE.relative_to(REPO)} is unreadable ({exc})"
     stale = stale_entries(recorded if isinstance(recorded, dict) else {},
                           provenance_record(tree_digest()))
     if stale:
-        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} difference(s) "
-              f"from its build record (first: {', '.join(stale[:5])}); "
-              "run scripts/test_lean_aarch64_archive.sh")
+        return (f"{ARCHIVE.relative_to(REPO)} is stale: {len(stale)} difference(s) "
+                f"from its build record (first: {', '.join(stale[:5])})")
+    return None
+
+
+def check_fresh() -> int:
+    """Refuse an archive whose recorded inputs or outputs have changed."""
+    stale = archive_staleness()
+    if stale is not None:
+        print(f"FAIL: {stale}; run scripts/test_lean_aarch64_archive.sh")
         return 1
     print(f"OK: {ARCHIVE.relative_to(REPO)} was built from the current tree")
     return 0

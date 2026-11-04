@@ -535,7 +535,6 @@ theorem syscallDispatchEntryState_preserves_contextMatchesCurrentOffCore (ctx : 
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
-      (hT := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (hS := by rw [Architecture.IpcBufferRead.syncUserWords_scheduler])
       (hRes := by unfold Architecture.IpcBufferRead.syncUserWords; split <;> rfl)
       (st' := Architecture.IpcBufferRead.syncUserWords
@@ -782,6 +781,100 @@ theorem saveCapturedTrapFrame_carriesPremises (st : SystemState) (c : CoreId)
         obtain ⟨t, hT0, hI, -⟩ := (hF E.objInv).2.2.1 tid t' hT'
         exact ⟨t, hT0, hI⟩),
     CurrentNotResidentElsewhere.of_frame hN (saveCapturedTrapFrame_scheduler st c frame) hM⟩
+
+/-- WS-ZA ZA6.32: **a step that writes only threads free at its start writes the
+saved registers of no thread current on another core after it**, when it makes
+no thread current on another core. -/
+theorem currentSavedRegsKeptOffCore_of_writtenFree {e : CoreId} {base post : SystemState}
+    (h : savedRegsWrittenFree e base base post) (hK : currentKeptOffCore e base post) :
+    currentSavedRegsKeptOffCore e base post :=
+  fun d hd t ht => (h t).elim id fun hF => absurd (hK d hd t ht) (hF d hd).1
+
+/-- WS-ZA ZA6.32: the interrupt step's off-core frames: it covers its reads
+and writes, writes the saved registers only of the threads its signal wakes,
+which are blocked and so held by no core (`interruptEntryStep_savedRegsWrittenFree`),
+and keeps the store well formed. -/
+theorem interruptEntryStep_offCoreFrames (S : SystemState) (coreId intId : UInt64)
+    (hlt : coreId.toNat < Concurrency.numCores) (E : EntryPremises S)
+    (hRT : S.residentsHaveTcbs) (hBNR : S.blockedNotResident) :
+    stepCovers ⟨coreId.toNat, hlt⟩ S (interruptEntryStep S coreId intId) ∧
+      currentSavedRegsKeptOffCore ⟨coreId.toNat, hlt⟩ S (interruptEntryStep S coreId intId) ∧
+      (interruptEntryStep S coreId intId).objects.invExt :=
+  have hC := interruptEntryStep_stepCovers ⟨coreId.toNat, hlt⟩ S coreId intId E.objInv
+  ⟨hC, currentSavedRegsKeptOffCore_of_writtenFree
+      (interruptEntryStep_savedRegsWrittenFree S coreId intId E hRT hBNR) hC.currentKept,
+    interruptEntryStep_preserves_objects_invExt _ coreId intId E.objInv⟩
+
+/-- WS-ZA ZA6.32: **the interrupt entry keeps every other core's bank match**:
+the save (`saveCapturedTrapFrame_carriesPremises`), the interrupt step
+(`interruptEntryStep_offCoreFrames`), the settle and the activation. -/
+theorem interruptEntryState_preserves_contextMatchesCurrentOffCore (coreId intId : UInt64)
+    (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (E : EntryPremises st) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hN : st.currentNotResidentElsewhere) (d : CoreId) (hd : d ≠ c)
+    (h : contextMatchesCurrentOnCore st d) :
+    contextMatchesCurrentOnCore (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))) d := by
+  have St := interruptEntryState_runQueueEntryStage coreId intId frame st E
+  have hUf := currentsUnique_of_dequeuedUnique (St.2 E.objInv E.refined
+    (St.1.links E.objInv E.refined).2 E.dequeued)
+  have hU0 := currentsUnique_of_dequeuedUnique E.dequeued
+  obtain ⟨hlt, rfl⟩ := coreIdOfUInt64?_some hc
+  simp only [activateThreadAt, PriorityInheritance.settleResidencyAt,
+    Concurrency.saveCapturedTrapFrameAt, hc] at hUf ⊢
+  have hSc := saveCapturedTrapFrame_contextMatchesCurrentOffCore st _ frame E.objInv hU0 hN d hd h
+  obtain ⟨ES, hRTS, hBS, -⟩ := saveCapturedTrapFrame_carriesPremises st ⟨coreId.toNat, hlt⟩
+    frame E hRT hBNR hN
+  generalize Architecture.saveCapturedTrapFrame st ⟨coreId.toNat, hlt⟩ frame = S at hSc hUf ES hRTS hBS
+  obtain ⟨hCov, hS, hI⟩ := interruptEntryStep_offCoreFrames S coreId intId hlt ES hRTS hBS
+  exact contextMatchesCurrentOnCore_clearLedgers
+    (settleThenActivateOnCore_contextMatchesCurrentOffCore hCov hS hI
+      (hUf.of_scheduler (by simp [Architecture.clearIcacheMaintenance,
+        Architecture.clearPhysicalWrites])) d hd hSc)
+
+/-- WS-ZA ZA6.32: **the interrupt step keeps every core's bank match**, the
+executing core's included.  Its frames hold whichever core is named the
+executing one (`interruptEntryStep_offCoreFrames` is stated at any core), so
+name one other than `d`: the step makes no thread current, writes no bank, and
+writes the saved registers only of threads blocked at its start, which are
+current on no core. -/
+theorem interruptEntryStep_contextMatchesCurrentOnCore (S : SystemState) (coreId intId : UInt64)
+    (E : EntryPremises S) (hRT : S.residentsHaveTcbs) (hBNR : S.blockedNotResident) (d : CoreId)
+    (h : contextMatchesCurrentOnCore S d) :
+    contextMatchesCurrentOnCore (interruptEntryStep S coreId intId) d := by
+  obtain ⟨e, he⟩ := exists_core_ne d
+  have hC := interruptEntryStep_stepCovers e S coreId intId E.objInv
+  exact contextMatchesCurrentOnCore_offCore hC.currentKept hC.banksKept
+    (currentSavedRegsKeptOffCore_of_writtenFree
+      (interruptEntryStep_savedRegsWrittenFree S coreId intId E hRT hBNR) hC.currentKept)
+    d (Ne.symm he) h
+
+/-- WS-ZA ZA6.32: **the interrupt entry keeps the executing core's bank its
+current thread's context**: the save, the interrupt step
+(`interruptEntryStep_contextMatchesCurrentOnCore`), the settle and the
+activation. -/
+theorem interruptEntryState_preserves_contextMatchesCurrentOnCore (coreId intId : UInt64)
+    (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (E : EntryPremises st) (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (hN : st.currentNotResidentElsewhere) (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))) c := by
+  obtain ⟨hlt, rfl⟩ := coreIdOfUInt64?_some hc
+  simp only [activateThreadAt, PriorityInheritance.settleResidencyAt,
+    Concurrency.saveCapturedTrapFrameAt, hc]
+  have hSc := saveCapturedTrapFrame_preserves_contextMatchesCurrentOnCore st ⟨coreId.toNat, hlt⟩
+    frame E.objInv h
+  obtain ⟨ES, hRTS, hBS, -⟩ := saveCapturedTrapFrame_carriesPremises st ⟨coreId.toNat, hlt⟩
+    frame E hRT hBNR hN
+  exact settleThenActivateOnCore_preserves_contextMatchesCurrentOnCore _ _
+    (interruptEntryStep_preserves_objects_invExt _ coreId intId ES.objInv)
+    (interruptEntryStep_contextMatchesCurrentOnCore _ coreId intId ES hRTS hBS _ hSc)
 
 /-- The fault step makes no thread current on another core, writes no other
 core's bank, and writes the saved registers of no thread current on another

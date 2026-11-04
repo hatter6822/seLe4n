@@ -1,3 +1,219 @@
+## v0.36.195 — WS-ZA ZA6.32: device interrupts enter the kernel as seL4's handleInterrupt
+
+Every shared peripheral interrupt now enters the verified kernel.
+`trap.rs::handle_irq_per_core` routes INTIDs 32 and up to the board's line
+count to `trap::device_interrupt`, which calls `Kernel.interruptEntry`
+(`@[export lean_handle_interrupt]`) inside the kernel-entry bracket and behind
+the `lean_ready` gate.  The entry takes ZA3.1's form, as the timer, reschedule
+and fault entries do.
+
+- **The step** (`handleInterruptOnCore`, `IPC/CrossCore/InterruptDelivery.lean`)
+  is seL4's `handleInterrupt` on the executing core.  At a line with a bound
+  handler it signals the notification with the bound-aware per-core signal,
+  with the badge of the notification capability in the line's node
+  (`Architecture.irqBinding?`), then masks the line until the handler
+  acknowledges it.
+  The signal (`interruptSignal`) is the syscall signal arm's: it clears the
+  bound receiver's stash and stages the badge into the frame of the thread it
+  wakes (seL4's `sendSignal` sets the woken thread's badge register).  Its
+  `@[csimp]` fast form (`interruptSignal_eq_impl`) wakes a notification's
+  waiter in place (`performSignalWokenDelivered`).
+  A line with no handler is masked (`IRQInactive`).  A spurious or non-device
+  INTID enters nothing.  The HAL masks a PPI other than the timer's on its own
+  core, because PPIs are banked per core and no handler capability names one.
+- **The mask** is machine state (`MachineState.setIrqLineMask`, five words).
+  It reaches the distributor as physical write tag 5
+  (`PhysicalWrite.setInterruptMask`).  The HAL validates the write
+  (`decode_physical_write`: a line from 32 up to the board's line count, and a
+  value of 0 or 1) and performs it through `GICD_ICENABLER` / `GICD_ISENABLER`
+  (`gic::set_interrupt_line_masked`).
+- **The acknowledge** is the new `.irqHandlerAck` syscall (44, `seL4_IRQHandler_Ack`).
+  It is invoked with the write right on the new `CapTarget.irqHandler`
+  capability and unmasks the line (`Architecture.irqHandlerAck`).  Its
+  refusal-carrying arm (`dispatchInvocationByR`) reads the line before the
+  write, so the mask is written in place, not through the shared-state
+  fallback.  Every arm
+  proof, census, lock set, taint, enforcement and refusal table covers it.  On
+  the Rust side, `SyscallId::IrqHandlerAck` is in `sele4n-types` and the HAL,
+  and `sele4n_sys::irq::irq_handler_ack` is new.
+- **The footprint** (`declaredLockSetForInterrupt`) is the table lock plus the
+  run queues of the executing core and of every core the signal wakes onto.
+  It covers the step (`interruptEntryStep_coversWrites`) and the settle and
+  activation tail (`interruptEntryTail_coversWrites`).
+- **Entry-level carries.**
+  - The run-queue entry stage.
+  - Refills and yield links.
+  - Blocked-not-resident, current-not-resident-elsewhere,
+    yield-linked-not-resident and residents-have-TCBs.
+  - The remote save.
+  - The bank match on the executing core and on every other core.
+  - The saved-register census (`interruptEntryStep_savedRegsWrittenFree`):
+    the step writes only the threads its signal wakes, which are blocked at
+    the entry's start and so held by no core.
+  - The mapping stage.
+  - Per-core non-interference: `interruptEntryState_lowEquivalent`, built on
+    a new all-paths theorem for the bound-aware signal
+    (`notificationSignalBoundOnCore_lowEquivalent`), the stash clear at the
+    hidden bound receiver and the stagings, which write only register
+    contexts no projection shows.  The step is the
+    `interruptEntry` constructor of `PerCoreNonInterferenceStep`, and
+    `niStepCoverage_perCore_count` is now 51.
+- **The exerciser**, in the QEMU image, gets two lines: line 250 is bound to
+  the interrupt notification, and line 251 is left unbound.  Each pass issues
+  a handler capability for each from the root task's IRQControl capability and
+  binds the first (see the interrupt nodes below).  The exerciser sets each line
+  pending at the distributor (`GICD_ISPENDR`), above the timer's priority, and
+  takes it through the IAR.  It drives five branches and pins each in
+  `scripts/qemu_exerciser_lib.sh`: the signal with no waiter, the acknowledge,
+  the signal to a waiting thread, the unbound line and the spurious INTID.
+  Read on the untraced image against a fresh archive, every branch is 0 at
+  the first call and 0 at steady state.  On a traced build the acknowledge
+  read 6 (the shared-state generic fallback, now its own refusal-carrying
+  arm), the signal to a waiting thread 4 (the general signal, now the
+  in-place wake), and the signal with no waiter 11 then 9 (the store copied
+  because the pre-state was still referenced after the signal, now the quiet
+  branch, plus the boot ledger's one-time copy).
+- **The device-line range is the board's.**  The lines the entry delivers
+  and the acknowledge unmasks were INTIDs 32 to 319 for every board, while
+  QEMU `virt` serves 288.  A line inside the model but past the board was
+  accepted, and the HAL's validation of the recorded mask write would then
+  halt every core: a denial of service open to any holder of a handler
+  capability for such a line (today only boot-granted ones; found in an
+  earlier commit of this change, so no released version carried it).  It
+  is fixed, not left to the HAL's fail-closed halt: the range is now read
+  from one owner, the
+  board's line count.  `MachineConfig.interruptLineCount` is set from
+  `gicSpiCount + 32` on the RPi5 (320) and `qemuVirtGicSpiCount + 32` on
+  `virt` (288), and `applyMachineConfig` installs it into
+  `MachineState.interruptLineCount`.  `Architecture.deviceInterruptLine st`
+  checks against that value, so a line past the board is refused before any
+  write, as seL4's `Arch_checkIRQ` refuses an IRQ above `maxIRQ`:
+  - the interrupt entry enters nothing (`interruptEntryStep_off_board`);
+  - the acknowledge returns `.invalidIrq` (`irqHandlerAck_refuses_off_board`),
+    on both the specification path and the refusal-carrying arm;
+  - `.irqControlGet` refuses it with `.invalidIrq` (`irqControlLineRefusal`,
+    seL4's `Arch_checkIRQ` in `seL4_IRQControl_Get`), and the boot issues no
+    handler capability at all (`bootIssuesNoInterruptHandler`, the ninth
+    `wellFormed` conjunct, checked ahead of the dangling-capability conjunct
+    because a handler capability names its line's interrupt node, which the
+    configuration does not install, so the refusal carries its own
+    diagnostic), so every handler capability names a line the board has.
+
+  The live count is the bound configuration's
+  (`bootAndInitialisePlatform_checked_interruptLineCount`), and the boot-map
+  fixtures print it, so `gic.rs` holds `BOARD.gic_intid_count` to the number
+  the kernel refuses lines by.  The HAL's mask-write validation stays as a
+  backstop the kernel never reaches.  New cases are
+  `runOffBoardInterruptLineChecks` in the negative-state suite and
+  `runBootInterruptHandlerChecks` in the SMP idle suite.
+- **The boot's physical-write ledger is the state's own**
+  (`SystemState.withFreshPhysicalWrites`, applied by `initialiseKernelState`).
+  The installed ledger was the shared initial constant, so the first physical
+  write recorded after boot copied its buffer and rebuilt its record: 2 cells,
+  paid by whichever entry recorded first.  That was the first page-table
+  retype's first call, so `untyped-retype-page-table-1` moves from (15, 13) to
+  (13, 13).  The 2 cells were the ledger copy, not the destination slot's
+  capability record the old pin comment named.
+- **Fixtures.**  `main_trace_smoke.expected` reads "all 47 variants" and
+  `syscall_return_shape.expected` counts 47 syscalls, the four interrupt
+  syscalls (44 to 47) all unit-returning.  `smp_information_flow.expected` is
+  regenerated from its producer for the 70-entry boundary (56 canonical), the
+  count of 47, the two interrupt nodes in its fixture (12 objects, 7/8/12
+  visible at low/mid/high) and the 38-entry cross-core inventory.  Each
+  `.sha256` is refreshed.
+- **The interrupt nodes and IRQControl, as seL4's.**  The line-to-notification
+  table (`SystemState.irqHandlers`, `Notification.irqBound`, the boot's IRQ
+  table and its reciprocity check, the projection's handler view) is retired.
+  - **The nodes.**  As in seL4's abstract specification (`interrupt_irq_node`),
+    each line has a CNode of one slot.  The boot creates them
+    (`installIrqNodes`, `SeLe4n/Platform/Boot/IrqNodes.lean`), one per line
+    below the board's `interruptLineCount`, at the reserved ids
+    `irqNodeId line`.  A new `wellFormed` conjunct (`irqNodeIdsReserved`) keeps
+    those ids free of configured objects, and the object budget now reserves
+    `InterruptLineSet.capacity` ids for them, so the install never overwrites
+    an object (`bootFromPlatformCheckedStartedFor_irqNodesFresh`).
+  - **The line state** (`IRQInactive` / `IRQSignal`) is the capability tree's
+    issued-line set (`SystemState.irqSignalLines`), written only through
+    `Architecture.setIrqLineSignal` (seL4's `setIRQState`, which also masks an
+    inactive line).  `objectPresent` holds of a node only while its line is
+    issued.
+  - **Delivery** reads the node's slot: a notification capability with the
+    send right is signalled with that capability's badge
+    (`irqBinding?_notification`).
+  - **No capability reaches a node**: a capability naming one is
+    kernel-reserved, as the idle threads are, so it resolves
+    `.invalidCapability` (`syscallResolveCap_ok_not_irqNode`).  The per-core
+    projection shows a line only where its node is observable
+    (`projectIrqSignalLines`), as seL4 labels `irq_node` slots.
+  - **IRQControl.**  The root task holds the IRQControl capability
+    (`CapTarget.irqControl`; QEMU slot 20, RPi5 slot 11).  `.irqControlGet`
+    (45, `seL4_IRQControl_Get`) refuses a line the board lacks or that a
+    handler holds, then puts the line at `IRQSignal` and inserts the handler
+    capability as a derivation child of the control capability, so a revoke
+    of the control capability reaches every handler.
+    `.irqHandlerSetNotification` (46) empties the node's slot by the
+    finalising delete (`cteDeleteOne`) and copies a send-right notification
+    capability there.  `.irqHandlerClear` (47) empties it.
+  - **Finalisation.**  The last handler capability's delete empties the node's
+    slot through the zombie loop (`deletingIRQHandler`), then retires the
+    node (`retireIrqNode`, `deletedIRQHandler`): the line goes to
+    `IRQInactive` and is masked.
+  - **In place.**  Each invocation has a check-perform split whose checks
+    precede every write.  The issue reads the slots' words
+    (`irqControlGetAdmittedAt` / `irqControlGetPerformAt`) and writes the
+    handler capability over the destination slot's own record
+    (`CNode.insertIrqHandlerCap`, `@[csimp]` `irqControlGetPerform_eq_impl`).
+    The bind's checks add the node slot's plain delete
+    (`irqHandlerSetNotificationInPlace`: an empty slot, or a capability that
+    finalises and retires nothing).  Its writes are then the slot emptied and
+    the copy's writes (`irqHandlerSetNotificationPerform`, `cspaceDeletePerform`
+    then `cspaceCopyPerform`).  On every well-formed object table these are
+    the delete and the copy (`irqHandlerSetNotification_inPlace_delete`,
+    `irqHandlerSetNotification_inPlace_copy`), and any other delete runs the
+    zombie loop and the checked copy as before.  `irqHandlerSetNotification_ok`
+    gives every consumer the delete-and-copy shape, and
+    `irqHandlerSetNotification_ok_cases` does the same for those that hold no
+    object-table invariant (`cspaceCopyPerform_runQueueStage`,
+    `cspaceCopyPerform_scheduler`, `cspaceCopyPerform_machine`).  The boot
+    gives the installed state its own issued-line set
+    (`SystemState.withFreshIrqLines`), so the first issue pays no copy of the
+    shared initial set.
+  - **Coverage.**  Each invocation has its decode and its dispatch-arm, census, lock-set,
+    footprint (`irqControlGet_stepCovers`, `irqHandlerSetNotification_stepCovers`,
+    `irqHandlerClear_stepCovers`), mapping-stage, run-queue, enforcement,
+    refusal, taint and non-interference coverage.  The bind and the clear are
+    cross-core inventory entries (`irqHandlerSetNotificationDispatch`,
+    `irqHandlerClearDispatch`, delegation-backed), invisible on every core
+    outside the node slot delete's `cspaceDeleteSlotFinalisingCores`
+    (`irqHandlerSetNotificationFromCap_crossCoreNonInterference`,
+    `irqHandlerClear_crossCoreNonInterference`).  On the Rust side the three
+    ids are in `sele4n-types` and the HAL, `sele4n_sys::irq` gains
+    `irq_control_get`, `irq_handler_set_notification` and `irq_handler_clear`,
+    and the ABI conformance suite covers them.
+  - **The exerciser** issues, binds, clears and deletes the handlers on every
+    pass (`irq-control-get`, `irq-handler-set-notification`,
+    `irq-handler-clear`, `irq-handler-delete`), each pinned at 0 in
+    `scripts/qemu_exerciser_lib.sh`, first call and steady state.  Each pass
+    also revokes the notification's slot (`irq-notification-revoke`), which
+    deletes the copy in the bound line's node, then raises the line
+    (`irq-revoked-line`): the entry takes it as unbound and masks it, and a
+    wait on the notification then blocks, so the line signalled nothing.
+    Both read 0.  The fault
+    scenarios' handler slot moves to 21 (`FAULT_HANDLER_SLOT`), since slot 20
+    holds the interrupt-control capability.
+  - The registered "No IRQControl" debt row is deleted.  The reference
+    dispatch's device arm stays on the existing reference-dispatch row.
+- **The entry-export gate reads only this tree's cross archives.**
+  `check_kernel_entry_exports.py` decided its aarch64 side on whatever archive
+  pair `.lake/build` held, so a pair restored from an earlier tree's build
+  cache, which lacks `lean_handle_interrupt`, failed Tier 1 for the wrong
+  reason.  The cross pair is now read only when its build record names this
+  tree (`archive_staleness`, the one answer `--check-fresh` also reports);
+  otherwise that side is skipped, and `--require-cross`, which the archive
+  lane passes after building the pair, fails.
+
+Refs: docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md (ZA6.32)
+
 ## v0.36.194 — WS-ZA ZA6.31: the fault entries cross their commit as words and allocate nothing
 
 The fault, unknown-syscall and FP/SIMD access entries take ZA3.1's form, and

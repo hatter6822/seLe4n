@@ -172,15 +172,38 @@ pub enum SyscallId {
     /// `MessageInfo` in x1, written when the call returns or, when the caller
     /// yielded its core to the target, when the caller next runs.
     SchedContextYieldTo = 43,
+    /// WS-ZA ZA6.32: acknowledge an interrupt line — seL4's
+    /// `seL4_IRQHandler_Ack`.  Invoked on the interrupt-handler capability
+    /// (`Write` right), with no message registers: the line the capability
+    /// names, masked since the kernel delivered it, is unmasked at the
+    /// interrupt controller.  Returns no value.
+    IrqHandlerAck = 44,
+    /// WS-ZA ZA6.32: issue an interrupt-handler capability — seL4's
+    /// `seL4_IRQControl_Get`.  Invoked on the interrupt-control capability
+    /// (`Write` right): x2 the line, x3 the address of the CNode the handler
+    /// capability is issued into, x4 the slot in it.  Refused for a line that
+    /// is no device line of the board or that a handler already holds.
+    /// Returns no value.
+    IrqControlGet = 45,
+    /// WS-ZA ZA6.32: bind a notification to an interrupt line — seL4's
+    /// `seL4_IRQHandler_SetNotification`.  Invoked on the interrupt-handler
+    /// capability (`Write` right): x2 the address of a notification capability
+    /// carrying the send right, copied into the line's node slot in place of
+    /// the one there.  Returns no value.
+    IrqHandlerSetNotification = 46,
+    /// WS-ZA ZA6.32: unbind an interrupt line's notification — seL4's
+    /// `seL4_IRQHandler_Clear`.  Invoked on the interrupt-handler capability
+    /// (`Write` right), with no message registers.  Returns no value.
+    IrqHandlerClear = 47,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 43;
+    pub const COUNT: usize = 47;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
-    pub const ENCODING_BOUND: u64 = 44;
+    pub const ENCODING_BOUND: u64 = 48;
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
@@ -234,6 +257,10 @@ impl SyscallId {
             41 => Some(Self::Yield),
             42 => Some(Self::SchedContextConsumed),
             43 => Some(Self::SchedContextYieldTo),
+            44 => Some(Self::IrqHandlerAck),
+            45 => Some(Self::IrqControlGet),
+            46 => Some(Self::IrqHandlerSetNotification),
+            47 => Some(Self::IrqHandlerClear),
             _ => None,
         }
     }
@@ -316,6 +343,14 @@ impl SyscallId {
             // WS-ZA ZA6.29: the yieldTo invocation resets the context's consumed
             // time and requeues its thread, so it carries the same write right.
             Self::SchedContextYieldTo => AccessRight::Write,
+            // WS-ZA ZA6.32: the acknowledge writes the line's mask, the right
+            // seL4's IRQHandler invocations need on the handler capability.
+            Self::IrqHandlerAck => AccessRight::Write,
+            // WS-ZA ZA6.32: the issue, bind and unbind write kernel state; the
+            // Lean `syscallRequiredRight` gives each the write right.
+            Self::IrqControlGet | Self::IrqHandlerSetNotification | Self::IrqHandlerClear => {
+                AccessRight::Write
+            }
         }
     }
 }
@@ -519,9 +554,29 @@ mod tests {
             SyscallId::from_u64(43),
             Some(SyscallId::SchedContextYieldTo)
         );
-        assert_eq!(SyscallId::from_u64(44), None);
-        assert_eq!(SyscallId::COUNT, 43);
-        assert_eq!(SyscallId::ENCODING_BOUND, 44);
+        // WS-ZA ZA6.32: the interrupt acknowledge, appended the same way.
+        assert_eq!(SyscallId::from_u64(44), Some(SyscallId::IrqHandlerAck));
+        assert_eq!(
+            SyscallId::IrqHandlerAck.required_right(),
+            AccessRight::Write
+        );
+        // WS-ZA ZA6.32: the handler issue, bind and unbind, appended the same way.
+        assert_eq!(SyscallId::from_u64(45), Some(SyscallId::IrqControlGet));
+        assert_eq!(
+            SyscallId::from_u64(46),
+            Some(SyscallId::IrqHandlerSetNotification)
+        );
+        assert_eq!(SyscallId::from_u64(47), Some(SyscallId::IrqHandlerClear));
+        for sid in [
+            SyscallId::IrqControlGet,
+            SyscallId::IrqHandlerSetNotification,
+            SyscallId::IrqHandlerClear,
+        ] {
+            assert_eq!(sid.required_right(), AccessRight::Write);
+        }
+        assert_eq!(SyscallId::from_u64(48), None);
+        assert_eq!(SyscallId::COUNT, 47);
+        assert_eq!(SyscallId::ENCODING_BOUND, 48);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype

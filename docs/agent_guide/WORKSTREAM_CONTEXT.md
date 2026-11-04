@@ -413,9 +413,9 @@ registration names), and register, revoke and query are gated on that label
 on a syscall path must gate on the endpoint's label the same way, and must
 name the registration through an endpoint's id and its `serviceRegistered`
 flag, never through a caller-supplied service id.  New code that writes either field must write the table entry in
-the same step, as the registry's two writers do; new code that writes the
-interrupt-handler table must set the flag on the notification it names, and
-every other step must leave both fields as it found them, which a
+the same step, as the registry's two writers do; the
+interrupt-handler table (gone since `v0.36.195`) set the flag on the
+notification it named, and every other step must leave both fields as it found them, which a
 kind-preserving write already does (`kindPreservingWrite` carries
 `KernelObject.tableBackLinks`).  Since `v0.36.147` the thread finalise's
 admission is carried across its steps (plan row 34,
@@ -648,6 +648,34 @@ assume it**: a new syscall arm states its stage as `RunQueueEntryStageOn L`
 the caller before its scheduling point may set the caller's yield-to code, and
 the syscall entry's `yieldLinkedNotResident` payoff takes
 `currentNotResidentElsewhere`.
+Since `v0.36.195`, ZA6.32 enters every shared peripheral interrupt into the
+Lean kernel (`interruptEntry`, `lean_handle_interrupt`, from
+`trap.rs::device_interrupt`) and adds the `.irqHandlerAck` syscall (44) and
+the `CapTarget.irqHandler` capability.  **New code must assume it**: a new
+`CapTarget` constructor needs an arm wherever `.irqHandler` has one; an
+interrupt line's mask is machine state written only through
+`Architecture.setInterruptLineMask`, which records physical write tag 5, and
+only for a line `Architecture.deviceInterruptLine st` admits (the board's
+line count, `MachineState.interruptLineCount`; a new board sets
+`MachineConfig.interruptLineCount` from its own count); a
+step that wakes a thread stages its delivery (`stageWokenDelivery`), so its
+saved-register census is `savedRegsWrittenFree`, not `savedRegsUnwritten`; a
+new committing entry is added to `PerCoreNonInterferenceStep` and moves
+`niStepCoverage_perCore_count` (51 since this row).  The same release
+replaces the line-to-notification table with seL4's interrupt nodes and adds
+IRQControl (`CapTarget.irqControl`; `.irqControlGet` 45,
+`.irqHandlerSetNotification` 46, `.irqHandlerClear` 47).  **New code must
+assume it**: a line's binding is the capability in its node's slot
+(`irqNodeAddr line`), written only by those two invocations; a line's state is
+the tree's issued-line set (`SystemState.irqSignalLines`), written only
+through `Architecture.setIrqLineSignal`; `objectPresent` holds of a node only
+while its line is issued, so a step that changes the tree states what it does
+to `irqSignalLines`; the retire of a final delete splits on
+`retireTargetsIrqNode` (`retireFinalisedObject_cases`), and a consumer proves
+the node branch through `setIrqLineSignal`, not on `retireIrqNode`'s own form,
+whose frame tactics recurse too deep in the kernel; the node ids are reserved
+(`irqNodeIdsReserved`, a `wellFormed` conjunct, and the object budget), so a
+new boot object or retype never lands on one.
 Since `v0.36.194`, ZA6.31 gives the fault, unknown-syscall and FP/SIMD
 access entries ZA3.1's form, so every committing entry crosses its commit as
 words.  **New code must assume it**: the FP/SIMD owner table holds codes

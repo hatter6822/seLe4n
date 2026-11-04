@@ -11,6 +11,7 @@ import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingSchedulingPoints
 import SeLe4n.Kernel.FaultEntry
 import SeLe4n.Kernel.SyscallDispatchEntry
+import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 
 /-!
 # The committing entries cover
@@ -301,6 +302,47 @@ theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : Cor
   exact stepCovers_trans (stepCovers_trans hD
     (syscallCommitTail_stepCovers e (st.scheduler.currentOnCore e) st' outcome hDInv))
     (activateThreadOnCore_stepCovers e _ hSInv)
+
+/-- WS-ZA ZA6.32: **the mask covers**: it writes the machine's mask and the
+physical-write ledger, no object, no scheduler field and no register bank. -/
+theorem setInterruptLineMask_stepCovers (e : CoreId) (st : SystemState) (line : Nat)
+    (masked : Bool) (hInv : st.objects.invExt) :
+    stepCovers e st (Architecture.setInterruptLineMask st line masked) ∧
+      (Architecture.setInterruptLineMask st line masked).objects.invExt :=
+  (capabilityKeyFrame_of_objects_scheduler_eq
+    (st' := Architecture.setInterruptLineMask st line masked) hInv rfl rfl).stepCoversInv
+    (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
+
+/-- WS-ZA ZA6.32: **the interrupt step covers** on any core: the bound-aware
+signal's coverage (`notificationSignalBoundOnCore_stepCovers`), the stash
+clear and the stagings (`keyFrame_trans_stage`), then the mask. -/
+theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState) (c : CoreId)
+    (line : Nat) (hInv : st.objects.invExt) :
+    stepCovers e st (handleInterruptOnCore st c line) ∧
+      (handleInterruptOnCore st c line).objects.invExt := by
+  unfold handleInterruptOnCore
+  split
+  · rename_i ntfn badge _
+    obtain ⟨h1, hI⟩ := notificationSignalBoundOnCore_stepCovers e
+      (notificationId := ntfn) (badge := badge) (executingCore := c) hInv
+    have hSig := interruptSignal_of
+      (P := fun s => stepCovers e st s ∧ s.objects.invExt) ntfn badge c st ⟨h1, hI⟩
+      (fun _ s2 _ hC => by
+        have hF := clearWokenReceiverStash_keyFrame _ hI hC
+        exact stepCoversInv_trans (stepCovers_trans h1 hF.stepCovers)
+          ((keyFrame_trans_stage hF.2.2).stepCoversInv
+            (hRes := by simp only [Architecture.stageWokenDelivery_machine_eq])
+            (hBank := banksKeptOffCore_of_eq (by
+              simp only [Architecture.stageWokenDelivery_machine_eq]))))
+    exact stepCoversInv_trans hSig.1 (setInterruptLineMask_stepCovers e _ line true hSig.2)
+  · exact setInterruptLineMask_stepCovers e st line true hInv
+
+/-- …and the raw step's. -/
+theorem interruptEntryStep_stepCovers (e : CoreId) (st : SystemState) (coreId intId : UInt64)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := stepCovers e st) st coreId intId (stepCovers_refl e st)
+    (fun c _ _ => (handleInterruptOnCore_stepCovers e st c _ hInv).1)
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 

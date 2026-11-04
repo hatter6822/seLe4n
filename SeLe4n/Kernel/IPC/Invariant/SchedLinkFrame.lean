@@ -1417,7 +1417,7 @@ theorem finaliseDestroyedCapabilities {ec : CoreId} {named : List SeLe4n.ObjId}
     (h : SeLe4n.Kernel.finaliseDestroyedCapabilities ec named pages st = .ok ((), st')) :
     SchedLinkFrame st st' :=
   let hF := finaliseDestroyedCapabilities_ok_frame ec named pages st st' hInv h
-  of_vspaceRootOnlyWrite hF.2.1 hF.2.2.1
+  of_vspaceRootOnlyWrite hF.2.1 hF.2.2
 
 /-- A thread slot's copy: the slot's delete, the insert of the copied capability
 into the thread's space slot, which keeps every projection, and the derivation

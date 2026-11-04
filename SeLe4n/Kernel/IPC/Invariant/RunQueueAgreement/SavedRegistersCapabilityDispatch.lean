@@ -1337,6 +1337,58 @@ theorem copyThreadSpacesZombie_savedRegsKeptOffCore {e ec : CoreId} {st st' : Sy
     exact savedRegsKeptOffCore_extend Q.2.2 C (stepCovers_trans Q.1.1 C)
       (fun t => (copyThreadSpaces_savedRegs (e := e) Q.1.2.1.2.1 h2 t).imp_right .inr)
 
+/-- WS-ZA ZA6.32: **`seL4_IRQControl_Get` keeps every saved context**: the
+line's state writes no object, then a capability insert and its derivation
+edge. -/
+theorem irqControlGet_savedRegsKept {control dst : CSpaceAddr} {line : Nat}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : irqControlGet control dst line st = .ok ((), st')) : savedRegsKept st st' := by
+  obtain ⟨-, stI, hI, rfl⟩ := irqControlGet_ok h
+  have h0 : (Architecture.setIrqLineSignal st line true).objects.invExt := hInv
+  exact ((savedRegsKept.of_objects_eq rfl).trans (savedRegsKept.cspaceInsertSlot h0 hI)).trans
+    (savedRegsKept.cdtAddChild stI control dst .mint
+      (cspaceInsertSlot_preserves_objects_invExt _ _ _ _ h0 hI))
+
+/-- WS-ZA ZA6.32: **`seL4_IRQHandler_SetNotification` writes the saved
+registers of no thread another core holds**: the node slot's finalising delete
+is a delete chain (`finaliseCensusChain`), and the copy after it keeps every
+saved context; a thread another core holds at the end was held at the start,
+so it has a context there that both steps keep. -/
+theorem irqHandlerSetNotification_savedRegsKeptOffCore {e ec : CoreId} {line : Nat}
+    {src : CSpaceAddr} {st st' : SystemState} (B : FinaliseCensusBase st)
+    (hB : finalisingDeleteBundle st) (hD0 : st.currentDequeuedUnique)
+    (hRT : st.residentsHaveTcbs) (hCK : currentKeptOffCore e st st')
+    (hRK : residentKeptOffCore e st st')
+    (h : irqHandlerSetNotification ec line src st = .ok ((), st')) :
+    savedRegsKeptOffCore e st st' := by
+  obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hB.1.2.1 h
+  have Q := cspaceDeleteSlotZombie_closed (finaliseCensusChain e st)
+    (fun _ _ _ hQ hD => hQ.delete B hD) (fun d _ hQ => hQ.finalise B d) (.start hB) hZ
+  have hInv1 : st1.objects.invExt := (cspaceDeleteSlotZombie_stepCovers e ec _ st st1 hB hZ).2
+  have C : stepCovers e st1 st' :=
+    ((cspaceCopy_keyFrame _ _ _ _ hInv1 hC).stepCoversInv
+      (hRes := by rw [cspaceCopy_machine_eq hC])
+      (hBank := banksKeptOffCore_of_eq (by rw [cspaceCopy_machine_eq hC]))).1
+  have hK : savedRegsKept st1 st' := by
+    obtain ⟨_, st2, -, -, hIns, -, rfl⟩ := cspaceCopy_ok_decompose hC
+    have i2 := cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hInv1 hIns
+    exact ((savedRegsKept.cspaceInsertSlot hInv1 hIns).trans
+      (savedRegsKept.cdtAddChild st2 src _ .copy i2)).trans
+      (untypedSourceSetFull_of (P := savedRegsKept _) (.refl _) fun idx =>
+        savedRegsKept.setCapFreeIndex _ src idx (cdtRecord_keyFrame st2 src _ .copy i2).2.2)
+  intro d hd t ht
+  have hT : (st.getTcb? t).isSome := by
+    rcases ht with x | x
+    · obtain ⟨y, hy, -⟩ := hD0.currentActive d t (hCK d hd t x)
+      rw [hy]; rfl
+    · exact hRT d t (hRK d hd t x)
+  obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+  have hS : st.savedRegs t = some x.registerContext := by
+    unfold SystemState.savedRegs; rw [hx]; rfl
+  have e1 := Q.2.2 d hd t (ht.imp (C.currentKept d hd t) (C.residentKept d hd t))
+  rw [hS] at e1 ⊢
+  exact hK t _ e1
+
 /-! ### Over the dispatch -/
 
 /-- WS-ZA ZA6.25: **the capability-only dispatch writes the saved registers of
@@ -1371,6 +1423,10 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     w.census hCK hRK
   have hX : savedRegsKeptExcept (fun _ => False) st st' → savedRegsKeptOffCore ec st st' := fun x =>
     hW (.of_kept x (fun _ h => h.elim))
+  have hSN : ∀ {line : Nat} {src : CSpaceAddr},
+      irqHandlerSetNotification ec line src st = .ok ((), st') →
+      savedRegsKeptOffCore ec st st' := fun h' =>
+    irqHandlerSetNotification_savedRegsKeptOffCore B hB P.dequeued hRT hCK hRK h'
   clear hCK hRK
   unfold dispatchCapabilityOnly at hK
   cases hId : decoded.syscallId <;> rw [hId] at hK <;> simp only [Option.some.injEq,
@@ -1391,6 +1447,11 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (vspaceUnifyInstructionPage_savedRegsKept h)
     | exact hF (pageTableMap_savedRegsKept hInv h)
     | exact hF (pageTableUnmap_savedRegsKept hInv h)
+    | exact hF (irqHandlerAck_savedRegsKept h)
+    | exact cspaceDeleteSlotZombie_savedRegsKeptOffCore B hB (irqHandlerClear_ok h).2
+    | exact hF (irqControlGet_savedRegsKept hInv
+        (irqControlGetFromCap_ok _ _ _ _ _ h).choose_spec.choose_spec.choose_spec.2.2.2)
+    | exact hSN (irqHandlerSetNotificationFromCap_ok _ _ _ _ _ _ h).choose_spec.choose_spec.2
     | exact hF (revokeServiceByRecordedRegistration_savedRegsKept hInv h)
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
     | exact hX (schedContextBind_savedRegsKeptExcept hInv h)

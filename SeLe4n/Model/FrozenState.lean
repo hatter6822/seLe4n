@@ -409,7 +409,6 @@ runtime kernel transitions (Q7). -/
 structure FrozenSystemState where
   -- Core maps (FrozenMap)
   objects           : FrozenMap SeLe4n.ObjId FrozenKernelObject
-  irqHandlers       : FrozenMap SeLe4n.Irq SeLe4n.ObjId
   asidTable         : FrozenMap SeLe4n.ASID SeLe4n.ObjId
   interfaceRegistry : FrozenMap SeLe4n.InterfaceId InterfaceSpec
 
@@ -499,6 +498,12 @@ structure FrozenSystemState where
       is the entire purpose of the ledger.  Complemented by the
       `freeze_preserves_declassificationRefusals := rfl` value-level guard. -/
   declassificationRefusals : SeLe4n.Kernel.RefusalLedger
+
+/-- WS-ZA ZA6.32: each interrupt line's state (IRQSignal or IRQInactive), read
+from the frozen derivation tree, where `SystemState.irqSignalLines` reads it; the
+bindings are the interrupt nodes' slots, frozen with the objects. -/
+abbrev FrozenSystemState.irqSignalLines (st : FrozenSystemState) : InterruptLineSet :=
+  st.cdt.issuedIrqLines
 
 /-- WS-BP BP7.2: the frozen state's physical-write ledger as its list. -/
 noncomputable def FrozenSystemState.pendingPhysicalWrites (fst : FrozenSystemState) :
@@ -664,7 +669,6 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
       (acc.insert k i, i + 1)) (RHTable.empty 16, 0)).1
     { data := data, indexMap := indexMap }
   { objects := frozenObjects
-    irqHandlers := freezeMap st.irqHandlers
     asidTable := freezeMap st.asidTable
     interfaceRegistry := freezeMap st.interfaceRegistry
     cdt := st.cdt
