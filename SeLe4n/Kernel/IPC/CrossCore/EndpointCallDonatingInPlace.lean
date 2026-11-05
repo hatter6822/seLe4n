@@ -219,22 +219,24 @@ is local.  Read off the codes, so the test builds nothing. -/
 rendezvous, the donation, the walk, each write in its slot. -/
 @[noinline] def performCallDonating (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId)
     (msg : IpcMessage) (core : Concurrency.CoreId) : SystemState :=
   (PriorityInheritance.propagatePipChainCrossCore
     (donateSchedContextInPlace (storeCallRendezvous st endpointId caller r next rid msg core)
-      caller r (callerScId st caller)) r core).1
+      caller r scId) r core).1
 
 /-- **The donating call, delivered**: the server woken without the message, the
 donation, the priority walk, then the message's frame written into the server's
 saved registers. -/
 @[noinline] def performCallDonatingDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
     (donateSchedContextInPlace (storeCallRendezvousReady st endpointId caller r nextCode rid core)
-      caller r (callerScId st caller)) r core).1
+      caller r scId) r core).1
   writeDeliveredFrameIfReady X r (Architecture.regMessageFrameW layout rf len badgeWord badged)
     (fun _ => holdDeliveredBody X r layout rf len (SeLe4n.Badge.opt badgeWord badged))
 
@@ -242,11 +244,12 @@ saved registers. -/
 specification does, out of line. -/
 @[noinline] def callDonatingStaged (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge)
     (core : Concurrency.CoreId) : SystemState :=
   Architecture.stageWokenDelivery
-    (performCallDonating st endpointId caller r (ThreadId.ofOptCode nextCode) rid
+    (performCallDonating st endpointId caller r (ThreadId.ofOptCode nextCode) rid scId
       { registers := Architecture.regMessageBody layout rf len, badge := badge } core)
     (some r) 0
 
@@ -254,33 +257,35 @@ specification does, out of line. -/
 most four words, staged otherwise. -/
 @[inline] def callRendezvousDonatingDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) : SystemState :=
   if Architecture.regMessageLength layout len ≤ 4 then
-    performCallDonatingDelivered st endpointId caller r nextCode rid layout rf len badgeWord
+    performCallDonatingDelivered st endpointId caller r nextCode rid scId layout rf len badgeWord
       badged core
-  else callDonatingStaged st endpointId caller r nextCode rid layout rf len
+  else callDonatingStaged st endpointId caller r nextCode rid scId layout rf len
     (SeLe4n.Badge.opt badgeWord badged) core
 
 /-- **The staged donating call is the delivered one** for a message of at most
 four words. -/
 theorem stageWokenDelivery_performCallDonating (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue) (hNe : caller ≠ r)
     (hSz : Architecture.regMessageLength layout len ≤ 4) :
     Architecture.stageWokenDelivery
-        (performCallDonating st endpointId caller r next rid
+        (performCallDonating st endpointId caller r next rid scId
           { registers := Architecture.regMessageBody layout rf len,
             badge := SeLe4n.Badge.opt badgeWord badged } core)
         (some r) 0 =
-      performCallDonatingDelivered st endpointId caller r (ThreadId.optCode next) rid layout rf
+      performCallDonatingDelivered st endpointId caller r (ThreadId.optCode next) rid scId layout rf
         len badgeWord badged core := by
   have hNoS := storeCallRendezvousReady_noResizeDue st endpointId caller r
     (ThreadId.optCode next) rid core hNo
-  have hNoD := donateSchedContextInPlace_noResizeDue _ caller r (callerScId st caller) hNoS
+  have hNoD := donateSchedContextInPlace_noResizeDue _ caller r scId hNoS
   unfold performCallDonating performCallDonatingDelivered
   rw [Architecture.regMessageFrameW_eq, storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo hNe,
     donateSchedContextInPlace_msg _ _ _ _ _ _ _ _ hNoS (Ne.symm hNe),
@@ -304,13 +309,14 @@ theorem callTakesReplyInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
 
 theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
+    (scId : SeLe4n.SchedContextId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) (hG : callDonatesInPlace st endpointId caller r rt rid = true) :
-    callRendezvousDonatingDelivered st endpointId caller r rt.queueNextCode rid layout rf len
+    callRendezvousDonatingDelivered st endpointId caller r rt.queueNextCode rid scId layout rf len
         badgeWord badged core =
       Architecture.stageWokenDelivery
-        (performCallDonating st endpointId caller r rt.queueNext rid
+        (performCallDonating st endpointId caller r rt.queueNext rid scId
           { registers := Architecture.regMessageBody layout rf len,
             badge := SeLe4n.Badge.opt badgeWord badged } core)
         (some r) 0 := by
@@ -319,7 +325,7 @@ theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe
   split
   · next hSz =>
     rw [← TCB.optCode_queueNext]
-    exact (stageWokenDelivery_performCallDonating _ _ _ _ _ _ _ _ _ _ _ _
+    exact (stageWokenDelivery_performCallDonating _ _ _ _ _ _ _ _ _ _ _ _ _
       (callTakesReplyInPlace_noResizeDue hG.1) (callTakesReplyInPlace_ne hG.1) hSz).symm
   · unfold callDonatingStaged
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
@@ -342,7 +348,7 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload slot core st =
-      (performCallDonating st endpointId caller r rt.queueNext rid msg core,
+      (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller) msg core,
        .ok ({ results := #[] }, sgi)) := by
   simp only [callDonatesInPlace, Bool.and_eq_true] at hG
   obtain ⟨hTR, hDR⟩ := hG
