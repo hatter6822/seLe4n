@@ -1805,6 +1805,21 @@ const CHAIN_REPLY_CAP_SLOT: u64 = 26;
 /// The boot-domain ids that scenario carves its thread and reply at.
 #[cfg(feature = "hw_target")]
 const CHAIN_CHILD_IDS: [u64; 2] = [33, 34];
+/// The free slots the reply-stack scenarios (WS-ZA ZA6.34) carve a fourth
+/// thread, the top of a three-frame stack, and its reply object and that
+/// reply's capability into, and the boot-domain ids they carve them at.
+#[cfg(feature = "hw_target")]
+const STACK_TOP_TCB_SLOT: u64 = 28;
+#[cfg(feature = "hw_target")]
+const STACK_TOP_REPLY_OBJECT_SLOT: u64 = 29;
+#[cfg(feature = "hw_target")]
+const STACK_TOP_REPLY_CAP_SLOT: u64 = 30;
+#[cfg(feature = "hw_target")]
+const STACK_TOP_CHILD_IDS: [u64; 2] = [36, 37];
+#[cfg(feature = "hw_target")]
+const STACK_TOP_TCB_CAP: u64 = cap_address(STACK_TOP_TCB_SLOT);
+#[cfg(feature = "hw_target")]
+const STACK_TOP_REPLY_CAP: u64 = cap_address(STACK_TOP_REPLY_CAP_SLOT);
 /// The second core (`TCB_SetAffinity`'s word for core 1) and the word that
 /// clears an affinity (`affinityUnbindMarker`, the core count).
 #[cfg(feature = "hw_target")]
@@ -3331,6 +3346,293 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
+        ),
+        // WS-ZA ZA6.34: a reply stack three frames deep, and a final delete
+        // of its middle reply.  The server is carved again, with a fourth
+        // thread and a reply for each; the root task, the server and the
+        // fourth thread receive on the endpoint in that order, each resuming
+        // the next, and the partner's call lends the context down the chain:
+        // the partner to the root task, the root task to the server, the
+        // server to the fourth thread, which runs holding it.  It deletes the
+        // server's reply, the middle frame: seL4-MCS's `reply_remove` severs
+        // the stack there and ends the root task, its caller.  The fourth
+        // thread resumes the root task and waits; the root task suspends the
+        // three others (the server's frame heads the context, which its
+        // holder keeps as its own) and unbinds the context.
+        invocation(
+            "untyped-retype-stack-server",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "stack-server-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "stack-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-stack-top",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, STACK_TOP_CHILD_IDS[0], CNODE_CAP, STACK_TOP_TCB_SLOT],
+        ),
+        invocation(
+            "stack-top-set-space",
+            TCB_SET_SPACE,
+            STACK_TOP_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "stack-top-set-priority",
+            TCB_SET_PRIORITY,
+            STACK_TOP_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-stack-server-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "stack-server-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-stack-top-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                STACK_TOP_CHILD_IDS[1],
+                CNODE_CAP,
+                STACK_TOP_REPLY_OBJECT_SLOT,
+            ],
+        ),
+        invocation(
+            "stack-top-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [STACK_TOP_REPLY_OBJECT_SLOT, STACK_TOP_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "stack-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "stack-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("stack-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
+        partner_step(
+            "stack-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        invocation(
+            "stack-server-resumes-top",
+            TCB_RESUME,
+            STACK_TOP_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "stack-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        invocation(
+            "stack-top-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "stack-top-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [STACK_TOP_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step("stack-partner-calls", CALL, ENDPOINT_CAP, 1, [0x6a, 0], true),
+        partner_step("stack-root-calls", CALL, ENDPOINT_CAP, 1, [0x6b, 0], true),
+        partner_step("stack-server-calls", CALL, ENDPOINT_CAP, 1, [0x6c, 0], true),
+        invocation(
+            "middle-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "middle-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        invocation("stack-top-resumes-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]),
+        partner_step("stack-top-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "stack-suspend-server",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "stack-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "stack-suspend-top",
+            TCB_SUSPEND,
+            STACK_TOP_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "stack-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        // A context deleted under a two-frame stack, then the final delete of
+        // the stack's old top.  A context is carved, configured and bound to
+        // the partner; the server and the fourth thread receive, the
+        // partner's call lends the context to the server, whose call lends it
+        // on to the fourth thread, which wakes the root task and waits.  The
+        // root task deletes the context's last capability (seL4's
+        // `schedContext_unbindReply` lets go of the stack, and the holder is
+        // unbound), then the top reply's: its caller, the server, is ended
+        // and the frame below loses its link up to it.  The partner and the
+        // fourth thread are suspended and the two carved threads deleted.
+        invocation(
+            "untyped-retype-stack-context",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+        ),
+        configure(
+            "stack-context-configure",
+            [
+                MOVE_SC_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "stack-context-bind-partner",
+            SCHED_CONTEXT_BIND,
+            MOVE_SC_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "contextless-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step("contextless-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "contextless-server-resumes-top",
+            TCB_RESUME,
+            STACK_TOP_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "contextless-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        invocation(
+            "contextless-top-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "contextless-top-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [STACK_TOP_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step("contextless-partner-calls", CALL, ENDPOINT_CAP, 1, [0x6d, 0], true),
+        partner_step("contextless-server-calls", CALL, ENDPOINT_CAP, 1, [0x6e, 0], true),
+        signal("contextless-top-wakes-root", 0x13),
+        partner_step("contextless-top-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
+        invocation(
+            "contextless-context-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SC_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "contextless-top-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [STACK_TOP_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "contextless-top-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [STACK_TOP_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "contextless-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "contextless-suspend-top",
+            TCB_SUSPEND,
+            STACK_TOP_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "stack-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "stack-top-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [STACK_TOP_TCB_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(

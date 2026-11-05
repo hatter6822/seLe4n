@@ -340,6 +340,28 @@ for driver in drivers:
             "waited-wake-server", "waited-root-waits", "waited-server-resumes-partner",
             "waited-server-receives", "waited-partner-calls", "waited-server-wakes-root",
             "waited-server-waits", "waited-server-delete", "third-unbind",
+            # A reply stack three frames deep (the partner's context lent to the
+            # root task, on to the server, on to a fourth thread), its middle
+            # reply's final delete issued by the fourth thread (the stack
+            # severed, the root task ended), the three suspended and the
+            # context unbound; then a carved context under a two-frame stack
+            # (partner, server, fourth thread) deleted, the old top's final
+            # delete (its caller ended, the frame below unlinked), the two
+            # carved threads suspended and deleted.
+            "stack-server-set-space", "stack-server-set-priority", "stack-top-set-space",
+            "stack-top-set-priority", "stack-server-reply-cap-mint", "stack-top-reply-cap-mint",
+            "stack-configure", "stack-bind-partner", "stack-resume-server", "stack-root-receives",
+            "stack-server-resumes-top", "stack-server-receives", "stack-top-resumes-partner",
+            "stack-top-receives", "stack-partner-calls", "stack-root-calls", "stack-server-calls",
+            "middle-reply-cap-delete", "middle-reply-delete", "stack-top-resumes-root",
+            "stack-top-waits", "stack-suspend-server", "stack-suspend-partner", "stack-suspend-top",
+            "stack-unbind", "stack-context-configure", "stack-context-bind-partner",
+            "contextless-resume-server", "contextless-root-waits", "contextless-server-resumes-top",
+            "contextless-server-receives", "contextless-top-resumes-partner",
+            "contextless-top-receives", "contextless-partner-calls", "contextless-server-calls",
+            "contextless-top-wakes-root", "contextless-top-waits", "contextless-context-delete",
+            "contextless-top-cap-delete", "contextless-top-delete", "contextless-suspend-partner",
+            "contextless-suspend-top", "stack-server-delete", "stack-top-delete",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -583,6 +605,10 @@ for driver in drivers:
             "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
             # and the third thread's (WS-ZA ZA6.34), the same carves.
             "untyped-retype-third-tcb": (26, 26), "untyped-retype-third-reply": (15, 15),
+            "untyped-retype-stack-server": (26, 26), "untyped-retype-stack-top": (26, 26),
+            "untyped-retype-stack-server-reply": (15, 15), "untyped-retype-stack-top-reply": (15, 15),
+            # and a context's (16, the move scenario's below).
+            "untyped-retype-stack-context": (16, 16),
             # The affinity change of a thread running on core 1 (seL4's
             # `setAffinity`: the thread taken off core 1's current slot, a
             # reschedule raised there, the remote stall until core 1 has
