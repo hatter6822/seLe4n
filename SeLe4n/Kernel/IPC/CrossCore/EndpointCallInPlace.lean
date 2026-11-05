@@ -237,33 +237,92 @@ its core and queued on the receiver's reply waiters. -/
     (fun t => { t with pendingReceiveReplyCode := 0 })
   (removeRunnableOnCore s7 caller core).linkReplyWaiter caller r
 
-/-- **The call rendezvous, in place**: under `callWakesInPlace` the
-specification's call returns `storeCallRendezvous`'s state with the receiver
-wake's SGI, and that state donates nothing. -/
-theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+/-- **The call rendezvous takes its slots and the caller's reply in place**:
+`callWakesInPlace` without its donation test — the send rendezvous's slots, the
+caller a third unreserved thread holding no reply object, the reply object
+free, each store changing only `objects`.  What the call then donates is the
+caller's own question (`callWakesInPlace`'s `callDonatesNothing`, or a
+donation's checks). -/
+@[inline] def callTakesReplyInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) : Bool :=
+  sendWakesInPlace st endpointId r rt.queueNext &&
+  !caller.isReserved && caller != r &&
+  (match rt.queueNext with
+   | none => true
+   | some n => caller != n) &&
+  storeLeavesIndexAndTypes st caller.toObjId .tcb &&
+  st.objects.findsInPlace caller.toObjId &&
+  storeLeavesIndexAndTypes st rid.toObjId .reply &&
+  st.objects.findsInPlace rid.toObjId &&
+  (match st.getTcb? caller with
+   | some ct => ct.replyObject.isNone
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => rp.isFree
+   | none => false)
+
+/-- A rendezvous that donates nothing takes its slots in place. -/
+theorem callWakesInPlace_takesReply {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
+    (h : callWakesInPlace st endpointId caller r rt rid = true) :
+    callTakesReplyInPlace st endpointId caller r rt rid = true ∧
+      ∃ ct, st.getTcb? caller = some ct ∧ callDonatesNothing ct rt = true := by
+  unfold callWakesInPlace at h
+  unfold callTakesReplyInPlace
+  simp only [Bool.and_eq_true] at h ⊢
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hCRes⟩, hCR⟩, hCN⟩, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hCT⟩, hRp⟩ := h
+  split at hCT
+  · next ct hCo =>
+    simp only [Bool.and_eq_true] at hCT
+    refine ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hCRes⟩, hCR⟩, hCN⟩, hLC⟩, hFC⟩, hLR⟩, hFR⟩, ?_⟩, hRp⟩, ct, hCo, hCT.2⟩
+    exact hCT.1
+  · cases hCT
+
+
+/-- **The call rendezvous, in place, and what it leaves**: under
+`callTakesReplyInPlace` the specification's call returns `storeCallRendezvous`'s
+state with the receiver wake's SGI; that state finds every key where the
+pre-state did and leaves every store local that was, holds every object other
+than a thread, an endpoint or the reply object as it was, holds the reply object
+linked to the caller, and holds the caller, linked to the reply object, and the
+receiver on the bindings they had. -/
+theorem callRendezvous_inPlace_facts (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) (payload : SendPayload)
     (msg : IpcMessage) (core : Concurrency.CoreId)
     (hM : sendPayloadMessage st caller payload = msg)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
-    (hG : callWakesInPlace st endpointId caller r rt rid = true) :
+    (hG : callTakesReplyInPlace st endpointId caller r rt rid = true) :
     endpointCallOnCore endpointId caller payload core st =
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
          .ok (wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
            (callReceiverTcb msg)) r core).2) ∧
-      callDonationSchedContext?
-        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) caller r = none := by
-  simp only [callWakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hG
+      (∀ k, (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core).objects.findsInPlace k
+        = st.objects.findsInPlace k) ∧
+      (∀ {id ty}, storeLeavesIndexAndTypes st id ty = true → storeLeavesIndexAndTypes
+        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) id ty = true) ∧
+      (∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+        st.objects[k]? = some o →
+        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core).objects[k]? = some o) ∧
+      (∀ rp, st.getReply? rid = some rp →
+        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core).getReply? rid =
+          some { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) }) ∧
+      (∀ ct, st.getTcb? caller = some ct → ∃ ct',
+        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core).getTcb? caller = some ct' ∧
+        ct'.schedContextBinding = ct.schedContextBinding ∧ ct'.replyObject = some rid) ∧
+      (∃ rt', (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core).getTcb? r = some rt' ∧
+        rt'.schedContextBinding = rt.schedContextBinding) := by
+  simp only [callTakesReplyInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hG
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hCRes⟩, hCR⟩, hCN⟩, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hCT⟩, hRp⟩ := hG
   have hSG' := hSG
   simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
   obtain ⟨⟨⟨⟨⟨hRRes, hLE⟩, hFE⟩, hLH⟩, hFH⟩, hNx⟩ := hSG'
-  obtain ⟨ct, hCo, hRO, hDN⟩ : ∃ ct, st.objects[caller.toObjId]? = some (.tcb ct) ∧
-      ct.replyObject = none ∧ callDonatesNothing ct rt = true := by
+  obtain ⟨ct, hCo, hRO⟩ : ∃ ct, st.objects[caller.toObjId]? = some (.tcb ct) ∧
+      ct.replyObject = none := by
     split at hCT
     · next ct hCo =>
-      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hCT
-      exact ⟨ct, (SystemState.getTcb?_eq_some_iff _ _ _).mp hCo, hCT.1, hCT.2⟩
+      simp only [Option.isNone_iff_eq_none] at hCT
+      exact ⟨ct, (SystemState.getTcb?_eq_some_iff _ _ _).mp hCo, hCT⟩
     · cases hCT
   obtain ⟨rp, hRo, hFree⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
       rp.isFree = true := by
@@ -301,6 +360,15 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
     (hFr.keepsFinds _).trans hFH
   have hO1c := (hFr.other _ hNeEC hNeRC hNxC).trans hCo
   have hO1q := (hFr.other _ hNeEQ hNeRQ hNxQ).trans hRo
+  -- Every object but a thread, an endpoint or the reply object stays.
+  have hOk1 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+      st.objects[k]? = some o → (storePopHead st endpointId true r rt.queueNext).objects[k]? = some o :=
+    fun k o hnt hne _ hk => (hFr.other k
+      (fun e => by rw [e, hk] at hE; exact hne ep (Option.some.inj hE))
+      (fun e => by rw [e, hk] at hT; exact hnt rt (Option.some.inj hT))
+      (fun n hn e => by
+        obtain ⟨_, nt, hTn⟩ := hNk n hn
+        rw [e, hk] at hTn; exact hnt nt (Option.some.inj hTn))).trans hk
   -- The receiver handed the message.
   have hM2 : storeTcbIpcStateAndMessage (storePopHead st endpointId true r rt.queueNext) r .ready
       (some msg) = .ok ((storePopHead st endpointId true r rt.queueNext).updateTcb r
@@ -318,6 +386,11 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   have hL2 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes (S1.updateTcb r (callReceiverTcb msg)) id ty = true :=
     fun h => updateTcb_storeLeaves _ hFr.head_tcb hFH1 (hFr.leaves h)
+  have hOk2 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+      st.objects[k]? = some o → (S1.updateTcb r (callReceiverTcb msg)).objects[k]? = some o :=
+    fun k o hnt hne hq hk => (updateTcb_get?_ne_of_findsInPlace (callReceiverTcb msg) hFr.head_tcb
+      hFH1 (fun e => by rw [e, hk] at hT; exact hnt rt (Option.some.inj hT))).trans
+      (hOk1 k o hnt hne hq hk)
   generalize hS2 : S1.updateTcb r (callReceiverTcb msg) = S2 at *
   -- The wake.
   have hA3 := enqueueRunnableOnCore_agree_of_findsInPlace S2 (determineTargetCore S2 r) r _ hT2r
@@ -333,6 +406,9 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   obtain ⟨rt3, hO3r, hrt3⟩ := hA3.get_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT2r)
   have hO3q := hA3.get_reply_iff.mpr hO2q
   have hW : (wakeThread S2 r core).1 = enqueueRunnableOnCore S2 (determineTargetCore S2 r) r := rfl
+  have hOk3 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+      st.objects[k]? = some o → (enqueueRunnableOnCore S2 (determineTargetCore S2 r) r).objects[k]? = some o :=
+    fun k o hnt hne hq hk => hA3.get_of_not_tcb hnt (hOk2 k o hnt hne hq hk)
   generalize hS3 : enqueueRunnableOnCore S2 (determineTargetCore S2 r) r = S3 at *
   -- The caller blocked.
   have hT3c : S3.getTcb? caller = some ct3 := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3c
@@ -352,6 +428,11 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   have hL4 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
       storeLeavesIndexAndTypes (S3.updateTcb caller (callCallerTcb endpointId r)) id ty = true :=
     fun h => updateTcb_storeLeaves _ hT3c hFC3 (hL3 h)
+  have hOk4 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+      st.objects[k]? = some o → (S3.updateTcb caller (callCallerTcb endpointId r)).objects[k]? = some o :=
+    fun k o hnt hne hq hk => (updateTcb_get?_ne_of_findsInPlace _ hT3c hFC3
+      (fun e => by rw [e, hk] at hCo; exact hnt ct (Option.some.inj hCo))).trans
+      (hOk3 k o hnt hne hq hk)
   generalize hS4 : S3.updateTcb caller (callCallerTcb endpointId r) = S4 at *
   -- The reply object linked.
   have hrt3rid : rt3.pendingReceiveReply = some rid := by
@@ -374,6 +455,12 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
       (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) })) } : SystemState) = S5 at *
   have hO5 : ∀ k, rid.toObjId ≠ k → S5.objects[k]? = S4.objects[k]? := fun k hk => by
     rw [← hS5']; exact RHTable.get?_insert_ne_of_findsInPlace k _ hFR4 hk
+  have hOk5 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+      st.objects[k]? = some o → S5.objects[k]? = some o :=
+    fun k o hnt hne hq hk => (hO5 k (Ne.symm hq)).trans (hOk4 k o hnt hne hq hk)
+  have hS5q : S5.objects[rid.toObjId]? =
+      some (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) }) := by
+    rw [← hS5']; exact RHTable.get?_insert_self_of_findsInPlace _ hFR4
   have hK5 : ∀ k, S5.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [← hS5']; exact (RHTable.findsInPlace_insert_of_findsInPlace k _ hFR4).trans (hK4 k)
   have hL5 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
@@ -428,6 +515,19 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
       (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hT5c hFC5
     have hFR6 := (updateTcb_findsInPlace (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hT5c hFC5
       r.toObjId).trans hFR5
+    have hK6 : ∀ k, (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).objects.findsInPlace k =
+        st.objects.findsInPlace k := fun k => (updateTcb_findsInPlace _ hT5c hFC5 k).trans (hK5 k)
+    have hL6 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
+        storeLeavesIndexAndTypes (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })) id ty = true :=
+      fun h => updateTcb_storeLeaves _ hT5c hFC5 (hL5 h)
+    have hOk6 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+        st.objects[k]? = some o → (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).objects[k]? = some o :=
+      fun k o hnt hne hq hk => (updateTcb_get?_ne_of_findsInPlace _ hT5c hFC5
+        (fun e => by rw [e, hk] at hCo; exact hnt ct (Option.some.inj hCo))).trans
+        (hOk5 k o hnt hne hq hk)
+    have hRq6 : (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).objects[rid.toObjId]? =
+        some (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) }) :=
+      (updateTcb_get?_ne_of_findsInPlace _ hT5c hFC5 hNeCQ).trans hS5q
     generalize hS6 : S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) = S6 at *
     have hT7c : (S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 })).getTcb? caller
         = some { callCallerTcb endpointId r ct3 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } :=
@@ -436,6 +536,19 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT6c))
     have hT7r := updateTcb_getTcb?_self_of_findsInPlace
       (fun t => { t with pendingReceiveReplyCode := 0 }) hT6r hFR6
+    have hK7 : ∀ k, (S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 })).objects.findsInPlace k =
+        st.objects.findsInPlace k := fun k => (updateTcb_findsInPlace _ hT6r hFR6 k).trans (hK6 k)
+    have hL7 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
+        storeLeavesIndexAndTypes (S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 })) id ty = true :=
+      fun h => updateTcb_storeLeaves _ hT6r hFR6 (hL6 h)
+    have hOk7 : ∀ k o, (∀ t, o ≠ .tcb t) → (∀ e, o ≠ .endpoint e) → k ≠ rid.toObjId →
+        st.objects[k]? = some o → (S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 })).objects[k]? = some o :=
+      fun k o hnt hne hq hk => (updateTcb_get?_ne_of_findsInPlace _ hT6r hFR6
+        (fun e => by rw [e, hk] at hT; exact hnt rt (Option.some.inj hT))).trans
+        (hOk6 k o hnt hne hq hk)
+    have hRq7 : (S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 })).objects[rid.toObjId]? =
+        some (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) }) :=
+      (updateTcb_get?_ne_of_findsInPlace _ hT6r hFR6 hNeRQ).trans hRq6
     generalize hS7 : S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 }) = S7 at *
     have hA8 := (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks
       (removeRunnableOnCore S7 caller core) caller r).trans
@@ -445,18 +558,71 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
     have hbr3 : rt3.schedContextBinding = rt.schedContextBinding := by
       have h := congrArg TCB.schedContextBinding hrt3; exact h
     have hTc : st.getTcb? caller = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hCo
-    have hTr : st.getTcb? r = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-    rw [callDonationSchedContext?_congr (s := st)
-      ((TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.schedContextBinding
-        (hA8.getTcb? caller)).trans (by rw [hT7c, hTc]; exact congrArg some hb3))
-      ((TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.schedContextBinding
-        (hA8.getTcb? r)).trans (by rw [hT7r, hTr]; exact congrArg some hbr3))]
-    rw [callDonationSchedContext?_eq_bindings]
-    simp only [lookupTcb, hRRes, hCRes, Bool.false_eq_true, ↓reduceIte, hTr, hTc, Option.map_some]
-    revert hDN
-    unfold callDonatesNothing
-    cases rt.schedContextBinding <;> cases ct.schedContextBinding <;>
-      simp [donationOfBindings, SchedContextBinding.scId?]
+    have hD8 := removeRunnableOnCore_onlyObjectsSchedulerDiffer S7 caller core
+    have hI8 : ((removeRunnableOnCore S7 caller core).linkReplyWaiter caller r).objectIndexSet =
+        S7.objectIndexSet := by
+      rw [SystemState.linkReplyWaiter_objectIndexSet, hD8]
+    have hLife8 : ((removeRunnableOnCore S7 caller core).linkReplyWaiter caller r).lifecycle =
+        S7.lifecycle := by
+      rw [SystemState.linkReplyWaiter_lifecycle, hD8]
+    refine ⟨fun k => ((linkReplyWaiter_keepsFinds _ caller r k).trans
+        (removeRunnableOnCore_keepsFinds S7 caller core k)).trans (hK7 k),
+      fun h => storeLeaves_of_agree hI8 hLife8 hA8 (hL7 h),
+      fun k o hnt hne hq hk => hA8.get_of_not_tcb hnt (hOk7 k o hnt hne hq hk),
+      fun rp' hrp' => ?_, fun ct' hct' => ?_, ?_⟩
+    · have hEq : rp' = rp := by
+        rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hRo] at hrp'
+        exact (Option.some.inj hrp').symm
+      subst hEq
+      exact (SystemState.getReply?_eq_some_iff _ _ _).mpr
+        (hA8.get_of_not_tcb (fun _ e => by cases e) hRq7)
+    · have hEq : ct' = ct := by rw [hTc] at hct'; exact (Option.some.inj hct').symm
+      subst hEq
+      obtain ⟨t', h', e'⟩ := hA8.getTcb?_some hT7c
+      refine ⟨t', h', ?_, ?_⟩
+      · have h1 : t'.schedContextBinding = ct3.schedContextBinding :=
+          TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e'
+        exact h1.trans hb3
+      · have h1 : t'.replyObject = SeLe4n.ReplyId.ofOptCode (SeLe4n.ReplyId.optCode (some rid)) :=
+          TCB.proj_eq_of_withoutRunLinks_eq TCB.replyObject e'
+        rw [h1, SeLe4n.ReplyId.ofOptCode_optCode]
+    · obtain ⟨t', h', e'⟩ := hA8.getTcb?_some hT7r
+      have h1 : t'.schedContextBinding = rt3.schedContextBinding :=
+        TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e'
+      exact ⟨t', h', h1.trans hbr3⟩
+
+/-- **The call rendezvous, in place**: under `callWakesInPlace` the
+specification's call returns `storeCallRendezvous`'s state with the receiver
+wake's SGI, and that state donates nothing. -/
+theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) (payload : SendPayload)
+    (msg : IpcMessage) (core : Concurrency.CoreId)
+    (hM : sendPayloadMessage st caller payload = msg)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
+    (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hG : callWakesInPlace st endpointId caller r rt rid = true) :
+    endpointCallOnCore endpointId caller payload core st =
+        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
+         .ok (wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
+           (callReceiverTcb msg)) r core).2) ∧
+      callDonationSchedContext?
+        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) caller r = none := by
+  obtain ⟨hG', ct, hTc, hDN⟩ := callWakesInPlace_takesReply hG
+  obtain ⟨hEq, -, -, -, -, hF5, rt', hTr', hbr'⟩ :=
+    callRendezvous_inPlace_facts st endpointId ep caller r rt rid payload msg core hM hE hH hT hRid hG'
+  refine ⟨hEq, ?_⟩
+  obtain ⟨ct', hTc', hb', -⟩ := hF5 ct hTc
+  have hG2 := hG'
+  simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG2
+  have hCRes : caller.isReserved = false := hG2.1.1.1.1.1.1.1.1.2
+  have hRRes : r.isReserved = false := hG2.1.1.1.1.1.1.1.1.1.1.1.1.1.1
+  rw [callDonationSchedContext?_eq_bindings]
+  simp only [lookupTcb, hRRes, hCRes, Bool.false_eq_true, ↓reduceIte, hTr', hTc', Option.map_some,
+    hb', hbr']
+  revert hDN
+  unfold callDonatesNothing
+  cases rt.schedContextBinding <;> cases ct.schedContextBinding <;>
+    simp [donationOfBindings, SchedContextBinding.scId?]
 
 /-- The call rendezvous's state after the receiver's priority walk: what the
 call dispatch commits on a rendezvous that donates nothing. -/

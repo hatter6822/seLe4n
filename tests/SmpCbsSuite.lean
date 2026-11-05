@@ -467,7 +467,12 @@ private def runCompositeScenarios : IO Unit := do
   -- composite is just the affinity write + run-queue migration.
   let stUnbound : SystemState :=
     let base := (BootstrapBuilder.empty.withObject (ThreadId.ofNat 300).toObjId
-      (.tcb { tcb0 with tid := ThreadId.ofNat 300, scBindingScCode := 0, scBindingOwnerCode := 0 })).build
+      (.tcb { tcb0 with
+        tid := ThreadId.ofNat 300
+        idCell := some (ThreadId.ofNat 300)
+        idCell_eq := rfl
+        scBindingScCode := 0
+        scBindingOwnerCode := 0 })).build
     base
   assertBool "composite on an unbound thread succeeds (affinity + run-queue write only)"
     (match setThreadCpuAffinityWithMigration stUnbound (ThreadId.ofNat 300) (some bootCoreId) core1 with

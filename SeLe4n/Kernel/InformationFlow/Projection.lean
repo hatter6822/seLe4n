@@ -335,7 +335,10 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- thread's side changes this projection.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
                       callerCode := 0, prev := none, next := none, stasherCode := 0,
-                      capTarget := .replyCap SeLe4n.ReplyId.sentinel, capTarget_eq := rfl }
+                      capTarget := .replyCap SeLe4n.ReplyId.sentinel, capTarget_eq := rfl,
+                      idCell := some SeLe4n.ReplyId.sentinel, idCell_eq := rfl,
+                      frameLinkCell := some (.frame SeLe4n.ReplyId.sentinel),
+                      frameLinkCell_eq := rfl }
   -- WS-SM SM8.B.4 stripped the per-object lock word here, because `RwLockState`
   -- carries core identities (`writerHeld`, `readers`, `waiters`) and an
   -- observer that could see an object would otherwise see the cores operating

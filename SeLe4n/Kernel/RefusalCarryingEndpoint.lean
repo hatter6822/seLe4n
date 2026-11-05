@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDonatingInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
 
@@ -517,7 +518,11 @@ capability addresses, refusing in the state it was handed
 (`endpointCallCheckedArmR_eq`).  WS-ZA ZA4.7: a rendezvous whose checks all
 pass before any write (`callWakesInPlace`, the seL4 decode/perform split) writes
 in place on a state nothing else holds (`performCallRendezvous`,
-`callDispatchChecked_inPlace`); any other call takes the general arm. -/
+`callDispatchChecked_inPlace`); a call that lends the caller's context to a
+passive server on its home core, every check of the rendezvous and of the
+donation passing first (`callDonatesInPlace`), writes its donation in place too
+(`performCallDonating`, `callDispatchChecked_donating_inPlace`); any other call
+takes the general arm. -/
 @[inline] def endpointCallCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -540,6 +545,12 @@ in place on a state nothing else holds (`performCallRendezvous`,
                           .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
                             layout rf len
                             cap.badgeWord cap.badged executingCore)
+                        else if (st.getTcb? tid).isSome &&
+                            endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                              (ctx.endpointLabelOf epId) &&
+                            callDonatesInPlace st epId tid r rt rid then
+                          .ok ((), callRendezvousDonatingDelivered st epId tid r rt.queueNextCode
+                            rid layout rf len cap.badgeWord cap.badged executingCore)
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                 | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
@@ -582,7 +593,19 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
               rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rfl
-            · rfl
+            · split
+              · next hG =>
+                simp only [Bool.and_eq_true] at hG
+                obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
+                obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid
+                  (.frame cap.badge (cap.rights.mem .grant)) _ (SeLe4n.Slot.ofNat 0) executingCore
+                  (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
+                  ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+                rw [callRendezvousDonatingDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
+                simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
+                rfl
+              · rfl
           · rfl
         · rfl
       · rfl

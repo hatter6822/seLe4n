@@ -2621,7 +2621,11 @@ and computes the RETIRED queued-only reading beside the live one. -/
 /-- A reservation the parked holder's manager can hand it: unbound, in the
 holder's domain (`0`, `mkTcb`'s), and heading no reply stack. -/
 private def spareSc : SchedContext :=
-  { mkSc none true with scId := scIdOther, priority := ⟨50⟩ }
+  { mkSc none true with
+    scId := scIdOther
+    headLinkCell := some (.head scIdOther)
+    headLinkCell_eq := rfl
+    priority := ⟨50⟩ }
 
 /-- **The RETIRED bind, computed here and nowhere else**: the queued-only
 re-bucket — `if the thread is already on its home core's run queue then move it,
@@ -2726,7 +2730,8 @@ refill it is owed recorded in its own list: what the live tick's exhaustion arm
 leaves behind. -/
 private def exhaustedSc : SchedContext :=
   { mkSc (some auxTid) false with
-    scId := scIdOther, priority := ⟨50⟩, budgetRemaining := ⟨0⟩,
+    scId := scIdOther, headLinkCell := some (.head scIdOther), headLinkCell_eq := rfl,
+    priority := ⟨50⟩, budgetRemaining := ⟨0⟩,
     refillHeadPresent := true, refillHeadAmount := 1000, refillHeadEligibleAt := 5000 }
 
 /-- **The RETIRED placement guard, computed here and nowhere else**: Cut B2's

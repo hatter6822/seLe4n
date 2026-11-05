@@ -889,6 +889,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.storeDonationFramePush, .halfStep `SeLe4n.Kernel.donateSchedContext)
   , (`SeLe4n.Kernel.donateSchedContext,
       .states [`SeLe4n.Kernel.donateSchedContext_preserves_donationChainWellFormed])
+    -- The push with each object rewritten in its slot: on the states whose
+    -- checks pass it is `donateSchedContext`'s state, so it carries that result.
+  , (`SeLe4n.Kernel.donateSchedContextInPlace,
+      .states [`SeLe4n.Kernel.donateSchedContextInPlace_preserves_donationChainWellFormed])
     -- The pop's three stores, and the pair that composes the first two.
   , (`SeLe4n.Kernel.storeDonationHeadClear, .halfStep `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.storeReplyReHead, .halfStep `SeLe4n.Kernel.storeDonationHeadPop)

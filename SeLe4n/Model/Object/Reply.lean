@@ -38,49 +38,6 @@ caller and the authority to reply to it:
 
 namespace SeLe4n.Kernel
 
-/-- WS-OD (`v0.35.4`): **the upward link of a reply-stack frame** — seL4's
-`replyNext`, a `call_stack_t` whose `isHead` bit says whether the pointer names
-the frame pushed above this one or the scheduling context whose stack this frame
-heads.  A sum type rather than two fields, so "head", "has a frame above" and
-"off every stack" (`none`) are three states of one value and no object can claim
-two of them at once.
-
-Only the head carries the context.  That is the whole point of the encoding: a
-frame taken out of the middle of a stack repairs its two neighbours and nothing
-else (`cutReplyFrameOut` above the cut, `Reply.consumed` at the frame
-itself), where a per-frame context field would have to be
-cleared on every frame below the cut — an `O(depth)` walk, or, left undone, a
-frame that names a context forever and can never be retyped or linked again. -/
-inductive ReplyStackLink where
-  /-- The frame pushed **above** this one on the same stack. -/
-  | frame (above : SeLe4n.ReplyId)
-  /-- This frame **heads** the stack of the named scheduling context. -/
-  | head (sc : SeLe4n.SchedContextId)
-deriving DecidableEq, Repr, Inhabited
-
-namespace ReplyStackLink
-
-/-- The reply id a `.frame` link names, if it is one. -/
-@[inline] def frame? : ReplyStackLink → Option SeLe4n.ReplyId
-  | .frame above => some above
-  | .head _ => none
-
-/-- The scheduling context a `.head` link names, if it is one. -/
-@[inline] def head? : ReplyStackLink → Option SeLe4n.SchedContextId
-  | .frame _ => none
-  | .head sc => some sc
-
-@[simp] theorem frame?_frame (above : SeLe4n.ReplyId) :
-    (ReplyStackLink.frame above).frame? = some above := rfl
-@[simp] theorem frame?_head (sc : SeLe4n.SchedContextId) :
-    (ReplyStackLink.head sc).frame? = none := rfl
-@[simp] theorem head?_frame (above : SeLe4n.ReplyId) :
-    (ReplyStackLink.frame above).head? = none := rfl
-@[simp] theorem head?_head (sc : SeLe4n.SchedContextId) :
-    (ReplyStackLink.head sc).head? = some sc := rfl
-
-end ReplyStackLink
-
 /-- WS-SM SM6.D: first-class Reply kernel object.  See the module docstring. -/
 structure Reply where
   replyId   : SeLe4n.ReplyId
@@ -105,6 +62,16 @@ structure Reply where
   mint shares it instead of building one (`CapTarget.ofReplyObject`). -/
   capTarget : SeLe4n.Model.CapTarget       := .replyCap replyId
   capTarget_eq : capTarget = .replyCap replyId := by rfl
+  /-- WS-ZA ZA6.33: the two cells a donation push writes naming this frame,
+  built once with the object as `capTarget` is, so the push shares them
+  (`SeLe4n.reuseSome`) rather than building them on every donating call:
+  `some replyId`, the head the lending context records
+  (`SchedContext.scReply`), and `some (.frame replyId)`, the upward link of the
+  frame below.  Read by the compiled push alone; no specification reads them. -/
+  idCell : Option SeLe4n.ReplyId := some replyId
+  frameLinkCell : Option ReplyStackLink := some (.frame replyId)
+  idCell_eq : idCell = some replyId := by rfl
+  frameLinkCell_eq : frameLinkCell = some (.frame replyId) := by rfl
 deriving Repr
 
 namespace Reply
@@ -116,8 +83,10 @@ Written as `callerCode := SeLe4n.ThreadId.optCode c`. -/
   SeLe4n.ThreadId.ofOptCode r.callerCode
 
 @[simp] theorem caller_mk (rid : SeLe4n.ReplyId) (c : Nat) (p : Option SeLe4n.ReplyId)
-    (n : Option ReplyStackLink) (s : Nat) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid) :
-    (Reply.mk rid c p n s t ht).caller = SeLe4n.ThreadId.ofOptCode c :=
+    (n : Option ReplyStackLink) (s : Nat) (t : SeLe4n.Model.CapTarget) (ht : t = .replyCap rid)
+    (ic : Option SeLe4n.ReplyId) (fc : Option ReplyStackLink) (hic : ic = some rid)
+    (hfc : fc = some (.frame rid)) :
+    (Reply.mk rid c p n s t ht ic fc hic hfc).caller = SeLe4n.ThreadId.ofOptCode c :=
   rfl
 
 /-- Default Reply: the given id, no caller, no stack links, lock unheld.  Used by

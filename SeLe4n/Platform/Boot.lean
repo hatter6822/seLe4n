@@ -961,7 +961,9 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
-     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode⟩ =>
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode,
+     -- The id cell is the thread's own id (`TCB.idCell_eq`).
+     _idCell, _hIdCell⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[0]) ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[1]) ||
@@ -1070,7 +1072,9 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      boundThreadCode, scReply, donationOrigin, _isActive,
-     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode⟩ =>
+     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
+     -- The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`).
+     _headLinkCell, _hHeadLinkCell⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     -- **WS-ZA ZA6.3**: and its release-queue successor, which names a scheduling
     -- context by its code (`0` is none, `s + 1` is `s`).
@@ -1092,7 +1096,9 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
     check covers it. -/
 def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
   match r with
-  | ⟨replyId, callerCode, prev, next, stasherCode, _capTarget, _hCapTarget⟩ =>
+  | ⟨replyId, callerCode, prev, next, stasherCode, _capTarget, _hCapTarget,
+     -- The id and frame-link cells name the reply's own id (`Reply.idCell_eq`).
+     _idCell, _frameLinkCell, _hIdCell, _hFrameLinkCell⟩ =>
     SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
     (SeLe4n.ThreadId.ofOptCode callerCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode stasherCode).any SeLe4n.Kernel.isIdleThreadId ||
@@ -2170,7 +2176,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      -- The taint words name no object.
      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated,
      -- The yield link is empty (WS-ZA ZA6.6): a boot state has yielded to nothing.
-     _yieldToCode⟩ =>
+     _yieldToCode,
+     -- The id cell is the thread's own id (`TCB.idCell_eq`).
+     _idCell, _hIdCell⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -2289,7 +2297,9 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      _boundThread, _scReply, _donationOrigin, _isActive,
-     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode⟩ =>
+     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
+     -- The head-link cell names the context's own id (`SchedContext.headLinkCell_eq`).
+     _headLinkCell, _hHeadLinkCell⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -2342,7 +2352,9 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     `PlatformConfig.wellFormed`. -/
 def bootSafeReplyCheck (r : Reply) : Bool :=
   match r with
-  | ⟨_replyId, _caller, _prev, _next, _stasher, _capTarget, _hCapTarget⟩ => r.isFree
+  | ⟨_replyId, _caller, _prev, _next, _stasher, _capTarget, _hCapTarget,
+     -- The id and frame-link cells name the reply's own id (`Reply.idCell_eq`).
+     _idCell, _frameLinkCell, _hIdCell, _hFrameLinkCell⟩ => r.isFree
 
 @[simp] theorem bootSafeReplyCheck_def (r : Reply) :
     bootSafeReplyCheck r = (r.caller.isNone && r.prev.isNone && r.next.isNone) := rfl
@@ -4127,7 +4139,9 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
-     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode⟩ =>
+     _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode,
+     -- The id cell is the thread's own id (`TCB.idCell_eq`).
+     _idCell, _hIdCell⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true
