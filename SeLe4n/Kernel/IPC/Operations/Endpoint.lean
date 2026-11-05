@@ -7860,7 +7860,7 @@ private theorem storeReply_keeps_reply {s s' : SystemState} {k : SeLe4n.ObjId} {
 
 /-- The head pop commits when its head and the head's lower frame are replies,
 and it keeps every object that is not a reply. -/
-private theorem storeDonationHeadPop_ok_of {s : SystemState} {scId : SeLe4n.SchedContextId}
+theorem storeDonationHeadPop_ok_of {s : SystemState} {scId : SeLe4n.SchedContextId}
     {rid : SeLe4n.ReplyId} {r : Reply} (hInv : s.objects.invExt)
     (hR : s.objects[rid.toObjId]? = some (.reply r))
     (hPrev : ∀ p, r.prev = some p → ∃ b, s.objects[p.toObjId]? = some (.reply b)) :
