@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.Operations
 import SeLe4n.Kernel.Service.Registry
+import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 -- `v0.35.164`: the per-core donation-cancellation arms live here now (they were
 -- in `IPC/CrossCore/Cancellation.lean`, which the destroy path cannot import),
 -- and the `.donated` arm's replenishment migration is the scheduler's
@@ -326,6 +327,54 @@ def spliceOutMidQueueNode (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSta
         | _ => objs
     { st with objects := objs }
 
+
+/-- **The interior splice, each write in its slot**: the predecessor's next
+link and the successor's back links rewritten where they stand
+(`SystemState.updateTcb`), from the removed thread's three link words read
+once.  It is `spliceOutMidQueueNode` (`spliceOutMidQueueNode_eq_impl`). -/
+@[inline] def spliceOutMidQueueNodeImpl (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  match lookupTcb st tid with
+  | none => st
+  | some tcb =>
+    let nextC := tcb.queueNextCode
+    let prevC := tcb.queuePrevCode
+    let pprevC := tcb.queuePPrevCode
+    let s1 := match SeLe4n.ThreadId.ofOptCode prevC with
+      | some p => st.updateTcb p (fun t => { t with queueNextCode := nextC })
+      | none => st
+    match SeLe4n.ThreadId.ofOptCode nextC with
+    | some n => s1.updateTcb n (fun t => { t with queuePrevCode := prevC, queuePPrevCode := pprevC })
+    | none => s1
+
+/-- A table write at a key that holds a TCB, and no write elsewhere, is
+`updateTcb` at that key. -/
+private theorem objectsTcbPatch_eq_updateTcb (s : SystemState) (p : SeLe4n.ThreadId)
+    (f : TCB → TCB) :
+    { s with objects := match s.objects[p.toObjId]? with
+        | some (.tcb t) => s.objects.insert p.toObjId (.tcb (f t))
+        | _ => s.objects } = s.updateTcb p f := by
+  cases hx : s.objects[p.toObjId]? with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hx])]
+  | some o =>
+    cases o with
+    | tcb t => rw [SystemState.updateTcb_eq_of_some (t := t) (by simp [SystemState.getTcb?, hx])]
+    | _ => rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hx])]
+
+@[csimp] theorem spliceOutMidQueueNode_eq_impl :
+    @spliceOutMidQueueNode = @spliceOutMidQueueNodeImpl := by
+  funext st tid
+  unfold spliceOutMidQueueNode spliceOutMidQueueNodeImpl
+  cases lookupTcb st tid with
+  | none => rfl
+  | some tcb =>
+    simp only [TCB.queuePrev, TCB.queueNext]
+    generalize SeLe4n.ThreadId.ofOptCode tcb.queuePrevCode = op
+    generalize SeLe4n.ThreadId.ofOptCode tcb.queueNextCode = on
+    cases op <;> cases on <;> dsimp only <;>
+      simp only [← objectsTcbPatch_eq_updateTcb] <;> rfl
+
 /-- R4-A.1 (M-12) + T5-E (M-LCS-1): Remove a ThreadId from all endpoint send/receive
     queues. First splices the mid-queue node out by patching predecessor/successor
     links, then adjusts head/tail pointers in each endpoint queue.
@@ -384,6 +433,94 @@ def removeFromBlockingEndpoint (st : SystemState) (tid : SeLe4n.ThreadId)
       stSpliced.rewriteObject endpointId (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
     else stSpliced
   | none => stSpliced
+
+/-- **The endpoint with each queue end that names the removed thread moved to
+its neighbour** (`tidCode` the thread's code): a head to `nextCode`, a tail to
+`prevCode` (`removedEndCode`, which is `queueRemoveBoundary` on codes), the
+other ends kept. -/
+@[inline] def endpointEndsRemoved (tidCode nextCode prevCode : Nat) :
+    KernelObject → KernelObject
+  | .endpoint e => .endpoint { e with
+      sendHeadCode := removedEndCode e.sendHeadCode tidCode nextCode,
+      sendTailCode := removedEndCode e.sendTailCode tidCode prevCode,
+      recvHeadCode := removedEndCode e.recvHeadCode tidCode nextCode,
+      recvTailCode := removedEndCode e.recvTailCode tidCode prevCode }
+  | o => o
+
+/-- **`removeFromBlockingEndpoint`, each write in its slot**: the neighbours'
+link words (`spliceOutMidQueueNodeImpl`), then, when one of the endpoint's four
+ends names the thread, the endpoint's ends rewritten where it stands
+(`endpointEndsRemoved`, through `RHTable.modify`).  The guard and the ends are
+read as codes, so no queue record and no `some` cell is built. -/
+@[inline] def removeFromBlockingEndpointImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (endpointId : SeLe4n.ObjId) : SystemState :=
+  let s := spliceOutMidQueueNodeImpl st tid
+  match s.getEndpoint? endpointId with
+  | some ep =>
+    let k := tid.val + 1
+    if ep.sendHeadCode == k || ep.sendTailCode == k || ep.recvHeadCode == k
+        || ep.recvTailCode == k then
+      match lookupTcb s tid with
+      | some t => s.modifyObject endpointId (endpointEndsRemoved k t.queueNextCode t.queuePrevCode)
+      | none => s.modifyObject endpointId (endpointEndsRemoved k 0 0)
+    else s
+  | none => s
+
+/-- A queue end read through its code, compared with a thread, is its code
+compared with the thread's. -/
+private theorem ofOptCode_beq_some (c : Nat) (tid : SeLe4n.ThreadId) :
+    (SeLe4n.ThreadId.ofOptCode c == some tid) = (c == tid.val + 1) := by
+  cases c with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ k =>
+    rw [Bool.eq_iff_iff]
+    simp only [SeLe4n.ThreadId.ofOptCode, beq_iff_eq, Option.some.injEq]
+    cases tid; simp
+
+/-- The code of the end a removal leaves, read back from its views. -/
+private theorem optCode_removedEnd (c n : Nat) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.optCode
+        (if SeLe4n.ThreadId.ofOptCode c = some tid then SeLe4n.ThreadId.ofOptCode n
+         else SeLe4n.ThreadId.ofOptCode c) = removedEndCode c (tid.val + 1) n := by
+  unfold removedEndCode
+  by_cases h : c = tid.val + 1 <;> simp [h]
+
+/-- The code of the end a removal with no thread to inherit from leaves. -/
+private theorem optCode_clearedEnd (c : Nat) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.optCode
+        (if SeLe4n.ThreadId.ofOptCode c = some tid then none else SeLe4n.ThreadId.ofOptCode c) =
+      removedEndCode c (tid.val + 1) 0 := by
+  unfold removedEndCode
+  by_cases h : c = tid.val + 1 <;> simp [h]
+
+@[csimp] theorem removeFromBlockingEndpoint_eq_impl :
+    @removeFromBlockingEndpoint = @removeFromBlockingEndpointImpl := by
+  funext st tid endpointId
+  unfold removeFromBlockingEndpoint removeFromBlockingEndpointImpl
+  rw [spliceOutMidQueueNode_eq_impl]
+  generalize spliceOutMidQueueNodeImpl st tid = s
+  dsimp only
+  obtain ⟨o, hE⟩ : ∃ o, s.getEndpoint? endpointId = o := ⟨_, rfl⟩
+  cases o with
+  | none => simp only [SystemState.getEndpointWitnessed?_eq_none hE, hE]
+  | some ep =>
+    simp only [SystemState.getEndpointWitnessed?_eq_some hE, hE]
+    have hEo := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE
+    simp only [Endpoint.sendQ, Endpoint.receiveQ, ofOptCode_beq_some]
+    split
+    · unfold removeThreadFromQueue SystemState.rewriteObject SystemState.modifyObject
+      cases lookupTcb s tid with
+      | some t =>
+        simp only [queueRemoveBoundary, TCB.queueNext, TCB.queuePrev, Endpoint.withSendQ,
+          Endpoint.withReceiveQ, optCode_removedEnd]
+        rw [RobinHood.RHTable.modify_of_get? hEo]
+        rfl
+      | none =>
+        simp only [Endpoint.withSendQ, Endpoint.withReceiveQ, optCode_clearedEnd]
+        rw [RobinHood.RHTable.modify_of_get? hEo]
+        rfl
+    · rfl
+
 
 /-- R4-A.2 (M-12), WS-ZA ZA4.4: Remove a thread from the notification wait queue
 it is linked into.
