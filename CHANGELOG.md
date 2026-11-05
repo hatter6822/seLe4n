@@ -1,3 +1,24 @@
+## v0.36.201 — The nightly builds the cross archive its Lean-linked gates link
+
+The `Nightly Determinism` workflow has failed in Tier 4 on every scheduled run
+that reached it since 2026-10-27: each `--lean-kernel` gate refused
+`.lake/build/aarch64-unknown-none-softfloat/libsele4n.a` as stale, with the one
+difference `<working tree>`.  No step of the nightly built that archive.  The
+`.lake/build` it ran with came from whichever cache the restore keys reached
+first (`lean-fast-`, `lean-full-` or `lean-aarch64-`).  Those caches are built
+from other commits and inherit `.lake/build` from one another, so the archive
+in them was another tree's, and the builder's freshness check rightly refused
+it.  The run on 2026-10-26 passed only because the restored cache happened to
+be the aarch64 lane's build of the same commit.
+
+- **Fixed.**  The nightly now installs the pinned Rust toolchain (with
+  `llvm-tools` and the softfloat target) and runs
+  `scripts/test_lean_aarch64_archive.sh` before `test_nightly.sh`, so the
+  archive the Tier-4 gates link is built from the nightly's own checkout.
+  The stale-archive refusal is unchanged.  If a tier ever writes a tracked or
+  unignored file, the freshness check still refuses the archive.
+- **Docs.**  `docs/CI_POLICY.md` §2 lists the archive step.
+
 ## v0.36.198 — Dead code removed: 123 definitions and four FFI exports nothing calls
 
 Every definition in the library that no constant names — no kernel code, no
