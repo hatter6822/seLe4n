@@ -17855,10 +17855,11 @@ run_check "INVARIANT" rg -n '^theorem frozenCutReplyFrameStores_eq_sever_of_no_f
 # ...and the WITNESS, because the flip is invisible to every scenario this surface
 # carried before it: a two-frame stack's lower frame is its bottom, so both
 # policies write the same value there and depth <= 2 cannot tell them apart.
-# FO-043 is the middle frame, and it discriminates -- reverting the splice fails
-# it while every control still passes.
-run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen removal splices the same way" tests/FrozenOpsSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -n "FO-043 NEGATIVE: the frozen removal does NOT sever the top frame" tests/FrozenOpsSuite.lean'
+# FO-043 is the middle frame, and it discriminates.  WS-ZA ZA6.33 reversed the
+# policy to seL4-MCS's sever (`reply_remove`); restoring the splice fails it
+# while every control still passes.
+run_check "INVARIANT" bash -lc 'rg -n "FO-043: the frozen removal severs the same way" tests/FrozenOpsSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -n "FO-043 NEGATIVE: the frozen removal does NOT splice the top frame onto the bottom" tests/FrozenOpsSuite.lean'
 # ...and the half that drives the PRIMITIVE, which is the only place the third
 # store is observable: through the composite `Reply.consumed` clears the cut
 # frame's links anyway, so a composite-only assertion about them tests `consumed`
@@ -18830,11 +18831,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^noncomputable def suspendThr
 # and no longer in the module that imports this one.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SchedContext\.ReplenishAffinity' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReclaimed|^def cancelUnboundHolder\?|^def descheduleUnboundHolder|^def cancelIpcBlockingMigrated' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-# The witness (`v0.35.158`): the single-core reference leaves the unbound holder
-# on no scheduler slot where the retired bare G2 left it queued, `.unbound`, on
-# nobody's budget.
-run_check "INVARIANT" bash -lc 'rg -U -n "match bootSuspendThread stQ vv with[^\n]*(\n([ \t][^\n]*)?)*the boot-core suspend leaves the unbound holder on no scheduler slot" tests/SmpCancellationSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "match bootSuspendThread stQ vv with[^\n]*(\n([ \t][^\n]*)?)*where the RETIRED bare G2 left it queued and unbound on core 2" tests/SmpCancellationSuite.lean'
+# The witness (WS-ZA ZA6.33): the single-core reference suspend is seL4-MCS's,
+# whose reply arm (`reply_remove_tcb`) leaves the server queued and holding the
+# context as its own.
+run_check "INVARIANT" bash -lc 'rg -U -n "match bootSuspendThread stQ vv with[^\n]*(\n([ \t][^\n]*)?)*the boot-core suspend leaves the holder queued with the context as its own" tests/SmpCancellationSuite.lean'
 # The bare teardown must not come back as the pipeline's G2 -- bounded to the
 # declaration, so the legitimate reads elsewhere in the file (the reclaim-complete
 # teardown's own body, every frame lemma) stay out of its reach.
@@ -18885,7 +18885,7 @@ run_check "INVARIANT" rg -n '^private def stQueuedHolderReclaim($|[ ({:\[\]])' t
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the LIVE reclaim-complete teardown leaves the blocked holder BLOCKED, unbound, on no slot" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED wake leaves the unbound holder QUEUED" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the LIVE reclaim takes the holder it unbound OFF core 2" tests/SmpCancellationSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the live suspend leaves the unbound holder on NO scheduler slot" tests/SmpCancellationSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the live suspend leaves the holder QUEUED on core 2, holding the context as its own" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n([ \t][^\n]*)?)*runReclaimCompleteSuspendChecks" tests/SmpCancellationSuite.lean'
 
 
@@ -19028,12 +19028,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_
 # the equality form cannot frame G4, which clears the victim's current slot.
 run_check "INVARIANT" rg -n '^theorem threadPlacedOnSomeCore_congr_at($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadPlacedOnSomeCore_congr [^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_congr_at st st. u" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-# The witness exhibits the payoff's premises on a state the live operations
-# reach, and asserts its conclusion in the payoff's own vocabulary -- a
-# hypothesis nothing exhibits is indistinguishable from one that cannot hold.
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the payoff.s trigger premise holds here" tests/SmpCancellationSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the payoff.s single-placement premise holds here" tests/SmpCancellationSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*\(!threadPlacedOnSomeCore stPost serverTid\)" tests/SmpCancellationSuite.lean'
 
 # ---------------------------------------------------------------------------
 # PR #897 review F2 (`v0.35.97`) -- the frozen write has ONE owner, and so does

@@ -2455,15 +2455,18 @@ never reached — the wake was the identity and the server stayed queued
 deschedule takes it off its queue.  On the **running** holder the deschedule
 clears its current slot, and the seam's diff-derived poke reaches that core.
 
-(v) and (vi) then measure the whole transition the syscall runs rather than the
-step in isolation, on the queued shape, and (vii) the footprint: the member is
-the holder's *placed* core, resolved by the same `placedCoreOf?` the step reads.
+(vi) then runs the whole transition the syscall runs, on the queued shape.
+Since WS-ZA ZA6.33 the suspend no longer reclaims: it is seL4-MCS's, whose reply
+arm (`reply_remove_tcb`) cuts the victim's frame off the context and leaves the
+server holding it, so (vi) and (vii) assert the server stays queued with the
+context as its own.  (viii) is the footprint: the member is the holder's
+*placed* core, resolved by the same `placedCoreOf?` the step reads.
 
 **On the mutation discipline.**  Reverting the reclaim's step to the wake does
-not reach these assertions first: `descheduleUnboundHolder_holder_unplaced` and
-the payoff `suspendThreadOnCore_holder_unplaced` fail to elaborate.  Those are
-proofs, not measurements, so both readings are computed here regardless: the
-queued-holder rows are the ones the wake could never have passed. -/
+not reach these assertions first: `descheduleUnboundHolder_holder_unplaced`
+fails to elaborate.  That is a proof, not a measurement, so both readings are
+computed here regardless: the queued-holder rows are the ones the wake could
+never have passed. -/
 private def runReclaimCompleteSuspendChecks : IO Unit := do
   IO.println "--- §3.26 WS-RR RR8.12 / v0.35.158 the live suspend completes its reclaim ---"
   let st := stStrandedHolderReclaim
@@ -2547,19 +2550,6 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
         victimTid tcbR = some core2))
   assertBool "...where the RETIRED wake left it running, unbound"
     (decide (retiredR.scheduler.currentOnCore core2 = some serverTid))
-  -- (v) The premises of the `v0.35.158` payoff, exhibited on the queued shape.  A
-  -- hypothesis nothing exhibits is indistinguishable from one that cannot hold,
-  -- and `suspendThreadOnCore_holder_unplaced` takes exactly these.
-  assertBool "the payoff's trigger premise holds here: the reclaim answers the holder"
-    (decide (cancelUnboundHolder? stQ (cancelIpcBlockingMigrated victimTid tcbQ stQ)
-      victimTid tcbQ = some serverTid))
-  assertBool "the payoff's single-placement premise holds here: the holder sits on exactly one core"
-    (decide (placedCores stQ serverTid = [core2]))
-  -- (`(st.scheduler.runQueueOnCore executingCore).wellFormed`, the payoff's third
-  -- premise, is the run-queue well-formedness every scheduler theorem takes; it
-  -- is not decidable and so is not exhibited here.)
-  assertBool "...and the fact the payoff DERIVES rather than assumes: holder ≠ victim"
-    (decide (serverTid ≠ victimTid))
   -- (vi) And the transition the live `.tcbSuspend` arm actually runs.
   match SeLe4n.ThreadId.toValid? victimTid with
   | none => assertBool "the victim id is valid" false
