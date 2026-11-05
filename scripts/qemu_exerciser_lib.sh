@@ -309,6 +309,19 @@ for driver in drivers:
             "suspend-reply-resume", "suspend-reply-root-receives", "suspend-reply-partner-calls",
             "suspend-donated-configure", "suspend-donated-bind-partner", "suspend-donated-resume",
             "suspend-donated-root-receives", "suspend-donated-unbind",
+            # and (WS-ZA ZA6.33) a donation across two home cores, then down a
+            # chain: the carved server's space, priority and reply capability,
+            # the context bound to the partner, both resumed, the root task's
+            # receive, homed on core 1 and back around the partner's call, the
+            # server's receive, and the teardown: the root task, its context
+            # handed back, restarted by the partner (the two donating calls
+            # and the two donated replies are pinned below).
+            "chain-tcb-set-space", "chain-tcb-set-priority", "chain-reply-cap-mint",
+            "chain-configure", "chain-bind-partner", "chain-resume-partner",
+            "chain-resume-server", "chain-root-receives", "cross-core-home-root",
+            "cross-core-home-root-back", "chain-server-receives",
+            "chain-suspend-server", "chain-suspend-root", "chain-resume-root",
+            "chain-suspend-partner", "chain-unbind", "chain-tcb-delete", "chain-reply-cap-delete", "chain-reply-delete",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -532,6 +545,23 @@ for driver in drivers:
             # carved with (`performCallDonating`,
             # `callDispatchChecked_donating_inPlace`): 0.
             "suspend-donated-partner-calls": (0, 0),
+            # The partner's call to the root task homed on core 1: the
+            # donation, then the replenishment migration from core 0's home to
+            # core 1's, its release link moved in its slot
+            # (`migrateReplenishmentWrite`): 0.
+            "cross-core-partner-calls": (0, 0),
+            # The root task's call to the server with the context still on
+            # loan: the push links the server's reply onto a stack that already
+            # holds the root task's, the frame below rewritten in its slot: 0.
+            "chain-root-calls-server": (0, 0),
+            # The server's reply-receive and the root task's reply, each
+            # handing the loaned context back down the stack: seL4's
+            # `reply_pop`, the popped frame cleared and the one below re-headed
+            # in their slots, the context settled on its new holder's home and
+            # the holder taken off its core (`performReplyDonated`): 0.
+            "chain-server-reply-recv": (0, 0), "chain-root-replies": (0, 0),
+            # The chain's carves, a thread's and a reply's as above.
+            "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
             # The requeue's first call follows the suspend and resume
             # scenarios, which now leave nothing shared: 0.
             "sched-context-yield-to-requeue": (0, 0),

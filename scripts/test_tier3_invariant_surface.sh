@@ -4268,6 +4268,18 @@ run_check "INVARIANT" rg -n '^theorem donateSchedContext_eq_inPlace($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem callDispatchChecked_donating_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n '^theorem donateSchedContextInPlace_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n -U '                            callDonatesInPlace st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# WS-ZA ZA6.33: the donating route migrates the replenishment in place, the two
+# homes read in the arm before its first write, and the migration is compiled
+# through its in-place write.
+run_check "INVARIANT" rg -n -U '                            rid \(callerScId st tid\) \(determineTargetCore st tid\)\n                            \(determineTargetCore st r\) layout rf len' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def performCallDonating [^\n]*(\n[ \t][^\n]*)*\n    \(migrateSchedContextReplenishment' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
+run_negative_check "INVARIANT" rg -n 'determineTargetCore st caller == determineTargetCore st r' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
+run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_mapTcbInPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem migrateSchedContextReplenishment_eq_impl' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+# WS-ZA ZA6.33: the affinity change tests the old core's current thread by
+# its code, compiled through the code forms.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem vacateForAffinityChange_eq_impl' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem setAffinityPerform_eq_impl' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n -U 'obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '^  runContextlessStackChecks\n  runMiddleReplyFinaliseChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n -U '          if b\.next != some \(\.frame rid\) then \.ok st\n          else frozenSeverReplyFrameBelowStores st rid below r b' SeLe4n/Kernel/FrozenOps/Core.lean

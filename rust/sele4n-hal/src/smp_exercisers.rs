@@ -1725,9 +1725,31 @@ const IRQ_BOUND_HANDLER_SLOT: u64 = 24;
 #[cfg(feature = "hw_target")]
 const IRQ_UNBOUND_HANDLER_SLOT: u64 = 25;
 
+/// The free slots the donation-chain scenario (WS-ZA ZA6.33) carves its
+/// server thread, its reply object and that reply's capability into.
+#[cfg(feature = "hw_target")]
+const CHAIN_TCB_SLOT: u64 = 22;
+#[cfg(feature = "hw_target")]
+const CHAIN_REPLY_OBJECT_SLOT: u64 = 23;
+#[cfg(feature = "hw_target")]
+const CHAIN_REPLY_CAP_SLOT: u64 = 26;
+/// The boot-domain ids that scenario carves its thread and reply at.
+#[cfg(feature = "hw_target")]
+const CHAIN_CHILD_IDS: [u64; 2] = [33, 34];
+/// The second core (`TCB_SetAffinity`'s word for core 1) and the word that
+/// clears an affinity (`affinityUnbindMarker`, the core count).
+#[cfg(feature = "hw_target")]
+const SECOND_CORE_AFFINITY: u64 = 1;
+#[cfg(feature = "hw_target")]
+const AFFINITY_UNBIND: u64 = 4;
+
 /// The capability addresses of those slots.
 #[cfg(feature = "hw_target")]
 const ROOT_TCB_CAP: u64 = cap_address(ROOT_TCB_SLOT);
+#[cfg(feature = "hw_target")]
+const CHAIN_TCB_CAP: u64 = cap_address(CHAIN_TCB_SLOT);
+#[cfg(feature = "hw_target")]
+const CHAIN_REPLY_CAP: u64 = cap_address(CHAIN_REPLY_CAP_SLOT);
 #[cfg(feature = "hw_target")]
 const CNODE_CAP: u64 = cap_address(CNODE_SLOT);
 #[cfg(feature = "hw_target")]
@@ -2955,6 +2977,149 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 7] = [
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
+        ),
+        // WS-ZA ZA6.33: a donation across two home cores, then a donation down
+        // a chain.  A server thread and its reply are carved; the partner,
+        // holding the context, and the server are resumed; the root task's
+        // receive blocks and the partner runs.  The partner homes the blocked
+        // root task on core 1 and calls it: the context is donated from core
+        // 0's home to core 1's and its replenishment migrated with it, and
+        // the server runs on core 0, homes the root task back (moving the
+        // context back) and receives, so the root task runs.  The root task,
+        // the context still on loan, calls the server: the donation pushes the
+        // server's reply onto a stack that already holds the root task's.
+        // The server answers and receives again, the root task answers the
+        // partner, and everything is taken down.  The timer is still masked.
+        invocation(
+            "untyped-retype-chain-tcb",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+        ),
+        invocation(
+            "chain-tcb-set-space",
+            TCB_SET_SPACE,
+            CHAIN_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation(
+            "chain-tcb-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            [PARTNER_PRIORITY, 0, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-chain-reply",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [REPLY_TYPE, CHAIN_CHILD_IDS[1], CNODE_CAP, CHAIN_REPLY_OBJECT_SLOT],
+        ),
+        invocation(
+            "chain-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "chain-configure",
+            [
+                SCHED_CONTEXT_CAP,
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+            ],
+        ),
+        invocation(
+            "chain-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation("chain-resume-partner", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("chain-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
+        partner_step(
+            "chain-root-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [REPLY_CAP, 0],
+            true,
+        ),
+        invocation(
+            "cross-core-home-root",
+            TCB_SET_AFFINITY,
+            ROOT_TCB_CAP,
+            [SECOND_CORE_AFFINITY, 0, 0, 0],
+        ),
+        partner_step(
+            "cross-core-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x66, 0],
+            true,
+        ),
+        invocation(
+            "cross-core-home-root-back",
+            TCB_SET_AFFINITY,
+            ROOT_TCB_CAP,
+            [AFFINITY_UNBIND, 0, 0, 0],
+        ),
+        partner_step(
+            "chain-server-receives",
+            RECEIVE,
+            ENDPOINT_CAP,
+            1,
+            [CHAIN_REPLY_CAP, 0],
+            true,
+        ),
+        partner_step(
+            "chain-root-calls-server",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x67, 0],
+            true,
+        ),
+        partner_step(
+            "chain-server-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            2,
+            [CHAIN_REPLY_CAP, 0x98],
+            true,
+        ),
+        partner_step("chain-root-replies", REPLY, REPLY_CAP, 1, [0x77, 0], false),
+        invocation("chain-suspend-server", TCB_SUSPEND, CHAIN_TCB_CAP, [0; 4]),
+        // The root task's reply handed the context back and took it off its
+        // core (seL4's `schedContext_donate`), so the partner restarts it
+        // before suspending itself: the root task runs the teardown.
+        invocation("chain-suspend-root", TCB_SUSPEND, ROOT_TCB_CAP, [0; 4]),
+        invocation("chain-resume-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]),
+        invocation("chain-suspend-partner", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+        invocation(
+            "chain-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "chain-tcb-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "chain-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "chain-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         invocation(

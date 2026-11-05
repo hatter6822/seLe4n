@@ -519,10 +519,11 @@ capability addresses, refusing in the state it was handed
 pass before any write (`callWakesInPlace`, the seL4 decode/perform split) writes
 in place on a state nothing else holds (`performCallRendezvous`,
 `callDispatchChecked_inPlace`); a call that lends the caller's context to a
-passive server on its home core, every check of the rendezvous and of the
-donation passing first (`callDonatesInPlace`), writes its donation in place too
-(`performCallDonating`, `callDispatchChecked_donating_inPlace`); any other call
-takes the general arm. -/
+passive server, every check of the rendezvous and of the donation passing first
+(`callDonatesInPlace`), writes its donation and the replenishment migration
+between the two home cores in place too (`performCallDonating`,
+`callDispatchChecked_donating_inPlace`; the homes are read here, before the
+first write); any other call takes the general arm. -/
 @[inline] def endpointCallCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -550,7 +551,8 @@ takes the general arm. -/
                               (ctx.endpointLabelOf epId) &&
                             callDonatesInPlace st epId tid r rt rid then
                           .ok ((), callRendezvousDonatingDelivered st epId tid r rt.queueNextCode
-                            rid (callerScId st tid) layout rf len cap.badgeWord cap.badged
+                            rid (callerScId st tid) (determineTargetCore st tid)
+                            (determineTargetCore st r) layout rf len cap.badgeWord cap.badged
                             executingCore)
                         else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
@@ -603,7 +605,7 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
                   (hMsg cap.badge (cap.rights.mem .grant) hS) (hReq epId _ _)
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
-                rw [callRendezvousDonatingDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ _ hW]
+                rw [callRendezvousDonatingDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hW]
                 simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
                 rfl
               · rfl

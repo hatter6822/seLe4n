@@ -11,12 +11,12 @@ import SeLe4n.Kernel.IPC.Operations.DonationInPlace
 seL4-MCS's `sendIPC` on a call to a passive server: the rendezvous, then
 `schedContext_donate` and `reply_push` (`donateSchedContext`), then the priority
 walk.  When every check of the rendezvous and of the donation passes on the
-pre-state, and donor and server share a home core (so the replenishment
-migration moves nothing), each write lands in its slot
-(`donateSchedContextInPlace`) and a message of at most four words is written
-straight into the server's registers (`performCallDonatingDelivered`): the call
-builds no object, no message and no table.  A call whose donation migrates
-replenishments between cores takes the general arm.
+pre-state, each write lands in its slot (`donateSchedContextInPlace`), the
+replenishment migration between the donor's and the server's home cores moves
+the context's release link in its slot (`migrateSchedContextReplenishment`,
+compiled as `migrateReplenishmentWrite`), and a message of at most four words is
+written straight into the server's registers (`performCallDonatingDelivered`):
+the call builds no object, no message and no table, on one core or across two.
 -/
 
 namespace SeLe4n.Kernel
@@ -176,18 +176,123 @@ theorem donateSchedContextInPlace_msg (r : SeLe4n.ThreadId)
               with_reducible apply modifyObject_noResizeDue |
               with_reducible apply updateSchedContext_noResizeDue | (intro _ _; rfl)))
 
+section ReleaseMoves
+variable (r : SeLe4n.ThreadId) (g : TCB → TCB)
+
+/-- A context written in its slot commutes with a thread written in its slot. -/
+theorem mapSchedContextInPlace_mapTcbInPlace (st : SystemState) (s : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) :
+    (st.mapTcbInPlace r g).mapSchedContextInPlace s f =
+      (st.mapSchedContextInPlace s f).mapTcbInPlace r g :=
+  SystemState.mapTcbInPlace_swap_objects st r g _ _ (fun _ o => by cases o <;> rfl)
+
+theorem releaseNextOn_mapTcbInPlace (st : SystemState) :
+    (st.mapTcbInPlace r g).releaseNextOn = st.releaseNextOn := by
+  funext c s; unfold SystemState.releaseNextOn; rw [SystemState.getSchedContext?_mapTcbInPlace]
+
+theorem releaseAtOn_mapTcbInPlace (st : SystemState) :
+    (st.mapTcbInPlace r g).releaseAtOn = st.releaseAtOn := by
+  funext c s; unfold SystemState.releaseAtOn; rw [SystemState.getSchedContext?_mapTcbInPlace]
+
+theorem releaseQueuedOn_mapTcbInPlace (st : SystemState) :
+    (st.mapTcbInPlace r g).releaseQueuedOn = st.releaseQueuedOn := by
+  funext c s; unfold SystemState.releaseQueuedOn; rw [SystemState.getSchedContext?_mapTcbInPlace]
+
+theorem releaseQueuedAnywhere_mapTcbInPlace (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (st.mapTcbInPlace r g).releaseQueuedAnywhere s = st.releaseQueuedAnywhere s := by
+  unfold SystemState.releaseQueuedAnywhere; rw [SystemState.getSchedContext?_mapTcbInPlace]
+
+theorem releaseUnlinkOn_mapTcbInPlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) :
+    (st.mapTcbInPlace r g).releaseUnlinkOn c s = (st.releaseUnlinkOn c s).mapTcbInPlace r g := by
+  unfold SystemState.releaseUnlinkOn
+  simp only [releaseQueuedOn_mapTcbInPlace, SystemState.releasePredOf_eq,
+    releaseNextOn_mapTcbInPlace, SystemState.mapTcbInPlace_scheduler,
+    mapSchedContextInPlace_mapTcbInPlace]
+  split
+  · split <;> rfl
+  · rfl
+
+theorem releaseLinkIn_mapTcbInPlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) :
+    (st.mapTcbInPlace r g).releaseLinkIn c s t = (st.releaseLinkIn c s t).mapTcbInPlace r g := by
+  unfold SystemState.releaseLinkIn
+  simp only [SystemState.releasePredBefore_eq, releaseNextOn_mapTcbInPlace,
+    releaseAtOn_mapTcbInPlace, SystemState.mapTcbInPlace_scheduler,
+    mapSchedContextInPlace_mapTcbInPlace]
+  split <;> rfl
+
+theorem releaseRemoveOn_mapTcbInPlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId) :
+    (st.mapTcbInPlace r g).releaseRemoveOn c s = (st.releaseRemoveOn c s).mapTcbInPlace r g := by
+  unfold SystemState.releaseRemoveOn
+  rw [releaseUnlinkOn_mapTcbInPlace]; rfl
+
+theorem releaseInsertOn_mapTcbInPlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) :
+    (st.mapTcbInPlace r g).releaseInsertOn c s t = (st.releaseInsertOn c s t).mapTcbInPlace r g := by
+  unfold SystemState.releaseInsertOn
+  rw [releaseQueuedAnywhere_mapTcbInPlace, SystemState.getSchedContext?_mapTcbInPlace]
+  split
+  · rfl
+  · unfold SystemState.releaseInsertFresh
+    rw [releaseLinkIn_mapTcbInPlace]; rfl
+
+/-- **The replenishment migration commutes with a thread written in its slot**:
+it moves a context's release link and the ghost queues, and reads no thread. -/
+theorem migrateSchedContextReplenishment_mapTcbInPlace (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
+    migrateSchedContextReplenishment (st.mapTcbInPlace r g) scId fromCore toCore =
+      (migrateSchedContextReplenishment st scId fromCore toCore).mapTcbInPlace r g := by
+  unfold migrateSchedContextReplenishment
+  split
+  · rfl
+  · rw [releaseQueuedOn_mapTcbInPlace, releaseAtOn_mapTcbInPlace]
+    dsimp only
+    split
+    · rw [releaseRemoveOn_mapTcbInPlace, releaseInsertOn_mapTcbInPlace]; rfl
+    · rfl
+
+end ReleaseMoves
+
+theorem releaseUnlinkOn_noResizeDue (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (hNo : st.objects.noResizeDue) : (st.releaseUnlinkOn c s).objects.noResizeDue := by
+  unfold SystemState.releaseUnlinkOn
+  split
+  · dsimp only; split <;> exact hNo
+  · exact hNo
+
+theorem releaseLinkIn_noResizeDue (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
+    (t : Nat) (hNo : st.objects.noResizeDue) : (st.releaseLinkIn c s t).objects.noResizeDue := by
+  unfold SystemState.releaseLinkIn
+  dsimp only; split <;> exact hNo
+
+/-- The migration leaves the table's size and capacity alone. -/
+theorem migrateSchedContextReplenishment_noResizeDue (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) (hNo : st.objects.noResizeDue) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).objects.noResizeDue := by
+  unfold migrateSchedContextReplenishment
+  split
+  · exact hNo
+  · dsimp only
+    split
+    · show ((st.releaseRemoveOn fromCore scId).releaseInsertOn toCore scId _).objects.noResizeDue
+      unfold SystemState.releaseInsertOn
+      split
+      · exact releaseUnlinkOn_noResizeDue _ _ _ hNo
+      · exact releaseLinkIn_noResizeDue _ _ _ _ (releaseUnlinkOn_noResizeDue _ _ _ hNo)
+    · exact hNo
+
 /-- **The donation a call makes, checked before any write**: an unbound
-receiver, a caller holding a context it is the bound thread of, donor and
-server homed on one core (so the replenishment migration moves nothing), the
-context's slot local, and the frame below it, if any, another reply whose slot
-is local.  Read off the codes, so the test builds nothing. -/
+receiver, a caller holding a context it is the bound thread of, the context's
+slot local, and the frame below it, if any, another reply whose slot is local.
+Read off the codes, so the test builds nothing.  Donor and server may be homed
+on different cores: the replenishment migration moves the context's release
+link in its slot whatever the cores. -/
 @[inline] def callDonationReady (st : SystemState) (caller r : SeLe4n.ThreadId) (ct rt : TCB)
     (rid : SeLe4n.ReplyId) : Bool :=
   rt.scBindingScCode == 0 &&
   (match ct.scBindingScCode with
    | 0 => false
    | k + 1 =>
-     determineTargetCore st caller == determineTargetCore st r &&
      storeLeavesIndexAndTypes st (SeLe4n.SchedContextId.toObjId ⟨k⟩) .schedContext &&
      st.objects.findsInPlace (SeLe4n.SchedContextId.toObjId ⟨k⟩) &&
      (match st.getSchedContext? ⟨k⟩ with
@@ -216,27 +321,31 @@ is local.  Read off the codes, so the test builds nothing. -/
   | none => ⟨0⟩
 
 /-- The donating call's state after the server's priority walk: the
-rendezvous, the donation, the walk, each write in its slot. -/
+rendezvous, the donation, the replenishment migration from the donor's home
+core to the server's (`donorHome`, `doneeHome`, read off the pre-state), the
+walk, each write in its slot. -/
 @[noinline] def performCallDonating (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (scId : SeLe4n.SchedContextId)
+    (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
     (msg : IpcMessage) (core : Concurrency.CoreId) : SystemState :=
   (PriorityInheritance.propagatePipChainCrossCore
-    (donateSchedContextInPlace (storeCallRendezvous st endpointId caller r next rid msg core)
-      caller r scId) r core).1
+    (migrateSchedContextReplenishment
+      (donateSchedContextInPlace (storeCallRendezvous st endpointId caller r next rid msg core)
+        caller r scId) scId donorHome doneeHome) r core).1
 
 /-- **The donating call, delivered**: the server woken without the message, the
 donation, the priority walk, then the message's frame written into the server's
 saved registers. -/
 @[noinline] def performCallDonatingDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
-    (scId : SeLe4n.SchedContextId)
+    (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
-    (donateSchedContextInPlace (storeCallRendezvousReady st endpointId caller r nextCode rid core)
-      caller r scId) r core).1
+    (migrateSchedContextReplenishment
+      (donateSchedContextInPlace (storeCallRendezvousReady st endpointId caller r nextCode rid core)
+        caller r scId) scId donorHome doneeHome) r core).1
   writeDeliveredFrameIfReady X r (Architecture.regMessageFrameW layout rf len badgeWord badged)
     (fun _ => holdDeliveredBody X r layout rf len (SeLe4n.Badge.opt badgeWord badged))
 
@@ -244,51 +353,53 @@ saved registers. -/
 specification does, out of line. -/
 @[noinline] def callDonatingStaged (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
-    (scId : SeLe4n.SchedContextId)
+    (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge)
     (core : Concurrency.CoreId) : SystemState :=
   Architecture.stageWokenDelivery
-    (performCallDonating st endpointId caller r (ThreadId.ofOptCode nextCode) rid scId
-      { registers := Architecture.regMessageBody layout rf len, badge := badge } core)
+    (performCallDonating st endpointId caller r (ThreadId.ofOptCode nextCode) rid scId donorHome
+      doneeHome { registers := Architecture.regMessageBody layout rf len, badge := badge } core)
     (some r) 0
 
 /-- The checked call arm's donating rendezvous: delivered for a message of at
 most four words, staged otherwise. -/
 @[inline] def callRendezvousDonatingDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
-    (scId : SeLe4n.SchedContextId)
+    (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) : SystemState :=
   if Architecture.regMessageLength layout len ≤ 4 then
-    performCallDonatingDelivered st endpointId caller r nextCode rid scId layout rf len badgeWord
-      badged core
-  else callDonatingStaged st endpointId caller r nextCode rid scId layout rf len
-    (SeLe4n.Badge.opt badgeWord badged) core
+    performCallDonatingDelivered st endpointId caller r nextCode rid scId donorHome doneeHome layout
+      rf len badgeWord badged core
+  else callDonatingStaged st endpointId caller r nextCode rid scId donorHome doneeHome layout rf
+    len (SeLe4n.Badge.opt badgeWord badged) core
 
 /-- **The staged donating call is the delivered one** for a message of at most
 four words. -/
 theorem stageWokenDelivery_performCallDonating (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (scId : SeLe4n.SchedContextId)
+    (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue) (hNe : caller ≠ r)
     (hSz : Architecture.regMessageLength layout len ≤ 4) :
     Architecture.stageWokenDelivery
-        (performCallDonating st endpointId caller r next rid scId
+        (performCallDonating st endpointId caller r next rid scId donorHome doneeHome
           { registers := Architecture.regMessageBody layout rf len,
             badge := SeLe4n.Badge.opt badgeWord badged } core)
         (some r) 0 =
-      performCallDonatingDelivered st endpointId caller r (ThreadId.optCode next) rid scId layout rf
-        len badgeWord badged core := by
+      performCallDonatingDelivered st endpointId caller r (ThreadId.optCode next) rid scId
+        donorHome doneeHome layout rf len badgeWord badged core := by
   have hNoS := storeCallRendezvousReady_noResizeDue st endpointId caller r
     (ThreadId.optCode next) rid core hNo
-  have hNoD := donateSchedContextInPlace_noResizeDue _ caller r scId hNoS
+  have hNoD := migrateSchedContextReplenishment_noResizeDue _ scId donorHome doneeHome
+    (donateSchedContextInPlace_noResizeDue _ caller r scId hNoS)
   unfold performCallDonating performCallDonatingDelivered
   rw [Architecture.regMessageFrameW_eq, storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo hNe,
     donateSchedContextInPlace_msg _ _ _ _ _ _ _ _ hNoS (Ne.symm hNe),
+    migrateSchedContextReplenishment_mapTcbInPlace,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoD, Architecture.stageWokenDelivery_some,
     stageDeliveredMessage_holdMessage _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ hNoD)
       (by rw [Architecture.regMessageBody_size]; exact hSz),
@@ -309,14 +420,14 @@ theorem callTakesReplyInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
 
 theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
-    (scId : SeLe4n.SchedContextId)
+    (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (core : Concurrency.CoreId) (hG : callDonatesInPlace st endpointId caller r rt rid = true) :
-    callRendezvousDonatingDelivered st endpointId caller r rt.queueNextCode rid scId layout rf len
-        badgeWord badged core =
+    callRendezvousDonatingDelivered st endpointId caller r rt.queueNextCode rid scId donorHome
+        doneeHome layout rf len badgeWord badged core =
       Architecture.stageWokenDelivery
-        (performCallDonating st endpointId caller r rt.queueNext rid scId
+        (performCallDonating st endpointId caller r rt.queueNext rid scId donorHome doneeHome
           { registers := Architecture.regMessageBody layout rf len,
             badge := SeLe4n.Badge.opt badgeWord badged } core)
         (some r) 0 := by
@@ -325,7 +436,7 @@ theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe
   split
   · next hSz =>
     rw [← TCB.optCode_queueNext]
-    exact (stageWokenDelivery_performCallDonating _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact (stageWokenDelivery_performCallDonating _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       (callTakesReplyInPlace_noResizeDue hG.1) (callTakesReplyInPlace_ne hG.1) hSz).symm
   · unfold callDonatingStaged
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
@@ -334,8 +445,9 @@ theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe
 `callDonatesInPlace`, a call that finds a passive server and transfers no
 capability commits `performCallDonating`'s state with an empty transfer
 summary: the rendezvous, `schedContext_donate` and `reply_push` each in its
-slot, no replenishment migrated (donor and server share a home core), then the
-priority walk. -/
+slot, the replenishment migrated from the donor's home core to the server's
+(both read off the pre-state, as the dispatch reads them), then the priority
+walk. -/
 theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
     (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage) (slot : SeLe4n.Slot)
@@ -348,7 +460,8 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload slot core st =
-      (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller) msg core,
+      (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller)
+        (determineTargetCore st caller) (determineTargetCore st r) msg core,
        .ok ({ results := #[] }, sgi)) := by
   simp only [callDonatesInPlace, Bool.and_eq_true] at hG
   obtain ⟨hTR, hDR⟩ := hG
@@ -377,7 +490,7 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
     | succ k => exact ⟨k, rfl⟩
   rw [hk] at hDR
   simp only [Bool.and_eq_true, beq_iff_eq] at hDR
-  obtain ⟨⟨⟨hCore, hLsc⟩, hFsc⟩, hScM⟩ := hDR
+  obtain ⟨⟨hLsc, hFsc⟩, hScM⟩ := hDR
   obtain ⟨sc, hSc⟩ : ∃ sc, st.getSchedContext? ⟨k⟩ = some sc := by
     cases h : st.getSchedContext? ⟨k⟩ with
     | none => rw [h] at hScM; cases hScM
@@ -458,8 +571,8 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hcv, hrv]
-  rw [hCore, applyCallDonationOnCore_eq_of_sharedHome, applyCallDonation_characterisation, hcv',
-    hrv', hDonId]
+  unfold applyCallDonationOnCore
+  rw [applyCallDonation_characterisation, hcv', hrv', hDonId]
   dsimp only
   rw [hDon]
   unfold performCallDonating
