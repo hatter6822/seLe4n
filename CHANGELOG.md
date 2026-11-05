@@ -59,6 +59,13 @@ context and returns no loan.  `.tcbResume` follows seL4's `restart` and
   yet due.  The postpone and donated scenarios run inside the
   scheduling-context scenario, after the real `SchedContext_Unbind`.
 
+  The donation chain adds a nested donating call (`chain-root-calls-server`),
+  a cross-core donation (`cross-core-partner-calls`, the root task homed on
+  core 1 by `cross-core-home-root`), the server's reply-receive
+  (`chain-server-reply-recv`) and the root task's reply
+  (`chain-root-replies`).  The partner restarts the root task before it
+  suspends itself.
+
   These read 0 at first call and in steady state: the notification-wait,
   bound, release-queued and postponed suspends, and the bound and postponed
   resumes.
@@ -87,8 +94,49 @@ context and returns no loan.  `.tcbResume` follows seL4's `restart` and
   (`donateSchedContextInPlace`), then the priority walk.  A message of at most
   four words is written straight into the server's registers.
   `callDispatchChecked_donating_inPlace` proves it is the specification's
-  dispatch.  A donation that migrates replenishments between cores still takes
-  the general arm.
+  dispatch.  A nested donating call, with the context still on loan, pushes
+  onto the stack the caller's reply already heads, the frame below rewritten
+  in its slot.  A donation whose donor and server live on different home
+  cores runs the same route: the migration moves the context's release link
+  in its slot (`migrateReplenishmentWrite`, `migrateSchedContextReplenishment_eq_impl`,
+  `@[csimp]`), the two homes read in the arm before its first write.
+- **A donated reply and reply-receive write in place**
+  (`IPC/CrossCore/EndpointReplyDonatedInPlace.lean`,
+  `IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean`).  A reply whose frame
+  heads the stack of the context its server holds on loan runs seL4's
+  `reply_pop` in place: the context handed back down the stack, the popped
+  frame's links cleared and the frame below re-headed
+  (`returnDonatedSchedContextInPlace`; the recorded origin is asked only at
+  the bottom of the stack, `replyDonationRecipient_eq_self_of_head`), the context settled on its new
+  holder's home (`popDonationSettledInPlace`) and the holder taken off its
+  core.  The reply arm checks it on the pre-state (`replyPopsInPlace`, one
+  out-of-line call, `replyDonatedAdmits`) and writes
+  `performReplyDonatedDelivered` (`replyTransferChecked_donated_inPlace`).
+  The reply-receive runs the pop between its legs and then blocks the
+  server, its receive's checks read on the pre-state and carried across the
+  pop, which writes only a binding, a reply's stack links and a context
+  (`popFrame`, `popDonationSettled_receiveGuard`).  It writes
+  `performReplyRecvDonatedDelivered` (`replyRecvOnCore_donated_delivered`),
+  routed from `replyRecvResolvedR`.  `Reply.consumed` has a compiled form
+  (`consumed_eq_impl`, `@[csimp]`) that writes a head in its cell; the
+  specification's head arm copied the record.  The reply-stack write census
+  registers the in-place pop with its chain result
+  (`returnDonatedSchedContextInPlace_preserves_donationChainWellFormed`).
+- **Every resume resumes the context it runs on.**  The single-core resume
+  (`resumeThread`) restored the thread and enqueued it without the per-core
+  resume's `resumeContext`, so a suspend then resume left a used-up context
+  on no release queue and its thread unschedulable for good.  It now runs
+  `restart`'s `refill_unblock_check` and `schedContext_resume` through the
+  per-core helpers and enqueues only a schedulable thread
+  (`resumeSchedulable`); `restoreToReadyWithWake` and the frozen
+  `frozenResumeThread` follow it.  `SuspendResumeSuite` SR-055 and SR-056
+  round-trip a used-up context, live and frozen.
+- **The affinity change reads codes.**  `runsOnCoreCode`,
+  `vacateForAffinityChangeImpl` and `setAffinityPerformImpl` (`@[csimp]`)
+  test the old core's current thread by its code, so the change builds
+  nothing, and moving a thread off the core it runs on writes that core's
+  scheduler in its cell (`vacatedScheduler`); the compiled update had
+  copied the scheduler record.
 - **Carved cells.**  The push stores links that name the objects' own ids, so
   each object is carved with them: a thread's `idCell`, a reply's `idCell` and
   `frameLinkCell`, and a context's `headLinkCell`.  Each is proof-carrying

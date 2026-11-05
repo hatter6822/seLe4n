@@ -4280,6 +4280,27 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem migrateSchedContextReplenishmen
 # its code, compiled through the code forms.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem vacateForAffinityChange_eq_impl' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem setAffinityPerform_eq_impl' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+# WS-ZA ZA6.33: a reply whose frame heads the stack of the context its server
+# holds on loan pops the context in place, in the reply arm and in the
+# reply-receive arm, each proven the specification's and routed from the arm.
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_donated_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n '^theorem popDonationSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvDonatedInPlace.lean
+run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge layout rf len executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyDonatedDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.returnDonatedSchedContextInPlace,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/Object/Reply.lean
+# WS-ZA ZA6.33: a pop above the bottom of the stack hands the context to the
+# answered caller whatever origin is recorded, and the gate asks the origin
+# only at the bottom; moving a thread off the core it runs on writes the old
+# core's scheduler in its cell.
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_eq_self_of_head($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n -U '          \(rp\.prev\.isSome \|\|\n            match sc\.donationOrigin with' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDonatedInPlace.lean
+run_check "INVARIANT" rg -n '^    \{ st with scheduler := vacatedScheduler st\.scheduler oldCore \}$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n -U 'obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '^  runContextlessStackChecks\n  runMiddleReplyFinaliseChecks$' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n -U '          if b\.next != some \(\.frame rid\) then \.ok st\n          else frozenSeverReplyFrameBelowStores st rid below r b' SeLe4n/Kernel/FrozenOps/Core.lean

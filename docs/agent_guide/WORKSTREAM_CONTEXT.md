@@ -434,11 +434,16 @@ suspend adds it there.  The suspend admits every arm and is seL4-MCS's: it unbin
 and returns no loan, and a context leaves the release queues through
 `releaseRemoveThread`.  New suspend or resume code must keep that shape, and
 any context returned to a thread is settled where it lands
-(`settleReturnedContext`).  Its endpoint and reply arms, and a donating
-call on one home core (`callDonatesInPlace`, `performCallDonating`), write
-each object over its own record, so new code that adds a link a donation
-stores names a cell the object is carved with (`TCB.idCell`, `Reply.idCell`,
-`Reply.frameLinkCell`, `SchedContext.headLinkCell`) rather than building one.
+(`settleReturnedContext`).  Its endpoint and reply arms, a donating call
+(`callDonatesInPlace`, `performCallDonating`, its replenishment migrated in
+place when the two homes differ) and a donated reply or reply-receive
+(`performReplyDonatedDelivered`, `performReplyRecvDonatedDelivered`, the pop
+in place through `popDonationSettledInPlace`) write each object over its own
+record, so new code that adds a link a donation stores names a cell the
+object is carved with (`TCB.idCell`, `Reply.idCell`, `Reply.frameLinkCell`,
+`SchedContext.headLinkCell`) rather than building one, and new code between
+a pop and a receive keeps to what the pop writes (`popFrame`) or carries the
+receive's checks across it.
 Since `v0.36.164` (ZA6.1) the timer tick, the reschedule SGI and
 each core's first entry allocate nothing: the tick's dispatch and domain
 accounting never refuse (`scheduleEffectiveOnCore_eq_state`,

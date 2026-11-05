@@ -6505,7 +6505,14 @@ Every kernel object has a decidable well-formedness predicate:
   (`suspendThreadOnCore_of_admitted`).  The resume follows seL4's `restart`
   and `schedContext_resume`: the context's `refillUnblockCheck`, a postpone
   onto the release queue when its refill is not yet due, and an enqueue only
-  when the thread is then schedulable (`resumeContext`, `resumeSchedulable`).
+  when the thread is then schedulable (`resumeContext`, `resumeSchedulable`);
+  the single-core resume runs the same steps (`resumeThread`).  The donation
+  routes write in place: a donating call, nested or across two home cores
+  (`performCallDonating`, its release link migrated in its slot), and a
+  reply or reply-receive whose frame heads the loaned context's stack
+  (seL4's `reply_pop`: `returnDonatedSchedContextInPlace`,
+  `popDonationSettledInPlace`, `replyTransferChecked_donated_inPlace`,
+  `replyRecvOnCore_donated_delivered`).
 - **Address-space operations write in place** (`v0.36.112`, WS-ZA ZA5.4
   part 2).  The frame map and unmap, the instruction-cache unify and the
   page-table install and removal run every check before any write
