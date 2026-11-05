@@ -706,6 +706,30 @@ moved to `t`, and the pending refills it now overlaps merge into it. -/
     SchedContext.mergeOverlapping maxReplenishments { sc with periodStart := t }
   else sc
 
+/-- Whether `refill_unblock_check` moves the head: it holds budget and starts by
+`t`.  A scalar helper kept out of line so that the compiled check is one
+straight-line record update. -/
+@[noinline] def refillUnblockDue (budget periodStart t : Nat) : Bool :=
+  decide (0 < budget ∧ periodStart ≤ t)
+
+/-- The compiled `SchedContext.refillUnblockCheck`: the head's start is chosen
+by a scalar helper, so the update has no branch around it and Lean writes the
+context in place when it holds the only reference (the branch around the update
+makes the context shared at the write, and the write then allocates a copy). -/
+@[inline] def SchedContext.refillUnblockCheckImpl (sc : SchedContext) (t : Nat) :
+    SchedContext :=
+  let c := refillUnblockDue sc.budgetRemaining.val sc.periodStart t
+  let sc' := { sc with periodStart := refillSlotSelect c t sc.periodStart }
+  if c then SchedContext.mergeOverlapping maxReplenishments sc' else sc'
+
+/-- The compiled check is the check. -/
+@[csimp] theorem SchedContext.refillUnblockCheck_eq_impl :
+    @SchedContext.refillUnblockCheck = @SchedContext.refillUnblockCheckImpl := by
+  funext sc t
+  unfold SchedContext.refillUnblockCheck SchedContext.refillUnblockCheckImpl
+    refillUnblockDue refillSlotSelect
+  by_cases h : 0 < sc.budgetRemaining.val ∧ sc.periodStart ≤ t <;> simp [h]
+
 /-- WS-ZA ZA6.4: the charge: `usage` run from `start` to `now`.  The head is
 made ready at the run's start (`refill_unblock_check`, as seL4-MCS runs it when
 the context is switched to), charged (`refill_budget_check`), and, when used up,

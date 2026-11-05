@@ -282,8 +282,9 @@ for driver in drivers:
             # partner ranked below the caller, requeued at its band's head with
             # the consumed time returned at once; and one ranked with it on its
             # core, the yield linked, read across the switch to the partner and
-            # back, the activation writing the consumed time.
-            "sched-context-yield-to-requeue", "sched-context-yield-to-linked",
+            # back, the activation writing the consumed time (the requeue's
+            # first call is pinned below).
+            "sched-context-yield-to-linked",
             # WS-ZA ZA6.33: the partner, blocked on the notification wait and
             # holding the bound context, suspended: the wait cancelled in
             # place and the context left bound (seL4's suspend unbinds
@@ -294,21 +295,20 @@ for driver in drivers:
             # WS-ZA ZA6.33: seL4's suspend of a blocked thread, as the root
             # task: the partner resumed, the root task's receive that blocks,
             # the partner's send that wakes it and the partner's own blocking
-            # receive, send, wait or call, then the suspend, each arm's cancel
-            # in place; the call's again with the partner holding the context,
-            # so the call donates it and the suspend's reply arm leaves it with
-            # the server, which the context's unbind then releases.
+            # receive, send, wait or call, then the suspend (the wait's cancel
+            # in place; the endpoint and reply arms are pinned below); the
+            # call's again with the partner holding the context, so the call
+            # donates it and the suspend's reply arm leaves it with the
+            # server, which the context's unbind then releases.
             "suspend-recv-resume", "suspend-recv-root-receives", "suspend-recv-wake-root",
-            "suspend-recv-partner-receives", "tcb-suspend-receive-blocked",
+            "suspend-recv-partner-receives",
             "suspend-send-resume", "suspend-send-root-receives", "suspend-send-wake-root",
-            "suspend-send-partner-sends", "tcb-suspend-send-blocked",
+            "suspend-send-partner-sends",
             "suspend-wait-resume", "suspend-wait-root-receives", "suspend-wait-wake-root",
             "suspend-wait-partner-waits", "tcb-suspend-wait-blocked",
             "suspend-reply-resume", "suspend-reply-root-receives", "suspend-reply-partner-calls",
-            "tcb-suspend-reply-blocked",
             "suspend-donated-configure", "suspend-donated-bind-partner", "suspend-donated-resume",
-            "suspend-donated-root-receives", "suspend-donated-partner-calls",
-            "tcb-suspend-reply-donated", "suspend-donated-unbind",
+            "suspend-donated-root-receives", "suspend-donated-unbind",
             # and seL4's resume of a thread whose refill is not yet due: the
             # bound partner's yield forfeits its budget, its suspend takes the
             # context off the release queue, and the resume postpones it there
@@ -506,6 +506,24 @@ for driver in drivers:
             # (`registerServiceWordsPerform`), and its compiled arm builds no
             # registration (`dispatchServiceRegisterByR_eq_impl`).
             "service-register": (0, 0),
+            # WS-ZA ZA6.33: the suspend no longer takes the general path (no
+            # copy of the store is held for a refusal), and its endpoint arm
+            # dequeues from the one endpoint the thread state names; what the
+            # endpoint and reply arms still read is the specification's own
+            # writes, which rebuild the neighbours', the endpoint's and the
+            # reply's records (`removeFromBlockingEndpoint`,
+            # `cutThreadReplyFrameOut`, `consumeReplyLink`).  ZA6.35 brings
+            # them to zero.
+            "tcb-suspend-receive-blocked": (14, 14),
+            "tcb-suspend-send-blocked": (12, 12),
+            "tcb-suspend-reply-blocked": (11, 11),
+            "tcb-suspend-reply-donated": (25, 25),
+            # The call that donates the partner's context to the root task:
+            # the call's donation leg, first measured here.
+            "suspend-donated-partner-calls": (124, 124),
+            # The requeue's first call follows the suspend and resume
+            # scenarios, and copies what they leave shared once.
+            "sched-context-yield-to-requeue": (3, 0),
         })
         # WS-ZA ZA6.31: the fault entries (each fault kind with no handler, a
         # VM fault queued on a handler not yet waiting, each kind delivered to

@@ -961,12 +961,12 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     -- forbids.  The return runs before the restore so that every intermediate
     -- state satisfies the invariant: at the return the caller is still
     -- `.blockedOnReply`, and after it no donation names the caller at all.
-    -- (A divergence from seL4-MCS's `cancelIPC`, which runs `reply_remove_tcb`
-    -- and donates nothing -- there the server keeps a cancelled client's context
-    -- until its manager intervenes -- and an agreement with its `reply_remove`,
-    -- which is what returns the context on reply-capability revocation.  See the
-    -- docstring above: the difference is WHEN, and this kernel's binding typing
-    -- forces the earlier point.)
+    -- (This is the finalisation's return, seL4-MCS's `reply_remove`.  The
+    -- suspend's cancel, `cancelIpcKeepingContexts`, is seL4-MCS's `cancelIPC`:
+    -- it runs `reply_remove_tcb` first (`cutCancelledCallerHead`), which cuts
+    -- the frame off the context it heads and makes the server's binding its
+    -- own, so the server keeps the context and, on that frame, this return finds
+    -- no loan to return.)
     --
     -- WS-OD (`v0.35.4`): and a frame that is **not** the head — the caller's
     -- callee donated onward — is detached from its stack in `O(1)` before the
