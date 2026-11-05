@@ -4029,6 +4029,14 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
+    // WS-ZA ZA6.33: the affinity change of a thread running on core 1, the
+    // timer masked across the whole section.
+    let saved = crate::interrupts::disable_interrupts();
+    let ok = affinity_move_running();
+    crate::interrupts::restore_interrupts(saved);
+    if ok != Some(true) {
+        return Some(false);
+    }
     // WS-ZA ZA6.29's requeue and linked branches (added at ZA6.30), twice,
     // the timer masked across each run.
     for first in [true, false] {
@@ -4856,11 +4864,22 @@ fn fault_entries() -> Option<bool> {
 /// it did neither of the two things a round trip may do), and the two readings.
 #[cfg(feature = "hw_target")]
 fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
+    dispatch_round_trip_at(trip, 0)
+}
+
+/// [`dispatch_round_trip`] with the frame's return address `pc`: the address
+/// the issuing thread resumes at, saved into its TCB when the syscall switches
+/// it out.
+#[cfg(feature = "hw_target")]
+fn dispatch_round_trip_at(
+    trip: &RoundTrip,
+    pc: u64,
+) -> (Dispatched, Option<u64>, Option<u64>, [u64; 6]) {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
         sp_el0: 0,
-        elr_el1: 0,
+        elr_el1: pc,
         spsr_el1: ROUND_TRIP_SPSR,
         esr_el1: ROUND_TRIP_ESR,
         far_el1: 0,
@@ -4981,6 +5000,415 @@ fn yield_to_branches(which: &str) -> Option<bool> {
         return Some(false);
     }
     Some(true)
+}
+
+/// **WS-ZA ZA6.33: an affinity change that moves a thread off the core it is
+/// running on** (seL4's `remoteTCBStall` before the thread is migrated).  A
+/// thread carved for it, bound to a scheduling context of
+/// its own (the image context's tenth of the processor, which the thread
+/// spends only in core 1's ticks and does not use up across the section) below
+/// the root task's priority, resumes at a frame of real code: one page holding
+/// `b .`, mapped user-executable at the user window's first page.  Homed on
+/// core 1 it runs there at EL0, and the root task's affinity change homes it
+/// back while it runs, which vacates core 1 (its current slot cleared, a
+/// reschedule raised) and stalls core 1 until it has left the thread and saved
+/// it.  Each call is measured; the thread is homed on core 1 again between
+/// them, unmeasured.  The carved objects reuse the frame scenarios' ids and
+/// slots and the chain's thread id and slot, all free again by here.
+#[cfg(feature = "hw_target")]
+const MOVE_SC_ID: u64 = 35;
+#[cfg(feature = "hw_target")]
+const MOVE_SC_SLOT: u64 = 27;
+#[cfg(feature = "hw_target")]
+const MOVE_SC_CAP: u64 = cap_address(MOVE_SC_SLOT);
+/// The moved thread's priority (its context's): below the root task's, so the
+/// root task keeps core 0 whenever both are ready there.
+#[cfg(feature = "hw_target")]
+const MOVE_PRIORITY: u64 = 100;
+/// Read, execute, user and cacheable (`PagePermissions.ofNat`).
+#[cfg(feature = "hw_target")]
+const CODE_PERMS: u64 = 0b11101;
+/// Two `b .` instructions, the word the code page starts with.
+#[cfg(feature = "hw_target")]
+const SPIN_CODE_WORD: u64 = 0x1400_0000_1400_0000;
+/// The word the moved thread's send carries, which the root task's receive
+/// returns in `x2` once the thread's receive switches core 0 back to it.
+#[cfg(feature = "hw_target")]
+const MOVE_MARKER: u64 = 0x6d6f_7665;
+/// The thread's setup, once the code page is mapped: the context carved,
+/// configured and bound to the carved thread, whose space is the root task's.
+#[cfg(feature = "hw_target")]
+const MOVE_SETUP_THREAD: [RoundTrip; 5] = [
+    invocation(
+        "move-retype-sched-context",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [SCHED_CONTEXT_TYPE, MOVE_SC_ID, CNODE_CAP, MOVE_SC_SLOT],
+    ),
+    configure(
+        "move-configure",
+        [
+            MOVE_SC_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+            MOVE_PRIORITY,
+        ],
+    ),
+    invocation(
+        "move-retype-tcb",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+    ),
+    invocation(
+        "move-tcb-set-space",
+        TCB_SET_SPACE,
+        CHAIN_TCB_CAP,
+        [CNODE_CAP, VSPACE_CAP, 0, 0],
+    ),
+    invocation(
+        "move-bind",
+        SCHED_CONTEXT_BIND,
+        MOVE_SC_CAP,
+        [CHAIN_TCB_CAP, 0, 0, 0],
+    ),
+];
+/// The code page: three tables completing the walk to the user window's
+/// first page, a frame carved and mapped there user-executable.
+#[cfg(feature = "hw_target")]
+const MOVE_SETUP_PAGE: [RoundTrip; 7] = [
+    invocation(
+        "move-retype-page-table-1",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[0],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[0],
+        ],
+    ),
+    invocation(
+        "move-page-table-map-1",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[0],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-retype-page-table-2",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[1],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[1],
+        ],
+    ),
+    invocation(
+        "move-page-table-map-2",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[1],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-retype-page-table-3",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [
+            PAGE_TABLE_TYPE,
+            PAGE_TABLE_CHILD_IDS[2],
+            CNODE_CAP,
+            PAGE_TABLE_SLOTS[2],
+        ],
+    ),
+    invocation(
+        "move-page-table-map-3",
+        PAGE_TABLE_MAP,
+        PAGE_TABLE_CAPS[2],
+        [VSPACE_CAP, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-retype-frame",
+        UNTYPED_RETYPE,
+        UNTYPED_CAP,
+        [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+    ),
+];
+/// The frame mapped user-executable, after its code is written.
+#[cfg(feature = "hw_target")]
+const MOVE_MAP_CODE: RoundTrip = invocation(
+    "move-map-code",
+    VSPACE_MAP,
+    VSPACE_CAP,
+    [ROOT_ASID, FRAME_VADDR, FRAME_CAP, CODE_PERMS],
+);
+/// The written code published to instruction fetch.
+#[cfg(feature = "hw_target")]
+const MOVE_UNIFY: RoundTrip = invocation(
+    "move-unify-instruction",
+    VSPACE_UNIFY_INSTRUCTION,
+    VSPACE_CAP,
+    [ROOT_ASID, FRAME_VADDR, 0, 0],
+);
+/// The thread resumed (ready on core 0, below the root task); the root task's
+/// receive, which blocks and switches core 0 to the thread; the thread's send,
+/// which readies the root task and continues the thread; and the thread's
+/// receive from the code page's address, which blocks it there and switches
+/// core 0 back to the root task.  Homed on core 1, the thread is then woken by
+/// the root task's send and runs on core 1 from that address.
+#[cfg(feature = "hw_target")]
+const MOVE_RESUME: RoundTrip = invocation("move-resume", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]);
+#[cfg(feature = "hw_target")]
+const MOVE_ROOT_RECEIVES: RoundTrip =
+    partner_step("move-root-receives", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true);
+#[cfg(feature = "hw_target")]
+const MOVE_THREAD_SENDS: RoundTrip = partner_step(
+    "move-thread-sends",
+    SEND,
+    ENDPOINT_CAP,
+    1,
+    [MOVE_MARKER, 0],
+    false,
+);
+#[cfg(feature = "hw_target")]
+const MOVE_THREAD_RECEIVES: RoundTrip = partner_step(
+    "move-thread-receives",
+    RECEIVE,
+    ENDPOINT_CAP,
+    0,
+    [0, 0],
+    true,
+);
+#[cfg(feature = "hw_target")]
+const MOVE_ROOT_WAKES: RoundTrip =
+    partner_step("move-root-wakes", SEND, ENDPOINT_CAP, 1, [0, 0], false);
+/// The thread homed on core 1, where it runs; and the measured change that
+/// homes it back while it runs there.
+#[cfg(feature = "hw_target")]
+const MOVE_HOME_SECOND: RoundTrip = invocation(
+    "move-home-second-core",
+    TCB_SET_AFFINITY,
+    CHAIN_TCB_CAP,
+    [SECOND_CORE_AFFINITY, 0, 0, 0],
+);
+#[cfg(feature = "hw_target")]
+const MOVE_RUNNING: RoundTrip = invocation(
+    "tcb-set-affinity-running",
+    TCB_SET_AFFINITY,
+    CHAIN_TCB_CAP,
+    [AFFINITY_UNBIND, 0, 0, 0],
+);
+/// Everything taken down again: the thread suspended (on core 0's run queue
+/// by then), the context unbound, both deleted, the page unmapped and deleted,
+/// and the tables taken out deepest first and deleted.
+#[cfg(feature = "hw_target")]
+const MOVE_TEARDOWN: [RoundTrip; 12] = [
+    invocation("move-suspend", TCB_SUSPEND, CHAIN_TCB_CAP, [0; 4]),
+    invocation("move-unbind", SCHED_CONTEXT_UNBIND, MOVE_SC_CAP, [0; 4]),
+    invocation(
+        "move-sc-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [MOVE_SC_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "move-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [CHAIN_TCB_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "move-unmap-code",
+        VSPACE_UNMAP,
+        VSPACE_CAP,
+        [ROOT_ASID, FRAME_VADDR, 0, 0],
+    ),
+    invocation(
+        "move-frame-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [FRAME_SLOT, 0, 0, 0],
+    ),
+    invocation(
+        "move-page-table-unmap-3",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[2],
+        [0; 4],
+    ),
+    invocation(
+        "move-page-table-delete-3",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[2], 0, 0, 0],
+    ),
+    invocation(
+        "move-page-table-unmap-2",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[1],
+        [0; 4],
+    ),
+    invocation(
+        "move-page-table-delete-2",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[1], 0, 0, 0],
+    ),
+    invocation(
+        "move-page-table-unmap-1",
+        PAGE_TABLE_UNMAP,
+        PAGE_TABLE_CAPS[0],
+        [0; 4],
+    ),
+    invocation(
+        "move-page-table-delete-1",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+    ),
+];
+
+/// The physical page the root task's address space maps at `vaddr`, read off
+/// the hardware tables the kernel wrote (four levels from the root's table in
+/// the boot pool), or `None` where a level holds no valid descriptor.
+#[cfg(feature = "hw_target")]
+fn root_user_page(vaddr: u64) -> Option<u64> {
+    const OUTPUT_ADDRESS: u64 = 0x0000_FFFF_FFFF_F000;
+    let mut table = crate::mmu::BOOT_TABLE_POOL_BASE;
+    for level in 0..4u64 {
+        let index = (vaddr >> (39 - 9 * level)) & 0x1FF;
+        // SAFETY: `table` is the root's pool page or a table page a valid
+        // descriptor names, RAM under the kernel's identity map; one aligned
+        // 64-bit load of one of its 512 entries.
+        let descriptor = unsafe { core::ptr::read_volatile((table + index * 8) as *const u64) };
+        if descriptor & 0b11 != 0b11 {
+            return None;
+        }
+        table = descriptor & OUTPUT_ADDRESS;
+    }
+    Some(table)
+}
+
+/// Wait, bounded by the command timeout, for `ready` to hold.
+#[cfg(feature = "hw_target")]
+fn wait_until(mut ready: impl FnMut() -> bool) -> bool {
+    let start = crate::timer::read_counter();
+    let timeout = command_timeout_ticks();
+    loop {
+        if ready() {
+            return true;
+        }
+        if crate::timer::read_counter().saturating_sub(start) >= timeout {
+            return ready();
+        }
+        core::hint::spin_loop();
+    }
+}
+
+/// Whether core 1 is running a thread at EL0, seen twice a millisecond apart
+/// (a tick on core 1 between the two returns it to the same thread).
+#[cfg(feature = "hw_target")]
+fn second_core_at_user() -> bool {
+    let at_user = || crate::remote_stall::AT_USER[1].load(Ordering::SeqCst);
+    if !wait_until(at_user) {
+        return false;
+    }
+    let settle = crate::timer::read_counter()
+        .saturating_add(u64::from(crate::timer::read_frequency()) / 1000);
+    while crate::timer::read_counter() < settle {
+        core::hint::spin_loop();
+    }
+    wait_until(at_user)
+}
+
+/// Whether core 1 has left EL0 for good: not at user, seen twice a
+/// millisecond apart.
+#[cfg(feature = "hw_target")]
+fn second_core_left_user() -> bool {
+    let left = || !crate::remote_stall::AT_USER[1].load(Ordering::SeqCst);
+    if !wait_until(left) {
+        return false;
+    }
+    let settle = crate::timer::read_counter()
+        .saturating_add(u64::from(crate::timer::read_frequency()) / 1000);
+    while crate::timer::read_counter() < settle {
+        core::hint::spin_loop();
+    }
+    left()
+}
+
+/// Run `steps` unmeasured, naming `why` on the first that fails.
+#[cfg(feature = "hw_target")]
+fn unmeasured_all(steps: &[RoundTrip], why: &str) -> bool {
+    steps.iter().all(|step| unmeasured(step, why))
+}
+
+/// Report `why` for the running-thread move and fail.
+#[cfg(feature = "hw_target")]
+fn move_failed(why: &str) -> Option<bool> {
+    crate::kprintln!(
+        "[smp-test] FAIL: heap-allocations-per-syscall: tcb-set-affinity-running: {why}"
+    );
+    Some(false)
+}
+
+/// The affinity change of a thread running on core 1, first call and steady
+/// state ([`MOVE_RUNNING`]); the timer masked by the caller.
+#[cfg(feature = "hw_target")]
+fn affinity_move_running() -> Option<bool> {
+    // The page first: mapped at the root task's IPC buffer address, it is also
+    // the buffer the configure reads its fifth word from.
+    if !unmeasured_all(&MOVE_SETUP_PAGE, "the code page's setup failed")
+        || !unmeasured(&MOVE_MAP_CODE, "the code page was not mapped")
+        || !unmeasured_all(&MOVE_SETUP_THREAD, "the moved thread's setup failed")
+    {
+        return Some(false);
+    }
+    let Some(page) = root_user_page(FRAME_VADDR) else {
+        return move_failed("the code page has no translation");
+    };
+    if page < crate::mmu::KERNEL_RESERVED_END || !page.is_multiple_of(4096) {
+        return move_failed("the code page's translation names no frame");
+    }
+    // SAFETY: `page` is the frame the root task's tables map at the code
+    // address, RAM past the kernel's extent under the identity map, which no
+    // thread runs yet; one aligned 64-bit store.
+    unsafe { core::ptr::write_volatile(page as *mut u64, SPIN_CODE_WORD) };
+    core::sync::atomic::fence(Ordering::SeqCst);
+    if !unmeasured(&MOVE_UNIFY, "the code page was not unified")
+        || !unmeasured(&MOVE_RESUME, "the moved thread was not resumed")
+        || !unmeasured(&MOVE_ROOT_RECEIVES, "the root task's receive did not block")
+    {
+        return Some(false);
+    }
+    if !unmeasured(&MOVE_THREAD_SENDS, "the thread's send failed") {
+        return Some(false);
+    }
+    let (received, _, _, resumed) = dispatch_round_trip_at(&MOVE_THREAD_RECEIVES, FRAME_VADDR);
+    if !matches!(received, Dispatched::Blocked) || resumed[2] != MOVE_MARKER {
+        return move_failed("the thread's receive did not switch core 0 back to the root task");
+    }
+    if !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1")
+        || !unmeasured(&MOVE_ROOT_WAKES, "the root task's send failed")
+    {
+        return Some(false);
+    }
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !first && !unmeasured(&MOVE_HOME_SECOND, "the thread was not homed on core 1") {
+            return Some(false);
+        }
+        if !second_core_at_user() {
+            return move_failed("core 1 did not run the thread at EL0");
+        }
+        if heap_allocations_round_trip(&MOVE_RUNNING, which) != Some(true) {
+            return Some(false);
+        }
+        if !second_core_left_user() {
+            return move_failed("core 1 still runs the thread");
+        }
+    }
+    Some(unmeasured_all(&MOVE_TEARDOWN, "the move's teardown failed"))
 }
 
 /// **The linked yieldTo, measured across its whole round trip**: the root

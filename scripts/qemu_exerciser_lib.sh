@@ -563,6 +563,12 @@ for driver in drivers:
             "chain-server-reply-recv": (0, 0), "chain-root-replies": (0, 0),
             # The chain's carves, a thread's and a reply's as above.
             "untyped-retype-chain-tcb": (26, 26), "untyped-retype-chain-reply": (15, 15),
+            # The affinity change of a thread running on core 1 (seL4's
+            # `setAffinity`: the thread taken off core 1's current slot, a
+            # reschedule raised there, the remote stall until core 1 has
+            # saved it): the vacate writes the scheduler in its cell
+            # (`vacatedScheduler`): 0.
+            "tcb-set-affinity-running": (0, 0),
             # The requeue's first call follows the suspend and resume
             # scenarios, which now leave nothing shared: 0.
             "sched-context-yield-to-requeue": (0, 0),
