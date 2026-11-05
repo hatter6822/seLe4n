@@ -281,14 +281,6 @@ def donationBudgetTransfer_perCore (st : SystemState) (c : CoreId) : Prop :=
     tcb2.schedContextBinding.scId? = some scId →
     False
 
-/-- SM6.D: per-core form of `blockedOnReplyHasTarget` (AJ1-B / M-04). -/
-def blockedOnReplyHasTarget_perCore (st : SystemState) (c : CoreId) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (endpointId : SeLe4n.ObjId)
-    (replyTarget : Option SeLe4n.ThreadId),
-    st.getTcb? tid = some tcb → threadHomeCore tcb = c →
-    tcb.ipcState = .blockedOnReply endpointId replyTarget →
-    replyTarget.isSome
-
 /-- SM6.D: per-core form of `replyCallerLinkageReciprocal`.  The forward
 clause (TCB → Reply) restricts on the TCB subject; the backward clause
 (Reply → TCB) asserts the very *existence* of the caller TCB — its subject
@@ -487,12 +479,6 @@ theorem donationBudgetTransfer_perCore_of_global {st : SystemState}
   fun tid1 tid2 tcb1 tcb2 scId h1 _ h2 hNe hS1 hS2 =>
     h tid1 tid2 tcb1 tcb2 scId ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1) ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2) hNe hS1 hS2
 
-theorem blockedOnReplyHasTarget_perCore_of_global {st : SystemState}
-    (h : blockedOnReplyHasTarget st) (c : CoreId) :
-    blockedOnReplyHasTarget_perCore st c :=
-  fun tid tcb endpointId replyTarget hTcb _ hIpc =>
-    h tid tcb endpointId replyTarget ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb) hIpc
-
 theorem replyCallerLinkageReciprocal_perCore_of_global {st : SystemState}
     (h : replyCallerLinkageReciprocal st) (c : CoreId) :
     replyCallerLinkageReciprocal_perCore st c := by
@@ -669,12 +655,6 @@ theorem donationBudgetTransfer_of_forall_perCore {st : SystemState}
     h (threadHomeCore tcb1) tid1 tid2 tcb1 tcb2 scId
       ((SystemState.getTcb?_eq_some_iff _ _ _).mpr h1) rfl ((SystemState.getTcb?_eq_some_iff _ _ _).mpr h2) hNe hS1 hS2
 
-theorem blockedOnReplyHasTarget_of_forall_perCore {st : SystemState}
-    (h : ∀ c, blockedOnReplyHasTarget_perCore st c) :
-    blockedOnReplyHasTarget st :=
-  fun tid tcb endpointId replyTarget hRaw hIpc =>
-    h (threadHomeCore tcb) tid tcb endpointId replyTarget ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRaw) rfl hIpc
-
 theorem replyCallerLinkageReciprocal_of_forall_perCore {st : SystemState}
     (h : ∀ c, replyCallerLinkageReciprocal_perCore st c) :
     replyCallerLinkageReciprocal st := by
@@ -796,7 +776,6 @@ structure ipcInvariantFull_perCore (st : SystemState) (c : CoreId) : Prop where
   donationChainAcyclic : donationChainAcyclic_perCore st c
   donationOwnerValid : donationOwnerValid_perCore st c
   donationBudgetTransfer : donationBudgetTransfer_perCore st c
-  blockedOnReplyHasTarget : blockedOnReplyHasTarget_perCore st c
   replyCallerLinkage : replyCallerLinkage_perCore st c
   pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed_perCore st c
   donationOwnerUnique : donationOwnerUnique_perCore st c
@@ -836,7 +815,6 @@ theorem ipcInvariantFull_perCore_of_full {st : SystemState} {c : CoreId}
   donationChainAcyclic := donationChainAcyclic_perCore_of_global h.donationChainAcyclic c
   donationOwnerValid := donationOwnerValid_perCore_of_global h.donationOwnerValid c
   donationBudgetTransfer := donationBudgetTransfer_perCore_of_global h.donationBudgetTransfer c
-  blockedOnReplyHasTarget := blockedOnReplyHasTarget_perCore_of_global h.blockedOnReplyHasTarget c
   replyCallerLinkage := replyCallerLinkage_perCore_of_global h.replyCallerLinkage c
   pendingReceiveReplyWellFormed :=
     pendingReceiveReplyWellFormed_perCore_of_global h.pendingReceiveReplyWellFormed c
@@ -867,7 +845,6 @@ theorem ipcInvariantFull_of_smp {st : SystemState}
    donationChainAcyclic_of_forall_perCore (fun c => (h c).donationChainAcyclic),
    donationOwnerValid_of_forall_perCore (fun c => (h c).donationOwnerValid),
    donationBudgetTransfer_of_forall_perCore (fun c => (h c).donationBudgetTransfer),
-   blockedOnReplyHasTarget_of_forall_perCore (fun c => (h c).blockedOnReplyHasTarget),
    replyCallerLinkage_of_forall_perCore (fun c => (h c).replyCallerLinkage),
    pendingReceiveReplyWellFormed_of_forall_perCore
      (fun c => (h c).pendingReceiveReplyWellFormed),
@@ -948,8 +925,6 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
   donationOwnerValid := fun tid tcb scId owner hTcb _ _ => absurd hTcb default_no_tcb
   donationBudgetTransfer := fun tid1 tid2 tcb1 tcb2 scId h1 _ _ _ _ _ =>
     default_no_tcb h1
-  blockedOnReplyHasTarget := fun tid tcb endpointId replyTarget hTcb _ _ =>
-    absurd hTcb default_no_tcb
   replyCallerLinkage :=
     ⟨⟨fun tid tcb rid hTcb _ _ => absurd hTcb default_no_tcb,
       fun rid r tid hRep _ => (by

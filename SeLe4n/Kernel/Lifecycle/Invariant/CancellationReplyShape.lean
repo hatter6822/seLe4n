@@ -2491,18 +2491,6 @@ theorem restoreToReadyStaging_blockedThreadsPendingMessageConsistent (st : Syste
   · rw [restoredTcb_eq]
     simp only [TCB.ipcState_setIpcState]
 
-theorem restoreToReadyStaging_blockedOnReplyHasTarget (st : SystemState)
-    (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
-    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
-    (h : blockedOnReplyHasTarget st) :
-    blockedOnReplyHasTarget (Lifecycle.Suspend.restoreToReadyStaging st v frame) := by
-  intro tid tcb' epId rt hTcb' hBlocked
-  rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
-    tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨_, rfl⟩
-  · exact h tid tcb' epId rt h0 hBlocked
-  · rw [restoredTcb_ipcState] at hBlocked
-    cases hBlocked
-
 theorem restoreToReadyStaging_donationChainAcyclic (st : SystemState)
     (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
     (hInv : st.objects.invExt) (h : donationChainAcyclic st) :
@@ -2906,7 +2894,7 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
     ipcInvariantFullExceptReplyLinkage
       (Lifecycle.Suspend.restoreToReadyStaging st v frame) v := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
+    hDonAcyc, hDonOwner, hDonBudget, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hBind := restoreToReadyStaging_sameSchedContextBindings st v frame hInv
@@ -2935,7 +2923,6 @@ theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage
     restoreToReadyStaging_donationChainAcyclic st v frame hInv hDonAcyc,
     restoreToReadyStaging_donationOwnerValid st v frame tcbV hInv hLookup hNotOwner hDonOwner,
     donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
-    restoreToReadyStaging_blockedOnReplyHasTarget st v frame tcbV hInv hLookup hBlkReply,
     restoreToReadyStaging_replyCallerLinkageExcept st v frame tcbV hInv hLookup hReplyLink,
     restoreToReadyStaging_pendingReceiveReplyWellFormed st v frame tcbV hInv hLookup hStash,
     donationOwnerUnique_of_sameSchedContextBindings hBind hDonUnique,

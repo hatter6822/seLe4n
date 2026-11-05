@@ -1701,17 +1701,6 @@ theorem notificationQueue_acyclic {st : SystemState} {n : SeLe4n.ObjId}
 -- TCBs, and a thread's membership is its own `ipcState`
 -- (`notificationWaiterConsistent`), so it cannot be queued twice.
 
-/-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
-`replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
-create `blockedOnReply` with `some receiver`, making the `none` authorization
-branch in `endpointReply` unreachable under this invariant. -/
-def blockedOnReplyHasTarget (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (endpointId : SeLe4n.ObjId)
-    (replyTarget : Option SeLe4n.ThreadId),
-    st.objects[tid.toObjId]? = some (.tcb tcb) →
-    tcb.ipcState = .blockedOnReply endpointId replyTarget →
-    replyTarget.isSome
-
 /-- WS-SM SM6.D (PR #822 review): **bidirectional** consistency between a TCB's
 `replyObject` forward link and the Reply object's `caller` back-link.  The public
 `.reply` path resolves authority through `reply.caller`, and `consumeCallerReply`
@@ -1763,7 +1752,7 @@ The #7 D6 fold links the caller's reply object **atomically** with the blocking 
 (inside `endpointCall` / `endpointCallOnCore` / `endpointReceiveDual{,OnCore}`), so
 `blockedOnReply ⇒ replyObject` now holds at the **transition boundary**, not merely at
 syscall boundaries — closing the false-assurance gap where `ipcInvariantFull` (whose
-16th conjunct this is) admitted a `.blockedOnReply` caller with no Reply object to answer
+14th conjunct this is) admitted a `.blockedOnReply` caller with no Reply object to answer
 it (a thread blocked forever, since the public `.reply` path resolves authority through
 `reply.caller`).  The reciprocal clauses are factored out because they are the strongest
 invariant that survives the fold's intermediate state (post-blocking-store, pre-link):
@@ -2363,25 +2352,6 @@ theorem linkServerStashedReply_machine_eq (st st' : SystemState)
       | some sTcb =>
         simp only [hT] at hStep
         exact (storeObject_machine_eq st1 st' server.toObjId _ hStep).trans hMach1
-
-/-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
-Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
-explicit target. This theorem is the formal discharge of the claim that the
-new `none => .error .replyCapInvalid` arm in `endpointReply`/`endpointReplyRecv`
-does not change behavior on invariant-satisfying states — the `none` arm is
-unreachable. -/
-theorem blockedOnReplyHasTarget_implies_some_replyTarget
-    (st : SystemState)
-    (hInv : blockedOnReplyHasTarget st)
-    (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (endpointId : SeLe4n.ObjId) (replyTarget : Option SeLe4n.ThreadId)
-    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hIpc : tcb.ipcState = .blockedOnReply endpointId replyTarget) :
-    ∃ t, replyTarget = some t := by
-  have h := hInv tid tcb endpointId replyTarget hTcb hIpc
-  cases replyTarget with
-  | none => simp at h
-  | some t => exact ⟨t, rfl⟩
 
 -- WS-RC R4.C close-out: `notificationWait_preserves_uniqueWaiters` was
 -- deleted along with the `uniqueWaiters` predicate it preserved.
@@ -6142,7 +6112,7 @@ end notificationBindingReciprocal
 -- Full IPC invariant bundle
 -- ============================================================================
 
-/-- The structural IPC invariant: fourteen conjuncts.
+/-- The structural IPC invariant: thirteen conjuncts.
 
 Three of them are donation invariants:
 - `donationChainAcyclic`: no circular donation chains
@@ -6154,8 +6124,11 @@ became structural (since WS-ZA ZA4.4, through the intrusive TCB queue).
 `v0.36.136` retired `passiveServerIdle`, which stated that no unbound thread
 off the boot core's queue is blocked sending or calling: seL4 MCS lets such a
 thread wait unbound (`schedContext_unbindTCB` leaves it blocked), and the
-final delete of its context now does the same.  `blockedOnReplyHasTarget` is
-the 14th. -/
+final delete of its context now does the same.  `v0.36.202` retired
+`blockedOnReplyHasTarget`, which stated that every reply-blocked thread records
+the server it waits on: seL4 MCS's thread finalisation leaves a deleted
+server's callers `BlockedOnReply` with no server, answerable through their
+reply capability, so a reply-blocked thread may record none. -/
 def ipcInvariantCore (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
@@ -6163,22 +6136,21 @@ def ipcInvariantCore (st : SystemState) : Prop :=
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
-  donationBudgetTransfer st ∧
-  blockedOnReplyHasTarget st
+  donationBudgetTransfer st
 
-/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — **twenty-one conjuncts**:
-the 14 structural conjuncts (`ipcInvariantCore`) **plus** the bidirectional
-`replyCallerLinkage` (15th) tying every `TCB.replyObject` to a reciprocating
+/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — **twenty conjuncts**:
+the 13 structural conjuncts (`ipcInvariantCore`) **plus** the bidirectional
+`replyCallerLinkage` (14th) tying every `TCB.replyObject` to a reciprocating
 `Reply.caller`, **plus** the `pendingReceiveReplyWellFormed` server-first stash
-conjunct (16th, PR #822 review 6J9Kjg/6J9Kp6) tying every
+conjunct (15th, PR #822 review 6J9Kjg/6J9Kp6) tying every
 `TCB.pendingReceiveReply` to a still-`.blockedOnReceive` server holding a free
 existing Reply, **plus** the reply-object hardening trio added during the
-SM6.D deep audits (`donationOwnerUnique` 17th,
-`endpointQueueTailBlockedConsistent` 18th, `queueNextTargetBlocked` 19th),
+SM6.D deep audits (`donationOwnerUnique` 16th,
+`endpointQueueTailBlockedConsistent` 17th, `queueNextTargetBlocked` 18th),
 **plus** notification binding reciprocity (`notificationBindingReciprocal`,
-20th), which lets a final delete read a thread's or a notification's own
+19th), which lets a final delete read a thread's or a notification's own
 binding code instead of scanning the object table for the other end, **plus**
-the endpoint-queue link discipline (`endpointQueueLinksOnlyBlocked`, 21st): a
+the endpoint-queue link discipline (`endpointQueueLinksOnlyBlocked`, 20th): a
 thread with a queue successor is blocked on an endpoint, so an endpoint whose
 own queues are empty has no thread blocked on it
 (`endpointQueues_empty_noneBlocked`).
@@ -6194,7 +6166,7 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   donationBudgetTransfer st ∧
-  blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
+  replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
   queueNextTargetBlocked st ∧ notificationBindingReciprocal st ∧
@@ -6225,7 +6197,7 @@ The family below is the pointwise counterpart of the `_of_objects_eq` frames.
 Four of those (`endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`,
 `queueNextBlockingConsistent`, `queueNextTargetBlocked`) already took a
 pointwise hypothesis under the equality name; the rest took the equality.  A
-`_of_storeAgrees` wrapper exists for all twenty-one so a caller need not know which
+`_of_storeAgrees` wrapper exists for all twenty so a caller need not know which
 was which. -/
 def objectStoreAgrees (st st' : SystemState) : Prop :=
   ∀ k : SeLe4n.ObjId, st'.objects[k]? = st.objects[k]?
@@ -6378,13 +6350,6 @@ theorem donationBudgetTransfer_of_storeAgrees {st st' : SystemState}
   rw [hA] at h1 h2
   exact h tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
 
-theorem blockedOnReplyHasTarget_of_storeAgrees {st st' : SystemState}
-    (hA : objectStoreAgrees st st') (h : blockedOnReplyHasTarget st) :
-    blockedOnReplyHasTarget st' := by
-  intro tid tcb ep rt hTcb hBlk
-  rw [hA] at hTcb
-  exact h tid tcb ep rt hTcb hBlk
-
 theorem replyCallerLinkage_of_storeAgrees {st st' : SystemState}
     (hA : objectStoreAgrees st st') (h : replyCallerLinkage st) :
     replyCallerLinkage st' := by
@@ -6466,7 +6431,7 @@ def ipcInvariantFullExceptDonationOwner (st : SystemState) (woken : SeLe4n.Threa
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValidExcept st woken ∧
   donationBudgetTransfer st ∧
-  blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
+  replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
   queueNextTargetBlocked st ∧ notificationBindingReciprocal st ∧
@@ -6626,7 +6591,7 @@ def ipcInvariantFullExceptReplyLinkage (st : SystemState) (woken : SeLe4n.Thread
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   donationBudgetTransfer st ∧
-  blockedOnReplyHasTarget st ∧ replyCallerLinkageExcept st woken ∧
+  replyCallerLinkageExcept st woken ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
   endpointQueueTailBlockedConsistent st ∧
   queueNextTargetBlocked st ∧ notificationBindingReciprocal st ∧
@@ -6665,63 +6630,59 @@ theorem ipcInvariantFull_of_exceptReplyLinkage {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken)
     (hRCL : replyCallerLinkage st) :
     ipcInvariantFull st :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, hRCL,
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1, hRCL, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
-/-- WS-RR RR8.7: the relaxed bundle's fourteen structural conjuncts are
-`ipcInvariantCore` verbatim — the relaxation is the fifteenth. -/
+/-- WS-RR RR8.7: the relaxed bundle's thirteen structural conjuncts are
+`ipcInvariantCore` verbatim — the relaxation is the fourteenth. -/
 theorem ipcInvariantFullExceptReplyLinkage.toCore {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     ipcInvariantCore st :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
-/-- WS-RR RR8.7: the relaxed fifteenth conjunct. -/
+/-- WS-RR RR8.7: the relaxed fourteenth conjunct. -/
 theorem ipcInvariantFullExceptReplyLinkage.replyCallerLinkageExcept {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.replyCallerLinkageExcept st woken :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-RR RR8.7: the relaxed bundle's remaining named projections. -/
 theorem ipcInvariantFullExceptReplyLinkage.pendingReceiveReplyWellFormed {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 theorem ipcInvariantFullExceptReplyLinkage.donationOwnerUnique {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 theorem ipcInvariantFullExceptReplyLinkage.endpointQueueTailBlockedConsistent
     {st : SystemState} {woken : SeLe4n.ThreadId}
     (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 theorem ipcInvariantFullExceptReplyLinkage.queueNextTargetBlocked {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 theorem ipcInvariantFullExceptReplyLinkage.notificationBindingReciprocal {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.notificationBindingReciprocal st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 theorem ipcInvariantFullExceptReplyLinkage.endpointQueueLinksOnlyBlocked {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
     _root_.SeLe4n.Kernel.endpointQueueLinksOnlyBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- WS-RR RR3.12: the relaxed bundle's own `donationOwnerValidExcept` projection. -/
 theorem ipcInvariantFullExceptDonationOwner.donationOwnerValidExcept
@@ -6736,7 +6697,7 @@ theorem ipcInvariantFullExceptDonationOwner.donationOwnerUnique
     {st : SystemState} {woken : SeLe4n.ThreadId}
     (h : ipcInvariantFullExceptDonationOwner st woken) :
     _root_.SeLe4n.Kernel.donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-RR RR3.12: the relaxed bundle's remaining named projections — the same
 surface `ipcInvariantFull` exposes, minus the one conjunct that is relaxed. -/
@@ -6776,37 +6737,32 @@ theorem ipcInvariantFullExceptDonationOwner.donationChainAcyclic {st : SystemSta
 theorem ipcInvariantFullExceptDonationOwner.donationBudgetTransfer {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
     _root_.SeLe4n.Kernel.donationBudgetTransfer st := h.2.2.2.2.2.2.2.2.2.2.2.2.1
-theorem ipcInvariantFullExceptDonationOwner.blockedOnReplyHasTarget {st : SystemState}
-    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.replyCallerLinkage {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.replyCallerLinkage st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.replyCallerLinkage st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.pendingReceiveReplyWellFormed {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.endpointQueueTailBlockedConsistent {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.queueNextTargetBlocked {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.queueNextTargetBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.notificationBindingReciprocal {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.notificationBindingReciprocal st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    _root_.SeLe4n.Kernel.notificationBindingReciprocal st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 theorem ipcInvariantFullExceptDonationOwner.endpointQueueLinksOnlyBlocked {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptDonationOwner st woken) :
-    _root_.SeLe4n.Kernel.endpointQueueLinksOnlyBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.endpointQueueLinksOnlyBlocked st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
-/-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
+/-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 13
 conjuncts of `ipcInvariantFull`. -/
 theorem ipcInvariantFull.toCore {st : SystemState} (h : ipcInvariantFull st) :
     ipcInvariantCore st :=
-  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
 /-- WS-SM SM6.D (PR #822 review): assemble `ipcInvariantFull` from its structural
 core plus the reply linkage and the server-first stash well-formedness — the seam
@@ -6820,12 +6776,10 @@ theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hQNTB : queueNextTargetBlocked st) (hNBR : notificationBindingReciprocal st)
     (hLinks : endpointQueueLinksOnlyBlocked st) :
     ipcInvariantFull st :=
-  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
-   hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB, hNBR, hLinks⟩
+  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1, hCore.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB, hNBR, hLinks⟩
 
 /-- **WS-RR RR8.16: the relaxed bundle's assembler**, the sibling of
 `ipcInvariantFull_of_core_replyCallerLinkage` one strength down.
@@ -6842,12 +6796,10 @@ theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
     (hQNTB : queueNextTargetBlocked st) (hNBR : notificationBindingReciprocal st)
     (hLinks : endpointQueueLinksOnlyBlocked st) :
     ipcInvariantFullExceptReplyLinkage st woken :=
-  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
-   hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB, hNBR, hLinks⟩
+  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1, hCore.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB, hNBR, hLinks⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -6855,8 +6807,9 @@ theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
 -- The legacy tuple form above is preserved as the primary definition so
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
 -- projections continues to typecheck.  The block below layers a named
--- `structure IpcInvariantFull` over the same conjuncts (twenty-one since
--- v0.36.140: 14 structural — `uniqueWaiters` and `passiveServerIdle` retired — plus
+-- `structure IpcInvariantFull` over the same conjuncts (twenty since
+-- v0.36.202: 13 structural — `uniqueWaiters`, `passiveServerIdle` and
+-- `blockedOnReplyHasTarget` retired — plus
 -- the reply-linkage/stash/hardening quintet added through the SM6.D
 -- reply-object audits, plus notification binding reciprocity and the endpoint-queue link
 -- discipline), a
@@ -6898,7 +6851,6 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   donationChainAcyclic : donationChainAcyclic st
   donationOwnerValid : donationOwnerValid st
   donationBudgetTransfer : donationBudgetTransfer st
-  blockedOnReplyHasTarget : blockedOnReplyHasTarget st
   replyCallerLinkage : replyCallerLinkage st
   pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
   donationOwnerUnique : donationOwnerUnique st
@@ -6982,50 +6934,45 @@ elaborator. -/
     _root_.SeLe4n.Kernel.donationBudgetTransfer st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-@[simp] theorem blockedOnReplyHasTarget {st : SystemState}
-    (h : ipcInvariantFull st) :
-    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 @[simp] theorem replyCallerLinkage {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.replyCallerLinkage st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 @[simp] theorem pendingReceiveReplyWellFormed {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 @[simp] theorem donationOwnerUnique {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 @[simp] theorem endpointQueueTailBlockedConsistent {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 @[simp] theorem queueNextTargetBlocked {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 @[simp] theorem notificationBindingReciprocal {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.notificationBindingReciprocal st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 @[simp] theorem endpointQueueLinksOnlyBlocked {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.endpointQueueLinksOnlyBlocked st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
 /- WS-SM SM6.D (PR #822 review): named projections for the structural core
-(`ipcInvariantCore` = the first 14 conjuncts of `ipcInvariantFull`), so the
+(`ipcInvariantCore` = the first 13 conjuncts of `ipcInvariantFull`), so the
 reply-store building blocks can read `hInv.ipcInvariant` etc. on a core hypothesis. -/
 namespace ipcInvariantCore
 
@@ -7054,9 +7001,7 @@ theorem donationChainAcyclic {st : SystemState} (h : ipcInvariantCore st) :
 theorem donationOwnerValid {st : SystemState} (h : ipcInvariantCore st) :
     _root_.SeLe4n.Kernel.donationOwnerValid st := h.2.2.2.2.2.2.2.2.2.2.2.1
 theorem donationBudgetTransfer {st : SystemState} (h : ipcInvariantCore st) :
-    _root_.SeLe4n.Kernel.donationBudgetTransfer st := h.2.2.2.2.2.2.2.2.2.2.2.2.1
-theorem blockedOnReplyHasTarget {st : SystemState} (h : ipcInvariantCore st) :
-    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.donationBudgetTransfer st := h.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantCore
 
@@ -7075,8 +7020,7 @@ def ipcInvariantCoreNonDonation (st : SystemState) : Prop :=
   badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
-  blockedThreadTimeoutConsistent st ∧
-  blockedOnReplyHasTarget st
+  blockedThreadTimeoutConsistent st
 
 namespace ipcInvariantCoreNonDonation
 
@@ -7101,9 +7045,7 @@ theorem queueNextBlockingConsistent {st : SystemState} (h : ipcInvariantCoreNonD
 theorem queueHeadBlockedConsistent {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
     _root_.SeLe4n.Kernel.queueHeadBlockedConsistent st := h.2.2.2.2.2.2.2.2.1
 theorem blockedThreadTimeoutConsistent {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
-    _root_.SeLe4n.Kernel.blockedThreadTimeoutConsistent st := h.2.2.2.2.2.2.2.2.2.1
-theorem blockedOnReplyHasTarget {st : SystemState} (h : ipcInvariantCoreNonDonation st) :
-    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2
+    _root_.SeLe4n.Kernel.blockedThreadTimeoutConsistent st := h.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantCoreNonDonation
 
@@ -7113,8 +7055,7 @@ theorem ipcInvariantCoreNonDonation_of_core {st : SystemState} (h : ipcInvariant
   ⟨h.ipcInvariant, h.dualQueueSystemInvariant, h.allPendingMessagesBounded,
    h.badgeWellFormed, h.blockedThreadsPendingMessageConsistent, h.endpointQueueNoDup,
    h.ipcStateQueueMembershipConsistent, h.queueNextBlockingConsistent,
-   h.queueHeadBlockedConsistent, h.blockedThreadTimeoutConsistent,
-   h.blockedOnReplyHasTarget⟩
+   h.queueHeadBlockedConsistent, h.blockedThreadTimeoutConsistent⟩
 
 /-- WS-RR RR3.12: the relaxed bundle contains the eleven binding-free conjuncts
 outright — the relaxation touches only `donationOwnerValid`. -/
@@ -7123,7 +7064,7 @@ theorem ipcInvariantCoreNonDonation_of_exceptDonationOwner {st : SystemState}
     ipcInvariantCoreNonDonation st :=
   ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
    h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+   h.2.2.2.2.2.2.2.2.2.1⟩
 
 /-- AN3-B.1 bridge: `ipcInvariantFull` (tuple form) and `IpcInvariantFull`
 (named-field form) are logically equivalent.  Proven by constructor-then-
@@ -7141,7 +7082,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid,
            h.donationBudgetTransfer,
-           h.blockedOnReplyHasTarget, h.replyCallerLinkage,
+           h.replyCallerLinkage,
            h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
            h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked,
            h.notificationBindingReciprocal, h.endpointQueueLinksOnlyBlocked⟩
@@ -7154,7 +7095,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid,
            h.donationBudgetTransfer,
-           h.blockedOnReplyHasTarget, h.replyCallerLinkage,
+           h.replyCallerLinkage,
            h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
            h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked,
            h.notificationBindingReciprocal, h.endpointQueueLinksOnlyBlocked⟩

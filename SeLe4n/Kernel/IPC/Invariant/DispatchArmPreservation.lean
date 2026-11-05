@@ -3413,23 +3413,6 @@ private theorem retypeWrite_donationBudgetTransfer
       rw [hNe _ hK2] at h2
       exact hInv tid1 tid2 tcb1 tcb2 scId h1 h2 hTNe hS1 hS2
 
-private theorem retypeWrite_blockedOnReplyHasTarget
-    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
-    (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
-    (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]?)
-    (hFresh : retypeReplacementFresh newObj)
-    (hInv : blockedOnReplyHasTarget st) :
-    blockedOnReplyHasTarget st' := by
-  intro tid tcb epId rt hT hIpc
-  by_cases hK : tid.toObjId = target
-  · rw [hK] at hT
-    obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
-    obtain ⟨hReady, -⟩ := hFresh
-    rw [hReady] at hIpc
-    cases hIpc
-  · rw [hNe _ hK] at hT
-    exact hInv tid tcb epId rt hT hIpc
-
 private theorem retypeWrite_blockedOnReplyHasReplyObject
     {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
     (hAt : st'.objects[target]? = some newObj ∨ st'.objects[target]? = none)
@@ -3999,7 +3982,6 @@ private theorem retypeOrEraseWrite_preserves_ipcInvariantFull
    retypeWrite_donationChainAcyclic hAt hNe hFresh hInv.donationChainAcyclic,
    retypeWrite_donationOwnerValid hAt hNe hFresh hDet hInv.donationOwnerValid,
    retypeWrite_donationBudgetTransfer hAt hNe hFresh hInv.donationBudgetTransfer,
-   retypeWrite_blockedOnReplyHasTarget hAt hNe hFresh hInv.blockedOnReplyHasTarget,
    ⟨retypeWrite_replyCallerLinkageReciprocal hAt hNe hFresh hDet hInv.replyCallerLinkage.1,
     retypeWrite_blockedOnReplyHasReplyObject hAt hNe hFresh hInv.replyCallerLinkage.2⟩,
    retypeWrite_pendingReceiveReplyWellFormed hAt hNe hFresh hDet
@@ -6089,7 +6071,6 @@ theorem stageWokenSendCompletion_donationChainFrame
           split
           · exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
           · exact donationChainFrame.refl st
-
 
 
 /-! ### WS-ZA ZA6.32: the interrupt-control and interrupt-handler invocations -/

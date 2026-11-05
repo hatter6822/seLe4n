@@ -55,7 +55,6 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 
-
 -- WS-RR RR3.3 / RR3.8: `ipcUnwrapCaps_preserves_blockedThreadsPendingMessageConsistent`,
 -- `ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal` and the
 -- `ipcUnwrapCaps_reply_backward` transport the second rests on, moved UP to
@@ -162,8 +161,6 @@ theorem ipcUnwrapCaps_preserves_ipcInvariantFull
       grantRight st st' summary hObjInv hInv.blockedThreadTimeoutConsistent hStep,
     donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
     donationBudgetTransfer_of_sameSchedContextBindings hSame hInv.donationBudgetTransfer,
-    ipcUnwrapCaps_preserves_blockedOnReplyHasTarget caps receiverRoot slotBase
-      grantRight st st' summary hObjInv hInv.blockedOnReplyHasTarget hStep,
     ⟨ipcUnwrapCaps_preserves_replyCallerLinkageReciprocal caps receiverRoot slotBase
         grantRight st st' summary hObjInv hInv.replyCallerLinkage.1 hStep,
       ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject caps receiverRoot slotBase

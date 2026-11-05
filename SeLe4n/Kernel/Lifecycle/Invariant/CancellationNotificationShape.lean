@@ -574,19 +574,6 @@ theorem purgedAndRestored_blockedThreadsPendingMessageConsistent
   · rw [restoredTcb_eq]
     simp only [TCB.ipcState_setIpcState]
 
-theorem purgedAndRestored_blockedOnReplyHasTarget
-    (st : SystemState) (v : SeLe4n.ThreadId)
-    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
-    (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
-    (h : blockedOnReplyHasTarget st) :
-    blockedOnReplyHasTarget (purgedAndRestored st v frame) := by
-  intro tid tcb' epId rt hTcb' hBlocked
-  rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
-  · exact h tid t0 epId rt h0 hBlocked
-  · rw [restoredTcb_ipcState] at hBlocked
-    cases hBlocked
-
 theorem purgedAndRestored_donationChainAcyclic
     (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
@@ -951,7 +938,7 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     (hOff : sweptThreadOffQueueChains st v) :
     ipcInvariantFull (purgedAndRestored st v frame) := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBlkMsg, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    hDonAcyc, hDonOwner, hDonBudget, hBlkReply, hReplyLink, hStash,
+    hDonAcyc, hDonOwner, hDonBudget, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt, hNBR, hLinks⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
   have hNotReply : ∀ ep rt, tcbV.ipcState ≠ .blockedOnReply ep rt := by
@@ -1000,7 +987,6 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     donationOwnerValid_of_frames hBind
       (purgedAndRestored_donationOwnerFrame st v frame tcbV hInv hLookup hNotReply) hDonOwner,
     donationBudgetTransfer_of_sameSchedContextBindings hBind hDonBudget,
-    purgedAndRestored_blockedOnReplyHasTarget st v frame tcbV hInv hLookup hBlkReply,
     purgedAndRestored_replyCallerLinkage st v frame tcbV hInv hLookup hNotReply hReplyLink,
     purgedAndRestored_pendingReceiveReplyWellFormed st v frame tcbV hInv hLookup hStash,
     donationOwnerUnique_of_sameSchedContextBindings hBind hDonUnique,

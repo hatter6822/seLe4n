@@ -227,9 +227,9 @@ invariant in the representation when you can.
 | Group | Conjuncts |
 |-------|-----------|
 | Notification and message well-formedness | `ipcInvariant`, `allPendingMessagesBounded`, `badgeWellFormed` |
-| Queue structure | `dualQueueSystemInvariant`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `endpointQueueTailBlockedConsistent`, `queueNextTargetBlocked` |
-| Blocked-thread coherence | `blockedThreadsPendingMessageConsistent`, `blockedThreadTimeoutConsistent`, `blockedOnReplyHasTarget`, `pendingReceiveReplyWellFormed` |
-| Reply linkage | `replyCallerLinkage` |
+| Queue structure | `dualQueueSystemInvariant`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `endpointQueueTailBlockedConsistent`, `queueNextTargetBlocked`, `endpointQueueLinksOnlyBlocked` |
+| Blocked-thread coherence | `blockedThreadsPendingMessageConsistent`, `blockedThreadTimeoutConsistent`, `pendingReceiveReplyWellFormed` |
+| Reply and notification linkage | `replyCallerLinkage`, `notificationBindingReciprocal` |
 | SchedContext donation | `donationChainAcyclic`, `donationOwnerValid`, `donationOwnerUnique`, `donationBudgetTransfer` |
 
 **The bundle is de-threaded end to end.** No theorem in the

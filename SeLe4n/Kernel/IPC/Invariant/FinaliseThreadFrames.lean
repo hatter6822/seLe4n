@@ -940,7 +940,7 @@ theorem readyThread_unlinked {s : SystemState} {x : SeLe4n.ThreadId} {t : TCB}
     rw [hS, hO]; rfl
   have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hX
   obtain ⟨hFull, -, hNtfn, hRw, -, -⟩ := h
-  obtain ⟨-, -, -, -, -, -, -, -, -, hTB, -, -, -, -, hLink, hPend, -, -, -⟩ := hFull
+  obtain ⟨-, -, -, -, -, -, -, -, -, hTB, -, -, -, hLink, hPend, -, -, -⟩ := hFull
   have hN := hNtfn.2.2.2.2 x t hTo (fun oid e => by rw [hR] at e; cases e)
   have hSrv : t.blockingServer? = none := by unfold TCB.blockingServer?; rw [hR]
   have hV := SystemState.replyViews_of_tcb hTo

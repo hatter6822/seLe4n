@@ -253,7 +253,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
       have hExcept := endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership
         st p.2 epId true t hObjInv hRemove hInv (hPred t epId hTarget)
       obtain ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,
-        hTimeout1, hAcyc1, hOwner1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
+        hTimeout1, hAcyc1, hOwner1, hBudget1, hRLink1, hStash1, hUniq1,
         hQTB1, hQNT1⟩ := hExcept
       -- The delivered thread survives the splice with its `ipcState` untouched:
       -- still `.blockedOnReceive epId`, which is what the detachment argument reads.
@@ -293,7 +293,7 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
               simp [Array.size])
             (fun tcbX hX => hAllNone1 t tcbX hX) hNotReply1 hNotHead1 hNotTail1 hNoIncoming1
             ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,
-              hTimeout1, hAcyc1, hOwner1, hBudget1, hRTgt1, hRLink1, hStash1, hUniq1,
+              hTimeout1, hAcyc1, hOwner1, hBudget1, hRLink1, hStash1, hUniq1,
               hQTB1, hQNT1⟩ hStore
         have hObj2 := storeTcbReceiveComplete_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
         obtain ⟨tr, hTrGet, hTrReady⟩ :=

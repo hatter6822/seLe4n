@@ -1724,14 +1724,6 @@ theorem donationBudgetTransfer_of_readViewAgreement {s1 s2 : SystemState}
   run_links_back hView at tcb1 h1; run_links_back hView at tcb2 h2
   exact h tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
 
-/-- Read-view transport of `blockedOnReplyHasTarget`. -/
-theorem blockedOnReplyHasTarget_of_readViewAgreement {s1 s2 : SystemState}
-    (hView : ipcReadViewAgreement s1 s2)
-    (h : blockedOnReplyHasTarget s1) : blockedOnReplyHasTarget s2 := by
-  intro tid tcb endpointId replyTarget hTcb hIpc
-  run_links_back hView at tcb hTcb
-  exact h tid tcb endpointId replyTarget hTcb hIpc
-
 /-- Read-view transport of `replyCallerLinkageReciprocal`. -/
 theorem replyCallerLinkageReciprocal_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
@@ -1843,7 +1835,6 @@ theorem ipcInvariantFull_of_readViewAgreement_of_reciprocal {s1 s2 : SystemState
    donationChainAcyclic_of_readViewAgreement hView h.donationChainAcyclic,
    donationOwnerValid_of_readViewAgreement hView h.donationOwnerValid,
    donationBudgetTransfer_of_readViewAgreement hView h.donationBudgetTransfer,
-   blockedOnReplyHasTarget_of_readViewAgreement hView h.blockedOnReplyHasTarget,
    replyCallerLinkage_of_readViewAgreement hView h.replyCallerLinkage,
    pendingReceiveReplyWellFormed_of_readViewAgreement hView h.pendingReceiveReplyWellFormed,
    donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
@@ -2000,13 +1991,12 @@ theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffSchedulerLinks {s1
    donationChainAcyclic_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.1,
    donationOwnerValidExcept_of_readViewAgreement hView h.donationOwnerValidExcept,
    donationBudgetTransfer_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   blockedOnReplyHasTarget_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   replyCallerLinkage_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_readViewAgreement hView h.replyCallerLinkage,
    pendingReceiveReplyWellFormed_of_readViewAgreement hView
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+     h.pendingReceiveReplyWellFormed,
    donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+     h.endpointQueueTailBlockedConsistent,
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked,
    .of_codes (.of_objectsAgreeOffSchedulerLinks hA) h.notificationBindingReciprocal,
    endpointQueueLinksOnlyBlocked_of_readViewAgreement hView h.endpointQueueLinksOnlyBlocked⟩

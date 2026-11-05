@@ -71,9 +71,9 @@ private theorem ipcInvariantFull_of_exceptDonationOwner_of_no_edge
       sTcb.schedContextBinding ≠ .donated sc0 woken) :
     ipcInvariantFull st := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hBTPM, hNoDup, hQMC, hQNBC, hQHBC, hBTT,
-    hDCA, hDOVexc, hDBT, hBRT, hRCL, hPRR, hDOU, hEQTB, hQNTB⟩ := hExc
+    hDCA, hDOVexc, hDBT, hRCL, hPRR, hDOU, hEQTB, hQNTB⟩ := hExc
   refine ⟨hIpc, hDual, hBnd, hBadge, hBTPM, hNoDup, hQMC, hQNBC, hQHBC, hBTT,
-    hDCA, ?_, hDBT, hBRT, hRCL, hPRR, hDOU, hEQTB, hQNTB⟩
+    hDCA, ?_, hDBT, hRCL, hPRR, hDOU, hEQTB, hQNTB⟩
   intro tid tcb scId owner hT hB
   obtain ⟨hSC, ownerTcb, hOT, hOU, hDisj⟩ := hDOVexc tid tcb scId owner hT hB
   refine ⟨hSC, ownerTcb, hOT, hOU, ?_⟩

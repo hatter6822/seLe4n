@@ -65,7 +65,7 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
     ipcInvariantFullExceptMembership st' tid := by
   obtain ⟨hIpc, hDual, hBnd, hBadge, hPend, hNoDup, hMem, hQNB, hQHB, hTimeout,
-    _hAcyc, hOwner, hBudget, hReplyTarget, hReplyLink, hStash, hUnique, hTail,
+    _hAcyc, hOwner, hBudget, hReplyLink, hStash, hUnique, hTail,
     hQNT, hNBR, hLinks⟩ := hInv
   have hDual' := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId isReceiveQ
     st st' tid hObjInv hStep hDual
@@ -114,8 +114,6 @@ theorem endpointQueuePopHead_establishes_ipcInvariantFullExceptMembership
     donationOwnerValid_implies_donationChainAcyclic st' hOwner',
     hOwner',
     donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
-    endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId isReceiveQ st st' tid
-      headTcb hObjInv hReplyTarget hStep,
     ⟨replyCallerLinkageReciprocal_of_frame
         (endpointQueuePopHead_replyLinkageFrame endpointId isReceiveQ st st' tid headTcb hObjInv
           hStep) hReplyLink.1,
@@ -643,7 +641,7 @@ theorem storeEndpointBlockedCancelled_preserves_ipcInvariantFull
   have hT1 : s1.objects[t.toObjId]? = some (.tcb (tcbOffQueue tcb)) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hFr.removed_tcb
   have hEx' := hEx
-  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
+  obtain ⟨-, hDual1, -, -, -, -, -, -, hQHB1, -, -, -, -, -, -, -, hQTB1, -⟩ := hEx'
   obtain ⟨hNotHead, hNotTail, hNoInc⟩ := endpointQueueRemoveDual_removed_detached_side st s1 e q
     t hObjInv hInv.dualQueueSystemInvariant hRem _ hT1 hSideS hQHB1 hQTB1 hDual1.2.1
   refine cancelledEndpointWaiter_closes s1 t (tcbOffQueue tcb) hI1 hNotRes hT1 hNoBudget

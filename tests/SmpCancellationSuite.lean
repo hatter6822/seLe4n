@@ -307,7 +307,6 @@ open SeLe4n.Testing
 #check @sweptAndRestored_badgeWellFormed
 #check @sweptAndRestored_allPendingMessagesBounded
 #check @sweptAndRestored_blockedThreadsPendingMessageConsistent
-#check @sweptAndRestored_blockedOnReplyHasTarget
 #check @sweptAndRestored_donationChainAcyclic
 #check @sweptAndRestored_queueNextTargetBlocked
 #check @sweptAndRestored_queueNextBlockingConsistent
@@ -343,7 +342,6 @@ open SeLe4n.Testing
 #check @purgedAndRestored_badgeWellFormed
 #check @purgedAndRestored_allPendingMessagesBounded
 #check @purgedAndRestored_blockedThreadsPendingMessageConsistent
-#check @purgedAndRestored_blockedOnReplyHasTarget
 #check @purgedAndRestored_donationChainAcyclic
 #check @purgedAndRestored_pendingReceiveReplyWellFormed
 #check @purgedAndRestored_replyCallerLinkage
