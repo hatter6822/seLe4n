@@ -260,6 +260,30 @@ theorem consumed_of_unlinked (r : Reply) (hPrev : r.prev = none) (hNext : r.next
     r.consumed = { r with callerCode := 0 } := by
   unfold consumed; rw [hNext]; simp [hPrev]
 
+/-- A head's consumption: its caller cleared, in the record's cell.  Out of
+line, so the compiler sees one record written and nothing matched on it. -/
+@[noinline] def callerClearedForConsume (r : Reply) : Reply := { r with callerCode := 0 }
+
+/-- Consumption off a head: the caller and the links cleared, in the record's
+cell. -/
+@[noinline] def clearedForConsume (r : Reply) : Reply :=
+  { r with callerCode := 0, prev := none, next := none }
+
+/-- WS-ZA ZA6.33: the compiled `consumed`: whether the links go is read before
+the record is written, then the caller cleared and, off a head, the links, in
+the record's own cell.  The specification's head arm rebuilds the record
+beside the one it matched on, so a head was copied on every reply that pops a
+donation.  Proven equal (`consumed_eq_impl`). -/
+def consumedImpl (r : Reply) : Reply :=
+  if r.consumedIsFree then clearedForConsume r else callerClearedForConsume r
+
+@[csimp] theorem consumed_eq_impl : @consumed = @consumedImpl := by
+  funext r
+  unfold consumed consumedImpl consumedIsFree clearedForConsume callerClearedForConsume
+  cases r.next with
+  | none => rfl
+  | some l => cases l <;> rfl
+
 /-- A consumed Reply that is not a head is well formed and free. -/
 theorem consumed_isFree_of_not_head (r : Reply) (h : ∀ sc, r.next ≠ some (.head sc)) :
     r.consumed.isFree = true := by

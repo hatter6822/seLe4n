@@ -372,6 +372,8 @@ def chainNeutralConstructors : List (Name × String) :=
     -- release links are not chain data: `scReply` is in no assignment list.
   , (`SeLe4n.Kernel.setAffinityPerform,
       "the TCB's `cpuAffinity`, the vacate and requeue (scheduler slots), and the replenishment migration's release-link writes; `scReply` is untouched")
+  , (`SeLe4n.Kernel.setAffinityPerformImpl,
+      "the compiled form of the same affinity change (`setAffinityPerform_eq_impl`); same reason")
   , (`SeLe4n.Kernel.releaseSchedContextBinding,
       "the TCB's binding codes and the purge's release-link writes (`purgeReplenishment`); `scReply` is untouched")
   , (`SeLe4n.Kernel.cancelDonationArmReplenishCores,
@@ -904,6 +906,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.returnDonatedSchedContext,
       .states [`SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed_of_except])
+    -- WS-ZA ZA6.33: the pop with each object rewritten in its slot: on the
+    -- states whose checks pass it is the resolved pop's state, so it carries
+    -- that pop's result.
+  , (`SeLe4n.Kernel.returnDonatedSchedContextInPlace,
+      .states [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_donationChainWellFormed])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects

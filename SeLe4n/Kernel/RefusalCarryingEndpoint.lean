@@ -11,6 +11,7 @@ import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDonatingInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
 
@@ -817,6 +818,35 @@ where this is called, so only the general arm reads them. -/
       (Architecture.regMessageRegs layout rf) tid
     executingCore cap
 
+/-- WS-ZA ZA6.33: the checked reply arm on a reply whose reply object heads the
+stack of the context its server holds on loan (seL4-MCS's `reply_pop`): a reply
+of at most four words whose checks all pass before any write
+(`replyPopsInPlace`) writes in place (`performReplyDonatedDelivered`,
+`replyTransferChecked_donated_inPlace`); any other takes the general arm.  Out
+of line, taking the caller's binding code and fault flag rather than its TCB,
+so nothing the writes rewrite is held across them. -/
+@[noinline] def replyDonatedAdmits (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (tid : SeLe4n.ThreadId)
+    (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cBinding : Nat) (cFault : Bool)
+    (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len ≤ 4) &&
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+    !server.isReserved && !cFault && replyPopsInPlace st c cBinding server rid
+
+/-- The donated reply's arm: the checks of `replyDonatedAdmits`, then the
+in-place writes or the general arm. -/
+@[inline] def endpointReplyDonatedArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cBinding : Nat) (cFault : Bool) :
+    RefusalCarrying Unit :=
+  fun st =>
+    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then
+      .ok ((), performReplyDonatedDelivered st c server rid
+        ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
+        layout rf len cap.badgeWord cap.badged executingCore)
+    else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
+
 /-- WS-ZA ZA4.7: the checked reply arm (`dispatchWithCapChecked`'s `.reply`
 case), refusing in the state it was handed (`endpointReplyCheckedArmR_eq`).  A
 reply to an unfaulted caller blocked on it whose checks all pass before any
@@ -854,8 +884,9 @@ takes the general arm. -/
                                   ct.faultX7)
                               else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                                   tid executingCore cap st
-                            else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
-                                tid executingCore cap st
+                            else endpointReplyDonatedArmR ctx layout rf len extraCaps label tid
+                                executingCore cap c server rid ct.scBindingScCode
+                                ct.faultWords.isFault st
                         | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label
                             tid executingCore cap st
                     | _ =>
@@ -919,7 +950,23 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hK]
                   · simp only [endpointReplyCheckedArmRegsR, endpointReplyCheckedArmGeneralR, hTgt,
                       hAns, hFlow, ↓reduceIte]
-              · rfl
+              · unfold endpointReplyDonatedArmR
+                split
+                · next hG =>
+                  unfold replyDonatedAdmits at hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+                  obtain ⟨⟨⟨⟨hSz4, hFlow⟩, hSRes⟩, hNoF⟩, hP⟩ := hG
+                  have hAns : replyAnsweredCaller? st rid0 = some c := by
+                    rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                  simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                  rw [replyTransferChecked_donated_inPlace ctx st tid c server ct ep rid
+                    { length := len, extraCaps := extraCaps, label := label }
+                    (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+                    executingCore
+                    { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+                    rfl (by simp only [maxMessageRegisters]; omega) hSz4
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hP hNoF hFlow]
+                · rfl
             · rfl
           · rfl
         · rfl
