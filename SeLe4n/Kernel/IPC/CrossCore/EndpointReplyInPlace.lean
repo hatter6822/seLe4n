@@ -79,31 +79,28 @@ caller's delivered message staged in its return frame. -/
     (PriorityInheritance.propagatePipChainCrossCore
       (storeReplyRendezvous st c server rid msg) server core).1 c 0
 
-/-- **The reply, in place**: under `replyWakesInPlace` the specification's
-reply returns `storeReplyRendezvous`'s state with the caller wake's SGI, and the
-consumed reply object heads no context there. -/
-theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.ThreadId)
-    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+/-- **The reply leg, in place**, on a reply object linked to nothing or heading
+a stack (the splice is the identity on both): every write lands in its slot, so
+the specification's reply returns `storeReplyRendezvous`'s state with the caller
+wake's SGI. -/
+theorem replyOnCore_eq_store (st : SystemState) (replier c server : SeLe4n.ThreadId)
+    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (rp : Reply) (msg : IpcMessage)
     (core : Concurrency.CoreId)
     (hSz : ¬ msg.registers.size > maxMessageRegisters)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep (some server))
     (hRO : ct.replyObject = some rid)
-    (hG : replyWakesInPlace st c ct rid = true) :
+    (hCRes : c.isReserved = false)
+    (hLC : storeLeavesIndexAndTypes st c.toObjId .tcb = true)
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hLR : storeLeavesIndexAndTypes st rid.toObjId .reply = true)
+    (hFR : st.objects.findsInPlace rid.toObjId = true)
+    (hRo : st.objects[rid.toObjId]? = some (.reply rp))
+    (hShape : (rp.next = none ∧ rp.prev = none) ∨ ∃ s, rp.next = some (.head s)) :
     endpointReplyOnCore replier c msg core st =
         (storeReplyRendezvous st c server rid msg,
          .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
-      replyFrameHeadHolder? (storeReplyRendezvous st c server rid msg) rid = none := by
-  simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
-  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
-      rp.next = none ∧ rp.prev = none := by
-    split at hRp
-    · next rp hRo =>
-      rw [Bool.and_eq_true] at hRp
-      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
-        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
-    · cases hRp
+      (storeReplyRendezvous st c server rid msg).getReply? rid = some rp.consumed := by
   have hNeCQ : c.toObjId ≠ rid.toObjId := fun h => by rw [h, hRo] at hT; cases hT
   have hNeQC : rid.toObjId ≠ c.toObjId := fun h => hNeCQ h.symm
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
@@ -145,7 +142,9 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   have hRp2 : S2.getReply? rid = some rp := (SystemState.getReply?_eq_some_iff _ _ _).mpr hO2q
   have hSp : cutReplyFrameOutOrSelf S2 rid = S2 := by
     unfold cutReplyFrameOutOrSelf
-    rw [cutReplyFrameOut_of_no_frame_above S2 rid rp hRp2 hNext hPrev]
+    rcases hShape with ⟨hNext, hPrev⟩ | ⟨s, hNext⟩
+    · rw [cutReplyFrameOut_of_no_frame_above S2 rid rp hRp2 hNext hPrev]
+    · rw [cutReplyFrameOut_of_head S2 rid rp s hRp2 hNext]
   have hS3 : S2.modifyObject rid.toObjId replyConsumedObject =
       { S2 with objects := (S2.objects.insert rid.toObjId (.reply rp.consumed)) } := by
     unfold SystemState.modifyObject
@@ -189,12 +188,42 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
     rw [hW, hSp]
     unfold SystemState.consumeCallerReply SystemState.consumeReply
     simp only [hRp2, hStR, hT3c, hSt4]
-  · apply replyFrameHeadHolder?_of_no_head
-    have hR5 := (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks
-      (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) c server).get_reply_iff.mpr hO4q
-    unfold replyFrameHeadContext?
-    rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hR5]
-    simp only [Reply.consumed, hNext]
+  · exact (SystemState.getReply?_eq_some_iff _ _ _).mpr
+      ((SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks
+        (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) c server).get_reply_iff.mpr hO4q)
+
+/-- **The reply, in place**: under `replyWakesInPlace` the specification's
+reply returns `storeReplyRendezvous`'s state with the caller wake's SGI, and the
+consumed reply object heads no context there. -/
+theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.ThreadId)
+    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep (some server))
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true) :
+    endpointReplyOnCore replier c msg core st =
+        (storeReplyRendezvous st c server rid msg,
+         .ok (wakeThread (st.updateTcb c (callReceiverTcb msg)) c core).2) ∧
+      replyFrameHeadHolder? (storeReplyRendezvous st c server rid msg) rid = none := by
+  simp only [replyWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
+  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
+      rp.next = none ∧ rp.prev = none := by
+    split at hRp
+    · next rp hRo =>
+      rw [Bool.and_eq_true] at hRp
+      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
+        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
+    · cases hRp
+  obtain ⟨hEq, hR5⟩ := replyOnCore_eq_store st replier c server ct ep rid rp msg core hSz hT hIpc
+    hRO hCRes hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)
+  refine ⟨hEq, ?_⟩
+  apply replyFrameHeadHolder?_of_no_head
+  unfold replyFrameHeadContext?
+  rw [hR5]
+  simp only [Reply.consumed, hNext]
 
 /-- **The reply's dispatch, in place**: under `replyWakesInPlace` the
 cross-core reply dispatch returns the in-place writes followed by the server's
